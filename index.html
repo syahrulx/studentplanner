@@ -1,0 +1,88 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Studly</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#002D5A">
+    <meta name="description" content="AI-powered student productivity app for UiTM students">
+    
+    <!-- iOS PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Studly">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --uitm-navy: #002D5A;
+            --uitm-gold: #C5A028;
+            --bg-light: #F9FBFF;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg-light); 
+            color: #1A1C1E;
+            -webkit-tap-highlight-color: transparent;
+            letter-spacing: -0.011em;
+        }
+        .uitm-navy { color: var(--uitm-navy); }
+        .bg-uitm-navy { background-color: var(--uitm-navy); }
+        .uitm-gold { color: var(--uitm-gold); }
+        .bg-uitm-gold { background-color: var(--uitm-gold); }
+        
+        .shadow-premium {
+            box-shadow: 0 4px 20px -2px rgba(0, 45, 90, 0.04), 0 2px 8px -1px rgba(0, 45, 90, 0.02);
+        }
+        .shadow-gold {
+            box-shadow: 0 10px 20px -5px rgba(197, 160, 40, 0.15);
+        }
+        .glass { 
+            background: rgba(255, 255, 255, 0.82); 
+            backdrop-filter: blur(16px); 
+            -webkit-backdrop-filter: blur(16px);
+            border-top: 0.5px solid rgba(0, 0, 0, 0.05);
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes slideIn {
+            from { transform: translateY(12px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        input:focus, select:focus, textarea:focus {
+            box-shadow: 0 0 0 2px rgba(0, 45, 90, 0.05);
+        }
+
+        .card-gradient {
+            background: linear-gradient(135deg, #FFFFFF 0%, #F3F7FF 100%);
+        }
+
+        /* Compact sizing overrides */
+        .p-compact { padding: 1.25rem; }
+        .rounded-premium { border-radius: 1.75rem; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="max-w-md mx-auto min-h-screen relative overflow-x-hidden border-x border-gray-50 bg-white shadow-2xl">
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
