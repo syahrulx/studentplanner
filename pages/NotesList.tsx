@@ -8,9 +8,10 @@ interface Props {
   onBack: () => void;
   onSelectNote: (note: Note) => void;
   onAddNote: () => void;
+  onTutorialStep?: (step: number) => void;
 }
 
-const NotesList: React.FC<Props> = ({ subjectId, notes, onBack, onSelectNote, onAddNote }) => {
+const NotesList: React.FC<Props> = ({ subjectId, notes, onBack, onSelectNote, onAddNote, onTutorialStep }) => {
   return (
     <div className="p-6 space-y-6 bg-white animate-slide-in pb-24">
       <header className="flex items-center justify-between pt-2">
@@ -36,11 +37,11 @@ const NotesList: React.FC<Props> = ({ subjectId, notes, onBack, onSelectNote, on
 
       {/* Filter Tabs */}
       <div className="flex gap-2 overflow-x-auto hide-scrollbar py-2">
-        {['All', 'Lecture', 'Tutorial', 'Exam'].map((tag) => (
+        {['Lecture'].map((tag) => (
           <button
             key={tag}
             className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-              tag === 'All' 
+              tag === 'Lecture' 
                 ? 'bg-uitm-navy text-white shadow-premium' 
                 : 'bg-gray-50 text-gray-400 border border-gray-100'
             }`}
@@ -58,10 +59,11 @@ const NotesList: React.FC<Props> = ({ subjectId, notes, onBack, onSelectNote, on
             <p className="text-xs font-bold uppercase tracking-widest">No notes yet</p>
           </div>
         ) : (
-          notes.map((note) => (
+          notes.map((note, index) => (
             <div
               key={note.id}
-              onClick={() => onSelectNote(note)}
+              id={index === 0 ? 'note-item' : undefined}
+              onClick={() => { onTutorialStep?.(14); onSelectNote(note); }}
               className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-premium group active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden"
             >
               <div className="flex justify-between items-start mb-4">

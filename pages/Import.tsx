@@ -7,7 +7,7 @@ const Import = ({ onExtract, onNavigate }: { onExtract: (t: string) => void, onN
   const [pastedText, setPastedText] = useState('');
 
   return (
-    <div className="p-6 bg-white space-y-8 animate-slide-in">
+    <div className="p-6 space-y-8 animate-slide-in">
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-black text-uitm-navy tracking-tight">Import WhatsApp</h1>
         <button 
@@ -18,7 +18,7 @@ const Import = ({ onExtract, onNavigate }: { onExtract: (t: string) => void, onN
         </button>
       </div>
 
-      <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+      <div className="flex bg-gray-50/50 backdrop-blur-sm p-1.5 rounded-2xl border border-gray-100">
         {['Share', 'Paste', 'Upload'].map(tab => (
           <button 
             key={tab}
@@ -43,7 +43,7 @@ const Import = ({ onExtract, onNavigate }: { onExtract: (t: string) => void, onN
             <li className="p-3 bg-white/50 rounded-xl">Open <span className="text-green-600 font-black uppercase">WhatsApp</span></li>
             <li className="p-3 bg-white/50 rounded-xl">Long press task message</li>
             <li className="p-3 bg-white/50 rounded-xl">Tap <span className="text-uitm-navy font-black uppercase">Share</span></li>
-            <li className="p-3 bg-white/50 rounded-xl">Select <span className="text-uitm-gold font-black uppercase tracking-widest">Studly</span></li>
+            <li className="p-3 bg-white/50 rounded-xl">Select <span className="text-uitm-gold font-black uppercase tracking-widest">GradeUp</span></li>
           </ol>
         </div>
       )}
@@ -59,7 +59,7 @@ const Import = ({ onExtract, onNavigate }: { onExtract: (t: string) => void, onN
             />
           </div>
 
-          <div className="bg-white space-y-6">
+          <div className="space-y-6">
             <div className="space-y-4">
               <Toggle label="Auto-detect course code" defaultChecked />
               <Toggle label="Auto-detect due date/time" defaultChecked />

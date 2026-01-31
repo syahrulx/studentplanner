@@ -1,6 +1,6 @@
 {
-  "name": "Studly",
-  "short_name": "Studly",
+  "name": "GradeUp",
+  "short_name": "GradeUp",
   "description": "AI-powered student productivity app for UiTM students",
   "start_url": "/",
   "display": "standalone",

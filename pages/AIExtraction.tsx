@@ -17,11 +17,11 @@ const AIExtraction: React.FC<Props> = ({ sourceMessage, courses, onAdd, onCancel
     title: 'Lab 4 - Normalization Study',
     courseId: 'IPS551',
     type: TaskType.Lab,
-    dueDate: '2024-05-24',
+    dueDate: '2024-12-27',
     dueTime: '23:59',
     priority: Priority.High,
     effort: 4,
-    notes: 'Follow the specific ERD to Normalization mapping taught in Week 10.'
+    notes: 'Follow the specific ERD to Normalization mapping taught in Week 11.'
   });
 
   const analysisSteps = [

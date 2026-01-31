@@ -6,7 +6,7 @@ const Groups = ({ onBack }: { onBack: () => void }) => {
   return (
     <div className="p-6 space-y-8 bg-white">
       <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 bg-gray-50 rounded-xl"><Icons.ArrowRight /></button>
+        <button onClick={onBack} className="p-2 bg-gray-50 rounded-xl"><Icons.ArrowRight className="rotate-180" /></button>
         <h1 className="text-xl font-bold text-uitm-navy">Source Groups</h1>
       </div>
 

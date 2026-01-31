@@ -9,8 +9,8 @@ interface Props {
 
 const MatchLobby: React.FC<Props> = ({ onStart, onBack }) => {
   const [participants, setParticipants] = useState([
-    { name: 'Aiman Hafiz (You)', status: 'Ready', isMe: true },
-    { name: 'Sarah Amin', status: 'Ready', isMe: false },
+    { name: 'Syahrul Izwan (You)', status: 'Ready', isMe: true },
+    { name: 'Syafiq ', status: 'Ready', isMe: false },
   ]);
   const [countdown, setCountdown] = useState(5);
 

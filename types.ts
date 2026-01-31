@@ -22,7 +22,10 @@ export type Page =
   | 'quizGameplay'
   | 'resultsPage'
   | 'leaderboard'
-  | 'flashcardReview';
+  | 'flashcardReview'
+  | 'addTask'
+  | 'signUp'
+  | 'forgotPassword';
 
 export enum TaskType {
   Assignment = 'Assignment',

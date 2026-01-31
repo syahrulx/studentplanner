@@ -7,13 +7,25 @@ interface Props {
 }
 
 const Leaderboard: React.FC<Props> = ({ onBack }) => {
-  const rankings = [
-    { rank: 1, name: 'Sarah Amin', subject: 'CSC584', score: 1250, badge: true },
-    { rank: 2, name: 'Aiman Hafiz (You)', subject: 'CSC584', score: 1180, badge: true },
-    { rank: 3, name: 'Zul Hilmi', subject: 'CSC584', score: 950, badge: true },
-    { rank: 4, name: 'Farah Wahida', subject: 'CSC584', score: 820, badge: false },
-    { rank: 5, name: 'Iskandar Z.', subject: 'CSC584', score: 790, badge: false },
+  const [activeTab, setActiveTab] = React.useState<'quiz' | 'task'>('quiz');
+
+  const quizRankings = [
+    { rank: 1, name: 'Sarah Amin', sub: 'Quiz Master', score: '1,250 XP', badge: true },
+    { rank: 2, name: 'Syahrul Izwan (You)', sub: 'Top 5%', score: '1,180 XP', badge: true },
+    { rank: 3, name: 'Zul Hilmi', sub: 'Rising Star', score: '950 XP', badge: true },
+    { rank: 4, name: 'Farah Wahida', sub: 'Consistent', score: '820 XP', badge: false },
+    { rank: 5, name: 'Iskandar Z.', sub: 'Rookie', score: '790 XP', badge: false },
   ];
+
+  const taskRankings = [
+    { rank: 1, name: 'Farah Wahida', sub: 'Efficiency Pro', score: '98% Done', badge: true },
+    { rank: 2, name: 'Syahrul Izwan (You)', sub: 'Productive', score: '92% Done', badge: true },
+    { rank: 3, name: 'Sarah Amin', sub: 'On Track', score: '88% Done', badge: true },
+    { rank: 4, name: 'Iskandar Z.', sub: 'Catching Up', score: '75% Done', badge: false },
+    { rank: 5, name: 'Zul Hilmi', sub: 'Need Focus', score: '60% Done', badge: false },
+  ];
+
+  const rankings = activeTab === 'quiz' ? quizRankings : taskRankings;
 
   return (
     <div className="p-6 bg-white space-y-8 animate-slide-in pb-10">
@@ -26,8 +38,18 @@ const Leaderboard: React.FC<Props> = ({ onBack }) => {
       </header>
 
       <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100">
-        <button className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl bg-white shadow-premium text-uitm-navy">This Week</button>
-        <button className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-gray-400">All Time</button>
+        <button 
+          onClick={() => setActiveTab('quiz')}
+          className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'quiz' ? 'bg-white shadow-premium text-uitm-navy' : 'text-gray-400'}`}
+        >
+          Quiz Rank
+        </button>
+        <button 
+          onClick={() => setActiveTab('task')}
+          className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'task' ? 'bg-white shadow-premium text-uitm-navy' : 'text-gray-400'}`}
+        >
+          Task Rank
+        </button>
       </div>
 
       <div className="space-y-4">
@@ -42,12 +64,12 @@ const Leaderboard: React.FC<Props> = ({ onBack }) => {
               </div>
               <div>
                 <h4 className="text-sm font-black tracking-tight">{p.name}</h4>
-                <p className={`text-[9px] font-black uppercase tracking-widest ${p.rank === 2 ? 'text-blue-200' : 'text-gray-400'}`}>{p.subject} Champion</p>
+                <p className={`text-[9px] font-black uppercase tracking-widest ${p.rank === 2 ? 'text-blue-200' : 'text-gray-400'}`}>{p.sub}</p>
               </div>
             </div>
             <div className="text-right">
               <div className="text-sm font-black tracking-tight">{p.score}</div>
-              <div className={`text-[8px] font-black uppercase tracking-widest ${p.rank === 2 ? 'text-uitm-gold' : 'text-gray-300'}`}>PTS</div>
+                {/* <div className={`text-[8px] font-black uppercase tracking-widest ${p.rank === 2 ? 'text-uitm-gold' : 'text-gray-300'}`}>PTS</div> */}
             </div>
           </div>
         ))}

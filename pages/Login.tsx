@@ -1,14 +1,17 @@
 
 import React from 'react';
 
-const Login = ({ onLogin, onDemo }: { onLogin: () => void, onDemo: () => void }) => {
+interface Props {
+  onLogin: () => void;
+  onSignUp: () => void;
+  onForgotPassword: () => void;
+}
+
+const Login: React.FC<Props> = ({ onLogin, onSignUp, onForgotPassword }) => {
   return (
     <div className="min-h-screen flex flex-col p-10 bg-white">
       <div className="flex-1 flex flex-col justify-center">
         <div className="mb-14">
-          <div className="w-16 h-16 bg-uitm-navy rounded-2xl flex items-center justify-center text-white mb-8 shadow-premium">
-              <span className="text-2xl font-black">SP</span>
-          </div>
           <h1 className="text-4xl font-black text-uitm-navy mb-3 tracking-tight">Login</h1>
           <p className="text-gray-400 font-medium">Access your personalized study hub.</p>
         </div>
@@ -19,7 +22,7 @@ const Login = ({ onLogin, onDemo }: { onLogin: () => void, onDemo: () => void })
             <input 
               type="email" 
               placeholder="2022456789@student.uitm.edu.my"
-              className="w-full px-6 py-5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-uitm-navy/20 outline-none transition-all font-semibold text-sm"
+              className="w-full px-6 py-5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-uitm-navy/20 outline-none transition-all font-semibold text-sm placeholder:text-gray-400"
             />
           </div>
           <div className="space-y-2">
@@ -27,8 +30,16 @@ const Login = ({ onLogin, onDemo }: { onLogin: () => void, onDemo: () => void })
             <input 
               type="password" 
               placeholder="••••••••"
-              className="w-full px-6 py-5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-uitm-navy/20 outline-none transition-all font-semibold text-sm"
+              className="w-full px-6 py-5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-uitm-navy/20 outline-none transition-all font-semibold text-sm placeholder:text-gray-400"
             />
+            <div className="flex justify-end">
+              <button 
+                onClick={onForgotPassword}
+                className="text-[11px] font-bold text-uitm-gold"
+              >
+                Forgot Password?
+              </button>
+            </div>
           </div>
         </div>
 
@@ -39,17 +50,10 @@ const Login = ({ onLogin, onDemo }: { onLogin: () => void, onDemo: () => void })
           Login
         </button>
 
-        <div className="relative my-12 flex items-center justify-center">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-          <span className="relative px-6 bg-white text-[10px] text-gray-400 font-black tracking-widest uppercase">OR</span>
-        </div>
-
-        <button 
-          onClick={onDemo}
-          className="w-full border-2 border-gray-100 text-gray-600 py-5 rounded-[1.5rem] font-black flex items-center justify-center gap-2 bg-white hover:bg-gray-50 transition-all active:scale-95"
-        >
-          Continue as Demo
-        </button>
+        <p className="text-center mt-6 text-sm text-gray-400">
+          Don't have an account?{' '}
+          <button onClick={onSignUp} className="text-uitm-navy font-black">Sign Up</button>
+        </p>
       </div>
 
       <div className="mt-10 text-center">

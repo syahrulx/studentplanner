@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Task, TaskType, Priority } from '../types';
 import { Icons } from '../constants';
 
@@ -8,16 +8,17 @@ interface Props {
   onBack: () => void;
   onUpdate: (t: Task) => void;
   onToggleDone: () => void;
+  onDelete: () => void;
 }
 
-const TaskDetails: React.FC<Props> = ({ task, onBack, onToggleDone }) => {
+const TaskDetails: React.FC<Props> = ({ task, onBack, onToggleDone, onDelete }) => {
   if (!task) return null;
 
   return (
     <div className="p-6 space-y-8 bg-white min-h-full">
       <header className="flex items-center justify-between">
         <button onClick={onBack} className="p-3 bg-gray-50 rounded-2xl text-gray-600 hover:bg-gray-100 transition-all">
-          <Icons.ArrowRight />
+          <Icons.ArrowRight className="rotate-180" />
         </button>
         <div className="text-center">
            <p className="text-[9px] font-black text-uitm-gold uppercase tracking-widest">Task ID: {task.id.slice(0, 4)}</p>
@@ -55,8 +56,8 @@ const TaskDetails: React.FC<Props> = ({ task, onBack, onToggleDone }) => {
           </div>
           <p className="text-xs leading-relaxed opacity-90 font-medium">
             {task.deadlineRisk === 'High' 
-              ? "Critical collision detected. This deadline falls exactly on the Week 7 SOW workload spike for enterprise programming. High probability of burnout if not started today."
-              : "Safe window confirmed. Current semester workload for Week 4 is baseline. Completing this now will maximize your rest for next week's peak."}
+              ? "Critical collision detected. This deadline falls within the Week 11-13 SOW workload surge. Week 13 shows peak stress for CSC584 and IPS551. Start now to avoid burnout."
+              : "Safe window confirmed. Current Week 11 workload is manageable. Completing this early gives you buffer before the Week 13 critical peak."}
           </p>
         </div>
 
@@ -77,6 +78,12 @@ const TaskDetails: React.FC<Props> = ({ task, onBack, onToggleDone }) => {
         <div className="flex gap-4 pt-6">
           <button className="p-5 bg-gray-50 text-gray-600 rounded-3xl transition-all hover:bg-gray-100 active:scale-90">
              <Icons.Share />
+          </button>
+          <button 
+            onClick={onDelete}
+            className="p-5 bg-red-50 text-red-500 rounded-3xl transition-all hover:bg-red-100 active:scale-90"
+          >
+             <Icons.Plus className="rotate-45" />
           </button>
           <button 
             onClick={onToggleDone}
