@@ -77,4 +77,35 @@ export const Icons = {
   HelpCircle: ({ style, size = iconSize, color = '#000' }: IconProps) => (
     <Feather name="help-circle" size={size} color={color} style={style as any} />
   ),
+  // Theme & familiar symbols
+  Sun: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="sun" size={size} color={color} style={style as any} />
+  ),
+  Moon: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="moon" size={size} color={color} style={style as any} />
+  ),
+  Circle: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="circle" size={size} color={color} style={style as any} />
+  ),
+  Zap: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="zap" size={size} color={color} style={style as any} />
+  ),
+  Film: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="film" size={size} color={color} style={style as any} />
+  ),
+  Award: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="award" size={size} color={color} style={style as any} />
+  ),
+  Target: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="target" size={size} color={color} style={style as any} />
+  ),
+  Star: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="star" size={size} color={color} style={style as any} />
+  ),
+  Clock: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="clock" size={size} color={color} style={style as any} />
+  ),
+  PieChart: ({ style, size = iconSize, color = '#000' }: IconProps) => (
+    <Feather name="pie-chart" size={size} color={color} style={style as any} />
+  ),
 };

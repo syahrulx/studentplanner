@@ -4,13 +4,14 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
+import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
 
 export default function AddTask() {
   const { courses, addTask } = useApp();
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [type, setType] = useState<TaskType>(TaskType.Assignment);
-  const [dueDate, setDueDate] = useState('2025-01-15');
+  const [dueDate, setDueDate] = useState(formatDisplayDate('2025-01-15'));
   const [dueTime, setDueTime] = useState('23:59');
   const [priority, setPriority] = useState<Priority>(Priority.Medium);
   const [effort, setEffort] = useState(4);
@@ -19,6 +20,7 @@ export default function AddTask() {
 
   const handleSubmit = () => {
     if (!title.trim()) return;
+    const isoDate = parseDisplayDate(dueDate) ?? dueDate;
     setIsSaving(true);
     setTimeout(() => {
     const newTask = {
@@ -26,7 +28,7 @@ export default function AddTask() {
       title: title.trim(),
       courseId,
       type,
-      dueDate,
+      dueDate: isoDate,
       dueTime,
       priority,
       effort,
@@ -86,7 +88,7 @@ export default function AddTask() {
       <View style={styles.row}>
         <View style={styles.half}>
           <Text style={styles.label}>Due date</Text>
-          <TextInput style={styles.input} value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.gray} />
+          <TextInput style={styles.input} value={dueDate} onChangeText={setDueDate} placeholder="DD-MM-YYYY" placeholderTextColor={COLORS.gray} />
         </View>
         <View style={styles.half}>
           <Text style={styles.label}>Time</Text>

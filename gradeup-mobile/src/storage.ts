@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { ThemeId } from '@/constants/Themes';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
+const KEY_THEME = 'appTheme';
 
 export async function getHasSeenTutorial(): Promise<boolean> {
   try {
@@ -18,5 +20,119 @@ export async function setHasSeenTutorial(value: boolean): Promise<void> {
     } else {
       await AsyncStorage.removeItem(KEY_HAS_SEEN_TUTORIAL);
     }
+  } catch {}
+}
+
+const validThemes: ThemeId[] = ['dark', 'light', 'minimal', 'modern', 'retro'];
+
+export async function getTheme(): Promise<ThemeId> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_THEME);
+    if (value && validThemes.includes(value as ThemeId)) return value as ThemeId;
+  } catch {}
+  return 'light';
+}
+
+export async function setTheme(theme: ThemeId): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_THEME, theme);
+  } catch {}
+}
+
+// Revision / Study time
+const KEY_REVISION = 'revisionSettings';
+
+export type RevisionDay = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Every day';
+
+export type RevisionRepeat = 'once' | 'repeated';
+
+export interface RevisionSettings {
+  enabled: boolean;
+  time: string; // "HH:mm" 24h
+  subjectId: string;
+  day: RevisionDay;
+  durationMinutes: number;
+  topic: string;
+  repeat: RevisionRepeat;
+  singleDate?: string; // "YYYY-MM-DD" when repeat === 'once'
+}
+
+const DEFAULT_REVISION: RevisionSettings = {
+  enabled: false,
+  time: '20:00',
+  subjectId: '',
+  day: 'Every day',
+  durationMinutes: 60,
+  topic: '',
+  repeat: 'repeated',
+};
+
+export async function getRevisionSettings(): Promise<RevisionSettings> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_REVISION);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<RevisionSettings>;
+      if (typeof parsed.enabled === 'boolean' && typeof parsed.time === 'string') {
+        return {
+          ...DEFAULT_REVISION,
+          ...parsed,
+          subjectId: typeof parsed.subjectId === 'string' ? parsed.subjectId : DEFAULT_REVISION.subjectId,
+          day: parsed.day && ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Every day'].includes(parsed.day) ? parsed.day : DEFAULT_REVISION.day,
+          durationMinutes: typeof parsed.durationMinutes === 'number' && [15,30,45,60,90].includes(parsed.durationMinutes) ? parsed.durationMinutes : DEFAULT_REVISION.durationMinutes,
+          topic: typeof parsed.topic === 'string' ? parsed.topic : DEFAULT_REVISION.topic,
+          repeat: parsed.repeat === 'once' || parsed.repeat === 'repeated' ? parsed.repeat : DEFAULT_REVISION.repeat,
+          singleDate: typeof parsed.singleDate === 'string' ? parsed.singleDate : undefined,
+        };
+      }
+    }
+  } catch {}
+  return DEFAULT_REVISION;
+}
+
+export async function setRevisionSettings(settings: RevisionSettings): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_REVISION, JSON.stringify(settings));
+  } catch {}
+}
+
+// Completed study sessions (keys like "YYYY-MM-DDTHH:mm") so user can mark study as done
+const KEY_COMPLETED_STUDIES = 'completedStudyKeys';
+
+export async function getCompletedStudyKeys(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_COMPLETED_STUDIES);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string');
+    }
+  } catch {}
+  return [];
+}
+
+export async function setCompletedStudyKeys(keys: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_COMPLETED_STUDIES, JSON.stringify(keys));
+  } catch {}
+}
+
+// Pinned task IDs (max 2) – tasks stay at top of planner
+const KEY_PINNED_TASKS = 'pinnedTaskIds';
+const MAX_PINNED_TASKS = 2;
+
+export async function getPinnedTaskIds(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_PINNED_TASKS);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string').slice(0, MAX_PINNED_TASKS);
+    }
+  } catch {}
+  return [];
+}
+
+export async function setPinnedTaskIds(ids: string[]): Promise<void> {
+  try {
+    const trimmed = ids.slice(0, MAX_PINNED_TASKS);
+    await AsyncStorage.setItem(KEY_PINNED_TASKS, JSON.stringify(trimmed));
   } catch {}
 }

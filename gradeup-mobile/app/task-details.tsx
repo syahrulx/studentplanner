@@ -1,7 +1,8 @@
-import { View, Text, Pressable, ScrollView, StyleSheet, Share } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
+import { formatDisplayDate } from '@/src/utils/date';
 import { Priority } from '@/src/types';
 
 export default function TaskDetails() {
@@ -26,12 +27,30 @@ export default function TaskDetails() {
   };
 
   const handleToggle = () => {
-    toggleTaskDone(task.id);
+    if (task.isDone) {
+      Alert.alert(
+        'Mark as not done?',
+        `Mark "${task.title}" as incomplete?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Undo', onPress: () => toggleTaskDone(task.id) },
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Mark as done?',
+        `Mark "${task.title}" as completed?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Mark done', onPress: () => toggleTaskDone(task.id) },
+        ]
+      );
+    }
   };
 
   const handleShare = () => {
     Share.share({
-      message: `${task.title} (${task.courseId}) – Due ${task.dueDate} ${task.dueTime}`,
+      message: `${task.title} (${task.courseId}) – Due ${formatDisplayDate(task.dueDate)} ${task.dueTime}`,
       title: 'Task',
     });
   };
@@ -57,7 +76,7 @@ export default function TaskDetails() {
       <View style={styles.grid}>
         <View style={styles.infoBox}>
           <Text style={styles.infoLabel}>DUE DATE</Text>
-          <Text style={styles.infoValue}>{task.dueDate}</Text>
+          <Text style={styles.infoValue}>{formatDisplayDate(task.dueDate)}</Text>
         </View>
         <View style={styles.infoBox}>
           <Text style={styles.infoLabel}>PRIORITY</Text>

@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { UserProfile, Course, Task, Note, Flashcard } from '../types';
+import type { ThemeId } from '@/constants/Themes';
 import {
   initialUser,
   initialCourses,
@@ -7,6 +8,8 @@ import {
   initialNotes,
   initialFlashcards,
 } from '../seedData';
+import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, type RevisionSettings } from '../storage';
+import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
 
 type AppState = {
   user: UserProfile;
@@ -20,9 +23,19 @@ type AppState = {
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
+  theme: ThemeId;
+  setTheme: (theme: ThemeId) => void;
+  revisionSettings: RevisionSettings;
+  setRevisionSettings: (settings: RevisionSettings) => Promise<void>;
+  completedStudyKeys: string[];
+  markStudyDone: (key: string) => void;
+  unmarkStudyDone: (key: string) => void;
   addTask: (task: Task) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
+  pinnedTaskIds: string[];
+  pinTask: (taskId: string) => boolean;
+  unpinTask: (taskId: string) => void;
   handleSaveNote: (note: Note) => void;
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
 };
@@ -36,6 +49,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [pendingExtraction, setPendingExtraction] = useState('');
+  const [theme, setThemeState] = useState<ThemeId>('light');
+  const [revisionSettings, setRevisionState] = useState<RevisionSettings>({
+    enabled: false,
+    time: '20:00',
+    subjectId: '',
+    day: 'Every day',
+    durationMinutes: 60,
+    topic: '',
+    repeat: 'repeated',
+  });
+  const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
+  const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    getTheme().then(setThemeState);
+    getRevisionSettings().then(setRevisionState);
+    getCompletedStudyKeys().then(setCompletedStudyKeys);
+    getPinnedTaskIds().then(setPinnedTaskIds);
+  }, []);
+
+  const setTheme = useCallback((next: ThemeId) => {
+    setThemeState(next);
+    persistTheme(next);
+  }, []);
+
+  const setRevisionSettings = useCallback(async (settings: RevisionSettings) => {
+    if (settings.enabled) {
+      const ok = await requestRevisionPermissions();
+      if (!ok) {
+        const fallback = { ...settings, enabled: false };
+        setRevisionState(fallback);
+        await persistRevision(fallback);
+        await cancelAllRevisionNotifications();
+        return;
+      }
+      await scheduleRevisionNotification(settings);
+    } else {
+      await cancelAllRevisionNotifications();
+    }
+    setRevisionState(settings);
+    await persistRevision(settings);
+  }, []);
+
+  const markStudyDone = useCallback((key: string) => {
+    setCompletedStudyKeys((prev) => {
+      if (prev.includes(key)) return prev;
+      const next = [...prev, key];
+      persistCompletedStudies(next);
+      return next;
+    });
+  }, []);
+
+  const unmarkStudyDone = useCallback((key: string) => {
+    setCompletedStudyKeys((prev) => {
+      const next = prev.filter((k) => k !== key);
+      persistCompletedStudies(next);
+      return next;
+    });
+  }, []);
 
   const addTask = useCallback((task: Task) => {
     setTasks((prev) => [task, ...prev]);
@@ -49,6 +121,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteTask = useCallback((taskId: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    setPinnedTaskIds((prev) => {
+      const next = prev.filter((id) => id !== taskId);
+      if (next.length !== prev.length) persistPinnedTaskIds(next);
+      return next;
+    });
+  }, []);
+
+  const pinTask = useCallback((taskId: string): boolean => {
+    let added = false;
+    setPinnedTaskIds((prev) => {
+      if (prev.includes(taskId)) return prev;
+      if (prev.length >= 2) return prev;
+      added = true;
+      const next = [...prev, taskId];
+      persistPinnedTaskIds(next);
+      return next;
+    });
+    return added;
+  }, []);
+
+  const unpinTask = useCallback((taskId: string) => {
+    setPinnedTaskIds((prev) => {
+      const next = prev.filter((id) => id !== taskId);
+      if (next.length !== prev.length) persistPinnedTaskIds(next);
+      return next;
+    });
   }, []);
 
   const handleSaveNote = useCallback((note: Note) => {
@@ -75,9 +173,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFlashcards,
     pendingExtraction,
     setPendingExtraction,
+    theme,
+    setTheme,
+    revisionSettings,
+    setRevisionSettings,
+    completedStudyKeys,
+    markStudyDone,
+    unmarkStudyDone,
     addTask,
     toggleTaskDone,
     deleteTask,
+    pinnedTaskIds,
+    pinTask,
+    unpinTask,
     handleSaveNote,
     handleGenerateFlashcards,
   };

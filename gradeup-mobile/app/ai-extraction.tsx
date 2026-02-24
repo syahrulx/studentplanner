@@ -5,6 +5,7 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import type { Task } from '@/src/types';
+import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
 
 const ANALYSIS_STEPS = [
   'Identifying keywords...',
@@ -127,7 +128,7 @@ export default function AIExtraction() {
       <View style={styles.row}>
         <View style={styles.half}>
           <Text style={styles.label}>Due Date</Text>
-          <TextInput style={styles.input} value={formData.dueDate} onChangeText={(d) => setFormData({ ...formData, dueDate: d })} />
+          <TextInput style={styles.input} value={formData.dueDate ? formatDisplayDate(formData.dueDate) : ''} onChangeText={(d) => { const p = parseDisplayDate(d); if (p) setFormData({ ...formData, dueDate: p }); }} placeholder="DD-MM-YYYY" placeholderTextColor={COLORS.gray} />
         </View>
         <View style={styles.half}>
           <Text style={styles.label}>Target Time</Text>
