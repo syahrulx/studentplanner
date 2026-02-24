@@ -57,13 +57,19 @@ const Dashboard: React.FC<Props> = ({ user, tasks, onNavigate, onTutorialStep })
           </div>
         </div>
         <div className="bg-uitm-navy text-white px-4 py-2 rounded-2xl shadow-premium flex items-center gap-3">
-          <span className="text-xs font-black tracking-tight">Week {user.currentWeek}</span>
-          <div 
+          <button 
+            onClick={() => onNavigate('stressMap')}
+            className="text-xs font-black tracking-tight active:scale-95 transition-all outline-none"
+          >
+            Week {user.currentWeek}
+          </button>
+          <div className="w-[1px] h-3 bg-white/20"></div>
+          <button 
             onClick={() => onNavigate('profileSettings')}
-            className="cursor-pointer active:scale-90 transition-all"
+            className="cursor-pointer active:scale-90 transition-all outline-none"
           >
             <Icons.User className="w-4 h-4" />
-          </div>
+          </button>
         </div>
       </header>
 
@@ -110,11 +116,10 @@ const Dashboard: React.FC<Props> = ({ user, tasks, onNavigate, onTutorialStep })
 
 
       {/* 4. Quick Actions - Monochromatic & Professional */}
-      <section className="px-6 grid grid-cols-4 gap-4">
-        <QuickShortcut icon={Icons.Layers} label="Cards" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('flashcardReview')} />
-        <QuickShortcut icon={Icons.List} label="Notes" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('notesHub')} />
+      <section className="px-6 grid grid-cols-3 gap-4">
+        <QuickShortcut icon={Icons.Layers} label="Flashcard" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('flashcardReview')} />
         <QuickShortcut icon={Icons.CheckCircle} label="Quiz" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('quizConfig')} />
-        <QuickShortcut icon={Icons.Sparkles} label="AI" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('ai')} />
+        <QuickShortcut icon={Icons.TrendingUp} label="Ranking" color="bg-white border border-gray-200 text-uitm-navy" onClick={() => onNavigate('leaderboard')} />
       </section>
 
       {/* 5. Micro-Timeline */}

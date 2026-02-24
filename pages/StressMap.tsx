@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Course } from '../types';
+import { Course, UserProfile } from '../types';
 import { Icons } from '../constants';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -15,14 +15,14 @@ const INITIAL_SOW_DATA: Record<string, number[]> = {
   'LCC401': [1, 1, 2, 2, 3, 3, 3, 3, 9, 4, 4, 4, 5, 8], 
 };
 
-const StressMap = ({ courses, onBack }: { courses: Course[], onBack: () => void }) => {
-  const currentWeek = 11;
+const StressMap = ({ user, courses, onBack }: { user: UserProfile, courses: Course[], onBack: () => void }) => {
+  const currentWeek = user.currentWeek;
   const [sowData, setSowData] = useState<Record<string, number[]>>(INITIAL_SOW_DATA);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [messages, setMessages] = useState<{role: 'ai' | 'user', text: string}[]>([
-    { role: 'ai', text: "Hello ! I see we're in Week 11. I can help you recalibrate your SOW if any deadlines have shifted. What's changed?" }
+    { role: 'ai', text: `Hello ! I see we're in Week ${user.currentWeek}. I can help you recalibrate your SOW if any deadlines have shifted. What's changed?` }
   ]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -54,7 +54,7 @@ const StressMap = ({ courses, onBack }: { courses: Course[], onBack: () => void 
           </button>
           <div>
             <h1 className="text-lg font-black text-gray-800 leading-tight">SOW Intelligence</h1>
-            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">PART 4 ISE • AI MANAGED</p>
+            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{user.program} • PART {user.part} • AI MANAGED</p>
           </div>
         </div>
       </div>

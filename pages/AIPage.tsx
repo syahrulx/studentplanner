@@ -81,7 +81,10 @@ const AIPage: React.FC<Props> = ({ user, tasks, courses, onNavigate }) => {
           Your current stress load is <span className="text-uitm-gold font-black">7.8/10</span>. 
           You have 4 tasks due this week (Dec 23-27). Week 13 (Jan 6-10) will be your <span className="text-red-300 font-black">Critical Window</span> with 3 high-priority items.
         </p>
-        <button className="w-full mt-8 bg-white/10 hover:bg-white/20 text-white text-[10px] py-4 rounded-2xl font-black uppercase tracking-widest transition-colors border border-white/10">
+        <button 
+          onClick={() => onNavigate('stressMap')}
+          className="w-full mt-8 bg-white/10 hover:bg-white/20 text-white text-[10px] py-4 rounded-2xl font-black uppercase tracking-widest transition-colors border border-white/10 active:scale-95"
+        >
           View SOW Intelligence
         </button>
         <div className="absolute top-[-20%] right-[-10%] w-32 h-32 bg-white/5 rounded-full blur-2xl"></div>

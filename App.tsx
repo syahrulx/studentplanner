@@ -366,7 +366,7 @@ const App: React.FC = () => {
       case 'planner': return <Planner tasks={tasks} courses={courses} onSelectTask={(t) => { setSelectedTask(t); navigate('taskDetails'); }} onNavigate={navigate} onToggleTask={toggleTaskDone} onAddTask={addTask} autoOpenChat={openAIChat} onChatOpened={() => setOpenAIChat(false)} onTutorialStep={(s) => showTutorial && setTutorialStep(s)} shouldCloseChat={showTutorial && tutorialStep >= 8} />;
       case 'taskDetails': return <TaskDetails task={selectedTask} onBack={() => navigate('planner')} onUpdate={() => {}} onToggleDone={() => toggleTaskDone(selectedTask!.id)} onDelete={() => deleteTask(selectedTask!.id)} />;
       case 'ai': return <AIPage user={user} tasks={tasks} courses={courses} onNavigate={navigate} />;
-      case 'stressMap': return <StressMap courses={courses} onBack={() => navigate('dashboard')} />;
+      case 'stressMap': return <StressMap user={user} courses={courses} onBack={() => navigate('dashboard')} />;
       case 'weeklySummary': return <WeeklySummary user={user} tasks={tasks} onBack={() => navigate('dashboard')} />;
       case 'groups': return <Groups onBack={() => navigate('import')} />;
       case 'profileSettings': return <ProfileSettings user={user} setUser={setUser} tasks={tasks} onNavigate={customNavigate} />;

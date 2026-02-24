@@ -30,105 +30,161 @@ const ProfileSettings: React.FC<Props> = ({ user, tasks, setUser, onNavigate }) 
   const completionRate = Math.round(((tasks.length - pendingTasks.length) / (tasks.length || 1)) * 100);
 
   return (
-    <div className="bg-[#F8FAFC] min-h-screen pb-32 animate-slide-in">
-      {/* 1. Premium Hero Identity */}
-      <section className="relative pt-16 pb-32 px-6 overflow-hidden bg-uitm-navy">
-        {/* Abstract Background Accents */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-uitm-gold opacity-10 blur-[100px] -translate-y-1/2 translate-x-1/2"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500 opacity-5 blur-[80px] translate-y-1/2 -translate-x-1/2"></div>
-        
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="w-24 h-24 rounded-[2.5rem] bg-white/10 backdrop-blur-md p-1.5 mb-6 ring-1 ring-white/20">
-            <div className="w-full h-full rounded-[2.2rem] bg-white flex items-center justify-center shadow-2xl">
-              <span className="text-2xl font-black text-uitm-navy tracking-tighter">
-                {user.name.split(' ').map(n => n[0]).join('')}
-              </span>
-            </div>
-          </div>
+    <div className="bg-[#F8FAFC] min-h-screen pb-32 animate-slide-in relative">
+      {/* 1. HERO: Executive Digital ID */}
+      <section className="pt-10 px-6 pb-6 relative z-10">
+        <div className="relative w-full bg-uitm-navy rounded-[2.5rem] p-7 text-white shadow-xl overflow-hidden border border-white/5">
+          {/* Very Subtle Decorative Glow */}
+          <div className="absolute top-0 right-0 w-48 h-48 bg-uitm-gold opacity-[0.05] rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
           
-          <h1 className="text-2xl font-black text-white tracking-tight mb-1">{user.name}</h1>
-          <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.3em] mb-4">ID: {user.studentId}</p>
-          
-          <div className="flex items-center gap-2 bg-white/5 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-lg">
-             <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-             <span className="text-[10px] font-black text-white/80 uppercase tracking-widest">{user.program.split('-')[0]} • PART {user.part}</span>
-          </div>
-        </div>
-      </section>
+          <div className="relative z-10 flex flex-col gap-5">
+            <div className="flex justify-between items-start">
+               {/* Photo Initials */}
+               <div className="w-16 h-16 rounded-2xl bg-white/10 p-1 ring-1 ring-white/10">
+                  <div className="w-full h-full rounded-xl bg-white flex items-center justify-center shadow-inner">
+                     <span className="text-xl font-black text-uitm-navy tracking-tighter">
+                       {user.name.split(' ').map(n => n[0]).join('')}
+                     </span>
+                  </div>
+               </div>
+               
+               {/* Metadata Column */}
+               <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.3em] mb-1">Status</span>
+                  <div className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-full border border-white/5 ring-1 ring-white/5">
+                     <div className="w-1 h-1 bg-green-400 rounded-full animate-pulse"></div>
+                     <span className="text-[8px] font-black uppercase tracking-widest text-white/80">Active</span>
+                  </div>
+               </div>
+            </div>
 
-      {/* 2. Main Stats Board */}
-      <section className="px-6 -mt-16 relative z-20">
-        <div className="grid grid-cols-2 gap-4">
-          <StatCard icon={Icons.List} label="Active Tasks" value={pendingTasks.length.toString()} sublabel="Priority" />
-          <StatCard icon={Icons.CheckCircle} label="Completion" value={`${completionRate}%`} sublabel="On Track" />
-          <StatCard icon={Icons.TrendingUp} label="Class Rank" value="#02" sublabel="+3 Places" />
-          <StatCard icon={Icons.Calendar} label="Current Week" value={user.currentWeek.toString()} sublabel="Semester 1" />
-        </div>
-      </section>
-
-      {/* 3. Detailed Progress */}
-      <section className="px-6 mt-8 space-y-4">
-        <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm space-y-6">
-          <div className="flex justify-between items-end">
-            <div>
-              <p className="text-[9px] font-black text-uitm-gold uppercase tracking-[0.2em] mb-1">Semester Pulse</p>
-              <h3 className="text-base font-black text-uitm-navy tracking-tight">Academic Journey</h3>
-            </div>
-            <div className="text-right">
-               <span className="text-xl font-black text-uitm-navy tracking-tight">{Math.round((user.currentWeek/14)*100)}%</span>
-               <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Completed</p>
-            </div>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="h-4 bg-gray-50 rounded-2xl p-1 flex gap-1 ring-1 ring-gray-100">
-               {[...Array(14)].map((_, i) => (
-                  <div 
-                    key={i} 
-                    className={`flex-1 rounded-xl transition-all duration-1000 ${i < user.currentWeek ? 'bg-uitm-navy shadow-sm' : i === user.currentWeek ? 'bg-uitm-gold animate-pulse' : 'bg-gray-200/50'}`}
-                  ></div>
-               ))}
-            </div>
-            <div className="flex justify-between px-1">
-               <span className="text-[8px] font-black text-gray-300 uppercase tracking-widest">START</span>
-               <span className="text-[8px] font-black text-uitm-gold uppercase tracking-widest">WEEK {user.currentWeek}</span>
-               <span className="text-[8px] font-black text-gray-300 uppercase tracking-widest">FINALS</span>
+            <div className="space-y-3">
+               <h1 className="text-2xl font-black text-white tracking-tight leading-none">{user.name}</h1>
+               
+               <div className="flex items-center gap-6">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[7px] font-black uppercase tracking-[0.2em] text-white/30">Matrix Number</span>
+                    <span className="text-[10px] font-bold tracking-widest text-white/90">{user.studentId}</span>
+                  </div>
+                  <div className="w-[1px] h-6 bg-white/10"></div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[7px] font-black uppercase tracking-[0.2em] text-white/30">Program Code</span>
+                    <span className="text-[10px] font-bold tracking-widest text-white/90">{user.program}</span>
+                  </div>
+               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 4. Configuration Hub */}
-      <section className="px-6 mt-8 space-y-8">
-        <div>
-          <h3 className="text-[10px] font-black text-[#8E9AAF] uppercase tracking-[0.2em] ml-4 mb-4">Academic Controls</h3>
-          <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
-            <MenuLink icon={Icons.Settings} label="Configure Workflow" value="Active" />
-            <MenuLink icon={Icons.Share} label="Export Progress" value="PDF/CSV" />
-            <div onClick={() => { localStorage.removeItem('hasSeenTutorial'); onNavigate('startTutorial'); }}>
-              <MenuLink icon={Icons.Sparkles} label="Re-run Guide" value="Tutorial" />
+      {/* 2. PROGRESS: Level Bar */}
+      <section className="px-6 mb-8">
+         <div className="bg-white rounded-[2.5rem] p-5 shadow-sm border border-gray-100 flex flex-col gap-3">
+            <div className="flex justify-between items-end">
+                <div className="flex items-center gap-2">
+                    <Icons.Sparkles className="w-3.5 h-3.5 text-uitm-gold" />
+                    <span className="text-[10px] font-black text-uitm-navy uppercase tracking-widest">Scholar Level 5</span>
+                </div>
+                <span className="text-[9px] font-bold text-gray-300 uppercase tracking-widest">65% Progress</span>
             </div>
-          </div>
-        </div>
+            <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden ring-1 ring-gray-100">
+                <div className="h-full bg-uitm-navy w-[65%] rounded-full shadow-sm shadow-blue-900/10"></div>
+            </div>
+         </div>
+      </section>
 
-        <div>
-           <button 
-             onClick={() => onNavigate('login')}
-             className="w-full bg-red-50 text-red-500 rounded-[2rem] py-5 font-black text-xs uppercase tracking-[0.2em] border border-red-100 active:scale-95 transition-all flex items-center justify-center gap-3"
-           >
-             <Icons.User className="w-4 h-4" />
-             Sign Out Account
-           </button>
+      {/* 3. PERFORMANCE STATS: Horizontal Grid */}
+      <section className="mb-8 overflow-hidden">
+        <h3 className="px-8 text-[9px] font-black text-[#8E9AAF] uppercase tracking-[0.3em] mb-4">Performance Metrics</h3>
+        <div className="flex gap-4 overflow-x-auto no-scrollbar px-6">
+           {/* Rank Badge */}
+           <div className="min-w-[150px] bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                 <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 shadow-sm shadow-orange-100">
+                    <Icons.TrendingUp className="w-4 h-4" />
+                 </div>
+                 <span className="text-[8px] font-black text-green-500 bg-green-50 px-2 py-1 rounded-md border border-green-100">+3</span>
+              </div>
+              <div>
+                 <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Class Rank</p>
+                 <p className="text-2xl font-black text-uitm-navy tracking-tighter">#02</p>
+              </div>
+           </div>
+
+           {/* CGPA Badge */}
+           <div className="min-w-[150px] bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                 <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center text-purple-500 shadow-sm shadow-purple-100">
+                    <Icons.CheckCircle className="w-4 h-4" />
+                 </div>
+                 <span className="text-[8px] font-black text-purple-500 bg-purple-50 px-2 py-1 rounded-md border border-purple-100">Top 5%</span>
+              </div>
+              <div>
+                 <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">CGPA Est.</p>
+                 <p className="text-2xl font-black text-uitm-navy tracking-tighter">3.85</p>
+              </div>
+           </div>
+
+            {/* Tasks Badge */}
+           <div className="min-w-[150px] bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                 <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500 shadow-sm shadow-blue-100">
+                    <Icons.List className="w-4 h-4" />
+                 </div>
+                 <span className="text-[8px] font-black text-blue-500 bg-blue-50 px-2 py-1 rounded-md border border-blue-100">Optimal</span>
+              </div>
+              <div>
+                 <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Tasks Done</p>
+                 <p className="text-2xl font-black text-uitm-navy tracking-tighter">{tasks.filter(t => t.isDone).length}</p>
+              </div>
+           </div>
         </div>
       </section>
 
-      {/* Branding */}
-      <div className="text-center mt-12 mb-8">
-        <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.3em]">STUDLY INTELLIGENCE</p>
-      </div>
+      {/* 4. SETTINGS: Unified App Grid */}
+      <section className="px-6 mb-10">
+         <h3 className="text-[9px] font-black text-[#8E9AAF] uppercase tracking-[0.3em] mb-4">Account Controls</h3>
+         <div className="grid grid-cols-2 gap-4">
+            <SettingsButton icon={Icons.Settings} label="Workflow" sub="AI Config" />
+            <SettingsButton icon={Icons.Share} label="Export" sub="PDF / CSV" />
+            <SettingsButton 
+              icon={Icons.HelpCircle} 
+              label="Support" 
+              sub="Tutorial" 
+              onClick={() => { localStorage.removeItem('hasSeenTutorial'); onNavigate('startTutorial'); }}
+            />
+            <SettingsButton icon={Icons.Lock} label="Security" sub="Password" />
+         </div>
+      </section>
+
+      {/* 5. ACTION: Sign Out */}
+      <section className="px-6">
+         <button 
+           onClick={() => onNavigate('login')}
+           className="w-full bg-white text-red-500 rounded-[2rem] py-5 font-black text-[10px] uppercase tracking-[0.2em] border border-gray-200 shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-3 hover:bg-red-50 hover:border-red-100"
+         >
+           <Icons.User className="w-3.5 h-3.5" />
+           <span>Deactivate Session</span>
+         </button>
+      </section>
     </div>
   );
 };
+
+const SettingsButton = ({ icon: Icon, label, sub, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col items-start gap-4 active:scale-[0.98] transition-all hover:border-uitm-navy group"
+  >
+     <div className="w-10 h-10 bg-gray-50 rounded-2xl flex items-center justify-center text-uitm-navy group-hover:bg-uitm-navy group-hover:text-white transition-all shadow-inner">
+        <Icon className="w-5 h-5" />
+     </div>
+     <div>
+        <span className="block text-[10px] font-black text-uitm-navy uppercase tracking-widest mb-0.5">{label}</span>
+        <span className="block text-[8px] font-bold text-gray-300 uppercase tracking-widest">{sub}</span>
+     </div>
+  </button>
+);
 
 const MenuLink = ({ icon: Icon, label, value }: any) => (
   <button className="w-full px-8 py-6 flex items-center justify-between active:bg-gray-50 transition-all text-left group">
