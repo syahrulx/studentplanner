@@ -22,8 +22,17 @@ export default function TaskDetails() {
   }
 
   const handleDelete = () => {
-    deleteTask(task.id);
-    router.back();
+    Alert.alert(
+      'Delete task?',
+      `"${task.title}" will be removed from your planner.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => {
+          deleteTask(task.id);
+          router.back();
+        } },
+      ]
+    );
   };
 
   const handleToggle = () => {
@@ -137,41 +146,44 @@ export default function TaskDetails() {
   );
 }
 
+// Layout: same as Planner – pad 20, section 24, card 20, radius 20/12
+const L = { pad: 20, section: 24, cardPad: 20, radius: 20, radiusSm: 12 };
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  content: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 100 },
+  content: { paddingHorizontal: L.pad, paddingTop: 56, paddingBottom: 100 },
   error: { fontSize: 16, color: COLORS.gray, textAlign: 'center', marginTop: 48 },
-  backBtn: { marginTop: 20, alignSelf: 'center', paddingVertical: 14, paddingHorizontal: 28, backgroundColor: COLORS.navy, borderRadius: 16 },
+  backBtn: { marginTop: L.section, alignSelf: 'center', paddingVertical: 14, paddingHorizontal: 24, backgroundColor: COLORS.navy, borderRadius: L.radiusSm },
   backBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
-  iconBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
-  headerId: { fontSize: 10, fontWeight: '800', color: COLORS.gold, letterSpacing: 1 },
-  badges: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  badgeNavy: { backgroundColor: COLORS.navy, color: COLORS.white, fontSize: 10, fontWeight: '800', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
-  badgeGray: { backgroundColor: COLORS.bg, color: COLORS.gray, fontSize: 10, fontWeight: '800', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.navy, marginBottom: 28, lineHeight: 32, letterSpacing: -0.5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 28 },
-  infoBox: { flex: 1, minWidth: '45%', backgroundColor: COLORS.bg, padding: 18, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border },
-  infoLabel: { fontSize: 10, color: COLORS.gray, fontWeight: '800', marginBottom: 6, letterSpacing: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: L.section },
+  iconBtn: { width: 44, height: 44, borderRadius: L.radiusSm, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  headerId: { fontSize: 11, fontWeight: '700', color: COLORS.gold },
+  badges: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  badgeNavy: { backgroundColor: COLORS.navy, color: COLORS.white, fontSize: 11, fontWeight: '700', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  badgeGray: { backgroundColor: COLORS.bg, color: COLORS.gray, fontSize: 11, fontWeight: '700', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  title: { fontSize: 20, fontWeight: '800', color: COLORS.navy, marginBottom: L.section, lineHeight: 26, letterSpacing: -0.5 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: L.section },
+  infoBox: { flex: 1, minWidth: '45%', backgroundColor: COLORS.bg, padding: L.cardPad, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border },
+  infoLabel: { fontSize: 11, color: COLORS.gray, fontWeight: '700', marginBottom: 6 },
   infoValue: { fontSize: 15, fontWeight: '800', color: COLORS.navy },
-  riskCard: { backgroundColor: COLORS.navy, borderRadius: 24, padding: 24, marginBottom: 28 },
+  riskCard: { backgroundColor: COLORS.navy, borderRadius: L.radius, padding: L.cardPad, marginBottom: L.section },
   riskHigh: { backgroundColor: '#ef4444' },
-  riskRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  riskTitle: { fontSize: 10, fontWeight: '800', color: COLORS.white, letterSpacing: 1.5 },
+  riskRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  riskTitle: { fontSize: 11, fontWeight: '700', color: COLORS.white },
   riskText: { fontSize: 13, color: 'rgba(255,255,255,0.95)', lineHeight: 20 },
-  sourceSection: { marginBottom: 28 },
-  sourceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  sourceLabel: { fontSize: 10, fontWeight: '800', color: COLORS.gray, letterSpacing: 1 },
+  sourceSection: { marginBottom: L.section },
+  sourceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sourceLabel: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   verifiedDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#22c55e' },
-  verifiedText: { fontSize: 9, fontWeight: '700', color: '#22c55e' },
-  sourceCard: { backgroundColor: COLORS.bg, padding: 24, borderRadius: 28, borderWidth: 1, borderColor: COLORS.border, position: 'relative' },
-  sourceTag: { position: 'absolute', top: -12, left: 24, backgroundColor: COLORS.white, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, fontSize: 8, fontWeight: '800', color: COLORS.gray },
-  sourceMessage: { fontSize: 14, color: COLORS.gray, fontStyle: 'italic', marginTop: 10, lineHeight: 20 },
-  actions: { flexDirection: 'row', gap: 14, alignItems: 'center' },
-  shareBtn: { width: 52, height: 52, borderRadius: 18, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
-  deleteBtn: { width: 52, height: 52, borderRadius: 18, backgroundColor: '#fef2f2', alignItems: 'center', justifyContent: 'center' },
-  doneBtn: { flex: 1, backgroundColor: COLORS.navy, paddingVertical: 18, borderRadius: 20, alignItems: 'center' },
+  verifiedText: { fontSize: 10, fontWeight: '700', color: '#22c55e' },
+  sourceCard: { backgroundColor: COLORS.bg, padding: L.cardPad, borderRadius: L.radius, borderWidth: 1, borderColor: COLORS.border, position: 'relative' },
+  sourceTag: { position: 'absolute', top: -10, left: L.pad, backgroundColor: COLORS.white, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, fontSize: 10, fontWeight: '700', color: COLORS.gray },
+  sourceMessage: { fontSize: 14, color: COLORS.gray, fontStyle: 'italic', marginTop: 8, lineHeight: 20 },
+  actions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  shareBtn: { width: 48, height: 48, borderRadius: 16, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#fef2f2', alignItems: 'center', justifyContent: 'center' },
+  doneBtn: { flex: 1, backgroundColor: COLORS.navy, paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
   doneBtnOff: { backgroundColor: COLORS.gray },
-  doneBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '800' },
+  doneBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '800' },
 });

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
@@ -6,8 +6,9 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import { useTheme } from '@/hooks/useTheme';
+import Feather from '@expo/vector-icons/Feather';
 import { ThemeIcon } from '@/components/ThemeIcon';
-import { formatDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO } from '@/src/utils/date';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
@@ -47,11 +48,6 @@ function getOutlineLevel(priority: Priority, daysUntil: number): 'red' | 'yellow
 
 const OUTLINE_COLORS = { red: '#dc2626', yellow: '#ca8a04', green: '#16a34a' };
 
-const WEEK_DAYS = [
-  { label: 'M', date: 23 }, { label: 'T', date: 24 }, { label: 'W', date: 25 },
-  { label: 'T', date: 26 }, { label: 'F', date: 27 }, { label: 'S', date: 28 }, { label: 'S', date: 29 },
-];
-
 type PlannerTaskItem = { type: 'task'; id: string } & import('@/src/types').Task;
 type PlannerStudyItem = {
   type: 'study';
@@ -86,7 +82,7 @@ export default function Planner() {
   } = useApp();
   const theme = useTheme();
   const [view, setView] = useState<'week' | 'month' | 'all'>('week');
-  const [activeDate, setActiveDate] = useState(26);
+  const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
   const [sortMode, setSortMode] = useState<'date' | 'priority-asc' | 'priority-desc'>('date');
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -96,12 +92,36 @@ export default function Planner() {
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const hasTaskOnDay = (day: number) =>
-    tasks.some((t) => {
-      const d = parseInt(t.dueDate.split('-')[2], 10);
-      const m = parseInt(t.dueDate.split('-')[1], 10);
-      return d === day && (m === 12 || m === 1);
-    });
+  const todayISO = getTodayISO();
+  const weekDays = useMemo(() => getWeekDatesFor(activeDate), [activeDate]);
+
+  const goToPrevWeek = () => {
+    const d = new Date(activeDate + 'T12:00:00');
+    d.setDate(d.getDate() - 7);
+    setActiveDate(d.toISOString().slice(0, 10));
+  };
+  const goToNextWeek = () => {
+    const d = new Date(activeDate + 'T12:00:00');
+    d.setDate(d.getDate() + 7);
+    setActiveDate(d.toISOString().slice(0, 10));
+  };
+  const hasTaskOnDay = (dateISO: string) => tasks.some((t) => t.dueDate === dateISO);
+  const getTaskCountOnDay = (dateISO: string) => tasks.filter((t) => t.dueDate === dateISO).length;
+  const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
+  const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
+  const monthGridCells = useMemo(() => getMonthGrid(activeYear, activeMonth), [activeYear, activeMonth]);
+
+  const goToPrevMonth = () => {
+    const d = new Date(activeYear, activeMonth, 1);
+    d.setMonth(d.getMonth() - 1);
+    setActiveDate(d.toISOString().slice(0, 10));
+  };
+  const goToNextMonth = () => {
+    const d = new Date(activeYear, activeMonth, 1);
+    d.setMonth(d.getMonth() + 1);
+    setActiveDate(d.toISOString().slice(0, 10));
+  };
+  const goToToday = () => setActiveDate(todayISO);
 
   const studyItemsForPlanner = useMemo((): PlannerStudyItem[] => {
     if (!revisionSettings.enabled || !revisionSettings.time) return [];
@@ -157,16 +177,16 @@ export default function Planner() {
 
   const filteredTasks = useMemo(() => {
     if (view === 'all') {
-      return [...tasks].sort((a, b) => (a.isDone === b.isDone ? 0 : a.isDone ? 1 : -1));
+      return [...tasks];
     }
-    return tasks
-      .filter((t) => {
-        const day = parseInt(t.dueDate.split('-')[2], 10);
-        const m = parseInt(t.dueDate.split('-')[1], 10);
-        return day === activeDate && (m === 12 || m === 1);
-      })
-      .sort((a, b) => (a.isDone === b.isDone ? 0 : a.isDone ? 1 : -1));
-  }, [tasks, activeDate, view]);
+    if (view === 'week') {
+      return tasks.filter((t) => t.dueDate === activeDate);
+    }
+    return tasks.filter((t) => {
+      const [y, m] = t.dueDate.split('-').map(Number);
+      return y === activeYear && m === activeMonth + 1;
+    });
+  }, [tasks, activeDate, view, activeYear, activeMonth]);
 
   const combinedList = useMemo((): PlannerItem[] => {
     if (view !== 'all') {
@@ -348,7 +368,7 @@ export default function Planner() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, { color: theme.text }]}>Task Planner</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>DECEMBER • WEEK 11</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{getMonthYearLabel(activeDate)} • Week {getWeekNumber(activeDate)}</Text>
         </View>
         <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Pressable style={[styles.viewBtn, view === 'week' && { backgroundColor: theme.primary }]} onPress={() => setView('week')}>
@@ -364,45 +384,114 @@ export default function Planner() {
       </View>
 
       {view === 'week' && (
-        <View style={styles.weekStrip}>
-          {WEEK_DAYS.map((day) => {
-            const isSelected = activeDate === day.date;
-            const hasTask = hasTaskOnDay(day.date);
-            return (
-              <Pressable key={day.date} style={[styles.weekDay, isSelected && styles.weekDaySelected]} onPress={() => setActiveDate(day.date)}>
-                <Text style={styles.weekDayLabel}>{day.label}</Text>
-                <Text style={[styles.weekDayNum, isSelected && styles.weekDayNumSelected]}>{day.date}</Text>
-                <View style={[styles.weekDayDot, hasTask && styles.weekDayDotActive]} />
-              </Pressable>
-            );
-          })}
+        <View style={styles.weekStripWrapper}>
+          <Pressable style={[styles.weekNavBtn, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToPrevWeek} hitSlop={8}>
+            <Feather name="chevron-left" size={20} color={theme.text} />
+          </Pressable>
+          <View style={styles.weekStrip}>
+            {weekDays.map((day) => {
+              const isSelected = activeDate === day.dateISO;
+              const hasTask = hasTaskOnDay(day.dateISO);
+              return (
+                <Pressable
+                  key={day.dateISO}
+                  style={[
+                    styles.weekDayTouchable,
+                    isSelected && styles.weekDayTouchableSelected,
+                    !isSelected && { opacity: 0.5 },
+                  ]}
+                  onPress={() => setActiveDate(day.dateISO)}
+                >
+                  <Text style={[styles.weekDayLabel, { color: theme.textSecondary }, isSelected && styles.weekDayLabelSelected]}>
+                    {day.label}
+                  </Text>
+                  <View style={[
+                    styles.weekDayCard,
+                    { borderColor: theme.border },
+                    isSelected && [styles.weekDayCardSelected, { backgroundColor: theme.card, borderColor: theme.border }],
+                  ]}>
+                    <Text style={[
+                      styles.weekDayNum,
+                      { color: theme.textSecondary },
+                      isSelected && { color: theme.text, fontWeight: '800' },
+                    ]}>
+                      {day.dayNum}
+                    </Text>
+                  </View>
+                  <View style={[styles.weekDayDot, hasTask && styles.weekDayDotActive, isSelected && styles.weekDayDotSelected]} />
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable style={[styles.weekNavBtn, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToNextWeek} hitSlop={8}>
+            <Feather name="chevron-right" size={20} color={theme.text} />
+          </Pressable>
         </View>
       )}
 
       {view === 'month' && (
-        <View style={styles.monthGrid}>
-          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => (
-            <Text key={d} style={styles.monthHead}>{d}</Text>
-          ))}
-          {[null, null, null, null, null, null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].map((d, i) =>
-            d ? (
-              <Pressable
-                key={i}
-                style={[styles.monthCell, d === activeDate && styles.monthCellSelected]}
-                onPress={() => setActiveDate(d)}
-              >
-                <Text style={[styles.monthCellText, d === activeDate && styles.monthCellTextSelected]}>{d}</Text>
-                {hasTaskOnDay(d) && d !== activeDate && <View style={styles.monthCellDot} />}
-              </Pressable>
-            ) : (
-              <View key={i} style={styles.monthCell} />
-            )
-          )}
+        <View style={styles.monthViewContainer}>
+          <View style={[styles.monthNavBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={goToPrevMonth} hitSlop={12}>
+              <Feather name="chevron-left" size={22} color={theme.text} />
+            </Pressable>
+            <Text style={[styles.monthNavTitle, { color: theme.text }]}>{getMonthYearLabel(activeDate)}</Text>
+            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={goToNextMonth} hitSlop={12}>
+              <Feather name="chevron-right" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+          <Pressable style={[styles.todayChip, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToToday}>
+            <ThemeIcon name="calendar" size={14} color={theme.primary} />
+            <Text style={[styles.todayChipText, { color: theme.primary }]}>Today</Text>
+          </Pressable>
+          <View style={[styles.monthGrid, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, i) => (
+              <Text key={`weekday-${i}`} style={[styles.monthHead, { color: theme.textSecondary }]}>{label}</Text>
+            ))}
+            {monthGridCells.map((d, i) => {
+              const dateISO = d != null ? toISO(activeYear, activeMonth, d) : null;
+              const isSelected = dateISO != null && activeDate === dateISO;
+              const isToday = dateISO === todayISO;
+              const taskCount = dateISO != null ? getTaskCountOnDay(dateISO) : 0;
+              const hasTask = taskCount > 0;
+              return d != null ? (
+                <Pressable
+                  key={i}
+                  style={[
+                    styles.monthCell,
+                    { backgroundColor: isSelected ? theme.primary : 'transparent' },
+                    isToday && !isSelected && [styles.monthCellToday, { borderColor: theme.primary }],
+                  ]}
+                  onPress={() => setActiveDate(dateISO!)}
+                >
+                  <Text
+                    style={[
+                      styles.monthCellText,
+                      { color: theme.textSecondary },
+                      isSelected && styles.monthCellTextSelected,
+                      isToday && !isSelected && { color: theme.primary, fontWeight: '800' },
+                    ]}
+                  >
+                    {d}
+                  </Text>
+                  {hasTask && (
+                    <View style={[styles.monthCellBadge, isSelected ? styles.monthCellBadgeSelected : { backgroundColor: theme.primary + '20' }]}>
+                      <Text style={[styles.monthCellBadgeText, isSelected ? styles.monthCellBadgeTextSelected : { color: theme.primary }]} numberOfLines={1}>
+                        {taskCount}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              ) : (
+                <View key={i} style={styles.monthCellEmpty} />
+              );
+            })}
+          </View>
         </View>
       )}
 
       <View style={styles.listHeader}>
-        <Text style={[styles.listTitle, { color: theme.text }]}>{view === 'all' ? 'Tasks & study' : `Deadlines • Dec ${activeDate}`}</Text>
+        <Text style={[styles.listTitle, { color: theme.text }]}>{view === 'all' ? 'Tasks & study' : `Deadlines • ${formatDisplayDate(activeDate)}`}</Text>
         <Text style={[styles.listCount, { color: theme.textSecondary }]}>{listCount} {listCount === 1 ? 'item' : 'items'}</Text>
       </View>
 
@@ -475,7 +564,9 @@ export default function Planner() {
       {displayList.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={[styles.emptyIcon, { backgroundColor: theme.backgroundSecondary }]}><ThemeIcon name="checkCircle" size={32} color={theme.textSecondary} /></View>
-          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>No tasks for today</Text>
+          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>
+            {view === 'all' ? 'No tasks or study items' : `No tasks for ${formatDisplayDate(activeDate)}`}
+          </Text>
           <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Enjoy your free time!</Text>
         </View>
       ) : (
@@ -817,88 +908,79 @@ export default function Planner() {
   );
 }
 
+// Layout: screen pad 20, section gap 24, card gap 12, card padding 20, radius 20
+const L = { pad: 20, section: 24, cardGap: 12, cardPad: 20, radius: 20, radiusSm: 12 };
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 20 },
-  title: { fontSize: 22, fontWeight: '800', color: COLORS.navy, letterSpacing: -0.5 },
-  subtitle: { fontSize: 9, fontWeight: '800', color: '#8E9AAF', marginTop: 4, letterSpacing: 1 },
-  viewToggle: { flexDirection: 'row', backgroundColor: COLORS.white, padding: 5, borderRadius: 18, borderWidth: 1, borderColor: COLORS.border, marginTop: 16 },
-  viewBtn: { flex: 1, paddingVertical: 9, borderRadius: 14, alignItems: 'center' },
+  header: { paddingHorizontal: L.pad, paddingTop: 56, paddingBottom: L.section },
+  title: { fontSize: 20, fontWeight: '800', color: COLORS.navy, letterSpacing: -0.5 },
+  subtitle: { fontSize: 11, fontWeight: '700', color: '#8E9AAF', marginTop: 4, letterSpacing: 0.5 },
+  viewToggle: { flexDirection: 'row', padding: 4, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border, marginTop: L.section },
+  viewBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   viewBtnActive: { backgroundColor: COLORS.navy },
-  viewBtnText: { fontSize: 9, fontWeight: '800', color: COLORS.gray, letterSpacing: 1 },
+  viewBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
   viewBtnTextActive: { color: COLORS.white },
-  weekStrip: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, marginBottom: 28 },
-  weekDay: { alignItems: 'center', gap: 10 },
-  weekDaySelected: { transform: [{ scale: 1.08 }] },
-  weekDayLabel: { fontSize: 9, fontWeight: '800', color: COLORS.gray, letterSpacing: 0.5 },
-  weekDayNum: { fontSize: 20, fontWeight: '800', color: COLORS.gray },
-  weekDayNumSelected: { color: COLORS.navy },
-  weekDayDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'transparent' },
+  weekStripWrapper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: L.pad, marginBottom: L.section, gap: 8 },
+  weekNavBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  weekStrip: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  weekDayTouchable: { flex: 1, alignItems: 'center', justifyContent: 'flex-start' },
+  weekDayTouchableSelected: { transform: [{ scale: 1.1 }] },
+  weekDayLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
+  weekDayLabelSelected: { opacity: 1 },
+  weekDayCard: { width: 40, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', borderWidth: 1 },
+  weekDayCardSelected: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3 },
+  weekDayNum: { fontSize: 18, fontWeight: '800' },
+  weekDayDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent', marginTop: 6 },
   weekDayDotActive: { backgroundColor: COLORS.gold },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: COLORS.white, borderRadius: 28, padding: 20, marginHorizontal: 24, marginBottom: 28, borderWidth: 1, borderColor: COLORS.border },
-  monthHead: { width: '14.28%', textAlign: 'center', fontSize: 10, fontWeight: '800', color: COLORS.gray, marginBottom: 12 },
-  monthCell: { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 14 },
-  monthCellSelected: { backgroundColor: COLORS.navy },
-  monthCellText: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
+  weekDayDotSelected: { transform: [{ scale: 1.25 }] },
+  monthViewContainer: { marginHorizontal: L.pad, marginBottom: L.section },
+  monthNavBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 8, borderRadius: L.radiusSm, borderWidth: 1, marginBottom: 10 },
+  monthNavBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  monthNavTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  todayChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
+  todayChipText: { fontSize: 13, fontWeight: '700' },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', borderRadius: L.radius, padding: 12, borderWidth: 1 },
+  monthHead: { width: '14.28%', textAlign: 'center', fontSize: 11, fontWeight: '700', color: COLORS.gray, marginBottom: 10, paddingVertical: 4 },
+  monthCell: { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 12, marginVertical: 1 },
+  monthCellEmpty: { width: '14.28%', aspectRatio: 1, marginVertical: 1 },
+  monthCellToday: { borderWidth: 2, backgroundColor: 'transparent' },
+  monthCellText: { fontSize: 14, fontWeight: '700', color: COLORS.gray },
   monthCellTextSelected: { color: COLORS.white },
-  monthCellDot: { position: 'absolute', bottom: 5, width: 5, height: 5, borderRadius: 2.5, backgroundColor: COLORS.gold },
-  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 28, marginBottom: 16 },
-  listTitle: { fontSize: 13, fontWeight: '800', color: COLORS.navy, letterSpacing: 0.5 },
-  listCount: { fontSize: 10, fontWeight: '800', color: COLORS.gray },
-  list: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 120, zIndex: 0 },
-  cardRow: { marginBottom: 14, borderRadius: 24, overflow: 'hidden' },
-  taskCard: { flexDirection: 'row', alignItems: 'flex-start', padding: 20, borderRadius: 24 },
+  monthCellBadge: { position: 'absolute', bottom: 2, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  monthCellBadgeSelected: { backgroundColor: 'rgba(255,255,255,0.35)' },
+  monthCellBadgeText: { fontSize: 9, fontWeight: '800' },
+  monthCellBadgeTextSelected: { color: COLORS.white },
+  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: L.pad, marginBottom: 12 },
+  listTitle: { fontSize: 13, fontWeight: '800', color: COLORS.navy },
+  listCount: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
+  list: { paddingHorizontal: L.pad, paddingTop: 8, paddingBottom: 120, zIndex: 0 },
+  cardRow: { marginBottom: L.cardGap, borderRadius: L.radius, overflow: 'hidden' },
+  taskCard: { flexDirection: 'row', alignItems: 'flex-start', padding: L.cardPad, borderRadius: L.radius },
   pressed: { opacity: 0.96 },
-  checkbox: { width: 26, height: 26, borderRadius: 13, borderWidth: 2.5, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 16, marginTop: 1 },
+  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 14, marginTop: 0 },
   checkboxDone: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
-  taskBody: { flex: 1 },
-  taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  taskCourse: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  priorityBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-  priorityText: { fontSize: 8, fontWeight: '800' },
+  taskBody: { flex: 1, minWidth: 0 },
+  taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  taskCourse: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  priorityText: { fontSize: 10, fontWeight: '800' },
   taskTitle: { fontSize: 15, fontWeight: '800', lineHeight: 20 },
-  taskDone: { textDecorationLine: 'line-through', opacity: 0.4 },
-  taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10 },
-  taskMetaText: { fontSize: 10, fontWeight: '700' },
+  taskDone: { textDecorationLine: 'line-through', opacity: 0.5 },
+  taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  taskMetaText: { fontSize: 11, fontWeight: '600' },
   taskMetaDot: { width: 4, height: 4, borderRadius: 2 },
-  sortRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 28, zIndex: 10 },
+  sortRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: L.pad, zIndex: 10, minHeight: 36 },
   sortLabel: { fontSize: 11, fontWeight: '700' },
-  sortDropdownContainer: {
-    position: 'relative',
-    alignItems: 'flex-end',
-    zIndex: 11,
-  },
-  sortDropdownToggle: {
-    minWidth: 120,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
+  sortDropdownContainer: { position: 'relative', alignItems: 'flex-end', zIndex: 11 },
+  sortDropdownToggle: { minWidth: 120, paddingHorizontal: 12, paddingVertical: 8, borderRadius: L.radiusSm, borderWidth: 1 },
   sortDropdownText: { fontSize: 11, fontWeight: '700' },
-  sortDropdown: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    marginTop: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-    zIndex: 12,
-  },
-  sortDropdownItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  sortDropdownItemActive: {
-    backgroundColor: COLORS.navy,
-  },
-  sortDropdownItemText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  sortDropdown: { position: 'absolute', top: '100%', right: 0, marginTop: 6, borderRadius: L.radiusSm, borderWidth: 1, overflow: 'hidden', zIndex: 12 },
+  sortDropdownItem: { paddingHorizontal: 14, paddingVertical: 10 },
+  sortDropdownItemActive: { backgroundColor: COLORS.navy },
+  sortDropdownItemText: { fontSize: 11, fontWeight: '600' },
   studyCard: { borderWidth: 1 },
-  postponeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, alignSelf: 'flex-start' },
+  postponeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, borderWidth: 1, alignSelf: 'flex-start' },
   postponeBtnText: { fontSize: 12, fontWeight: '700' },
   swipeActions: {
     width: 100,
@@ -910,58 +992,42 @@ const styles = StyleSheet.create({
     width: 200,
     marginLeft: -100,
     justifyContent: 'center',
-    borderRadius: 24,
+    borderRadius: L.radius,
   },
-  swipeActionContent: {
-    width: 100,
-    marginLeft: 100,
-    alignItems: 'center',
-  },
-  swipeActionsLeft: {
-    width: 100,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'stretch',
-  },
+  swipeActionContent: { width: 100, marginLeft: 100, alignItems: 'center' },
+  swipeActionsLeft: { width: 100, flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'stretch' },
   swipeActionBtnLeft: {
     width: 200,
     marginRight: -100,
     justifyContent: 'center',
-    borderRadius: 24,
+    borderRadius: L.radius,
   },
-  swipeActionContentLeft: {
-    width: 100,
-    alignItems: 'center',
-  },
-  swipeActionText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.white,
-  },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
-  emptyIcon: { width: 72, height: 72, backgroundColor: COLORS.bg, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  emptyTitle: { fontSize: 13, fontWeight: '800', color: COLORS.gray },
-  emptySub: { fontSize: 11, color: COLORS.gray, marginTop: 6 },
-  fabRow: { position: 'absolute', bottom: 28, right: 24, flexDirection: 'row', gap: 14 },
-  fab: { width: 58, height: 58, borderRadius: 29, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
-  chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  chatSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '88%' },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 24, backgroundColor: COLORS.navy },
-  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  chatHeaderIcon: { width: 44, height: 44, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
-  chatHeaderTitle: { fontSize: 15, fontWeight: '800', color: COLORS.white },
-  chatHeaderSub: { fontSize: 9, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
+  swipeActionContentLeft: { width: 100, alignItems: 'center' },
+  swipeActionText: { fontSize: 12, fontWeight: '800', color: COLORS.white },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
+  emptyIcon: { width: 64, height: 64, borderRadius: L.radius, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 14, fontWeight: '800', color: COLORS.gray },
+  emptySub: { fontSize: 12, color: COLORS.gray, marginTop: 8 },
+  fabRow: { position: 'absolute', bottom: 24, right: L.pad, flexDirection: 'row', gap: 12 },
+  fab: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
+  chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  chatSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: L.radius, borderTopRightRadius: L.radius, maxHeight: '88%' },
+  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: L.cardPad, backgroundColor: COLORS.navy },
+  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  chatHeaderIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  chatHeaderTitle: { fontSize: 16, fontWeight: '800', color: COLORS.white },
+  chatHeaderSub: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   chatMessages: { maxHeight: 360, backgroundColor: COLORS.bg },
-  chatMessagesContent: { padding: 24, gap: 18 },
+  chatMessagesContent: { padding: L.cardPad, gap: 12 },
   chatBubbleWrap: { alignItems: 'flex-start' },
   chatBubbleRight: { alignItems: 'flex-end' },
-  chatBubble: { maxWidth: '82%', padding: 16, borderRadius: 22, borderTopLeftRadius: 6 },
+  chatBubble: { maxWidth: '82%', padding: 14, borderRadius: 18, borderTopLeftRadius: 4 },
   chatBubbleAi: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
   chatBubbleUser: { backgroundColor: COLORS.navy },
   chatBubbleText: { fontSize: 13, color: COLORS.navy, lineHeight: 18 },
   chatBubbleTextUser: { color: COLORS.white },
-  chatInputRow: { flexDirection: 'row', gap: 12, padding: 18, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
-  chatInput: { flex: 1, backgroundColor: COLORS.bg, borderRadius: 22, paddingHorizontal: 20, paddingVertical: 14, fontSize: 14 },
-  chatSend: { width: 50, height: 50, borderRadius: 22, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center' },
+  chatInputRow: { flexDirection: 'row', gap: 12, padding: L.cardPad, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
+  chatInput: { flex: 1, backgroundColor: COLORS.bg, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
+  chatSend: { width: 48, height: 48, borderRadius: 16, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center' },
   chatSendDisabled: { opacity: 0.5 },
 });

@@ -33,3 +33,57 @@ export function parseDisplayDate(input: string): string | null {
   }
   return null;
 }
+
+/** Today as yyyy-mm-dd */
+export function getTodayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Get Monday–Sunday dates (yyyy-mm-dd) for the week containing the given date */
+export function getWeekDatesFor(isoDate: string): { label: string; dateISO: string; dayNum: number }[] {
+  const d = new Date(isoDate + 'T12:00:00');
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  return labels.map((label, i) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + i);
+    const dateISO = x.toISOString().slice(0, 10);
+    return { label, dateISO, dayNum: x.getDate() };
+  });
+}
+
+/** Short month name + year from yyyy-mm-dd */
+export function getMonthYearLabel(isoDate: string): string {
+  const d = new Date(isoDate + 'T12:00:00');
+  const months = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** ISO week number (1–53) for given date */
+export function getWeekNumber(isoDate: string): number {
+  const d = new Date(isoDate + 'T12:00:00');
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+/** Calendar grid for a month: array of null (empty) or day number 1–31 */
+export function getMonthGrid(year: number, month: number): (number | null)[] {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const startPad = first.getDay();
+  const daysInMonth = last.getDate();
+  const out: (number | null)[] = [];
+  for (let i = 0; i < startPad; i++) out.push(null);
+  for (let d = 1; d <= daysInMonth; d++) out.push(d);
+  return out;
+}
+
+/** yyyy-mm-dd for a given year, month, day (day 1–31) */
+export function toISO(year: number, month: number, day: number): string {
+  const d = new Date(year, month, day);
+  return d.toISOString().slice(0, 10);
+}
