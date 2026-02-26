@@ -19,7 +19,7 @@ export default function ResultsPage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, paddingTop: 48, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.navy, marginBottom: 16 },
+  title: { fontSize: 24, fontWeight: '800', color: COLORS.text, marginBottom: 16 },
   score: { fontSize: 48, fontWeight: '800', color: COLORS.gold, marginBottom: 32 },
   btn: { backgroundColor: COLORS.navy, paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16 },
   pressed: { opacity: 0.95 },

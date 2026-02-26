@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import type { Task } from '@/src/types';
 import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
+import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 
 const ANALYSIS_STEPS = [
   'Identifying keywords...',
@@ -15,7 +16,8 @@ const ANALYSIS_STEPS = [
 ];
 
 export default function AIExtraction() {
-  const { pendingExtraction, addTask, courses } = useApp();
+  const { pendingExtraction, addTask, courses, getSubjectColor, setSubjectColor } = useApp();
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<Partial<Task>>({
@@ -125,6 +127,39 @@ export default function AIExtraction() {
         </View>
       </View>
 
+      <Text style={styles.label}>Subject colour</Text>
+      <Pressable style={styles.colorRow} onPress={() => setShowColorPicker(true)}>
+        <View style={[styles.colorSwatch, { backgroundColor: getSubjectColor(formData.courseId ?? courses[0]?.id ?? '') }]} />
+        <Text style={styles.colorRowText}>Tap to set colour for {formData.courseId ?? courses[0]?.id ?? '—'}</Text>
+        <Icons.ArrowRight size={18} color={COLORS.gray} />
+      </Pressable>
+
+      <Modal visible={showColorPicker} transparent animationType="fade">
+        <Pressable style={styles.colorModalBackdrop} onPress={() => setShowColorPicker(false)}>
+          <View style={styles.colorModalPanel} onStartShouldSetResponder={() => true}>
+            <Text style={styles.colorModalTitle}>Colour for {formData.courseId ?? courses[0]?.id ?? '—'}</Text>
+            <View style={styles.colorGrid}>
+              {SUBJECT_COLOR_OPTIONS.map((color) => {
+                const cid = formData.courseId ?? courses[0]?.id ?? '';
+                return (
+                  <Pressable
+                    key={color}
+                    style={[styles.colorOption, { backgroundColor: color }, cid && getSubjectColor(cid) === color && styles.colorOptionSelected]}
+                    onPress={() => {
+                      if (cid) setSubjectColor(cid, color);
+                      setShowColorPicker(false);
+                    }}
+                  />
+                );
+              })}
+            </View>
+            <Pressable style={styles.colorCancelBtn} onPress={() => setShowColorPicker(false)}>
+              <Text style={styles.colorCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
       <View style={styles.row}>
         <View style={styles.half}>
           <Text style={styles.label}>Due Date</Text>
@@ -168,31 +203,31 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 100 },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48 },
   spinnerIcon: { alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  loadingTitle: { fontSize: 22, fontWeight: '800', color: COLORS.navy, marginBottom: 12, letterSpacing: -0.5 },
+  loadingTitle: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 12, letterSpacing: -0.5 },
   loadingStep: { fontSize: 13, fontWeight: '800', color: COLORS.gold, letterSpacing: 0.5 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.navy, letterSpacing: -0.5 },
-  accuracyBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#dcfce7', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22, borderWidth: 1, borderColor: '#bbf7d0' },
+  title: { fontSize: 26, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
+  accuracyBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(34,197,94,0.15)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)' },
   accuracyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' },
-  accuracyText: { fontSize: 10, fontWeight: '800', color: '#166534' },
+  accuracyText: { fontSize: 10, fontWeight: '800', color: '#4ade80' },
   sourceCard: { backgroundColor: COLORS.bg, padding: 24, borderRadius: 28, borderWidth: 1, borderColor: COLORS.border, marginBottom: 28, position: 'relative' },
-  sourceTag: { position: 'absolute', top: -12, left: 24, backgroundColor: COLORS.white, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, fontSize: 8, fontWeight: '800', color: COLORS.gray },
+  sourceTag: { position: 'absolute', top: -12, left: 24, backgroundColor: COLORS.card, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, fontSize: 8, fontWeight: '800', color: COLORS.gray },
   sourceMessage: { fontSize: 13, color: COLORS.gray, fontStyle: 'italic', marginTop: 10, lineHeight: 20 },
   label: { fontSize: 10, fontWeight: '800', color: COLORS.gray, marginBottom: 10, letterSpacing: 1 },
-  input: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, padding: 18, fontSize: 14, marginBottom: 20 },
+  input: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, padding: 18, fontSize: 14, marginBottom: 20 },
   row: { flexDirection: 'row', gap: 16 },
   half: { flex: 1 },
   pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  chip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  chip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
   chipActive: { backgroundColor: COLORS.navy, borderColor: COLORS.navy },
-  chipText: { fontSize: 12, fontWeight: '700', color: COLORS.navy },
+  chipText: { fontSize: 12, fontWeight: '700', color: COLORS.text },
   chipTextActive: { color: COLORS.white },
   insightCard: { backgroundColor: COLORS.navy, borderRadius: 32, padding: 26, marginBottom: 28 },
   insightHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 18 },
   insightIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   insightTitle: { fontSize: 15, fontWeight: '800', color: COLORS.white },
   insightRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  insightLabel: { fontSize: 10, fontWeight: '700', color: '#93c5fd' },
+  insightLabel: { fontSize: 10, fontWeight: '700', color: '#d4a843' },
   insightRisk: { fontSize: 13, fontWeight: '800', color: '#fca5a5' },
   insightText: { fontSize: 13, color: 'rgba(255,255,255,0.95)', lineHeight: 20 },
   actions: { flexDirection: 'row', gap: 16 },
@@ -200,4 +235,15 @@ const styles = StyleSheet.create({
   discardBtnText: { fontSize: 11, fontWeight: '800', color: COLORS.gray },
   confirmBtn: { flex: 2, backgroundColor: COLORS.navy, paddingVertical: 20, borderRadius: 24, alignItems: 'center' },
   confirmBtnText: { fontSize: 12, fontWeight: '800', color: COLORS.white },
+  colorRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, padding: 18, marginBottom: 20 },
+  colorSwatch: { width: 28, height: 28, borderRadius: 14, marginRight: 12 },
+  colorRowText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
+  colorModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  colorModalPanel: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24 },
+  colorModalTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginBottom: 20 },
+  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  colorOption: { width: 44, height: 44, borderRadius: 22 },
+  colorOptionSelected: { borderWidth: 3, borderColor: COLORS.navy },
+  colorCancelBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
+  colorCancelText: { fontSize: 15, fontWeight: '700', color: COLORS.gray },
 });

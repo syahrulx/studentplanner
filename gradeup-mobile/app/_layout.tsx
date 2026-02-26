@@ -79,7 +79,7 @@ function ThemeAwareLayout() {
   const theme = useTheme();
   const navTheme = {
     ...DefaultTheme,
-    dark: theme.id === 'dark',
+    dark: false,
     colors: {
       ...DefaultTheme.colors,
       primary: theme.primary,

@@ -21,8 +21,8 @@ export default function MatchLobby() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, paddingTop: 48 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
-  title: { fontSize: 22, fontWeight: '800', color: COLORS.navy },
+  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
+  title: { fontSize: 22, fontWeight: '800', color: COLORS.text },
   startBtn: { backgroundColor: COLORS.navy, paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
   pressed: { opacity: 0.95 },
   startBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '800' },

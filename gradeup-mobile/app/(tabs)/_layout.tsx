@@ -3,6 +3,8 @@ import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { Tabs, router } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { TabBarProvider } from '@/contexts/TabBarContext';
+import { GlassTabBar } from '@/components/GlassTabBar';
 
 export default function TabLayout() {
   const theme = useTheme();
@@ -12,21 +14,28 @@ export default function TabLayout() {
   const closeAddMenu = () => setAddMenuOpen(false);
 
   return (
-    <>
+    <TabBarProvider openAddMenu={openAddMenu}>
       <Tabs
+        tabBar={(props) => <GlassTabBar {...props} />}
         screenOptions={{
           tabBarActiveTintColor: theme.tabIconSelected,
           tabBarInactiveTintColor: theme.tabIconDefault,
-          tabBarStyle: {
-            backgroundColor: theme.card,
-            borderTopColor: theme.border,
-          },
           headerShown: false,
+          tabBarStyle: {
+            position: 'absolute',
+            backgroundColor: 'transparent',
+            borderTopWidth: 0,
+            elevation: 0,
+            shadowOpacity: 0,
+            height: 0,
+            minHeight: 0,
+          },
         }}>
         <Tabs.Screen
           name="index"
           options={{
             title: 'Home',
+            tabBarLabel: 'Home',
             tabBarIcon: ({ color }) => <ThemeIcon name="home" size={26} color={color} />,
           }}
         />
@@ -34,6 +43,7 @@ export default function TabLayout() {
           name="planner"
           options={{
             title: 'Tasks',
+            tabBarLabel: 'Tasks',
             tabBarIcon: ({ color }) => <ThemeIcon name="tasks" size={26} color={color} />,
           }}
         />
@@ -41,23 +51,15 @@ export default function TabLayout() {
           name="two"
           options={{
             title: 'Add',
+            tabBarLabel: 'Add',
             tabBarIcon: () => null,
-            tabBarButton: () => (
-              <View style={styles.centerTabWrap}>
-                <Pressable
-                  style={[styles.centerButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]}
-                  onPress={openAddMenu}
-                >
-                  <ThemeIcon name="add" size={28} color={theme.textInverse} />
-                </Pressable>
-              </View>
-            ),
           }}
         />
         <Tabs.Screen
           name="notes"
           options={{
             title: 'Notes',
+            tabBarLabel: 'Notes',
             tabBarIcon: ({ color }) => <ThemeIcon name="notes" size={26} color={color} />,
           }}
         />
@@ -65,6 +67,7 @@ export default function TabLayout() {
           name="profile"
           options={{
             title: 'Profile',
+            tabBarLabel: 'Profile',
             tabBarIcon: ({ color }) => <ThemeIcon name="profile" size={26} color={color} />,
           }}
         />
@@ -107,29 +110,11 @@ export default function TabLayout() {
           </View>
         </Pressable>
       </Modal>
-    </>
+    </TabBarProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  centerTabWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 8,
-  },
-  centerButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

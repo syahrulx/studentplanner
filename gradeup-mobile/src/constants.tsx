@@ -3,12 +3,14 @@ import { StyleProp, ViewStyle } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
 export const COLORS = {
-  navy: '#002D5A',
-  gold: '#C5A028',
+  navy: '#14532d',
+  gold: '#ca8a04',
   white: '#FFFFFF',
-  gray: '#64748b',
-  bg: '#f8fafc',
-  border: '#e2e8f0',
+  card: '#ffffff',
+  gray: '#4a6b5a',
+  bg: '#ffffff',
+  border: '#e2efe8',
+  text: '#1a2e1a',
 };
 
 export const DEFAULT_COURSES = [

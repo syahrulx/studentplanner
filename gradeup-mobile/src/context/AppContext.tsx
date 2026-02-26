@@ -8,7 +8,8 @@ import {
   initialNotes,
   initialFlashcards,
 } from '../seedData';
-import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, type RevisionSettings } from '../storage';
+import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, type RevisionSettings } from '../storage';
+import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
 
 type AppState = {
@@ -36,6 +37,9 @@ type AppState = {
   pinnedTaskIds: string[];
   pinTask: (taskId: string) => boolean;
   unpinTask: (taskId: string) => void;
+  subjectColors: Record<string, string>;
+  setSubjectColor: (courseId: string, color: string) => void;
+  getSubjectColor: (courseId: string) => string;
   handleSaveNote: (note: Note) => void;
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
 };
@@ -49,7 +53,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [pendingExtraction, setPendingExtraction] = useState('');
-  const [theme, setThemeState] = useState<ThemeId>('light');
+  const [theme, setThemeState] = useState<ThemeId>('dark');
   const [revisionSettings, setRevisionState] = useState<RevisionSettings>({
     enabled: false,
     time: '20:00',
@@ -61,12 +65,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
+  const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
 
   useEffect(() => {
     getTheme().then(setThemeState);
     getRevisionSettings().then(setRevisionState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
+    getSubjectColors().then(setSubjectColorsState);
   }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
@@ -149,6 +155,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const DEFAULT_PALETTE = SUBJECT_COLOR_OPTIONS.slice(0, 10);
+  const getSubjectColor = useCallback((courseId: string): string => {
+    return subjectColors[courseId] ?? DEFAULT_PALETTE[Math.abs(courseId.split('').reduce((a, c) => ((a << 5) - a) + c.charCodeAt(0), 0)) % DEFAULT_PALETTE.length];
+  }, [subjectColors]);
+
+  const setSubjectColor = useCallback((courseId: string, color: string) => {
+    setSubjectColorsState((prev) => {
+      const next = { ...prev, [courseId]: color };
+      persistSubjectColors(next);
+      return next;
+    });
+  }, []);
+
   const handleSaveNote = useCallback((note: Note) => {
     setNotes((prev) => {
       const exists = prev.find((n) => n.id === note.id);
@@ -186,6 +205,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     pinnedTaskIds,
     pinTask,
     unpinTask,
+    subjectColors,
+    setSubjectColor,
+    getSubjectColor,
     handleSaveNote,
     handleGenerateFlashcards,
   };

@@ -136,3 +136,29 @@ export async function setPinnedTaskIds(ids: string[]): Promise<void> {
     await AsyncStorage.setItem(KEY_PINNED_TASKS, JSON.stringify(trimmed));
   } catch {}
 }
+
+// Subject/course color mapping – user can assign a color per subject
+const KEY_SUBJECT_COLORS = 'subjectColors';
+
+export async function getSubjectColors(): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_SUBJECT_COLORS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof k === 'string' && typeof v === 'string' && /^#[0-9A-Fa-f]{6}$/.test(v)) out[k] = v;
+        }
+        return out;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+export async function setSubjectColors(colors: Record<string, string>): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_SUBJECT_COLORS, JSON.stringify(colors));
+  } catch {}
+}

@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
+import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 
 export default function AddTask() {
-  const { courses, addTask } = useApp();
+  const { courses, addTask, getSubjectColor, setSubjectColor } = useApp();
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [type, setType] = useState<TaskType>(TaskType.Assignment);
@@ -75,6 +77,36 @@ export default function AddTask() {
           </Pressable>
         ))}
       </View>
+
+      <Text style={styles.label}>Subject colour</Text>
+      <Pressable style={styles.colorRow} onPress={() => setShowColorPicker(true)}>
+        <View style={[styles.colorSwatch, { backgroundColor: getSubjectColor(courseId) }]} />
+        <Text style={styles.colorRowText}>Tap to change colour for {courseId}</Text>
+        <Icons.ArrowRight size={18} color={COLORS.gray} />
+      </Pressable>
+
+      <Modal visible={showColorPicker} transparent animationType="fade">
+        <Pressable style={styles.colorModalBackdrop} onPress={() => setShowColorPicker(false)}>
+          <View style={styles.colorModalPanel} onStartShouldSetResponder={() => true}>
+            <Text style={styles.colorModalTitle}>Colour for {courseId}</Text>
+            <View style={styles.colorGrid}>
+              {SUBJECT_COLOR_OPTIONS.map((color) => (
+                <Pressable
+                  key={color}
+                  style={[styles.colorOption, { backgroundColor: color }, getSubjectColor(courseId) === color && styles.colorOptionSelected]}
+                  onPress={() => {
+                    setSubjectColor(courseId, color);
+                    setShowColorPicker(false);
+                  }}
+                />
+              ))}
+            </View>
+            <Pressable style={styles.colorCancelBtn} onPress={() => setShowColorPicker(false)}>
+              <Text style={styles.colorCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
 
       <Text style={styles.label}>Type</Text>
       <View style={styles.pickerRow}>
@@ -144,16 +176,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   content: { paddingHorizontal: L.pad, paddingTop: 56, paddingBottom: 100 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: L.section },
-  backBtn: { width: 44, height: 44, borderRadius: L.radiusSm, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.navy, letterSpacing: -0.5 },
+  backBtn: { width: 44, height: 44, borderRadius: L.radiusSm, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
   headerSub: { fontSize: 11, color: COLORS.gray, fontWeight: '600', marginTop: 4 },
   label: { fontSize: 12, fontWeight: '700', color: COLORS.gray, marginBottom: 8 },
-  input: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: L.radiusSm, padding: 14, fontSize: 15, marginBottom: L.section },
+  input: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: L.radiusSm, padding: 14, fontSize: 15, marginBottom: L.section, color: COLORS.text },
   textArea: { minHeight: 96, paddingTop: 14 },
   pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: L.section },
-  chip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  chip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
   chipActive: { backgroundColor: COLORS.navy, borderColor: COLORS.navy },
-  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.navy },
+  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   chipTextActive: { color: COLORS.white },
   row: { flexDirection: 'row', gap: 12 },
   half: { flex: 1 },
@@ -161,10 +193,21 @@ const styles = StyleSheet.create({
   submitDisabled: { opacity: 0.5 },
   submitText: { color: COLORS.white, fontSize: 15, fontWeight: '800' },
   effortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: L.section },
-  effortChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
-  effortChipText: { fontSize: 13, fontWeight: '700', color: COLORS.navy },
+  effortChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
+  effortChipText: { fontSize: 13, fontWeight: '700', color: COLORS.text },
   savingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  bounceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.white },
+  bounceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.card },
   bounceDot2: { opacity: 0.7 },
   bounceDot3: { opacity: 0.4 },
+  colorRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: L.radiusSm, padding: 14, marginBottom: L.section },
+  colorSwatch: { width: 28, height: 28, borderRadius: 14, marginRight: 12 },
+  colorRowText: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
+  colorModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  colorModalPanel: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24 },
+  colorModalTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginBottom: 20 },
+  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  colorOption: { width: 44, height: 44, borderRadius: 22 },
+  colorOptionSelected: { borderWidth: 3, borderColor: COLORS.navy },
+  colorCancelBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
+  colorCancelText: { fontSize: 15, fontWeight: '700', color: COLORS.gray },
 });

@@ -14,9 +14,9 @@ const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 
 
 // Priority display colors: Low = green, Medium = yellow, High = red
 const PRIORITY_COLORS = {
-  [Priority.Low]: { bg: '#dcfce7', text: '#166534' },
-  [Priority.Medium]: { bg: '#fef9c3', text: '#854d0e' },
-  [Priority.High]: { bg: '#fee2e2', text: '#b91c1c' },
+  [Priority.Low]: { bg: 'rgba(34,197,94,0.15)', text: '#4ade80' },
+  [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#facc15' },
+  [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#f87171' },
 };
 
 function getDaysUntilDue(dueDate: string): number {
@@ -79,6 +79,7 @@ export default function Planner() {
     pinnedTaskIds,
     pinTask,
     unpinTask,
+    getSubjectColor,
   } = useApp();
   const theme = useTheme();
   const [view, setView] = useState<'week' | 'month' | 'all'>('week');
@@ -87,6 +88,7 @@ export default function Planner() {
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const [monthCalendarCollapsed, setMonthCalendarCollapsed] = useState(false);
   const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
     { role: 'ai', text: "Hello! I've analyzed your schedule. Week 13 is critical for CSC584 & IPS551. Need help rescheduling any deadlines?" },
   ]);
@@ -365,26 +367,37 @@ export default function Planner() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.title, { color: theme.text }]}>Task Planner</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{getMonthYearLabel(activeDate)} • Week {getWeekNumber(activeDate)}</Text>
-        </View>
+      <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+        <View style={styles.header}>
+          <View style={styles.headerTopRow}>
+            <View>
+              <Text style={[styles.title, { color: theme.text }]}>Task Planner</Text>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{getMonthYearLabel(activeDate)} • Week {getWeekNumber(activeDate)}</Text>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.addTaskBtn, { backgroundColor: theme.primary }, pressed && styles.pressed]}
+              onPress={() => router.push('/add-task' as any)}
+            >
+              <Icons.Plus size={22} color={COLORS.white} />
+            </Pressable>
+          </View>
         <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Pressable style={[styles.viewBtn, view === 'week' && { backgroundColor: theme.primary }]} onPress={() => setView('week')}>
-            <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'week' && { color: theme.textInverse }]}>Week</Text>
-          </Pressable>
-          <Pressable style={[styles.viewBtn, view === 'month' && { backgroundColor: theme.primary }]} onPress={() => setView('month')}>
-            <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'month' && { color: theme.textInverse }]}>Month</Text>
-          </Pressable>
-          <Pressable style={[styles.viewBtn, view === 'all' && { backgroundColor: theme.primary }]} onPress={() => setView('all')}>
-            <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'all' && { color: theme.textInverse }]}>All</Text>
-          </Pressable>
+            <Pressable style={[styles.viewBtn, view === 'week' && { backgroundColor: theme.primary }]} onPress={() => setView('week')}>
+              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'week' && { color: theme.textInverse }]}>Week</Text>
+            </Pressable>
+            <Pressable style={[styles.viewBtn, view === 'month' && { backgroundColor: theme.primary }]} onPress={() => setView('month')}>
+              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'month' && { color: theme.textInverse }]}>Month</Text>
+            </Pressable>
+            <Pressable style={[styles.viewBtn, view === 'all' && { backgroundColor: theme.primary }]} onPress={() => setView('all')}>
+              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'all' && { color: theme.textInverse }]}>All</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
 
       {view === 'week' && (
-        <View style={styles.weekStripWrapper}>
+        <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+          <View style={styles.weekStripWrapper}>
           <Pressable style={[styles.weekNavBtn, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToPrevWeek} hitSlop={8}>
             <Feather name="chevron-left" size={20} color={theme.text} />
           </Pressable>
@@ -427,19 +440,33 @@ export default function Planner() {
             <Feather name="chevron-right" size={20} color={theme.text} />
           </Pressable>
         </View>
+        </View>
       )}
 
       {view === 'month' && (
+        <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
         <View style={styles.monthViewContainer}>
-          <View style={[styles.monthNavBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={goToPrevMonth} hitSlop={12}>
+          <Pressable
+            style={[
+              styles.monthNavBar,
+              { backgroundColor: theme.card, borderColor: theme.border },
+              monthCalendarCollapsed && { marginBottom: 0 },
+            ]}
+            onPress={() => setMonthCalendarCollapsed((c) => !c)}
+          >
+            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={(e) => { e.stopPropagation(); goToPrevMonth(); }} hitSlop={12}>
               <Feather name="chevron-left" size={22} color={theme.text} />
             </Pressable>
             <Text style={[styles.monthNavTitle, { color: theme.text }]}>{getMonthYearLabel(activeDate)}</Text>
-            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={goToNextMonth} hitSlop={12}>
+            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={(e) => { e.stopPropagation(); goToNextMonth(); }} hitSlop={12}>
               <Feather name="chevron-right" size={22} color={theme.text} />
             </Pressable>
-          </View>
+            <View style={styles.monthCollapseIcon}>
+              <Feather name={monthCalendarCollapsed ? 'chevron-down' : 'chevron-up'} size={20} color={theme.textSecondary} />
+            </View>
+          </Pressable>
+          {!monthCalendarCollapsed && (
+            <>
           <Pressable style={[styles.todayChip, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToToday}>
             <ThemeIcon name="calendar" size={14} color={theme.primary} />
             <Text style={[styles.todayChipText, { color: theme.primary }]}>Today</Text>
@@ -487,9 +514,13 @@ export default function Planner() {
               );
             })}
           </View>
+            </>
+          )}
+        </View>
         </View>
       )}
 
+      <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, flex: 1 }]}>
       <View style={styles.listHeader}>
         <Text style={[styles.listTitle, { color: theme.text }]}>{view === 'all' ? 'Tasks & study' : `Deadlines • ${formatDisplayDate(activeDate)}`}</Text>
         <Text style={[styles.listCount, { color: theme.textSecondary }]}>{listCount} {listCount === 1 ? 'item' : 'items'}</Text>
@@ -571,6 +602,7 @@ export default function Planner() {
         </View>
       ) : (
         <FlatList
+          style={styles.listScroll}
           data={displayList}
           extraData={pinnedTaskIds}
           keyExtractor={(item, index) => {
@@ -657,12 +689,13 @@ export default function Planner() {
                       (item.isDone ? handleStudyDelete : handleStudyToggle)();
                     }}
                   >
-                    <View style={[styles.taskCard, styles.studyCard, { backgroundColor: theme.card, borderColor: theme.accent2 + '99', borderLeftWidth: 3, borderLeftColor: theme.accent2 }]}>
+                    <View style={[styles.taskCard, styles.studyCard, { backgroundColor: theme.card, borderColor: theme.accent2 + '99' }]}>
+                      <View style={[styles.subjectTag, { backgroundColor: theme.accent2 }]} />
                       <Pressable
                         onPress={handleStudyToggle}
                         style={[styles.checkbox, item.isDone && styles.checkboxDone, { backgroundColor: item.isDone ? theme.accent2 : 'transparent' }]}
                       >
-                        <ThemeIcon name="checkCircle" size={14} color={item.isDone ? COLORS.white : 'transparent'} />
+                        <ThemeIcon name="checkCircle" size={16} color={item.isDone ? COLORS.white : 'transparent'} />
                       </Pressable>
                       <View style={styles.taskBody}>
                         <View style={styles.taskRow}>
@@ -814,36 +847,45 @@ export default function Planner() {
                   <Pressable
                     style={({ pressed }) => [
                       styles.taskCard,
-                      { backgroundColor: theme.card, borderColor: outlineColor, borderWidth: 2 },
+                      {
+                        backgroundColor: theme.card,
+                        borderColor: outlineColor,
+                        borderWidth: 2,
+                      },
                       pressed && styles.pressed,
                     ]}
                     onPress={() => router.push({ pathname: '/task-details' as any, params: { id: item.id } })}
                   >
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleTaskToggle();
-                      }}
-                      style={[styles.checkbox, item.isDone && styles.checkboxDone]}
-                    >
-                      <ThemeIcon name="checkCircle" size={14} color={item.isDone ? COLORS.white : 'transparent'} />
-                    </Pressable>
-                    <View style={styles.taskBody}>
-                      <View style={styles.taskRow}>
-                        <Text style={[styles.taskCourse, { color: theme.textSecondary }]}>{item.courseId}</Text>
-                        <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg }]}>
-                          <Text style={[styles.priorityText, { color: priorityStyle.text }]}>{item.priority}</Text>
+                    <View style={[styles.subjectTag, { backgroundColor: getSubjectColor(item.courseId) }]} />
+                    <View style={styles.taskFirstRow}>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleTaskToggle();
+                        }}
+                        style={[styles.checkbox, item.isDone && styles.checkboxDone]}
+                      >
+                        <ThemeIcon name="checkCircle" size={16} color={item.isDone ? COLORS.white : 'transparent'} />
+                      </Pressable>
+                      <View style={styles.taskBody}>
+                        <View style={styles.taskRow}>
+                          <Text style={[styles.taskCourse, { color: theme.textSecondary }]}>{item.courseId}</Text>
+                          <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg }]}>
+                            <Text style={[styles.priorityText, { color: priorityStyle.text }]}>{item.priority}</Text>
+                          </View>
                         </View>
                       </View>
-                      <Text style={[styles.taskTitle, { color: theme.text }, item.isDone && styles.taskDone]} numberOfLines={2}>{item.title}</Text>
-                      <View style={styles.taskMeta}>
-                        <ThemeIcon name="calendar" size={14} color={theme.textSecondary} />
-                        <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{formatDisplayDate(item.dueDate)} • {item.dueTime}</Text>
-                        <View style={[styles.taskMetaDot, { backgroundColor: theme.textSecondary }]} />
-                        <ThemeIcon name="clock" size={14} color={theme.textSecondary} />
-                        <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{item.effort}h Effort</Text>
-                      </View>
                     </View>
+                    <Text style={[styles.taskTitle, { color: theme.text }, item.isDone && styles.taskDone]} numberOfLines={2}>{item.title}</Text>
+                    <View style={styles.taskMeta}>
+                        <View style={styles.taskMetaRow}>
+                          <ThemeIcon name="calendar" size={12} color={theme.textSecondary} />
+                          <Text style={[styles.taskMetaText, styles.taskMetaDate, { color: theme.textSecondary }]}>{formatDisplayDate(item.dueDate)} • {item.dueTime}</Text>
+                          <View style={[styles.taskMetaDot, { backgroundColor: theme.textSecondary }]} />
+                          <ThemeIcon name="clock" size={12} color={theme.textSecondary} />
+                          <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{item.effort}h Effort</Text>
+                        </View>
+                      </View>
                   </Pressable>
                 </Swipeable>
               </View>
@@ -852,12 +894,11 @@ export default function Planner() {
         />
       )}
 
+      </View>
+
       <View style={styles.fabRow}>
         <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={() => setIsChatOpen(true)}>
           <Icons.Sparkles size={22} color={COLORS.white} />
-        </Pressable>
-        <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={() => router.push('/add-task' as any)}>
-          <Icons.Plus size={24} color={COLORS.white} />
         </Pressable>
       </View>
 
@@ -908,15 +949,18 @@ export default function Planner() {
   );
 }
 
-// Layout: screen pad 20, section gap 24, card gap 12, card padding 20, radius 20
-const L = { pad: 20, section: 24, cardGap: 12, cardPad: 20, radius: 20, radiusSm: 12 };
+// Layout: screen pad 12 for wider content, section gap 24, card gap 12, card padding 20, radius 20
+const L = { pad: 12, section: 24, cardGap: 12, cardPad: 20, radius: 20, radiusSm: 12 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { paddingHorizontal: L.pad, paddingTop: 56, paddingBottom: L.section },
-  title: { fontSize: 20, fontWeight: '800', color: COLORS.navy, letterSpacing: -0.5 },
-  subtitle: { fontSize: 11, fontWeight: '700', color: '#8E9AAF', marginTop: 4, letterSpacing: 0.5 },
-  viewToggle: { flexDirection: 'row', padding: 4, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border, marginTop: L.section },
+  container: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 56 },
+  sectionBox: { marginHorizontal: L.pad, marginBottom: L.section, padding: L.cardPad, borderRadius: L.radius, borderWidth: 1 },
+  header: { paddingBottom: 0 },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  addTaskBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 20, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
+  subtitle: { fontSize: 11, fontWeight: '700', color: '#8fa897', marginTop: 4, letterSpacing: 0.5 },
+  viewToggle: { flexDirection: 'row', padding: 4, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border },
   viewBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   viewBtnActive: { backgroundColor: COLORS.navy },
   viewBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
@@ -938,6 +982,7 @@ const styles = StyleSheet.create({
   monthNavBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 8, borderRadius: L.radiusSm, borderWidth: 1, marginBottom: 10 },
   monthNavBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   monthNavTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  monthCollapseIcon: { marginLeft: 4, padding: 4 },
   todayChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
   todayChipText: { fontSize: 13, fontWeight: '700' },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap', borderRadius: L.radius, padding: 12, borderWidth: 1 },
@@ -952,23 +997,28 @@ const styles = StyleSheet.create({
   monthCellBadgeText: { fontSize: 9, fontWeight: '800' },
   monthCellBadgeTextSelected: { color: COLORS.white },
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: L.pad, marginBottom: 12 },
-  listTitle: { fontSize: 13, fontWeight: '800', color: COLORS.navy },
+  listTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text },
   listCount: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
+  listScroll: { flex: 1 },
   list: { paddingHorizontal: L.pad, paddingTop: 8, paddingBottom: 120, zIndex: 0 },
   cardRow: { marginBottom: L.cardGap, borderRadius: L.radius, overflow: 'hidden' },
-  taskCard: { flexDirection: 'row', alignItems: 'flex-start', padding: L.cardPad, borderRadius: L.radius },
+  taskCard: { flexDirection: 'column', alignItems: 'flex-start', padding: 16, paddingRight: 20, borderRadius: L.radius, position: 'relative', overflow: 'hidden' },
+  subjectTag: { position: 'absolute', top: 0, right: 10, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
   pressed: { opacity: 0.96 },
-  checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 14, marginTop: 0 },
+  taskFirstRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, alignSelf: 'stretch' },
+  checkbox: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 14, marginTop: 0 },
   checkboxDone: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
-  taskBody: { flex: 1, minWidth: 0 },
-  taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  taskCourse: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
-  priorityBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  taskBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' },
+  taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', alignSelf: 'stretch' },
+  taskCourse: { fontSize: 12, fontWeight: '700', color: COLORS.gray },
+  priorityBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   priorityText: { fontSize: 10, fontWeight: '800' },
-  taskTitle: { fontSize: 15, fontWeight: '800', lineHeight: 20 },
+  taskTitle: { fontSize: 16, fontWeight: '800', lineHeight: 22, alignSelf: 'stretch', textAlign: 'left', marginBottom: 0 },
   taskDone: { textDecorationLine: 'line-through', opacity: 0.5 },
-  taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
-  taskMetaText: { fontSize: 11, fontWeight: '600' },
+  taskMeta: { marginTop: 6, gap: 4, alignSelf: 'stretch', alignItems: 'flex-start' },
+  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch', minWidth: 0, justifyContent: 'flex-start' },
+  taskMetaText: { fontSize: 11, fontWeight: '600', textAlign: 'left' },
+  taskMetaDate: { flex: 1, minWidth: 0 },
   taskMetaDot: { width: 4, height: 4, borderRadius: 2 },
   sortRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: L.pad, zIndex: 10, minHeight: 36 },
   sortLabel: { fontSize: 11, fontWeight: '700' },
@@ -1008,10 +1058,10 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 64, height: 64, borderRadius: L.radius, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 14, fontWeight: '800', color: COLORS.gray },
   emptySub: { fontSize: 12, color: COLORS.gray, marginTop: 8 },
-  fabRow: { position: 'absolute', bottom: 24, right: L.pad, flexDirection: 'row', gap: 12 },
+  fabRow: { position: 'absolute', bottom: 100, right: L.pad, flexDirection: 'row', gap: 12 },
   fab: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
   chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  chatSheet: { backgroundColor: COLORS.white, borderTopLeftRadius: L.radius, borderTopRightRadius: L.radius, maxHeight: '88%' },
+  chatSheet: { backgroundColor: COLORS.card, borderTopLeftRadius: L.radius, borderTopRightRadius: L.radius, maxHeight: '88%' },
   chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: L.cardPad, backgroundColor: COLORS.navy },
   chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   chatHeaderIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
@@ -1022,12 +1072,12 @@ const styles = StyleSheet.create({
   chatBubbleWrap: { alignItems: 'flex-start' },
   chatBubbleRight: { alignItems: 'flex-end' },
   chatBubble: { maxWidth: '82%', padding: 14, borderRadius: 18, borderTopLeftRadius: 4 },
-  chatBubbleAi: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  chatBubbleAi: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
   chatBubbleUser: { backgroundColor: COLORS.navy },
-  chatBubbleText: { fontSize: 13, color: COLORS.navy, lineHeight: 18 },
+  chatBubbleText: { fontSize: 13, color: COLORS.text, lineHeight: 18 },
   chatBubbleTextUser: { color: COLORS.white },
-  chatInputRow: { flexDirection: 'row', gap: 12, padding: L.cardPad, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
-  chatInput: { flex: 1, backgroundColor: COLORS.bg, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
+  chatInputRow: { flexDirection: 'row', gap: 12, padding: L.cardPad, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: COLORS.border },
+  chatInput: { flex: 1, backgroundColor: COLORS.bg, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, color: COLORS.text },
   chatSend: { width: 48, height: 48, borderRadius: 16, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center' },
   chatSendDisabled: { opacity: 0.5 },
 });

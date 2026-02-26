@@ -44,12 +44,12 @@ export default function NotesList() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: { flexDirection: 'row', alignItems: 'center', padding: 24, paddingTop: 48 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
-  title: { flex: 1, fontSize: 18, fontWeight: '800', color: COLORS.navy },
+  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
+  title: { flex: 1, fontSize: 18, fontWeight: '800', color: COLORS.text },
   list: { padding: 24, paddingBottom: 100 },
-  noteCard: { backgroundColor: COLORS.white, padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
+  noteCard: { backgroundColor: COLORS.card, padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
   pressed: { opacity: 0.95 },
-  noteTitle: { fontSize: 16, fontWeight: '700', color: COLORS.navy },
+  noteTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
   noteMeta: { fontSize: 12, color: COLORS.gray, marginTop: 4 },
   fab: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center' },
 });

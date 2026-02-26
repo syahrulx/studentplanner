@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: '800',
-    color: COLORS.navy,
+    color: COLORS.text,
     marginBottom: 12,
     letterSpacing: -1,
   },

@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
   card: {
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.card,
     borderRadius: 28,
     padding: 32,
     borderWidth: 1,
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '800',
-    color: COLORS.navy,
+    color: COLORS.text,
     marginBottom: 28,
     letterSpacing: -0.5,
   },
@@ -85,7 +85,8 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 15,
     marginBottom: 18,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
   },
   primaryButton: {
     backgroundColor: COLORS.navy,
@@ -101,5 +102,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   link: { marginTop: 18, alignItems: 'center' },
-  linkText: { color: COLORS.navy, fontSize: 14, fontWeight: '600' },
+  linkText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
 });

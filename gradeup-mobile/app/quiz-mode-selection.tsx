@@ -24,9 +24,9 @@ export default function QuizModeSelection() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, paddingTop: 48 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
-  title: { fontSize: 22, fontWeight: '800', color: COLORS.navy },
-  modeBtn: { backgroundColor: COLORS.white, paddingVertical: 20, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
+  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
+  title: { fontSize: 22, fontWeight: '800', color: COLORS.text },
+  modeBtn: { backgroundColor: COLORS.card, paddingVertical: 20, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
   pressed: { opacity: 0.95 },
-  modeBtnText: { fontSize: 16, fontWeight: '800', color: COLORS.navy },
+  modeBtnText: { fontSize: 16, fontWeight: '800', color: COLORS.text },
 });
