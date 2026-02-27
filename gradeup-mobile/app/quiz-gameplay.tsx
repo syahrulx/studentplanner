@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   question: { fontSize: 20, fontWeight: '700', color: COLORS.white, textAlign: 'center', lineHeight: 28 },
   opts: { gap: 14 },
   optBtn: { backgroundColor: COLORS.bg, padding: 22, borderRadius: 22, borderWidth: 2, borderColor: COLORS.border },
-  optCorrect: { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: '#22c55e' },
+  optCorrect: { backgroundColor: 'rgba(5,150,105,0.15)', borderColor: '#059669' },
   optWrong: { backgroundColor: 'rgba(239,68,68,0.15)', borderColor: '#ef4444' },
   optText: { fontSize: 16, fontWeight: '700', color: COLORS.text, lineHeight: 22 },
   empty: { fontSize: 16, color: COLORS.gray, textAlign: 'center', marginTop: 48 },

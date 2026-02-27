@@ -12,9 +12,9 @@ import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, get
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
-// Priority display colors: Low = green, Medium = yellow, High = red
+// Priority display colors: Low = teal, Medium = amber, High = red
 const PRIORITY_COLORS = {
-  [Priority.Low]: { bg: 'rgba(34,197,94,0.15)', text: '#4ade80' },
+  [Priority.Low]: { bg: 'rgba(5,150,105,0.15)', text: '#0d9488' },
   [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#facc15' },
   [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#f87171' },
 };
@@ -27,26 +27,25 @@ function getDaysUntilDue(dueDate: string): number {
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
 
-// Outline: red = urgent, yellow = medium, green = plenty. Thresholds depend on priority.
-function getOutlineLevel(priority: Priority, daysUntil: number): 'red' | 'yellow' | 'green' {
+// Outline: red = urgent, yellow = medium, teal = plenty. Thresholds depend on priority.
+function getOutlineLevel(priority: Priority, daysUntil: number): 'red' | 'yellow' | 'teal' {
   if (daysUntil < 0) return 'red';
   if (priority === Priority.High) {
     if (daysUntil < 7) return 'red';
     if (daysUntil < 14) return 'yellow';
-    return 'green';
+    return 'teal';
   }
   if (priority === Priority.Medium) {
     if (daysUntil < 5) return 'red';
     if (daysUntil < 10) return 'yellow';
-    return 'green';
+    return 'teal';
   }
-  // Low
   if (daysUntil < 3) return 'red';
   if (daysUntil < 7) return 'yellow';
-  return 'green';
+  return 'teal';
 }
 
-const OUTLINE_COLORS = { red: '#dc2626', yellow: '#ca8a04', green: '#16a34a' };
+const OUTLINE_COLORS = { red: '#dc2626', yellow: '#ca8a04', teal: '#059669' };
 
 type PlannerTaskItem = { type: 'task'; id: string } & import('@/src/types').Task;
 type PlannerStudyItem = {
@@ -664,7 +663,7 @@ export default function Planner() {
                   <Pressable
                     style={[
                       styles.swipeActionBtn,
-                      { backgroundColor: item.isDone ? '#ef4444' : '#22c55e' },
+                      { backgroundColor: item.isDone ? '#ef4444' : '#059669' },
                     ]}
                     onPress={item.isDone ? handleStudyDelete : handleStudyToggle}
                   >
@@ -797,7 +796,7 @@ export default function Planner() {
             const renderLeftActions = () => (
               <View style={styles.swipeActionsLeft}>
                 <Pressable
-                  style={[styles.swipeActionBtnLeft, { backgroundColor: '#d97706' }]}
+                  style={[styles.swipeActionBtnLeft, { backgroundColor: '#0e7490' }]}
                   onPress={handlePinPress}
                 >
                   <View style={styles.swipeActionContentLeft}>
@@ -812,7 +811,7 @@ export default function Planner() {
                 <Pressable
                   style={[
                     styles.swipeActionBtn,
-                    { backgroundColor: item.isDone ? '#ef4444' : '#22c55e' },
+                    { backgroundColor: item.isDone ? '#ef4444' : '#059669' },
                   ]}
                   onPress={item.isDone ? handleTaskDelete : handleTaskToggle}
                 >
@@ -824,7 +823,7 @@ export default function Planner() {
             );
 
             const daysUntil = getDaysUntilDue(item.dueDate);
-            const outlineLevel = item.isDone ? 'green' : getOutlineLevel(item.priority, daysUntil);
+            const outlineLevel = item.isDone ? 'teal' : getOutlineLevel(item.priority, daysUntil);
             const outlineColor = OUTLINE_COLORS[outlineLevel];
             const priorityStyle = PRIORITY_COLORS[item.priority];
 
@@ -959,7 +958,7 @@ const styles = StyleSheet.create({
   headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   addTaskBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 20, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
-  subtitle: { fontSize: 11, fontWeight: '700', color: '#8fa897', marginTop: 4, letterSpacing: 0.5 },
+  subtitle: { fontSize: 11, fontWeight: '700', color: COLORS.gray, marginTop: 4, letterSpacing: 0.5 },
   viewToggle: { flexDirection: 'row', padding: 4, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border },
   viewBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   viewBtnActive: { backgroundColor: COLORS.navy },
@@ -1007,7 +1006,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.96 },
   taskFirstRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, alignSelf: 'stretch' },
   checkbox: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 14, marginTop: 0 },
-  checkboxDone: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
+  checkboxDone: { backgroundColor: '#059669', borderColor: '#059669' },
   taskBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' },
   taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', alignSelf: 'stretch' },
   taskCourse: { fontSize: 12, fontWeight: '700', color: COLORS.gray },

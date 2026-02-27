@@ -109,66 +109,61 @@ export default function Dashboard() {
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
-  // Muted palette for home (no neon): dark green header, sage, cream, warm gray
-  // Study palette: dark green header, gold accent, sage/teal secondary
-  const homeColors = {
-    headerBg: '#14532d',
-    headerText: '#f0fdf4',
-    headerSubtext: '#86efac',
-    accent: '#ca8a04',
-    cardBg: '#ffffff',
-    cardBorder: '#e2efe8',
-    surface: '#ffffff',
-    boxTone: '#f0f7f2',
-    text: '#1a2e1a',
-    textSecondary: '#4a6b5a',
-    sage: '#0d9488',
-    mutedBlue: '#15803d',
-    mutedAmber: '#d4a843',
-    overdue: '#b91c1c',
-  };
+  // Use theme for navy consistency
+  const headerBg = theme.primary;
+  const headerText = '#f8fafc';
+  const headerSubtext = 'rgba(248, 250, 252, 0.85)';
+  const accent = theme.accent;
+  const cardBg = theme.card;
+  const cardBorder = theme.border;
+  const surface = theme.background;
+  const boxTone = theme.backgroundSecondary;
+  const text = theme.text;
+  const textSecondary = theme.textSecondary;
+  const sage = theme.accent2;
+  const overdue = theme.danger;
 
   const shortcuts: { iconKey: ThemeIconKey; label: string; description: string; color: string; route: string }[] = [
-    { iconKey: 'layers', label: 'Flashcard', description: 'Review notes with cards', color: homeColors.sage, route: '/flashcard-review' },
-    { iconKey: 'target', label: 'Quiz', description: 'Test your understanding', color: homeColors.mutedBlue, route: '/quiz-config' },
-    { iconKey: 'clock', label: 'Study time', description: 'Set a revision schedule', color: homeColors.mutedAmber, route: '/revision' },
+    { iconKey: 'layers', label: 'Flashcard', description: 'Review notes with cards', color: sage, route: '/flashcard-review' },
+    { iconKey: 'target', label: 'Quiz', description: 'Test your understanding', color: theme.secondary, route: '/quiz-config' },
+    { iconKey: 'clock', label: 'Study time', description: 'Set a revision schedule', color: accent, route: '/revision' },
   ];
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: homeColors.surface }]} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: surface }]} contentContainerStyle={styles.content}>
       {/* Top header: greeting + week + profile */}
-      <View style={[styles.headerWrap, { backgroundColor: homeColors.headerBg }]}>
+      <View style={[styles.headerWrap, { backgroundColor: headerBg }]}>
         <Image
           source={require('../../assets/images/wave-texture.png')}
           style={[StyleSheet.absoluteFillObject, styles.waveTexture]}
           resizeMode="cover"
         />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(20,83,45,0.4)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12, 74, 110, 0.4)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { color: homeColors.headerText }]}>Hello, {user.name.split(' ')[0]}</Text>
+            <Text style={[styles.greeting, { color: headerText }]}>Hello, {user.name.split(' ')[0]}</Text>
             <View style={styles.row}>
-              <View style={[styles.dot, { backgroundColor: homeColors.accent }]} />
-              <Text style={[styles.subtitle, { color: homeColors.headerSubtext }]}>Part {user.part} • Week {user.currentWeek}</Text>
+              <View style={[styles.dot, { backgroundColor: accent }]} />
+              <Text style={[styles.subtitle, { color: headerSubtext }]}>Part {user.part} • Week {user.currentWeek}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Pressable style={styles.weekBtn} onPress={() => router.push('/stress-map' as any)}>
-              <Text style={[styles.weekBtnText, { color: homeColors.headerSubtext }]}>Week {user.currentWeek}</Text>
+              <Text style={[styles.weekBtnText, { color: headerSubtext }]}>Week {user.currentWeek}</Text>
             </Pressable>
             <Pressable onPress={() => router.push('/(tabs)/profile' as any)}>
-              <ThemeIcon name="user" size={22} color={homeColors.headerText} />
+              <ThemeIcon name="user" size={22} color={headerText} />
             </Pressable>
           </View>
         </View>
 
-        {/* Today's focus card - prominent like wallet balance */}
+        {/* Today's focus card */}
         <View style={styles.focusSection}>
-          <Text style={[styles.focusSectionLabel, { color: homeColors.headerSubtext }]}>Today&apos;s focus</Text>
+          <Text style={[styles.focusSectionLabel, { color: headerSubtext }]}>Today&apos;s focus</Text>
           <Pressable
             style={({ pressed }) => [
               styles.focusCard,
-              { backgroundColor: homeColors.cardBg },
+              { backgroundColor: cardBg, borderColor: cardBorder },
               pressed && styles.pressed,
             ]}
             onPress={() => router.push('/(tabs)/planner' as any)}
@@ -177,27 +172,27 @@ export default function Dashboard() {
             {nextTask ? (
               <>
                 <View style={styles.focusTop}>
-                  <Text style={[styles.focusTitle, { color: homeColors.text }]} numberOfLines={2}>{nextTask.title}</Text>
-                  <Text style={[styles.dueTimeBold, { color: getDaysLeft(nextTask.dueDate) < 0 ? homeColors.overdue : homeColors.accent }]}>
+                  <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
+                  <Text style={[styles.dueTimeBold, { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent }]}>
                     {getDueTimeLabel(nextTask.dueDate)}
                   </Text>
                 </View>
                 <View style={styles.focusMetaRow}>
                   <View style={styles.focusMetaItem}>
-                    <ThemeIcon name="checkCircle" size={14} color={homeColors.textSecondary} />
-                    <Text style={[styles.focusMetaText, { color: homeColors.textSecondary }]}>{nextTask.courseId}</Text>
+                    <ThemeIcon name="checkCircle" size={14} color={textSecondary} />
+                    <Text style={[styles.focusMetaText, { color: textSecondary }]}>{nextTask.courseId}</Text>
                   </View>
-                  <View style={[styles.focusMetaDot, { backgroundColor: homeColors.cardBorder }]} />
+                  <View style={[styles.focusMetaDot, { backgroundColor: cardBorder }]} />
                   <View style={styles.focusMetaItem}>
-                    <ThemeIcon name="calendar" size={14} color={homeColors.textSecondary} />
-                    <Text style={[styles.focusMetaText, { color: homeColors.textSecondary }]}>{formatDisplayDate(nextTask.dueDate)} • {nextTask.dueTime}</Text>
+                    <ThemeIcon name="calendar" size={14} color={textSecondary} />
+                    <Text style={[styles.focusMetaText, { color: textSecondary }]}>{formatDisplayDate(nextTask.dueDate)} • {nextTask.dueTime}</Text>
                   </View>
                 </View>
               </>
             ) : (
               <View style={styles.focusEmptyWrap}>
-                <Text style={[styles.focusEmpty, { color: homeColors.textSecondary }]}>No tasks for today</Text>
-                <Text style={[styles.dueTimeBold, { color: homeColors.accent }]}>You&apos;re all set</Text>
+                <Text style={[styles.focusEmpty, { color: textSecondary }]}>No tasks for today</Text>
+                <Text style={[styles.dueTimeBold, { color: accent }]}>You&apos;re all set</Text>
               </View>
             )}
           </Pressable>
@@ -205,63 +200,64 @@ export default function Dashboard() {
       </View>
 
       {/* Quick actions */}
-      <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: homeColors.boxTone, borderColor: homeColors.cardBorder }]}>
-        <Text style={[styles.sectionBoxTitle, { color: homeColors.textSecondary }]}>Quick actions</Text>
+      <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: boxTone, borderColor: cardBorder }]}>
+        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>Quick actions</Text>
         <View style={styles.shortcutsWrap}>
           {shortcuts.map((s, i) => (
             <Pressable
               key={i}
-              style={({ pressed }) => [styles.shortcut, { backgroundColor: homeColors.cardBg, borderColor: homeColors.cardBorder }, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.shortcut, { backgroundColor: cardBg, borderColor: cardBorder }, pressed && styles.pressed]}
               onPress={() => router.push(s.route as any)}
             >
               <View style={[styles.shortcutIcon, { borderColor: s.color }]}>
               <ThemeIcon name={s.iconKey} size={22} color={s.color} />
               </View>
-              <Text style={[styles.shortcutLabel, { color: homeColors.text }]}>{s.label}</Text>
-              <Text style={[styles.shortcutDescription, { color: homeColors.textSecondary }]}>{s.description}</Text>
+              <Text style={[styles.shortcutLabel, { color: text }]}>{s.label}</Text>
+              <Text style={[styles.shortcutDescription, { color: textSecondary }]}>{s.description}</Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      {/* Timeline / Recent */}
-      <View style={[styles.sectionBox, { backgroundColor: homeColors.boxTone, borderColor: homeColors.cardBorder }]}>
+      {/* Timeline / Upcoming */}
+      <View style={[styles.sectionBox, { backgroundColor: boxTone, borderColor: cardBorder }]}>
         <View style={styles.timelineHeader}>
-          <Text style={[styles.timelineTitle, { color: homeColors.text }]}>Upcoming</Text>
+          <Text style={[styles.timelineTitle, { color: text }]}>Upcoming</Text>
           <Pressable onPress={() => router.push('/(tabs)/planner' as any)}>
-            <Text style={[styles.seeAll, { color: homeColors.accent }]}>See all</Text>
+            <Text style={[styles.seeAll, { color: accent }]}>See all</Text>
           </Pressable>
         </View>
         <View style={styles.timelineList}>
           {scheduleWithinMonth.length === 0 ? (
-            <View style={[styles.timelineCard, { backgroundColor: homeColors.cardBg, borderColor: homeColors.cardBorder }]}>
-              <Text style={[styles.timelineMeta, { color: homeColors.textSecondary }]}>Nothing in the next 30 days.</Text>
+            <View style={[styles.timelineCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <Text style={[styles.timelineMeta, { color: textSecondary }]}>Nothing in the next 30 days.</Text>
             </View>
           ) : (
             scheduleWithinMonth.map((item, idx) => {
               const showDateHeader = idx === 0 || scheduleWithinMonth[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
+              const badgeColor = studyDone ? sage : accent;
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
-                    <Text style={[styles.timelineDateHeader, { color: homeColors.accent }, idx > 0 && { marginTop: 16 }]}>{formatDateLabel(item.date)}</Text>
+                    <Text style={[styles.timelineDateHeader, { color: accent }, idx > 0 && { marginTop: 16 }]}>{formatDateLabel(item.date)}</Text>
                   )}
                   <View style={styles.timelineItem}>
-                    <View style={[styles.timelineDot, { backgroundColor: homeColors.cardBg, borderColor: studyDone ? homeColors.sage : isStudy ? homeColors.mutedAmber : getSubjectColor(item.code) }]} />
+                    <View style={[styles.timelineDot, { backgroundColor: cardBg, borderColor: studyDone ? sage : isStudy ? accent : getSubjectColor(item.code) }]} />
                     <View style={[
                       styles.timelineCard,
-                      { backgroundColor: homeColors.cardBg, borderColor: homeColors.cardBorder, position: 'relative', overflow: 'hidden' },
+                      { backgroundColor: cardBg, borderColor: cardBorder, position: 'relative', overflow: 'hidden' },
                     ]}>
-                      <View style={[styles.subjectDot, { backgroundColor: studyDone ? homeColors.sage : isStudy ? homeColors.mutedAmber : getSubjectColor(item.code) }]} />
+                      <View style={[styles.subjectDot, { backgroundColor: studyDone ? sage : isStudy ? accent : getSubjectColor(item.code) }]} />
                       <View style={styles.timelineCardTop}>
-                        <Text style={[styles.timelineTime, { color: homeColors.textSecondary }]}>{item.time}</Text>
-                        <View style={[styles.typeBadge, { backgroundColor: studyDone ? homeColors.sage + '22' : (isStudy ? homeColors.mutedAmber : homeColors.accent) + '22' }]}>
-                          <Text style={[styles.typeBadgeText, { color: studyDone ? homeColors.sage : isStudy ? homeColors.mutedAmber : homeColors.accent }]}>{studyDone ? 'DONE' : item.type}</Text>
+                        <Text style={[styles.timelineTime, { color: textSecondary }]}>{item.time}</Text>
+                        <View style={[styles.typeBadge, { backgroundColor: badgeColor + '22' }]}>
+                          <Text style={[styles.typeBadgeText, { color: badgeColor }]}>{studyDone ? 'DONE' : item.type}</Text>
                         </View>
                       </View>
-                      <Text style={[styles.timelineName, { color: homeColors.text }, studyDone && { textDecorationLine: 'line-through', color: homeColors.textSecondary }]}>{item.name}</Text>
-                      <Text style={[styles.timelineMeta, { color: homeColors.textSecondary }]}>{item.code} • {item.room}</Text>
+                      <Text style={[styles.timelineName, { color: text }, studyDone && { textDecorationLine: 'line-through', color: textSecondary }]}>{item.name}</Text>
+                      <Text style={[styles.timelineMeta, { color: textSecondary }]}>{item.code} • {item.room}</Text>
                     </View>
                   </View>
                 </View>

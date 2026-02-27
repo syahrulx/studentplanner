@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 20 },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   colorOption: { width: 44, height: 44, borderRadius: 22 },
-  colorOptionSelected: { borderWidth: 3, borderColor: '#1a2e26' },
+  colorOptionSelected: { borderWidth: 3, borderColor: '#0c4a6e' },
   cancelBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
   cancelBtnText: { fontSize: 15, fontWeight: '700' },
 });

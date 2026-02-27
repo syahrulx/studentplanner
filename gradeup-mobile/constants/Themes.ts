@@ -32,31 +32,39 @@ export interface ThemePalette {
 }
 
 /**
- * Study-focused colour palette:
- * - Primary: dark green (focus, growth)
- * - Secondary: medium green
- * - Accent: gold (achievement, warmth)
- * - Accent2: sage/teal (calm)
- * - Surfaces: white with subtle green-tinted greys where suitable
+ * Deep sea blue theme palette:
+ * - Primary: deep sea (cyan-900)
+ * - Secondary: teal/cyan (ocean mid-tone)
+ * - Accent: bright cyan (highlights, CTAs)
+ * - Surfaces: white with cyan-tinted greys
  */
-export const STUDY_PALETTE = {
-  primary: '#14532d',
-  primaryLight: '#166534',
-  secondary: '#15803d',
-  accent: '#ca8a04',
-  accentLight: '#d4a843',
-  sage: '#0d9488',
-  success: '#15803d',
-  warning: '#ca8a04',
+export const DEEP_SEA_PALETTE = {
+  primary: '#0c4a6e',
+  primaryLight: '#155e75',
+  secondary: '#0e7490',
+  accent: '#06b6d4',
+  accentLight: '#22d3ee',
+  sage: '#0891b2',
+  success: '#059669',
+  warning: '#d97706',
   danger: '#b91c1c',
-  text: '#1a2e1a',
-  textSecondary: '#4a6b5a',
-  border: '#bbd9ce',
-  borderLight: '#e2efe8',
-  focusCard: '#14532d',
-  focusCardText: '#dcfce7',
-  bgSecondary: '#f0f7f2',
+  text: '#0c4a6e',
+  textSecondary: '#475569',
+  border: '#a5f3fc',
+  borderLight: '#e0f2fe',
+  focusCard: '#0e7490',
+  focusCardText: '#cffafe',
+  bgSecondary: '#f0f9ff',
+  tabBarBg: '#0c4a6e',
+  tabBarPill: 'rgba(255,255,255,0.12)',
+  addBtn: '#0e7490',
 } as const;
+
+/** @deprecated Use DEEP_SEA_PALETTE */
+export const NAVY_PALETTE = DEEP_SEA_PALETTE;
+
+/** @deprecated Use DEEP_SEA_PALETTE */
+export const STUDY_PALETTE = DEEP_SEA_PALETTE;
 
 export const THEMES: Record<ThemeId, ThemePalette> = {
   dark: {
