@@ -1,5 +1,5 @@
 import { TaskType, Priority } from './types';
-import type { UserProfile, Course, Task, Note, Flashcard } from './types';
+import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder } from './types';
 import { DEFAULT_COURSES } from './constants';
 
 export const initialUser: UserProfile = {
@@ -41,7 +41,11 @@ export const initialNotes: Note[] = [
   { id: 'n2', subjectId: 'CSC584', title: 'Hibernate Mapping', content: 'OneToMany, ManyToOne.', tag: 'Tutorial', updatedAt: '2024-12-23' },
 ];
 
-export const initialFlashcards = [
-  { id: 'f1', noteId: 'n1', front: 'What does MVC stand for?', back: 'Model-View-Controller' },
-  { id: 'f2', noteId: 'n1', front: 'Role of Controller?', back: 'Handles input, updates model' },
+export const initialFlashcardFolders: FlashcardFolder[] = [
+  { id: 'folder1', name: 'General', createdAt: new Date().toISOString().slice(0, 10) },
+];
+
+export const initialFlashcards: Flashcard[] = [
+  { id: 'f1', folderId: 'folder1', noteId: 'n1', front: 'What does MVC stand for?', back: 'Model-View-Controller' },
+  { id: 'f2', folderId: 'folder1', noteId: 'n1', front: 'Role of Controller?', back: 'Handles input, updates model' },
 ];

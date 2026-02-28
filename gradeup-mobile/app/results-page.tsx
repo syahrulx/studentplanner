@@ -1,27 +1,83 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { COLORS, Icons } from '@/src/constants';
+import { useTheme } from '@/hooks/useTheme';
+import { ThemeIcon } from '@/components/ThemeIcon';
+
+const PAD = 20;
+const SECTION = 24;
+const RADIUS = 20;
+const RADIUS_SM = 14;
 
 export default function ResultsPage() {
-  const { score } = useLocalSearchParams<{ score?: string }>();
+  const theme = useTheme();
+  const { score, total } = useLocalSearchParams<{ score?: string; total?: string }>();
   const s = parseInt(score ?? '0', 10);
+  const t = Math.max(1, parseInt(total ?? '5', 10));
+  const correctCount = Math.round(s / 10);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Quiz complete</Text>
-      <Text style={styles.score}>{s} / 5</Text>
-      <Pressable style={({ pressed }) => [styles.btn, pressed && styles.pressed]} onPress={() => router.replace('/leaderboard' as any)}>
-        <Text style={styles.btnText}>View leaderboard</Text>
-      </Pressable>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <ThemeIcon name="checkCircle" size={48} color={theme.primary} />
+        <Text style={[styles.title, { color: theme.text }]}>Quiz complete</Text>
+        <Text style={[styles.score, { color: theme.primary }]}>{correctCount} / {t}</Text>
+        <Text style={[styles.sub, { color: theme.textSecondary }]}>
+          {s} points • {t} questions
+        </Text>
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable
+          style={({ pressed }) => [styles.ctaBtn, { backgroundColor: theme.primary }, pressed && styles.pressed]}
+          onPress={() => router.replace('/leaderboard' as any)}
+        >
+          <ThemeIcon name="leaderboard" size={20} color="#fff" />
+          <Text style={styles.ctaBtnText}>View leaderboard</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && styles.pressed]}
+          onPress={() => router.replace('/(tabs)/notes' as any)}
+        >
+          <ThemeIcon name="target" size={20} color={theme.primary} />
+          <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Back to Notes & Quiz</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, padding: 24, paddingTop: 48, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.text, marginBottom: 16 },
-  score: { fontSize: 48, fontWeight: '800', color: COLORS.gold, marginBottom: 32 },
-  btn: { backgroundColor: COLORS.navy, paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16 },
-  pressed: { opacity: 0.95 },
-  btnText: { color: COLORS.white, fontSize: 16, fontWeight: '800' },
+  container: { flex: 1, paddingHorizontal: PAD, paddingTop: 80, alignItems: 'center' },
+  card: {
+    alignItems: 'center',
+    padding: 32,
+    borderRadius: RADIUS,
+    borderWidth: 1,
+    marginBottom: SECTION,
+    width: '100%',
+  },
+  title: { fontSize: 22, fontWeight: '800', marginTop: 16, marginBottom: 8 },
+  score: { fontSize: 42, fontWeight: '800' },
+  sub: { fontSize: 14, marginTop: 8 },
+  actions: { width: '100%', gap: 12 },
+  ctaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    borderRadius: RADIUS,
+  },
+  ctaBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    borderRadius: RADIUS_SM,
+    borderWidth: 1,
+  },
+  secondaryBtnText: { fontSize: 16, fontWeight: '800' },
+  pressed: { opacity: 0.96 },
 });

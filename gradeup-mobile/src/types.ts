@@ -81,8 +81,15 @@ export interface Note {
   updatedAt: string;
 }
 
+export interface FlashcardFolder {
+  id: string;
+  name: string;
+  createdAt: string; // ISO date
+}
+
 export interface Flashcard {
   id: string;
+  folderId?: string; // which folder this card belongs to
   noteId?: string;
   front: string;
   back: string;

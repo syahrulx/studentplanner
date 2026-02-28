@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { UserProfile, Course, Task, Note, Flashcard } from '../types';
+import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {
   initialUser,
@@ -7,6 +7,7 @@ import {
   initialTasks,
   initialNotes,
   initialFlashcards,
+  initialFlashcardFolders,
 } from '../seedData';
 import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, type RevisionSettings } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
@@ -22,6 +23,12 @@ type AppState = {
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
   flashcards: Flashcard[];
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
+  flashcardFolders: FlashcardFolder[];
+  setFlashcardFolders: React.Dispatch<React.SetStateAction<FlashcardFolder[]>>;
+  addFlashcardFolder: (name: string) => FlashcardFolder;
+  addFlashcard: (folderId: string, front: string, back: string) => Flashcard;
+  deleteFlashcardFolder: (folderId: string) => void;
+  deleteFlashcard: (cardId: string) => void;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
   theme: ThemeId;
@@ -52,6 +59,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
+  const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
   const [pendingExtraction, setPendingExtraction] = useState('');
   const [theme, setThemeState] = useState<ThemeId>('dark');
   const [revisionSettings, setRevisionState] = useState<RevisionSettings>({
@@ -180,6 +188,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFlashcards(newCards);
   }, []);
 
+  const addFlashcardFolder = useCallback((name: string): FlashcardFolder => {
+    const folder: FlashcardFolder = {
+      id: 'folder-' + Date.now(),
+      name: name.trim() || 'New folder',
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    setFlashcardFolders((prev) => [folder, ...prev]);
+    return folder;
+  }, []);
+
+  const addFlashcard = useCallback((folderId: string, front: string, back: string): Flashcard => {
+    const card: Flashcard = {
+      id: 'card-' + Date.now(),
+      folderId,
+      front: front.trim() || 'Front',
+      back: back.trim() || 'Back',
+    };
+    setFlashcards((prev) => [card, ...prev]);
+    return card;
+  }, []);
+
+  const deleteFlashcardFolder = useCallback((folderId: string) => {
+    setFlashcardFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setFlashcards((prev) => prev.filter((c) => c.folderId !== folderId));
+  }, []);
+
+  const deleteFlashcard = useCallback((cardId: string) => {
+    setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
+  }, []);
+
   const value: AppState = {
     user,
     setUser,
@@ -190,6 +228,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNotes,
     flashcards,
     setFlashcards,
+    flashcardFolders,
+    setFlashcardFolders,
+    addFlashcardFolder,
+    addFlashcard,
+    deleteFlashcardFolder,
+    deleteFlashcard,
     pendingExtraction,
     setPendingExtraction,
     theme,

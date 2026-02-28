@@ -25,23 +25,23 @@ export default function NotesHub() {
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your knowledge hub</Text>
       </View>
 
-      {/* Knowledge Check CTA */}
+      {/* Knowledge Check CTA → Configure practice quiz → Play until done → Leaderboard */}
       <Pressable
         style={({ pressed }) => [
           styles.ctaCard,
           { backgroundColor: theme.primary },
           pressed && styles.pressed,
         ]}
-        onPress={() => router.push('/quiz-config' as any)}
+        onPress={() => router.push('/ai-quiz-builder' as any)}
       >
         <View style={[styles.ctaBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
           <ThemeIcon name="sparkles" size={14} color="#fff" />
           <Text style={styles.ctaBadgeText}>Daily Focus</Text>
         </View>
         <Text style={styles.ctaTitle}>Knowledge Check</Text>
-        <Text style={styles.ctaDesc}>AI-generated quizzes from your notes</Text>
-        <View style={[styles.ctaArrow, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-          <ThemeIcon name="arrowRight" size={20} color="#fff" />
+        <Text style={styles.ctaDesc}>Configure practice quiz, play until done, then view leaderboard</Text>
+        <View style={styles.ctaArrow}>
+          <ThemeIcon name="arrowRight" size={22} color="#fff" />
         </View>
       </Pressable>
 
@@ -79,6 +79,27 @@ export default function NotesHub() {
           })}
         </View>
       </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>LEADERBOARD</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.subjectCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && styles.pressed,
+          ]}
+          onPress={() => router.push('/leaderboard' as any)}
+        >
+          <View style={[styles.subjectIconWrap, { backgroundColor: (theme.accent3 || theme.accent || theme.primary) + '18' }]}>
+            <ThemeIcon name="leaderboard" size={20} color={theme.accent3 || theme.accent || theme.primary} />
+          </View>
+          <View style={styles.subjectBody}>
+            <Text style={[styles.subjectCode, { color: theme.text }]}>Quiz & Task Rank</Text>
+            <Text style={[styles.subjectName, { color: theme.textSecondary }]} numberOfLines={1}>View leaderboard</Text>
+          </View>
+          <ThemeIcon name="arrowRight" size={18} color={theme.textSecondary} />
+        </Pressable>
+      </View>
       <View style={{ height: 100 }} />
     </ScrollView>
   );
@@ -112,11 +133,13 @@ const styles = StyleSheet.create({
   ctaDesc: { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 18 },
   ctaArrow: {
     position: 'absolute',
-    bottom: 20,
+    top: '50%',
     right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    marginTop: -24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(148, 163, 184, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
   },

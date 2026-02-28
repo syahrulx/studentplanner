@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -7,6 +8,7 @@ import type { ThemeIconKey } from '@/constants/ThemeIcons';
 import { Priority } from '@/src/types';
 import { formatDisplayDate } from '@/src/utils/date';
 
+const TOTAL_WEEKS = 14;
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
 function getDaysLeft(dueDate: string): number {
@@ -26,7 +28,7 @@ function getDueTimeLabel(dueDate: string): string {
 }
 
 export default function Dashboard() {
-  const { user, tasks, revisionSettings, completedStudyKeys, getSubjectColor } = useApp();
+  const { user, tasks, courses, revisionSettings, completedStudyKeys, getSubjectColor } = useApp();
   const theme = useTheme();
   const pending = tasks.filter((t) => !t.isDone);
   const high = pending.filter((t) => t.priority === Priority.High).sort(
@@ -34,13 +36,16 @@ export default function Dashboard() {
   );
   const nextTask = high[0] || pending[0];
 
-  const getUrgency = (dueDate: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-    if (dueDate === today) return 'DUE TODAY';
-    if (dueDate === tomorrow) return 'DUE TOMORROW';
-    return `DUE ${formatDisplayDate(dueDate)}`;
-  };
+  const peakWeek = useMemo(() => {
+    let max = 0;
+    let peak = TOTAL_WEEKS;
+    for (let w = 0; w < TOTAL_WEEKS; w++) {
+      const total = courses.reduce((sum, c) => sum + (c.workload?.[w] ?? 0), 0);
+      if (total > max) { max = total; peak = w + 1; }
+    }
+    return peak;
+  }, [courses]);
+
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   const in30Days = new Date(now);
@@ -58,7 +63,6 @@ export default function Dashboard() {
       name: t.title,
     }));
 
-  // Study-time entries for the next 30 days (when reminder is enabled)
   const studyItems: { studyKey: string; date: string; time: string; code: string; room: string; type: 'STUDY'; name: string }[] = [];
   if (revisionSettings.enabled && revisionSettings.time) {
     const [h, m] = revisionSettings.time.split(':').map((x) => parseInt(x, 10) || 0);
@@ -68,15 +72,7 @@ export default function Dashboard() {
     if (revisionSettings.repeat === 'once' && revisionSettings.singleDate) {
       const dateStr = revisionSettings.singleDate;
       if (dateStr >= todayStr && dateStr <= in30Str) {
-        studyItems.push({
-          studyKey: `${dateStr}T${timeStr}`,
-          date: dateStr,
-          time: timeStr,
-          code: subject,
-          room: `${revisionSettings.durationMinutes} min${topic}`,
-          type: 'STUDY',
-          name: 'Time to study',
-        });
+        studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: 'Time to study' });
       }
     } else {
       const targetWeekday = revisionSettings.day === 'Every day' ? null : WEEKDAY_TO_NUM[revisionSettings.day];
@@ -88,15 +84,7 @@ export default function Dashboard() {
         if (dateStr > in30Str) break;
         const dayNum = dte.getDay();
         if (targetWeekday === null || dayNum === targetWeekday) {
-          studyItems.push({
-            studyKey: `${dateStr}T${timeStr}`,
-            date: dateStr,
-            time: timeStr,
-            code: subject,
-            room: `${revisionSettings.durationMinutes} min${topic}`,
-            type: 'STUDY',
-            name: 'Time to study',
-          });
+          studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: 'Time to study' });
         }
       }
     }
@@ -109,7 +97,6 @@ export default function Dashboard() {
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
-  // Use theme for navy consistency
   const headerBg = theme.primary;
   const headerText = '#f8fafc';
   const headerSubtext = 'rgba(248, 250, 252, 0.85)';
@@ -124,14 +111,14 @@ export default function Dashboard() {
   const overdue = theme.danger;
 
   const shortcuts: { iconKey: ThemeIconKey; label: string; description: string; color: string; route: string }[] = [
-    { iconKey: 'layers', label: 'Flashcard', description: 'Review notes with cards', color: sage, route: '/flashcard-review' },
-    { iconKey: 'target', label: 'Quiz', description: 'Test your understanding', color: theme.secondary, route: '/quiz-config' },
+    { iconKey: 'layers', label: 'Flashcard', description: 'Folders & cards by topic', color: sage, route: '/flashcards' },
+    { iconKey: 'target', label: 'Quiz', description: 'Notes & Quiz', color: theme.secondary, route: '/(tabs)/notes' },
     { iconKey: 'clock', label: 'Study time', description: 'Set a revision schedule', color: accent, route: '/revision' },
   ];
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: surface }]} contentContainerStyle={styles.content}>
-      {/* Top header: greeting + week + profile */}
+      {/* Header: greeting + week + profile + week peak alert (white box) */}
       <View style={[styles.headerWrap, { backgroundColor: headerBg }]}>
         <Image
           source={require('../../assets/images/wave-texture.png')}
@@ -156,51 +143,86 @@ export default function Dashboard() {
             </Pressable>
           </View>
         </View>
+        {/* Week peak alert – compact white box inside header */}
+        <Pressable
+          style={({ pressed }) => [styles.peakAlertBox, pressed && styles.pressed]}
+          onPress={() => router.push('/stress-map' as any)}
+        >
+          <View style={styles.peakAlertTop}>
+            <View style={styles.peakAlertLeft}>
+              <Text style={styles.peakAlertWeek}>Week {user.currentWeek}</Text>
+              <Text style={styles.peakAlertLabel}>SEMESTER PULSE</Text>
+            </View>
+            <View style={styles.peakAlertBadge}>
+              <Text style={styles.peakAlertBadgeText}>W{peakWeek} PEAK ALERT</Text>
+            </View>
+          </View>
+          <View style={styles.peakAlertBottom}>
+            <Text style={styles.peakAlertProgressLabel}>PROGRESS</Text>
+            <Text style={styles.peakAlertFinalLabel}>W{TOTAL_WEEKS} FINAL</Text>
+          </View>
+          <View style={styles.peakAlertDots}>
+            {Array.from({ length: TOTAL_WEEKS }, (_, i) => {
+              const weekNum = i + 1;
+              const isCurrent = weekNum === user.currentWeek;
+              return (
+                <View
+                  key={weekNum}
+                  style={[
+                    styles.peakAlertDot,
+                    isCurrent && styles.peakAlertDotCurrent,
+                    weekNum < user.currentWeek && styles.peakAlertDotPast,
+                  ]}
+                />
+              );
+            })}
+          </View>
+        </Pressable>
+      </View>
 
-        {/* Today's focus card */}
-        <View style={styles.focusSection}>
-          <Text style={[styles.focusSectionLabel, { color: headerSubtext }]}>Today&apos;s focus</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.focusCard,
-              { backgroundColor: cardBg, borderColor: cardBorder },
-              pressed && styles.pressed,
-            ]}
-            onPress={() => router.push('/(tabs)/planner' as any)}
-          >
-            {nextTask && <View style={[styles.subjectDot, { backgroundColor: getSubjectColor(nextTask.courseId) }]} />}
-            {nextTask ? (
-              <>
-                <View style={styles.focusTop}>
-                  <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
-                  <Text style={[styles.dueTimeBold, { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent }]}>
-                    {getDueTimeLabel(nextTask.dueDate)}
-                  </Text>
-                </View>
-                <View style={styles.focusMetaRow}>
-                  <View style={styles.focusMetaItem}>
-                    <ThemeIcon name="checkCircle" size={14} color={textSecondary} />
-                    <Text style={[styles.focusMetaText, { color: textSecondary }]}>{nextTask.courseId}</Text>
-                  </View>
-                  <View style={[styles.focusMetaDot, { backgroundColor: cardBorder }]} />
-                  <View style={styles.focusMetaItem}>
-                    <ThemeIcon name="calendar" size={14} color={textSecondary} />
-                    <Text style={[styles.focusMetaText, { color: textSecondary }]}>{formatDisplayDate(nextTask.dueDate)} • {nextTask.dueTime}</Text>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <View style={styles.focusEmptyWrap}>
-                <Text style={[styles.focusEmpty, { color: textSecondary }]}>No tasks for today</Text>
-                <Text style={[styles.dueTimeBold, { color: accent }]}>You&apos;re all set</Text>
+      {/* Today's focus */}
+      <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: boxTone, borderColor: cardBorder }]}>
+        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>Today&apos;s focus</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.focusCard,
+            { backgroundColor: cardBg, borderColor: cardBorder },
+            pressed && styles.pressed,
+          ]}
+          onPress={() => router.push('/(tabs)/planner' as any)}
+        >
+          {nextTask && <View style={[styles.subjectDot, { backgroundColor: getSubjectColor(nextTask.courseId) }]} />}
+          {nextTask ? (
+            <>
+              <View style={styles.focusTop}>
+                <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
+                <Text style={[styles.dueTimeBold, { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent }]}>
+                  {getDueTimeLabel(nextTask.dueDate)}
+                </Text>
               </View>
-            )}
-          </Pressable>
-        </View>
+              <View style={styles.focusMetaRow}>
+                <View style={styles.focusMetaItem}>
+                  <ThemeIcon name="checkCircle" size={14} color={textSecondary} />
+                  <Text style={[styles.focusMetaText, { color: textSecondary }]}>{nextTask.courseId}</Text>
+                </View>
+                <View style={[styles.focusMetaDot, { backgroundColor: cardBorder }]} />
+                <View style={styles.focusMetaItem}>
+                  <ThemeIcon name="calendar" size={14} color={textSecondary} />
+                  <Text style={[styles.focusMetaText, { color: textSecondary }]}>{formatDisplayDate(nextTask.dueDate)} • {nextTask.dueTime}</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.focusEmptyWrap}>
+              <Text style={[styles.focusEmpty, { color: textSecondary }]}>No tasks for today</Text>
+              <Text style={[styles.dueTimeBold, { color: accent }]}>You&apos;re all set</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
 
       {/* Quick actions */}
-      <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: boxTone, borderColor: cardBorder }]}>
+      <View style={[styles.sectionBox, { backgroundColor: boxTone, borderColor: cardBorder }]}>
         <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>Quick actions</Text>
         <View style={styles.shortcutsWrap}>
           {shortcuts.map((s, i) => (
@@ -210,7 +232,7 @@ export default function Dashboard() {
               onPress={() => router.push(s.route as any)}
             >
               <View style={[styles.shortcutIcon, { borderColor: s.color }]}>
-              <ThemeIcon name={s.iconKey} size={22} color={s.color} />
+                <ThemeIcon name={s.iconKey} size={22} color={s.color} />
               </View>
               <Text style={[styles.shortcutLabel, { color: text }]}>{s.label}</Text>
               <Text style={[styles.shortcutDescription, { color: textSecondary }]}>{s.description}</Text>
@@ -278,7 +300,7 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: 16,
     paddingTop: 56,
-    paddingBottom: 28,
+    paddingBottom: 55,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     shadowColor: '#000',
@@ -287,6 +309,85 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
     overflow: 'hidden',
+  },
+  // Week peak alert – white box inside header
+  peakAlertBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    marginTop: 22,
+    zIndex: 1,
+  },
+  peakAlertTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  peakAlertLeft: {},
+  peakAlertWeek: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: -0.3,
+  },
+  peakAlertLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 1.2,
+    marginTop: 4,
+  },
+  peakAlertBadge: {
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  peakAlertBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.4,
+  },
+  peakAlertBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  peakAlertProgressLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 1.2,
+  },
+  peakAlertFinalLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.5,
+  },
+  peakAlertDots: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  peakAlertDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#e2e8f0',
+  },
+  peakAlertDotCurrent: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#f59e0b',
+  },
+  peakAlertDotPast: {
+    backgroundColor: '#94a3b8',
   },
   waveTexture: {
     opacity: 0.5,
@@ -301,13 +402,14 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   weekBtn: {},
   weekBtnText: { fontSize: 11, fontWeight: '700' },
-  focusSection: { marginTop: 20, zIndex: 1 },
-  focusSectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 10 },
+
+  pressed: { opacity: 0.96 },
+
+  // Focus card
   focusCard: {
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -317,7 +419,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   subjectDot: { position: 'absolute', top: 0, right: 14, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
-  pressed: { opacity: 0.96 },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12 },
   focusTitle: { fontSize: 18, fontWeight: '800', flex: 1, lineHeight: 24 },
   dueTimeBold: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
@@ -327,14 +428,20 @@ const styles = StyleSheet.create({
   focusMetaText: { fontSize: 11, fontWeight: '600' },
   focusEmptyWrap: { alignItems: 'center', paddingVertical: 12 },
   focusEmpty: { fontSize: 14, marginBottom: 6 },
+
+  // Sections
+  sectionBox: { marginHorizontal: 14, marginBottom: 24, padding: 20, borderRadius: 22, borderWidth: 1 },
+  sectionBoxFirst: { marginTop: 20 },
+  sectionBoxTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 14 },
+
+  // Shortcuts
   shortcutsWrap: { flexDirection: 'row', gap: 8, paddingTop: 12 },
   shortcut: { flex: 1, borderRadius: 18, padding: 10, alignItems: 'flex-start', borderWidth: 1 },
   shortcutIcon: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   shortcutLabel: { fontSize: 14, fontWeight: '800', letterSpacing: 0.2, textAlign: 'left' },
   shortcutDescription: { fontSize: 11, fontStyle: 'italic', marginTop: 6, textAlign: 'left' },
-  sectionBox: { marginHorizontal: 14, marginBottom: 24, padding: 20, borderRadius: 22, borderWidth: 1 },
-  sectionBoxFirst: { marginTop: 28 },
-  sectionBoxTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 14 },
+
+  // Timeline
   timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   timelineTitle: { fontSize: 16, fontWeight: '800' },
   seeAll: { fontSize: 13, fontWeight: '700' },

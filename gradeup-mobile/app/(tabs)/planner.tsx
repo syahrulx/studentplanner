@@ -395,50 +395,51 @@ export default function Planner() {
       </View>
 
       {view === 'week' && (
-        <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-          <View style={styles.weekStripWrapper}>
-          <Pressable style={[styles.weekNavBtn, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToPrevWeek} hitSlop={8}>
-            <Feather name="chevron-left" size={20} color={theme.text} />
-          </Pressable>
-          <View style={styles.weekStrip}>
-            {weekDays.map((day) => {
-              const isSelected = activeDate === day.dateISO;
-              const hasTask = hasTaskOnDay(day.dateISO);
-              return (
-                <Pressable
-                  key={day.dateISO}
-                  style={[
-                    styles.weekDayTouchable,
-                    isSelected && styles.weekDayTouchableSelected,
-                    !isSelected && { opacity: 0.5 },
-                  ]}
-                  onPress={() => setActiveDate(day.dateISO)}
-                >
-                  <Text style={[styles.weekDayLabel, { color: theme.textSecondary }, isSelected && styles.weekDayLabelSelected]}>
-                    {day.label}
-                  </Text>
-                  <View style={[
-                    styles.weekDayCard,
-                    { borderColor: theme.border },
-                    isSelected && [styles.weekDayCardSelected, { backgroundColor: theme.card, borderColor: theme.border }],
-                  ]}>
-                    <Text style={[
-                      styles.weekDayNum,
-                      { color: theme.textSecondary },
-                      isSelected && { color: theme.text, fontWeight: '800' },
-                    ]}>
-                      {day.dayNum}
-                    </Text>
-                  </View>
-                  <View style={[styles.weekDayDot, hasTask && styles.weekDayDotActive, isSelected && styles.weekDayDotSelected]} />
-                </Pressable>
-              );
-            })}
+        <View style={styles.weekDateSectionWrap}>
+          <View style={styles.weekDateSection}>
+            <View style={styles.weekDateDotGrid} pointerEvents="none">
+              {Array.from({ length: 4 }, (_, row) => (
+                <View key={row} style={styles.weekDateDotRow}>
+                  {Array.from({ length: 10 }, (_, col) => (
+                    <View key={col} style={styles.weekDateDotBg} />
+                  ))}
+                </View>
+              ))}
+            </View>
+            <View style={styles.weekStripWrapper}>
+              <Pressable style={[styles.weekNavBtn, styles.weekNavBtnMinimal]} onPress={goToPrevWeek} hitSlop={8}>
+                <Feather name="chevron-left" size={20} color={theme.text} />
+              </Pressable>
+              <View style={styles.weekStrip}>
+                {weekDays.map((day) => {
+                  const isSelected = activeDate === day.dateISO;
+                  const hasTask = hasTaskOnDay(day.dateISO);
+                  return (
+                    <Pressable
+                      key={day.dateISO}
+                      style={styles.weekDayTouchable}
+                      onPress={() => setActiveDate(day.dateISO)}
+                    >
+                      <Text style={[styles.weekDayLabel, isSelected && styles.weekDayLabelSelected]}>
+                        {day.label}
+                      </Text>
+                      <Text style={[
+                        styles.weekDayNum,
+                        isSelected ? styles.weekDayNumSelected : styles.weekDayNumInactive,
+                      ]}>
+                        {day.dayNum}
+                      </Text>
+                      {isSelected && <View style={[styles.weekDayUnderline, { backgroundColor: theme.primary }]} />}
+                      {hasTask && <View style={styles.weekDayDot} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable style={[styles.weekNavBtn, styles.weekNavBtnMinimal]} onPress={goToNextWeek} hitSlop={8}>
+                <Feather name="chevron-right" size={20} color={theme.text} />
+              </Pressable>
+            </View>
           </View>
-          <Pressable style={[styles.weekNavBtn, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToNextWeek} hitSlop={8}>
-            <Feather name="chevron-right" size={20} color={theme.text} />
-          </Pressable>
-        </View>
         </View>
       )}
 
@@ -964,19 +965,48 @@ const styles = StyleSheet.create({
   viewBtnActive: { backgroundColor: COLORS.navy },
   viewBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
   viewBtnTextActive: { color: COLORS.white },
-  weekStripWrapper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: L.pad, marginBottom: L.section, gap: 8 },
-  weekNavBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  weekStrip: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
-  weekDayTouchable: { flex: 1, alignItems: 'center', justifyContent: 'flex-start' },
-  weekDayTouchableSelected: { transform: [{ scale: 1.1 }] },
-  weekDayLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
-  weekDayLabelSelected: { opacity: 1 },
-  weekDayCard: { width: 40, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', borderWidth: 1 },
-  weekDayCardSelected: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3 },
-  weekDayNum: { fontSize: 18, fontWeight: '800' },
-  weekDayDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent', marginTop: 6 },
-  weekDayDotActive: { backgroundColor: COLORS.gold },
-  weekDayDotSelected: { transform: [{ scale: 1.25 }] },
+  weekDateSectionWrap: { marginHorizontal: L.pad, marginBottom: L.section },
+  weekDateSection: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  weekDateDotGrid: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    justifyContent: 'space-between',
+  },
+  weekDateDotRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weekDateDotBg: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(203, 213, 225, 0.5)',
+  },
+  weekStripWrapper: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  weekNavBtn: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  weekNavBtnMinimal: { backgroundColor: 'transparent' },
+  weekStrip: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
+  weekDayTouchable: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingVertical: 4 },
+  weekDayLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, marginBottom: 6, color: '#94a3b8' },
+  weekDayLabelSelected: { color: '#0f172a', fontWeight: '800' },
+  weekDayNum: { fontSize: 17, fontWeight: '700' },
+  weekDayNumSelected: { fontWeight: '800', color: '#0f172a' },
+  weekDayNumInactive: { color: '#94a3b8', fontWeight: '500' },
+  weekDayUnderline: { width: 24, height: 2.5, borderRadius: 1, marginTop: 6 },
+  weekDayDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fde68a', marginTop: 8 },
   monthViewContainer: { marginHorizontal: L.pad, marginBottom: L.section },
   monthNavBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 8, borderRadius: L.radiusSm, borderWidth: 1, marginBottom: 10 },
   monthNavBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
