@@ -438,6 +438,7 @@ const styles = StyleSheet.create({
   timelineItem: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
   timelineDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, marginTop: 6 },
   timelineCard: { flex: 1, padding: 16, borderRadius: 18, borderWidth: 1 },
+  subjectDot: { position: 'absolute', top: 0, right: 14, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
   timelineCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
   timelineTime: { fontSize: 11, fontWeight: '700' },
   typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
