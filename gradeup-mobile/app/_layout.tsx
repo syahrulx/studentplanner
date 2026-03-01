@@ -96,6 +96,9 @@ function ThemeAwareLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="profile-settings" />
+        <Stack.Screen name="add-subject" />
+        <Stack.Screen name="community" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>

@@ -1,5 +1,6 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
@@ -21,29 +22,24 @@ export default function NotesHub() {
     >
       {/* Header */}
       <View style={styles.headerWrap}>
-        <Text style={[styles.title, { color: theme.text }]}>Notes & Quiz</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your knowledge hub</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Study</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your notes power flashcards & quizzes</Text>
       </View>
 
-      {/* Knowledge Check CTA → Configure practice quiz → Play until done → Leaderboard */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.ctaCard,
-          { backgroundColor: theme.primary },
-          pressed && styles.pressed,
-        ]}
-        onPress={() => router.push('/ai-quiz-builder' as any)}
-      >
-        <View style={[styles.ctaBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-          <ThemeIcon name="sparkles" size={14} color="#fff" />
-          <Text style={styles.ctaBadgeText}>Daily Focus</Text>
+      {/* How notes become flashcards & quiz — clear for users */}
+      <View style={[styles.notesTipCard, { backgroundColor: theme.primary + '14', borderColor: theme.primary + '30' }]}>
+        <View style={styles.notesTipRow}>
+          <View style={[styles.notesTipIconWrap, { backgroundColor: theme.primary + '24' }]}>
+            <ThemeIcon name="layers" size={18} color={theme.primary} />
+          </View>
+          <View style={styles.notesTipBody}>
+            <Text style={[styles.notesTipTitle, { color: theme.text }]}>Notes → Flashcards & Quiz</Text>
+            <Text style={[styles.notesTipDesc, { color: theme.textSecondary }]}>
+              Open a subject below to view notes. From any note you can create flashcards or a practice quiz.
+            </Text>
+          </View>
         </View>
-        <Text style={styles.ctaTitle}>Knowledge Check</Text>
-        <Text style={styles.ctaDesc}>Configure practice quiz, play until done, then view leaderboard</Text>
-        <View style={styles.ctaArrow}>
-          <ThemeIcon name="arrowRight" size={22} color="#fff" />
-        </View>
-      </Pressable>
+      </View>
 
       {/* Subjects */}
       <View style={styles.section}>
@@ -77,6 +73,23 @@ export default function NotesHub() {
               </Pressable>
             );
           })}
+          <Pressable
+            style={({ pressed }) => [
+              styles.addSubjectCard,
+              { backgroundColor: theme.card, borderColor: theme.border, borderStyle: 'dashed' },
+              pressed && styles.pressed,
+            ]}
+            onPress={() => router.push('/add-subject' as any)}
+          >
+            <View style={[styles.addSubjectIconWrap, { backgroundColor: theme.primary + '14' }]}>
+              <Feather name="plus" size={24} color={theme.primary} />
+            </View>
+            <View style={styles.subjectBody}>
+              <Text style={[styles.addSubjectLabel, { color: theme.primary }]}>Add subject</Text>
+              <Text style={[styles.subjectName, { color: theme.textSecondary }]}>Create a new subject for notes & flashcards</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          </Pressable>
         </View>
       </View>
 
@@ -111,38 +124,23 @@ const styles = StyleSheet.create({
   headerWrap: { marginBottom: SECTION },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, marginTop: 6, fontWeight: '500' },
-  ctaCard: {
-    borderRadius: RADIUS,
-    padding: 22,
+  notesTipCard: {
+    borderRadius: RADIUS_SM,
+    borderWidth: 1,
+    padding: 16,
     marginBottom: SECTION,
-    overflow: 'hidden',
-    position: 'relative',
   },
-  ctaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 14,
-  },
-  ctaBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: '#fff' },
-  ctaTitle: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 6, letterSpacing: -0.3 },
-  ctaDesc: { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 18 },
-  ctaArrow: {
-    position: 'absolute',
-    top: '50%',
-    right: 20,
-    marginTop: -24,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(148, 163, 184, 0.95)',
+  notesTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  notesTipIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  notesTipBody: { flex: 1, minWidth: 0 },
+  notesTipTitle: { fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  notesTipDesc: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
   pressed: { opacity: 0.96 },
   section: { marginBottom: SECTION },
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 14 },
@@ -154,6 +152,22 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS_SM,
     borderWidth: 1,
   },
+  addSubjectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: RADIUS_SM,
+    borderWidth: 1,
+  },
+  addSubjectIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  addSubjectLabel: { fontSize: 16, fontWeight: '800', marginBottom: 2 },
   subjectIconWrap: {
     width: 44,
     height: 44,

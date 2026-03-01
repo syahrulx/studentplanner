@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { Tabs, router } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { TabBarProvider } from '@/contexts/TabBarContext';
@@ -58,17 +59,17 @@ export default function TabLayout() {
         <Tabs.Screen
           name="notes"
           options={{
-            title: 'Notes',
-            tabBarLabel: 'Notes',
-            tabBarIcon: ({ color }) => <ThemeIcon name="notes" size={26} color={color} />,
+            title: 'Study',
+            tabBarLabel: 'Study',
+            tabBarIcon: ({ color }) => <ThemeIcon name="layers" size={26} color={color} />,
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
-            title: 'Profile',
-            tabBarLabel: 'Profile',
-            tabBarIcon: ({ color }) => <ThemeIcon name="profile" size={26} color={color} />,
+            title: 'Community',
+            tabBarLabel: 'Community',
+            tabBarIcon: ({ color }) => <Feather name="users" size={26} color={color} />,
           }}
         />
       </Tabs>

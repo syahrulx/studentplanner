@@ -9,7 +9,7 @@ import {
   initialFlashcards,
   initialFlashcardFolders,
 } from '../seedData';
-import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, type RevisionSettings } from '../storage';
+import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, getCourses, setCourses as persistCourses, type RevisionSettings } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
 
@@ -17,6 +17,8 @@ type AppState = {
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
   courses: Course[];
+  setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
+  addCourse: (course: Course) => void;
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   notes: Note[];
@@ -55,7 +57,7 @@ const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile>(initialUser);
-  const [courses] = useState<Course[]>(initialCourses);
+  const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
@@ -81,6 +83,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
+    getCourses().then((stored) => {
+      if (stored && stored.length > 0) setCourses(stored);
+    });
   }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
@@ -176,6 +181,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addCourse = useCallback((course: Course) => {
+    setCourses((prev) => {
+      if (prev.some((c) => c.id.toUpperCase() === course.id.toUpperCase())) return prev;
+      const next = [...prev, course];
+      persistCourses(next);
+      return next;
+    });
+  }, []);
+
   const handleSaveNote = useCallback((note: Note) => {
     setNotes((prev) => {
       const exists = prev.find((n) => n.id === note.id);
@@ -222,6 +236,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     user,
     setUser,
     courses,
+    setCourses,
+    addCourse,
     tasks,
     setTasks,
     notes,

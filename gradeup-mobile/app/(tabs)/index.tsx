@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
-import type { ThemeIconKey } from '@/constants/ThemeIcons';
 import { Priority } from '@/src/types';
 import { formatDisplayDate } from '@/src/utils/date';
 
@@ -110,12 +109,6 @@ export default function Dashboard() {
   const sage = theme.accent2;
   const overdue = theme.danger;
 
-  const shortcuts: { iconKey: ThemeIconKey; label: string; description: string; color: string; route: string }[] = [
-    { iconKey: 'layers', label: 'Flashcard', description: 'Folders & cards by topic', color: sage, route: '/flashcards' },
-    { iconKey: 'target', label: 'Quiz', description: 'Notes & Quiz', color: theme.secondary, route: '/(tabs)/notes' },
-    { iconKey: 'clock', label: 'Study time', description: 'Set a revision schedule', color: accent, route: '/revision' },
-  ];
-
   return (
     <ScrollView style={[styles.container, { backgroundColor: surface }]} contentContainerStyle={styles.content}>
       {/* Header: greeting + week + profile + week peak alert (white box) */}
@@ -135,10 +128,7 @@ export default function Dashboard() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <Pressable style={styles.weekBtn} onPress={() => router.push('/stress-map' as any)}>
-              <Text style={[styles.weekBtnText, { color: headerSubtext }]}>Week {user.currentWeek}</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push('/(tabs)/profile' as any)}>
+            <Pressable onPress={() => router.push('/profile-settings' as any)}>
               <ThemeIcon name="user" size={22} color={headerText} />
             </Pressable>
           </View>
@@ -186,59 +176,51 @@ export default function Dashboard() {
         <Pressable
           style={({ pressed }) => [
             styles.focusCard,
-            { backgroundColor: cardBg, borderColor: cardBorder },
+            {
+              backgroundColor: cardBg,
+              borderColor: cardBorder,
+              borderLeftWidth: nextTask ? 4 : 1,
+              borderLeftColor: nextTask ? getSubjectColor(nextTask.courseId) : cardBorder,
+            },
             pressed && styles.pressed,
           ]}
           onPress={() => router.push('/(tabs)/planner' as any)}
         >
-          {nextTask && <View style={[styles.subjectDot, { backgroundColor: getSubjectColor(nextTask.courseId) }]} />}
           {nextTask ? (
             <>
-              <View style={styles.focusTop}>
-                <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
-                <Text style={[styles.dueTimeBold, { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent }]}>
-                  {getDueTimeLabel(nextTask.dueDate)}
-                </Text>
+              <View style={styles.focusPillsRow}>
+                <View style={[styles.focusCoursePill, { backgroundColor: getSubjectColor(nextTask.courseId) + '18' }]}>
+                  <Text style={[styles.focusCoursePillText, { color: getSubjectColor(nextTask.courseId) }]}>{nextTask.courseId}</Text>
+                </View>
+                <View style={[
+                  styles.focusStatusPill,
+                  { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? overdue + '18' : accent + '18' },
+                ]}
+                >
+                  <Text style={[
+                    styles.focusStatusPillText,
+                    { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent },
+                  ]}
+                  >
+                    {getDueTimeLabel(nextTask.dueDate)}
+                  </Text>
+                </View>
               </View>
+              <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
               <View style={styles.focusMetaRow}>
-                <View style={styles.focusMetaItem}>
-                  <ThemeIcon name="checkCircle" size={14} color={textSecondary} />
-                  <Text style={[styles.focusMetaText, { color: textSecondary }]}>{nextTask.courseId}</Text>
-                </View>
-                <View style={[styles.focusMetaDot, { backgroundColor: cardBorder }]} />
-                <View style={styles.focusMetaItem}>
-                  <ThemeIcon name="calendar" size={14} color={textSecondary} />
-                  <Text style={[styles.focusMetaText, { color: textSecondary }]}>{formatDisplayDate(nextTask.dueDate)} • {nextTask.dueTime}</Text>
-                </View>
+                <ThemeIcon name="calendar" size={13} color={textSecondary} />
+                <Text style={[styles.focusMetaText, { color: textSecondary }]}>
+                  {formatDisplayDate(nextTask.dueDate)} · {nextTask.dueTime}
+                </Text>
               </View>
             </>
           ) : (
             <View style={styles.focusEmptyWrap}>
               <Text style={[styles.focusEmpty, { color: textSecondary }]}>No tasks for today</Text>
-              <Text style={[styles.dueTimeBold, { color: accent }]}>You&apos;re all set</Text>
+              <Text style={[styles.focusEmptySub, { color: accent }]}>You&apos;re all set</Text>
             </View>
           )}
         </Pressable>
-      </View>
-
-      {/* Quick actions */}
-      <View style={[styles.sectionBox, { backgroundColor: boxTone, borderColor: cardBorder }]}>
-        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>Quick actions</Text>
-        <View style={styles.shortcutsWrap}>
-          {shortcuts.map((s, i) => (
-            <Pressable
-              key={i}
-              style={({ pressed }) => [styles.shortcut, { backgroundColor: cardBg, borderColor: cardBorder }, pressed && styles.pressed]}
-              onPress={() => router.push(s.route as any)}
-            >
-              <View style={[styles.shortcutIcon, { borderColor: s.color }]}>
-                <ThemeIcon name={s.iconKey} size={22} color={s.color} />
-              </View>
-              <Text style={[styles.shortcutLabel, { color: text }]}>{s.label}</Text>
-              <Text style={[styles.shortcutDescription, { color: textSecondary }]}>{s.description}</Text>
-            </Pressable>
-          ))}
-        </View>
       </View>
 
       {/* Timeline / Upcoming */}
@@ -400,46 +382,52 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3 },
   subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  weekBtn: {},
-  weekBtnText: { fontSize: 11, fontWeight: '700' },
 
   pressed: { opacity: 0.96 },
 
   // Focus card
   focusCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 20,
     borderWidth: 1,
+    borderLeftWidth: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
     elevation: 2,
-    position: 'relative',
     overflow: 'hidden',
   },
-  subjectDot: { position: 'absolute', top: 0, right: 14, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
-  focusTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12 },
-  focusTitle: { fontSize: 18, fontWeight: '800', flex: 1, lineHeight: 24 },
-  dueTimeBold: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
-  focusMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  focusMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  focusMetaDot: { width: 4, height: 4, borderRadius: 2 },
-  focusMetaText: { fontSize: 11, fontWeight: '600' },
-  focusEmptyWrap: { alignItems: 'center', paddingVertical: 12 },
-  focusEmpty: { fontSize: 14, marginBottom: 6 },
+  focusPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 10,
+  },
+  focusCoursePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  focusCoursePillText: { fontSize: 12, fontWeight: '700' },
+  focusStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  focusStatusPillText: { fontSize: 12, fontWeight: '700' },
+  focusTitle: { fontSize: 17, fontWeight: '800', lineHeight: 23, marginBottom: 10 },
+  focusMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  focusMetaText: { fontSize: 12, fontWeight: '500' },
+  focusEmptyWrap: { alignItems: 'center', paddingVertical: 16 },
+  focusEmpty: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  focusEmptySub: { fontSize: 13, fontWeight: '700' },
 
   // Sections
   sectionBox: { marginHorizontal: 14, marginBottom: 24, padding: 20, borderRadius: 22, borderWidth: 1 },
   sectionBoxFirst: { marginTop: 20 },
-  sectionBoxTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 14 },
-
-  // Shortcuts
-  shortcutsWrap: { flexDirection: 'row', gap: 8, paddingTop: 12 },
-  shortcut: { flex: 1, borderRadius: 18, padding: 10, alignItems: 'flex-start', borderWidth: 1 },
-  shortcutIcon: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  shortcutLabel: { fontSize: 14, fontWeight: '800', letterSpacing: 0.2, textAlign: 'left' },
-  shortcutDescription: { fontSize: 11, fontStyle: 'italic', marginTop: 6, textAlign: 'left' },
+  sectionBoxTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginBottom: 14 },
 
   // Timeline
   timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },

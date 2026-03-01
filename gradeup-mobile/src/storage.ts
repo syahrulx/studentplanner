@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ThemeId } from '@/constants/Themes';
+import type { Course } from '../types';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_THEME = 'appTheme';
@@ -160,5 +161,41 @@ export async function getSubjectColors(): Promise<Record<string, string>> {
 export async function setSubjectColors(colors: Record<string, string>): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_SUBJECT_COLORS, JSON.stringify(colors));
+  } catch {}
+}
+
+// User-added courses/subjects (Study page)
+const KEY_COURSES = 'userCourses';
+
+function isCourse(c: unknown): c is Course {
+  return (
+    typeof c === 'object' &&
+    c !== null &&
+    'id' in c &&
+    'name' in c &&
+    typeof (c as Course).id === 'string' &&
+    typeof (c as Course).name === 'string' &&
+    typeof (c as Course).creditHours === 'number' &&
+    Array.isArray((c as Course).workload)
+  );
+}
+
+export async function getCourses(): Promise<Course[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_COURSES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const list = parsed.filter(isCourse);
+        if (list.length > 0) return list;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export async function setCourses(courses: Course[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_COURSES, JSON.stringify(courses));
   } catch {}
 }
