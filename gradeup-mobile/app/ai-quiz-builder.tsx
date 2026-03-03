@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { generateQuizFromNotes, setGeneratedQuizQuestions, getOpenAIKey } from '@/src/lib/studyApi';
 
 const PAD = 20;
 const SECTION = 24;
@@ -35,14 +36,37 @@ export default function AIQuizBuilder() {
     });
   };
 
+  const [quizLoading, setQuizLoading] = useState(false);
   const hasTopicsSelected = selectedTopicIds.size > 0;
-  const handleBegin = () => {
+
+  const handleBegin = async () => {
     if (!hasTopicsSelected) return;
     const questionCount = Math.max(5, Math.min(15, selectedTopicIds.size * 3));
-    router.push({
-      pathname: '/quiz-mode-selection',
-      params: { fromBuilder: '1', subjectId: selectedSubject, total: String(questionCount) },
-    } as any);
+    const selectedNotes = topicsForSubject.filter((n) => selectedTopicIds.has(n.id));
+    const contents = selectedNotes.map((n) => n.content).filter(Boolean);
+    if (!contents.length) {
+      Alert.alert('No content', 'Selected notes have no content to generate questions from.');
+      return;
+    }
+    const hasKey = !!getOpenAIKey();
+    if (!hasKey) {
+      Alert.alert(
+        'OpenAI API key needed',
+        'Add EXPO_PUBLIC_OPENAI_API_KEY to .env or app.config.js, then implement generateQuizFromNotes in src/lib/studyApi.ts to generate quiz from notes.'
+      );
+      return;
+    }
+    setQuizLoading(true);
+    try {
+      const questions = await generateQuizFromNotes(contents, questionCount);
+      setGeneratedQuizQuestions(questions);
+      router.push({
+        pathname: '/quiz-mode-selection',
+        params: { fromBuilder: '1', useGenerated: '1', total: String(questions.length || questionCount) },
+      } as any);
+    } finally {
+      setQuizLoading(false);
+    }
   };
 
   return (
@@ -150,14 +174,18 @@ export default function AIQuizBuilder() {
         style={[
           styles.ctaBtn,
           hasTopicsSelected ? [styles.ctaBtnActive, { backgroundColor: theme.primary }] : styles.ctaBtnDisabled,
-          !hasTopicsSelected && styles.ctaBtnDisabled,
+          (!hasTopicsSelected || quizLoading) && styles.ctaBtnDisabled,
         ]}
         onPress={handleBegin}
-        disabled={!hasTopicsSelected}
+        disabled={!hasTopicsSelected || quizLoading}
       >
-        <Text style={styles.ctaBtnText}>
-          {hasTopicsSelected ? 'GENERATE QUIZ' : 'SELECT TOPICS TO BEGIN'}
-        </Text>
+        {quizLoading ? (
+          <ActivityIndicator color="#fff" size="small" />
+        ) : (
+          <Text style={styles.ctaBtnText}>
+            {hasTopicsSelected ? 'GENERATE QUIZ' : 'SELECT TOPICS TO BEGIN'}
+          </Text>
+        )}
       </Pressable>
 
       <View style={{ height: 48 }} />

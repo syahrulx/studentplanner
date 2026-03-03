@@ -79,6 +79,9 @@ export interface Note {
   content: string;
   tag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important' | 'Lab' | 'Discussion';
   updatedAt: string;
+  /** Storage path for attached file (Supabase Storage bucket note-attachments). */
+  attachmentPath?: string;
+  attachmentFileName?: string;
 }
 
 export interface FlashcardFolder {

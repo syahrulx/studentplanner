@@ -4,11 +4,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { Icons } from '@/src/constants';
+import { getGeneratedQuizQuestions } from '@/src/lib/studyApi';
 
 const TIMER_SECONDS = 15;
 
 export default function QuizGameplay() {
-  const { folderId, total } = useLocalSearchParams<{ folderId?: string; total?: string }>();
+  const { folderId, total, useGenerated } = useLocalSearchParams<{ folderId?: string; total?: string; useGenerated?: string }>();
   const { flashcards } = useApp();
   const theme = useTheme();
   const totalNum = Math.max(1, Math.min(20, parseInt(total || '5', 10) || 5));
@@ -19,6 +20,17 @@ export default function QuizGameplay() {
   }, [flashcards, folderId]);
 
   const questions = useMemo(() => {
+    if (useGenerated === '1') {
+      const generated = getGeneratedQuizQuestions();
+      if (generated.length > 0) {
+        return generated.map((g) => ({
+          q: g.question,
+          opts: g.options,
+          correct: g.correctIndex,
+        }));
+      }
+      return [{ q: 'No questions generated. Add OpenAI API and implement generateQuizFromNotes.', opts: ['OK'], correct: 0 }];
+    }
     const list: { q: string; opts: string[]; correct: number }[] = [];
     const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, totalNum);
     for (const card of shuffled) {
@@ -38,7 +50,7 @@ export default function QuizGameplay() {
       if (correct >= 0) list.push({ q: front, opts, correct });
     }
     return list.length ? list : [{ q: 'No questions available', opts: ['True', 'False'], correct: 0 }];
-  }, [pool, totalNum]);
+  }, [pool, totalNum, useGenerated]);
 
   const [qIndex, setQIndex] = useState(0);
   const [score, setScore] = useState(0);

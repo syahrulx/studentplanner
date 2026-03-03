@@ -12,6 +12,8 @@ import {
 import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, getCourses, setCourses as persistCourses, type RevisionSettings } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
+import { supabase } from '../lib/supabase';
+import * as studyDb from '../lib/studyDb';
 
 type AppState = {
   user: UserProfile;
@@ -85,6 +87,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getSubjectColors().then(setSubjectColorsState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
+    });
+    // Load study data from Supabase when user is signed in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user?.id) return;
+      const uid = session.user.id;
+      Promise.all([studyDb.getNotes(uid), studyDb.getFlashcardFolders(uid), studyDb.getFlashcards(uid)]).then(([notesList, foldersList, cardsList]) => {
+        if (notesList.length > 0) setNotes(notesList);
+        if (foldersList.length > 0) setFlashcardFolders(foldersList);
+        if (cardsList.length > 0) setFlashcards(cardsList);
+      });
     });
   }, []);
 
@@ -196,6 +208,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (exists) return prev.map((n) => (n.id === note.id ? note : n));
       return [note, ...prev];
     });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.upsertNote(session.user.id, note);
+    });
   }, []);
 
   const handleGenerateFlashcards = useCallback((newCards: Flashcard[]) => {
@@ -209,6 +224,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString().slice(0, 10),
     };
     setFlashcardFolders((prev) => [folder, ...prev]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.upsertFlashcardFolder(session.user.id, folder);
+    });
     return folder;
   }, []);
 
@@ -220,16 +238,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       back: back.trim() || 'Back',
     };
     setFlashcards((prev) => [card, ...prev]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.upsertFlashcard(session.user.id, card);
+    });
     return card;
   }, []);
 
   const deleteFlashcardFolder = useCallback((folderId: string) => {
     setFlashcardFolders((prev) => prev.filter((f) => f.id !== folderId));
     setFlashcards((prev) => prev.filter((c) => c.folderId !== folderId));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.deleteFlashcardFolder(session.user.id, folderId);
+    });
   }, []);
 
   const deleteFlashcard = useCallback((cardId: string) => {
     setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.deleteFlashcard(session.user.id, cardId);
+    });
   }, []);
 
   const value: AppState = {

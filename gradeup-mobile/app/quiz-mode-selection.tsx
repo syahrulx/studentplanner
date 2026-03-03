@@ -11,16 +11,18 @@ const RADIUS_SM = 14;
 
 export default function QuizModeSelection() {
   const theme = useTheme();
-  const { folderId, total, fromBuilder, subjectId } = useLocalSearchParams<{
+  const { folderId, total, fromBuilder, subjectId, useGenerated } = useLocalSearchParams<{
     folderId?: string;
     total?: string;
     fromBuilder?: string;
     subjectId?: string;
+    useGenerated?: string;
   }>();
   const params = {
     folderId: folderId || '_all',
     total: total || '5',
     ...(subjectId && { subjectId }),
+    ...(useGenerated && { useGenerated }),
   };
 
   return (
