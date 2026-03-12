@@ -234,18 +234,7 @@ export default function NotesEditor() {
         </>
       )}
 
-      {/* AI Synthesis Hub callout */}
-      <View style={styles.aiHubCard}>
-        <View style={styles.aiHubIconWrap}>
-          <Icons.Moon size={16} color={COLORS.navy} />
-        </View>
-        <View style={styles.aiHubBody}>
-          <Text style={styles.aiHubTitle}>{T('aiSynthesisHub')}</Text>
-          <Text style={styles.aiHubDesc}>
-            {T('aiSynthesisDesc')}
-          </Text>
-        </View>
-      </View>
+
 
       <Modal visible={folderModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setFolderModalVisible(false)}>
@@ -409,39 +398,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  aiHubCard: {
-    marginTop: 72,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: COLORS.card,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  aiHubIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eef2ff',
-  },
-  aiHubBody: { flex: 1 },
-  aiHubTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  aiHubDesc: {
-    fontSize: 11,
-    lineHeight: 15,
-    color: COLORS.gray,
-  },
+
 
   pressed: { opacity: 0.92 },
   buttonDisabled: { opacity: 0.7 },

@@ -99,23 +99,20 @@ export default function Dashboard() {
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
-  const headerBg = theme.primary;
-  const headerText = '#f8fafc';
-  const headerSubtext = 'rgba(248, 250, 252, 0.85)';
-  const accent = theme.accent;
-  const cardBg = theme.card;
-  const cardBorder = theme.border;
-  const surface = theme.background;
-  const boxTone = theme.backgroundSecondary;
-  const text = theme.text;
-  const textSecondary = theme.textSecondary;
-  const sage = theme.accent2;
-  const overdue = theme.danger;
+  // Hardcoded theme – matching planner page navy/gold palette
+  const NAVY = '#003366';
+  const GOLD = '#f59e0b';
+  const BG = '#f8fafc';
+  const CARD_BG = '#ffffff';
+  const CARD_BORDER = '#e2e8f0';
+  const TEXT_PRIMARY = '#1A1C1E';
+  const TEXT_SECONDARY = '#8E9AAF';
+  const OVERDUE_COLOR = '#dc2626';
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: surface }]} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: BG }]} contentContainerStyle={styles.content}>
       {/* Header: greeting + week + profile + week peak alert (white box) */}
-      <View style={[styles.headerWrap, { backgroundColor: headerBg }]}>
+      <View style={[styles.headerWrap, { backgroundColor: NAVY }]}>
         <Image
           source={require('../../assets/images/wave-texture.png')}
           style={[StyleSheet.absoluteFillObject, styles.waveTexture]}
@@ -124,15 +121,15 @@ export default function Dashboard() {
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0, 51, 102, 0.45)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { color: headerText }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
+            <Text style={[styles.greeting, { color: '#f8fafc' }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
             <View style={styles.row}>
-              <View style={[styles.dot, { backgroundColor: accent }]} />
-              <Text style={[styles.subtitle, { color: headerSubtext }]}>{T('part')} {user.part} • {T('week')} {user.currentWeek}</Text>
+              <View style={[styles.dot, { backgroundColor: GOLD }]} />
+              <Text style={[styles.subtitle, { color: 'rgba(248,250,252,0.85)' }]}>{T('part')} {user.part} • {T('week')} {user.currentWeek}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Pressable onPress={() => router.push('/profile-settings' as any)}>
-              <ThemeIcon name="user" size={22} color={headerText} />
+              <ThemeIcon name="user" size={22} color="#f8fafc" />
             </Pressable>
           </View>
         </View>
@@ -174,17 +171,11 @@ export default function Dashboard() {
       </View>
 
       {/* Today's focus */}
-      <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: boxTone, borderColor: cardBorder }]}>
-        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>{T('todaysFocus')}</Text>
+      <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>
+        <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('todaysFocus')}</Text>
         <Pressable
           style={({ pressed }) => [
             styles.focusCard,
-            {
-              backgroundColor: cardBg,
-              borderColor: cardBorder,
-              borderLeftWidth: nextTask ? 4 : 1,
-              borderLeftColor: nextTask ? getSubjectColor(nextTask.courseId) : cardBorder,
-            },
             pressed && styles.pressed,
           ]}
           onPress={() => router.push('/(tabs)/planner' as any)}
@@ -192,19 +183,17 @@ export default function Dashboard() {
           {nextTask ? (
             <>
               <View style={styles.focusPillsRow}>
-                <View style={[styles.focusCoursePill, { backgroundColor: getSubjectColor(nextTask.courseId) + '18' }]}>
-                  <Text style={[styles.focusCoursePillText, { color: getSubjectColor(nextTask.courseId) }]}>{nextTask.courseId}</Text>
+                <View style={[styles.focusCoursePill, { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.08)' : 'rgba(0,51,102,0.05)' }]}>
+                  <Text style={[styles.focusCoursePillText, { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : NAVY }]}>{nextTask.courseId}</Text>
                 </View>
                 <View style={[
                   styles.focusStatusPill,
-                  { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? overdue + '18' : accent + '18' },
-                ]}
-                >
+                  { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.1)' : 'rgba(245,158,11,0.1)' },
+                ]}>
                   <Text style={[
                     styles.focusStatusPillText,
-                    { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent },
-                  ]}
-                  >
+                    { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : GOLD },
+                  ]}>
                     {(() => {
                       const info = getDueTimeLabelRaw(nextTask.dueDate);
                       if (info.key === 'daysLeft') return `${info.days} ${T('daysLeft')}`;
@@ -213,62 +202,63 @@ export default function Dashboard() {
                   </Text>
                 </View>
               </View>
-              <Text style={[styles.focusTitle, { color: text }]} numberOfLines={2}>{nextTask.title}</Text>
+              <Text style={[styles.focusTitle, { color: TEXT_PRIMARY }]} numberOfLines={2}>{nextTask.title}</Text>
               <View style={styles.focusMetaRow}>
-                <ThemeIcon name="calendar" size={13} color={textSecondary} />
-                <Text style={[styles.focusMetaText, { color: textSecondary }]}>
-                  {formatDisplayDate(nextTask.dueDate)} · {nextTask.dueTime}
+                <ThemeIcon name="calendar" size={13} color={TEXT_SECONDARY} />
+                <Text style={[styles.focusMetaText, { color: TEXT_SECONDARY }]}>
+                  {formatDisplayDate(nextTask.dueDate)} · {(nextTask.dueTime || '').slice(0, 5)}
                 </Text>
               </View>
             </>
           ) : (
             <View style={styles.focusEmptyWrap}>
-              <Text style={[styles.focusEmpty, { color: textSecondary }]}>{T('noTasksToday')}</Text>
-              <Text style={[styles.focusEmptySub, { color: accent }]}>{T('youreAllSet')}</Text>
+              <Text style={[styles.focusEmpty, { color: TEXT_SECONDARY }]}>{T('noTasksToday')}</Text>
+              <Text style={[styles.focusEmptySub, { color: NAVY }]}>{T('youreAllSet')}</Text>
             </View>
           )}
         </Pressable>
       </View>
 
       {/* Timeline / Upcoming */}
-      <View style={[styles.sectionBox, { backgroundColor: boxTone, borderColor: cardBorder }]}>
+      <View style={styles.sectionWrapper}>
         <View style={styles.timelineHeader}>
-          <Text style={[styles.timelineTitle, { color: text }]}>{T('upcoming')}</Text>
+          <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('upcoming')}</Text>
           <Pressable onPress={() => router.push('/(tabs)/planner' as any)}>
-            <Text style={[styles.seeAll, { color: accent }]}>{T('seeAll')}</Text>
+            <Text style={[styles.seeAll, { color: NAVY }]}>{T('seeAll')}</Text>
           </Pressable>
         </View>
         <View style={styles.timelineList}>
           {scheduleWithinMonth.length === 0 ? (
-            <View style={[styles.timelineCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={[styles.timelineMeta, { color: textSecondary }]}>{T('nothingIn30Days')}</Text>
+            <View style={styles.timelineCard}>
+              <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>{T('nothingIn30Days')}</Text>
             </View>
           ) : (
             scheduleWithinMonth.map((item, idx) => {
               const showDateHeader = idx === 0 || scheduleWithinMonth[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
-              const badgeColor = studyDone ? sage : accent;
+              const badgeColor = studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD;
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
-                    <Text style={[styles.timelineDateHeader, { color: accent }, idx > 0 && { marginTop: 16 }]}>{formatDateLabel(item.date)}</Text>
+                    <Text style={[styles.timelineDateHeader, { color: NAVY }, idx > 0 && { marginTop: 16 }]}>{formatDateLabel(item.date)}</Text>
                   )}
                   <View style={styles.timelineItem}>
-                    <View style={[styles.timelineDot, { backgroundColor: cardBg, borderColor: studyDone ? sage : isStudy ? accent : getSubjectColor(item.code) }]} />
-                    <View style={[
-                      styles.timelineCard,
-                      { backgroundColor: cardBg, borderColor: cardBorder, position: 'relative', overflow: 'hidden' },
-                    ]}>
-                      <View style={[styles.subjectDot, { backgroundColor: studyDone ? sage : isStudy ? accent : getSubjectColor(item.code) }]} />
+                    <View style={styles.timelineDotCol}>
+                      <View style={[styles.timelineDot, { borderColor: studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD }]} />
+                      <View style={styles.timelineTrack} />
+                    </View>
+                    <View style={styles.timelineCard}>
                       <View style={styles.timelineCardTop}>
-                        <Text style={[styles.timelineTime, { color: textSecondary }]}>{item.time}</Text>
-                        <View style={[styles.typeBadge, { backgroundColor: badgeColor + '22' }]}>
-                          <Text style={[styles.typeBadgeText, { color: badgeColor }]}>{studyDone ? 'DONE' : item.type}</Text>
-                        </View>
+                        <Text style={[styles.timelineTime, { color: TEXT_SECONDARY }]}>{(item.time || '').slice(0, 5)}</Text>
+                        {studyDone ? (
+                          <View style={[styles.typeBadge, { backgroundColor: 'rgba(148, 163, 184, 0.15)' }]}>
+                            <Text style={[styles.typeBadgeText, { color: '#64748b' }]}>DONE</Text>
+                          </View>
+                        ) : null}
                       </View>
-                      <Text style={[styles.timelineName, { color: text }, studyDone && { textDecorationLine: 'line-through', color: textSecondary }]}>{item.name}</Text>
-                      <Text style={[styles.timelineMeta, { color: textSecondary }]}>{item.code} • {item.room}</Text>
+                      <Text style={[styles.timelineName, { color: TEXT_PRIMARY }, studyDone && { textDecorationLine: 'line-through', color: TEXT_SECONDARY }]}>{item.name}</Text>
+                      <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>{item.code} • {item.room}</Text>
                     </View>
                   </View>
                 </View>
@@ -394,62 +384,71 @@ const styles = StyleSheet.create({
 
   // Focus card
   focusCard: {
-    borderRadius: 18,
+    borderRadius: 24, // Apple-like squircle radius
     padding: 20,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 3,
   },
   focusPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    gap: 10,
+    gap: 8,
+    marginBottom: 14,
   },
   focusCoursePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8, // Softer pill
   },
-  focusCoursePillText: { fontSize: 12, fontWeight: '700' },
+  focusCoursePillText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
   focusStatusPill: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  focusStatusPillText: { fontSize: 12, fontWeight: '700' },
-  focusTitle: { fontSize: 17, fontWeight: '800', lineHeight: 23, marginBottom: 10 },
-  focusMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  focusMetaText: { fontSize: 12, fontWeight: '500' },
-  focusEmptyWrap: { alignItems: 'center', paddingVertical: 16 },
-  focusEmpty: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  focusEmptySub: { fontSize: 13, fontWeight: '700' },
+  focusStatusPillText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
+  focusTitle: { fontSize: 18, fontWeight: '700', lineHeight: 24, marginBottom: 10, letterSpacing: -0.3 },
+  focusMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  focusMetaText: { fontSize: 13, fontWeight: '500' },
+  focusEmptyWrap: { alignItems: 'center', paddingVertical: 20 },
+  focusEmpty: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  focusEmptySub: { fontSize: 14, fontWeight: '500' },
 
   // Sections
-  sectionBox: { marginHorizontal: 14, marginBottom: 24, padding: 20, borderRadius: 22, borderWidth: 1 },
-  sectionBoxFirst: { marginTop: 20 },
-  sectionBoxTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginBottom: 14 },
+  sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
+  sectionWrapperFirst: { marginTop: 24 },
+  sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 16, color: '#000000' },
 
   // Timeline
-  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  timelineTitle: { fontSize: 16, fontWeight: '800' },
-  seeAll: { fontSize: 13, fontWeight: '700' },
-  timelineList: { marginLeft: 8 },
-  timelineDateHeader: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
-  timelineItem: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
-  timelineDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, marginTop: 6 },
-  timelineCard: { flex: 1, padding: 16, borderRadius: 18, borderWidth: 1 },
-  subjectDot: { position: 'absolute', top: 0, right: 14, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
-  timelineCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  timelineTime: { fontSize: 11, fontWeight: '700' },
-  typeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  typeBadgeText: { fontSize: 9, fontWeight: '800' },
-  timelineName: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  timelineMeta: { fontSize: 10, fontWeight: '600', marginTop: 4 },
+  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  seeAll: { fontSize: 15, fontWeight: '600' },
+  timelineList: { marginLeft: 0 },
+  timelineDateHeader: { fontSize: 14, fontWeight: '700', marginBottom: 12, letterSpacing: -0.2 },
+  timelineItem: { flexDirection: 'row', gap: 14, marginBottom: 16 },
+  timelineDotCol: { alignItems: 'center', width: 14, paddingTop: 4 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, backgroundColor: '#f8fafc' },
+  timelineTrack: { width: 2, flex: 1, backgroundColor: '#f1f5f9', marginTop: 4 },
+  timelineCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  timelineCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  timelineTime: { fontSize: 13, fontWeight: '600' },
+  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  typeBadgeText: { fontSize: 10, fontWeight: '700' },
+  timelineName: { fontSize: 16, fontWeight: '700', lineHeight: 22, letterSpacing: -0.3 },
+  timelineMeta: { fontSize: 13, fontWeight: '500', marginTop: 4 },
 });

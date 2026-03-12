@@ -82,30 +82,32 @@ export default function TabLayout() {
         <Pressable style={styles.modalOverlay} onPress={closeAddMenu}>
           <View style={[styles.addMenuCard, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
             <Pressable
-              style={styles.addMenuItem}
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {
                 closeAddMenu();
                 router.push('/add-task' as any);
               }}
             >
               <View style={[styles.addMenuIcon, { backgroundColor: theme.primary }]}>
-                <ThemeIcon name="add" size={20} color={theme.textInverse} />
+                <ThemeIcon name="add" size={24} color={theme.textInverse} />
               </View>
               <View>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addManually')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('createTaskYourself')}</Text>
               </View>
             </Pressable>
+            
             <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
+            
             <Pressable
-              style={styles.addMenuItem}
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {
                 closeAddMenu();
-                router.push('/import' as any);
+                router.push('/ai-chat' as any);
               }}
             >
               <View style={[styles.addMenuIcon, { backgroundColor: theme.accent3 }]}>
-                <ThemeIcon name="sparkles" size={20} color={theme.textInverse} />
+                <ThemeIcon name="sparkles" size={22} color={theme.textInverse} />
               </View>
               <View>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
@@ -122,39 +124,47 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
-    paddingBottom: 100,
+    paddingBottom: 110,
   },
   addMenuCard: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 12,
-    marginHorizontal: 20,
+    borderRadius: 32,
+    padding: 10,
+    marginHorizontal: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 32,
+    elevation: 8,
   },
   addMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    padding: 18,
+    padding: 16,
+    borderRadius: 24,
   },
   addMenuIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addMenuTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   addMenuSub: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 3,
   },
   addMenuDivider: {
-    height: 1,
-    marginHorizontal: 18,
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
+    marginVertical: 4,
   },
 });

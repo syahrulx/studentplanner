@@ -23,7 +23,7 @@ const translations = {
 
     // Planner
     academicPlanner: 'Academic Planner',
-    week: 'WEEK',
+    week: 'DAY',
     month: 'MONTH',
     all: 'ALL',
     allTasks: 'ALL TASKS',
@@ -57,6 +57,10 @@ const translations = {
     academicCoPilot: 'Academic Co-Pilot',
     typeYourPlan: 'Type your plan or request...',
     analyzing: 'Analyzing...',
+    chatGreeting: 'Hey there! I am your AI Strategist. How can I assist with your planning today?',
+    chatReplyExam: 'I see you have an exam coming up. Would you like me to generate a study schedule focusing on past-year topics?',
+    chatReplyBusy: 'It sounds like you are feeling overwhelmed. Let me suggest postponing your non-urgent tasks to give you breathing room.',
+    chatReplyPlan: 'Great! Let\'s draft a plan. What specific subjects are we aiming to tackle this week?',
 
     // Notes
     studyTitle: 'Study',
@@ -301,6 +305,10 @@ const translations = {
     academicCoPilot: 'Ko-Pilot Akademik',
     typeYourPlan: 'Taip pelan atau permintaan anda...',
     analyzing: 'Menganalisis...',
+    chatGreeting: 'Hai! Saya Strategis AI anda. Bagaimana saya boleh bantu dengan perancangan anda hari ini?',
+    chatReplyExam: 'Saya lihat peperiksaan anda akan tiba. Perlukan saya menjana jadual ulang kaji untuk topik-topik lepas?',
+    chatReplyBusy: 'Nampaknya jadual anda padat. Mari saya cadangkan penangguhan tugasan yang tidak mendesak untuk kurangkan beban anda.',
+    chatReplyPlan: 'Bagus! Mari kita rangka rancangan. Subjek manakah yang kita mahu fokuskan minggu ini?',
 
     // Notes
     studyTitle: 'Pembelajaran',

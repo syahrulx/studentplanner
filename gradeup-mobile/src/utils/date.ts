@@ -34,9 +34,10 @@ export function parseDisplayDate(input: string): string | null {
   return null;
 }
 
-/** Today as yyyy-mm-dd */
+/** Today as yyyy-mm-dd (local time) */
 export function getTodayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** Get Monday–Sunday dates (yyyy-mm-dd) for the week containing the given date */
@@ -82,8 +83,7 @@ export function getMonthGrid(year: number, month: number): (number | null)[] {
   return out;
 }
 
-/** yyyy-mm-dd for a given year, month, day (day 1–31) */
+/** yyyy-mm-dd for a given year, month, day (day 1–31) — local time */
 export function toISO(year: number, month: number, day: number): string {
-  const d = new Date(year, month, day);
-  return d.toISOString().slice(0, 10);
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }

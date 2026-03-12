@@ -100,6 +100,14 @@ function ThemeAwareLayout() {
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="community" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen 
+          name="ai-chat" 
+          options={{ 
+            presentation: 'transparentModal', 
+            animation: 'fade',
+            headerShown: false 
+          }} 
+        />
       </Stack>
     </ThemeProvider>
   );

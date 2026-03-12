@@ -9,7 +9,7 @@ import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
 
 export default function AddTask() {
-  const { courses, addTask, getSubjectColor, setSubjectColor, language } = useApp();
+  const { courses, addTask, getSubjectColor, setSubjectColor, language, user } = useApp();
   const T = useTranslations(language);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [title, setTitle] = useState('');
@@ -51,7 +51,13 @@ export default function AddTask() {
             : priority === Priority.Medium
             ? ('Medium' as const)
             : ('Low' as const),
-        suggestedWeek: 12,
+        suggestedWeek: (() => {
+          if (!user?.startDate) return 1;
+          const start = new Date(user.startDate + 'T00:00:00');
+          const due = new Date(dueDateISO + 'T00:00:00');
+          const diffDays = Math.floor((due.getTime() - start.getTime()) / 864e5);
+          return Math.max(1, Math.ceil(diffDays / 7));
+        })(),
       };
       addTask(newTask);
       router.back();
