@@ -6,6 +6,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import type { RevisionSettings, RevisionDay, RevisionRepeat } from '@/src/storage';
 import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
+import { supabase } from '@/src/lib/supabase';
+import * as studyTimeDb from '@/src/lib/studyTimeDb';
 
 const DAYS: RevisionDay[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Every day'];
 
@@ -63,6 +65,24 @@ export default function RevisionScreen() {
     setDurationMinutes(revisionSettings.durationMinutes);
     setTopic(revisionSettings.topic);
   }, [revisionSettings, courses]);
+
+  // Ensure we always show the latest value from Supabase for the logged-in user
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      const remote = await studyTimeDb.getStudySettings(uid);
+      if (!remote) return;
+      setEnabled(remote.enabled);
+      setRepeat(remote.repeat);
+      setSingleDate(remote.singleDate || new Date().toISOString().slice(0, 10));
+      setSubjectId(remote.subjectId || courses[0]?.id || '');
+      setDay(remote.day);
+      setTime(remote.time);
+      setDurationMinutes(remote.durationMinutes);
+      setTopic(remote.topic);
+    });
+  }, [courses]);
 
   const handleSave = async () => {
     const normalizedTime = TIME_OPTIONS.includes(time) ? time : TIME_OPTIONS[0];

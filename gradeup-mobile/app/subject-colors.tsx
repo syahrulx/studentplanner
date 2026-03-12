@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, TextInput } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -10,12 +10,15 @@ export default function SubjectColorsScreen() {
   const { courses, tasks, getSubjectColor, setSubjectColor } = useApp();
   const theme = useTheme();
   const [pickingFor, setPickingFor] = useState<string | null>(null);
+  const [customHex, setCustomHex] = useState('#003366');
 
   const subjectIds = useMemo(() => {
     const fromCourses = new Set(courses.map((c) => c.id));
     tasks.forEach((t) => fromCourses.add(t.courseId));
     return Array.from(fromCourses).sort();
   }, [courses, tasks]);
+
+  const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(customHex.trim());
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
@@ -33,7 +36,10 @@ export default function SubjectColorsScreen() {
           <Pressable
             key={courseId}
             style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => setPickingFor(courseId)}
+            onPress={() => {
+              setCustomHex(getSubjectColor(courseId));
+              setPickingFor(courseId);
+            }}
           >
             <View style={[styles.swatch, { backgroundColor: getSubjectColor(courseId) }]} />
             <Text style={[styles.subjectId, { color: theme.text }]}>{courseId}</Text>
@@ -59,6 +65,36 @@ export default function SubjectColorsScreen() {
                   }}
                 />
               ))}
+            </View>
+            <Text style={[styles.customLabel, { color: theme.textSecondary }]}>Custom hex colour</Text>
+            <View style={styles.customRow}>
+              <TextInput
+                style={[
+                  styles.customInput,
+                  { borderColor: theme.border, color: theme.text, backgroundColor: theme.background },
+                ]}
+                value={customHex}
+                onChangeText={setCustomHex}
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={7}
+                placeholder="#003366"
+                placeholderTextColor={theme.textSecondary}
+              />
+              <Pressable
+                style={[
+                  styles.customApply,
+                  !isValidHex && styles.customApplyDisabled,
+                ]}
+                disabled={!isValidHex}
+                onPress={() => {
+                  if (!pickingFor || !isValidHex) return;
+                  setSubjectColor(pickingFor, customHex.trim());
+                  setPickingFor(null);
+                }}
+              >
+                <Text style={styles.customApplyText}>Use</Text>
+              </Pressable>
             </View>
             <Pressable style={[styles.cancelBtn, { borderColor: theme.border }]} onPress={() => setPickingFor(null)}>
               <Text style={[styles.cancelBtnText, { color: theme.textSecondary }]}>Cancel</Text>
@@ -93,7 +129,25 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 20 },
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   colorOption: { width: 44, height: 44, borderRadius: 22 },
-  colorOptionSelected: { borderWidth: 3, borderColor: '#0c4a6e' },
+  colorOptionSelected: { borderWidth: 3, borderColor: '#003366' },
+  customLabel: { fontSize: 11, fontWeight: '700', marginBottom: 6 },
+  customRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  customInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  customApply: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: '#003366',
+  },
+  customApplyDisabled: { backgroundColor: '#cbd5e1' },
+  customApplyText: { fontSize: 13, fontWeight: '700', color: '#ffffff' },
   cancelBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
   cancelBtnText: { fontSize: 15, fontWeight: '700' },
 });

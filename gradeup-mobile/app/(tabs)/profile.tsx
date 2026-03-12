@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
 import { router } from 'expo-router';
+import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 28;
@@ -11,31 +13,15 @@ const RADIUS = 24;
 const RADIUS_SM = 18;
 
 const CONNECT_CARDS = [
-  {
-    id: 'study-buddy',
-    title: 'Study Buddy',
-    description: 'Find a study partner and study together',
-    icon: 'book-open' as const,
-    route: '/community/study-buddy' as const,
-  },
-  {
-    id: 'merit',
-    title: 'Campus & merit',
-    description: 'Clubs & merit activities',
-    icon: 'award' as const,
-    route: '/community/merit' as const,
-  },
-  {
-    id: 'music',
-    title: 'Music taste',
-    description: 'Find friends by music',
-    icon: 'music' as const,
-    route: '/community/music' as const,
-  },
+  { id: 'study-buddy' as const, titleKey: 'connectStudyBuddyTitle' as const, descKey: 'connectStudyBuddyDesc' as const, icon: 'book-open' as const, route: '/community/study-buddy' as const },
+  { id: 'merit' as const, titleKey: 'connectMeritTitle' as const, descKey: 'connectMeritDesc' as const, icon: 'award' as const, route: '/community/merit' as const },
+  { id: 'music' as const, titleKey: 'connectMusicTitle' as const, descKey: 'connectMusicDesc' as const, icon: 'music' as const, route: '/community/music' as const },
 ] as const;
 
 export default function Profile() {
+  const { language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const cardAccent = theme.primary;
 
   return (
@@ -56,10 +42,10 @@ export default function Profile() {
           <View style={[styles.heroIconRing, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
             <Feather name="users" size={28} color="#fff" />
           </View>
-          <Text style={styles.heroTitle}>Community</Text>
-          <Text style={styles.heroSubtitle}>Connect with peers who get you</Text>
+          <Text style={styles.heroTitle}>{T('communityHeroTitle')}</Text>
+          <Text style={styles.heroSubtitle}>{T('communityHeroSubtitle')}</Text>
           <View style={[styles.heroPill, { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
-            <Text style={styles.heroPillText}>Find your people</Text>
+            <Text style={styles.heroPillText}>{T('communityHeroPill')}</Text>
           </View>
         </View>
       </View>
@@ -70,10 +56,10 @@ export default function Profile() {
           <View style={[styles.sectionIconWrap, { backgroundColor: theme.primary + '12' }]}>
             <Feather name="user-plus" size={16} color={theme.primary} />
           </View>
-          <Text style={[styles.sectionLabel, { color: theme.text }]}>How do you want to connect?</Text>
+          <Text style={[styles.sectionLabel, { color: theme.text }]}>{T('communitySectionLabel')}</Text>
         </View>
         <Text style={[styles.sectionHint, { color: theme.textSecondary }]}>
-          Pick one to find peers who share your goals or interests.
+          {T('communitySectionHint')}
         </Text>
         <View style={styles.cardList}>
           {CONNECT_CARDS.map((card) => (
@@ -96,8 +82,8 @@ export default function Profile() {
                 <Feather name={card.icon} size={26} color={cardAccent} />
               </View>
               <View style={styles.connectBody}>
-                <Text style={[styles.connectTitle, { color: theme.text }]}>{card.title}</Text>
-                <Text style={[styles.connectDesc, { color: theme.textSecondary }]}>{card.description}</Text>
+                <Text style={[styles.connectTitle, { color: theme.text }]}>{T(card.titleKey)}</Text>
+                <Text style={[styles.connectDesc, { color: theme.textSecondary }]}>{T(card.descKey)}</Text>
               </View>
               <View style={[styles.arrowWrap, { backgroundColor: cardAccent + '14' }]}>
                 <Feather name="chevron-right" size={20} color={cardAccent} />
@@ -109,7 +95,7 @@ export default function Profile() {
 
       <View style={[styles.footerHint, { backgroundColor: theme.backgroundSecondary }]}>
         <Feather name="sparkles" size={14} color={theme.textSecondary} />
-        <Text style={[styles.footerHintText, { color: theme.textSecondary }]}>More ways to connect coming soon</Text>
+        <Text style={[styles.footerHintText, { color: theme.textSecondary }]}>{T('communityFooterHint')}</Text>
       </View>
       <View style={{ height: 100 }} />
     </ScrollView>
@@ -128,7 +114,7 @@ const styles = StyleSheet.create({
     minHeight: 180,
     paddingVertical: 28,
     paddingHorizontal: 24,
-    shadowColor: '#0c4a6e',
+    shadowColor: '#003366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
@@ -139,7 +125,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS,
   },
   heroOverlay: {
-    backgroundColor: 'rgba(12, 74, 110, 0.35)',
+    backgroundColor: 'rgba(0, 51, 102, 0.4)',
     borderRadius: RADIUS,
   },
   heroContent: {

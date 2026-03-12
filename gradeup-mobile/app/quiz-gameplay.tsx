@@ -5,13 +5,15 @@ import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { Icons } from '@/src/constants';
 import { getGeneratedQuizQuestions } from '@/src/lib/studyApi';
+import { useTranslations } from '@/src/i18n';
 
 const TIMER_SECONDS = 15;
 
 export default function QuizGameplay() {
   const { folderId, total, useGenerated } = useLocalSearchParams<{ folderId?: string; total?: string; useGenerated?: string }>();
-  const { flashcards } = useApp();
+  const { flashcards, language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const totalNum = Math.max(1, Math.min(20, parseInt(total || '5', 10) || 5));
 
   const pool = useMemo(() => {
@@ -112,7 +114,7 @@ export default function QuizGameplay() {
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Text style={[styles.empty, { color: theme.textSecondary }]}>No questions.</Text>
         <Pressable style={[styles.backBtn, { backgroundColor: theme.primary }]} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Back</Text>
+          <Text style={styles.backBtnText}>{T('back')}</Text>
         </Pressable>
       </View>
     );

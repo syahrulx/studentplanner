@@ -1,7 +1,9 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 24;
@@ -9,7 +11,9 @@ const RADIUS = 20;
 const RADIUS_SM = 14;
 
 export default function ResultsPage() {
+  const { language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const { score, total } = useLocalSearchParams<{ score?: string; total?: string }>();
   const s = parseInt(score ?? '0', 10);
   const t = Math.max(1, parseInt(total ?? '5', 10));
@@ -19,10 +23,10 @@ export default function ResultsPage() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <ThemeIcon name="checkCircle" size={48} color={theme.primary} />
-        <Text style={[styles.title, { color: theme.text }]}>Quiz complete</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{T('quizComplete')}</Text>
         <Text style={[styles.score, { color: theme.primary }]}>{correctCount} / {t}</Text>
         <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          {s} points • {t} questions
+          {s} {T('points')} • {t} {T('questions')}
         </Text>
       </View>
 
@@ -32,14 +36,14 @@ export default function ResultsPage() {
           onPress={() => router.replace('/leaderboard' as any)}
         >
           <ThemeIcon name="leaderboard" size={20} color="#fff" />
-          <Text style={styles.ctaBtnText}>View leaderboard</Text>
+          <Text style={styles.ctaBtnText}>{T('viewLeaderboard')}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && styles.pressed]}
           onPress={() => router.replace('/(tabs)/notes' as any)}
         >
           <ThemeIcon name="target" size={20} color={theme.primary} />
-          <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Back to Notes & Quiz</Text>
+          <Text style={[styles.secondaryBtnText, { color: theme.text }]}>{T('backToNotesQuiz')}</Text>
         </Pressable>
       </View>
     </View>

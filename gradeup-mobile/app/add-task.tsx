@@ -4,43 +4,57 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
-import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
+import { useTranslations } from '@/src/i18n';
 
 export default function AddTask() {
-  const { courses, addTask, getSubjectColor, setSubjectColor } = useApp();
+  const { courses, addTask, getSubjectColor, setSubjectColor, language } = useApp();
+  const T = useTranslations(language);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [type, setType] = useState<TaskType>(TaskType.Assignment);
-  const [dueDate, setDueDate] = useState(formatDisplayDate('2025-01-15'));
+  const [dueDateISO, setDueDateISO] = useState<string>(getTodayISO());
   const [dueTime, setDueTime] = useState('23:59');
   const [priority, setPriority] = useState<Priority>(Priority.Medium);
   const [effort, setEffort] = useState(4);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const activeDate = dueDateISO;
+  const activeYear = new Date(activeDate + 'T12:00:00').getFullYear();
+  const activeMonth = new Date(activeDate + 'T12:00:00').getMonth();
+  const monthGridCells = getMonthGrid(activeYear, activeMonth);
+
   const handleSubmit = () => {
     if (!title.trim()) return;
-    const isoDate = parseDisplayDate(dueDate) ?? dueDate;
     setIsSaving(true);
     setTimeout(() => {
-    const newTask = {
-      id: `t${Date.now()}`,
-      title: title.trim(),
-      courseId,
-      type,
-      dueDate: isoDate,
-      dueTime,
-      priority,
-      effort,
-      notes,
-      isDone: false,
-      deadlineRisk: priority === Priority.High ? 'High' as const : priority === Priority.Medium ? 'Medium' as const : 'Low' as const,
-      suggestedWeek: 12,
-    };
-    addTask(newTask);
-    router.back();
+      const newTask = {
+        id: `t${Date.now()}`,
+        title: title.trim(),
+        courseId,
+        type,
+        dueDate: dueDateISO,
+        dueTime,
+        priority,
+        effort,
+        notes,
+        isDone: false,
+        deadlineRisk:
+          priority === Priority.High
+            ? ('High' as const)
+            : priority === Priority.Medium
+            ? ('Medium' as const)
+            : ('Low' as const),
+        suggestedWeek: 12,
+      };
+      addTask(newTask);
+      router.back();
     }, 800);
   };
 
@@ -51,12 +65,12 @@ export default function AddTask() {
           <Icons.ArrowRight size={20} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
         </Pressable>
         <View>
-          <Text style={styles.headerTitle}>Add New Task</Text>
-          <Text style={styles.headerSub}>Manual Entry</Text>
+          <Text style={styles.headerTitle}>{T('addNewTask')}</Text>
+          <Text style={styles.headerSub}>{T('manualEntry')}</Text>
         </View>
       </View>
 
-      <Text style={styles.label}>Task title *</Text>
+      <Text style={styles.label}>{T('taskTitleRequired')}</Text>
       <TextInput
         style={styles.input}
         value={title}
@@ -65,7 +79,7 @@ export default function AddTask() {
         placeholderTextColor={COLORS.gray}
       />
 
-      <Text style={styles.label}>Subject</Text>
+      <Text style={styles.label}>{T('subjectLabel')}</Text>
       <View style={styles.pickerRow}>
         {courses.map((c) => (
           <Pressable
@@ -78,17 +92,17 @@ export default function AddTask() {
         ))}
       </View>
 
-      <Text style={styles.label}>Subject colour</Text>
+      <Text style={styles.label}>{T('subjectColour')}</Text>
       <Pressable style={styles.colorRow} onPress={() => setShowColorPicker(true)}>
         <View style={[styles.colorSwatch, { backgroundColor: getSubjectColor(courseId) }]} />
-        <Text style={styles.colorRowText}>Tap to change colour for {courseId}</Text>
+        <Text style={styles.colorRowText}>{T('tapToChangeColour')} {courseId}</Text>
         <Icons.ArrowRight size={18} color={COLORS.gray} />
       </Pressable>
 
       <Modal visible={showColorPicker} transparent animationType="fade">
         <Pressable style={styles.colorModalBackdrop} onPress={() => setShowColorPicker(false)}>
           <View style={styles.colorModalPanel} onStartShouldSetResponder={() => true}>
-            <Text style={styles.colorModalTitle}>Colour for {courseId}</Text>
+            <Text style={styles.colorModalTitle}>{T('colourFor')} {courseId}</Text>
             <View style={styles.colorGrid}>
               {SUBJECT_COLOR_OPTIONS.map((color) => (
                 <Pressable
@@ -102,13 +116,13 @@ export default function AddTask() {
               ))}
             </View>
             <Pressable style={styles.colorCancelBtn} onPress={() => setShowColorPicker(false)}>
-              <Text style={styles.colorCancelText}>Cancel</Text>
+              <Text style={styles.colorCancelText}>{T('cancel')}</Text>
             </Pressable>
           </View>
         </Pressable>
       </Modal>
 
-      <Text style={styles.label}>Type</Text>
+      <Text style={styles.label}>{T('type')}</Text>
       <View style={styles.pickerRow}>
         {(Object.values(TaskType) as TaskType[]).map((t) => (
           <Pressable key={t} style={[styles.chip, type === t && styles.chipActive]} onPress={() => setType(t)}>
@@ -119,16 +133,64 @@ export default function AddTask() {
 
       <View style={styles.row}>
         <View style={styles.half}>
-          <Text style={styles.label}>Due date</Text>
-          <TextInput style={styles.input} value={dueDate} onChangeText={setDueDate} placeholder="DD-MM-YYYY" placeholderTextColor={COLORS.gray} />
+          <Text style={styles.label}>{T('dueDateLabel')}</Text>
+          <Pressable
+            style={styles.input}
+            onPress={() => setShowDatePicker((v) => !v)}
+          >
+            <Text style={styles.dateText}>{formatDisplayDate(dueDateISO)}</Text>
+          </Pressable>
         </View>
         <View style={styles.half}>
-          <Text style={styles.label}>Time</Text>
-          <TextInput style={styles.input} value={dueTime} onChangeText={setDueTime} placeholder="23:59" placeholderTextColor={COLORS.gray} />
+          <Text style={styles.label}>{T('time')}</Text>
+          <Pressable
+            style={styles.input}
+            onPress={() => setShowTimePicker(true)}
+          >
+            <Text style={styles.dateText}>{dueTime}</Text>
+          </Pressable>
         </View>
       </View>
 
-      <Text style={styles.label}>Priority</Text>
+      {showDatePicker && (
+        <View style={styles.calendarCard}>
+          <View style={styles.calendarHeader}>
+            <Text style={styles.calendarTitle}>{getMonthYearLabel(activeDate)}</Text>
+          </View>
+          <View style={styles.calendarWeekHeader}>
+            {['S','M','T','W','T','F','S'].map((d, idx) => (
+              <Text key={`${d}-${idx}`} style={styles.calendarWeekText}>{d}</Text>
+            ))}
+          </View>
+          <View style={styles.calendarGrid}>
+            {monthGridCells.map((d, idx) => {
+              if (d == null) {
+                return <View key={idx} style={styles.calendarCellEmpty} />;
+              }
+              const iso = toISO(activeYear, activeMonth, d);
+              const isSelected = iso === dueDateISO;
+              return (
+                <Pressable
+                  key={idx}
+                  style={styles.calendarCell}
+                  onPress={() => {
+                    setDueDateISO(iso);
+                    setShowDatePicker(false);
+                  }}
+                >
+                  <View style={[styles.calendarDayBubble, isSelected && styles.calendarDayBubbleSelected]}>
+                    <Text style={[styles.calendarCellText, isSelected && styles.calendarCellTextSelected]}>
+                      {d}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      <Text style={styles.label}>{T('priorityLabel')}</Text>
       <View style={styles.pickerRow}>
         {(Object.values(Priority) as Priority[]).map((p) => (
           <Pressable key={p} style={[styles.chip, priority === p && styles.chipActive]} onPress={() => setPriority(p)}>
@@ -137,7 +199,7 @@ export default function AddTask() {
         ))}
       </View>
 
-      <Text style={styles.label}>Estimated Effort: {effort} hours</Text>
+      <Text style={styles.label}>{T('estimatedEffort')} {effort} {T('hoursUnit')}</Text>
       <View style={styles.effortRow}>
         {[1, 2, 4, 6, 8, 12, 20].map((n) => (
           <Pressable key={n} style={[styles.effortChip, effort === n && styles.chipActive]} onPress={() => setEffort(n)}>
@@ -146,8 +208,8 @@ export default function AddTask() {
         ))}
       </View>
 
-      <Text style={styles.label}>Notes</Text>
-      <TextInput style={[styles.input, styles.textArea]} value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={COLORS.gray} multiline />
+      <Text style={styles.label}>{T('notesLabel')}</Text>
+      <TextInput style={[styles.input, styles.textArea]} value={notes} onChangeText={setNotes} placeholder={T('optional')} placeholderTextColor={COLORS.gray} multiline />
 
       <Pressable style={[styles.submit, (!title.trim() || isSaving) && styles.submitDisabled]} onPress={handleSubmit} disabled={!title.trim() || isSaving}>
         {isSaving ? (
@@ -155,16 +217,70 @@ export default function AddTask() {
             <View style={styles.bounceDot} />
             <View style={[styles.bounceDot, styles.bounceDot2]} />
             <View style={[styles.bounceDot, styles.bounceDot3]} />
-            <Text style={styles.submitText}>Adding Task...</Text>
+            <Text style={styles.submitText}>{T('addingTask')}</Text>
           </View>
         ) : (
           <>
             <Icons.Plus size={20} color={COLORS.white} />
-            <Text style={styles.submitText}>Add Task</Text>
+            <Text style={styles.submitText}>{T('addTask')}</Text>
           </>
         )}
       </Pressable>
       <View style={{ height: 48 }} />
+
+      {/* Time picker modal */}
+      <Modal visible={showTimePicker} transparent animationType="fade">
+        <Pressable style={styles.timeModalBackdrop} onPress={() => setShowTimePicker(false)}>
+          <View style={styles.timeModalPanel} onStartShouldSetResponder={() => true}>
+            <Text style={styles.timeModalTitle}>{T('time')}</Text>
+            <View style={styles.timePickerRow}>
+              <View style={styles.timeColumn}>
+                <Text style={styles.timeColumnLabel}>HH</Text>
+                <ScrollView style={styles.timeList}>
+                  {Array.from({ length: 24 }, (_, h) => h).map((h) => {
+                    const hh = String(h).padStart(2, '0');
+                    const isActive = dueTime.slice(0, 2) === hh;
+                    return (
+                      <Pressable
+                        key={hh}
+                        style={[styles.timeItem, isActive && styles.timeItemActive]}
+                        onPress={() => {
+                          setDueTime(`${hh}:${dueTime.slice(3, 5) || '00'}`);
+                        }}
+                      >
+                        <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{hh}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              <View style={styles.timeColumn}>
+                <Text style={styles.timeColumnLabel}>MM</Text>
+                <ScrollView style={styles.timeList}>
+                  {Array.from({ length: 60 }, (_, m) => m).map((m) => {
+                    const mm = String(m).padStart(2, '0');
+                    const isActive = dueTime.slice(3, 5) === mm;
+                    return (
+                      <Pressable
+                        key={mm}
+                        style={[styles.timeItem, isActive && styles.timeItemActive]}
+                        onPress={() => {
+                          setDueTime(`${dueTime.slice(0, 2) || '00'}:${mm}`);
+                        }}
+                      >
+                        <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{mm}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+            <Pressable style={styles.timeDoneBtn} onPress={() => setShowTimePicker(false)}>
+              <Text style={styles.timeDoneText}>{T('done')}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -210,4 +326,73 @@ const styles = StyleSheet.create({
   colorOptionSelected: { borderWidth: 3, borderColor: COLORS.navy },
   colorCancelBtn: { paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
   colorCancelText: { fontSize: 15, fontWeight: '700', color: COLORS.gray },
+  dateText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+
+  calendarCard: {
+    marginTop: -12,
+    marginBottom: L.section,
+    backgroundColor: COLORS.card,
+    borderRadius: L.radiusSm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+  },
+  calendarHeader: { alignItems: 'center', marginBottom: 8 },
+  calendarTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  calendarWeekHeader: { flexDirection: 'row', marginBottom: 4 },
+  calendarWeekText: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.gray,
+  },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: {
+    width: '14.28%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarCellEmpty: { width: '14.28%', aspectRatio: 1 },
+  calendarCellText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  calendarCellTextSelected: { color: COLORS.white, fontWeight: '800' },
+  calendarDayBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayBubbleSelected: {
+    backgroundColor: COLORS.navy,
+  },
+
+  timeModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  timeModalPanel: { backgroundColor: COLORS.card, borderRadius: 20, padding: 20 },
+  timeModalTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text, marginBottom: 12 },
+  timePickerRow: { flexDirection: 'row', gap: 12 },
+  timeColumn: { flex: 1 },
+  timeColumnLabel: { fontSize: 11, fontWeight: '700', color: COLORS.gray, marginBottom: 6 },
+  timeList: { maxHeight: 160 },
+  timeItem: {
+    paddingVertical: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 4,
+    backgroundColor: COLORS.bg,
+  },
+  timeItemActive: {
+    backgroundColor: COLORS.navy,
+  },
+  timeItemText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  timeItemTextActive: { color: COLORS.white },
+  timeDoneBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: COLORS.navy,
+    alignItems: 'center',
+  },
+  timeDoneText: { fontSize: 14, fontWeight: '800', color: COLORS.white },
 });

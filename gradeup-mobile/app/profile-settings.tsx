@@ -7,6 +7,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
 import type { ThemeIconKey } from '@/constants/ThemeIcons';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 24;
@@ -15,8 +16,9 @@ const RADIUS_SM = 14;
 const TOTAL_WEEKS = 14;
 
 export default function ProfileSettings() {
-  const { user } = useApp();
+  const { user, language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
 
   const resetTutorial = async () => {
@@ -25,11 +27,12 @@ export default function ProfileSettings() {
   };
 
   const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void }[] = [
-    { icon: 'settings', label: 'Subject colours', onPress: () => router.push('/subject-colors' as any) },
-    { icon: 'stressMap', label: 'Stress Map', onPress: () => router.push('/stress-map' as any) },
-    { icon: 'weeklySummary', label: 'Weekly Summary', onPress: () => router.push('/weekly-summary' as any) },
-    { icon: 'leaderboard', label: 'Leaderboard', onPress: () => router.push('/leaderboard' as any) },
-    { icon: 'helpCircle', label: 'Reset tutorial', onPress: resetTutorial },
+    { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any) },
+    { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any) },
+    { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any) },
+    { icon: 'weeklySummary', label: T('weeklySummary'), onPress: () => router.push('/weekly-summary' as any) },
+    { icon: 'leaderboard', label: T('leaderboard'), onPress: () => router.push('/leaderboard' as any) },
+    { icon: 'helpCircle', label: T('resetTutorial'), onPress: resetTutorial },
   ];
 
   const menuIconColor = [theme.accent2, theme.primary, theme.secondary, theme.accent3, theme.textSecondary];
@@ -48,7 +51,7 @@ export default function ProfileSettings() {
         >
           <Feather name="chevron-left" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{T('profile')}</Text>
       </View>
 
       {/* Dark blue hero with avatar, name, ID */}
@@ -76,14 +79,14 @@ export default function ProfileSettings() {
       {/* White card 1: Primary Program, Semester Progress, Academic Status */}
       <View style={[styles.card, styles.cardWhite]}>
         <View style={styles.cardRow}>
-          <Text style={styles.cardLabel}>PRIMARY PROGRAM</Text>
+          <Text style={styles.cardLabel}>{T('primaryProgram')}</Text>
           <View style={[styles.pill, { backgroundColor: theme.primary }]}>
-            <Text style={styles.pillText}>PART {user.part}</Text>
+            <Text style={styles.pillText}>{T('part')} {user.part}</Text>
           </View>
         </View>
         <Text style={styles.cardValue}>{user.program}</Text>
 
-        <Text style={[styles.cardLabel, { marginTop: 20 }]}>SEMESTER PROGRESS</Text>
+        <Text style={[styles.cardLabel, { marginTop: 20 }]}>{T('semesterProgress')}</Text>
         <View style={styles.progressRow}>
           <View style={styles.segmentBar}>
             {Array.from({ length: TOTAL_WEEKS }, (_, i) => (
@@ -101,11 +104,11 @@ export default function ProfileSettings() {
 
         <View style={styles.academicStatusBlock}>
           <View style={styles.academicStatusLeft}>
-            <Text style={styles.cardLabel}>ACADEMIC STATUS</Text>
-            <Text style={styles.statusActive}>ACTIVE / GOOD STANDING</Text>
+            <Text style={styles.cardLabel}>{T('academicStatus')}</Text>
+            <Text style={styles.statusActive}>{T('activeGoodStanding')}</Text>
           </View>
           <View style={styles.academicStatusRight}>
-            <Text style={styles.cardLabel}>FACULTY HUB</Text>
+            <Text style={styles.cardLabel}>{T('facultyHub')}</Text>
             <Text style={styles.facultyValue}>FSKM SHAH ALAM</Text>
           </View>
         </View>
@@ -113,15 +116,15 @@ export default function ProfileSettings() {
 
       {/* White card 2: Semester Configuration */}
       <View style={styles.section}>
-        <Text style={styles.cardLabel}>SEMESTER CONFIGURATION</Text>
+        <Text style={styles.cardLabel}>{T('semesterConfig')}</Text>
         <View style={[styles.configCard, styles.cardWhite]}>
           <Pressable
             style={({ pressed }) => [styles.configRow, pressed && styles.pressed]}
             onPress={() => router.push('/stress-map' as any)}
           >
             <ThemeIcon name="calendar" size={20} color={theme.primary} />
-            <Text style={styles.configLabel}>Academic Calendar</Text>
-            <Text style={styles.configMeta}>WEEK {user.currentWeek}</Text>
+            <Text style={styles.configLabel}>{T('academicCalendar')}</Text>
+            <Text style={styles.configMeta}>{T('week')} {user.currentWeek}</Text>
             <Feather name="chevron-right" size={18} color="#94a3b8" />
           </Pressable>
           <Pressable
@@ -129,8 +132,8 @@ export default function ProfileSettings() {
             onPress={() => router.push('/upload-sow' as any)}
           >
             <Feather name="trending-up" size={20} color="#f59e0b" />
-            <Text style={styles.configLabel}>Configure Semester Workload</Text>
-            <Text style={styles.configMeta}>SETUP</Text>
+            <Text style={styles.configLabel}>{T('configWorkload')}</Text>
+            <Text style={styles.configMeta}>{T('setup')}</Text>
             <Feather name="chevron-right" size={18} color="#94a3b8" />
           </Pressable>
         </View>
@@ -138,7 +141,7 @@ export default function ProfileSettings() {
 
       {/* Settings menu */}
       <View style={styles.menuSection}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>SETTINGS & TOOLS</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('settingsTools')}</Text>
         <View style={[styles.menuCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           {menuItems.map((item, i) => (
             <Pressable
@@ -198,7 +201,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS,
   },
   heroOverlay: {
-    backgroundColor: 'rgba(12, 74, 110, 0.25)',
+    backgroundColor: 'rgba(0, 51, 102, 0.35)',
     borderRadius: RADIUS,
   },
   heroContent: {
@@ -227,7 +230,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#0c4a6e',
+    borderColor: '#003366',
   },
   heroName: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 4, letterSpacing: -0.3 },
   heroId: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
@@ -245,10 +248,10 @@ const styles = StyleSheet.create({
   },
   cardWhite: { backgroundColor: '#ffffff' },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardLabel: { fontSize: 10, fontWeight: '800', color: '#64748b', letterSpacing: 1.2 },
-  cardValue: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 2 },
-  pill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
-  pillText: { fontSize: 12, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
+  cardLabel: { fontSize: 9, fontWeight: '800', color: '#64748b', letterSpacing: 1.2 },
+  cardValue: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 2 },
+  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  pillText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
   segmentBar: {
     flex: 1,
     flexDirection: 'row',
@@ -263,7 +266,7 @@ const styles = StyleSheet.create({
   segmentFilled: {},
   segmentEmpty: { backgroundColor: '#e2e8f0' },
   progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  weekLabel: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  weekLabel: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
   academicStatusBlock: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -273,8 +276,8 @@ const styles = StyleSheet.create({
   },
   academicStatusLeft: { flex: 1, minWidth: 0 },
   academicStatusRight: { alignItems: 'flex-end' },
-  statusActive: { fontSize: 15, fontWeight: '800', color: '#059669', marginTop: 4 },
-  facultyValue: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 4, textAlign: 'right' },
+  statusActive: { fontSize: 14, fontWeight: '800', color: '#059669', marginTop: 4 },
+  facultyValue: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginTop: 4, textAlign: 'right' },
   section: { marginBottom: SECTION },
   configCard: { marginTop: 10 },
   configRow: {

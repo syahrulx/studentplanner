@@ -4,6 +4,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 24;
@@ -11,8 +12,9 @@ const RADIUS = 20;
 const RADIUS_SM = 14;
 
 export default function NotesHub() {
-  const { courses, notes } = useApp();
+  const { courses, notes, language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
 
   return (
     <ScrollView
@@ -22,8 +24,8 @@ export default function NotesHub() {
     >
       {/* Header */}
       <View style={styles.headerWrap}>
-        <Text style={[styles.title, { color: theme.text }]}>Study</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your notes power flashcards & quizzes</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{T('studyTitle')}</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{T('notesSubtitle')}</Text>
       </View>
 
       {/* How notes become flashcards & quiz — clear for users */}
@@ -33,9 +35,9 @@ export default function NotesHub() {
             <ThemeIcon name="layers" size={18} color={theme.primary} />
           </View>
           <View style={styles.notesTipBody}>
-            <Text style={[styles.notesTipTitle, { color: theme.text }]}>Notes → Flashcards & Quiz</Text>
+            <Text style={[styles.notesTipTitle, { color: theme.text }]}>{T('notesToFlashcards')}</Text>
             <Text style={[styles.notesTipDesc, { color: theme.textSecondary }]}>
-              Open a subject below to view notes. From any note you can create flashcards or a practice quiz.
+              {T('notesToFlashcardsDesc')}
             </Text>
           </View>
         </View>
@@ -43,7 +45,7 @@ export default function NotesHub() {
 
       {/* Subjects */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>YOUR SUBJECTS</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('yourSubjects')}</Text>
         <View style={styles.subjectList}>
           {courses.map((course) => {
             const count = notes.filter((n) => n.subjectId === course.id).length;
@@ -85,8 +87,8 @@ export default function NotesHub() {
               <Feather name="plus" size={24} color={theme.primary} />
             </View>
             <View style={styles.subjectBody}>
-              <Text style={[styles.addSubjectLabel, { color: theme.primary }]}>Add subject</Text>
-              <Text style={[styles.subjectName, { color: theme.textSecondary }]}>Create a new subject for notes & flashcards</Text>
+              <Text style={[styles.addSubjectLabel, { color: theme.primary }]}>{T('addSubject')}</Text>
+              <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{T('addSubjectDesc')}</Text>
             </View>
             <Feather name="chevron-right" size={18} color={theme.textSecondary} />
           </Pressable>
@@ -94,7 +96,7 @@ export default function NotesHub() {
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>LEADERBOARD</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('leaderboard').toUpperCase()}</Text>
         <Pressable
           style={({ pressed }) => [
             styles.subjectCard,
@@ -107,8 +109,8 @@ export default function NotesHub() {
             <ThemeIcon name="leaderboard" size={20} color={theme.accent3 || theme.accent || theme.primary} />
           </View>
           <View style={styles.subjectBody}>
-            <Text style={[styles.subjectCode, { color: theme.text }]}>Quiz & Task Rank</Text>
-            <Text style={[styles.subjectName, { color: theme.textSecondary }]} numberOfLines={1}>View leaderboard</Text>
+            <Text style={[styles.subjectCode, { color: theme.text }]}>{T('quizTaskRank')}</Text>
+            <Text style={[styles.subjectName, { color: theme.textSecondary }]} numberOfLines={1}>{T('viewLeaderboard')}</Text>
           </View>
           <ThemeIcon name="arrowRight" size={18} color={theme.textSecondary} />
         </Pressable>

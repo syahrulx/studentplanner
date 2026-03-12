@@ -5,12 +5,12 @@ import Feather from '@expo/vector-icons/Feather';
 import { supabase } from '@/src/lib/supabase';
 
 const THEME = {
-  primary: '#0c4a6e',
-  primaryLight: '#0e7490',
+  primary: '#003366',
+  primaryLight: '#004b7a',
   accent: '#06b6d4',
   bg: '#f0f9ff',
   card: '#ffffff',
-  text: '#0c4a6e',
+  text: '#003366',
   textSecondary: '#475569',
   border: '#e0f2fe',
   inputBg: '#f0f9ff',
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     padding: 28,
     borderWidth: 1,
     borderColor: '#e0f2fe',
-    shadowColor: '#0c4a6e',
+    shadowColor: '#003366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 24,

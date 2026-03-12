@@ -39,8 +39,8 @@ export interface ThemePalette {
  * - Surfaces: white with cyan-tinted greys
  */
 export const DEEP_SEA_PALETTE = {
-  primary: '#0c4a6e',
-  primaryLight: '#155e75',
+  primary: '#003366',
+  primaryLight: '#004b7a',
   secondary: '#0e7490',
   accent: '#06b6d4',
   accentLight: '#22d3ee',
@@ -48,14 +48,14 @@ export const DEEP_SEA_PALETTE = {
   success: '#059669',
   warning: '#d97706',
   danger: '#b91c1c',
-  text: '#0c4a6e',
+  text: '#003366',
   textSecondary: '#475569',
   border: '#a5f3fc',
   borderLight: '#e0f2fe',
-  focusCard: '#0e7490',
+  focusCard: '#003366',
   focusCardText: '#cffafe',
   bgSecondary: '#f0f9ff',
-  tabBarBg: '#0c4a6e',
+  tabBarBg: '#003366',
   tabBarPill: 'rgba(255,255,255,0.12)',
   addBtn: '#0e7490',
 } as const;

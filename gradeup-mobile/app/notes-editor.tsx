@@ -8,11 +8,14 @@ import { COLORS, Icons } from '@/src/constants';
 import { generateFlashcardsFromNote, getOpenAIKey } from '@/src/lib/studyApi';
 import { ensureNoteAttachmentsBucket, uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
+import { useTranslations } from '@/src/i18n';
 
 export default function NotesEditor() {
   const { subjectId, noteId } = useLocalSearchParams<{ subjectId: string; noteId?: string }>();
-  const { notes, handleSaveNote, courses, flashcardFolders, addFlashcard } = useApp();
+  const { notes, handleSaveNote, courses, flashcardFolders, addFlashcard, language } = useApp();
+  const T = useTranslations(language);
   const existing = noteId ? notes.find((n) => n.id === noteId) : null;
+  const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(existing?.id);
   const [title, setTitle] = useState(existing?.title ?? '');
   const [content, setContent] = useState(existing?.content ?? '');
   const [attachmentPath, setAttachmentPath] = useState<string | undefined>(existing?.attachmentPath);
@@ -21,29 +24,61 @@ export default function NotesEditor() {
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generatedCards, setGeneratedCards] = useState<{ front: string; back: string }[] | null>(null);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [tag, setTag] = useState<'Lecture' | 'Tutorial' | 'Exam' | 'Important'>(
+    existing?.tag === 'Tutorial' || existing?.tag === 'Exam' || existing?.tag === 'Important'
+      ? existing.tag
+      : 'Lecture'
+  );
 
   useEffect(() => {
     if (existing) {
+      setCurrentNoteId(existing.id);
       setTitle(existing.title);
       setContent(existing.content);
       setAttachmentPath(existing.attachmentPath);
       setAttachmentFileName(existing.attachmentFileName);
+      if (existing.tag === 'Tutorial' || existing.tag === 'Exam' || existing.tag === 'Important' || existing.tag === 'Lecture') {
+        setTag(existing.tag);
+      }
     }
   }, [noteId]);
 
   const onSave = () => {
     const note = {
-      id: existing?.id ?? `n${Date.now()}`,
+      id: currentNoteId ?? existing?.id ?? `n${Date.now()}`,
       subjectId: subjectId!,
       title: title.trim() || 'Untitled',
       content: content.trim(),
-      tag: 'Lecture' as const,
+      tag,
       updatedAt: new Date().toISOString().slice(0, 10),
       attachmentPath,
       attachmentFileName,
     };
     handleSaveNote(note);
     router.back();
+  };
+
+  const handleSelectTag = (nextTag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important') => {
+    setTag(nextTag);
+    const match = notes.find(
+      (n) => n.subjectId === subjectId && n.tag === nextTag
+    );
+    if (match) {
+      setCurrentNoteId(match.id);
+      setTitle(match.title);
+      setContent(match.content);
+      setAttachmentPath(match.attachmentPath);
+      setAttachmentFileName(match.attachmentFileName);
+      setIsEditing(false);
+    } else {
+      setCurrentNoteId(undefined);
+      setTitle('');
+      setContent('');
+      setAttachmentPath(undefined);
+      setAttachmentFileName(undefined);
+      setIsEditing(true);
+    }
   };
 
   const handleAttachFile = async () => {
@@ -118,70 +153,99 @@ export default function NotesEditor() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
+      {/* Header: back + Cards + Save */}
+      <View style={styles.headerRow}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Icons.ArrowRight size={20} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
+          <Icons.ArrowRight size={18} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
         </Pressable>
-        <Text style={styles.title}>{existing ? 'Edit note' : 'New note'}</Text>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={styles.headerChipLight}
+            onPress={handleGenerateFlashcards}
+            disabled={generateLoading}
+          >
+            <Icons.Layers size={14} color={COLORS.text} />
+            <Text style={styles.headerChipLightText}>{T('cards')}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.headerChipLight}
+            onPress={() => setIsEditing((prev) => !prev)}
+          >
+            <Feather name="edit-2" size={14} color={COLORS.text} />
+            <Text style={styles.headerChipLightText}>{isEditing ? T('done') : T('edit')}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.headerChipPrimary}
+            onPress={onSave}
+          >
+            <Text style={styles.headerChipPrimaryText}>{T('save')}</Text>
+          </Pressable>
+        </View>
       </View>
-      <TextInput style={styles.inputTitle} value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={COLORS.gray} />
-      <TextInput style={styles.inputContent} value={content} onChangeText={setContent} placeholder="Content..." placeholderTextColor={COLORS.gray} multiline />
 
-      <View style={styles.attachSection}>
-        <Text style={styles.attachLabel}>Attachment</Text>
-        {attachmentPath && attachmentFileName ? (
-          <View style={styles.attachedRow}>
-            <Feather name="paperclip" size={18} color={COLORS.navy} />
-            <Text style={styles.attachedName} numberOfLines={1}>{attachmentFileName}</Text>
+      {/* Note tag tabs */}
+      <View style={styles.tagRow}>
+        {(['Lecture', 'Tutorial', 'Exam', 'Important'] as const).map((tg) => {
+          const isActive = tag === tg;
+          const tagLabel = tg === 'Lecture' ? T('lecture') : tg === 'Tutorial' ? T('tutorial') : tg === 'Exam' ? T('exam') : T('important');
+          return (
             <Pressable
-              onPress={() => { setAttachmentPath(undefined); setAttachmentFileName(undefined); }}
-              style={styles.removeAttach}
+              key={tg}
+              onPress={() => handleSelectTag(tg)}
               hitSlop={8}
             >
-              <Feather name="x-circle" size={20} color={COLORS.gray} />
+              {isActive ? (
+                <View style={styles.tagChipActive}>
+                  <Text style={styles.tagChipActiveText}>{tagLabel}</Text>
+                </View>
+              ) : (
+                <Text style={styles.tagChipMuted}>{tagLabel}</Text>
+              )}
             </Pressable>
-          </View>
-        ) : (
-          <Pressable
-            style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed, attachLoading && styles.buttonDisabled]}
-            onPress={handleAttachFile}
-            disabled={attachLoading}
-          >
-            {attachLoading ? (
-              <ActivityIndicator size="small" color={COLORS.navy} />
-            ) : (
-              <>
-                <Feather name="upload-cloud" size={20} color={COLORS.navy} />
-                <Text style={styles.attachBtnText}>Attach file</Text>
-              </>
-            )}
-          </Pressable>
-        )}
+          );
+        })}
       </View>
 
-      <Pressable style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]} onPress={onSave}>
-        <Text style={styles.saveBtnText}>Save</Text>
-      </Pressable>
+      {/* Note content */}
+      {isEditing ? (
+        <>
+          <TextInput
+            style={styles.noteTitleInput}
+            value={title}
+            onChangeText={setTitle}
+            placeholder={T('noteTitle')}
+            placeholderTextColor={COLORS.gray}
+          />
+          <TextInput
+            style={styles.noteBodyInput}
+            value={content}
+            onChangeText={setContent}
+            placeholder={T('startWriting')}
+            placeholderTextColor={COLORS.gray}
+            multiline
+          />
+        </>
+      ) : (
+        <>
+          <Text style={styles.noteTitle}>{title || T('untitledNote')}</Text>
+          <Text style={styles.noteBodyRead}>
+            {content || T('startCapturing')}
+          </Text>
+        </>
+      )}
 
-      <Pressable
-        style={({ pressed }) => [styles.generateBtn, pressed && styles.pressed, generateLoading && styles.buttonDisabled]}
-        onPress={handleGenerateFlashcards}
-        disabled={generateLoading}
-      >
-        {generateLoading ? (
-          <ActivityIndicator color={COLORS.white} size="small" />
-        ) : (
-          <>
-            <Icons.Sparkles size={20} color={COLORS.white} />
-            <Text style={styles.generateBtnText}>Generate flashcards from this note</Text>
-          </>
-        )}
-      </Pressable>
-
-      <Pressable style={styles.cardsBtn} onPress={() => router.push('/flashcards' as any)}>
-        <Icons.Layers size={20} color={COLORS.navy} />
-        <Text style={styles.cardsBtnText}>Open Flashcards</Text>
-      </Pressable>
+      {/* AI Synthesis Hub callout */}
+      <View style={styles.aiHubCard}>
+        <View style={styles.aiHubIconWrap}>
+          <Icons.Moon size={16} color={COLORS.navy} />
+        </View>
+        <View style={styles.aiHubBody}>
+          <Text style={styles.aiHubTitle}>{T('aiSynthesisHub')}</Text>
+          <Text style={styles.aiHubDesc}>
+            {T('aiSynthesisDesc')}
+          </Text>
+        </View>
+      </View>
 
       <Modal visible={folderModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setFolderModalVisible(false)}>
@@ -213,7 +277,7 @@ export default function NotesEditor() {
               </>
             )}
             <Pressable style={[styles.modalClose, { borderColor: COLORS.border }]} onPress={() => setFolderModalVisible(false)}>
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={styles.modalCloseText}>{T('close')}</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -226,58 +290,162 @@ export default function NotesEditor() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: 24, paddingTop: 48 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1, borderColor: COLORS.border },
-  title: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  inputTitle: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14, fontSize: 18, fontWeight: '700', marginBottom: 16, color: COLORS.text },
-  inputContent: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 14, fontSize: 16, minHeight: 200, marginBottom: 16, color: COLORS.text },
-  attachSection: { marginBottom: 24 },
-  attachLabel: { fontSize: 13, fontWeight: '600', color: COLORS.gray, marginBottom: 8 },
-  attachBtn: {
+  content: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 32 },
+
+  headerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderStyle: 'dashed',
-    backgroundColor: COLORS.bg,
   },
-  attachBtnText: { fontSize: 15, fontWeight: '700', color: COLORS.navy },
-  attachedRow: {
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+    gap: 6,
+  },
+  headerChipLight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  headerChipLightText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    color: COLORS.text,
+  },
+  headerChipPrimary: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.navy,
+  },
+  headerChipPrimaryText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    color: COLORS.white,
+  },
+
+  tagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    paddingTop: 2,
+    borderBottomWidth: 1,
+    borderColor: COLORS.border,
+    paddingBottom: 8,
+  },
+  tagChipActive: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
     backgroundColor: COLORS.card,
   },
-  attachedName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
-  removeAttach: { padding: 4 },
-  saveBtn: { backgroundColor: COLORS.navy, paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12 },
-  pressed: { opacity: 0.95 },
-  saveBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '800' },
-  generateBtn: {
+  tagChipActiveText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: COLORS.text,
+  },
+  tagChipMuted: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: COLORS.gray,
+  },
+
+  noteTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  noteTitleInput: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 4,
+  },
+  noteBodyRead: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: COLORS.text,
+    marginTop: 8,
+    minHeight: 120,
+  },
+  noteBodyInput: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: COLORS.text,
+    minHeight: 220,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    textAlignVertical: 'top',
+  },
+
+  aiHubCard: {
+    marginTop: 72,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: COLORS.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 10,
-    backgroundColor: COLORS.navy,
-    paddingVertical: 14,
-    borderRadius: 16,
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
+  aiHubIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ff',
+  },
+  aiHubBody: { flex: 1 },
+  aiHubTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  aiHubDesc: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: COLORS.gray,
+  },
+
+  pressed: { opacity: 0.92 },
   buttonDisabled: { opacity: 0.7 },
-  generateBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
-  cardsBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, backgroundColor: COLORS.card, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border },
-  cardsBtnText: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
   modalBox: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, maxHeight: '70%' },
   modalTitle: { fontSize: 16, color: COLORS.text, marginBottom: 16 },

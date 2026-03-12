@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   barShadow: {
-    shadowColor: '#0c4a6e',
+    shadowColor: '#003366',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.08,
     shadowRadius: 28,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     marginTop: -8,
     ...Platform.select({
       ios: {
-        shadowColor: '#0c4a6e',
+        shadowColor: '#003366',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
         shadowRadius: 8,

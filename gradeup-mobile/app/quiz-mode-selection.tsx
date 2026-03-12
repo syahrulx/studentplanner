@@ -1,8 +1,10 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 24;
@@ -10,7 +12,9 @@ const RADIUS = 20;
 const RADIUS_SM = 14;
 
 export default function QuizModeSelection() {
+  const { language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const { folderId, total, fromBuilder, subjectId, useGenerated } = useLocalSearchParams<{
     folderId?: string;
     total?: string;
@@ -35,11 +39,11 @@ export default function QuizModeSelection() {
         <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>Choose mode</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{T('chooseMode')}</Text>
       </View>
 
       {total && (
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{total} questions ready</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{total} {T('questionsReady')}</Text>
       )}
 
       <View style={styles.cards}>
@@ -52,8 +56,8 @@ export default function QuizModeSelection() {
             <Feather name="user" size={24} color="#64748b" />
           </View>
           <View style={styles.modeCardBody}>
-            <Text style={styles.soloTitle}>Solo Practice</Text>
-            <Text style={styles.soloDesc}>Personal focus, no timers, learn at your own pace.</Text>
+            <Text style={styles.soloTitle}>{T('soloPractice')}</Text>
+            <Text style={styles.soloDesc}>{T('soloPracticeDesc')}</Text>
           </View>
         </Pressable>
 
@@ -66,13 +70,13 @@ export default function QuizModeSelection() {
             <ThemeIcon name="sparkles" size={22} color="#fff" />
           </View>
           <View style={styles.modeCardBody}>
-            <Text style={styles.multiTitle}>Multiplayer VS</Text>
-            <Text style={styles.multiDesc}>Battle classmates real-time and climb the leaderboard.</Text>
+            <Text style={styles.multiTitle}>{T('multiplayerVs')}</Text>
+            <Text style={styles.multiDesc}>{T('multiplayerDesc')}</Text>
           </View>
         </Pressable>
       </View>
 
-      <Text style={styles.footer}>AI SIMULATED MATCHMAKING ACTIVE</Text>
+      <Text style={styles.footer}>{T('aiSimulated')}</Text>
       <View style={{ height: 48 }} />
     </ScrollView>
   );
@@ -108,7 +112,7 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   multiCard: {
-    backgroundColor: '#0c4a6e',
+    backgroundColor: '#003366',
   },
   multiIconWrap: {
     width: 52,

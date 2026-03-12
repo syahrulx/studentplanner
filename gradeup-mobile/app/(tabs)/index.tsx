@@ -6,6 +6,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { Priority } from '@/src/types';
 import { formatDisplayDate } from '@/src/utils/date';
+import { useTranslations } from '@/src/i18n';
 
 const TOTAL_WEEKS = 14;
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
@@ -18,17 +19,18 @@ function getDaysLeft(dueDate: string): number {
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
 
-function getDueTimeLabel(dueDate: string): string {
+function getDueTimeLabelRaw(dueDate: string): { key: 'overdue' | 'dueToday' | 'tomorrow' | 'daysLeft'; days: number } {
   const days = getDaysLeft(dueDate);
-  if (days < 0) return 'Overdue';
-  if (days === 0) return 'Due today';
-  if (days === 1) return 'Tomorrow';
-  return `${days} days left`;
+  if (days < 0) return { key: 'overdue', days };
+  if (days === 0) return { key: 'dueToday', days };
+  if (days === 1) return { key: 'tomorrow', days };
+  return { key: 'daysLeft', days };
 }
 
 export default function Dashboard() {
-  const { user, tasks, courses, revisionSettings, completedStudyKeys, getSubjectColor } = useApp();
+  const { user, tasks, courses, revisionSettingsList, completedStudyKeys, getSubjectColor, language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const pending = tasks.filter((t) => !t.isDone);
   const high = pending.filter((t) => t.priority === Priority.High).sort(
     (a, b) => new Date(a.dueDate + 'T' + a.dueTime).getTime() - new Date(b.dueDate + 'T' + b.dueTime).getTime()
@@ -57,13 +59,14 @@ export default function Dashboard() {
       date: t.dueDate,
       time: t.dueTime,
       code: t.courseId,
-      room: 'Online Submission',
+      room: T('onlineSubmission'),
       type: 'DEADLINE' as const,
       name: t.title,
     }));
 
   const studyItems: { studyKey: string; date: string; time: string; code: string; room: string; type: 'STUDY'; name: string }[] = [];
-  if (revisionSettings.enabled && revisionSettings.time) {
+  for (const revisionSettings of revisionSettingsList) {
+    if (!revisionSettings.time) continue;
     const [h, m] = revisionSettings.time.split(':').map((x) => parseInt(x, 10) || 0);
     const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const subject = revisionSettings.subjectId || 'Study';
@@ -71,7 +74,7 @@ export default function Dashboard() {
     if (revisionSettings.repeat === 'once' && revisionSettings.singleDate) {
       const dateStr = revisionSettings.singleDate;
       if (dateStr >= todayStr && dateStr <= in30Str) {
-        studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: 'Time to study' });
+        studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: T('timeToStudy') });
       }
     } else {
       const targetWeekday = revisionSettings.day === 'Every day' ? null : WEEKDAY_TO_NUM[revisionSettings.day];
@@ -83,7 +86,7 @@ export default function Dashboard() {
         if (dateStr > in30Str) break;
         const dayNum = dte.getDay();
         if (targetWeekday === null || dayNum === targetWeekday) {
-          studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: 'Time to study' });
+          studyItems.push({ studyKey: `${dateStr}T${timeStr}`, date: dateStr, time: timeStr, code: subject, room: `${revisionSettings.durationMinutes} min${topic}`, type: 'STUDY', name: T('timeToStudy') });
         }
       }
     }
@@ -118,13 +121,13 @@ export default function Dashboard() {
           style={[StyleSheet.absoluteFillObject, styles.waveTexture]}
           resizeMode="cover"
         />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12, 74, 110, 0.4)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0, 51, 102, 0.45)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { color: headerText }]}>Hello, {user.name.split(' ')[0]}</Text>
+            <Text style={[styles.greeting, { color: headerText }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
             <View style={styles.row}>
               <View style={[styles.dot, { backgroundColor: accent }]} />
-              <Text style={[styles.subtitle, { color: headerSubtext }]}>Part {user.part} • Week {user.currentWeek}</Text>
+              <Text style={[styles.subtitle, { color: headerSubtext }]}>{T('part')} {user.part} • {T('week')} {user.currentWeek}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
@@ -140,16 +143,16 @@ export default function Dashboard() {
         >
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={styles.peakAlertWeek}>Week {user.currentWeek}</Text>
-              <Text style={styles.peakAlertLabel}>SEMESTER PULSE</Text>
+              <Text style={styles.peakAlertWeek}>{T('week')} {user.currentWeek}</Text>
+              <Text style={styles.peakAlertLabel}>{T('semesterPulse')}</Text>
             </View>
             <View style={styles.peakAlertBadge}>
-              <Text style={styles.peakAlertBadgeText}>W{peakWeek} PEAK ALERT</Text>
+              <Text style={styles.peakAlertBadgeText}>W{peakWeek} {T('peakAlert')}</Text>
             </View>
           </View>
           <View style={styles.peakAlertBottom}>
-            <Text style={styles.peakAlertProgressLabel}>PROGRESS</Text>
-            <Text style={styles.peakAlertFinalLabel}>W{TOTAL_WEEKS} FINAL</Text>
+            <Text style={styles.peakAlertProgressLabel}>{T('progress')}</Text>
+            <Text style={styles.peakAlertFinalLabel}>W{TOTAL_WEEKS} {T('final')}</Text>
           </View>
           <View style={styles.peakAlertDots}>
             {Array.from({ length: TOTAL_WEEKS }, (_, i) => {
@@ -172,7 +175,7 @@ export default function Dashboard() {
 
       {/* Today's focus */}
       <View style={[styles.sectionBox, styles.sectionBoxFirst, { backgroundColor: boxTone, borderColor: cardBorder }]}>
-        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>Today&apos;s focus</Text>
+        <Text style={[styles.sectionBoxTitle, { color: textSecondary }]}>{T('todaysFocus')}</Text>
         <Pressable
           style={({ pressed }) => [
             styles.focusCard,
@@ -202,7 +205,11 @@ export default function Dashboard() {
                     { color: getDaysLeft(nextTask.dueDate) < 0 ? overdue : accent },
                   ]}
                   >
-                    {getDueTimeLabel(nextTask.dueDate)}
+                    {(() => {
+                      const info = getDueTimeLabelRaw(nextTask.dueDate);
+                      if (info.key === 'daysLeft') return `${info.days} ${T('daysLeft')}`;
+                      return T(info.key);
+                    })()}
                   </Text>
                 </View>
               </View>
@@ -216,8 +223,8 @@ export default function Dashboard() {
             </>
           ) : (
             <View style={styles.focusEmptyWrap}>
-              <Text style={[styles.focusEmpty, { color: textSecondary }]}>No tasks for today</Text>
-              <Text style={[styles.focusEmptySub, { color: accent }]}>You&apos;re all set</Text>
+              <Text style={[styles.focusEmpty, { color: textSecondary }]}>{T('noTasksToday')}</Text>
+              <Text style={[styles.focusEmptySub, { color: accent }]}>{T('youreAllSet')}</Text>
             </View>
           )}
         </Pressable>
@@ -226,15 +233,15 @@ export default function Dashboard() {
       {/* Timeline / Upcoming */}
       <View style={[styles.sectionBox, { backgroundColor: boxTone, borderColor: cardBorder }]}>
         <View style={styles.timelineHeader}>
-          <Text style={[styles.timelineTitle, { color: text }]}>Upcoming</Text>
+          <Text style={[styles.timelineTitle, { color: text }]}>{T('upcoming')}</Text>
           <Pressable onPress={() => router.push('/(tabs)/planner' as any)}>
-            <Text style={[styles.seeAll, { color: accent }]}>See all</Text>
+            <Text style={[styles.seeAll, { color: accent }]}>{T('seeAll')}</Text>
           </Pressable>
         </View>
         <View style={styles.timelineList}>
           {scheduleWithinMonth.length === 0 ? (
             <View style={[styles.timelineCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={[styles.timelineMeta, { color: textSecondary }]}>Nothing in the next 30 days.</Text>
+              <Text style={[styles.timelineMeta, { color: textSecondary }]}>{T('nothingIn30Days')}</Text>
             </View>
           ) : (
             scheduleWithinMonth.map((item, idx) => {

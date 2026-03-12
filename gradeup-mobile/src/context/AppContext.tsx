@@ -9,11 +9,32 @@ import {
   initialFlashcards,
   initialFlashcardFolders,
 } from '../seedData';
-import { getTheme, setTheme as persistTheme, getRevisionSettings, setRevisionSettings as persistRevision, getCompletedStudyKeys, setCompletedStudyKeys as persistCompletedStudies, getPinnedTaskIds, setPinnedTaskIds as persistPinnedTaskIds, getSubjectColors, setSubjectColors as persistSubjectColors, getCourses, setCourses as persistCourses, type RevisionSettings } from '../storage';
+import {
+  getTheme,
+  setTheme as persistTheme,
+  setRevisionSettings as persistRevision,
+  getCompletedStudyKeys,
+  setCompletedStudyKeys as persistCompletedStudies,
+  getPinnedTaskIds,
+  setPinnedTaskIds as persistPinnedTaskIds,
+  getSubjectColors,
+  setSubjectColors as persistSubjectColors,
+  getCourses,
+  setCourses as persistCourses,
+  getLanguage,
+  setLanguage as persistLanguage,
+  getLoghat,
+  setLoghat as persistLoghat,
+  type RevisionSettings,
+  type AppLanguage,
+  type AppLoghat,
+} from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
+import * as taskDb from '../lib/taskDb';
+import * as studyTimeDb from '../lib/studyTimeDb';
 
 type AppState = {
   user: UserProfile;
@@ -37,8 +58,14 @@ type AppState = {
   setPendingExtraction: (text: string) => void;
   theme: ThemeId;
   setTheme: (theme: ThemeId) => void;
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
+  loghat: AppLoghat | null;
+  setLoghat: (loghat: AppLoghat | null) => void;
   revisionSettings: RevisionSettings;
+  revisionSettingsList: RevisionSettings[];
   setRevisionSettings: (settings: RevisionSettings) => Promise<void>;
+  deleteStudySetting: (id: string) => Promise<void>;
   completedStudyKeys: string[];
   markStudyDone: (key: string) => void;
   unmarkStudyDone: (key: string) => void;
@@ -60,13 +87,15 @@ const AppContext = createContext<AppState | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile>(initialUser);
   const [courses, setCourses] = useState<Course[]>(initialCourses);
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
   const [pendingExtraction, setPendingExtraction] = useState('');
   const [theme, setThemeState] = useState<ThemeId>('dark');
-  const [revisionSettings, setRevisionState] = useState<RevisionSettings>({
+  const [language, setLanguageState] = useState<AppLanguage>('en');
+  const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
+  const defaultRevision: RevisionSettings = {
     enabled: false,
     time: '20:00',
     subjectId: '',
@@ -74,35 +103,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     durationMinutes: 60,
     topic: '',
     repeat: 'repeated',
-  });
+  };
+  const [revisionSettings, setRevisionState] = useState<RevisionSettings>(defaultRevision);
+  const [revisionSettingsList, setRevisionSettingsList] = useState<RevisionSettings[]>([]);
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
 
   useEffect(() => {
     getTheme().then(setThemeState);
-    getRevisionSettings().then(setRevisionState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
+    getLanguage().then(setLanguageState);
+    getLoghat().then(setLoghatState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
     });
-    // Load study data from Supabase when user is signed in
+
+    // Helper to load all remote data for a given user id
+    const loadRemoteData = (uid: string) => {
+      Promise.all([
+        studyDb.getNotes(uid),
+        studyDb.getFlashcardFolders(uid),
+        studyDb.getFlashcards(uid),
+        taskDb.getTasks(uid),
+        studyTimeDb.getAllStudySettings(uid),
+      ])
+        .then(([notesList, foldersList, cardsList, tasksList, studyList]) => {
+          setNotes(notesList);
+          setFlashcardFolders(foldersList);
+          setFlashcards(cardsList);
+          setTasks(tasksList);
+          setRevisionSettingsList(studyList);
+          setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
+        })
+        .catch(() => {
+          // On error, keep existing local state
+        });
+    };
+
+    // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user?.id) return;
-      const uid = session.user.id;
-      Promise.all([studyDb.getNotes(uid), studyDb.getFlashcardFolders(uid), studyDb.getFlashcards(uid)]).then(([notesList, foldersList, cardsList]) => {
-        if (notesList.length > 0) setNotes(notesList);
-        if (foldersList.length > 0) setFlashcardFolders(foldersList);
-        if (cardsList.length > 0) setFlashcards(cardsList);
-      });
+      const uid = session?.user?.id;
+      if (!uid) return;
+      loadRemoteData(uid);
     });
+
+    // Load remote data whenever auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id;
+      if (!uid) {
+        // If user signed out, clear server-backed data but leave local preferences
+        setTasks([]);
+        setNotes(initialNotes);
+        setFlashcardFolders(initialFlashcardFolders);
+        setFlashcards(initialFlashcards);
+        setRevisionSettingsList([]);
+        setRevisionState(defaultRevision);
+        return;
+      }
+      loadRemoteData(uid);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
     persistTheme(next);
+  }, []);
+
+  const setLanguage = useCallback((lang: AppLanguage) => {
+    setLanguageState(lang);
+    persistLanguage(lang);
+  }, []);
+
+  const setLoghat = useCallback((value: AppLoghat | null) => {
+    setLoghatState(value);
+    persistLoghat(value);
   }, []);
 
   const setRevisionSettings = useCallback(async (settings: RevisionSettings) => {
@@ -121,6 +204,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     setRevisionState(settings);
     await persistRevision(settings);
+
+    // Persist study settings to Supabase and refresh list so UI shows all saved study times
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (uid) {
+      await studyTimeDb.upsertStudySettings(uid, settings);
+      const list = await studyTimeDb.getAllStudySettings(uid);
+      setRevisionSettingsList(list);
+    }
+  }, []);
+
+  const deleteStudySetting = useCallback(async (id: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await studyTimeDb.deleteStudySetting(uid, id);
+    const list = await studyTimeDb.getAllStudySettings(uid);
+    setRevisionSettingsList(list);
+    setRevisionState(list.length > 0 ? list[0] : defaultRevision);
   }, []);
 
   const markStudyDone = useCallback((key: string) => {
@@ -142,12 +244,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addTask = useCallback((task: Task) => {
     setTasks((prev) => [task, ...prev]);
+    // Persist to Supabase in background
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      taskDb.upsertTask(uid, task);
+    });
   }, []);
 
   const toggleTaskDone = useCallback((taskId: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t))
-    );
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
+      const updated = next.find((t) => t.id === taskId);
+      if (updated) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const uid = session?.user?.id;
+          if (!uid) return;
+          taskDb.upsertTask(uid, updated);
+        });
+      }
+      return next;
+    });
   }, []);
 
   const deleteTask = useCallback((taskId: string) => {
@@ -156,6 +273,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const next = prev.filter((id) => id !== taskId);
       if (next.length !== prev.length) persistPinnedTaskIds(next);
       return next;
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      taskDb.deleteTask(uid, taskId);
     });
   }, []);
 
@@ -281,8 +403,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPendingExtraction,
     theme,
     setTheme,
+    language,
+    setLanguage,
+    loghat,
+    setLoghat,
     revisionSettings,
+    revisionSettingsList,
     setRevisionSettings,
+    deleteStudySetting,
     completedStudyKeys,
     markStudyDone,
     unmarkStudyDone,

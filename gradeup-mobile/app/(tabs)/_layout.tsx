@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { Tabs, router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { TabBarProvider } from '@/contexts/TabBarContext';
 import { GlassTabBar } from '@/components/GlassTabBar';
+import { useTranslations } from '@/src/i18n';
 
 export default function TabLayout() {
+  const { language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   const openAddMenu = () => setAddMenuOpen(true);
@@ -35,40 +39,40 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'Home',
-            tabBarLabel: 'Home',
+            title: T('home'),
+            tabBarLabel: T('home'),
             tabBarIcon: ({ color }) => <ThemeIcon name="home" size={26} color={color} />,
           }}
         />
         <Tabs.Screen
           name="planner"
           options={{
-            title: 'Tasks',
-            tabBarLabel: 'Tasks',
+            title: T('tasks'),
+            tabBarLabel: T('tasks'),
             tabBarIcon: ({ color }) => <ThemeIcon name="tasks" size={26} color={color} />,
           }}
         />
         <Tabs.Screen
           name="two"
           options={{
-            title: 'Add',
-            tabBarLabel: 'Add',
+            title: T('add'),
+            tabBarLabel: T('add'),
             tabBarIcon: () => null,
           }}
         />
         <Tabs.Screen
           name="notes"
           options={{
-            title: 'Study',
-            tabBarLabel: 'Study',
+            title: T('studyTitle'),
+            tabBarLabel: T('studyTitle'),
             tabBarIcon: ({ color }) => <ThemeIcon name="layers" size={26} color={color} />,
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
-            title: 'Community',
-            tabBarLabel: 'Community',
+            title: T('community'),
+            tabBarLabel: T('community'),
             tabBarIcon: ({ color }) => <Feather name="users" size={26} color={color} />,
           }}
         />
@@ -88,8 +92,8 @@ export default function TabLayout() {
                 <ThemeIcon name="add" size={20} color={theme.textInverse} />
               </View>
               <View>
-                <Text style={[styles.addMenuTitle, { color: theme.text }]}>Add Manually</Text>
-                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>Create a new task yourself</Text>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addManually')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('createTaskYourself')}</Text>
               </View>
             </Pressable>
             <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
@@ -104,8 +108,8 @@ export default function TabLayout() {
                 <ThemeIcon name="sparkles" size={20} color={theme.textInverse} />
               </View>
               <View>
-                <Text style={[styles.addMenuTitle, { color: theme.text }]}>AI Planner</Text>
-                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>Paste message to extract tasks</Text>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('pasteMessageExtract')}</Text>
               </View>
             </Pressable>
           </View>

@@ -5,19 +5,17 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
-import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
-import { ThemeIcon } from '@/components/ThemeIcon';
 import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO } from '@/src/utils/date';
+import { useTranslations } from '@/src/i18n';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
-// Priority display colors: Low = teal, Medium = amber, High = red
 const PRIORITY_COLORS = {
-  [Priority.Low]: { bg: 'rgba(5,150,105,0.15)', text: '#0d9488' },
-  [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#facc15' },
-  [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#f87171' },
-};
+  [Priority.Low]: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
+  [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#ca8a04' },
+  [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#b91c1c' },
+} as const;
 
 function getDaysUntilDue(dueDate: string): number {
   const today = new Date();
@@ -27,25 +25,14 @@ function getDaysUntilDue(dueDate: string): number {
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
 
-// Outline: red = urgent, yellow = medium, teal = plenty. Thresholds depend on priority.
-function getOutlineLevel(priority: Priority, daysUntil: number): 'red' | 'yellow' | 'teal' {
-  if (daysUntil < 0) return 'red';
-  if (priority === Priority.High) {
-    if (daysUntil < 7) return 'red';
-    if (daysUntil < 14) return 'yellow';
-    return 'teal';
-  }
-  if (priority === Priority.Medium) {
-    if (daysUntil < 5) return 'red';
-    if (daysUntil < 10) return 'yellow';
-    return 'teal';
-  }
-  if (daysUntil < 3) return 'red';
-  if (daysUntil < 7) return 'yellow';
-  return 'teal';
+function getUrgencyLabelRaw(dueDate: string): { key: string; days: number } {
+  const days = getDaysUntilDue(dueDate);
+  if (days < 0) return { key: 'overdue', days };
+  if (days === 0) return { key: 'today', days };
+  if (days === 1) return { key: 'tomorrow', days };
+  if (days <= 3) return { key: 'soon', days };
+  return { key: 'later', days };
 }
-
-const OUTLINE_COLORS = { red: '#dc2626', yellow: '#ca8a04', teal: '#059669' };
 
 type PlannerTaskItem = { type: 'task'; id: string } & import('@/src/types').Task;
 type PlannerStudyItem = {
@@ -57,6 +44,7 @@ type PlannerStudyItem = {
   durationMinutes: number;
   topic: string;
   isDone: boolean;
+  revisionId?: string;
 };
 type PlannerItem = PlannerTaskItem | PlannerStudyItem;
 
@@ -64,14 +52,17 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
   return item.type === 'study';
 }
 
+type ViewMode = 'week' | 'month' | 'all';
+type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
+
 export default function Planner() {
   const {
     tasks,
     toggleTaskDone,
     addTask,
     deleteTask,
-    revisionSettings,
-    setRevisionSettings,
+    revisionSettingsList,
+    deleteStudySetting,
     completedStudyKeys,
     markStudyDone,
     unmarkStudyDone,
@@ -79,17 +70,19 @@ export default function Planner() {
     pinTask,
     unpinTask,
     getSubjectColor,
+    user,
+    language,
   } = useApp();
-  const theme = useTheme();
-  const [view, setView] = useState<'week' | 'month' | 'all'>('week');
+  const T = useTranslations(language);
+  const [view, setView] = useState<ViewMode>('week');
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
-  const [sortMode, setSortMode] = useState<'date' | 'priority-asc' | 'priority-desc'>('date');
-  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [monthCalendarCollapsed, setMonthCalendarCollapsed] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<'nearest' | 'priority-desc' | 'subject'>('nearest');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
-    { role: 'ai', text: "Hello! I've analyzed your schedule. Week 13 is critical for CSC584 & IPS551. Need help rescheduling any deadlines?" },
+    { role: 'ai', text: '' },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -125,69 +118,87 @@ export default function Planner() {
   const goToToday = () => setActiveDate(todayISO);
 
   const studyItemsForPlanner = useMemo((): PlannerStudyItem[] => {
-    if (!revisionSettings.enabled || !revisionSettings.time) return [];
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
     const in30 = new Date(now);
     in30.setDate(in30.getDate() + 30);
     const in30Str = in30.toISOString().slice(0, 10);
-    const [h, m] = revisionSettings.time.split(':').map((x) => parseInt(x, 10) || 0);
-    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    const subject = revisionSettings.subjectId || 'Study';
     const out: PlannerStudyItem[] = [];
-    if (revisionSettings.repeat === 'once' && revisionSettings.singleDate) {
-      const dateStr = revisionSettings.singleDate;
-      if (dateStr >= todayStr && dateStr <= in30Str) {
-        out.push({
-          type: 'study',
-          studyKey: `${dateStr}T${timeStr}`,
-          date: dateStr,
-          time: timeStr,
-          subjectId: subject,
-          durationMinutes: revisionSettings.durationMinutes,
-          topic: revisionSettings.topic,
-          isDone: completedStudyKeys.includes(`${dateStr}T${timeStr}`),
-        });
-      }
-    } else {
-      const targetWeekday = revisionSettings.day === 'Every day' ? null : WEEKDAY_TO_NUM[revisionSettings.day];
-      for (let d = 0; d <= 30; d++) {
-        const dte = new Date(now);
-        dte.setDate(dte.getDate() + d);
-        const dateStr = dte.toISOString().slice(0, 10);
-        if (dateStr < todayStr) continue;
-        if (dateStr > in30Str) break;
-        const dayNum = dte.getDay();
-        if (targetWeekday === null || dayNum === targetWeekday) {
-          const key = `${dateStr}T${timeStr}`;
+    for (const revisionSettings of revisionSettingsList) {
+      if (!revisionSettings.time) continue;
+      const [h, m] = revisionSettings.time.split(':').map((x) => parseInt(x, 10) || 0);
+      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const subject = revisionSettings.subjectId || 'Study';
+      if (revisionSettings.repeat === 'once' && revisionSettings.singleDate) {
+        const dateStr = revisionSettings.singleDate;
+        if (dateStr >= todayStr && dateStr <= in30Str) {
           out.push({
             type: 'study',
-            studyKey: key,
+            studyKey: `${dateStr}T${timeStr}`,
             date: dateStr,
             time: timeStr,
             subjectId: subject,
             durationMinutes: revisionSettings.durationMinutes,
             topic: revisionSettings.topic,
-            isDone: completedStudyKeys.includes(key),
+            isDone: completedStudyKeys.includes(`${dateStr}T${timeStr}`),
+            revisionId: revisionSettings.id,
           });
+        }
+      } else {
+        const targetWeekday = revisionSettings.day === 'Every day' ? null : WEEKDAY_TO_NUM[revisionSettings.day];
+        for (let d = 0; d <= 30; d++) {
+          const dte = new Date(now);
+          dte.setDate(dte.getDate() + d);
+          const dateStr = dte.toISOString().slice(0, 10);
+          if (dateStr < todayStr) continue;
+          if (dateStr > in30Str) break;
+          const dayNum = dte.getDay();
+          if (targetWeekday === null || dayNum === targetWeekday) {
+            const key = `${dateStr}T${timeStr}`;
+            out.push({
+              type: 'study',
+              studyKey: key,
+              date: dateStr,
+              time: timeStr,
+              subjectId: subject,
+              durationMinutes: revisionSettings.durationMinutes,
+              topic: revisionSettings.topic,
+              isDone: completedStudyKeys.includes(key),
+              revisionId: revisionSettings.id,
+            });
+          }
         }
       }
     }
     return out;
-  }, [revisionSettings, completedStudyKeys]);
+  }, [revisionSettingsList, completedStudyKeys]);
 
   const filteredTasks = useMemo(() => {
+    let list: import('@/src/types').Task[];
     if (view === 'all') {
-      return [...tasks];
+      list = [...tasks];
+    } else if (view === 'week') {
+      list = tasks.filter((t) => t.dueDate === activeDate);
+    } else {
+      list = tasks.filter((t) => {
+        const [y, m] = t.dueDate.split('-').map(Number);
+        return y === activeYear && m === activeMonth + 1;
+      });
     }
-    if (view === 'week') {
-      return tasks.filter((t) => t.dueDate === activeDate);
+    if (activeFilter !== 'all') {
+      const typeMap: Record<string, string> = {
+        assignment: TaskType.Assignment,
+        quiz: TaskType.Quiz,
+        project: TaskType.Project,
+        lab: TaskType.Lab,
+      };
+      const targetType = typeMap[activeFilter];
+      if (targetType) {
+        list = list.filter((t) => t.type === targetType);
+      }
     }
-    return tasks.filter((t) => {
-      const [y, m] = t.dueDate.split('-').map(Number);
-      return y === activeYear && m === activeMonth + 1;
-    });
-  }, [tasks, activeDate, view, activeYear, activeMonth]);
+    return list;
+  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter]);
 
   const combinedList = useMemo((): PlannerItem[] => {
     if (view !== 'all') {
@@ -212,6 +223,7 @@ export default function Planner() {
     const raw = view === 'all' ? combinedList : filteredTasks.map((t) => ({ type: 'task' as const, ...t }));
     const isPinned = (item: PlannerItem): item is PlannerTaskItem =>
       item.type === 'task' && typeof (item as PlannerTaskItem).id === 'string' && pinnedSet.has((item as PlannerTaskItem).id);
+
     const pinned: PlannerTaskItem[] = [];
     const unpinned: PlannerItem[] = [];
     for (const item of raw) {
@@ -219,73 +231,60 @@ export default function Planner() {
       else unpinned.push(item);
     }
 
-    const priorityRank: Record<Priority, number> = {
-      [Priority.Low]: 1,
-      [Priority.Medium]: 2,
-      [Priority.High]: 3,
-    };
-
-    const compareTasksBySortMode = (a: PlannerTaskItem, b: PlannerTaskItem): number => {
-      // Keep incomplete tasks above completed ones
+    const compareTasks = (a: PlannerTaskItem, b: PlannerTaskItem): number => {
+      // Incomplete above completed
       if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
 
-      if (sortMode === 'priority-asc' || sortMode === 'priority-desc') {
-        const pa = priorityRank[a.priority];
-        const pb = priorityRank[b.priority];
-        if (pa !== pb) {
-          return sortMode === 'priority-asc' ? pa - pb : pb - pa;
+      if (sortMode === 'priority-desc') {
+        const rank: Record<Priority, number> = {
+          [Priority.High]: 3,
+          [Priority.Medium]: 2,
+          [Priority.Low]: 1,
+        };
+        if (rank[a.priority] !== rank[b.priority]) {
+          return rank[b.priority] - rank[a.priority];
         }
       }
 
-      const dateA = a.dueDate ?? '';
-      const dateB = b.dueDate ?? '';
-      const timeA = a.dueTime ?? '';
-      const timeB = b.dueTime ?? '';
-      const d = dateA.localeCompare(dateB);
+      if (sortMode === 'subject') {
+        const c = a.courseId.localeCompare(b.courseId);
+        if (c !== 0) return c;
+      }
+
+      const d = a.dueDate.localeCompare(b.dueDate);
       if (d !== 0) return d;
-      return timeA.localeCompare(timeB);
+      return a.dueTime.localeCompare(b.dueTime);
     };
 
-    pinned.sort(compareTasksBySortMode);
+    pinned.sort(compareTasks);
 
     unpinned.sort((a, b) => {
       const aIsTask = a.type === 'task';
       const bIsTask = b.type === 'task';
 
-      if (sortMode === 'priority-asc' || sortMode === 'priority-desc') {
-        // In priority mode, sort tasks by priority; keep study items after tasks,
-        // and sort study items by date/time.
-        if (aIsTask && bIsTask) {
-          return compareTasksBySortMode(a as PlannerTaskItem, b as PlannerTaskItem);
-        }
-        if (aIsTask && !bIsTask) return -1;
-        if (!aIsTask && bIsTask) return 1;
-
-        // both study items
-        const dateA = (a as PlannerStudyItem).date ?? '';
-        const dateB = (b as PlannerStudyItem).date ?? '';
-        const timeA = (a as PlannerStudyItem).time ?? '';
-        const timeB = (b as PlannerStudyItem).time ?? '';
-        const d = dateA.localeCompare(dateB);
-        return d !== 0 ? d : timeA.localeCompare(timeB);
+      if (aIsTask && bIsTask) {
+        return compareTasks(a as PlannerTaskItem, b as PlannerTaskItem);
       }
 
-      // Default: sort everything by date then time (tasks & study together)
-      const dateA = (aIsTask ? (a as PlannerTaskItem).dueDate : (a as PlannerStudyItem).date) ?? '';
-      const dateB = (bIsTask ? (b as PlannerTaskItem).dueDate : (b as PlannerStudyItem).date) ?? '';
-      const timeA = (aIsTask ? (a as PlannerTaskItem).dueTime : (a as PlannerStudyItem).time) ?? '';
-      const timeB = (bIsTask ? (b as PlannerTaskItem).dueTime : (b as PlannerStudyItem).time) ?? '';
+      // Tasks always before study items in mixed views
+      if (aIsTask && !bIsTask) return -1;
+      if (!aIsTask && bIsTask) return 1;
+
+      // Both study items: sort by date then time (defensive for missing fields)
+      const sa = a as PlannerStudyItem;
+      const sb = b as PlannerStudyItem;
+      const dateA = sa.date ?? '';
+      const dateB = sb.date ?? '';
       const d = dateA.localeCompare(dateB);
       if (d !== 0) return d;
-
-      // When same slot, keep incomplete tasks above completed ones
-      if (aIsTask && bIsTask && (a as PlannerTaskItem).isDone !== (b as PlannerTaskItem).isDone) {
-        return (a as PlannerTaskItem).isDone ? 1 : -1;
-      }
+      const timeA = sa.time ?? '';
+      const timeB = sb.time ?? '';
       return timeA.localeCompare(timeB);
     });
+
     return [...pinned, ...unpinned];
   }, [view, combinedList, filteredTasks, pinnedSet, pinnedTaskIds, sortMode]);
+
   const listCount = displayList.length;
 
   const handleAiSend = () => {
@@ -337,609 +336,467 @@ export default function Planner() {
         addTask(newTask);
         setMessages((prev) => [
           ...prev,
-          { role: 'ai', text: `✅ Task extracted!\n\n📝 ${title}\n📅 Due: ${extractedDate}\n⚡ Priority: High\n\nI've added this to your planner.` },
+          { role: 'ai', text: `${T('taskExtracted')}\n\n${title}\nDue: ${extractedDate}\nPriority: High\n\n${T('addedToPlanner')}` },
         ]);
       } else {
         setMessages((prev) => [
           ...prev,
-          { role: 'ai', text: "Understood. I've re-optimized your planner. CSC584 preparation time has been allocated for Friday morning." },
+          { role: 'ai', text: T('reOptimizedMsg') },
         ]);
       }
       setIsProcessing(false);
     }, 1500);
   };
 
-  const getUrgency = (dueDate: string) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-    if (dueDate === today) return 'DUE TODAY';
-    if (dueDate === tomorrow) return 'DUE TOMORROW';
-    return `DUE ${formatDisplayDate(dueDate)}`;
-  };
+  const activeDateDay = new Date(activeDate + 'T12:00:00').getDate();
+  const activeMonthName = new Date(activeDate + 'T12:00:00').toLocaleString('en', { month: 'short' }).toUpperCase();
 
-  const sortLabel =
-    sortMode === 'date'
-      ? 'Nearest date'
-      : sortMode === 'priority-asc'
-      ? 'Priority low→high'
-      : 'Priority high→low';
-
-  return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-        <View style={styles.header}>
-          <View style={styles.headerTopRow}>
-            <View>
-              <Text style={[styles.title, { color: theme.text }]}>Task Planner</Text>
-              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{getMonthYearLabel(activeDate)} • Week {getWeekNumber(activeDate)}</Text>
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.addTaskBtn, { backgroundColor: theme.primary }, pressed && styles.pressed]}
-              onPress={() => router.push('/add-task' as any)}
-            >
-              <Icons.Plus size={22} color={COLORS.white} />
-            </Pressable>
+  const renderListHeader = () => (
+    <>
+      {/* AI Strategist Card */}
+      <View style={s.aiCard}>
+        <View style={s.aiCardHeader}>
+          <View style={s.aiIconWrap}>
+            <Feather name="clock" size={16} color={COLORS.white} />
           </View>
-        <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Pressable style={[styles.viewBtn, view === 'week' && { backgroundColor: theme.primary }]} onPress={() => setView('week')}>
-              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'week' && { color: theme.textInverse }]}>Week</Text>
-            </Pressable>
-            <Pressable style={[styles.viewBtn, view === 'month' && { backgroundColor: theme.primary }]} onPress={() => setView('month')}>
-              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'month' && { color: theme.textInverse }]}>Month</Text>
-            </Pressable>
-            <Pressable style={[styles.viewBtn, view === 'all' && { backgroundColor: theme.primary }]} onPress={() => setView('all')}>
-              <Text style={[styles.viewBtnText, { color: theme.textSecondary }, view === 'all' && { color: theme.textInverse }]}>All</Text>
-            </Pressable>
-          </View>
+          <Text style={s.aiCardTitle}>{T('aiAcademicStrategist')}</Text>
+        </View>
+        <Text style={s.aiCardText}>{messages[messages.length - 1]?.text || T('analysisMsg')}</Text>
+        <View style={s.aiCardFooter}>
+          <View style={s.aiDot} />
+          <Text style={s.aiFooterText}>{T('sowAlignment')}: 94%</Text>
         </View>
       </View>
 
+      {/* Week Strip */}
       {view === 'week' && (
-        <View style={styles.weekDateSectionWrap}>
-          <View style={styles.weekDateSection}>
-            <View style={styles.weekDateDotGrid} pointerEvents="none">
-              {Array.from({ length: 4 }, (_, row) => (
-                <View key={row} style={styles.weekDateDotRow}>
-                  {Array.from({ length: 10 }, (_, col) => (
-                    <View key={col} style={styles.weekDateDotBg} />
-                  ))}
-                </View>
-              ))}
-            </View>
-            <View style={styles.weekStripWrapper}>
-              <Pressable style={[styles.weekNavBtn, styles.weekNavBtnMinimal]} onPress={goToPrevWeek} hitSlop={8}>
-                <Feather name="chevron-left" size={20} color={theme.text} />
+        <View style={s.weekStrip}>
+          {weekDays.map((day) => {
+            const isActive = activeDate === day.dateISO;
+            const hasTask = hasTaskOnDay(day.dateISO);
+            return (
+              <Pressable key={day.dateISO} style={s.weekDay} onPress={() => setActiveDate(day.dateISO)}>
+                <Text style={[s.weekLabel, isActive && s.weekLabelActive]}>{day.label}</Text>
+                <Text style={[s.weekDate, isActive && s.weekDateActive]}>{day.dayNum}</Text>
+                {isActive && <View style={s.weekIndicator} />}
+                {!isActive && hasTask && <View style={s.weekTaskDot} />}
               </Pressable>
-              <View style={styles.weekStrip}>
-                {weekDays.map((day) => {
-                  const isSelected = activeDate === day.dateISO;
-                  const hasTask = hasTaskOnDay(day.dateISO);
-                  return (
-                    <Pressable
-                      key={day.dateISO}
-                      style={styles.weekDayTouchable}
-                      onPress={() => setActiveDate(day.dateISO)}
-                    >
-                      <Text style={[styles.weekDayLabel, isSelected && styles.weekDayLabelSelected]}>
-                        {day.label}
-                      </Text>
-                      <Text style={[
-                        styles.weekDayNum,
-                        isSelected ? styles.weekDayNumSelected : styles.weekDayNumInactive,
-                      ]}>
-                        {day.dayNum}
-                      </Text>
-                      {isSelected && <View style={[styles.weekDayUnderline, { backgroundColor: theme.primary }]} />}
-                      {hasTask && <View style={styles.weekDayDot} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <Pressable style={[styles.weekNavBtn, styles.weekNavBtnMinimal]} onPress={goToNextWeek} hitSlop={8}>
-                <Feather name="chevron-right" size={20} color={theme.text} />
-              </Pressable>
-            </View>
-          </View>
+            );
+          })}
         </View>
       )}
 
+      {/* Month Grid */}
       {view === 'month' && (
-        <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-        <View style={styles.monthViewContainer}>
-          <Pressable
-            style={[
-              styles.monthNavBar,
-              { backgroundColor: theme.card, borderColor: theme.border },
-              monthCalendarCollapsed && { marginBottom: 0 },
-            ]}
-            onPress={() => setMonthCalendarCollapsed((c) => !c)}
-          >
-            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={(e) => { e.stopPropagation(); goToPrevMonth(); }} hitSlop={12}>
-              <Feather name="chevron-left" size={22} color={theme.text} />
+        <View style={s.monthCard}>
+          <View style={s.monthNavRow}>
+            <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
+              <Feather name="chevron-left" size={20} color="#1A1C1E" />
             </Pressable>
-            <Text style={[styles.monthNavTitle, { color: theme.text }]}>{getMonthYearLabel(activeDate)}</Text>
-            <Pressable style={[styles.monthNavBtn, { backgroundColor: theme.background }]} onPress={(e) => { e.stopPropagation(); goToNextMonth(); }} hitSlop={12}>
-              <Feather name="chevron-right" size={22} color={theme.text} />
+            <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+            <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
+              <Feather name="chevron-right" size={20} color="#1A1C1E" />
             </Pressable>
-            <View style={styles.monthCollapseIcon}>
-              <Feather name={monthCalendarCollapsed ? 'chevron-down' : 'chevron-up'} size={20} color={theme.textSecondary} />
-            </View>
-          </Pressable>
-          {!monthCalendarCollapsed && (
-            <>
-          <Pressable style={[styles.todayChip, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={goToToday}>
-            <ThemeIcon name="calendar" size={14} color={theme.primary} />
-            <Text style={[styles.todayChipText, { color: theme.primary }]}>Today</Text>
-          </Pressable>
-          <View style={[styles.monthGrid, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, i) => (
-              <Text key={`weekday-${i}`} style={[styles.monthHead, { color: theme.textSecondary }]}>{label}</Text>
+          </View>
+          <View style={s.monthHeaders}>
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((h, i) => (
+              <Text key={i} style={s.monthHeaderText}>{h}</Text>
             ))}
+          </View>
+          <View style={s.monthGrid}>
             {monthGridCells.map((d, i) => {
               const dateISO = d != null ? toISO(activeYear, activeMonth, d) : null;
               const isSelected = dateISO != null && activeDate === dateISO;
               const isToday = dateISO === todayISO;
-              const taskCount = dateISO != null ? getTaskCountOnDay(dateISO) : 0;
-              const hasTask = taskCount > 0;
+              const hasTask = dateISO != null && hasTaskOnDay(dateISO);
               return d != null ? (
                 <Pressable
                   key={i}
-                  style={[
-                    styles.monthCell,
-                    { backgroundColor: isSelected ? theme.primary : 'transparent' },
-                    isToday && !isSelected && [styles.monthCellToday, { borderColor: theme.primary }],
-                  ]}
+                  style={[s.monthCell, isSelected && s.monthCellActive, isToday && !isSelected && s.monthCellToday]}
                   onPress={() => setActiveDate(dateISO!)}
                 >
-                  <Text
-                    style={[
-                      styles.monthCellText,
-                      { color: theme.textSecondary },
-                      isSelected && styles.monthCellTextSelected,
-                      isToday && !isSelected && { color: theme.primary, fontWeight: '800' },
-                    ]}
-                  >
-                    {d}
-                  </Text>
-                  {hasTask && (
-                    <View style={[styles.monthCellBadge, isSelected ? styles.monthCellBadgeSelected : { backgroundColor: theme.primary + '20' }]}>
-                      <Text style={[styles.monthCellBadgeText, isSelected ? styles.monthCellBadgeTextSelected : { color: theme.primary }]} numberOfLines={1}>
-                        {taskCount}
-                      </Text>
-                    </View>
-                  )}
+                  <Text style={[s.monthCellText, isSelected && s.monthCellTextActive, isToday && !isSelected && { color: NAVY, fontWeight: '900' as const }]}>{d}</Text>
+                  {hasTask && !isSelected && <View style={s.monthDot} />}
                 </Pressable>
               ) : (
-                <View key={i} style={styles.monthCellEmpty} />
+                <View key={i} style={s.monthCellEmpty} />
               );
             })}
           </View>
-            </>
-          )}
-        </View>
         </View>
       )}
 
-      <View style={[styles.sectionBox, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, flex: 1 }]}>
-      <View style={styles.listHeader}>
-        <Text style={[styles.listTitle, { color: theme.text }]}>{view === 'all' ? 'Tasks & study' : `Deadlines • ${formatDisplayDate(activeDate)}`}</Text>
-        <Text style={[styles.listCount, { color: theme.textSecondary }]}>{listCount} {listCount === 1 ? 'item' : 'items'}</Text>
-      </View>
-
-      <View style={styles.sortRow}>
-        <Text style={[styles.sortLabel, { color: theme.textSecondary }]}>Sort</Text>
-        <View style={styles.sortDropdownContainer}>
-          <Pressable
-            style={[styles.sortDropdownToggle, { borderColor: theme.border, backgroundColor: theme.card }]}
-            onPress={() => setIsSortMenuOpen((open) => !open)}
-          >
-            <Text style={[styles.sortDropdownText, { color: theme.text }]} numberOfLines={1}>
-              {sortLabel} ▾
-            </Text>
-          </Pressable>
-          {isSortMenuOpen && (
-            <View style={[styles.sortDropdown, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <Pressable
-                style={[styles.sortDropdownItem, sortMode === 'date' && styles.sortDropdownItemActive]}
-                onPress={() => {
-                  setSortMode('date');
-                  setIsSortMenuOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.sortDropdownItemText,
-                    { color: sortMode === 'date' ? '#ffffff' : theme.text },
-                  ]}
-                >
-                  Nearest date
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.sortDropdownItem, sortMode === 'priority-asc' && styles.sortDropdownItemActive]}
-                onPress={() => {
-                  setSortMode('priority-asc');
-                  setIsSortMenuOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.sortDropdownItemText,
-                    { color: sortMode === 'priority-asc' ? '#ffffff' : theme.text },
-                  ]}
-                >
-                  Priority low→high
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.sortDropdownItem, sortMode === 'priority-desc' && styles.sortDropdownItemActive]}
-                onPress={() => {
-                  setSortMode('priority-desc');
-                  setIsSortMenuOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.sortDropdownItemText,
-                    { color: sortMode === 'priority-desc' ? '#ffffff' : theme.text },
-                  ]}
-                >
-                  Priority high→low
-                </Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {displayList.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={[styles.emptyIcon, { backgroundColor: theme.backgroundSecondary }]}><ThemeIcon name="checkCircle" size={32} color={theme.textSecondary} /></View>
-          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>
-            {view === 'all' ? 'No tasks or study items' : `No tasks for ${formatDisplayDate(activeDate)}`}
-          </Text>
-          <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Enjoy your free time!</Text>
-        </View>
-      ) : (
-        <FlatList
-          style={styles.listScroll}
-          data={displayList}
-          extraData={pinnedTaskIds}
-          keyExtractor={(item, index) => {
-            const id = item.type === 'task' ? item.id : item.studyKey;
-            return `${index}-${id ?? `item-${index}`}`;
-          }}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            if (isStudyItem(item)) {
-              let swipeRef: Swipeable | null = null;
-              const closeSwipe = () => swipeRef?.close();
-
-              const handleStudyToggle = () => {
-                if (item.isDone) {
-                  Alert.alert('Mark as not done?', 'Mark this study as incomplete?', [
-                    { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                    {
-                      text: 'Undo',
-                      onPress: () => {
-                        unmarkStudyDone(item.studyKey);
-                        closeSwipe();
-                      },
-                    },
-                  ]);
-                } else {
-                  Alert.alert('Mark as done?', 'Mark this revision as completed?', [
-                    { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                    {
-                      text: 'Mark done',
-                      onPress: () => {
-                        markStudyDone(item.studyKey);
-                        closeSwipe();
-                      },
-                    },
-                  ]);
-                }
-              };
-
-              const handleStudyDelete = () => {
-                Alert.alert(
-                  'Delete revision?',
-                  'Turn off this study reminder?',
-                  [
-                    { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () => {
-                        setRevisionSettings({ ...revisionSettings, enabled: false });
-                        closeSwipe();
-                      },
-                    },
-                  ]
-                );
-              };
-
-              const renderRightActions = () => (
-                <View style={styles.swipeActions}>
-                  <Pressable
-                    style={[
-                      styles.swipeActionBtn,
-                      { backgroundColor: item.isDone ? '#ef4444' : '#059669' },
-                    ]}
-                    onPress={item.isDone ? handleStudyDelete : handleStudyToggle}
-                  >
-                    <View style={styles.swipeActionContent}>
-                      <Text style={styles.swipeActionText} numberOfLines={1}>{item.isDone ? 'Delete' : 'Mark done'}</Text>
-                    </View>
-                  </Pressable>
-                </View>
-              );
-
-              return (
-                <View style={styles.cardRow}>
-                  <Swipeable
-                    renderRightActions={renderRightActions}
-                    overshootRight={false}
-                    rightThreshold={72}
-                    ref={(ref) => {
-                      swipeRef = ref;
-                    }}
-                    onSwipeableOpen={() => {
-                      // Full second swipe -> confirm mark done / delete
-                      (item.isDone ? handleStudyDelete : handleStudyToggle)();
-                    }}
-                  >
-                    <View style={[styles.taskCard, styles.studyCard, { backgroundColor: theme.card, borderColor: theme.accent2 + '99' }]}>
-                      <View style={[styles.subjectTag, { backgroundColor: theme.accent2 }]} />
-                      <Pressable
-                        onPress={handleStudyToggle}
-                        style={[styles.checkbox, item.isDone && styles.checkboxDone, { backgroundColor: item.isDone ? theme.accent2 : 'transparent' }]}
-                      >
-                        <ThemeIcon name="checkCircle" size={16} color={item.isDone ? COLORS.white : 'transparent'} />
-                      </Pressable>
-                      <View style={styles.taskBody}>
-                        <View style={styles.taskRow}>
-                          <Text style={[styles.taskCourse, { color: theme.textSecondary }]}>{item.subjectId}</Text>
-                          <View style={[styles.priorityBadge, { backgroundColor: theme.accent2 + '22' }]}>
-                            <Text style={[styles.priorityText, { color: theme.accent2 }]}>STUDY</Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.taskTitle, { color: theme.text }, item.isDone && styles.taskDone]} numberOfLines={2}>Time to study{item.topic ? `: ${item.topic}` : ''}</Text>
-                        <View style={styles.taskMeta}>
-                          <ThemeIcon name="calendar" size={14} color={theme.textSecondary} />
-                          <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{formatDisplayDate(item.date)} • {item.time}</Text>
-                          <View style={[styles.taskMetaDot, { backgroundColor: theme.textSecondary }]} />
-                          <ThemeIcon name="clock" size={14} color={theme.textSecondary} />
-                          <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{item.durationMinutes} min</Text>
-                        </View>
-                        <Pressable
-                          style={[styles.postponeBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
-                          onPress={() => router.push('/revision-postpone' as any)}
-                        >
-                          <ThemeIcon name="clock" size={14} color={theme.primary} />
-                          <Text style={[styles.postponeBtnText, { color: theme.primary }]}>Postpone</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  </Swipeable>
-                </View>
-              );
-            }
-
-            let swipeRef: Swipeable | null = null;
-            const closeSwipe = () => swipeRef?.close();
-
-            const handleTaskToggle = () => {
-              if (item.isDone) {
-                Alert.alert(
-                  'Mark as not done?',
-                  `Mark "${item.title}" as incomplete?`,
-                  [
-                    { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                    {
-                      text: 'Undo',
-                      onPress: () => {
-                        toggleTaskDone(item.id);
-                        closeSwipe();
-                      },
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert(
-                  'Mark as done?',
-                  `Mark "${item.title}" as completed?`,
-                  [
-                    { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                    {
-                      text: 'Mark done',
-                      onPress: () => {
-                        toggleTaskDone(item.id);
-                        closeSwipe();
-                      },
-                    },
-                  ]
-                );
-              }
-            };
-
-            const handleTaskDelete = () => {
-              Alert.alert(
-                'Delete task?',
-                `Delete "${item.title}" from your planner?`,
-                [
-                  { text: 'Cancel', style: 'cancel', onPress: closeSwipe },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => {
-                      deleteTask(item.id);
-                      closeSwipe();
-                    },
-                  },
-                ]
-              );
-            };
-
-            const isPinned = pinnedTaskIds.includes(item.id);
-            const handlePinPress = () => {
-              if (isPinned) {
-                unpinTask(item.id);
-              } else {
-                const added = pinTask(item.id);
-                if (!added) {
-                  Alert.alert('Limit reached', 'You can only pin 2 tasks. Unpin one first.');
-                }
-              }
-              closeSwipe();
-            };
-
-            const renderLeftActions = () => (
-              <View style={styles.swipeActionsLeft}>
-                <Pressable
-                  style={[styles.swipeActionBtnLeft, { backgroundColor: '#0e7490' }]}
-                  onPress={handlePinPress}
-                >
-                  <View style={styles.swipeActionContentLeft}>
-                    <Text style={styles.swipeActionText} numberOfLines={1}>{isPinned ? 'Unpin' : 'Pin'}</Text>
-                  </View>
-                </Pressable>
-              </View>
-            );
-
-            const renderRightActions = () => (
-              <View style={styles.swipeActions}>
-                <Pressable
-                  style={[
-                    styles.swipeActionBtn,
-                    { backgroundColor: item.isDone ? '#ef4444' : '#059669' },
-                  ]}
-                  onPress={item.isDone ? handleTaskDelete : handleTaskToggle}
-                >
-                  <View style={styles.swipeActionContent}>
-                    <Text style={styles.swipeActionText} numberOfLines={1}>{item.isDone ? 'Delete' : 'Mark done'}</Text>
-                  </View>
-                </Pressable>
-              </View>
-            );
-
-            const daysUntil = getDaysUntilDue(item.dueDate);
-            const outlineLevel = item.isDone ? 'teal' : getOutlineLevel(item.priority, daysUntil);
-            const outlineColor = OUTLINE_COLORS[outlineLevel];
-            const priorityStyle = PRIORITY_COLORS[item.priority];
-
-            return (
-              <View style={styles.cardRow}>
-                <Swipeable
-                  renderLeftActions={renderLeftActions}
-                  renderRightActions={renderRightActions}
-                  overshootRight={false}
-                  overshootLeft={false}
-                  rightThreshold={72}
-                  leftThreshold={72}
-                  ref={(ref) => {
-                    swipeRef = ref;
-                  }}
-                  onSwipeableRightOpen={() => {
-                    (item.isDone ? handleTaskDelete : handleTaskToggle)();
-                  }}
-                >
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.taskCard,
-                      {
-                        backgroundColor: theme.card,
-                        borderColor: outlineColor,
-                        borderWidth: 2,
-                      },
-                      pressed && styles.pressed,
-                    ]}
-                    onPress={() => router.push({ pathname: '/task-details' as any, params: { id: item.id } })}
-                  >
-                    <View style={[styles.subjectTag, { backgroundColor: getSubjectColor(item.courseId) }]} />
-                    <View style={styles.taskFirstRow}>
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleTaskToggle();
-                        }}
-                        style={[styles.checkbox, item.isDone && styles.checkboxDone]}
-                      >
-                        <ThemeIcon name="checkCircle" size={16} color={item.isDone ? COLORS.white : 'transparent'} />
-                      </Pressable>
-                      <View style={styles.taskBody}>
-                        <View style={styles.taskRow}>
-                          <Text style={[styles.taskCourse, { color: theme.textSecondary }]}>{item.courseId}</Text>
-                          <View style={[styles.priorityBadge, { backgroundColor: priorityStyle.bg }]}>
-                            <Text style={[styles.priorityText, { color: priorityStyle.text }]}>{item.priority}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    </View>
-                    <Text style={[styles.taskTitle, { color: theme.text }, item.isDone && styles.taskDone]} numberOfLines={2}>{item.title}</Text>
-                    <View style={styles.taskMeta}>
-                        <View style={styles.taskMetaRow}>
-                          <ThemeIcon name="calendar" size={12} color={theme.textSecondary} />
-                          <Text style={[styles.taskMetaText, styles.taskMetaDate, { color: theme.textSecondary }]}>{formatDisplayDate(item.dueDate)} • {item.dueTime}</Text>
-                          <View style={[styles.taskMetaDot, { backgroundColor: theme.textSecondary }]} />
-                          <ThemeIcon name="clock" size={12} color={theme.textSecondary} />
-                          <Text style={[styles.taskMetaText, { color: theme.textSecondary }]}>{item.effort}h Effort</Text>
-                        </View>
-                      </View>
-                  </Pressable>
-                </Swipeable>
-              </View>
-            );
-          }}
-        />
-      )}
-
-      </View>
-
-      <View style={styles.fabRow}>
-        <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={() => setIsChatOpen(true)}>
-          <Icons.Sparkles size={22} color={COLORS.white} />
+      {/* Task list header + filter */}
+      <View style={s.taskListHeader}>
+        <Text style={s.taskListLabel}>
+          {view === 'all' ? T('allTasks') : `${listCount} ${T('deadlines')} \u2022 ${activeMonthName} ${activeDateDay}`}
+        </Text>
+        <Pressable onPress={() => setFilterMenuOpen((o) => !o)}>
+          <Text style={s.filterLabel}>{T('filterSort')}</Text>
         </Pressable>
       </View>
 
-      <Modal visible={isChatOpen} animationType="slide" transparent>
-        <Pressable style={styles.chatOverlay} onPress={() => setIsChatOpen(false)}>
-          <View style={styles.chatSheet} onStartShouldSetResponder={() => true}>
-            <View style={styles.chatHeader}>
-              <View style={styles.chatHeaderLeft}>
-                <View style={styles.chatHeaderIcon}><Icons.Sparkles size={20} color={COLORS.gold} /></View>
-                <View>
-                  <Text style={styles.chatHeaderTitle}>AI Strategist</Text>
-                  <Text style={styles.chatHeaderSub}>Academic Co-Pilot</Text>
+      {filterMenuOpen && (
+        <>
+          <View style={s.filterRow}>
+            {[
+              { key: 'all' as FilterType, label: T('all') },
+              { key: 'assignment' as FilterType, label: T('assign') },
+              { key: 'quiz' as FilterType, label: T('quiz') },
+              { key: 'project' as FilterType, label: T('project') },
+              { key: 'lab' as FilterType, label: T('lab') },
+            ].map((f) => (
+              <Pressable
+                key={f.key}
+                style={[s.filterChip, activeFilter === f.key && s.filterChipActive]}
+                onPress={() => { setActiveFilter(f.key); }}
+              >
+                <Text style={[s.filterChipText, activeFilter === f.key && s.filterChipTextActive]}>{f.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={s.sortRow}>
+            <Text style={s.sortLabel}>{T('sort')}</Text>
+            <View style={s.sortChips}>
+              <Pressable
+                style={[s.sortChip, sortMode === 'nearest' && s.sortChipActive]}
+                onPress={() => setSortMode('nearest')}
+              >
+                <Text style={[s.sortChipText, sortMode === 'nearest' && s.sortChipTextActive]}>{T('nearestDue')}</Text>
+              </Pressable>
+              <Pressable
+                style={[s.sortChip, sortMode === 'priority-desc' && s.sortChipActive]}
+                onPress={() => setSortMode('priority-desc')}
+              >
+                <Text style={[s.sortChipText, sortMode === 'priority-desc' && s.sortChipTextActive]}>{T('priorityHighLow')}</Text>
+              </Pressable>
+              <Pressable
+                style={[s.sortChip, sortMode === 'subject' && s.sortChipActive]}
+                onPress={() => setSortMode('subject')}
+              >
+                <Text style={[s.sortChipText, sortMode === 'subject' && s.sortChipTextActive]}>{T('subject')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </>
+      )}
+    </>
+  );
+
+  const renderItem = ({ item }: { item: PlannerItem }) => {
+    if (isStudyItem(item)) {
+      let swipeRef: Swipeable | null = null;
+      const closeSwipe = () => swipeRef?.close();
+      const handleStudyToggle = () => {
+        if (item.isDone) {
+          Alert.alert(T('markAsNotDone'), T('markStudyNotDone'), [
+            { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+            { text: T('undo'), onPress: () => { unmarkStudyDone(item.studyKey); closeSwipe(); } },
+          ]);
+        } else {
+          Alert.alert(T('markAsDoneQuestion'), T('markStudyDone'), [
+            { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+            { text: T('markDone'), onPress: () => { markStudyDone(item.studyKey); closeSwipe(); } },
+          ]);
+        }
+      };
+      const handleStudyDelete = () => {
+        if (!item.revisionId) {
+          closeSwipe();
+          return;
+        }
+        Alert.alert(T('deleteRevision'), T('turnOffReminder'), [
+          { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+          {
+            text: T('delete'),
+            style: 'destructive',
+            onPress: async () => {
+              await deleteStudySetting(item.revisionId!);
+              closeSwipe();
+            },
+          },
+        ]);
+      };
+      const renderRightActions = () => (
+        <View style={s.swipeActions}>
+          <Pressable
+            style={[s.swipeActionBtn, { backgroundColor: item.isDone ? '#ef4444' : '#22c55e' }]}
+            onPress={item.isDone ? handleStudyDelete : handleStudyToggle}
+          >
+            <Text style={s.swipeActionText}>{item.isDone ? T('delete') : T('done')}</Text>
+          </Pressable>
+        </View>
+      );
+      return (
+        <View style={s.cardRow}>
+          <Swipeable
+            renderRightActions={renderRightActions}
+            overshootRight={false}
+            rightThreshold={72}
+            ref={(ref) => { swipeRef = ref; }}
+            onSwipeableOpen={() => { (item.isDone ? handleStudyDelete : handleStudyToggle)(); }}
+          >
+            <View style={s.taskCard}>
+              <Pressable
+                style={[s.checkbox, item.isDone && s.checkboxDone]}
+                onPress={handleStudyToggle}
+              >
+                {item.isDone && <Feather name="check" size={12} color={COLORS.white} />}
+              </Pressable>
+              <View style={s.taskContent}>
+                <View style={s.taskTopRow}>
+                  <Text style={s.taskCourse}>{item.subjectId}</Text>
+                  <Text style={s.taskType}>{T('study')}</Text>
+                </View>
+                <Text style={[s.taskTitle, item.isDone && s.taskTitleDone]} numberOfLines={2}>
+                  {T('timeToStudy')}{item.topic ? `: ${item.topic}` : ''}
+                </Text>
+                <View style={s.taskMetaRow}>
+                  <Feather name="calendar" size={11} color="#8E9AAF" />
+                  <Text style={s.taskMetaText}>{formatDisplayDate(item.date)} {'\u2022'} {item.time}</Text>
+                  <Feather name="clock" size={11} color="#8E9AAF" />
+                  <Text style={s.taskMetaText}>{item.durationMinutes}min</Text>
                 </View>
               </View>
-              <Pressable onPress={() => setIsChatOpen(false)}><Icons.Plus size={24} color={COLORS.white} style={{ transform: [{ rotate: '45deg' }] }} /></Pressable>
             </View>
-            <ScrollView style={styles.chatMessages} contentContainerStyle={styles.chatMessagesContent}>
+          </Swipeable>
+        </View>
+      );
+    }
+
+    let swipeRef: Swipeable | null = null;
+    const closeSwipe = () => swipeRef?.close();
+    const handleTaskToggle = () => {
+      if (item.isDone) {
+        Alert.alert(T('markAsNotDone'), `"${item.title}" ${T('markAsIncomplete')}`, [
+          { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+          { text: T('undo'), onPress: () => { toggleTaskDone(item.id); closeSwipe(); } },
+        ]);
+      } else {
+        Alert.alert(T('markAsDoneQuestion'), `"${item.title}" ${T('markAsCompleted')}`, [
+          { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+          { text: T('markDone'), onPress: () => { toggleTaskDone(item.id); closeSwipe(); } },
+        ]);
+      }
+    };
+    const handleTaskDelete = () => {
+      Alert.alert(T('deleteTask'), `"${item.title}" ${T('deleteTaskDesc')}`, [
+        { text: T('cancel'), style: 'cancel', onPress: closeSwipe },
+        { text: T('delete'), style: 'destructive', onPress: () => { deleteTask(item.id); closeSwipe(); } },
+      ]);
+    };
+    const isPinned = pinnedTaskIds.includes(item.id);
+    const handlePinPress = () => {
+      if (isPinned) { unpinTask(item.id); }
+      else {
+        const added = pinTask(item.id);
+        if (!added) Alert.alert(T('limitReached'), T('pinLimit'));
+      }
+      closeSwipe();
+    };
+    const renderLeftActions = () => (
+      <View style={s.swipeActionsLeft}>
+        <Pressable style={[s.swipeActionBtnLeft, { backgroundColor: '#0e7490' }]} onPress={handlePinPress}>
+          <Text style={s.swipeActionText}>{isPinned ? T('unpin') : T('pin')}</Text>
+        </Pressable>
+      </View>
+    );
+    const renderRightActions = () => (
+      <View style={s.swipeActions}>
+        <Pressable
+          style={[s.swipeActionBtn, { backgroundColor: item.isDone ? '#ef4444' : '#22c55e' }]}
+          onPress={item.isDone ? handleTaskDelete : handleTaskToggle}
+        >
+          <Text style={s.swipeActionText}>{item.isDone ? T('delete') : T('done')}</Text>
+        </Pressable>
+      </View>
+    );
+
+    const daysUntil = getDaysUntilDue(item.dueDate);
+    const urgencyRaw = getUrgencyLabelRaw(item.dueDate);
+    const urgencyLabel = urgencyRaw.key === 'overdue' ? T('dueOverdue')
+      : urgencyRaw.key === 'today' ? T('dueTodayLabel')
+      : urgencyRaw.key === 'tomorrow' ? T('dueTomorrow')
+      : urgencyRaw.key === 'soon' ? `${T('dueInDays')} ${urgencyRaw.days} ${T('daysWord')}`
+      : `${T('due')} ${formatDisplayDate(item.dueDate)}`;
+    const isOverdue = daysUntil < 0;
+    const isDueSoon = !isOverdue && daysUntil <= 3;
+    const priorityColors = PRIORITY_COLORS[item.priority];
+
+    return (
+      <View style={s.cardRow}>
+        <Swipeable
+          renderLeftActions={renderLeftActions}
+          renderRightActions={renderRightActions}
+          overshootRight={false}
+          overshootLeft={false}
+          rightThreshold={72}
+          leftThreshold={72}
+          ref={(ref) => { swipeRef = ref; }}
+          onSwipeableRightOpen={() => { (item.isDone ? handleTaskDelete : handleTaskToggle)(); }}
+        >
+          <Pressable
+            style={[
+              s.taskCard,
+              {
+                borderColor: isOverdue ? '#dc2626' : isDueSoon ? '#d97706' : BORDER,
+              },
+            ]}
+            onPress={() => router.push({ pathname: '/task-details' as any, params: { id: item.id } })}
+          >
+            <View style={[s.subjectBookmark, { backgroundColor: getSubjectColor(item.courseId) }]} />
+            <Pressable
+              style={[s.checkbox, item.isDone && s.checkboxDone]}
+              onPress={(e) => { e.stopPropagation(); handleTaskToggle(); }}
+            >
+              {item.isDone && <Feather name="check" size={12} color={COLORS.white} />}
+            </Pressable>
+            <View style={s.taskContent}>
+              <View style={s.taskTopRow}>
+                <Text style={s.taskCourse}>{item.courseId}</Text>
+                <View style={s.priorityPill}>
+                  <View style={[s.priorityBadge, { backgroundColor: priorityColors.bg }]}>
+                    <Text style={[s.priorityText, { color: priorityColors.text }]}>{item.priority}</Text>
+                  </View>
+                </View>
+              </View>
+              <Text style={[s.taskTitle, item.isDone && s.taskTitleDone]} numberOfLines={2}>
+                {item.courseId}: {item.title}
+              </Text>
+              <View style={s.taskMetaRow}>
+                <Feather name="calendar" size={11} color="#8E9AAF" />
+                <Text
+                  style={[
+                    s.taskMetaText,
+                    (isOverdue || isDueSoon) && s.taskMetaUrgent,
+                  ]}
+                >
+                  {urgencyLabel}
+                </Text>
+              </View>
+              <View style={s.taskMetaRow}>
+                <Feather name="clock" size={11} color="#8E9AAF" />
+                <Text style={s.taskMetaText}>{item.dueTime}</Text>
+                <Feather name="trending-up" size={11} color="#8E9AAF" />
+                <Text style={s.taskMetaText}>{item.effort}h {T('effort')}</Text>
+              </View>
+            </View>
+          </Pressable>
+        </Swipeable>
+      </View>
+    );
+  };
+
+  return (
+    <View style={s.safe}>
+      {/* Header */}
+      <View style={s.header}>
+        <View style={s.headerTopRow}>
+          <View>
+            <Text style={s.headerTitle}>{T('academicPlanner')}</Text>
+            <Text style={s.headerSub}>{getMonthYearLabel(activeDate).toUpperCase()} {'\u2022'} W{getWeekNumber(activeDate)}</Text>
+          </View>
+          <View style={s.headerBtns}>
+            <Pressable style={s.addBtn} onPress={() => router.push('/add-task' as any)}>
+              <Feather name="plus" size={18} color={COLORS.white} />
+            </Pressable>
+            <Pressable style={s.addStudyBtn} onPress={() => router.push('/revision' as any)}>
+              <Feather name="book-open" size={16} color={NAVY} />
+            </Pressable>
+          </View>
+        </View>
+        <View style={s.viewToggleWrap}>
+          <View style={s.viewToggle}>
+            {(['week', 'month', 'all'] as ViewMode[]).map((v) => {
+              const vLabel = v === 'week' ? T('week') : v === 'month' ? T('month') : T('all');
+              return (
+                <Pressable
+                  key={v}
+                  style={[s.viewBtn, view === v && s.viewBtnActive]}
+                  onPress={() => setView(v)}
+                >
+                  <Text style={[s.viewBtnText, view === v && s.viewBtnTextActive]}>{vLabel}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      <FlatList
+        data={displayList}
+        extraData={pinnedTaskIds}
+        keyExtractor={(item, index) => {
+          const id = item.type === 'task' ? item.id : item.studyKey;
+          return `${index}-${id ?? `item-${index}`}`;
+        }}
+        renderItem={renderItem}
+        contentContainerStyle={s.listContent}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={
+          <View style={s.emptyState}>
+            <Feather name="check-circle" size={40} color="#e2e8f0" />
+            <Text style={s.emptyText}>{T('noTasksForDay')}</Text>
+          </View>
+        }
+      />
+
+      {/* AI FAB */}
+      <Pressable style={s.aiFab} onPress={() => setIsChatOpen(true)}>
+        <Feather name="zap" size={22} color={COLORS.white} />
+      </Pressable>
+
+      {/* AI Chat Modal */}
+      <Modal visible={isChatOpen} animationType="slide" transparent>
+        <Pressable style={s.chatOverlay} onPress={() => setIsChatOpen(false)}>
+          <View style={s.chatSheet} onStartShouldSetResponder={() => true}>
+            <View style={s.chatHeader}>
+              <View style={s.chatHeaderLeft}>
+                <View style={s.chatIcon}>
+                  <Feather name="zap" size={16} color={GOLD} />
+                </View>
+                <View>
+                  <Text style={s.chatTitle}>{T('aiStrategist')}</Text>
+                  <Text style={s.chatSub}>{T('academicCoPilot')}</Text>
+                </View>
+              </View>
+              <Pressable onPress={() => setIsChatOpen(false)}>
+                <Feather name="x" size={22} color="rgba(255,255,255,0.6)" />
+              </Pressable>
+            </View>
+            <ScrollView style={s.chatMessages} contentContainerStyle={s.chatMessagesContent}>
               {messages.map((m, i) => (
-                <View key={i} style={[styles.chatBubbleWrap, m.role === 'user' && styles.chatBubbleRight]}>
-                  <View style={[styles.chatBubble, m.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAi]}>
-                    <Text style={[styles.chatBubbleText, m.role === 'user' && styles.chatBubbleTextUser]}>{m.text}</Text>
+                <View key={i} style={[s.chatBubbleWrap, m.role === 'user' && s.chatBubbleRight]}>
+                  <View style={[s.chatBubble, m.role === 'user' ? s.chatBubbleUser : s.chatBubbleAi]}>
+                    <Text style={[s.chatBubbleText, m.role === 'user' && { color: COLORS.white }]}>{m.text}</Text>
                   </View>
                 </View>
               ))}
               {isProcessing && (
-                <View style={styles.chatBubbleWrap}>
-                  <View style={[styles.chatBubble, styles.chatBubbleAi]}><Text style={styles.chatBubbleText}>Analyzing...</Text></View>
+                <View style={s.chatBubbleWrap}>
+                  <View style={[s.chatBubble, s.chatBubbleAi]}>
+                    <Text style={s.chatBubbleText}>{T('analyzing')}</Text>
+                  </View>
                 </View>
               )}
             </ScrollView>
-            <View style={styles.chatInputRow}>
+            <View style={s.chatInputRow}>
               <TextInput
-                style={styles.chatInput}
+                style={s.chatInput}
                 value={chatInput}
                 onChangeText={setChatInput}
-                placeholder="Type your plan or request..."
-                placeholderTextColor={COLORS.gray}
+                placeholder={T('typeYourPlan')}
+                placeholderTextColor="#8E9AAF"
                 onSubmitEditing={handleAiSend}
               />
-              <Pressable style={[styles.chatSend, (!chatInput.trim() || isProcessing) && styles.chatSendDisabled]} onPress={handleAiSend} disabled={!chatInput.trim() || isProcessing}>
-                <Icons.ArrowRight size={20} color={COLORS.white} />
+              <Pressable
+                style={[s.chatSendBtn, (!chatInput.trim() || isProcessing) && { opacity: 0.5 }]}
+                onPress={handleAiSend}
+                disabled={!chatInput.trim() || isProcessing}
+              >
+                <Feather name="arrow-right" size={18} color={COLORS.white} />
               </Pressable>
             </View>
           </View>
@@ -949,164 +806,313 @@ export default function Planner() {
   );
 }
 
-// Layout: screen pad 12 for wider content, section gap 24, card gap 12, card padding 20, radius 20
-const L = { pad: 12, section: 24, cardGap: 12, cardPad: 20, radius: 20, radiusSm: 12 };
+const NAVY = '#003366';
+const GOLD = '#D4AF37';
+const BG = '#f8fafc';
+const BORDER = '#e2e8f0';
+const TEXT_PRIMARY = '#1A1C1E';
+const TEXT_SECONDARY = '#8E9AAF';
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 56 },
-  sectionBox: { marginHorizontal: L.pad, marginBottom: L.section, padding: L.cardPad, borderRadius: L.radius, borderWidth: 1 },
-  header: { paddingBottom: 0 },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  addTaskBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 20, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
-  subtitle: { fontSize: 11, fontWeight: '700', color: COLORS.gray, marginTop: 4, letterSpacing: 0.5 },
-  viewToggle: { flexDirection: 'row', padding: 4, borderRadius: L.radiusSm, borderWidth: 1, borderColor: COLORS.border },
-  viewBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  viewBtnActive: { backgroundColor: COLORS.navy },
-  viewBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
-  viewBtnTextActive: { color: COLORS.white },
-  weekDateSectionWrap: { marginHorizontal: L.pad, marginBottom: L.section },
-  weekDateSection: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    position: 'relative',
-    overflow: 'hidden',
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: BG, paddingTop: 56 },
+
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
-  weekDateDotGrid: {
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: NAVY, letterSpacing: -0.3 },
+  headerSub: { fontSize: 10, fontWeight: '800', color: TEXT_SECONDARY, letterSpacing: 1.2, marginTop: 2 },
+  viewToggleWrap: { alignItems: 'center' },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 2,
+  },
+  viewBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 10 },
+  viewBtnActive: { backgroundColor: NAVY },
+  viewBtnText: { fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1.5 },
+  viewBtnTextActive: { color: '#ffffff' },
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: NAVY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addStudyBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  listContent: { paddingHorizontal: 20, paddingBottom: 120 },
+
+  // AI Card
+  aiCard: {
+    backgroundColor: NAVY,
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
+  },
+  aiCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  aiIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiCardTitle: { fontSize: 10, fontWeight: '900', color: '#ffffff', letterSpacing: 2 },
+  aiCardText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 20, fontWeight: '500', marginBottom: 14 },
+  aiCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aiDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ade80' },
+  aiFooterText: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1 },
+
+  // Week Strip
+  weekStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  weekDay: { alignItems: 'center', flex: 1, paddingVertical: 8 },
+  weekLabel: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY, marginBottom: 10 },
+  weekLabelActive: { color: NAVY, fontWeight: '900' },
+  weekDate: { fontSize: 22, fontWeight: '700', color: TEXT_SECONDARY, marginBottom: 8 },
+  weekDateActive: { fontSize: 30, fontWeight: '900', color: TEXT_PRIMARY },
+  weekIndicator: { width: 24, height: 3, borderRadius: 2, backgroundColor: NAVY },
+  weekTaskDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: GOLD },
+
+  // Month Grid
+  monthCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginBottom: 20,
+  },
+  monthNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  monthNavBtn: { width: 36, height: 36, borderRadius: 12, backgroundColor: BG, alignItems: 'center', justifyContent: 'center' },
+  monthNavTitle: { fontSize: 17, fontWeight: '900', color: TEXT_PRIMARY, letterSpacing: -0.3 },
+  monthHeaders: { flexDirection: 'row', marginBottom: 8 },
+  monthHeaderText: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  monthCell: {
+    width: '14.28%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  monthCellActive: { backgroundColor: NAVY },
+  monthCellToday: { borderWidth: 2, borderColor: NAVY },
+  monthCellEmpty: { width: '14.28%', aspectRatio: 1 },
+  monthCellText: { fontSize: 13, fontWeight: '600', color: TEXT_SECONDARY },
+  monthCellTextActive: { color: '#ffffff', fontWeight: '900' },
+  monthDot: {
     position: 'absolute',
-    top: 0,
+    bottom: 4,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: GOLD,
+  },
+
+  // Task list header + filter
+  taskListHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  taskListLabel: { fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1.5 },
+  filterLabel: { fontSize: 10, fontWeight: '700', color: NAVY, letterSpacing: 1 },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  filterChipActive: { backgroundColor: NAVY, borderColor: NAVY },
+  filterChipText: { fontSize: 9, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1 },
+  filterChipTextActive: { color: '#ffffff' },
+
+  sortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  sortLabel: { fontSize: 10, fontWeight: '800', color: TEXT_SECONDARY },
+  sortChips: { flexDirection: 'row', gap: 8 },
+  sortChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  sortChipActive: { backgroundColor: NAVY, borderColor: NAVY },
+  sortChipText: { fontSize: 9, fontWeight: '800', color: TEXT_SECONDARY },
+  sortChipTextActive: { color: '#ffffff' },
+
+  // Task Card
+  cardRow: { marginBottom: 12, borderRadius: 28, overflow: 'hidden' },
+  taskCard: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 18,
+    alignItems: 'flex-start',
+    gap: 14,
+    position: 'relative',
+  },
+  subjectBookmark: {
+    position: 'absolute',
     left: 0,
-    right: 0,
+    top: 0,
     bottom: 0,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    justifyContent: 'space-between',
+    width: 6,
+    borderTopLeftRadius: 28,
+    borderBottomLeftRadius: 28,
   },
-  weekDateDotRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
   },
-  weekDateDotBg: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(203, 213, 225, 0.5)',
-  },
-  weekStripWrapper: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  weekNavBtn: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  weekNavBtnMinimal: { backgroundColor: 'transparent' },
-  weekStrip: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
-  weekDayTouchable: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingVertical: 4 },
-  weekDayLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, marginBottom: 6, color: '#94a3b8' },
-  weekDayLabelSelected: { color: '#0f172a', fontWeight: '800' },
-  weekDayNum: { fontSize: 17, fontWeight: '700' },
-  weekDayNumSelected: { fontWeight: '800', color: '#0f172a' },
-  weekDayNumInactive: { color: '#94a3b8', fontWeight: '500' },
-  weekDayUnderline: { width: 24, height: 2.5, borderRadius: 1, marginTop: 6 },
-  weekDayDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fde68a', marginTop: 8 },
-  monthViewContainer: { marginHorizontal: L.pad, marginBottom: L.section },
-  monthNavBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 8, borderRadius: L.radiusSm, borderWidth: 1, marginBottom: 10 },
-  monthNavBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  monthNavTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
-  monthCollapseIcon: { marginLeft: 4, padding: 4 },
-  todayChip: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
-  todayChipText: { fontSize: 13, fontWeight: '700' },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', borderRadius: L.radius, padding: 12, borderWidth: 1 },
-  monthHead: { width: '14.28%', textAlign: 'center', fontSize: 11, fontWeight: '700', color: COLORS.gray, marginBottom: 10, paddingVertical: 4 },
-  monthCell: { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 12, marginVertical: 1 },
-  monthCellEmpty: { width: '14.28%', aspectRatio: 1, marginVertical: 1 },
-  monthCellToday: { borderWidth: 2, backgroundColor: 'transparent' },
-  monthCellText: { fontSize: 14, fontWeight: '700', color: COLORS.gray },
-  monthCellTextSelected: { color: COLORS.white },
-  monthCellBadge: { position: 'absolute', bottom: 2, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  monthCellBadgeSelected: { backgroundColor: 'rgba(255,255,255,0.35)' },
-  monthCellBadgeText: { fontSize: 9, fontWeight: '800' },
-  monthCellBadgeTextSelected: { color: COLORS.white },
-  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: L.pad, marginBottom: 12 },
-  listTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text },
-  listCount: { fontSize: 11, fontWeight: '700', color: COLORS.gray },
-  listScroll: { flex: 1 },
-  list: { paddingHorizontal: L.pad, paddingTop: 8, paddingBottom: 120, zIndex: 0 },
-  cardRow: { marginBottom: L.cardGap, borderRadius: L.radius, overflow: 'hidden' },
-  taskCard: { flexDirection: 'column', alignItems: 'flex-start', padding: 16, paddingRight: 20, borderRadius: L.radius, position: 'relative', overflow: 'hidden' },
-  subjectTag: { position: 'absolute', top: 0, right: 10, width: 14, height: 22, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 },
-  pressed: { opacity: 0.96 },
-  taskFirstRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, alignSelf: 'stretch' },
-  checkbox: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginRight: 14, marginTop: 0 },
-  checkboxDone: { backgroundColor: '#059669', borderColor: '#059669' },
-  taskBody: { flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' },
-  taskRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', alignSelf: 'stretch' },
-  taskCourse: { fontSize: 12, fontWeight: '700', color: COLORS.gray },
-  priorityBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  checkboxDone: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
+  taskContent: { flex: 1 },
+  taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  taskCourse: { fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1.5 },
+  priorityPill: { flexDirection: 'row', alignItems: 'center' },
+  priorityBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   priorityText: { fontSize: 10, fontWeight: '800' },
-  taskTitle: { fontSize: 16, fontWeight: '800', lineHeight: 22, alignSelf: 'stretch', textAlign: 'left', marginBottom: 0 },
-  taskDone: { textDecorationLine: 'line-through', opacity: 0.5 },
-  taskMeta: { marginTop: 6, gap: 4, alignSelf: 'stretch', alignItems: 'flex-start' },
-  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch', minWidth: 0, justifyContent: 'flex-start' },
-  taskMetaText: { fontSize: 11, fontWeight: '600', textAlign: 'left' },
-  taskMetaDate: { flex: 1, minWidth: 0 },
-  taskMetaDot: { width: 4, height: 4, borderRadius: 2 },
-  sortRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: L.pad, zIndex: 10, minHeight: 36 },
-  sortLabel: { fontSize: 11, fontWeight: '700' },
-  sortDropdownContainer: { position: 'relative', alignItems: 'flex-end', zIndex: 11 },
-  sortDropdownToggle: { minWidth: 120, paddingHorizontal: 12, paddingVertical: 8, borderRadius: L.radiusSm, borderWidth: 1 },
-  sortDropdownText: { fontSize: 11, fontWeight: '700' },
-  sortDropdown: { position: 'absolute', top: '100%', right: 0, marginTop: 6, borderRadius: L.radiusSm, borderWidth: 1, overflow: 'hidden', zIndex: 12 },
-  sortDropdownItem: { paddingHorizontal: 14, paddingVertical: 10 },
-  sortDropdownItemActive: { backgroundColor: COLORS.navy },
-  sortDropdownItemText: { fontSize: 11, fontWeight: '600' },
-  studyCard: { borderWidth: 1 },
-  postponeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 10, paddingHorizontal: 14, borderRadius: L.radiusSm, borderWidth: 1, alignSelf: 'flex-start' },
-  postponeBtnText: { fontSize: 12, fontWeight: '700' },
-  swipeActions: {
-    width: 100,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'stretch',
-  },
-  swipeActionBtn: {
-    width: 200,
-    marginLeft: -100,
-    justifyContent: 'center',
-    borderRadius: L.radius,
-  },
-  swipeActionContent: { width: 100, marginLeft: 100, alignItems: 'center' },
+  taskTitle: { fontSize: 15, fontWeight: '900', color: NAVY, lineHeight: 20, marginBottom: 8 },
+  taskTitleDone: { textDecorationLine: 'line-through', opacity: 0.4 },
+  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, opacity: 0.6 },
+  taskMetaText: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY },
+  taskMetaUrgent: { fontWeight: '800', color: '#b91c1c' },
+
+  // Empty
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY },
+
+  // Swipe actions
+  swipeActions: { width: 100, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'stretch' },
+  swipeActionBtn: { width: 100, justifyContent: 'center', alignItems: 'center', borderRadius: 28 },
   swipeActionsLeft: { width: 100, flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'stretch' },
-  swipeActionBtnLeft: {
-    width: 200,
-    marginRight: -100,
+  swipeActionBtnLeft: { width: 100, justifyContent: 'center', alignItems: 'center', borderRadius: 28 },
+  swipeActionText: { fontSize: 12, fontWeight: '800', color: '#ffffff' },
+
+  // FAB
+  aiFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 120,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: GOLD,
+    alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: L.radius,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  swipeActionContentLeft: { width: 100, alignItems: 'center' },
-  swipeActionText: { fontSize: 12, fontWeight: '800', color: COLORS.white },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
-  emptyIcon: { width: 64, height: 64, borderRadius: L.radius, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  emptyTitle: { fontSize: 14, fontWeight: '800', color: COLORS.gray },
-  emptySub: { fontSize: 12, color: COLORS.gray, marginTop: 8 },
-  fabRow: { position: 'absolute', bottom: 100, right: L.pad, flexDirection: 'row', gap: 12 },
-  fab: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
+
+  // Chat Modal
   chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  chatSheet: { backgroundColor: COLORS.card, borderTopLeftRadius: L.radius, borderTopRightRadius: L.radius, maxHeight: '88%' },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: L.cardPad, backgroundColor: COLORS.navy },
-  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  chatHeaderIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
-  chatHeaderTitle: { fontSize: 16, fontWeight: '800', color: COLORS.white },
-  chatHeaderSub: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  chatMessages: { maxHeight: 360, backgroundColor: COLORS.bg },
-  chatMessagesContent: { padding: L.cardPad, gap: 12 },
+  chatSheet: { backgroundColor: '#ffffff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '80%' },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: NAVY,
+    padding: 20,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+  },
+  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chatIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatTitle: { fontSize: 14, fontWeight: '900', color: '#ffffff' },
+  chatSub: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
+  chatMessages: { maxHeight: 300, backgroundColor: BG },
+  chatMessagesContent: { padding: 16, gap: 10 },
   chatBubbleWrap: { alignItems: 'flex-start' },
   chatBubbleRight: { alignItems: 'flex-end' },
-  chatBubble: { maxWidth: '82%', padding: 14, borderRadius: 18, borderTopLeftRadius: 4 },
-  chatBubbleAi: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
-  chatBubbleUser: { backgroundColor: COLORS.navy },
-  chatBubbleText: { fontSize: 13, color: COLORS.text, lineHeight: 18 },
-  chatBubbleTextUser: { color: COLORS.white },
-  chatInputRow: { flexDirection: 'row', gap: 12, padding: L.cardPad, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: COLORS.border },
-  chatInput: { flex: 1, backgroundColor: COLORS.bg, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, color: COLORS.text },
-  chatSend: { width: 48, height: 48, borderRadius: 16, backgroundColor: COLORS.navy, alignItems: 'center', justifyContent: 'center' },
-  chatSendDisabled: { opacity: 0.5 },
+  chatBubble: { maxWidth: '85%', padding: 14, borderRadius: 18 },
+  chatBubbleAi: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: BORDER, alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+  chatBubbleUser: { backgroundColor: NAVY, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
+  chatBubbleText: { fontSize: 13, lineHeight: 19, color: TEXT_PRIMARY, fontWeight: '500' },
+  chatInputRow: {
+    flexDirection: 'row',
+    padding: 12,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    backgroundColor: '#ffffff',
+  },
+  chatInput: {
+    flex: 1,
+    backgroundColor: BG,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '500',
+    color: TEXT_PRIMARY,
+  },
+  chatSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: NAVY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

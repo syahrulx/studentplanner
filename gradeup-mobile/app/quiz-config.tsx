@@ -5,6 +5,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
+import { useTranslations } from '@/src/i18n';
 
 const PAD = 20;
 const SECTION = 24;
@@ -13,7 +14,8 @@ const RADIUS_SM = 14;
 const QUESTION_OPTS = [5, 10, 15];
 
 export default function QuizConfig() {
-  const { flashcardFolders, flashcards } = useApp();
+  const { flashcardFolders, flashcards, language } = useApp();
+  const T = useTranslations(language);
   const theme = useTheme();
   const [folderId, setFolderId] = useState<string>(''); // '' = all
   const [totalQuestions, setTotalQuestions] = useState(5);
@@ -39,11 +41,11 @@ export default function QuizConfig() {
         <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>Configure practice quiz</Text>
+        <Text style={[styles.title, { color: theme.text }]}>{T('configurePracticeQuiz')}</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>TOPIC</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('topic')}</Text>
         <Pressable
           style={({ pressed }) => [
             styles.subjectCard,
@@ -57,8 +59,8 @@ export default function QuizConfig() {
             <ThemeIcon name="layers" size={20} color={theme.primary} />
           </View>
           <View style={styles.subjectBody}>
-            <Text style={[styles.subjectCode, { color: theme.text }, !folderId && { color: theme.primary }]}>All folders</Text>
-            <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{flashcards.length} cards</Text>
+            <Text style={[styles.subjectCode, { color: theme.text }, !folderId && { color: theme.primary }]}>{T('allFolders')}</Text>
+            <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{flashcards.length} {T('cardsUnit')}</Text>
           </View>
           {!folderId && <ThemeIcon name="checkCircle" size={18} color={theme.primary} />}
         </Pressable>
@@ -81,7 +83,7 @@ export default function QuizConfig() {
               </View>
               <View style={styles.subjectBody}>
                 <Text style={[styles.subjectCode, { color: theme.text }, isSelected && { color: theme.primary }]} numberOfLines={1}>{f.name}</Text>
-                <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{count} cards</Text>
+                <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{count} {T('cardsUnit')}</Text>
               </View>
               {isSelected && <ThemeIcon name="checkCircle" size={18} color={theme.primary} />}
             </Pressable>
@@ -90,7 +92,7 @@ export default function QuizConfig() {
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>NUMBER OF QUESTIONS</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('numberOfQuestions')}</Text>
         <View style={styles.row}>
           {QUESTION_OPTS.map((n) => {
             const disabled = n > maxAvailable;
@@ -115,7 +117,7 @@ export default function QuizConfig() {
             );
           })}
         </View>
-        <Text style={[styles.hint, { color: theme.textSecondary }]}>{maxAvailable} cards in pool</Text>
+        <Text style={[styles.hint, { color: theme.textSecondary }]}>{maxAvailable} {T('cardsInPool')}</Text>
       </View>
 
       <Pressable
@@ -128,7 +130,7 @@ export default function QuizConfig() {
         disabled={maxAvailable < 1}
       >
         <ThemeIcon name="target" size={20} color="#fff" />
-        <Text style={styles.ctaBtnText}>Start practice quiz</Text>
+        <Text style={styles.ctaBtnText}>{T('startPracticeQuiz')}</Text>
       </Pressable>
 
       <View style={{ height: 48 }} />

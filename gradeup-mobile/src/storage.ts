@@ -4,6 +4,8 @@ import type { Course } from '../types';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_THEME = 'appTheme';
+const KEY_LANGUAGE = 'appLanguage';
+const KEY_LOGHAT = 'appLoghat';
 
 export async function getHasSeenTutorial(): Promise<boolean> {
   try {
@@ -40,6 +42,43 @@ export async function setTheme(theme: ThemeId): Promise<void> {
   } catch {}
 }
 
+export type AppLanguage = 'en' | 'ms';
+export type AppLoghat = 'negeriSembilan' | 'kelantan' | 'kedah' | 'melaka';
+
+export async function getLanguage(): Promise<AppLanguage> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_LANGUAGE);
+    if (value === 'en' || value === 'ms') return value;
+  } catch {}
+  return 'en';
+}
+
+export async function setLanguage(lang: AppLanguage): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_LANGUAGE, lang);
+  } catch {}
+}
+
+export async function getLoghat(): Promise<AppLoghat | null> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_LOGHAT);
+    if (value === 'negeriSembilan' || value === 'kelantan' || value === 'kedah' || value === 'melaka') {
+      return value;
+    }
+  } catch {}
+  return null;
+}
+
+export async function setLoghat(loghat: AppLoghat | null): Promise<void> {
+  try {
+    if (!loghat) {
+      await AsyncStorage.removeItem(KEY_LOGHAT);
+    } else {
+      await AsyncStorage.setItem(KEY_LOGHAT, loghat);
+    }
+  } catch {}
+}
+
 // Revision / Study time
 const KEY_REVISION = 'revisionSettings';
 
@@ -48,6 +87,7 @@ export type RevisionDay = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thurs
 export type RevisionRepeat = 'once' | 'repeated';
 
 export interface RevisionSettings {
+  id?: string; // from DB (study_times.id) when loaded
   enabled: boolean;
   time: string; // "HH:mm" 24h
   subjectId: string;

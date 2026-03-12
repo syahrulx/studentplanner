@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: COLORS.navy },
   tabText: { fontSize: 10, fontWeight: '800', color: COLORS.gray, letterSpacing: 1 },
   tabTextActive: { color: COLORS.white },
-  shareCard: { backgroundColor: '#0c4a6e', borderRadius: 32, padding: 36, borderWidth: 1, borderColor: 'rgba(14,116,144,0.5)' },
+  shareCard: { backgroundColor: '#003366', borderRadius: 32, padding: 36, borderWidth: 1, borderColor: 'rgba(0,51,102,0.4)' },
   shareIcon: { width: 64, height: 64, backgroundColor: COLORS.card, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   shareTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginBottom: 10, letterSpacing: -0.5 },
   shareDesc: { fontSize: 13, color: COLORS.gray, marginBottom: 20, lineHeight: 18 },

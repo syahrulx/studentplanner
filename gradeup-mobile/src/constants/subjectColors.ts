@@ -1,6 +1,17 @@
-/** Deep sea palette–friendly colours for subject/course picker */
+/** High-contrast colours for subject/course picker */
 export const SUBJECT_COLOR_OPTIONS = [
-  '#0c4a6e', '#0e7490', '#06b6d4', '#0891b2', '#155e75',
-  '#475569', '#0d9488', '#f59e0b', '#64748b', '#22d3ee',
-  '#7dd3fc', '#bae6fd', '#fde047', '#fcd34d', '#a5f3fc',
+  '#003366', // deep navy
+  '#b91c1c', // red
+  '#f97316', // orange
+  '#16a34a', // green
+  '#0ea5e9', // sky blue
+  '#6366f1', // indigo
+  '#a855f7', // purple
+  '#db2777', // pink
+  '#15803d', // dark green
+  '#facc15', // yellow
+  '#0891b2', // teal
+  '#7c2d12', // brown
+  '#4b5563', // slate gray
+  '#10b981', // emerald
 ];
