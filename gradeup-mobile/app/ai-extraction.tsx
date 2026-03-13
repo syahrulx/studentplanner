@@ -5,6 +5,7 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import type { Task } from '@/src/types';
+import type { TaskExtractionDTO } from '@/src/lib/taskExtraction';
 import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 
@@ -16,7 +17,7 @@ const ANALYSIS_STEPS = [
 ];
 
 export default function AIExtraction() {
-  const { pendingExtraction, addTask, courses, getSubjectColor, setSubjectColor } = useApp();
+  const { pendingExtraction, addTask, courses, getSubjectColor, setSubjectColor, user } = useApp();
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
@@ -47,6 +48,11 @@ export default function AIExtraction() {
 
   const sourceMessage = pendingExtraction || 'Assalammualaikum students. Sila hantar Lab 4 sebelum Jumaat ni jam 11:59PM. TQ.';
 
+  // If this screen was opened from an AI extraction flow, we might have structured metadata
+  // about deadline risk and suggested week attached to the pending task.
+  const aiMeta: Pick<TaskExtractionDTO, 'deadline_risk' | 'suggested_week'> | null =
+    (pendingExtraction as any)?.aiMeta ?? null;
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -59,6 +65,13 @@ export default function AIExtraction() {
   }
 
   const handleConfirm = () => {
+    const deadlineRisk =
+      (aiMeta?.deadline_risk as 'High' | 'Medium' | 'Low' | undefined) ?? 'Medium';
+    const suggestedWeek =
+      typeof aiMeta?.suggested_week === 'number' && aiMeta.suggested_week > 0
+        ? aiMeta.suggested_week
+        : user?.currentWeek ?? 1;
+
     const task: Task = {
       id: `t${Date.now()}`,
       title: (formData.title ?? 'Task').trim(),
@@ -70,8 +83,8 @@ export default function AIExtraction() {
       effort: formData.effort ?? 4,
       notes: formData.notes ?? '',
       isDone: false,
-      deadlineRisk: 'High',
-      suggestedWeek: 11,
+      deadlineRisk,
+      suggestedWeek,
       sourceMessage,
     };
     addTask(task);

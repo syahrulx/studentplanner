@@ -6,6 +6,7 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
+import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 
 const NAVY = '#003366';
 const GOLD = '#f59e0b';
@@ -116,7 +117,7 @@ function extractTasksFromMessage(text: string): { title: string; dueDate: string
 }
 
 export default function AiChat() {
-  const { language, addTask, courses } = useApp();
+  const { language, addTask, courses, user } = useApp();
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -130,6 +131,12 @@ export default function AiChat() {
     setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
   };
 
+  const riskToPriority = (risk: 'High' | 'Medium' | 'Low'): Priority => {
+    if (risk === 'High') return Priority.High;
+    if (risk === 'Low') return Priority.Low;
+    return Priority.Medium;
+  };
+
   const handleSend = () => {
     if (!chatInput.trim()) return;
     const pastedText = chatInput;
@@ -139,48 +146,89 @@ export default function AiChat() {
     scrollToBottom();
 
     setTimeout(() => {
-      const extracted = extractTasksFromMessage(pastedText);
+      (async () => {
+        try {
+          const todayISO = new Date().toISOString().slice(0, 10);
+          const { tasks, error } = await extractTasksFromMessageAI({
+            message: pastedText,
+            courses,
+            todayISO,
+            currentWeek: user.currentWeek,
+          });
 
-      if (extracted.length === 0) {
-        setMessages(prev => [...prev, {
-          role: 'ai',
-          text: '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date'
-        }]);
-        setIsProcessing(false);
-        scrollToBottom();
-        return;
-      }
+          const extracted = tasks.map((t) => ({
+            title: t.title,
+            dueDate: t.due_date,
+            dueTime: t.due_time,
+            courseId: t.course_id,
+            deadlineRisk: (t.deadline_risk as 'High' | 'Medium' | 'Low' | undefined) ?? 'Medium',
+            suggestedWeek:
+              typeof t.suggested_week === 'number' && t.suggested_week > 0
+                ? t.suggested_week
+                : user.currentWeek,
+          }));
 
-      for (const task of extracted) {
-        const fallbackCourse = courses[0]?.id || 'General';
-        addTask({
-          id: `t${Date.now()}`,
-          title: task.title,
-          courseId: task.courseId || fallbackCourse,
-          type: TaskType.Assignment,
-          dueDate: task.dueDate,
-          dueTime: task.dueTime,
-          priority: Priority.Medium,
-          effort: 4,
-          notes: '',
-          isDone: false,
-          deadlineRisk: 'Medium',
-          suggestedWeek: 1,
-          sourceMessage: pastedText,
-        });
-      }
+          if (extracted.length === 0) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'ai',
+                text: error
+                  ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}`
+                  : '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date',
+              },
+            ]);
+            return;
+          }
 
-      const taskSummary = extracted.map(t => 
-        `• "${t.title}"\n   📅 ${t.dueDate}  ⏰ ${t.dueTime}${t.courseId ? `  📚 ${t.courseId}` : ''}`
-      ).join('\n\n');
+          for (const task of extracted) {
+            const fallbackCourse = courses[0]?.id || 'General';
+            addTask({
+              id: `t${Date.now()}`,
+              title: task.title,
+              courseId: task.courseId || fallbackCourse,
+              type: TaskType.Assignment,
+              dueDate: task.dueDate,
+              dueTime: task.dueTime,
+              priority: riskToPriority(task.deadlineRisk),
+              effort: 4,
+              notes: '',
+              isDone: false,
+              deadlineRisk: task.deadlineRisk,
+              suggestedWeek: task.suggestedWeek,
+              sourceMessage: pastedText,
+            });
+          }
 
-      setMessages(prev => [...prev, {
-        role: 'ai',
-        text: `✅ Task extracted and added to your planner!\n\n${taskSummary}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`
-      }]);
-      setIsProcessing(false);
-      scrollToBottom();
-    }, 1500);
+          const taskSummary = extracted
+            .map(
+              (t) =>
+                `• "${t.title}"\n   📅 ${t.dueDate}  ⏰ ${t.dueTime}${t.courseId ? `  📚 ${t.courseId}` : ''}`,
+            )
+            .join('\n\n');
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'ai',
+              text: `✅ Task extracted and added to your planner!\n\n${taskSummary}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
+            },
+          ]);
+        } catch {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'ai',
+              text:
+                '⚠️ Something went wrong while talking to the AI. Please try again in a moment or enter the task manually.',
+            },
+          ]);
+        } finally {
+          setIsProcessing(false);
+          scrollToBottom();
+        }
+      })();
+    }, 500);
   };
 
   return (

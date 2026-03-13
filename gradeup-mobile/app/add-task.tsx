@@ -8,6 +8,18 @@ import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO 
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
 
+const riskFromDiffDays = (diffDays: number): 'High' | 'Medium' | 'Low' => {
+  if (diffDays <= 2) return 'High';
+  if (diffDays <= 7) return 'Medium';
+  return 'Low';
+};
+
+const riskToPriority = (risk: 'High' | 'Medium' | 'Low'): Priority => {
+  if (risk === 'High') return Priority.High;
+  if (risk === 'Low') return Priority.Low;
+  return Priority.Medium;
+};
+
 export default function AddTask() {
   const { courses, addTask, getSubjectColor, setSubjectColor, language, user } = useApp();
   const T = useTranslations(language);
@@ -34,6 +46,14 @@ export default function AddTask() {
     if (!title.trim()) return;
     setIsSaving(true);
     setTimeout(() => {
+      // Compute deadline risk from due date vs today, then map to priority.
+      const todayISO = getTodayISO();
+      const today = new Date(todayISO + 'T00:00:00');
+      const due = new Date(dueDateISO + 'T00:00:00');
+      const diffDays = Math.floor((due.getTime() - today.getTime()) / 864e5);
+      const deadlineRisk = riskFromDiffDays(diffDays);
+      const resolvedPriority = riskToPriority(deadlineRisk);
+
       const newTask = {
         id: `t${Date.now()}`,
         title: title.trim(),
@@ -41,16 +61,11 @@ export default function AddTask() {
         type,
         dueDate: dueDateISO,
         dueTime,
-        priority,
+        priority: resolvedPriority,
         effort,
         notes,
         isDone: false,
-        deadlineRisk:
-          priority === Priority.High
-            ? ('High' as const)
-            : priority === Priority.Medium
-            ? ('Medium' as const)
-            : ('Low' as const),
+        deadlineRisk,
         suggestedWeek: (() => {
           if (!user?.startDate) return 1;
           const start = new Date(user.startDate + 'T00:00:00');
