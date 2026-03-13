@@ -412,11 +412,27 @@ export default function Planner() {
               return d != null ? (
                 <Pressable
                   key={i}
-                  style={[s.monthCell, isSelected && s.monthCellActive, isToday && !isSelected && s.monthCellToday]}
+                  style={s.monthCell}
                   onPress={() => setActiveDate(dateISO!)}
                 >
-                  <Text style={[s.monthCellText, isSelected && s.monthCellTextActive, isToday && !isSelected && { color: NAVY, fontWeight: '900' as const }]}>{d}</Text>
-                  {hasTask && !isSelected && <View style={s.monthDot} />}
+                  <View
+                    style={[
+                      s.monthDayBubble,
+                      isSelected && s.monthDayBubbleActive,
+                      isToday && !isSelected && s.monthDayBubbleToday,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        s.monthCellText,
+                        isSelected && s.monthCellTextActive,
+                        isToday && !isSelected && { color: NAVY, fontWeight: '900' as const },
+                      ]}
+                    >
+                      {d}
+                    </Text>
+                  </View>
+                  {hasTask && <View style={s.monthDot} />}
                 </Pressable>
               ) : (
                 <View key={i} style={s.monthCellEmpty} />
@@ -921,19 +937,25 @@ const s = StyleSheet.create({
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
   },
-  monthCellActive: { backgroundColor: NAVY },
-  monthCellToday: { borderWidth: 2, borderColor: NAVY },
+  monthDayBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthDayBubbleActive: { backgroundColor: NAVY },
+  monthDayBubbleToday: { borderWidth: 2, borderColor: NAVY },
   monthCellEmpty: { width: '14.28%', aspectRatio: 1 },
   monthCellText: { fontSize: 13, fontWeight: '600', color: TEXT_SECONDARY },
   monthCellTextActive: { color: '#ffffff', fontWeight: '900' },
   monthDot: {
     position: 'absolute',
     bottom: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
     backgroundColor: GOLD,
   },
 
