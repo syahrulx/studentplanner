@@ -310,7 +310,6 @@ export default function CommunityMap() {
               latitudeDelta: 0.01,
               longitudeDelta: 0.01,
             }}
-            showsMyLocationButton
             showsUserLocation
           >
 
