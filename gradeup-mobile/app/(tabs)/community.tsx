@@ -200,7 +200,19 @@ export default function CommunityMap() {
     [sendBump]
   );
 
+  const handleCenterOnMe = useCallback(() => {
+    if (myLatitude && myLongitude && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: myLatitude,
+        longitude: myLongitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 500);
+    }
+  }, [myLatitude, myLongitude]);
+
   // =========================================================================
+
   // RENDER
   // =========================================================================
 
@@ -299,7 +311,9 @@ export default function CommunityMap() {
               longitudeDelta: 0.01,
             }}
             showsMyLocationButton
+            showsUserLocation
           >
+
             {/* My own marker */}
             <Marker
               coordinate={{ latitude: myLatitude, longitude: myLongitude }}
@@ -371,7 +385,19 @@ export default function CommunityMap() {
             <Feather name="edit-3" size={16} color={theme.primary} />
             <Text style={[styles.mapOverlayBtnText, { color: theme.primary }]}>Set Status</Text>
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapOverlayBtn,
+              { backgroundColor: theme.card, width: 44, justifyContent: 'center' },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={handleCenterOnMe}
+          >
+            <Feather name="crosshair" size={18} color={theme.primary} />
+          </Pressable>
         </View>
+
       </View>
 
       {/* ─── SELECTED FRIEND POPUP ─── */}
