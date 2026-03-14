@@ -64,12 +64,15 @@ export interface Task {
 }
 
 export interface UserProfile {
+  id?: string;
   name: string;
   studentId: string;
   program: string;
   part: number;
   currentWeek: number;
   startDate: string;
+  isBreak?: boolean;
+  avatar?: string;
 }
 
 export interface Note {

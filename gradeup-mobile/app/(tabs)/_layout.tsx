@@ -69,11 +69,11 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="profile"
+          name="community"
           options={{
             title: T('community'),
             tabBarLabel: T('community'),
-            tabBarIcon: ({ color }) => <Feather name="users" size={26} color={color} />,
+            tabBarIcon: ({ color }) => <Feather name="map-pin" size={26} color={color} />,
           }}
         />
       </Tabs>

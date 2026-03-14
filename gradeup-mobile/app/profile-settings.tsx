@@ -1,57 +1,97 @@
-import React from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Alert, Switch } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
+import { useCommunity } from '@/src/context/CommunityContext';
+import { uploadAvatar } from '@/src/lib/communityApi';
 import { setHasSeenTutorial } from '@/src/storage';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
 import type { ThemeIconKey } from '@/constants/ThemeIcons';
 import { useTranslations } from '@/src/i18n';
+import type { LocationVisibility } from '@/src/lib/communityApi';
 
 const PAD = 20;
 const SECTION = 24;
-const RADIUS = 20;
-const RADIUS_SM = 14;
+const RADIUS = 14;
 const TOTAL_WEEKS = 14;
 
 export default function ProfileSettings() {
-  const { user, language } = useApp();
+  const { user, language, setUser } = useApp();
+  const { locationVisibility, setLocationVisibility } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleEditAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0].base64) {
+        setIsUploading(true);
+        const asset = result.assets[0];
+        const ext = asset.uri.split('.').pop() || 'jpeg';
+        
+        const publicUrl = await uploadAvatar(asset.base64 || '', ext);
+        setUser({ ...user, avatar: publicUrl });
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const resetTutorial = async () => {
     await setHasSeenTutorial(false);
     router.replace('/(auth)/onboarding');
   };
 
-  const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void }[] = [
-    { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any) },
-    { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any) },
-    { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any) },
-    { icon: 'weeklySummary', label: T('weeklySummary'), onPress: () => router.push('/weekly-summary' as any) },
-    { icon: 'leaderboard', label: T('leaderboard'), onPress: () => router.push('/leaderboard' as any) },
-    { icon: 'helpCircle', label: T('resetTutorial'), onPress: resetTutorial },
+  const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = [
+    { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any), color: '#3b82f6' },
+    { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any), color: '#8b5cf6' },
+    { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any), color: '#ec4899' },
+    { icon: 'weeklySummary', label: T('weeklySummary'), onPress: () => router.push('/weekly-summary' as any), color: '#f59e0b' },
+    { icon: 'leaderboard', label: T('leaderboard'), onPress: () => router.push('/leaderboard' as any), color: '#10b981' },
+    { icon: 'helpCircle', label: T('resetTutorial'), onPress: resetTutorial, color: '#64748b' },
   ];
 
-  const menuIconColor = [theme.accent2, theme.primary, theme.secondary, theme.accent3, theme.textSecondary];
+  const privacyOptions: { value: LocationVisibility; label: string; icon: string; desc: string }[] = [
+    { value: 'public', label: 'Public', icon: '🌍', desc: 'Everyone can see you' },
+    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'Only friends can see you' },
+    { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see you' },
+  ];
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: '#f1f5f9' }]}
+      style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header with back */}
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
         >
-          <Feather name="chevron-left" size={24} color={theme.text} />
+          <Feather name="chevron-left" size={28} color={theme.primary} />
+          <Text style={[styles.backText, { color: theme.primary }]}>Back</Text>
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>{T('profile')}</Text>
       </View>
 
       {/* Dark blue hero with avatar, name, ID */}
@@ -65,10 +105,18 @@ export default function ProfileSettings() {
         <View style={styles.heroContent}>
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
+              {user.avatar ? (
+                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
+              )}
             </View>
-            <Pressable style={styles.editAvatarBtn}>
-              <Feather name="plus" size={18} color="#0f172a" />
+            <Pressable style={styles.editAvatarBtn} onPress={handleEditAvatar} disabled={isUploading}>
+              {isUploading ? (
+                <ActivityIndicator size="small" color="#fff" style={{ transform: [{ scale: 0.7 }] }} />
+              ) : (
+                <Feather name="camera" size={16} color="#0f172a" />
+              )}
             </Pressable>
           </View>
           <Text style={styles.heroName}>{user.name}</Text>
@@ -76,117 +124,133 @@ export default function ProfileSettings() {
         </View>
       </View>
 
-      {/* White card 1: Primary Program, Semester Progress, Academic Status */}
-      <View style={[styles.card, styles.cardWhite]}>
+      {/* Academic Info */}
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
         <View style={styles.cardRow}>
-          <Text style={styles.cardLabel}>{T('primaryProgram')}</Text>
-          <View style={[styles.pill, { backgroundColor: theme.primary }]}>
-            <Text style={styles.pillText}>{T('part')} {user.part}</Text>
-          </View>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('primaryProgram')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>{user.program}</Text>
         </View>
-        <Text style={styles.cardValue}>{user.program}</Text>
-
-        <Text style={[styles.cardLabel, { marginTop: 20 }]}>{T('semesterProgress')}</Text>
-        <View style={styles.progressRow}>
+        <View style={styles.divider} />
+        <View style={styles.cardRow}>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('part')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>{user.part}</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.progressContainer}>
+          <View style={styles.progressHeader}>
+            <Text style={[styles.cardLabel, { color: theme.text }]}>{T('semesterProgress')}</Text>
+            <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+              {user.isBreak ? T('semesterBreak') || 'Semester Break' : `W${user.currentWeek} of ${TOTAL_WEEKS}`}
+            </Text>
+          </View>
           <View style={styles.segmentBar}>
             {Array.from({ length: TOTAL_WEEKS }, (_, i) => (
               <View
                 key={i}
                 style={[
                   styles.segment,
-                  i < user.currentWeek ? [styles.segmentFilled, { backgroundColor: theme.primary }] : styles.segmentEmpty,
+                  i < user.currentWeek
+                    ? { backgroundColor: theme.primary }
+                    : { backgroundColor: theme.backgroundSecondary || theme.border },
                 ]}
               />
             ))}
           </View>
-          <Text style={styles.weekLabel}>W{user.currentWeek} OF {TOTAL_WEEKS}</Text>
-        </View>
-
-        <View style={styles.academicStatusBlock}>
-          <View style={styles.academicStatusLeft}>
-            <Text style={styles.cardLabel}>{T('academicStatus')}</Text>
-            <Text style={styles.statusActive}>{T('activeGoodStanding')}</Text>
-          </View>
-          <View style={styles.academicStatusRight}>
-            <Text style={styles.cardLabel}>{T('facultyHub')}</Text>
-            <Text style={styles.facultyValue}>FSKM SHAH ALAM</Text>
-          </View>
         </View>
       </View>
 
-      {/* White card 2: Semester Configuration */}
-      <View style={styles.section}>
-        <Text style={styles.cardLabel}>{T('semesterConfig')}</Text>
-        <View style={[styles.configCard, styles.cardWhite]}>
-          <Pressable
-            style={({ pressed }) => [styles.configRow, pressed && styles.pressed]}
-            onPress={() => router.push('/stress-map' as any)}
-          >
-            <ThemeIcon name="calendar" size={20} color={theme.primary} />
-            <Text style={styles.configLabel}>{T('academicCalendar')}</Text>
-            <Text style={styles.configMeta}>{T('week')} {user.currentWeek}</Text>
-            <Feather name="chevron-right" size={18} color="#94a3b8" />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.configRow, styles.configRowBorder, pressed && styles.pressed]}
-            onPress={() => router.push('/upload-sow' as any)}
-          >
-            <Feather name="trending-up" size={20} color="#f59e0b" />
-            <Text style={styles.configLabel}>{T('configWorkload')}</Text>
-            <Text style={styles.configMeta}>{T('setup')}</Text>
-            <Feather name="chevron-right" size={18} color="#94a3b8" />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Settings menu */}
-      <View style={styles.menuSection}>
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('settingsTools')}</Text>
-        <View style={[styles.menuCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          {menuItems.map((item, i) => (
+      {/* Location Privacy */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LOCATION PRIVACY</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        {privacyOptions.map((opt, i) => (
+          <React.Fragment key={opt.value}>
             <Pressable
-              key={item.label}
               style={({ pressed }) => [
-                styles.menuRow,
-                i < menuItems.length - 1 && styles.menuRowBorder,
-                { borderBottomColor: theme.border },
-                pressed && styles.pressed,
+                styles.privacyRow,
+                pressed && { backgroundColor: theme.backgroundSecondary },
               ]}
+              onPress={() => setLocationVisibility(opt.value)}
+            >
+              <Text style={styles.privacyEmoji}>{opt.icon}</Text>
+              <View style={styles.privacyBody}>
+                <Text style={[styles.privacyLabel, { color: theme.text }]}>{opt.label}</Text>
+                <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>{opt.desc}</Text>
+              </View>
+              {locationVisibility === opt.value && (
+                <Feather name="check" size={20} color={theme.primary} />
+              )}
+            </Pressable>
+            {i < privacyOptions.length - 1 && <View style={styles.dividerList} />}
+          </React.Fragment>
+        ))}
+      </View>
+
+      {/* Semester Config */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('semesterConfig').toUpperCase()}</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <Pressable
+          style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/stress-map' as any)}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#e0e7ff' }]}>
+            <ThemeIcon name="calendar" size={18} color="#4f46e5" />
+          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+        <View style={styles.dividerList} />
+        <Pressable
+          style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/upload-sow' as any)}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
+            <Feather name="trending-up" size={18} color="#d97706" />
+          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
+      {/* Settings Tools */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('settingsTools').toUpperCase()}</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        {menuItems.map((item, i) => (
+          <React.Fragment key={item.label}>
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={item.onPress}
             >
-              <View style={[styles.menuIconWrap, { backgroundColor: theme.backgroundSecondary }]}>
-                <ThemeIcon name={item.icon} size={20} color={menuIconColor[i] ?? theme.textSecondary} />
+              <View style={[styles.iconBox, { backgroundColor: item.color }]}>
+                <ThemeIcon name={item.icon} size={18} color="#fff" />
               </View>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
-              <ThemeIcon name="arrowRight" size={18} color={theme.textSecondary} />
+              <Feather name="chevron-right" size={20} color={theme.textSecondary} />
             </Pressable>
-          ))}
-        </View>
+            {i < menuItems.length - 1 && <View style={styles.dividerList} />}
+          </React.Fragment>
+        ))}
       </View>
-      <View style={{ height: 100 }} />
+
+      <View style={{ height: 60 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingHorizontal: PAD, paddingTop: 56, paddingBottom: 24 },
+  content: { paddingVertical: 56 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    paddingHorizontal: 8,
+    marginBottom: 10,
   },
   backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
+    padding: 8,
   },
-  headerTitle: { fontSize: 20, fontWeight: '800', flex: 1 },
-  pressed: { opacity: 0.96 },
+  backText: { fontSize: 17, fontWeight: '500', marginLeft: -4 },
   heroWrap: {
     borderRadius: RADIUS,
     marginBottom: SECTION,
@@ -195,6 +259,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     minHeight: 200,
     position: 'relative',
+    marginHorizontal: PAD,
   },
   heroTexture: {
     opacity: 0.35,
@@ -217,7 +282,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   avatarText: { fontSize: 28, fontWeight: '800', color: '#0f172a', letterSpacing: -0.5 },
   editAvatarBtn: {
     position: 'absolute',
@@ -234,78 +301,70 @@ const styles = StyleSheet.create({
   },
   heroName: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 4, letterSpacing: -0.3 },
   heroId: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
-  card: {
-    borderRadius: RADIUS_SM,
-    padding: 20,
-    marginBottom: SECTION,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginHorizontal: PAD,
+    marginBottom: 8,
+    marginTop: 24,
+    letterSpacing: -0.2,
   },
-  cardWhite: { backgroundColor: '#ffffff' },
-  cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardLabel: { fontSize: 9, fontWeight: '800', color: '#64748b', letterSpacing: 1.2 },
-  cardValue: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 2 },
-  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
-  pillText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
-  segmentBar: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
-    marginRight: 12,
+  cardGroup: {
+    marginHorizontal: PAD,
+    borderRadius: RADIUS,
+    overflow: 'hidden',
   },
-  segment: {
-    flex: 1,
-    height: 8,
-    borderRadius: 4,
-  },
-  segmentFilled: {},
-  segmentEmpty: { backgroundColor: '#e2e8f0' },
-  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  weekLabel: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
-  academicStatusBlock: {
+  cardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: 20,
-    gap: 16,
-  },
-  academicStatusLeft: { flex: 1, minWidth: 0 },
-  academicStatusRight: { alignItems: 'flex-end' },
-  statusActive: { fontSize: 14, fontWeight: '800', color: '#059669', marginTop: 4 },
-  facultyValue: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginTop: 4, textAlign: 'right' },
-  section: { marginBottom: SECTION },
-  configCard: { marginTop: 10 },
-  configRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-  },
-  configRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e8f0' },
-  configLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: '#0f172a', marginLeft: 12 },
-  configMeta: { fontSize: 13, fontWeight: '600', color: '#64748b', marginRight: 8 },
-  menuSection: { marginBottom: SECTION },
-  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
-  menuCard: { borderRadius: RADIUS_SM, borderWidth: 1, overflow: 'hidden' },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  menuRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
-  menuIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  cardLabel: { fontSize: 16, fontWeight: '400' },
+  cardValue: { fontSize: 16, fontWeight: '400' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)' },
+  dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },
+  progressContainer: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  segmentBar: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  privacyEmoji: { fontSize: 24, marginRight: 12 },
+  privacyBody: { flex: 1 },
+  privacyLabel: { fontSize: 16, fontWeight: '400', marginBottom: 2 },
+  privacyDesc: { fontSize: 13, fontWeight: '400' },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  iconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
   },
-  menuLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
+  menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
 });

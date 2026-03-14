@@ -7,8 +7,8 @@ export const initialUser: UserProfile = {
   studentId: '2022456789',
   program: 'FSKM - Information System Engineering',
   part: 4,
-  currentWeek: 11,
-  startDate: '2025-10-14',
+  currentWeek: 11, // This will be overriden by AppContext now
+  startDate: '2026-03-02',
 };
 
 const courseNames: Record<string, string> = {

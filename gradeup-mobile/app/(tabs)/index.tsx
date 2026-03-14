@@ -124,7 +124,9 @@ export default function Dashboard() {
             <Text style={[styles.greeting, { color: '#f8fafc' }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
             <View style={styles.row}>
               <View style={[styles.dot, { backgroundColor: GOLD }]} />
-              <Text style={[styles.subtitle, { color: 'rgba(248,250,252,0.85)' }]}>{T('part')} {user.part} • {T('week')} {user.currentWeek}</Text>
+              <Text style={[styles.subtitle, { color: 'rgba(248,250,252,0.85)' }]}>
+                {T('part')} {user.part} • {user.isBreak ? T('semesterBreak') || 'Semester Break' : `${T('week')} ${user.currentWeek}`}
+              </Text>
             </View>
           </View>
           <View style={styles.headerRight}>
@@ -140,7 +142,9 @@ export default function Dashboard() {
         >
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={styles.peakAlertWeek}>{T('week')} {user.currentWeek}</Text>
+              <Text style={styles.peakAlertWeek}>
+                {user.isBreak ? T('semesterBreak') || 'Semester Break' : `${T('week')} ${user.currentWeek}`}
+              </Text>
               <Text style={styles.peakAlertLabel}>{T('semesterPulse')}</Text>
             </View>
             <View style={styles.peakAlertBadge}>
