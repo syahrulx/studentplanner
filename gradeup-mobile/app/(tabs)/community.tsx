@@ -389,12 +389,12 @@ export default function CommunityMap() {
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: theme.card, width: 44, justifyContent: 'center' },
+              { backgroundColor: theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleCenterOnMe}
           >
-            <Feather name="crosshair" size={18} color={theme.primary} />
+            <Feather name="crosshair" size={20} color={theme.primary} />
           </Pressable>
         </View>
 
