@@ -24,7 +24,7 @@ const translations = {
 
     // Planner
     academicPlanner: 'Academic Planner',
-    week: 'DAY',
+    week: 'WEEK',
     month: 'MONTH',
     all: 'ALL',
     allTasks: 'ALL TASKS',
