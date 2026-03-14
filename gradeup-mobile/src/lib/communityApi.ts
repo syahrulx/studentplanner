@@ -651,6 +651,18 @@ export async function sendBump(senderId: string, receiverId: string) {
 // ADDITIONAL UTILITIES
 // =============================================================================
 
+/** Get a single user's profile */
+export async function getUserProfile(userId: string): Promise<FriendProfile | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .eq('id', userId)
+    .single();
+
+  if (error) return null;
+  return data as FriendProfile;
+}
+
 /** Remove friend by looking up the friendship between two users */
 export async function removeFriendByUserId(userId: string, friendId: string) {
   const { data, error } = await supabase

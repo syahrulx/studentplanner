@@ -36,6 +36,8 @@ import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import * as taskDb from '../lib/taskDb';
 import * as studyTimeDb from '../lib/studyTimeDb';
+import * as communityApi from '../lib/communityApi';
+
 
 type AppState = {
   user: UserProfile;
@@ -142,14 +144,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         studyDb.getFlashcards(uid),
         taskDb.getTasks(uid),
         studyTimeDb.getAllStudySettings(uid),
+        communityApi.getUserProfile(uid),
       ])
-        .then(([notesList, foldersList, cardsList, tasksList, studyList]) => {
+        .then(([notesList, foldersList, cardsList, tasksList, studyList, profile]) => {
           setNotes(notesList);
           setFlashcardFolders(foldersList);
           setFlashcards(cardsList);
           setTasks(tasksList);
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
+          
+          if (profile) {
+            setUserState(prev => {
+              const base = {
+                ...prev,
+                id: profile.id,
+                name: profile.name || prev.name,
+                avatar: profile.avatar_url || prev.avatar,
+                program: profile.course || profile.faculty || prev.program,
+              };
+              // Recalculate academic progress if startDate exists in potential future DB schema
+              // For now we keep the seedData startDate unless we added it to DB
+              return base;
+            });
+          }
         })
         .catch(() => {
           // On error, keep existing local state
