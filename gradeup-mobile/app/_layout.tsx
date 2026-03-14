@@ -9,6 +9,7 @@ import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppProvider } from '@/src/context/AppContext';
+import { CommunityProvider } from '@/src/context/CommunityContext';
 import { useTheme } from '@/hooks/useTheme';
 
 export {
@@ -70,7 +71,9 @@ function RootLayoutNav() {
 
   return (
     <AppProvider>
-      <ThemeAwareLayout />
+      <CommunityProvider>
+        <ThemeAwareLayout />
+      </CommunityProvider>
     </AppProvider>
   );
 }

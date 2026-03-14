@@ -9,6 +9,7 @@ import {
   initialFlashcards,
   initialFlashcardFolders,
 } from '../seedData';
+import { getAcademicProgress } from '../lib/academicUtils';
 import {
   getTheme,
   setTheme as persistTheme,
@@ -85,7 +86,19 @@ type AppState = {
 const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile>(initialUser);
+  const [user, setUserState] = useState<UserProfile>(() => {
+    const progress = getAcademicProgress(initialUser.startDate);
+    return { ...initialUser, currentWeek: progress.week, isBreak: progress.isBreak };
+  });
+
+  const setUser = useCallback((newUser: UserProfile | ((prev: UserProfile) => UserProfile)) => {
+    setUserState(prev => {
+      const updated = typeof newUser === 'function' ? newUser(prev) : newUser;
+      const progress = getAcademicProgress(updated.startDate);
+      return { ...updated, currentWeek: progress.week, isBreak: progress.isBreak };
+    });
+  }, []);
+
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
