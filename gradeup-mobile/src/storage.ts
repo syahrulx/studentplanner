@@ -239,3 +239,22 @@ export async function setCourses(courses: Course[]): Promise<void> {
     await AsyncStorage.setItem(KEY_COURSES, JSON.stringify(courses));
   } catch {}
 }
+
+// Last planner view (week | month | all) – restore when opening Calendar tab
+export type PlannerViewMode = 'week' | 'month' | 'all';
+const KEY_PLANNER_VIEW = 'plannerView';
+const VALID_PLANNER_VIEWS: PlannerViewMode[] = ['week', 'month', 'all'];
+
+export async function getPlannerView(): Promise<PlannerViewMode> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_PLANNER_VIEW);
+    if (value && VALID_PLANNER_VIEWS.includes(value as PlannerViewMode)) return value as PlannerViewMode;
+  } catch {}
+  return 'week';
+}
+
+export async function setPlannerView(view: PlannerViewMode): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
+  } catch {}
+}

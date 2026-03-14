@@ -39,6 +39,7 @@ const translations = {
     project: 'PROJECT',
     lab: 'LAB',
     noTasksForDay: 'No tasks for this day',
+    addStudyTime: 'Study time',
     dueOverdue: 'OVERDUE',
     dueTodayLabel: 'DUE TODAY',
     dueTomorrow: 'DUE TOMORROW',
@@ -215,9 +216,11 @@ const translations = {
     tasks: 'Tasks',
     add: 'Add',
     community: 'Community',
+    addTask: 'Add task',
     addManually: 'Add Manually',
     createTaskYourself: 'Create a new task yourself',
     aiPlanner: 'AI Planner',
+    scheduleStudySub: 'Schedule study or revision',
     pasteMessageExtract: 'Paste message to extract tasks',
 
     // Community tab
@@ -288,6 +291,7 @@ const translations = {
     project: 'PROJEK',
     lab: 'MAKMAL',
     noTasksForDay: 'Tiada tugasan untuk hari ini',
+    addStudyTime: 'Masa belajar',
     dueOverdue: 'TERLEWAT',
     dueTodayLabel: 'TAMAT HARI INI',
     dueTomorrow: 'TAMAT ESOK',
@@ -464,9 +468,11 @@ const translations = {
     tasks: 'Tugasan',
     add: 'Tambah',
     community: 'Komuniti',
+    addTask: 'Tambah tugasan',
     addManually: 'Tambah Manual',
     createTaskYourself: 'Cipta tugasan baharu sendiri',
     aiPlanner: 'Perancang AI',
+    scheduleStudySub: 'Jadual masa belajar atau ulang kaji',
     pasteMessageExtract: 'Tampal mesej untuk ekstrak tugasan',
 
     // Community tab

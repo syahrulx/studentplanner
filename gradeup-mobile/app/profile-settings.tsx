@@ -19,7 +19,8 @@ const RADIUS = 14;
 const TOTAL_WEEKS = 14;
 
 export default function ProfileSettings() {
-  const { user, language, setUser } = useApp();
+  const { user, academicCalendar, language, setUser } = useApp();
+  const totalWeeks = academicCalendar?.totalWeeks ?? TOTAL_WEEKS;
   const { locationVisibility, setLocationVisibility } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
@@ -140,11 +141,11 @@ export default function ProfileSettings() {
           <View style={styles.progressHeader}>
             <Text style={[styles.cardLabel, { color: theme.text }]}>{T('semesterProgress')}</Text>
             <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
-              {user.isBreak ? T('semesterBreak') || 'Semester Break' : `W${user.currentWeek} of ${TOTAL_WEEKS}`}
+              {user.isBreak ? T('semesterBreak') || 'Semester Break' : `W${user.currentWeek} of ${totalWeeks}`}
             </Text>
           </View>
           <View style={styles.segmentBar}>
-            {Array.from({ length: TOTAL_WEEKS }, (_, i) => (
+            {Array.from({ length: totalWeeks }, (_, i) => (
               <View
                 key={i}
                 style={[
@@ -188,6 +189,17 @@ export default function ProfileSettings() {
       {/* Semester Config */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('semesterConfig').toUpperCase()}</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <Pressable
+          style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/academic-setup' as any)}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#dbeafe' }]}>
+            <ThemeIcon name="calendar" size={18} color="#1d4ed8" />
+          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>Academic level & semester</Text>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+        <View style={styles.dividerList} />
         <Pressable
           style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
           onPress={() => router.push('/stress-map' as any)}

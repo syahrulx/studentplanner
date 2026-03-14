@@ -5,11 +5,10 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS } from '@/src/constants';
 import Feather from '@expo/vector-icons/Feather';
 
-const TOTAL_WEEKS = 14;
-
 export default function StressMap() {
-  const { user, courses } = useApp();
-  const weeks = Array.from({ length: TOTAL_WEEKS }, (_, i) => i + 1);
+  const { user, courses, academicCalendar } = useApp();
+  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const weeks = Array.from({ length: totalWeeks }, (_, i) => i + 1);
   const maxWork = 10;
 
   // Subject load levels: derive from workload for current week (0–10) → display as LEVEL x.x
@@ -46,8 +45,8 @@ export default function StressMap() {
 
   const avgStress = useMemo(() => {
     const sum = weeklyTotals.reduce((a, b) => a + b, 0);
-    return (sum / TOTAL_WEEKS).toFixed(1);
-  }, [weeklyTotals]);
+    return (sum / totalWeeks).toFixed(1);
+  }, [weeklyTotals, totalWeeks]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -58,7 +57,11 @@ export default function StressMap() {
         </Pressable>
         <View>
           <Text style={styles.title}>SOW Intelligence</Text>
-          <Text style={styles.subtitle}>PART {user.part} ISE • AI MANAGED</Text>
+          <Text style={styles.subtitle}>
+            {[user.academicLevel, user.university].filter(Boolean).length > 0
+              ? [user.academicLevel, user.university].filter(Boolean).join(' • ')
+              : `PART ${user.part} • Set level in Profile`}
+          </Text>
         </View>
       </View>
 

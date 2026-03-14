@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder } from '../types';
+import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder, NoteFolder, AcademicCalendar } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {
   initialUser,
@@ -26,9 +26,12 @@ import {
   setLanguage as persistLanguage,
   getLoghat,
   setLoghat as persistLoghat,
+  getPlannerView,
+  setPlannerView as persistPlannerView,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
+  type PlannerViewMode,
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
@@ -36,22 +39,34 @@ import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import * as taskDb from '../lib/taskDb';
 import * as studyTimeDb from '../lib/studyTimeDb';
+import * as coursesDb from '../lib/coursesDb';
+import * as profileDb from '../lib/profileDb';
+import * as academicCalendarDb from '../lib/academicCalendarDb';
 
 type AppState = {
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
+  academicCalendar: AcademicCalendar | null;
+  setAcademicCalendar: React.Dispatch<React.SetStateAction<AcademicCalendar | null>>;
+  updateProfile: (updates: { name?: string; university?: string; academicLevel?: UserProfile['academicLevel'] }) => Promise<void>;
+  updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   courses: Course[];
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course) => void;
   tasks: Task[];
+  tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   notes: Note[];
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
+  noteFolders: NoteFolder[];
+  addNoteFolder: (folder: NoteFolder) => void;
+  deleteNote: (noteId: string) => void;
+  deleteNoteFolder: (folderId: string) => void;
   flashcards: Flashcard[];
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
   flashcardFolders: FlashcardFolder[];
   setFlashcardFolders: React.Dispatch<React.SetStateAction<FlashcardFolder[]>>;
-  addFlashcardFolder: (name: string) => FlashcardFolder;
+  addFlashcardFolder: (name: string, subjectId?: string) => FlashcardFolder;
   addFlashcard: (folderId: string, front: string, back: string) => Flashcard;
   deleteFlashcardFolder: (folderId: string) => void;
   deleteFlashcard: (cardId: string) => void;
@@ -71,6 +86,7 @@ type AppState = {
   markStudyDone: (key: string) => void;
   unmarkStudyDone: (key: string) => void;
   addTask: (task: Task) => void;
+  updateTask: (taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
   pinnedTaskIds: string[];
@@ -79,6 +95,8 @@ type AppState = {
   subjectColors: Record<string, string>;
   setSubjectColor: (courseId: string, color: string) => void;
   getSubjectColor: (courseId: string) => string;
+  lastPlannerView: PlannerViewMode;
+  setLastPlannerView: (view: PlannerViewMode) => void;
   handleSaveNote: (note: Note) => void;
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
 };
@@ -86,22 +104,26 @@ type AppState = {
 const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [academicCalendar, setAcademicCalendar] = useState<AcademicCalendar | null>(null);
   const [user, setUserState] = useState<UserProfile>(() => {
-    const progress = getAcademicProgress(initialUser.startDate);
+    const progress = getAcademicProgress(initialUser.startDate, 14);
     return { ...initialUser, currentWeek: progress.week, isBreak: progress.isBreak };
   });
 
   const setUser = useCallback((newUser: UserProfile | ((prev: UserProfile) => UserProfile)) => {
     setUserState(prev => {
       const updated = typeof newUser === 'function' ? newUser(prev) : newUser;
-      const progress = getAcademicProgress(updated.startDate);
+      const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+      const progress = getAcademicProgress(updated.startDate, totalWeeks);
       return { ...updated, currentWeek: progress.week, isBreak: progress.isBreak };
     });
-  }, []);
+  }, [academicCalendar?.totalWeeks]);
 
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksVersion, setTasksVersion] = useState(0);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
   const [pendingExtraction, setPendingExtraction] = useState('');
@@ -122,34 +144,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
+  const [lastPlannerView, setLastPlannerViewState] = useState<PlannerViewMode>('week');
 
   useEffect(() => {
     getTheme().then(setThemeState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
+    getPlannerView().then(setLastPlannerViewState);
     getLanguage().then(setLanguageState);
     getLoghat().then(setLoghatState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
     });
 
-    // Helper to load all remote data for a given user id
+    // Helper to load all remote data for a given user id (including profile, calendar, subjects)
     const loadRemoteData = (uid: string) => {
       Promise.all([
         studyDb.getNotes(uid),
+        studyDb.getNoteFolders(uid),
         studyDb.getFlashcardFolders(uid),
         studyDb.getFlashcards(uid),
         taskDb.getTasks(uid),
         studyTimeDb.getAllStudySettings(uid),
+        coursesDb.getCourses(uid),
+        profileDb.getProfile(uid),
+        academicCalendarDb.getActiveCalendar(uid),
       ])
-        .then(([notesList, foldersList, cardsList, tasksList, studyList]) => {
+        .then(([notesList, noteFoldersList, foldersList, cardsList, tasksList, studyList, coursesList, profile, calendar]) => {
           setNotes(notesList);
+          setNoteFolders(noteFoldersList);
           setFlashcardFolders(foldersList);
           setFlashcards(cardsList);
           setTasks(tasksList);
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
+          setCourses(coursesList);
+          setAcademicCalendar(calendar ?? null);
+          setUserState((prev) => {
+            let next = { ...prev };
+            if (profile) next = { ...next, name: profile.name, university: profile.university, academicLevel: profile.academicLevel };
+            if (calendar) {
+              const progress = getAcademicProgress(calendar.startDate, calendar.totalWeeks);
+              next = { ...next, startDate: calendar.startDate, currentWeek: progress.week, isBreak: progress.isBreak };
+            }
+            return next;
+          });
         })
         .catch(() => {
           // On error, keep existing local state
@@ -169,13 +209,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const uid = session?.user?.id;
       if (!uid) {
-        // If user signed out, clear server-backed data but leave local preferences
         setTasks([]);
         setNotes(initialNotes);
+        setNoteFolders([]);
         setFlashcardFolders(initialFlashcardFolders);
         setFlashcards(initialFlashcards);
         setRevisionSettingsList([]);
         setRevisionState(defaultRevision);
+        setCourses([]);
+        setAcademicCalendar(null);
         return;
       }
       loadRemoteData(uid);
@@ -199,6 +241,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setLoghat = useCallback((value: AppLoghat | null) => {
     setLoghatState(value);
     persistLoghat(value);
+  }, []);
+
+  const setLastPlannerView = useCallback((view: PlannerViewMode) => {
+    setLastPlannerViewState(view);
+    persistPlannerView(view);
   }, []);
 
   const setRevisionSettings = useCallback(async (settings: RevisionSettings) => {
@@ -255,6 +302,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateProfile = useCallback(async (updates: { name?: string; university?: string; academicLevel?: UserProfile['academicLevel'] }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await profileDb.updateProfile(uid, updates);
+    setUserState((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const updateAcademicCalendar = useCallback(async (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    const saved = await academicCalendarDb.upsertCalendar(uid, calendar);
+    setAcademicCalendar(saved);
+    const progress = getAcademicProgress(saved.startDate, saved.totalWeeks);
+    setUserState((prev) => ({ ...prev, startDate: saved.startDate, currentWeek: progress.week, isBreak: progress.isBreak }));
+  }, []);
+
   const addTask = useCallback((task: Task) => {
     setTasks((prev) => [task, ...prev]);
     // Persist to Supabase in background
@@ -264,6 +329,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       taskDb.upsertTask(uid, task);
     });
   }, []);
+
+  const updateTask = useCallback((taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => {
+    const id = String(taskId).trim();
+    setTasks((prev) => {
+      const task = prev.find((t) => String(t.id).trim() === id);
+      if (!task) return prev;
+      const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : task.dueDate;
+      const dueDate = (rawDueDate ?? '').trim().slice(0, 10);
+      const rawDueTime = updates.dueTime !== undefined ? updates.dueTime : task.dueTime;
+      const dueTime = (rawDueTime ?? '').trim().length >= 5 ? (rawDueTime ?? '').trim().slice(0, 5) : (rawDueTime ?? '23:59').trim();
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const today = new Date(todayISO + 'T00:00:00');
+      const due = new Date(dueDate + 'T00:00:00');
+      const diffDays = Math.floor((due.getTime() - today.getTime()) / 864e5);
+      const deadlineRisk: Task['deadlineRisk'] = diffDays <= 2 ? 'High' : diffDays <= 7 ? 'Medium' : 'Low';
+      const suggestedWeek = (() => {
+        const start = user?.startDate ? new Date(user.startDate + 'T00:00:00') : new Date(todayISO + 'T00:00:00');
+        const diff = Math.floor((due.getTime() - start.getTime()) / 864e5);
+        return Math.max(1, Math.ceil(diff / 7));
+      })();
+      const updated: Task = {
+        ...task,
+        dueDate,
+        dueTime,
+        priority: updates.priority !== undefined ? updates.priority : task.priority,
+        effort: updates.effort !== undefined ? updates.effort : task.effort,
+        deadlineRisk,
+        suggestedWeek,
+      };
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (!uid) return;
+        taskDb.upsertTask(uid, updated);
+      });
+      // Return a new array with new object refs so React and list consumers see the update
+      const next: Task[] = prev.map((t) =>
+        String(t.id).trim() === id ? { ...updated } : { ...t }
+      );
+      setTasksVersion((v) => v + 1);
+      return next;
+    });
+  }, [user?.startDate]);
 
   const toggleTaskDone = useCallback((taskId: string) => {
     setTasks((prev) => {
@@ -287,11 +394,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (next.length !== prev.length) persistPinnedTaskIds(next);
       return next;
     });
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (!uid) return;
-      taskDb.deleteTask(uid, taskId);
-    });
+      await taskDb.deleteTask(uid, taskId);
+    })();
   }, []);
 
   const pinTask = useCallback((taskId: string): boolean => {
@@ -333,6 +441,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (prev.some((c) => c.id.toUpperCase() === course.id.toUpperCase())) return prev;
       const next = [...prev, course];
       persistCourses(next);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) {
+          coursesDb.addCourse(session.user.id, course).catch(() => {
+            // On error, local state is already updated; Supabase sync may retry later
+          });
+        }
+      });
       return next;
     });
   }, []);
@@ -348,15 +463,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addNoteFolder = useCallback((folder: NoteFolder) => {
+    setNoteFolders((prev) => {
+      if (prev.some((f) => f.id === folder.id)) return prev;
+      return [...prev, folder];
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.upsertNoteFolder(session.user.id, folder);
+    });
+  }, []);
+
+  const deleteNote = useCallback((noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.deleteNote(session.user.id, noteId);
+    });
+  }, []);
+
+  const deleteNoteFolder = useCallback((folderId: string) => {
+    setNoteFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setNotes((prev) => prev.map((n) => (n.folderId === folderId ? { ...n, folderId: undefined } : n)));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) studyDb.deleteNoteFolder(session.user.id, folderId);
+    });
+  }, []);
+
   const handleGenerateFlashcards = useCallback((newCards: Flashcard[]) => {
     setFlashcards(newCards);
   }, []);
 
-  const addFlashcardFolder = useCallback((name: string): FlashcardFolder => {
+  const addFlashcardFolder = useCallback((name: string, subjectId?: string): FlashcardFolder => {
     const folder: FlashcardFolder = {
       id: 'folder-' + Date.now(),
       name: name.trim() || 'New folder',
       createdAt: new Date().toISOString().slice(0, 10),
+      ...(subjectId != null && subjectId !== '' ? { subjectId } : {}),
     };
     setFlashcardFolders((prev) => [folder, ...prev]);
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -397,13 +538,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value: AppState = {
     user,
     setUser,
+    academicCalendar,
+    setAcademicCalendar,
+    updateProfile,
+    updateAcademicCalendar,
     courses,
     setCourses,
     addCourse,
     tasks,
+    tasksVersion,
     setTasks,
     notes,
     setNotes,
+    noteFolders,
+    addNoteFolder,
+    deleteNote,
+    deleteNoteFolder,
     flashcards,
     setFlashcards,
     flashcardFolders,
@@ -428,6 +578,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     markStudyDone,
     unmarkStudyDone,
     addTask,
+    updateTask,
     toggleTaskDone,
     deleteTask,
     pinnedTaskIds,
@@ -436,6 +587,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     subjectColors,
     setSubjectColor,
     getSubjectColor,
+    lastPlannerView,
+    setLastPlannerView,
     handleSaveNote,
     handleGenerateFlashcards,
   };

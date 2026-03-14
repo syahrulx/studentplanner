@@ -7,16 +7,14 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 
 export default function SubjectColorsScreen() {
-  const { courses, tasks, getSubjectColor, setSubjectColor } = useApp();
+  const { courses, getSubjectColor, setSubjectColor } = useApp();
   const theme = useTheme();
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   const [customHex, setCustomHex] = useState('#003366');
 
   const subjectIds = useMemo(() => {
-    const fromCourses = new Set(courses.map((c) => c.id));
-    tasks.forEach((t) => fromCourses.add(t.courseId));
-    return Array.from(fromCourses).sort();
-  }, [courses, tasks]);
+    return courses.map((c) => c.id).sort();
+  }, [courses]);
 
   const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(customHex.trim());
 

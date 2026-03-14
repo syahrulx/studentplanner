@@ -1,8 +1,9 @@
-import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform, Modal } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
-import { formatDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { Priority } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
 
@@ -30,11 +31,52 @@ function getDaysUntilDue(dueDate: string): number {
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
 
+const EFFORT_OPTIONS = [1, 2, 4, 6, 8, 12, 20];
+const TIME_OPTIONS = (() => {
+  const out: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    out.push(`${String(h).padStart(2, '0')}:00`);
+    out.push(`${String(h).padStart(2, '0')}:30`);
+  }
+  return out;
+})();
+
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, toggleTaskDone, deleteTask, language } = useApp();
+  const { tasks, toggleTaskDone, deleteTask, updateTask, language } = useApp();
   const T = useTranslations(language);
   const task = tasks.find((t) => t.id === id);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editDueTime, setEditDueTime] = useState('');
+  const [editPriority, setEditPriority] = useState<Priority>(Priority.Medium);
+  const [editEffort, setEditEffort] = useState(4);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
+  const [showEffortModal, setShowEffortModal] = useState(false);
+  const [pickerViewDate, setPickerViewDate] = useState(getTodayISO);
+
+  useEffect(() => {
+    if (task) {
+      setEditDueDate(task.dueDate);
+      setEditDueTime((task.dueTime || '23:59').slice(0, 5));
+      setEditPriority(task.priority);
+      setEditEffort(task.effort);
+    }
+  }, [task?.id]);
+
+  const handleDoneEditing = () => {
+    if (!task) return;
+    updateTask(String(task.id), {
+      dueDate: editDueDate,
+      dueTime: editDueTime.length === 5 ? editDueTime : editDueTime + ':00',
+      priority: editPriority,
+      effort: editEffort,
+    });
+    setIsEditing(false);
+  };
 
   if (!task) {
     return (
@@ -125,7 +167,7 @@ export default function TaskDetails() {
             <View style={s.badgeDone}>
               <Feather name="check" size={12} color="#16a34a" />
               <Text style={s.badgeDoneText}>{T('completed')}</Text>
-            </View>
+      </View>
           )}
         </View>
 
@@ -144,48 +186,73 @@ export default function TaskDetails() {
           </Text>
         </View>
 
-        {/* Info Cards */}
-        <View style={s.infoGrid}>
-          <View style={s.infoCard}>
-            <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
-              <Feather name="calendar" size={18} color={NAVY} />
-            </View>
-            <View>
-              <Text style={s.infoLabel}>{T('dueDate')}</Text>
-              <Text style={s.infoValue}>{formatDisplayDate(task.dueDate)}</Text>
-            </View>
-          </View>
+        {/* Info Cards — when isEditing, tap to open picker */}
+        {(() => {
+          const displayDate = isEditing ? editDueDate : task.dueDate;
+          const displayTime = isEditing ? editDueTime : (task.dueTime || '').slice(0, 5);
+          const displayPriority = isEditing ? editPriority : task.priority;
+          const displayEffort = isEditing ? editEffort : task.effort;
+          const displayPriorityConfig = PRIORITY_CONFIG[displayPriority] || PRIORITY_CONFIG[Priority.Low];
+          return (
+            <View style={s.infoGrid}>
+              <Pressable
+                style={s.infoCard}
+                onPress={isEditing ? () => { setPickerViewDate(displayDate); setShowDateModal(true); } : undefined}
+                disabled={!isEditing}
+              >
+                <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
+                  <Feather name="calendar" size={18} color={NAVY} />
+                </View>
+                <View>
+                  <Text style={s.infoLabel}>{T('dueDate')}</Text>
+                  <Text style={s.infoValue}>{formatDisplayDate(displayDate)}</Text>
+                </View>
+              </Pressable>
 
-          <View style={s.infoCard}>
-            <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
-              <Feather name="clock" size={18} color={NAVY} />
-            </View>
-            <View>
-              <Text style={s.infoLabel}>{T('deadline')}</Text>
-              <Text style={s.infoValue}>{(task.dueTime || '').slice(0, 5)}</Text>
-            </View>
-          </View>
+              <Pressable
+                style={s.infoCard}
+                onPress={isEditing ? () => setShowTimeModal(true) : undefined}
+                disabled={!isEditing}
+              >
+                <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
+                  <Feather name="clock" size={18} color={NAVY} />
+                </View>
+                <View>
+                  <Text style={s.infoLabel}>{T('deadline')}</Text>
+                  <Text style={s.infoValue}>{displayTime || '—'}</Text>
+                </View>
+              </Pressable>
 
-          <View style={s.infoCard}>
-            <View style={[s.infoIconWrap, { backgroundColor: priorityConfig.bg }]}>
-              <Feather name="flag" size={18} color={priorityConfig.color} />
-            </View>
-            <View>
-              <Text style={s.infoLabel}>{T('priority')}</Text>
-              <Text style={[s.infoValue, { color: priorityConfig.color }]}>{priorityConfig.label}</Text>
-            </View>
-          </View>
+              <Pressable
+                style={s.infoCard}
+                onPress={isEditing ? () => setShowPriorityModal(true) : undefined}
+                disabled={!isEditing}
+              >
+                <View style={[s.infoIconWrap, { backgroundColor: displayPriorityConfig.bg }]}>
+                  <Feather name="flag" size={18} color={displayPriorityConfig.color} />
+                </View>
+                <View>
+                  <Text style={s.infoLabel}>{T('priority')}</Text>
+                  <Text style={[s.infoValue, { color: displayPriorityConfig.color }]}>{displayPriorityConfig.label}</Text>
+                </View>
+              </Pressable>
 
-          <View style={s.infoCard}>
-            <View style={[s.infoIconWrap, { backgroundColor: 'rgba(245,158,11,0.06)' }]}>
-              <Feather name="zap" size={18} color={GOLD} />
+              <Pressable
+                style={s.infoCard}
+                onPress={isEditing ? () => setShowEffortModal(true) : undefined}
+                disabled={!isEditing}
+              >
+                <View style={[s.infoIconWrap, { backgroundColor: 'rgba(245,158,11,0.06)' }]}>
+                  <Feather name="zap" size={18} color={GOLD} />
+                </View>
+                <View>
+                  <Text style={s.infoLabel}>{T('estEffort')}</Text>
+                  <Text style={s.infoValue}>{displayEffort} {T('hours')}</Text>
+                </View>
+              </Pressable>
             </View>
-            <View>
-              <Text style={s.infoLabel}>{T('estEffort')}</Text>
-              <Text style={s.infoValue}>{task.effort} {T('hours')}</Text>
-            </View>
-          </View>
-        </View>
+          );
+        })()}
 
 
         {/* Notes — only shown if notes exist */}
@@ -194,7 +261,7 @@ export default function TaskDetails() {
           <View style={s.notesSectionHeader}>
             <Feather name="file-text" size={14} color={TEXT_SECONDARY} />
             <Text style={s.notesSectionTitle}>{T('notesLabel')}</Text>
-          </View>
+      </View>
           <View style={s.notesCard}>
             <Text style={s.notesBody}>{task.notes}</Text>
           </View>
@@ -225,11 +292,138 @@ export default function TaskDetails() {
         ) : null}
       </ScrollView>
 
-      {/* Sticky Bottom Actions */}
+      {/* Edit modals */}
+      <Modal visible={showDateModal} transparent animationType="fade">
+        <Pressable style={s.modalOverlay} onPress={() => setShowDateModal(false)}>
+          <View style={s.pickerCard} onStartShouldSetResponder={() => true}>
+            <Text style={s.pickerTitle}>{T('dueDate')}</Text>
+            {(() => {
+              const y = new Date(pickerViewDate + 'T12:00:00').getFullYear();
+              const m = new Date(pickerViewDate + 'T12:00:00').getMonth();
+              const grid = getMonthGrid(y, m);
+              return (
+                <>
+                  <View style={s.calendarNav}>
+                    <Pressable onPress={() => { const d = new Date(y, m - 1, 1); setPickerViewDate(toISO(d.getFullYear(), d.getMonth(), 1)); }} hitSlop={8}>
+                      <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
+                    </Pressable>
+                    <Text style={s.calendarNavTitle}>{getMonthYearLabel(pickerViewDate)}</Text>
+                    <Pressable onPress={() => { const d = new Date(y, m + 1, 1); setPickerViewDate(toISO(d.getFullYear(), d.getMonth(), 1)); }} hitSlop={8}>
+                      <Feather name="chevron-right" size={24} color={TEXT_PRIMARY} />
+                    </Pressable>
+                  </View>
+                  <View style={s.calendarWeekRow}>
+                    {['S','M','T','W','T','F','S'].map((day, i) => <Text key={i} style={s.calendarWeekText}>{day}</Text>)}
+                  </View>
+                  <View style={s.calendarGrid}>
+                    {grid.map((day, i) => {
+                      if (day == null) return <View key={i} style={s.calendarCellEmpty} />;
+                      const iso = toISO(y, m, day);
+                      const isSelected = iso === editDueDate;
+                      return (
+                        <Pressable
+                          key={i}
+                          style={s.calendarCell}
+                          onPress={() => { setEditDueDate(iso); setShowDateModal(false); }}
+                        >
+                          <View style={[s.calendarDayBubble, isSelected && s.calendarDayBubbleSelected]}>
+                            <Text style={[s.calendarCellText, isSelected && s.calendarCellSelected]}>{day}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              );
+            })()}
+            <Pressable style={s.pickerClose} onPress={() => setShowDateModal(false)}>
+              <Text style={s.pickerCloseText}>{T('cancel')}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showTimeModal} transparent animationType="fade">
+        <Pressable style={s.modalOverlay} onPress={() => setShowTimeModal(false)}>
+          <View style={s.pickerCard} onStartShouldSetResponder={() => true}>
+            <Text style={s.pickerTitle}>{T('deadline')}</Text>
+            <ScrollView style={s.timeList} contentContainerStyle={s.timeListContent}>
+              {TIME_OPTIONS.map((t) => (
+                <Pressable
+                  key={t}
+                  style={[s.timeOption, editDueTime === t && s.timeOptionActive]}
+                  onPress={() => { setEditDueTime(t); setShowTimeModal(false); }}
+                >
+                  <Text style={[s.timeOptionText, editDueTime === t && s.timeOptionTextActive]}>{t}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable style={s.pickerClose} onPress={() => setShowTimeModal(false)}>
+              <Text style={s.pickerCloseText}>{T('cancel')}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showPriorityModal} transparent animationType="fade">
+        <Pressable style={s.modalOverlay} onPress={() => setShowPriorityModal(false)}>
+          <View style={s.pickerCard} onStartShouldSetResponder={() => true}>
+            <Text style={s.pickerTitle}>{T('priority')}</Text>
+            {(Object.values(Priority) as Priority[]).map((p) => {
+              const cfg = PRIORITY_CONFIG[p];
+              return (
+                <Pressable
+                  key={p}
+                  style={[s.priorityOption, editPriority === p && s.priorityOptionActive]}
+                  onPress={() => { setEditPriority(p); setShowPriorityModal(false); }}
+                >
+                  <Text style={[s.priorityOptionText, editPriority === p && { color: cfg.color }]}>{cfg.label}</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable style={s.pickerClose} onPress={() => setShowPriorityModal(false)}>
+              <Text style={s.pickerCloseText}>{T('cancel')}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showEffortModal} transparent animationType="fade">
+        <Pressable style={s.modalOverlay} onPress={() => setShowEffortModal(false)}>
+          <View style={s.pickerCard} onStartShouldSetResponder={() => true}>
+            <Text style={s.pickerTitle}>{T('estEffort')} ({T('hours')})</Text>
+            <View style={s.effortRow}>
+              {EFFORT_OPTIONS.map((n) => (
+                <Pressable
+                  key={n}
+                  style={[s.effortChip, editEffort === n && s.effortChipActive]}
+                  onPress={() => { setEditEffort(n); setShowEffortModal(false); }}
+                >
+                  <Text style={[s.effortChipText, editEffort === n && s.effortChipTextActive]}>{n}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={s.pickerClose} onPress={() => setShowEffortModal(false)}>
+              <Text style={s.pickerCloseText}>{T('cancel')}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Sticky Bottom Actions: Delete, Edit/Done, Mark as done */}
       <View style={s.bottomBar}>
         <Pressable onPress={handleDelete} style={({ pressed }) => [s.actionBtn, s.deleteBtn, pressed && { opacity: 0.7 }]}>
           <Feather name="trash-2" size={20} color={RED} />
         </Pressable>
+        {isEditing ? (
+          <Pressable onPress={handleDoneEditing} style={({ pressed }) => [s.actionBtn, s.editBtn, pressed && { opacity: 0.7 }]}>
+            <Text style={s.editBtnText}>{T('done')}</Text>
+          </Pressable>
+        ) : (
+          <Pressable onPress={() => setIsEditing(true)} style={({ pressed }) => [s.actionBtn, s.editBtn, pressed && { opacity: 0.7 }]}>
+            <Feather name="edit-2" size={20} color={NAVY} />
+          </Pressable>
+        )}
         <Pressable
           style={({ pressed }) => [s.mainActionBtn, task.isDone && s.mainActionBtnDone, pressed && { opacity: 0.85 }]}
           onPress={handleToggle}
@@ -275,6 +469,37 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: { fontSize: 17, fontWeight: '700', color: TEXT_PRIMARY, letterSpacing: -0.3 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
+  pickerCard: { backgroundColor: CARD, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: BORDER },
+  pickerTitle: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 16 },
+  pickerClose: { marginTop: 16, paddingVertical: 12, alignItems: 'center' },
+  pickerCloseText: { fontSize: 15, fontWeight: '700', color: TEXT_SECONDARY },
+  calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  calendarNavTitle: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  calendarWeekRow: { flexDirection: 'row', marginBottom: 8 },
+  calendarWeekText: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { width: '14.28%', paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
+  calendarCellEmpty: { width: '14.28%', paddingVertical: 8 },
+  calendarDayBubble: { minWidth: 36, paddingVertical: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  calendarDayBubbleSelected: { backgroundColor: NAVY },
+  calendarCellText: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  calendarCellSelected: { color: '#ffffff', fontWeight: '800' },
+  timeList: { maxHeight: 240 },
+  timeListContent: { paddingVertical: 8 },
+  timeOption: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, marginBottom: 4 },
+  timeOptionActive: { backgroundColor: 'rgba(0,51,102,0.1)' },
+  timeOptionText: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  timeOptionTextActive: { color: NAVY, fontWeight: '700' },
+  priorityOption: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8 },
+  priorityOptionActive: { backgroundColor: '#f1f5f9' },
+  priorityOptionText: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  effortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  effortChip: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: BORDER },
+  effortChipActive: { backgroundColor: 'rgba(0,51,102,0.1)', borderColor: NAVY },
+  effortChipText: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  effortChipTextActive: { color: NAVY, fontWeight: '700' },
 
   // Scroll
   scroll: { flex: 1 },
@@ -424,6 +649,12 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239,68,68,0.12)',
   },
+  editBtn: {
+    backgroundColor: 'rgba(0,51,102,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,51,102,0.2)',
+  },
+  editBtnText: { fontSize: 14, fontWeight: '700', color: NAVY },
   mainActionBtn: {
     flex: 1,
     flexDirection: 'row',

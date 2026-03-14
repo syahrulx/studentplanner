@@ -22,12 +22,13 @@ create policy "Users can manage own notes"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- Flashcard folders (per user)
+-- Flashcard folders (per user; optional subject_id for grouping by course/chapter/topic)
 create table if not exists public.flashcard_folders (
   id text not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   created_at text not null,
+  subject_id text,
   primary key (id, user_id)
 );
 

@@ -3,14 +3,27 @@ import type { Task } from '../types';
 
 const TASKS_TABLE = 'tasks';
 
+function toYYYYMMDD(value: unknown): string {
+  const s = value != null ? String(value).trim() : '';
+  if (!s) return '';
+  return s.slice(0, 10);
+}
+
+function toHHMM(value: unknown): string {
+  const s = value != null ? String(value).trim() : '';
+  if (!s) return '';
+  const part = s.slice(0, 5);
+  return part.length === 5 ? part : s.includes(':') ? s.split(':').slice(0, 2).map((p) => p.padStart(2, '0')).join(':') : '00:00';
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: String(row.id),
     title: String(row.title ?? ''),
     courseId: String(row.course_id ?? ''),
     type: row.type as Task['type'],
-    dueDate: String(row.due_date ?? ''),
-    dueTime: String(row.due_time ?? ''),
+    dueDate: toYYYYMMDD(row.due_date),
+    dueTime: toHHMM(row.due_time),
     priority: row.priority as Task['priority'],
     effort: Number(row.effort_hours ?? 0) || 0,
     notes: String(row.notes ?? ''),

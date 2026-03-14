@@ -63,6 +63,23 @@ export interface Task {
   sourceMessage?: string;
 }
 
+/** Academic level for SOW/calendar (diploma, bachelor, etc.) */
+export type AcademicLevel = 'Diploma' | 'Bachelor' | 'Master' | 'PhD' | 'Foundation' | 'Other';
+
+/** Per-user academic calendar: semester dates and week count for SOW alignment */
+export interface AcademicCalendar {
+  id: string;
+  userId?: string;
+  semesterLabel: string;
+  startDate: string;
+  endDate: string;
+  totalWeeks: number;
+  breakStartDate?: string;
+  breakEndDate?: string;
+  isActive: boolean;
+  createdAt?: string;
+}
+
 export interface UserProfile {
   id?: string;
   name: string;
@@ -73,11 +90,17 @@ export interface UserProfile {
   startDate: string;
   isBreak?: boolean;
   avatar?: string;
+  /** University/school name – used for SOW and calendar */
+  university?: string;
+  /** Diploma, Bachelor, Master, etc. – affects semester length and SOW intelligence */
+  academicLevel?: AcademicLevel;
 }
 
 export interface Note {
   id: string;
   subjectId: string;
+  /** Optional chapter/folder id (user-defined). */
+  folderId?: string;
   title: string;
   content: string;
   tag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important' | 'Lab' | 'Discussion';
@@ -87,10 +110,19 @@ export interface Note {
   attachmentFileName?: string;
 }
 
+export interface NoteFolder {
+  id: string;
+  subjectId: string;
+  name: string;
+  createdAt: string; // ISO timestamp
+}
+
 export interface FlashcardFolder {
   id: string;
   name: string;
   createdAt: string; // ISO date
+  /** Optional: group folder under a subject (e.g. course code) for chapter/topic organization. */
+  subjectId?: string;
 }
 
 export interface Flashcard {

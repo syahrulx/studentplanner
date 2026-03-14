@@ -92,13 +92,31 @@ export default function TabLayout() {
                 <ThemeIcon name="add" size={24} color={theme.textInverse} />
               </View>
               <View>
-                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addManually')}</Text>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addTask')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('createTaskYourself')}</Text>
               </View>
             </Pressable>
-            
+
             <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
-            
+
+            <Pressable
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => {
+                closeAddMenu();
+                router.push('/revision' as any);
+              }}
+            >
+              <View style={[styles.addMenuIcon, { backgroundColor: theme.accent2 ?? theme.primary }]}>
+                <ThemeIcon name="clock" size={22} color={theme.textInverse} />
+              </View>
+              <View>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addStudyTime')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('scheduleStudySub')}</Text>
+              </View>
+            </Pressable>
+
+            <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
+
             <Pressable
               style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {

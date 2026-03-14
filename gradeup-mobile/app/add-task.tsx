@@ -36,11 +36,29 @@ export default function AddTask() {
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  // When date picker is open, this is the month being viewed (so user can change month)
+  const [pickerViewDate, setPickerViewDate] = useState<string>(() => getTodayISO());
 
   const activeDate = dueDateISO;
   const activeYear = new Date(activeDate + 'T12:00:00').getFullYear();
   const activeMonth = new Date(activeDate + 'T12:00:00').getMonth();
-  const monthGridCells = getMonthGrid(activeYear, activeMonth);
+
+  const pickerViewYear = new Date(pickerViewDate + 'T12:00:00').getFullYear();
+  const pickerViewMonth = new Date(pickerViewDate + 'T12:00:00').getMonth();
+  const monthGridCells = getMonthGrid(pickerViewYear, pickerViewMonth);
+
+  const goToPrevMonth = () => {
+    const d = new Date(pickerViewYear, pickerViewMonth - 1, 1);
+    setPickerViewDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
+  };
+  const goToNextMonth = () => {
+    const d = new Date(pickerViewYear, pickerViewMonth + 1, 1);
+    setPickerViewDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
+  };
+  const openDatePicker = () => {
+    setPickerViewDate(dueDateISO);
+    setShowDatePicker(true);
+  };
 
   const handleSubmit = () => {
     if (!title.trim()) return;
@@ -157,7 +175,7 @@ export default function AddTask() {
           <Text style={styles.label}>{T('dueDateLabel')}</Text>
           <Pressable
             style={styles.input}
-            onPress={() => setShowDatePicker((v) => !v)}
+            onPress={openDatePicker}
           >
             <Text style={styles.dateText}>{formatDisplayDate(dueDateISO)}</Text>
           </Pressable>
@@ -176,7 +194,13 @@ export default function AddTask() {
       {showDatePicker && (
         <View style={styles.calendarCard}>
           <View style={styles.calendarHeader}>
-            <Text style={styles.calendarTitle}>{getMonthYearLabel(activeDate)}</Text>
+            <Pressable style={styles.calendarNavBtn} onPress={goToPrevMonth} hitSlop={12}>
+              <Icons.ArrowRight size={20} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
+            </Pressable>
+            <Text style={styles.calendarTitle}>{getMonthYearLabel(pickerViewDate)}</Text>
+            <Pressable style={styles.calendarNavBtn} onPress={goToNextMonth} hitSlop={12}>
+              <Icons.ArrowRight size={20} color={COLORS.gray} />
+            </Pressable>
           </View>
           <View style={styles.calendarWeekHeader}>
             {['S','M','T','W','T','F','S'].map((d, idx) => (
@@ -188,7 +212,7 @@ export default function AddTask() {
               if (d == null) {
                 return <View key={idx} style={styles.calendarCellEmpty} />;
               }
-              const iso = toISO(activeYear, activeMonth, d);
+              const iso = toISO(pickerViewYear, pickerViewMonth, d);
               const isSelected = iso === dueDateISO;
               return (
                 <Pressable
@@ -358,8 +382,9 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: 12,
   },
-  calendarHeader: { alignItems: 'center', marginBottom: 8 },
-  calendarTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  calendarNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  calendarTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   calendarWeekHeader: { flexDirection: 'row', marginBottom: 4 },
   calendarWeekText: {
     flex: 1,

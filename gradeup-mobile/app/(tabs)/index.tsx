@@ -32,10 +32,14 @@ export default function Dashboard() {
   const theme = useTheme();
   const T = useTranslations(language);
   const pending = tasks.filter((t) => !t.isDone);
-  const high = pending.filter((t) => t.priority === Priority.High).sort(
-    (a, b) => new Date(a.dueDate + 'T' + a.dueTime).getTime() - new Date(b.dueDate + 'T' + b.dueTime).getTime()
-  );
-  const nextTask = high[0] || pending[0];
+  const nextTask = useMemo(() => {
+    const incomplete = tasks.filter((t) => !t.isDone);
+    if (incomplete.length === 0) return undefined;
+    const sorted = [...incomplete].sort(
+      (a, b) => new Date(a.dueDate + 'T' + (a.dueTime || '23:59')).getTime() - new Date(b.dueDate + 'T' + (b.dueTime || '23:59')).getTime()
+    );
+    return sorted[0];
+  }, [tasks]);
 
   const peakWeek = useMemo(() => {
     let max = 0;
@@ -62,6 +66,8 @@ export default function Dashboard() {
       room: T('onlineSubmission'),
       type: 'DEADLINE' as const,
       name: t.title,
+      priority: t.priority,
+      daysLeft: getDaysLeft(t.dueDate),
     }));
 
   const studyItems: { studyKey: string; date: string; time: string; code: string; room: string; type: 'STUDY'; name: string }[] = [];
@@ -98,6 +104,16 @@ export default function Dashboard() {
   });
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
+
+  // White box with shadow; outline colour by due-date
+  const CARD_BG_WHITE = '#ffffff';
+  const getBorderColorByDueProximity = (daysLeft: number) => {
+    if (daysLeft < 0 || daysLeft <= 3) return '#dc2626';
+    if (daysLeft <= 14) return '#eab308';
+    return '#22c55e';
+  };
+
+  const getPriorityLabel = (p: Priority) => (p === Priority.High ? T('high') : p === Priority.Medium ? T('medium') : T('low'));
 
   // Hardcoded theme – matching planner page navy/gold palette
   const NAVY = '#003366';
@@ -181,36 +197,23 @@ export default function Dashboard() {
           style={({ pressed }) => [
             styles.focusCard,
             pressed && styles.pressed,
+            { backgroundColor: CARD_BG_WHITE },
+            { borderWidth: 1.5, borderColor: nextTask ? getBorderColorByDueProximity(getDaysLeft(nextTask.dueDate)) : '#e2e8f0' },
           ]}
           onPress={() => router.push('/(tabs)/planner' as any)}
         >
           {nextTask ? (
             <>
               <View style={styles.focusPillsRow}>
-                <View style={[styles.focusCoursePill, { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.08)' : 'rgba(0,51,102,0.05)' }]}>
-                  <Text style={[styles.focusCoursePillText, { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : NAVY }]}>{nextTask.courseId}</Text>
-                </View>
-                <View style={[
-                  styles.focusStatusPill,
-                  { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.1)' : 'rgba(245,158,11,0.1)' },
-                ]}>
-                  <Text style={[
-                    styles.focusStatusPillText,
-                    { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : GOLD },
-                  ]}>
-                    {(() => {
-                      const info = getDueTimeLabelRaw(nextTask.dueDate);
-                      if (info.key === 'daysLeft') return `${info.days} ${T('daysLeft')}`;
-                      return T(info.key);
-                    })()}
-                  </Text>
+                <View style={[styles.focusCoursePill, { backgroundColor: getSubjectColor(nextTask.courseId) + '25' }]}>
+                  <Text style={[styles.focusCoursePillText, { color: getSubjectColor(nextTask.courseId) }]}>{nextTask.courseId}</Text>
                 </View>
               </View>
               <Text style={[styles.focusTitle, { color: TEXT_PRIMARY }]} numberOfLines={2}>{nextTask.title}</Text>
               <View style={styles.focusMetaRow}>
                 <ThemeIcon name="calendar" size={13} color={TEXT_SECONDARY} />
                 <Text style={[styles.focusMetaText, { color: TEXT_SECONDARY }]}>
-                  {formatDisplayDate(nextTask.dueDate)} · {(nextTask.dueTime || '').slice(0, 5)}
+                  {formatDisplayDate(nextTask.dueDate)} · {(nextTask.dueTime || '').slice(0, 5)} · {getPriorityLabel(nextTask.priority)}
                 </Text>
               </View>
             </>
@@ -241,7 +244,11 @@ export default function Dashboard() {
               const showDateHeader = idx === 0 || scheduleWithinMonth[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
-              const badgeColor = studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD;
+              const daysLeft = !isStudy && 'daysLeft' in item ? item.daysLeft : 99;
+              const priority = !isStudy && 'priority' in item ? item.priority : null;
+              const subjectColor = getSubjectColor(item.code);
+              const cardBg = CARD_BG_WHITE;
+              const borderColor = isStudy ? '#e2e8f0' : getBorderColorByDueProximity(daysLeft);
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
@@ -249,20 +256,25 @@ export default function Dashboard() {
                   )}
                   <View style={styles.timelineItem}>
                     <View style={styles.timelineDotCol}>
-                      <View style={[styles.timelineDot, { borderColor: studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD }]} />
+                      <View style={[styles.timelineDot, { borderColor: studyDone ? '#94a3b8' : isStudy ? NAVY : subjectColor }]} />
                       <View style={styles.timelineTrack} />
                     </View>
-                    <View style={styles.timelineCard}>
+                    <View style={[styles.timelineCard, { backgroundColor: cardBg, borderWidth: 1.5, borderColor }]}>
                       <View style={styles.timelineCardTop}>
                         <Text style={[styles.timelineTime, { color: TEXT_SECONDARY }]}>{(item.time || '').slice(0, 5)}</Text>
                         {studyDone ? (
                           <View style={[styles.typeBadge, { backgroundColor: 'rgba(148, 163, 184, 0.15)' }]}>
                             <Text style={[styles.typeBadgeText, { color: '#64748b' }]}>DONE</Text>
                           </View>
+                        ) : priority ? (
+                          <Text style={[styles.typeBadgeText, { color: TEXT_SECONDARY, fontWeight: '600' }]}>{getPriorityLabel(priority)}</Text>
                         ) : null}
                       </View>
                       <Text style={[styles.timelineName, { color: TEXT_PRIMARY }, studyDone && { textDecorationLine: 'line-through', color: TEXT_SECONDARY }]}>{item.name}</Text>
-                      <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>{item.code} • {item.room}</Text>
+                      <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>
+                        <Text style={{ color: subjectColor, fontWeight: '700' }}>{item.code}</Text>
+                        {' • '}{item.room}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -386,16 +398,16 @@ const styles = StyleSheet.create({
 
   pressed: { opacity: 0.96 },
 
-  // Focus card
+  // Focus card – white with shadow
   focusCard: {
-    borderRadius: 24, // Apple-like squircle radius
+    borderRadius: 24,
     padding: 20,
     backgroundColor: '#ffffff',
-    shadowColor: '#000000',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.28,
     shadowRadius: 16,
-    elevation: 3,
+    elevation: 4,
   },
   focusPillsRow: {
     flexDirection: 'row',
@@ -441,13 +453,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     backgroundColor: '#ffffff',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
     shadowRadius: 12,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
+    elevation: 3,
   },
   timelineCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   timelineTime: { fontSize: 13, fontWeight: '600' },

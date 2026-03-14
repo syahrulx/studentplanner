@@ -1,18 +1,24 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
-import { COLORS, Icons } from '@/src/constants';
 import { generateFlashcardsFromNote, getOpenAIKey } from '@/src/lib/studyApi';
 import { ensureNoteAttachmentsBucket, uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { useTranslations } from '@/src/i18n';
 
+const NAVY = '#003366';
+const BG = '#f8fafc';
+const CARD = '#ffffff';
+const TEXT_PRIMARY = '#0f172a';
+const TEXT_SECONDARY = '#64748b';
+const DIVIDER = '#f1f5f9';
+
 export default function NotesEditor() {
-  const { subjectId, noteId } = useLocalSearchParams<{ subjectId: string; noteId?: string }>();
-  const { notes, handleSaveNote, courses, flashcardFolders, addFlashcard, language } = useApp();
+  const { subjectId, noteId, folderId } = useLocalSearchParams<{ subjectId: string; noteId?: string; folderId?: string }>();
+  const { notes, handleSaveNote, deleteNote, courses, flashcardFolders, addFlashcard, language } = useApp();
   const T = useTranslations(language);
   const existing = noteId ? notes.find((n) => n.id === noteId) : null;
   const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(existing?.id);
@@ -48,6 +54,7 @@ export default function NotesEditor() {
     const note = {
       id: currentNoteId ?? existing?.id ?? `n${Date.now()}`,
       subjectId: subjectId!,
+      folderId: existing?.folderId ?? folderId,
       title: title.trim() || 'Untitled',
       content: content.trim(),
       tag,
@@ -57,6 +64,14 @@ export default function NotesEditor() {
     };
     handleSaveNote(note);
     router.back();
+  };
+
+  const onDeleteNote = () => {
+    if (!existing?.id) return;
+    Alert.alert('Delete note', `Remove "${existing.title || 'this note'}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { deleteNote(existing.id); router.back(); } },
+    ]);
   };
 
   const handleSelectTag = (nextTag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important') => {
@@ -152,87 +167,74 @@ export default function NotesEditor() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header: back + Cards + Save */}
-      <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Icons.ArrowRight size={18} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
-        </Pressable>
+    <View style={styles.container}>
+      {/* Header: same style as notes-list / flashcard-folder */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <Feather name="chevron-left" size={28} color={NAVY} />
+            <Text style={styles.backText}>Study</Text>
+          </Pressable>
+        </View>
         <View style={styles.headerRight}>
+          {existing?.id ? (
+            <Pressable style={styles.iconBtn} onPress={onDeleteNote}>
+              <Feather name="trash-2" size={20} color={NAVY} />
+            </Pressable>
+          ) : null}
           <Pressable
-            style={styles.headerChipLight}
+            style={styles.iconBtn}
             onPress={handleGenerateFlashcards}
             disabled={generateLoading}
           >
-            <Icons.Layers size={14} color={COLORS.text} />
-            <Text style={styles.headerChipLightText}>{T('cards')}</Text>
+            <Feather name="layers" size={22} color={NAVY} />
           </Pressable>
-          <Pressable
-            style={styles.headerChipLight}
-            onPress={() => setIsEditing((prev) => !prev)}
-          >
-            <Feather name="edit-2" size={14} color={COLORS.text} />
-            <Text style={styles.headerChipLightText}>{isEditing ? T('done') : T('edit')}</Text>
+          <Pressable style={styles.iconBtn} onPress={() => setIsEditing((prev) => !prev)}>
+            <Feather name="edit-2" size={22} color={NAVY} />
           </Pressable>
-          <Pressable
-            style={styles.headerChipPrimary}
-            onPress={onSave}
-          >
-            <Text style={styles.headerChipPrimaryText}>{T('save')}</Text>
+          <Pressable style={styles.saveBtn} onPress={onSave}>
+            <Text style={styles.saveBtnText}>{T('save')}</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Note tag tabs */}
-      <View style={styles.tagRow}>
-        {(['Lecture', 'Tutorial', 'Exam', 'Important'] as const).map((tg) => {
-          const isActive = tag === tg;
-          const tagLabel = tg === 'Lecture' ? T('lecture') : tg === 'Tutorial' ? T('tutorial') : tg === 'Exam' ? T('exam') : T('important');
-          return (
-            <Pressable
-              key={tg}
-              onPress={() => handleSelectTag(tg)}
-              hitSlop={8}
-            >
-              {isActive ? (
-                <View style={styles.tagChipActive}>
-                  <Text style={styles.tagChipActiveText}>{tagLabel}</Text>
-                </View>
-              ) : (
-                <Text style={styles.tagChipMuted}>{tagLabel}</Text>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
+      {/* Page title + content area */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.pageTitle}>Note</Text>
 
-      {/* Note content */}
-      {isEditing ? (
-        <>
-          <TextInput
-            style={styles.noteTitleInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder={T('noteTitle')}
-            placeholderTextColor={COLORS.gray}
-          />
-          <TextInput
-            style={styles.noteBodyInput}
-            value={content}
-            onChangeText={setContent}
-            placeholder={T('startWriting')}
-            placeholderTextColor={COLORS.gray}
-            multiline
-          />
-        </>
-      ) : (
-        <>
-          <Text style={styles.noteTitle}>{title || T('untitledNote')}</Text>
-          <Text style={styles.noteBodyRead}>
-            {content || T('startCapturing')}
-          </Text>
-        </>
-      )}
+        {isEditing ? (
+          <>
+            <TextInput
+              style={styles.noteTitleInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder={T('noteTitle')}
+              placeholderTextColor={TEXT_SECONDARY}
+            />
+            <TextInput
+              style={styles.noteBodyInput}
+              value={content}
+              onChangeText={setContent}
+              placeholder={T('startWriting')}
+              placeholderTextColor={TEXT_SECONDARY}
+              multiline
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.noteTitle}>{title || T('untitledNote')}</Text>
+            <Text style={styles.noteBodyRead}>
+              {content || T('startCapturing')}
+            </Text>
+          </>
+        )}
+
+        <View style={{ height: 48 }} />
+      </ScrollView>
 
 
 
@@ -265,7 +267,7 @@ export default function NotesEditor() {
                 )}
               </>
             )}
-            <Pressable style={[styles.modalClose, { borderColor: COLORS.border }]} onPress={() => setFolderModalVisible(false)}>
+            <Pressable style={styles.modalClose} onPress={() => setFolderModalVisible(false)}>
               <Text style={styles.modalCloseText}>{T('close')}</Text>
             </Pressable>
           </View>
@@ -273,63 +275,51 @@ export default function NotesEditor() {
       </Modal>
 
       <View style={{ height: 48 }} />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 32 },
+  container: { flex: 1, backgroundColor: BG },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
 
-  headerRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    paddingHorizontal: 8,
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingBottom: 12,
+    backgroundColor: BG,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: DIVIDER,
   },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
+  headerLeft: { flex: 1 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  backText: { fontSize: 17, color: NAVY, fontWeight: '400', marginTop: -1 },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
+    paddingRight: 8,
   },
-  headerChipLight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  iconBtn: { padding: 6 },
+  saveBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: NAVY,
   },
-  headerChipLightText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    color: COLORS.text,
-  },
-  headerChipPrimary: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: COLORS.navy,
-  },
-  headerChipPrimaryText: {
-    fontSize: 11,
+  saveBtnText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
+
+  pageTitle: {
+    fontSize: 34,
     fontWeight: '800',
-    letterSpacing: 0.4,
-    color: COLORS.white,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.8,
+    marginBottom: 20,
+    marginTop: 4,
   },
 
   tagRow: {
@@ -339,62 +329,62 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingTop: 2,
     borderBottomWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: DIVIDER,
     paddingBottom: 8,
   },
   tagChipActive: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: COLORS.card,
+    backgroundColor: CARD,
   },
   tagChipActiveText: {
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
-    color: COLORS.text,
+    color: TEXT_PRIMARY,
   },
   tagChipMuted: {
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
-    color: COLORS.gray,
+    color: TEXT_SECONDARY,
   },
 
   noteTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: COLORS.text,
+    color: TEXT_PRIMARY,
     marginBottom: 4,
   },
   noteTitleInput: {
     fontSize: 24,
     fontWeight: '800',
-    color: COLORS.text,
+    color: TEXT_PRIMARY,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: DIVIDER,
     paddingVertical: 4,
   },
   noteBodyRead: {
     fontSize: 15,
     lineHeight: 22,
-    color: COLORS.text,
+    color: TEXT_PRIMARY,
     marginTop: 8,
     minHeight: 120,
   },
   noteBodyInput: {
     fontSize: 15,
     lineHeight: 22,
-    color: COLORS.text,
+    color: TEXT_PRIMARY,
     minHeight: 220,
     marginTop: 8,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 16,
-    backgroundColor: COLORS.card,
+    backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: DIVIDER,
     textAlignVertical: 'top',
   },
 
@@ -403,13 +393,13 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.92 },
   buttonDisabled: { opacity: 0.7 },
 
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
-  modalBox: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, maxHeight: '70%' },
-  modalTitle: { fontSize: 16, color: COLORS.text, marginBottom: 16 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', padding: 24 },
+  modalBox: { backgroundColor: CARD, borderRadius: 20, padding: 24, maxHeight: '70%', borderWidth: 1, borderColor: DIVIDER },
+  modalTitle: { fontSize: 16, color: TEXT_PRIMARY, marginBottom: 16 },
   folderList: { maxHeight: 200, marginBottom: 16 },
-  folderRow: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: COLORS.bg, marginBottom: 8 },
-  folderRowText: { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  modalClose: { paddingVertical: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  modalCloseText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  modalHint: { fontSize: 14, color: COLORS.gray, marginBottom: 12 },
+  folderRow: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: BG, marginBottom: 8 },
+  folderRowText: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  modalClose: { paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: DIVIDER, alignItems: 'center' },
+  modalCloseText: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
+  modalHint: { fontSize: 14, color: TEXT_SECONDARY, marginBottom: 12 },
 });
