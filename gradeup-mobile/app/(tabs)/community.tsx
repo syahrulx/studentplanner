@@ -172,8 +172,10 @@ export default function CommunityMap() {
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
+  const mapRef = useRef<any>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
+
 
   // Request location on mount
   useEffect(() => {
@@ -286,7 +288,9 @@ export default function CommunityMap() {
       <View style={styles.mapContainer}>
         {MapView && myLatitude && myLongitude ? (
           <MapView
+            ref={mapRef}
             style={styles.map}
+
             provider={PROVIDER_GOOGLE}
             initialRegion={{
               latitude: myLatitude,
@@ -518,11 +522,26 @@ export default function CommunityMap() {
                   styles.personRow,
                   pressed && { backgroundColor: theme.background },
                 ]}
-                onPress={() =>
-                  router.push({ pathname: '/community/friend-profile', params: { friendId: friend.id } } as any)
-                }
+                onPress={() => {
+                  if (friend.location && mapRef.current) {
+                    mapRef.current.animateToRegion({
+                      latitude: friend.location.latitude,
+                      longitude: friend.location.longitude,
+                      latitudeDelta: 0.005,
+                      longitudeDelta: 0.005,
+                    }, 500);
+                  }
+                }}
               >
-                <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={44} />
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    router.push({ pathname: '/community/friend-profile', params: { friendId: friend.id } } as any);
+                  }}
+                >
+                  <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={44} />
+                </Pressable>
+
                 <View style={styles.personInfo}>
                   <Text style={[styles.personName, { color: theme.text }]}>{friend.name}</Text>
                   <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
