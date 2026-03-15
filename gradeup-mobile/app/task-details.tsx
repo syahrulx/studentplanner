@@ -1,7 +1,9 @@
-import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform, Modal, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
+import { useCommunity } from '@/src/context/CommunityContext';
 import { formatDisplayDate } from '@/src/utils/date';
 import { Priority } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
@@ -33,8 +35,17 @@ function getDaysUntilDue(dueDate: string): number {
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tasks, toggleTaskDone, deleteTask, language } = useApp();
+  const { filteredFriends, createSharedGoal, sharedGoals } = useCommunity();
   const T = useTranslations(language);
   const task = tasks.find((t) => t.id === id);
+
+  const [showPledgeModal, setShowPledgeModal] = useState(false);
+  const [pledgeType, setPledgeType] = useState<'task' | 'subject'>('task');
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [isPledging, setIsPledging] = useState(false);
+
+  // Check if this task is already pledged
+  const existingPledge = task ? sharedGoals.find(g => g.local_task_id === task.id || (g.share_type === 'subject' && g.course_id === task.courseId)) : null;
 
   if (!task) {
     return (
@@ -87,7 +98,22 @@ export default function TaskDetails() {
     });
   };
 
-  const sourceMessage = task.sourceMessage || 'Assalammualaikum students. Sila hantar Lab 4 sebelum Jumaat ni jam 11:59PM. Make sure follow format normalization yang saya ajar tadi. TQ.';
+  const handleEdit = () => {
+    router.push({ pathname: '/add-task' as any, params: { taskId: task.id } });
+  };
+
+  const handleCreatePledge = async () => {
+    if (!selectedFriendId) return;
+    setIsPledging(true);
+    const result = await createSharedGoal(selectedFriendId, task.id, task.title, pledgeType, task.courseId);
+    setIsPledging(false);
+    if (result) {
+      setShowPledgeModal(false);
+      Alert.alert('Pledge Sent', 'Your friend has been notified of your accountability pact!');
+    } else {
+      Alert.alert('Error', 'Could not create pledge');
+    }
+  };
 
   const urgencyLabel = isOverdue
     ? `${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} overdue`
@@ -102,7 +128,7 @@ export default function TaskDetails() {
         <Pressable onPress={() => router.back()} style={s.headerBtn}>
           <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
         </Pressable>
-        <Text style={s.headerTitle}>Task Details</Text>
+        <Text style={s.headerTitle}>{T('taskDetails')}</Text>
         <Pressable onPress={handleShare} style={s.headerBtn}>
           <Feather name="share" size={20} color={TEXT_PRIMARY} />
         </Pressable>
@@ -187,6 +213,36 @@ export default function TaskDetails() {
           </View>
         </View>
 
+        {/* Pledge Section */}
+        <View style={s.pledgeSection}>
+          {existingPledge ? (
+            <View style={s.activePledgeCard}>
+              <View style={s.activePledgeIconWrap}>
+                <Feather name="shield" size={18} color="#10b981" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.activePledgeTitle}>Accountability Goal Active</Text>
+                <Text style={s.activePledgeSub}>
+                  Linked with {existingPledge.friend_profile?.name || 'a friend'}. Status: {existingPledge.status}.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <Pressable 
+              style={({ pressed }) => [s.pledgeBtn, pressed && { opacity: 0.8 }]}
+              onPress={() => setShowPledgeModal(true)}
+            >
+              <View style={s.pledgeBtnIconWrap}>
+                <Feather name="shield" size={20} color={NAVY} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.pledgeBtnTitle}>Share with a Friend</Text>
+                <Text style={s.pledgeBtnSub}>Share this goal for mutual accountability</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+            </Pressable>
+          )}
+        </View>
 
         {/* Notes — only shown if notes exist */}
         {task.notes ? (
@@ -230,6 +286,9 @@ export default function TaskDetails() {
         <Pressable onPress={handleDelete} style={({ pressed }) => [s.actionBtn, s.deleteBtn, pressed && { opacity: 0.7 }]}>
           <Feather name="trash-2" size={20} color={RED} />
         </Pressable>
+        <Pressable onPress={handleEdit} style={({ pressed }) => [s.actionBtn, s.editBtn, pressed && { opacity: 0.7 }]}>
+          <Feather name="edit-2" size={18} color={NAVY} />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [s.mainActionBtn, task.isDone && s.mainActionBtnDone, pressed && { opacity: 0.85 }]}
           onPress={handleToggle}
@@ -240,6 +299,78 @@ export default function TaskDetails() {
           </Text>
         </Pressable>
       </View>
+
+      {/* Modal: Pledge with a Friend */}
+      <Modal visible={showPledgeModal} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Share Goal</Text>
+              <Pressable onPress={() => setShowPledgeModal(false)} style={s.modalCloseBtn} hitSlop={10}>
+                <Feather name="x" size={24} color={TEXT_SECONDARY} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={s.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={s.modalSectionLabel}>Share Type</Text>
+              <View style={s.typeSelectorGrid}>
+                <Pressable 
+                  style={[s.typeCard, pledgeType === 'task' && s.typeCardActive]}
+                  onPress={() => setPledgeType('task')}
+                >
+                  <Feather name="check-square" size={20} color={pledgeType === 'task' ? NAVY : TEXT_SECONDARY} />
+                  <Text style={[s.typeCardText, pledgeType === 'task' && s.typeCardTextActive]}>Just this task</Text>
+                </Pressable>
+                <Pressable 
+                  style={[s.typeCard, pledgeType === 'subject' && s.typeCardActive]}
+                  onPress={() => setPledgeType('subject')}
+                >
+                  <Feather name="book" size={20} color={pledgeType === 'subject' ? NAVY : TEXT_SECONDARY} />
+                  <Text style={[s.typeCardText, pledgeType === 'subject' && s.typeCardTextActive]}>Whole Subject</Text>
+                </Pressable>
+              </View>
+
+              <Text style={s.modalSectionLabel}>Select a Friend</Text>
+              {filteredFriends.length === 0 ? (
+                <Text style={s.noFriendsText}>You need to add friends in the Community tab first!</Text>
+              ) : (
+                <View style={s.friendsList}>
+                  {filteredFriends.map(friend => (
+                    <Pressable 
+                      key={friend.id} 
+                      style={[s.friendRow, selectedFriendId === friend.id && s.friendRowActive]}
+                      onPress={() => setSelectedFriendId(friend.id)}
+                    >
+                      <View style={s.friendAvatarWrap}>
+                        <Text style={s.friendAvatarText}>{friend.name.charAt(0)}</Text>
+                      </View>
+                      <Text style={[s.friendName, selectedFriendId === friend.id && s.friendNameActive]}>{friend.name}</Text>
+                      {selectedFriendId === friend.id && (
+                        <Feather name="check-circle" size={20} color={NAVY} />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={s.modalFooter}>
+              <Pressable 
+                style={[s.confirmBtn, (!selectedFriendId || isPledging) && s.confirmBtnDisabled]}
+                disabled={!selectedFriendId || isPledging}
+                onPress={handleCreatePledge}
+              >
+                {isPledging ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={s.confirmBtnText}>Send Share Request</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -424,6 +555,11 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239,68,68,0.12)',
   },
+  editBtn: {
+    backgroundColor: 'rgba(0,51,102,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,51,102,0.10)',
+  },
   mainActionBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -436,4 +572,59 @@ const s = StyleSheet.create({
   },
   mainActionBtnDone: { backgroundColor: TEXT_SECONDARY },
   mainActionText: { color: '#ffffff', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+
+  // Pledge Section
+  pledgeSection: { marginBottom: 24 },
+  pledgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff', // light blue from tailwind
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    gap: 16,
+  },
+  pledgeBtnIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#dbeafe', alignItems: 'center', justifyContent: 'center' },
+  pledgeBtnTitle: { fontSize: 16, fontWeight: '800', color: NAVY, marginBottom: 4 },
+  pledgeBtnSub: { fontSize: 13, color: '#3b82f6', fontWeight: '500' },
+  activePledgeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5', // light emerald
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    gap: 16,
+  },
+  activePledgeIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#d1fae5', alignItems: 'center', justifyContent: 'center' },
+  activePledgeTitle: { fontSize: 16, fontWeight: '800', color: '#065f46', marginBottom: 4 },
+  activePledgeSub: { fontSize: 13, color: '#059669', fontWeight: '500' },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: CARD, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, maxHeight: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  modalTitle: { fontSize: 22, fontWeight: '800', color: NAVY },
+  modalCloseBtn: { padding: 4 },
+  modalScroll: { marginBottom: 24 },
+  modalSectionLabel: { fontSize: 14, fontWeight: '800', color: TEXT_SECONDARY, marginBottom: 16, marginTop: 12 },
+  typeSelectorGrid: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  typeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, borderWidth: 2, borderColor: BORDER, backgroundColor: BG },
+  typeCardActive: { borderColor: NAVY, backgroundColor: 'rgba(0,51,102,0.05)' },
+  typeCardText: { fontSize: 14, fontWeight: '700', color: TEXT_SECONDARY },
+  typeCardTextActive: { color: NAVY },
+  friendsList: { gap: 12 },
+  friendRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: BORDER, backgroundColor: BG, gap: 12 },
+  friendRowActive: { borderColor: NAVY, backgroundColor: 'rgba(0,51,102,0.05)' },
+  friendAvatarWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,51,102,0.1)', alignItems: 'center', justifyContent: 'center' },
+  friendAvatarText: { fontSize: 18, fontWeight: '700', color: NAVY },
+  friendName: { flex: 1, fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  friendNameActive: { color: NAVY },
+  noFriendsText: { fontSize: 14, color: TEXT_SECONDARY, fontStyle: 'italic', textAlign: 'center', padding: 20 },
+  modalFooter: { paddingTop: 16, borderTopWidth: 1, borderTopColor: BORDER },
+  confirmBtn: { backgroundColor: NAVY, padding: 18, borderRadius: 20, alignItems: 'center' },
+  confirmBtnDisabled: { opacity: 0.5 },
+  confirmBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
 });

@@ -4,9 +4,10 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS } from '@/src/constants';
-import { Priority, TaskType } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
+import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
+import { getTodayISO } from '@/src/utils/date';
 
 const NAVY = '#003366';
 const GOLD = '#f59e0b';
@@ -17,104 +18,6 @@ const TEXT_SECONDARY = '#64748b';
 const GREEN = '#059669';
 
 type Message = { role: 'ai' | 'user'; text: string };
-
-// Simple task extraction from pasted WhatsApp messages
-function extractTasksFromMessage(text: string): { title: string; dueDate: string; dueTime: string; courseId: string }[] {
-  const tasks: { title: string; dueDate: string; dueTime: string; courseId: string }[] = [];
-  const lines = text.split('\n').filter(l => l.trim());
-
-  // Try to detect assignment keywords
-  const keywords = ['submit', 'hantar', 'due', 'deadline', 'assignment', 'quiz', 'test', 'project', 'lab', 'report', 'presentation', 'tutorial', 'homework'];
-  const hasTask = keywords.some(k => text.toLowerCase().includes(k));
-
-  if (!hasTask) return tasks;
-
-  // Try to extract date patterns
-  let dueDate = '';
-  let dueTime = '23:59';
-
-  // Match common date formats
-  const datePatterns = [
-    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,            // dd/mm/yyyy or dd-mm-yyyy
-    /(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/,            // yyyy/mm/dd
-    /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i, // 15 March 2026
-  ];
-
-  for (const p of datePatterns) {
-    const m = text.match(p);
-    if (m) {
-      if (m[1].length === 4) {
-        dueDate = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-      } else if (m[2].length > 2) {
-        // Day Month Year format
-        const months: Record<string, string> = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
-        const mon = months[m[2].toLowerCase().slice(0,3)] || '01';
-        dueDate = `${m[3]}-${mon}-${String(m[1]).padStart(2, '0')}`;
-      } else {
-        dueDate = `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
-      }
-      break;
-    }
-  }
-
-  // Match day names as relative dates
-  if (!dueDate) {
-    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday',
-                      'ahad','isnin','selasa','rabu','khamis','jumaat','sabtu'];
-    const dayMap: Record<string, number> = {};
-    dayNames.forEach((name, i) => { dayMap[name] = i % 7; });
-    
-    for (const [name, dayNum] of Object.entries(dayMap)) {
-      if (text.toLowerCase().includes(name)) {
-        const today = new Date();
-        const todayDay = today.getDay();
-        let diff = dayNum - todayDay;
-        if (diff <= 0) diff += 7;
-        const target = new Date(today);
-        target.setDate(target.getDate() + diff);
-        dueDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
-        break;
-      }
-    }
-  }
-
-  // Fallback: 7 days from now
-  if (!dueDate) {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    dueDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  // Try to extract time
-  const timeMatch = text.match(/(\d{1,2})[:\.](\d{2})\s*(AM|PM|am|pm)?/);
-  if (timeMatch) {
-    let h = parseInt(timeMatch[1]);
-    const mins = timeMatch[2];
-    const ampm = timeMatch[3];
-    if (ampm && ampm.toLowerCase() === 'pm' && h < 12) h += 12;
-    if (ampm && ampm.toLowerCase() === 'am' && h === 12) h = 0;
-    dueTime = `${String(h).padStart(2, '0')}:${mins}`;
-  }
-
-  // Try to detect course code (e.g., CSC248, BIO123)
-  let courseId = '';
-  const courseMatch = text.match(/\b([A-Z]{2,4}\s?\d{3,4})\b/);
-  if (courseMatch) courseId = courseMatch[1].replace(/\s/g, '');
-
-  // Build task title from the message
-  let title = '';
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    if (keywords.some(k => lower.includes(k))) {
-      title = line.trim().slice(0, 80);
-      break;
-    }
-  }
-  if (!title) title = lines[0]?.trim().slice(0, 80) || 'Task from WhatsApp';
-
-  tasks.push({ title, dueDate, dueTime, courseId });
-  return tasks;
-}
 
 export default function AiChat() {
   const { language, addTask, courses, user } = useApp();
@@ -131,12 +34,6 @@ export default function AiChat() {
     setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
   };
 
-  const riskToPriority = (risk: 'High' | 'Medium' | 'Low'): Priority => {
-    if (risk === 'High') return Priority.High;
-    if (risk === 'Low') return Priority.Low;
-    return Priority.Medium;
-  };
-
   const handleSend = () => {
     if (!chatInput.trim()) return;
     const pastedText = chatInput;
@@ -148,7 +45,7 @@ export default function AiChat() {
     setTimeout(() => {
       (async () => {
         try {
-          const todayISO = new Date().toISOString().slice(0, 10);
+          const todayISO = getTodayISO();
           const { tasks, error } = await extractTasksFromMessageAI({
             message: pastedText,
             courses,
@@ -156,19 +53,7 @@ export default function AiChat() {
             currentWeek: user.currentWeek,
           });
 
-          const extracted = tasks.map((t) => ({
-            title: t.title,
-            dueDate: t.due_date,
-            dueTime: t.due_time,
-            courseId: t.course_id,
-            deadlineRisk: (t.deadline_risk as 'High' | 'Medium' | 'Low' | undefined) ?? 'Medium',
-            suggestedWeek:
-              typeof t.suggested_week === 'number' && t.suggested_week > 0
-                ? t.suggested_week
-                : user.currentWeek,
-          }));
-
-          if (extracted.length === 0) {
+          if (tasks.length === 0) {
             setMessages((prev) => [
               ...prev,
               {
@@ -181,29 +66,20 @@ export default function AiChat() {
             return;
           }
 
-          for (const task of extracted) {
-            const fallbackCourse = courses[0]?.id || 'General';
-            addTask({
-              id: `t${Date.now()}`,
-              title: task.title,
-              courseId: task.courseId || fallbackCourse,
-              type: TaskType.Assignment,
-              dueDate: task.dueDate,
-              dueTime: task.dueTime,
-              priority: riskToPriority(task.deadlineRisk),
-              effort: 4,
-              notes: '',
-              isDone: false,
-              deadlineRisk: task.deadlineRisk,
-              suggestedWeek: task.suggestedWeek,
-              sourceMessage: pastedText,
-            });
+          for (const task of tasks) {
+            addTask(
+              buildTaskFromExtraction(task, {
+                fallbackCourseId: courses[0]?.id || 'General',
+                user,
+                sourceMessage: pastedText,
+              })
+            );
           }
 
-          const taskSummary = extracted
+          const taskSummary = tasks
             .map(
               (t) =>
-                `• "${t.title}"\n   📅 ${t.dueDate}  ⏰ ${t.dueTime}${t.courseId ? `  📚 ${t.courseId}` : ''}`,
+                `• "${t.title}"\n   📅 ${t.due_date}  ⏰ ${t.due_time}${t.course_id ? `  📚 ${t.course_id}` : ''}`,
             )
             .join('\n\n');
 

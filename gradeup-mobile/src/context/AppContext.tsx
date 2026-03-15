@@ -73,6 +73,7 @@ type AppState = {
   markStudyDone: (key: string) => void;
   unmarkStudyDone: (key: string) => void;
   addTask: (task: Task) => void;
+  updateTask: (task: Task) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
   pinnedTaskIds: string[];
@@ -283,6 +284,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateTask = useCallback((task: Task) => {
+    setTasks((prev) => prev.map((item) => (item.id === task.id ? task : item)));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      taskDb.upsertTask(uid, task);
+    });
+  }, []);
+
   const toggleTaskDone = useCallback((taskId: string) => {
     setTasks((prev) => {
       const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
@@ -292,6 +302,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const uid = session?.user?.id;
           if (!uid) return;
           taskDb.upsertTask(uid, updated);
+          
+          // Sync with Shared Goals (Accountability Pacts)
+          supabase
+            .from('shared_goals')
+            .update({ is_completed: updated.isDone, updated_at: new Date().toISOString() })
+            .eq('local_task_id', updated.id)
+            .or(`user_id.eq.${uid},friend_id.eq.${uid}`)
+            .then(({ error }) => {
+              if (error) console.error('Error syncing shared goal completion:', error);
+            });
         });
       }
       return next;
@@ -446,6 +466,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     markStudyDone,
     unmarkStudyDone,
     addTask,
+    updateTask,
     toggleTaskDone,
     deleteTask,
     pinnedTaskIds,

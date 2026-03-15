@@ -1,15 +1,28 @@
 import { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
 import { router } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme } from '@/hooks/useTheme';
+import { useCommunity } from '@/src/context/CommunityContext';
 import { ThemeIcon } from '@/components/ThemeIcon';
-import { Priority } from '@/src/types';
-import { formatDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
+import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
 
 const TOTAL_WEEKS = 14;
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+const NAVY = '#003366';
+const GOLD = '#f59e0b';
+const BG = '#f8fafc';
+const CARD_BG = '#ffffff';
+const CARD_BORDER = '#dbe4f0';
+const TEXT_PRIMARY = '#1A1C1E';
+const TEXT_SECONDARY = '#8E9AAF';
+const OVERDUE_COLOR = '#dc2626';
+
+function toLocalISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function getDaysLeft(dueDate: string): number {
   const today = new Date();
@@ -27,15 +40,39 @@ function getDueTimeLabelRaw(dueDate: string): { key: 'overdue' | 'dueToday' | 't
   return { key: 'daysLeft', days };
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return `rgba(0, 51, 102, ${alpha})`;
+  const int = parseInt(clean, 16);
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+type FocusStudyItem = {
+  studyKey: string;
+  date: string;
+  time: string;
+  code: string;
+  room: string;
+  type: 'STUDY';
+  name: string;
+};
+
 export default function Dashboard() {
-  const { user, tasks, courses, revisionSettingsList, completedStudyKeys, getSubjectColor, language } = useApp();
-  const theme = useTheme();
+  const { user, tasks, courses, revisionSettingsList, completedStudyKeys, pinnedTaskIds, getSubjectColor, language } = useApp();
+  const { friendsWithStatus } = useCommunity();
   const T = useTranslations(language);
-  const pending = tasks.filter((t) => !t.isDone);
-  const high = pending.filter((t) => t.priority === Priority.High).sort(
-    (a, b) => new Date(a.dueDate + 'T' + a.dueTime).getTime() - new Date(b.dueDate + 'T' + b.dueTime).getTime()
+  const focusTask = useMemo(
+    () => selectTodaysFocusTask(tasks, pinnedTaskIds),
+    [tasks, pinnedTaskIds]
   );
-  const nextTask = high[0] || pending[0];
+
+  const studyingFriends = useMemo(
+    () => friendsWithStatus.filter((f) => f.activity?.activity_type === 'studying'),
+    [friendsWithStatus]
+  );
 
   const peakWeek = useMemo(() => {
     let max = 0;
@@ -48,14 +85,15 @@ export default function Dashboard() {
   }, [courses]);
 
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = getTodayISO();
   const in30Days = new Date(now);
   in30Days.setDate(in30Days.getDate() + 30);
-  const in30Str = in30Days.toISOString().slice(0, 10);
+  const in30Str = toLocalISO(in30Days);
 
   const deadlineItems = tasks
     .filter((t) => !t.isDone && t.dueDate >= todayStr && t.dueDate <= in30Str)
     .map((t) => ({
+      taskId: t.id,
       date: t.dueDate,
       time: t.dueTime,
       code: t.courseId,
@@ -64,7 +102,7 @@ export default function Dashboard() {
       name: t.title,
     }));
 
-  const studyItems: { studyKey: string; date: string; time: string; code: string; room: string; type: 'STUDY'; name: string }[] = [];
+  const studyItems: FocusStudyItem[] = [];
   for (const revisionSettings of revisionSettingsList) {
     if (!revisionSettings.time) continue;
     const [h, m] = revisionSettings.time.split(':').map((x) => parseInt(x, 10) || 0);
@@ -81,7 +119,7 @@ export default function Dashboard() {
       for (let d = 0; d <= 30; d++) {
         const dte = new Date(now);
         dte.setDate(dte.getDate() + d);
-        const dateStr = dte.toISOString().slice(0, 10);
+        const dateStr = toLocalISO(dte);
         if (dateStr < todayStr) continue;
         if (dateStr > in30Str) break;
         const dayNum = dte.getDay();
@@ -96,18 +134,67 @@ export default function Dashboard() {
     const d = a.date.localeCompare(b.date);
     return d !== 0 ? d : a.time.localeCompare(b.time);
   });
+  const previewItems = scheduleWithinMonth.slice(0, 8);
+  const hiddenUpcomingCount = Math.max(0, scheduleWithinMonth.length - previewItems.length);
+
+  const nextStudyItem = useMemo(() => {
+    const pendingStudyItems = studyItems.filter((item) => !completedStudyKeys.includes(item.studyKey));
+    if (pendingStudyItems.length === 0) return null;
+    return [...pendingStudyItems].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      return dateCompare !== 0 ? dateCompare : a.time.localeCompare(b.time);
+    })[0];
+  }, [completedStudyKeys, revisionSettingsList, todayStr, in30Str]);
+
+  const focusCard = useMemo(() => {
+    if (focusTask) {
+      const info = getDueTimeLabelRaw(focusTask.task.dueDate);
+      const subjectColor = getSubjectColor(focusTask.task.courseId);
+      const isOverdue = getDaysUntilTaskDue(focusTask.task) < 0;
+      return {
+        kind: 'task' as const,
+        title: focusTask.task.title,
+        code: focusTask.task.courseId,
+        date: focusTask.task.dueDate,
+        time: focusTask.task.dueTime,
+        accentColor: isOverdue ? OVERDUE_COLOR : subjectColor,
+        badgeBackground: isOverdue ? 'rgba(220,38,38,0.10)' : hexToRgba(subjectColor, 0.10),
+        label:
+          info.key === 'daysLeft'
+            ? `${info.days} ${T('daysLeft')}`
+            : T(info.key),
+        subtitle:
+          focusTask.reason === 'pinned'
+            ? `${T('subject')} • ${focusTask.task.priority}`
+            : `${focusTask.task.type} • ${focusTask.task.priority}`,
+        onPress: () => router.push({ pathname: '/task-details', params: { id: focusTask.task.id } } as any),
+      };
+    }
+
+    if (nextStudyItem) {
+      const info = getDueTimeLabelRaw(nextStudyItem.date);
+      const subjectColor = getSubjectColor(nextStudyItem.code);
+      return {
+        kind: 'study' as const,
+        title: nextStudyItem.name,
+        code: nextStudyItem.code,
+        date: nextStudyItem.date,
+        time: nextStudyItem.time,
+        accentColor: subjectColor,
+        badgeBackground: hexToRgba(subjectColor, 0.10),
+        label:
+          info.key === 'daysLeft'
+            ? `${info.days} ${T('daysLeft')}`
+            : T(info.key),
+        subtitle: nextStudyItem.room,
+        onPress: () => router.push('/(tabs)/planner' as any),
+      };
+    }
+
+    return null;
+  }, [focusTask, nextStudyItem, T, getSubjectColor]);
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
-
-  // Hardcoded theme – matching planner page navy/gold palette
-  const NAVY = '#003366';
-  const GOLD = '#f59e0b';
-  const BG = '#f8fafc';
-  const CARD_BG = '#ffffff';
-  const CARD_BORDER = '#e2e8f0';
-  const TEXT_PRIMARY = '#1A1C1E';
-  const TEXT_SECONDARY = '#8E9AAF';
-  const OVERDUE_COLOR = '#dc2626';
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: BG }]} contentContainerStyle={styles.content}>
@@ -177,98 +264,173 @@ export default function Dashboard() {
       {/* Today's focus */}
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>
         <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('todaysFocus')}</Text>
+        <Text style={styles.sectionSubcopy}>
+          {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
+        </Text>
         <Pressable
           style={({ pressed }) => [
             styles.focusCard,
             pressed && styles.pressed,
           ]}
-          onPress={() => router.push('/(tabs)/planner' as any)}
+          onPress={() => {
+            if (focusCard) {
+              focusCard.onPress();
+            } else {
+              router.push('/(tabs)/planner' as any);
+            }
+          }}
         >
-          {nextTask ? (
+          {focusCard ? (
             <>
-              <View style={styles.focusPillsRow}>
-                <View style={[styles.focusCoursePill, { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.08)' : 'rgba(0,51,102,0.05)' }]}>
-                  <Text style={[styles.focusCoursePillText, { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : NAVY }]}>{nextTask.courseId}</Text>
+              <View style={styles.focusCardHeader}>
+                <View style={styles.focusPillsRow}>
+                  <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
+                    <Text style={[styles.focusCoursePillText, { color: focusCard.accentColor }]}>{focusCard.code}</Text>
+                  </View>
+                  <View style={[styles.focusStatusPill, { backgroundColor: focusCard.badgeBackground, borderColor: hexToRgba(focusCard.accentColor, 0.14) }]}>
+                    <Text style={[styles.focusStatusPillText, { color: focusCard.accentColor }]}>
+                      {focusCard.label}
+                    </Text>
+                  </View>
                 </View>
-                <View style={[
-                  styles.focusStatusPill,
-                  { backgroundColor: getDaysLeft(nextTask.dueDate) < 0 ? 'rgba(220,38,38,0.1)' : 'rgba(245,158,11,0.1)' },
-                ]}>
-                  <Text style={[
-                    styles.focusStatusPillText,
-                    { color: getDaysLeft(nextTask.dueDate) < 0 ? OVERDUE_COLOR : GOLD },
-                  ]}>
-                    {(() => {
-                      const info = getDueTimeLabelRaw(nextTask.dueDate);
-                      if (info.key === 'daysLeft') return `${info.days} ${T('daysLeft')}`;
-                      return T(info.key);
-                    })()}
-                  </Text>
+                <View style={styles.focusArrowButton}>
+                  <Feather name="arrow-up-right" size={17} color={NAVY} />
                 </View>
               </View>
-              <Text style={[styles.focusTitle, { color: TEXT_PRIMARY }]} numberOfLines={2}>{nextTask.title}</Text>
+              <Text style={styles.focusTitle} numberOfLines={2}>{focusCard.title}</Text>
+              <Text style={styles.focusSupportText} numberOfLines={1}>
+                {focusCard.subtitle}
+              </Text>
               <View style={styles.focusMetaRow}>
-                <ThemeIcon name="calendar" size={13} color={TEXT_SECONDARY} />
-                <Text style={[styles.focusMetaText, { color: TEXT_SECONDARY }]}>
-                  {formatDisplayDate(nextTask.dueDate)} · {(nextTask.dueTime || '').slice(0, 5)}
-                </Text>
+                <View style={styles.focusMetaPill}>
+                  <Feather name="calendar" size={13} color={TEXT_SECONDARY} />
+                  <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
+                </View>
+                <View style={styles.focusMetaPill}>
+                  <Feather name="clock" size={13} color={TEXT_SECONDARY} />
+                  <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
+                </View>
               </View>
             </>
           ) : (
             <View style={styles.focusEmptyWrap}>
-              <Text style={[styles.focusEmpty, { color: TEXT_SECONDARY }]}>{T('noTasksToday')}</Text>
-              <Text style={[styles.focusEmptySub, { color: NAVY }]}>{T('youreAllSet')}</Text>
+              <View style={styles.focusEmptyIcon}>
+                <Feather name="sun" size={22} color={NAVY} />
+              </View>
+              <Text style={styles.focusEmpty}>{T('noTasksToday')}</Text>
+              <Text style={styles.focusEmptySub}>{T('youreAllSet')}</Text>
             </View>
           )}
         </Pressable>
       </View>
 
+      {/* Friends Studying Widget */}
+      {studyingFriends.length > 0 && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.studyingWidget,
+            pressed && styles.pressed,
+          ]}
+          onPress={() => router.push('/study-timer' as any)}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '800', color: NAVY, flex: 1 }}>
+            📚 {studyingFriends.length} friend{studyingFriends.length > 1 ? 's' : ''} studying now
+          </Text>
+          <Text style={{ fontSize: 13, color: '#3b82f6', fontWeight: '700' }}>Join →</Text>
+        </Pressable>
+      )}
+
       {/* Timeline / Upcoming */}
       <View style={styles.sectionWrapper}>
         <View style={styles.timelineHeader}>
-          <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('upcoming')}</Text>
-          <Pressable onPress={() => router.push('/(tabs)/planner' as any)}>
-            <Text style={[styles.seeAll, { color: NAVY }]}>{T('seeAll')}</Text>
-          </Pressable>
+          <View style={styles.timelineHeaderBody}>
+            <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('upcoming')}</Text>
+            <Text style={styles.sectionSubcopy}>A tighter view of your next deadlines and study windows.</Text>
+          </View>
         </View>
-        <View style={styles.timelineList}>
-          {scheduleWithinMonth.length === 0 ? (
-            <View style={styles.timelineCard}>
-              <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>{T('nothingIn30Days')}</Text>
+        <View style={styles.upcomingPanel}>
+          <View style={styles.upcomingLeadRow}>
+            <View style={styles.upcomingLeadBadge}>
+              <Text style={styles.upcomingLeadBadgeText}>{scheduleWithinMonth.length} items</Text>
+            </View>
+            <Pressable style={styles.upcomingSeeAllButton} onPress={() => router.push('/(tabs)/planner' as any)}>
+              <Text style={styles.upcomingSeeAllText}>{T('seeAll')}</Text>
+              <Feather name="arrow-right" size={14} color={NAVY} />
+            </Pressable>
+          </View>
+          {previewItems.length === 0 ? (
+            <View style={styles.upcomingEmptyCard}>
+              <View style={styles.upcomingEmptyIcon}>
+                <Feather name="calendar" size={20} color={NAVY} />
+              </View>
+              <Text style={styles.upcomingEmptyTitle}>{T('nothingIn30Days')}</Text>
+              <Text style={styles.upcomingEmptySub}>New tasks and revision sessions will appear here automatically.</Text>
+              <Pressable style={styles.upcomingEmptyButton} onPress={() => router.push('/(tabs)/planner' as any)}>
+                <Text style={styles.upcomingEmptyButtonText}>{T('seeAll')}</Text>
+              </Pressable>
             </View>
           ) : (
-            scheduleWithinMonth.map((item, idx) => {
-              const showDateHeader = idx === 0 || scheduleWithinMonth[idx - 1].date !== item.date;
+            previewItems.map((item, idx) => {
+              const showDateHeader = idx === 0 || previewItems[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
-              const badgeColor = studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD;
+              const accent = studyDone
+                ? '#94a3b8'
+                : isStudy
+                  ? getSubjectColor((item as { code: string }).code)
+                  : getSubjectColor((item as { code: string }).code);
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
-                    <Text style={[styles.timelineDateHeader, { color: NAVY }, idx > 0 && { marginTop: 16 }]}>{formatDateLabel(item.date)}</Text>
-                  )}
-                  <View style={styles.timelineItem}>
-                    <View style={styles.timelineDotCol}>
-                      <View style={[styles.timelineDot, { borderColor: studyDone ? '#94a3b8' : isStudy ? NAVY : GOLD }]} />
-                      <View style={styles.timelineTrack} />
-                    </View>
-                    <View style={styles.timelineCard}>
-                      <View style={styles.timelineCardTop}>
-                        <Text style={[styles.timelineTime, { color: TEXT_SECONDARY }]}>{(item.time || '').slice(0, 5)}</Text>
-                        {studyDone ? (
-                          <View style={[styles.typeBadge, { backgroundColor: 'rgba(148, 163, 184, 0.15)' }]}>
-                            <Text style={[styles.typeBadgeText, { color: '#64748b' }]}>DONE</Text>
-                          </View>
-                        ) : null}
+                    <View style={[styles.upcomingDateRow, idx > 0 && { marginTop: 18 }]}>
+                      <View style={styles.upcomingDateChip}>
+                        <Text style={styles.upcomingDateChipText}>{formatDateLabel(item.date)}</Text>
                       </View>
-                      <Text style={[styles.timelineName, { color: TEXT_PRIMARY }, studyDone && { textDecorationLine: 'line-through', color: TEXT_SECONDARY }]}>{item.name}</Text>
-                      <Text style={[styles.timelineMeta, { color: TEXT_SECONDARY }]}>{item.code} • {item.room}</Text>
                     </View>
-                  </View>
+                  )}
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.upcomingCard,
+                      pressed && styles.pressed,
+                    ]}
+                    disabled={isStudy}
+                    onPress={() => {
+                      const taskId = (item as { taskId?: string }).taskId;
+                      if (taskId) {
+                        router.push({ pathname: '/task-details', params: { id: taskId } } as any);
+                      }
+                    }}
+                  >
+                    <View style={[styles.upcomingAccent, { backgroundColor: accent }]} />
+                    <View style={styles.upcomingCardBody}>
+                      <View style={styles.upcomingCardTop}>
+                        <View style={styles.upcomingTimeWrap}>
+                          <Feather name="clock" size={12} color="#64748b" />
+                          <Text style={styles.upcomingTime}>{(item.time || '').slice(0, 5)}</Text>
+                        </View>
+                        {!isStudy ? <Feather name="chevron-right" size={18} color="#94a3b8" /> : null}
+                      </View>
+                      <Text style={[styles.upcomingTitle, studyDone && styles.upcomingTitleDone]} numberOfLines={2}>
+                        {item.name}
+                      </Text>
+                      <View style={styles.upcomingMetaRow}>
+                        <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
+                        <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.code}</Text>
+                        <Text style={styles.upcomingMetaDivider}>•</Text>
+                        <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.room}</Text>
+                      </View>
+                    </View>
+                  </Pressable>
                 </View>
               );
             })
           )}
+          {hiddenUpcomingCount > 0 ? (
+            <Pressable style={styles.upcomingMoreRow} onPress={() => router.push('/(tabs)/planner' as any)}>
+              <Text style={styles.upcomingMoreText}>+{hiddenUpcomingCount} more items in planner</Text>
+              <Feather name="arrow-right" size={15} color={NAVY} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -386,73 +548,252 @@ const styles = StyleSheet.create({
 
   pressed: { opacity: 0.96 },
 
-  // Focus card
+  sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
+  sectionWrapperFirst: { marginTop: 24 },
+  sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: '#000000' },
+  sectionSubcopy: { fontSize: 13, lineHeight: 19, color: '#64748b', marginBottom: 16, maxWidth: '92%' },
+
   focusCard: {
-    borderRadius: 24, // Apple-like squircle radius
-    padding: 20,
-    backgroundColor: '#ffffff',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
+    borderRadius: 26,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.045,
     shadowRadius: 16,
     elevation: 3,
+  },
+  focusCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   focusPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 14,
+    flexWrap: 'wrap',
   },
   focusCoursePill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8, // Softer pill
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  focusCoursePillText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
+  focusCoursePillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
   focusStatusPill: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  focusStatusPillText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
-  focusTitle: { fontSize: 18, fontWeight: '700', lineHeight: 24, marginBottom: 10, letterSpacing: -0.3 },
-  focusMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  focusMetaText: { fontSize: 13, fontWeight: '500' },
-  focusEmptyWrap: { alignItems: 'center', paddingVertical: 20 },
-  focusEmpty: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  focusEmptySub: { fontSize: 14, fontWeight: '500' },
+  focusStatusPillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+  focusArrowButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  focusTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 23,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.4,
+  },
+  focusSupportText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    marginTop: 6,
+  },
+  focusMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    marginTop: 14,
+  },
+  focusMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  focusMetaText: { fontSize: 13, fontWeight: '700', color: '#475569' },
+  focusEmptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 156,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    borderRadius: 28,
+    paddingHorizontal: 24,
+  },
+  focusEmptyIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e0f2fe',
+    marginBottom: 16,
+  },
+  focusEmpty: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY, marginBottom: 6 },
+  focusEmptySub: { fontSize: 14, fontWeight: '500', color: NAVY },
 
-  // Sections
-  sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
-  sectionWrapperFirst: { marginTop: 24 },
-  sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 16, color: '#000000' },
-
-  // Timeline
-  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  seeAll: { fontSize: 15, fontWeight: '600' },
-  timelineList: { marginLeft: 0 },
-  timelineDateHeader: { fontSize: 14, fontWeight: '700', marginBottom: 12, letterSpacing: -0.2 },
-  timelineItem: { flexDirection: 'row', gap: 14, marginBottom: 16 },
-  timelineDotCol: { alignItems: 'center', width: 14, paddingTop: 4 },
-  timelineDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, backgroundColor: '#f8fafc' },
-  timelineTrack: { width: 2, flex: 1, backgroundColor: '#f1f5f9', marginTop: 4 },
-  timelineCard: {
-    flex: 1,
+  timelineHeader: { marginBottom: 16 },
+  timelineHeaderBody: { flex: 1, minWidth: 0 },
+  upcomingPanel: {
+    backgroundColor: '#eef4fb',
+    borderRadius: 26,
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#dae5f2',
+  },
+  upcomingLeadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  upcomingLeadBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#dbeafe',
+  },
+  upcomingLeadBadgeText: { fontSize: 12, fontWeight: '800', color: NAVY, letterSpacing: 0.3 },
+  upcomingSeeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d9e4f0',
+  },
+  upcomingSeeAllText: { fontSize: 13, fontWeight: '700', color: NAVY },
+  upcomingEmptyCard: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 18,
     borderRadius: 20,
     backgroundColor: '#ffffff',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
   },
-  timelineCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  timelineTime: { fontSize: 13, fontWeight: '600' },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  typeBadgeText: { fontSize: 10, fontWeight: '700' },
-  timelineName: { fontSize: 16, fontWeight: '700', lineHeight: 22, letterSpacing: -0.3 },
-  timelineMeta: { fontSize: 13, fontWeight: '500', marginTop: 4 },
+  upcomingEmptyIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+    marginBottom: 14,
+  },
+  upcomingEmptyTitle: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY, textAlign: 'center' },
+  upcomingEmptySub: { fontSize: 13, lineHeight: 19, color: TEXT_SECONDARY, textAlign: 'center', marginTop: 8 },
+  upcomingEmptyButton: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: NAVY,
+  },
+  upcomingEmptyButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+  upcomingDateRow: { marginBottom: 10 },
+  upcomingDateChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#dbeafe',
+  },
+  upcomingDateChipText: { fontSize: 12, fontWeight: '800', color: NAVY, letterSpacing: 0.3 },
+  upcomingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5edf6',
+    marginBottom: 12,
+  },
+  upcomingAccent: {
+    width: 6,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+  },
+  upcomingCardBody: { flex: 1, minWidth: 0 },
+  upcomingCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  upcomingTimeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  upcomingTime: { fontSize: 13, fontWeight: '700', color: '#475569' },
+  upcomingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.3,
+  },
+  upcomingTitleDone: { color: TEXT_SECONDARY, textDecorationLine: 'line-through' },
+  upcomingMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 },
+  upcomingSubjectDot: { width: 8, height: 8, borderRadius: 4 },
+  upcomingMetaText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: TEXT_SECONDARY },
+  upcomingMetaDivider: { fontSize: 13, color: '#94a3b8', fontWeight: '700' },
+  upcomingMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  upcomingMoreText: { fontSize: 13, fontWeight: '700', color: NAVY },
+
+  studyingWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    marginTop: -10,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
 });

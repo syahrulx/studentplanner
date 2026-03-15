@@ -6,8 +6,9 @@ import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import type { Task } from '@/src/types';
 import type { TaskExtractionDTO } from '@/src/lib/taskExtraction';
-import { formatDisplayDate, parseDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, parseDisplayDate } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
+import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 
 const ANALYSIS_STEPS = [
   'Identifying keywords...',
@@ -22,14 +23,14 @@ export default function AIExtraction() {
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<Partial<Task>>({
-    title: 'Lab 4 - Normalization Study',
-    courseId: courses[0]?.id ?? 'IPS551',
-    type: TaskType.Lab,
-    dueDate: '2024-12-27',
+    title: '',
+    courseId: courses[0]?.id ?? '',
+    type: TaskType.Assignment,
+    dueDate: getTodayISO(),
     dueTime: '23:59',
-    priority: Priority.High,
-    effort: 4,
-    notes: 'Follow the specific ERD to Normalization mapping taught in Week 11.',
+    priority: Priority.Medium,
+    effort: 2,
+    notes: '',
   });
 
   useEffect(() => {
@@ -65,19 +66,20 @@ export default function AIExtraction() {
   }
 
   const handleConfirm = () => {
+    const dueDate = formData.dueDate ?? getTodayISO();
     const deadlineRisk =
-      (aiMeta?.deadline_risk as 'High' | 'Medium' | 'Low' | undefined) ?? 'Medium';
+      (aiMeta?.deadline_risk as 'High' | 'Medium' | 'Low' | undefined) ?? getDeadlineRiskFromDueDate(dueDate);
     const suggestedWeek =
       typeof aiMeta?.suggested_week === 'number' && aiMeta.suggested_week > 0
         ? aiMeta.suggested_week
-        : user?.currentWeek ?? 1;
+        : getSuggestedWeekForDueDate(dueDate, user);
 
     const task: Task = {
-      id: `t${Date.now()}`,
+      id: createTaskId(),
       title: (formData.title ?? 'Task').trim(),
-      courseId: formData.courseId ?? courses[0]?.id ?? 'IPS551',
-      type: formData.type ?? TaskType.Lab,
-      dueDate: formData.dueDate ?? '2024-12-27',
+      courseId: formData.courseId ?? courses[0]?.id ?? 'General',
+      type: formData.type ?? TaskType.Assignment,
+      dueDate,
       dueTime: formData.dueTime ?? '23:59',
       priority: formData.priority ?? Priority.High,
       effort: formData.effort ?? 4,

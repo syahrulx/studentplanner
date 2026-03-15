@@ -24,7 +24,8 @@ const translations = {
 
     // Planner
     academicPlanner: 'Academic Planner',
-    week: 'DAY',
+    today: 'Today',
+    week: 'WEEK',
     month: 'MONTH',
     all: 'ALL',
     allTasks: 'ALL TASKS',
@@ -98,8 +99,11 @@ const translations = {
     uploadFailed: 'Upload failed',
 
     // Task details
+    taskDetails: 'Task Details',
     addNewTask: 'Add New Task',
+    editTask: 'Edit Task',
     manualEntry: 'Manual Entry',
+    taskChangesSync: 'Changes sync to your planner instantly',
     taskTitleLabel: 'Task title',
     dueDate: 'DUE DATE',
     priority: 'PRIORITY',
@@ -184,7 +188,9 @@ const translations = {
     notesLabel: 'Notes',
     optional: 'Optional',
     addingTask: 'Adding Task...',
+    savingTask: 'Saving Task...',
     addTask: 'Add Task',
+    saveTask: 'Save Task',
 
     // Quiz Config
     configurePracticeQuiz: 'Configure practice quiz',
@@ -273,6 +279,7 @@ const translations = {
 
     // Planner
     academicPlanner: 'Perancang Akademik',
+    today: 'Hari ini',
     week: 'MINGGU',
     month: 'BULAN',
     all: 'SEMUA',
@@ -347,8 +354,11 @@ const translations = {
     uploadFailed: 'Muat naik gagal',
 
     // Task details
+    taskDetails: 'Butiran Tugasan',
     addNewTask: 'Tambah Tugasan Baharu',
+    editTask: 'Sunting Tugasan',
     manualEntry: 'Kemasukan Manual',
+    taskChangesSync: 'Perubahan dikemas kini terus dalam perancang anda',
     taskTitleLabel: 'Tajuk tugasan',
     dueDate: 'TARIKH AKHIR',
     priority: 'KEUTAMAAN',
@@ -433,7 +443,9 @@ const translations = {
     notesLabel: 'Nota',
     optional: 'Pilihan',
     addingTask: 'Menambah Tugasan...',
+    savingTask: 'Menyimpan Tugasan...',
     addTask: 'Tambah Tugasan',
+    saveTask: 'Simpan Tugasan',
 
     // Quiz Config
     configurePracticeQuiz: 'Konfigurasi kuiz latihan',

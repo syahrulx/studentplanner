@@ -1,28 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType, Priority } from '@/src/types';
 import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
-
-const riskFromDiffDays = (diffDays: number): 'High' | 'Medium' | 'Low' => {
-  if (diffDays <= 2) return 'High';
-  if (diffDays <= 7) return 'Medium';
-  return 'Low';
-};
-
-const riskToPriority = (risk: 'High' | 'Medium' | 'Low'): Priority => {
-  if (risk === 'High') return Priority.High;
-  if (risk === 'Low') return Priority.Low;
-  return Priority.Medium;
-};
+import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 
 export default function AddTask() {
-  const { courses, addTask, getSubjectColor, setSubjectColor, language, user } = useApp();
+  const { taskId: rawTaskId } = useLocalSearchParams<{ taskId?: string | string[] }>();
+  const { courses, tasks, addTask, updateTask, getSubjectColor, setSubjectColor, language, user } = useApp();
   const T = useTranslations(language);
+  const taskId = Array.isArray(rawTaskId) ? rawTaskId[0] : rawTaskId;
+  const existingTask = tasks.find((task) => task.id === taskId);
+  const isEditing = Boolean(taskId);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
@@ -42,39 +35,49 @@ export default function AddTask() {
   const activeMonth = new Date(activeDate + 'T12:00:00').getMonth();
   const monthGridCells = getMonthGrid(activeYear, activeMonth);
 
+  useEffect(() => {
+    if (!existingTask) return;
+    setTitle(existingTask.title);
+    setCourseId(existingTask.courseId);
+    setType(existingTask.type);
+    setDueDateISO(existingTask.dueDate);
+    setDueTime(existingTask.dueTime || '23:59');
+    setPriority(existingTask.priority);
+    setEffort(existingTask.effort);
+    setNotes(existingTask.notes);
+  }, [existingTask]);
+
+  useEffect(() => {
+    if (isEditing || courseId || !courses[0]?.id) return;
+    setCourseId(courses[0].id);
+  }, [isEditing, courseId, courses]);
+
   const handleSubmit = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || (isEditing && !existingTask)) return;
     setIsSaving(true);
     setTimeout(() => {
-      // Compute deadline risk from due date vs today, then map to priority.
-      const todayISO = getTodayISO();
-      const today = new Date(todayISO + 'T00:00:00');
-      const due = new Date(dueDateISO + 'T00:00:00');
-      const diffDays = Math.floor((due.getTime() - today.getTime()) / 864e5);
-      const deadlineRisk = riskFromDiffDays(diffDays);
-      const resolvedPriority = riskToPriority(deadlineRisk);
+      const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
 
-      const newTask = {
-        id: `t${Date.now()}`,
+      const nextTask = {
+        id: existingTask?.id ?? createTaskId(),
         title: title.trim(),
-        courseId,
+        courseId: courseId || courses[0]?.id || 'General',
         type,
         dueDate: dueDateISO,
         dueTime,
-        priority: resolvedPriority,
+        priority,
         effort,
         notes,
-        isDone: false,
+        isDone: existingTask?.isDone ?? false,
         deadlineRisk,
-        suggestedWeek: (() => {
-          if (!user?.startDate) return 1;
-          const start = new Date(user.startDate + 'T00:00:00');
-          const due = new Date(dueDateISO + 'T00:00:00');
-          const diffDays = Math.floor((due.getTime() - start.getTime()) / 864e5);
-          return Math.max(1, Math.ceil(diffDays / 7));
-        })(),
+        suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user),
+        sourceMessage: existingTask?.sourceMessage,
       };
-      addTask(newTask);
+      if (existingTask) {
+        updateTask(nextTask);
+      } else {
+        addTask(nextTask);
+      }
       router.back();
     }, 800);
   };
@@ -86,8 +89,8 @@ export default function AddTask() {
           <Icons.ArrowRight size={20} color={COLORS.gray} style={{ transform: [{ rotate: '180deg' }] }} />
         </Pressable>
         <View>
-          <Text style={styles.headerTitle}>{T('addNewTask')}</Text>
-          <Text style={styles.headerSub}>{T('manualEntry')}</Text>
+          <Text style={styles.headerTitle}>{isEditing ? T('editTask') : T('addNewTask')}</Text>
+          <Text style={styles.headerSub}>{isEditing ? T('taskChangesSync') : T('manualEntry')}</Text>
         </View>
       </View>
 
@@ -232,18 +235,26 @@ export default function AddTask() {
       <Text style={styles.label}>{T('notesLabel')}</Text>
       <TextInput style={[styles.input, styles.textArea]} value={notes} onChangeText={setNotes} placeholder={T('optional')} placeholderTextColor={COLORS.gray} multiline />
 
-      <Pressable style={[styles.submit, (!title.trim() || isSaving) && styles.submitDisabled]} onPress={handleSubmit} disabled={!title.trim() || isSaving}>
+      <Pressable
+        style={[styles.submit, (!title.trim() || isSaving || (isEditing && !existingTask)) && styles.submitDisabled]}
+        onPress={handleSubmit}
+        disabled={!title.trim() || isSaving || (isEditing && !existingTask)}
+      >
         {isSaving ? (
           <View style={styles.savingRow}>
             <View style={styles.bounceDot} />
             <View style={[styles.bounceDot, styles.bounceDot2]} />
             <View style={[styles.bounceDot, styles.bounceDot3]} />
-            <Text style={styles.submitText}>{T('addingTask')}</Text>
+            <Text style={styles.submitText}>{isEditing ? T('savingTask') : T('addingTask')}</Text>
           </View>
         ) : (
           <>
-            <Icons.Plus size={20} color={COLORS.white} />
-            <Text style={styles.submitText}>{T('addTask')}</Text>
+            {isEditing ? (
+              <Icons.CheckCircle size={20} color={COLORS.white} />
+            ) : (
+              <Icons.Plus size={20} color={COLORS.white} />
+            )}
+            <Text style={styles.submitText}>{isEditing ? T('saveTask') : T('addTask')}</Text>
           </>
         )}
       </Pressable>
