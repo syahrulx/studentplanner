@@ -100,6 +100,30 @@ export interface FriendWithStatus extends FriendProfile {
   activity?: UserActivity;
 }
 
+// -----------------------------------------------------------------------------
+// Accountability Pacts (Shared Goals)
+// -----------------------------------------------------------------------------
+export interface SharedGoal {
+  id: string;
+  user_id: string;
+  friend_id: string;
+  local_task_id: string;
+  title: string;
+  share_type: 'task' | 'subject';
+  course_id: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  is_completed: boolean;
+  created_at: string;
+  updated_at: string;
+  // Included when joining with profiles
+  creator_profile?: FriendProfile;
+  friend_profile?: FriendProfile;
+}
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
 // Activity type metadata for UI
 export const ACTIVITY_TYPES: { type: ActivityType; emoji: string; label: string }[] = [
   { type: 'studying', emoji: '📚', label: 'Studying' },
@@ -756,4 +780,89 @@ export async function uploadAvatar(base64Image: string, ext: string = 'jpeg'): P
   if (updateError) throw updateError;
 
   return publicUrl;
+}
+
+// =============================================================================
+// SHARED GOALS (Accountability Pacts)
+// =============================================================================
+
+export async function fetchSharedGoals(): Promise<SharedGoal[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return [];
+
+  const { data, error } = await supabase
+    .from('shared_goals')
+    .select(`
+      *,
+      creator_profile:profiles!shared_goals_user_id_fkey(id, name, avatar_url),
+      friend_profile:profiles!shared_goals_friend_id_fkey(id, name, avatar_url)
+    `)
+    .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching shared goals:', error);
+    return [];
+  }
+  return data as SharedGoal[];
+}
+
+export async function createSharedGoal(params: {
+  friendId: string;
+  localTaskId: string;
+  title: string;
+  shareType: 'task' | 'subject';
+  courseId: string;
+}): Promise<SharedGoal | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('shared_goals')
+    .insert([{
+      user_id: user.id,
+      friend_id: params.friendId,
+      local_task_id: params.localTaskId,
+      title: params.title,
+      share_type: params.shareType,
+      course_id: params.courseId,
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating shared goal:', error);
+    return null;
+  }
+  
+  // Send a quick reaction as a notification
+  await sendReaction(
+    params.friendId,
+    params.shareType === 'task' ? '🤝' : '📚',
+    `I pledged to complete ${params.shareType === 'task' ? 'a task' : 'my tasks'} for ${params.courseId}. Hold me accountable!`
+  );
+
+  return data as SharedGoal;
+}
+
+export async function updateSharedGoalStatus(id: string, updates: Partial<Pick<SharedGoal, 'status' | 'is_completed'>>): Promise<void> {
+  const { error } = await supabase
+    .from('shared_goals')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating shared goal:', error);
+  }
+}
+
+export async function deleteSharedGoal(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('shared_goals')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting shared goal:', error);
+  }
 }

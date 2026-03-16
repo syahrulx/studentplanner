@@ -102,6 +102,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="profile-settings" />
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="community" />
+        <Stack.Screen name="study-timer" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 
           name="ai-chat" 

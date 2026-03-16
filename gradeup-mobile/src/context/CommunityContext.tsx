@@ -12,6 +12,7 @@ import type {
   ActivityType,
   LocationVisibility,
   Friendship,
+  SharedGoal,
 } from '../lib/communityApi';
 
 import * as Location from 'expo-location';
@@ -48,6 +49,12 @@ interface CommunityState {
   clearMyActivity: () => Promise<void>;
   sendReaction: (receiverId: string, type: string, message?: string) => Promise<void>;
   sendBump: (receiverId: string) => Promise<void>;
+
+  // Accountability Pacts (Shared Goals)
+  sharedGoals: SharedGoal[];
+  refreshSharedGoals: () => Promise<void>;
+  createSharedGoal: (friendId: string, localTaskId: string, title: string, shareType: 'task' | 'subject', courseId: string) => Promise<SharedGoal | null>;
+  updateSharedGoalStatus: (id: string, updates: Partial<Pick<SharedGoal, 'status' | 'is_completed'>>) => Promise<void>;
 
   // Circle filtering
   selectedCircleId: string | null;
@@ -114,6 +121,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [myLongitude, setMyLongitude] = useState<number | null>(null);
   const [locationVisibility, setLocationVisibilityState] = useState<LocationVisibility>('friends');
   const [loading, setLoading] = useState(true);
+
+  // Accountability Pacts
+  const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
 
   // Circle filtering
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
@@ -207,6 +217,16 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  const refreshSharedGoals = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const data = await communityApi.fetchSharedGoals();
+      setSharedGoals(data);
+    } catch (e) {
+      // Ignore
+    }
+  }, [userId]);
+
   const refreshAll = useCallback(async () => {
     try {
       await Promise.allSettled([
@@ -215,6 +235,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshRequests(),
         refreshUnreadCount(),
         refreshMyActivity(),
+        refreshSharedGoals(),
       ]);
     } catch (e) {
       // Silently fail
@@ -235,6 +256,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       refreshFriends();
       refreshUnreadCount();
       refreshMyActivity();
+      refreshSharedGoals();
     }, REFRESH_INTERVAL);
 
     return () => {
@@ -431,6 +453,24 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  // ─── Shared Goals actions ───
+  const createSharedGoal = useCallback(async (
+    friendId: string, localTaskId: string, title: string, shareType: 'task' | 'subject', courseId: string
+  ) => {
+    if (!userId) return null;
+    const goal = await communityApi.createSharedGoal({ friendId, localTaskId, title, shareType, courseId });
+    if (goal) refreshSharedGoals();
+    return goal;
+  }, [userId, refreshSharedGoals]);
+
+  const updateSharedGoalStatus = useCallback(async (
+    id: string, updates: Partial<Pick<SharedGoal, 'status' | 'is_completed'>>
+  ) => {
+    if (!userId) return;
+    await communityApi.updateSharedGoalStatus(id, updates);
+    refreshSharedGoals();
+  }, [userId, refreshSharedGoals]);
+
   const value: CommunityState = {
     friends,
     friendsWithStatus,
@@ -449,6 +489,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     selectedCircleId,
     setSelectedCircleId,
     filteredFriends,
+    sharedGoals,
+    refreshSharedGoals,
+    createSharedGoal,
+    updateSharedGoalStatus,
     locationPermissionGranted,
     requestLocationPermission,
     myLatitude,

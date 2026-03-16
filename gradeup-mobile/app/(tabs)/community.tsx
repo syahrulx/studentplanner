@@ -118,16 +118,17 @@ function MapPin({
   name, 
   avatarUrl, 
   activityType, 
-  isMe 
+  isMe,
+  isFocusing,
 }: { 
   name?: string; 
   avatarUrl?: string; 
   activityType?: string; 
-  isMe?: boolean; 
+  isMe?: boolean;
+  isFocusing?: boolean;
 }) {
   const emoji = getActivityEmoji(activityType);
   const isActive = activityType && activityType !== 'idle';
-
   return (
     <View style={styles.markerWrapper}>
       <View style={styles.markerInner}>
@@ -136,7 +137,7 @@ function MapPin({
             <Text style={styles.statusCloudText}>{emoji}</Text>
           </View>
         )}
-        <View style={[styles.avatarRing, isMe && styles.avatarRingMe]}>
+        <View style={[styles.avatarRing, isMe && styles.avatarRingMe, isFocusing && styles.avatarRingFocus]}>
           <Avatar name={name} avatarUrl={avatarUrl} size={42} />
         </View>
         <View style={styles.pinTriangle} />
@@ -322,7 +323,8 @@ export default function CommunityMap() {
                 name={user.name} 
                 avatarUrl={user.avatar}
                 activityType={myActivity?.activity_type} 
-                isMe={true} 
+                isMe={true}
+                isFocusing={myActivity?.activity_type === 'studying'}
               />
             </Marker>
 
@@ -342,9 +344,12 @@ export default function CommunityMap() {
                     name={friend.name}
                     avatarUrl={friend.avatar_url}
                     activityType={friend.activity?.activity_type}
+                    isFocusing={friend.activity?.activity_type === 'studying'}
                   />
                 </Marker>
+
               ))}
+
           </MapView>
         ) : (
           <View style={[styles.mapPlaceholder, { backgroundColor: theme.backgroundSecondary || theme.card }]}>
@@ -379,6 +384,18 @@ export default function CommunityMap() {
               { backgroundColor: theme.card },
               pressed && { opacity: 0.8 },
             ]}
+            onPress={() => router.push('/study-timer' as any)}
+          >
+            <Feather name="clock" size={16} color={theme.primary} />
+            <Text style={[styles.mapOverlayBtnText, { color: theme.primary }]}>Focus</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapOverlayBtn,
+              { backgroundColor: theme.card },
+              pressed && { opacity: 0.8 },
+            ]}
             onPress={() => router.push('/community/set-status' as any)}
           >
             <Feather name="edit-3" size={16} color={theme.primary} />
@@ -400,57 +417,113 @@ export default function CommunityMap() {
       </View>
 
       {/* ─── SELECTED FRIEND POPUP ─── */}
-      {selectedFriend && (
-        <View style={[styles.friendPopup, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.friendPopupHeader}>
-            <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={36} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.friendPopupName, { color: theme.text }]}>{selectedFriend.name}</Text>
-              <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]}>
-                {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
-                {selectedFriend.activity?.detail || getActivityLabel(selectedFriend.activity?.activity_type)}
-              </Text>
+      {selectedFriend && (() => {
+        const friendPacts = sharedGoals.filter(
+          g => (g.friend_id === selectedFriend.id || g.user_id === selectedFriend.id) && g.status !== 'rejected'
+        );
+
+        return (
+          <View style={[styles.friendPopup, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.friendPopupHeader}>
+              <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={36} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.friendPopupName, { color: theme.text }]}>{selectedFriend.name}</Text>
+                <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]}>
+                  {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
+                  {selectedFriend.activity?.detail || getActivityLabel(selectedFriend.activity?.activity_type)}
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedFriend(null)}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
             </View>
-            <Pressable onPress={() => setSelectedFriend(null)}>
-              <Feather name="x" size={20} color={theme.textSecondary} />
-            </Pressable>
-          </View>
-          <View style={styles.friendPopupReactions}>
-            {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
+
+            {/* Accountability Pacts Tracker */}
+            {friendPacts.length > 0 && (
+              <View style={[styles.pactsContainer, { backgroundColor: theme.backgroundSecondary || 'rgba(0,51,102,0.03)' }]}>
+                <View style={styles.pactsHeader}>
+                  <Feather name="shield" size={14} color={theme.primary} />
+                  <Text style={[styles.pactsTitle, { color: theme.textSecondary }]}>Accountability Pacts</Text>
+                </View>
+                {friendPacts.map(pact => (
+                  <View key={pact.id} style={styles.pactRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pactCourse, { color: theme.text }]}>{pact.course_id}</Text>
+                      <Text style={[styles.pactDesc, { color: theme.textSecondary }]} numberOfLines={1}>
+                        {pact.share_type === 'task' ? pact.title : 'All Course Tasks'}
+                      </Text>
+                    </View>
+                    
+                    {pact.status === 'pending' && pact.user_id === user.id ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary, fontStyle: 'italic' }}>Pending</Text>
+                    ) : pact.status === 'pending' && pact.friend_id === user.id ? (
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        <Pressable 
+                          style={[styles.pactActionBtn, { backgroundColor: '#10b981' }]}
+                          onPress={() => updateSharedGoalStatus(pact.id, { status: 'accepted' })}
+                        >
+                          <Feather name="check" size={14} color="#fff" />
+                        </Pressable>
+                        <Pressable 
+                          style={[styles.pactActionBtn, { backgroundColor: '#ef4444' }]}
+                          onPress={() => updateSharedGoalStatus(pact.id, { status: 'rejected' })}
+                        >
+                          <Feather name="x" size={14} color="#fff" />
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <View style={[styles.pactStatusBadge, { backgroundColor: pact.is_completed ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)' }]}>
+                        <Feather name={pact.is_completed ? 'check-circle' : 'clock'} size={12} color={pact.is_completed ? '#10b981' : '#f59e0b'} />
+                        <Text style={[styles.pactStatusText, { color: pact.is_completed ? '#10b981' : '#f59e0b' }]}>
+                          {pact.is_completed ? 'Done' : 'In Progress'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <View style={styles.friendPopupReactions}>
+              {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={({ pressed }) => [
+                    styles.reactionBtn,
+                    { backgroundColor: theme.background },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  onPress={() => handleQuickReact(selectedFriend.id, emoji)}
+                >
+                  <Text style={styles.reactionEmoji}>{emoji}</Text>
+                </Pressable>
+              ))}
               <Pressable
-                key={emoji}
                 style={({ pressed }) => [
                   styles.reactionBtn,
-                  { backgroundColor: theme.background },
+                  styles.reactionBumpBtn,
                   pressed && { opacity: 0.7 },
                 ]}
-                onPress={() => handleQuickReact(selectedFriend.id, emoji)}
+                onPress={() => handleBump(selectedFriend.id)}
               >
-                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                <Text style={styles.reactionBumpText}>BUMP</Text>
               </Pressable>
-            ))}
+            </View>
+
             <Pressable
-              style={({ pressed }) => [
-                styles.bumpBtn,
-                { backgroundColor: theme.primary },
-                pressed && { opacity: 0.7 },
-              ]}
-              onPress={() => handleBump(selectedFriend.id)}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+              onPress={() => {
+                setSelectedFriend(null);
+                router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
+              }}
             >
-              <Text style={styles.bumpBtnText}>Bump!</Text>
+              <Text style={{ textAlign: 'center', color: theme.primary, marginTop: 12, fontWeight: '600' }}>
+                View Full Profile
+              </Text>
             </Pressable>
           </View>
-          <Pressable
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-            onPress={() => {
-              setSelectedFriend(null);
-              router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
-            }}
-          >
-            <Text style={[styles.viewProfileLink, { color: theme.primary }]}>View Profile →</Text>
-          </Pressable>
-        </View>
-      )}
+        );
+      })()}
 
       {/* ─── BOTTOM SHEET ─── */}
       <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
@@ -651,6 +724,60 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
+  // Accountability Pacts Tracker
+  pactsContainer: {
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  pactsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  pactsTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  pactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    gap: 12,
+  },
+  pactCourse: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  pactDesc: {
+    fontSize: 13,
+  },
+  pactActionBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pactStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  pactStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
   // Circle dropdown
   circleDropdown: {
     position: 'absolute',
@@ -783,6 +910,23 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  avatarRingFocus: {
+    borderColor: '#3b82f6',
+    borderWidth: 3,
+    shadowColor: '#3b82f6',
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  focusPulseRing: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+    zIndex: 0,
+  },
   pinTriangle: {
     width: 0,
     height: 0,
@@ -798,9 +942,21 @@ const styles = StyleSheet.create({
     zIndex: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  reactionBumpBtn: {
+    backgroundColor: '#eff6ff', // light blue
+    borderColor: '#bfdbfe',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flex: undefined,
+  },
+  reactionBumpText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1d4ed8', // dark blue
   },
   statusCloud: {
     position: 'absolute',
