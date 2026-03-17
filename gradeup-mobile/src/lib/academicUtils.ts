@@ -5,7 +5,7 @@
  * @param startDateStr ISO date string (e.g. '2025-10-14')
  * @returns { week: number, isBreak: boolean, label: string }
  */
-export function getAcademicProgress(startDateStr: string) {
+export function getAcademicProgress(startDateStr: string, totalWeeks: number = 14) {
   const startDate = new Date(startDateStr);
   const now = new Date();
   

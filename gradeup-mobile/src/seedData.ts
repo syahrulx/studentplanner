@@ -3,7 +3,7 @@ import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder } from
 import { DEFAULT_COURSES } from './constants';
 
 export const initialUser: UserProfile = {
-  name: 'Syahrul Izwan',
+  name: 'Student',
   studentId: '2022456789',
   program: 'FSKM - Information System Engineering',
   part: 4,

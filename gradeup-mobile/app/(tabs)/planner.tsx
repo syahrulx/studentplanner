@@ -71,7 +71,7 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
   return item.itemType === 'study';
 }
 
-type ViewMode = 'week' | 'month' | 'all';
+type ViewMode = 'day' | 'week' | 'month' | 'all';
 type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
 const CALENDAR_STRIP_SLOT = 64;
 
@@ -939,7 +939,7 @@ export default function Planner() {
             </Pressable>
             {viewMenuOpen && (
               <View style={s.viewDropdown}>
-                {(['week', 'month', 'all'] as ViewMode[]).map((mode) => (
+                {(['day', 'week', 'month', 'all'] as ViewMode[]).map((mode) => (
                   <Pressable
                     key={mode}
                     style={[s.viewDropdownItem, view === mode && s.viewDropdownItemActive]}
@@ -950,12 +950,17 @@ export default function Planner() {
                     }}
                   >
                     <Feather
-                      name={mode === 'week' ? 'columns' : mode === 'month' ? 'grid' : 'list'}
+                      name={
+                        mode === 'day' ? 'calendar' : 
+                        mode === 'week' ? 'columns' : 
+                        mode === 'month' ? 'grid' : 
+                        'list'
+                      }
                       size={14}
                       color={view === mode ? '#ffffff' : TEXT_PRIMARY}
                     />
                     <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
-                      {mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
+                      {mode === 'day' ? 'Day' : mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
                     </Text>
                   </Pressable>
                 ))}
@@ -968,8 +973,8 @@ export default function Planner() {
         {view !== 'all' && (
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
-            {view === 'week' ? (
-              <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
+            {view === 'day' || view === 'week' ? (
+              <Pressable style={s.monthNavBtn} onPress={view === 'day' ? goToPrevMonth : goToPrevWeek} hitSlop={12}>
                 <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
               </Pressable>
             ) : (
@@ -980,7 +985,7 @@ export default function Planner() {
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={s.monthNavTitleCol}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-                {view === 'week' && activeWeekNumber > 0 && (
+                {(view === 'day' || view === 'week') && activeWeekNumber > 0 && (
                   <Text style={s.weekInfoText}>
                     Week {activeWeekNumber} of {totalWeeks}
                   </Text>
@@ -994,8 +999,8 @@ export default function Planner() {
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
-              {view === 'week' ? (
-                <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
+              {view === 'day' || view === 'week' ? (
+                <Pressable style={s.monthNavBtn} onPress={view === 'day' ? goToNextMonth : goToNextWeek} hitSlop={12}>
                   <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
                 </Pressable>
               ) : (
@@ -1032,8 +1037,8 @@ export default function Planner() {
             </View>
           )}
 
-          {/* Month view: scrollable horizontal calendar strip */}
-          {view === 'month' && (
+          {/* Day view: scrollable horizontal calendar strip */}
+          {view === 'day' && (
           <View style={s.weekStrip} onLayout={handleCalendarStripLayout}>
             <View pointerEvents="none" style={s.weekCenterHighlight} />
             <ScrollView 
@@ -1085,6 +1090,13 @@ export default function Planner() {
               })}
             </ScrollView>
           </View>
+          )}
+
+          {/* Month view: Blank screen as requested */}
+          {view === 'month' && (
+            <View style={{ height: 100, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: TEXT_SECONDARY, fontSize: 13, fontWeight: '500' }}>Month View (Coming Soon)</Text>
+            </View>
           )}
         </View>
         )}

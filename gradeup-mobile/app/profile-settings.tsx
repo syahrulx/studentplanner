@@ -19,12 +19,66 @@ const RADIUS = 14;
 const TOTAL_WEEKS = 14;
 
 export default function ProfileSettings() {
-  const { user, language, setUser } = useApp();
+  const { user, language, setUser, updateProfile } = useApp();
   const { locationVisibility, setLocationVisibility } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleEditName = () => {
+    Alert.prompt(
+      T('editName') || 'Edit Name',
+      T('enterYourName') || 'Please enter your full name',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Save', 
+          onPress: async (newName: string | undefined) => {
+            if (!newName?.trim()) return;
+            setIsUpdating(true);
+            try {
+              await updateProfile({ name: newName.trim() });
+            } catch (e) {
+              Alert.alert('Error', 'Failed to update name');
+            } finally {
+              setIsUpdating(false);
+            }
+          } 
+        }
+      ],
+      'plain-text',
+      user.name
+    );
+  };
+
+  const handleEditStudentId = () => {
+    Alert.prompt(
+      'Edit Student ID',
+      'Please enter your student ID',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Save', 
+          onPress: async (newId: string | undefined) => {
+            if (!newId?.trim()) return;
+            setIsUpdating(true);
+            try {
+              // Note: updateProfile in AppContext might need studentId support if we want to persist it
+              setUser({ ...user, studentId: newId.trim() });
+            } catch (e) {
+              Alert.alert('Error', 'Failed to update ID');
+            } finally {
+              setIsUpdating(false);
+            }
+          } 
+        }
+      ],
+      'plain-text',
+      user.studentId
+    );
+  };
 
   const handleEditAvatar = async () => {
     try {
@@ -119,8 +173,14 @@ export default function ProfileSettings() {
               )}
             </Pressable>
           </View>
-          <Text style={styles.heroName}>{user.name}</Text>
-          <Text style={styles.heroId}>{user.studentId}</Text>
+          <Pressable style={styles.nameRow} onPress={handleEditName}>
+            <Text style={styles.heroName}>{user.name}</Text>
+            <Feather name="edit-2" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 8 }} />
+          </Pressable>
+          <Pressable style={styles.nameRow} onPress={handleEditStudentId}>
+            <Text style={styles.heroId}>{user.studentId}</Text>
+            <Feather name="edit-2" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
+          </Pressable>
         </View>
       </View>
 
@@ -301,6 +361,7 @@ const styles = StyleSheet.create({
   },
   heroName: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 4, letterSpacing: -0.3 },
   heroId: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  nameRow: { flexDirection: 'row', alignItems: 'center' },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',

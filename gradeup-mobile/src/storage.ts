@@ -243,16 +243,16 @@ export async function setCourses(courses: Course[]): Promise<void> {
 // Planner view (week | month | all)
 const KEY_PLANNER_VIEW = 'plannerView';
 
-export type PlannerViewMode = 'week' | 'month' | 'all';
+export type PlannerViewMode = 'day' | 'week' | 'month' | 'all';
 
 export async function getPlannerView(): Promise<PlannerViewMode> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PLANNER_VIEW);
-    if (raw === 'week' || raw === 'month' || raw === 'all') {
+    if (raw === 'day' || raw === 'week' || raw === 'month' || raw === 'all') {
       return raw;
     }
   } catch {}
-  return 'week';
+  return 'day';
 }
 
 export async function setPlannerView(view: PlannerViewMode): Promise<void> {

@@ -17,7 +17,7 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { ACTIVITY_TYPES } from '@/src/lib/communityApi';
-import type { FriendWithStatus, Circle } from '@/src/lib/communityApi';
+import type { FriendWithStatus, Circle, SharedGoal } from '@/src/lib/communityApi';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -168,6 +168,8 @@ export default function CommunityMap() {
     sendBump,
     selectedCircleId,
     setSelectedCircleId,
+    sharedGoals,
+    updateSharedGoalStatus,
   } = useCommunity();
 
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
@@ -418,8 +420,8 @@ export default function CommunityMap() {
 
       {/* ─── SELECTED FRIEND POPUP ─── */}
       {selectedFriend && (() => {
-        const friendPacts = sharedGoals.filter(
-          g => (g.friend_id === selectedFriend.id || g.user_id === selectedFriend.id) && g.status !== 'rejected'
+        const friendPacts = (sharedGoals || []).filter(
+          (g: SharedGoal) => (g.friend_id === selectedFriend.id || g.user_id === selectedFriend.id) && g.status !== 'rejected'
         );
 
         return (
@@ -445,7 +447,7 @@ export default function CommunityMap() {
                   <Feather name="shield" size={14} color={theme.primary} />
                   <Text style={[styles.pactsTitle, { color: theme.textSecondary }]}>Accountability Pacts</Text>
                 </View>
-                {friendPacts.map(pact => (
+                {friendPacts.map((pact: SharedGoal) => (
                   <View key={pact.id} style={styles.pactRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pactCourse, { color: theme.text }]}>{pact.course_id}</Text>

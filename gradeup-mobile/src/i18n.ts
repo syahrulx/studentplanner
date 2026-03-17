@@ -162,6 +162,8 @@ const translations = {
     weeklySummary: 'Weekly Summary',
     leaderboard: 'Leaderboard',
     resetTutorial: 'Reset tutorial',
+    editName: 'Edit Name',
+    enterYourName: 'Please enter your full name',
 
     // Language
     languagePreference: 'Language preference',
@@ -364,7 +366,7 @@ const translations = {
     taskTitleLabel: 'Tajuk tugasan',
     dueDate: 'TARIKH AKHIR',
     priority: 'KEUTAMAAN',
-    deadline: 'TARIKH TAMAT',
+    deadline: 'TARIKAT TAMAT',
     estEffort: 'ANGGARAN USAHA',
     hours: 'Jam',
     high: 'Tinggi',
@@ -419,6 +421,8 @@ const translations = {
     weeklySummary: 'Ringkasan Mingguan',
     leaderboard: 'Papan Pendahulu',
     resetTutorial: 'Set semula tutorial',
+    editName: 'Sunting Nama',
+    enterYourName: 'Sila masukkan nama penuh anda',
 
     // Language
     languagePreference: 'Keutamaan bahasa',

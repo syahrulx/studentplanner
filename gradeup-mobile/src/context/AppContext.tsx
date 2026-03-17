@@ -182,8 +182,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCourses(coursesList);
           setAcademicCalendar(calendar ?? null);
           setUserState((prev) => {
-            let next = { ...prev };
-            if (profile) next = { ...next, name: profile.name, university: profile.university, academicLevel: profile.academicLevel };
+            let next = { ...prev, name: profile?.name || prev.name || 'Student' };
+            if (profile) {
+              next = { ...next, university: profile.university, academicLevel: profile.academicLevel };
+            }
             if (calendar) {
               const progress = getAcademicProgress(calendar.startDate, calendar.totalWeeks);
               next = { ...next, startDate: calendar.startDate, currentWeek: progress.week, isBreak: progress.isBreak };
@@ -209,6 +211,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const uid = session?.user?.id;
       if (!uid) {
+        setUserState({ ...initialUser, name: 'Student' });
         setTasks([]);
         setNotes(initialNotes);
         setNoteFolders([]);
