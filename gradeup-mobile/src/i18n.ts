@@ -63,6 +63,9 @@ const translations = {
     chatReplyExam: 'I see you have an exam coming up. Would you like me to generate a study schedule focusing on past-year topics?',
     chatReplyBusy: 'It sounds like you are feeling overwhelmed. Let me suggest postponing your non-urgent tasks to give you breathing room.',
     chatReplyPlan: 'Great! Let\'s draft a plan. What specific subjects are we aiming to tackle this week?',
+    layout: 'Layout',
+    timeline: 'Timeline',
+    grid: 'Grid',
 
     // Notes
     studyTitle: 'Study',
@@ -517,6 +520,9 @@ const translations = {
     markStudyDone: 'Tandakan ulangkaji ini sebagai selesai?',
     markStudyNotDone: 'Tandakan belajar ini sebagai belum selesai?',
     error: 'Ralat',
+    layout: 'Layout',
+    timeline: 'Garis Masa',
+    grid: 'Grid',
   },
 } as const;
 

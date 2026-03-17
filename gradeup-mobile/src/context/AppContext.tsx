@@ -28,10 +28,13 @@ import {
   setLoghat as persistLoghat,
   getPlannerView,
   setPlannerView as persistPlannerView,
+  getPlannerLayout,
+  setPlannerLayout as persistPlannerLayout,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
   type PlannerViewMode,
+  type PlannerLayoutMode,
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
@@ -97,6 +100,8 @@ type AppState = {
   getSubjectColor: (courseId: string) => string;
   lastPlannerView: PlannerViewMode;
   setLastPlannerView: (view: PlannerViewMode) => void;
+  plannerLayout: PlannerLayoutMode;
+  setPlannerLayout: (layout: PlannerLayoutMode) => void;
   handleSaveNote: (note: Note) => void;
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
 };
@@ -145,6 +150,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
   const [lastPlannerView, setLastPlannerViewState] = useState<PlannerViewMode>('week');
+  const [plannerLayout, setPlannerLayoutState] = useState<PlannerLayoutMode>('timeline');
 
   useEffect(() => {
     getTheme().then(setThemeState);
@@ -152,6 +158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
     getPlannerView().then(setLastPlannerViewState);
+    getPlannerLayout().then(setPlannerLayoutState);
     getLanguage().then(setLanguageState);
     getLoghat().then(setLoghatState);
     getCourses().then((stored) => {
@@ -249,6 +256,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setLastPlannerView = useCallback((view: PlannerViewMode) => {
     setLastPlannerViewState(view);
     persistPlannerView(view);
+  }, []);
+
+  const setPlannerLayout = useCallback((layout: PlannerLayoutMode) => {
+    setPlannerLayoutState(layout);
+    persistPlannerLayout(layout);
   }, []);
 
   const setRevisionSettings = useCallback(async (settings: RevisionSettings) => {
@@ -592,6 +604,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getSubjectColor,
     lastPlannerView,
     setLastPlannerView,
+    plannerLayout,
+    setPlannerLayout,
     handleSaveNote,
     handleGenerateFlashcards,
   };

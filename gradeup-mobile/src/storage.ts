@@ -240,23 +240,41 @@ export async function setCourses(courses: Course[]): Promise<void> {
   } catch {}
 }
 
-// Planner view (week | month | all)
+// Planner view (day | week | month | all)
 const KEY_PLANNER_VIEW = 'plannerView';
+const KEY_PLANNER_LAYOUT = 'plannerLayout';
 
-export type PlannerViewMode = 'day' | 'week' | 'month' | 'all';
+export type PlannerViewMode = 'week' | 'month' | 'all';
+export type PlannerLayoutMode = 'timeline' | 'grid';
 
 export async function getPlannerView(): Promise<PlannerViewMode> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PLANNER_VIEW);
-    if (raw === 'day' || raw === 'week' || raw === 'month' || raw === 'all') {
+    if (raw === 'week' || raw === 'month' || raw === 'all') {
       return raw;
     }
   } catch {}
-  return 'day';
+  return 'week';
 }
 
 export async function setPlannerView(view: PlannerViewMode): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
+  } catch {}
+}
+
+export async function getPlannerLayout(): Promise<PlannerLayoutMode> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_PLANNER_LAYOUT);
+    if (raw === 'timeline' || raw === 'grid') {
+      return raw;
+    }
+  } catch {}
+  return 'timeline';
+}
+
+export async function setPlannerLayout(layout: PlannerLayoutMode): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_PLANNER_LAYOUT, layout);
   } catch {}
 }

@@ -1,12 +1,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
-import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst, isDateInWeek } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
@@ -71,9 +71,9 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
   return item.itemType === 'study';
 }
 
-type ViewMode = 'day' | 'week' | 'month' | 'all';
+type ViewMode = 'week' | 'month' | 'all';
 type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
-const CALENDAR_STRIP_SLOT = 64;
+// CALENDAR_STRIP_SLOT is now dynamic based on width
 
 export default function Planner() {
   const scrollRef = useRef<ScrollView>(null);
@@ -95,15 +95,16 @@ export default function Planner() {
     getSubjectColor,
     lastPlannerView,
     setLastPlannerView,
+    plannerLayout,
+    setPlannerLayout,
     user,
     language,
   } = useApp();
   const T = useTranslations(language);
-  const [view, setView] = useState<ViewMode>(lastPlannerView);
+  const [view, setView] = useState<ViewMode>(lastPlannerView === ('day' as any) ? 'week' : lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [monthZoom, setMonthZoom] = useState(1); // 0.8 to 2.0
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
-  const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
-  const [isCalendarDragging, setIsCalendarDragging] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
@@ -115,10 +116,7 @@ export default function Planner() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAiCard, setShowAiCard] = useState(false);
   const [calendarStripWidth, setCalendarStripWidth] = useState(0);
-  const activeDateRef = useRef(activeDate);
-  const calendarPreviewDateRef = useRef(calendarPreviewDate);
-  const skipCalendarRecenteringRef = useRef(false);
-
+  const calendarStripRef = useRef<ScrollView>(null);
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
@@ -139,11 +137,8 @@ export default function Planner() {
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
 
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const calendarStripSideInset = useMemo(() => {
-    const fallbackWidth = Dimensions.get('window').width - 72;
-    const stripWidth = calendarStripWidth || fallbackWidth;
-    return Math.max(16, stripWidth / 2 - CALENDAR_STRIP_SLOT / 2);
-  }, [calendarStripWidth]);
+  const weekDays = useMemo(() => getWeekDatesSundayFirst(activeDate), [activeDate]);
+  
   const monthDays = useMemo(() => {
     const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
     const result: { dateISO: string; dayNum: string; label: string }[] = [];
@@ -158,76 +153,34 @@ export default function Planner() {
     }
     return result;
   }, [activeYear, activeMonth]);
-  const calendarSnapOffsets = useMemo(
-    () => monthDays.map((_, index) => index * CALENDAR_STRIP_SLOT),
-    [monthDays]
-  );
 
-  const weekDays = useMemo(() => getWeekDatesSundayFirst(activeDate), [activeDate]);
+  const monthSlotWidth = useMemo(() => {
+    if (!calendarStripWidth) return 64;
+    return (calendarStripWidth - 20) / 5;
+  }, [calendarStripWidth]);
 
-  const calendarStripRef = useRef<ScrollView>(null);
-
-  useEffect(() => {
-    activeDateRef.current = activeDate;
-  }, [activeDate]);
-
-  useEffect(() => {
-    calendarPreviewDateRef.current = calendarPreviewDate;
-  }, [calendarPreviewDate]);
-
-  const centerCalendarDate = (dateISO: string, animated: boolean) => {
+  const centerMonthDate = useCallback((dateISO: string, animated: boolean) => {
     const dayIndex = monthDays.findIndex((day) => day.dateISO === dateISO);
-    if (dayIndex < 0) return;
-    calendarStripRef.current?.scrollTo({ x: dayIndex * CALENDAR_STRIP_SLOT, animated });
-  };
+    if (dayIndex < 0 || !calendarStripRef.current || !calendarStripWidth) return;
+    const x = (dayIndex * monthSlotWidth);
+    // Center it relative to the strip
+    const scrollX = x - (calendarStripWidth / 2) + (monthSlotWidth / 2) + 10; // +10 for padding
+    calendarStripRef.current.scrollTo({ x: Math.max(0, scrollX), animated });
+  }, [monthDays, calendarStripWidth, monthSlotWidth]);
 
-  // Keep the chosen date centered unless the user just got there by scrolling.
   useEffect(() => {
-    if (skipCalendarRecenteringRef.current) {
-      skipCalendarRecenteringRef.current = false;
-      return;
+    if (view === 'month') {
+      // Small timeout to ensure layout is ready
+      const timer = setTimeout(() => centerMonthDate(activeDate, true), 50);
+      return () => clearTimeout(timer);
     }
-    setCalendarPreviewDate(activeDate);
-    requestAnimationFrame(() => {
-      centerCalendarDate(activeDate, true);
-    });
-  }, [activeDate, monthDays, calendarStripSideInset]);
+  }, [activeDate, view, centerMonthDate]);
 
-  const handleCalendarStripLayout = ({ nativeEvent }: LayoutChangeEvent) => {
-    const nextWidth = Math.round(nativeEvent.layout.width);
-    setCalendarStripWidth((prev) => (prev === nextWidth ? prev : nextWidth));
-  };
+  // Auto-scroll to top when view or layout changes
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [view, plannerLayout, activeDate]);
 
-  const getCenteredDateFromOffset = (offsetX: number): string | null => {
-    if (monthDays.length === 0) return null;
-    const centeredIndex = Math.max(0, Math.min(monthDays.length - 1, Math.round(offsetX / CALENDAR_STRIP_SLOT)));
-    return monthDays[centeredIndex]?.dateISO ?? null;
-  };
-
-  const commitCenteredDate = (offsetX: number, animated: boolean) => {
-    const centeredDate = getCenteredDateFromOffset(offsetX);
-    setIsCalendarDragging(false);
-    if (!centeredDate) return;
-    if (centeredDate !== calendarPreviewDateRef.current) {
-      setCalendarPreviewDate(centeredDate);
-    }
-    if (centeredDate !== activeDateRef.current) {
-      skipCalendarRecenteringRef.current = true;
-      setActiveDate(centeredDate);
-    }
-    requestAnimationFrame(() => {
-      centerCalendarDate(centeredDate, animated);
-    });
-  };
-
-  const handleCalendarMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    commitCenteredDate(event.nativeEvent.contentOffset.x, false);
-  };
-
-  const handleCalendarDragEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (Math.abs(event.nativeEvent.velocity?.x ?? 0) > 0.02) return;
-    commitCenteredDate(event.nativeEvent.contentOffset.x, true);
-  };
 
   const goToPrevWeek = () => {
     const d = new Date(activeDate + 'T12:00:00');
@@ -263,7 +216,13 @@ export default function Planner() {
     setActiveDate(`${y}-${String(m + 1).padStart(2, '0')}-01`);
   };
   
-  const goToToday = () => setActiveDate(todayISO);
+  const goToToday = () => {
+    if (activeDate === todayISO && view === 'month') {
+      centerMonthDate(todayISO, true);
+    } else {
+      setActiveDate(todayISO);
+    }
+  };
 
   // Count total items (tasks + study sessions) on a given date
   const getItemCountOnDay = (dateISO: string) => {
@@ -332,8 +291,18 @@ export default function Planner() {
     let list: import('@/src/types').Task[];
     if (view === 'all') {
       list = [...tasks];
+    } else if (view === 'week' && plannerLayout === 'grid') {
+      // For grid week, show all tasks in the week
+      list = tasks.filter((t) => isDateInWeek(t.dueDate, activeDate));
+    } else if (view === 'month' && plannerLayout === 'grid') {
+      // For grid month, show all tasks in the month
+      const y = activeYear, m = activeMonth;
+      list = tasks.filter((t) => {
+        const d = new Date(t.dueDate + 'T12:00:00');
+        return d.getFullYear() === y && d.getMonth() === m;
+      });
     } else {
-      // For both week + month views, show tasks for the *selected date* only.
+      // For both week + month views (timeline), show tasks for the *selected date* only.
       // The calendar strip (week or month) controls which date is active.
       list = tasks.filter((t) => t.dueDate === activeDate);
     }
@@ -356,7 +325,17 @@ export default function Planner() {
     if (view === 'all') {
       return studyItemsForPlanner;
     }
-    // For both week + month views, only show study sessions for the selected date.
+    if (view === 'week' && plannerLayout === 'grid') {
+      return studyItemsForPlanner.filter((item) => isDateInWeek(item.date, activeDate));
+    }
+    if (view === 'month' && plannerLayout === 'grid') {
+      const y = activeYear, m = activeMonth;
+      return studyItemsForPlanner.filter((item) => {
+        const d = new Date(item.date + 'T12:00:00');
+        return d.getFullYear() === y && d.getMonth() === m;
+      });
+    }
+    // For both week + month views (timeline), only show study sessions for the selected date.
     return studyItemsForPlanner.filter((item) => item.date === activeDate);
   }, [studyItemsForPlanner, activeDate, view, activeYear, activeMonth]);
 
@@ -556,7 +535,9 @@ export default function Planner() {
       {/* Task list header + filter */}
       <View style={s.taskListHeader}>
         <Text style={s.taskListLabel}>
-          {view === 'all' ? T('allTasks') : `${listCount} ${T('deadlines')} \u2022 ${activeMonthName} ${activeDateDay}`}
+          {view === 'all' ? T('allTasks') : 
+           view === 'month' ? `${activeMonthName} ${activeYear}` :
+           `${listCount} ${T('deadlines')} \u2022 ${activeMonthName} ${activeDateDay}`}
         </Text>
         <Pressable onPress={() => setFilterMenuOpen((o) => !o)}>
           <Text style={s.filterLabel}>{T('filterSort')}</Text>
@@ -924,6 +905,311 @@ export default function Planner() {
     );
   };
 
+  // Render month grid for the Month view
+  const renderMonthGrid = () => {
+    const days = monthGridCells;
+    const colWidth = 100 * monthZoom; // Adjusted to match week grid width (100)
+    const cellHeight = 125; 
+
+    return (
+      <View style={{ flex: 1 }}>
+        {/* Month Grid Nav Header (Replacement for the hidden one) */}
+        <View style={s.gridNavHeader}>
+          <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
+            <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+          </Pressable>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+          </View>
+          <Pressable style={s.gridNavBtn} onPress={goToNextMonth}>
+            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+          </Pressable>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: '#ffffff' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+            <View style={{ width: colWidth * 7 }}>
+              {/* Weekdays header */}
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                  <View key={`day-${i}`} style={{ width: colWidth, alignItems: 'center', paddingVertical: 12 }}>
+                    <Text style={s.monthGridHeaderText}>{d}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Grid Cells */}
+              <View style={{ width: colWidth * 7 }}>
+                {(() => {
+                  const weeks: (number | null)[][] = [];
+                  for (let i = 0; i < days.length; i += 7) {
+                    weeks.push(days.slice(i, i + 7));
+                  }
+
+                  return weeks.map((week, weekIdx) => (
+                    <View key={`week-${weekIdx}`} style={{ flexDirection: 'row' }}>
+                      {week.map((day, i) => {
+                        if (day === null) {
+                          return (
+                            <View 
+                              key={`empty-${weekIdx}-${i}`} 
+                              style={[s.monthGridCellEmpty, { width: colWidth, minHeight: cellHeight }]} 
+                            />
+                          );
+                        }
+                        
+                        const dateISO = toISO(activeYear, activeMonth, day);
+                        const isActive = dateISO === activeDate;
+                        const isToday = dateISO === todayISO;
+                        
+                        const dayItems = combinedList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === dateISO);
+                        const showItems = dayItems.slice(0, 6);
+                        const hiddenCount = dayItems.length - showItems.length;
+
+                        return (
+                          <View
+                            key={dateISO}
+                            style={[
+                              s.monthGridCell, 
+                              { width: colWidth, minHeight: cellHeight },
+                              isActive && s.monthGridCellActive
+                            ]}
+                          >
+                            {/* Background Pressable for date selection */}
+                            <Pressable 
+                              style={StyleSheet.absoluteFill} 
+                              onPress={() => setActiveDate(dateISO)} 
+                            />
+                            
+                            <View style={s.monthGridCellHeader} pointerEvents="none">
+                              <Text style={[
+                                s.monthGridCellText, 
+                                isActive && s.monthGridCellTextActive, 
+                                isToday && !isActive && { color: '#ffffff', backgroundColor: '#dc2626', width: 20, height: 20, borderRadius: 10, textAlign: 'center', lineHeight: 20, overflow: 'hidden' }
+                              ]}>
+                                {day}
+                              </Text>
+                            </View>
+                            <View style={[s.monthGridTagList, { zIndex: 10 }]} pointerEvents="box-none">
+                              {showItems.map((item, idx) => {
+                                const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
+                                const color = getSubjectColor(subject);
+                                const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
+                                const isDone = item.isDone;
+                                const itemCount = showItems.length;
+                                const dynamicFontSize = itemCount <= 2 ? 10 : itemCount <= 4 ? 9 : 8;
+                                const dynamicLines = itemCount <= 2 ? 3 : itemCount <= 4 ? 2 : 1;
+
+                                return (
+                                  <Pressable 
+                                    key={`${dateISO}-${idx}`} 
+                                    onPress={(e) => {
+                                      e.stopPropagation();
+                                      handleItemPress(item);
+                                    }}
+                                    style={[
+                                      s.monthGridItemBlock, 
+                                      { borderLeftColor: color, backgroundColor: isActive ? 'rgba(255,255,255,0.1)' : hexToRgba(color, 0.08), zIndex: 20 }
+                                    ]}
+                                  >
+                                    <View style={{ flex: 1 }}>
+                                      <Text 
+                                        style={[s.monthGridTagText, { color: isActive ? '#ffffff' : TEXT_PRIMARY, fontSize: dynamicFontSize }]} 
+                                        numberOfLines={dynamicLines}
+                                      >
+                                        {subject}: {title}
+                                      </Text>
+                                    </View>
+                                    <View style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 0.5, borderColor: isActive ? '#ffffff' : color, backgroundColor: isDone ? (isActive ? '#ffffff' : color) : 'transparent' }} />
+                                  </Pressable>
+                                );
+                              })}
+                              {hiddenCount > 0 && (
+                                <Text style={[s.monthGridMoreText, isActive && { color: 'rgba(255,255,255,0.7)' }]}>
+                                  +{hiddenCount}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ));
+                })()}
+              </View>
+            </View>
+          </ScrollView>
+        </ScrollView>
+
+        {/* Zoom Controls */}
+        <View style={s.zoomControls}>
+          <Pressable style={s.zoomBtn} onPress={() => setMonthZoom(prev => Math.max(0.7, prev - 0.2))}>
+            <Feather name="minus" size={18} color={TEXT_PRIMARY} />
+          </Pressable>
+          <Pressable style={s.zoomBtn} onPress={() => setMonthZoom(prev => Math.min(2.5, prev + 0.2))}>
+            <Feather name="plus" size={18} color={TEXT_PRIMARY} />
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  // Render vertical week grid (7 columns)
+  const renderWeekGrid = () => {
+    const hourHeight = 85;
+    const colWidth = 100;
+    
+    return (
+      <View style={{ flex: 1 }}>
+        {/* Grid Navigation Header */}
+        <View style={s.gridNavHeader}>
+          <Pressable style={s.gridNavBtn} onPress={goToPrevWeek}>
+            <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+          </Pressable>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+            {activeWeekNumber > 0 && (
+              <Text style={s.gridNavSub}>
+                Week {activeWeekNumber} of {totalWeeks}
+              </Text>
+            )}
+          </View>
+          <Pressable style={s.gridNavBtn} onPress={goToNextWeek}>
+            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+          </Pressable>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+      <View style={{ flexDirection: 'row', backgroundColor: '#ffffff' }}>
+        {/* Time labels column */}
+        <View style={{ width: 60, borderRightWidth: 1, borderColor: '#e2e8f0' }}>
+          <View style={{ height: 30 }} />
+          {HOUR_SLOTS.map(slot => (
+            <View key={slot.hour} style={{ height: hourHeight, justifyContent: 'flex-start', paddingTop: 4, paddingLeft: 8 }}>
+              <Text style={{ fontSize: 10, color: TEXT_SECONDARY }}>{slot.label.split(' ')[0]}</Text>
+              <Text style={{ fontSize: 8, color: TEXT_SECONDARY }}>{slot.label.split(' ')[1]}</Text>
+            </View>
+          ))}
+          {/* Pad to match 25h grid exactly */}
+          <View style={{ height: hourHeight + 30 }} />
+        </View>
+
+        {/* Days columns */}
+        {weekDays.map((day, dayIdx) => {
+          const isActive = day.dateISO === activeDate;
+          const isToday = day.dateISO === todayISO;
+          const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === day.dateISO);
+          
+          return (
+            <View key={day.dateISO} style={{ width: colWidth, borderRightWidth: 1, borderColor: '#f1f5f9' }}>
+              <Pressable 
+                onPress={() => setActiveDate(day.dateISO)}
+                style={[
+                  { height: 38, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+                  isActive && { backgroundColor: 'rgba(0,51,102,0.05)' },
+                  isToday && { borderBottomWidth: 2, borderBottomColor: NAVY }
+                ]}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? NAVY : TEXT_SECONDARY, textTransform: 'uppercase' }}>{day.label[0]}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: isToday ? NAVY : TEXT_PRIMARY }}>{day.dayNum}</Text>
+              </Pressable>
+              
+              <View style={{ height: 25 * hourHeight, position: 'relative' }}>
+                {/* Hour grid lines */}
+                {HOUR_SLOTS.map(slot => (
+                  <View key={slot.hour} style={{ position: 'absolute', top: slot.hour * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
+                ))}
+                {/* 24th Hour Line (Midnight) */}
+                <View style={{ position: 'absolute', top: 24 * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
+                {/* 25th Hour Line (End of Grid) */}
+                <View style={{ position: 'absolute', top: 25 * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
+
+                {/* Current time indicator line on the today column */}
+                {isToday && (
+                  <View 
+                    style={{ 
+                      position: 'absolute', 
+                      top: (currentHour + currentMinute/60) * hourHeight, 
+                      left: 0, 
+                      right: 0, 
+                      height: 2, 
+                      backgroundColor: NAVY,
+                      zIndex: 20,
+                    }} 
+                  >
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: NAVY, position: 'absolute', left: -3, top: -2 }} />
+                  </View>
+                )}
+
+                {/* Event cards */}
+                {dayItems.map((item, idx) => {
+                  const timeStr = item.itemType === 'task' ? item.dueTime : item.time;
+                  const [h, m] = (timeStr || '00:00').split(':').map(Number);
+                  const top = (h + m/60) * hourHeight;
+                  const duration = item.itemType === 'study' ? item.durationMinutes : 45;
+                  const height = (duration / 60) * hourHeight;
+                  const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
+                  const color = getSubjectColor(subject);
+
+                  return (
+                    <Pressable
+                      key={`${item.itemType}-${idx}`}
+                      onPress={() => handleItemPress(item)}
+                      style={{
+                        position: 'absolute',
+                        top: top,
+                        left: 0,
+                        right: 0,
+                        height: Math.max(height, 20),
+                        backgroundColor: hexToRgba(color, 0.12),
+                        borderRadius: 0,
+                        borderLeftWidth: 4,
+                        borderLeftColor: color,
+                        borderBottomWidth: 1,
+                        borderBottomColor: 'rgba(0,0,0,0.05)',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingHorizontal: 8,
+                        zIndex: 10,
+                      }}
+                    >
+                      {(() => {
+                        const isDone = item.isDone;
+                        const icon = item.itemType === 'task' ? (item.type === TaskType.Quiz ? '📝' : '📚') : '🧘';
+                        const title = item.itemType === 'task' ? item.title : (item as any).topic || T('study');
+                        const subjectDisplay = subject ? subject.substring(0, 6) : '';
+                        
+                        return (
+                          <View style={{ flex: 1, paddingVertical: 4 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                              <Text style={{ fontSize: 8, fontWeight: '700', color: color }}>{subjectDisplay}</Text>
+                              <View style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 1, borderColor: color, backgroundColor: isDone ? color : 'transparent' }} />
+                            </View>
+                            <Text style={{ fontSize: 9, fontWeight: '800', color: NAVY, lineHeight: 11 }} numberOfLines={2}>
+                              {title}
+                            </Text>
+                            {height > 30 && (
+                              <Text style={{ fontSize: 8, color: TEXT_SECONDARY, marginTop: 1 }}>{timeStr}</Text>
+                            )}
+                          </View>
+                        );
+                      })()}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+      </ScrollView>
+      </ScrollView>
+      </View>
+    );
+  };
+
   return (
     <View style={s.safe}>
       {/* Header */}
@@ -939,7 +1225,7 @@ export default function Planner() {
             </Pressable>
             {viewMenuOpen && (
               <View style={s.viewDropdown}>
-                {(['day', 'week', 'month', 'all'] as ViewMode[]).map((mode) => (
+                {(['week', 'month', 'all'] as ViewMode[]).map((mode) => (
                   <Pressable
                     key={mode}
                     style={[s.viewDropdownItem, view === mode && s.viewDropdownItemActive]}
@@ -951,7 +1237,6 @@ export default function Planner() {
                   >
                     <Feather
                       name={
-                        mode === 'day' ? 'calendar' : 
                         mode === 'week' ? 'columns' : 
                         mode === 'month' ? 'grid' : 
                         'list'
@@ -960,21 +1245,45 @@ export default function Planner() {
                       color={view === mode ? '#ffffff' : TEXT_PRIMARY}
                     />
                     <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
-                      {mode === 'day' ? 'Day' : mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
+                      {mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
                     </Text>
                   </Pressable>
                 ))}
+                
+                <View style={s.viewDropdownDivider} />
+                <View style={s.viewDropdownSection}>
+                  <Text style={s.viewDropdownLabel}>{T('layout')}</Text>
+                  {(['timeline', 'grid'] as const).map((mode) => (
+                    <Pressable
+                      key={mode}
+                      style={[s.viewDropdownItem, plannerLayout === mode && s.viewDropdownItemActive]}
+                      onPress={() => {
+                        setPlannerLayout(mode);
+                        setViewMenuOpen(false);
+                      }}
+                    >
+                      <Feather
+                        name={mode === 'timeline' ? 'list' : 'grid'}
+                        size={14}
+                        color={plannerLayout === mode ? '#ffffff' : TEXT_PRIMARY}
+                      />
+                      <Text style={[s.viewDropdownText, plannerLayout === mode && s.viewDropdownTextActive]}>
+                        {mode === 'timeline' ? T('timeline') : T('grid')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             )}
           </View>
         </View>
 
-        {/* Calendar panel — hidden in "all" mode */}
-        {view !== 'all' && (
+        {/* Calendar panel — hidden in "all" mode and when in Grid mode (since grid has its own nav) */}
+        {view !== 'all' && plannerLayout !== 'grid' && (
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
-            {view === 'day' || view === 'week' ? (
-              <Pressable style={s.monthNavBtn} onPress={view === 'day' ? goToPrevMonth : goToPrevWeek} hitSlop={12}>
+            {view === 'week' ? (
+              <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
                 <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
               </Pressable>
             ) : (
@@ -985,7 +1294,7 @@ export default function Planner() {
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={s.monthNavTitleCol}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-                {(view === 'day' || view === 'week') && activeWeekNumber > 0 && (
+                {view === 'week' && activeWeekNumber > 0 && (
                   <Text style={s.weekInfoText}>
                     Week {activeWeekNumber} of {totalWeeks}
                   </Text>
@@ -993,14 +1302,14 @@ export default function Planner() {
               </View>
             </View>
             <View style={s.monthNavActions}>
-              {activeDate !== todayISO ? (
+              {(view === 'month' || activeDate !== todayISO) ? (
                 <Pressable style={s.monthTodayBtn} onPress={goToToday} hitSlop={10}>
                   <Feather name="calendar" size={13} color={NAVY} />
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
-              {view === 'day' || view === 'week' ? (
-                <Pressable style={s.monthNavBtn} onPress={view === 'day' ? goToNextMonth : goToNextWeek} hitSlop={12}>
+              {view === 'week' ? (
+                <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
                   <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
                 </Pressable>
               ) : (
@@ -1037,72 +1346,46 @@ export default function Planner() {
             </View>
           )}
 
-          {/* Day view: scrollable horizontal calendar strip */}
-          {view === 'day' && (
-          <View style={s.weekStrip} onLayout={handleCalendarStripLayout}>
-            <View pointerEvents="none" style={s.weekCenterHighlight} />
+          {/* Month view: Horizontal scrollable date strip */}
+          {view === 'month' && (
             <ScrollView 
               ref={calendarStripRef}
               horizontal 
-              decelerationRate={0.985}
-              snapToOffsets={calendarSnapOffsets}
-              snapToAlignment="center"
-              disableIntervalMomentum
-              onScrollBeginDrag={() => setIsCalendarDragging(true)}
-              onMomentumScrollEnd={handleCalendarMomentumEnd}
-              onScrollEndDrag={handleCalendarDragEnd}
               showsHorizontalScrollIndicator={false} 
-              contentContainerStyle={[s.weekStripContent, { paddingHorizontal: calendarStripSideInset }]}
+              onLayout={(e) => setCalendarStripWidth(e.nativeEvent.layout.width)}
+              contentContainerStyle={{ paddingHorizontal: 10 }}
+              snapToInterval={monthSlotWidth}
+              decelerationRate="fast"
             >
-              {monthDays.map((day) => {
-                const isPreviewActive = !isCalendarDragging && calendarPreviewDate === day.dateISO;
-                const count = getItemCountOnDay(day.dateISO);
-                let dotColor: string | null = null;
-                if (count === 1) {
-                  dotColor = '#22c55e';
-                } else if (count >= 2 && count <= 3) {
-                  dotColor = '#eab308';
-                } else if (count >= 4) {
-                  dotColor = '#dc2626';
-                }
+              <View style={s.dayStrip}>
+                {monthDays.map((day) => {
+                  const isActive = day.dateISO === activeDate;
+                  const count = getItemCountOnDay(day.dateISO);
+                  let dotColor: string | null = null;
+                  if (count === 1) dotColor = '#22c55e';
+                  else if (count >= 2 && count <= 3) dotColor = '#eab308';
+                  else if (count >= 4) dotColor = '#dc2626';
 
-                return (
-                  <Pressable 
-                    key={day.dateISO} 
-                    style={s.weekDaySlot}
-                    onPress={() => {
-                      setIsCalendarDragging(false);
-                      setCalendarPreviewDate(day.dateISO);
-                      setActiveDate(day.dateISO);
-                    }}
-                  >
-                    <View style={[s.weekDay, isPreviewActive ? s.weekDayActive : s.weekDayInactive]}>
-                      <Text style={[s.weekDate, isPreviewActive ? s.weekDateActive : s.weekDateInactive]}>
-                        {day.dayNum}
-                      </Text>
-                      <Text style={[s.weekLabel, isPreviewActive ? s.weekLabelActive : s.weekLabelInactive]}>
-                        {day.label}
-                      </Text>
-                      {dotColor && <View style={[s.weekDayDot, { backgroundColor: dotColor }]} />}
-                    </View>
-                  </Pressable>
-                );
-              })}
+                  return (
+                    <Pressable
+                      key={day.dateISO}
+                      style={[s.dayCell, isActive && s.dayCellActive, { width: monthSlotWidth }]}
+                      onPress={() => setActiveDate(day.dateISO)}
+                    >
+                      <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label}</Text>
+                      <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
+                      {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
             </ScrollView>
-          </View>
-          )}
-
-          {/* Month view: Blank screen as requested */}
-          {view === 'month' && (
-            <View style={{ height: 100, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: TEXT_SECONDARY, fontSize: 13, fontWeight: '500' }}>Month View (Coming Soon)</Text>
-            </View>
           )}
         </View>
         )}
       </View>
 
-      {/* "All" view: flat scrollable list grouped by date */}
+      {/* Content */}
       {view === 'all' ? (
         <ScrollView
           ref={scrollRef}
@@ -1140,18 +1423,30 @@ export default function Planner() {
             })()
           )}
         </ScrollView>
+      ) : plannerLayout === 'grid' ? (
+        <View style={{ flex: 1 }}>
+          {view === 'month' ? (
+            <View style={{ flex: 1 }}>
+              {renderMonthGrid()}
+            </View>
+          ) : (
+            <View style={{ flex: 1 }}>
+              {renderWeekGrid()}
+            </View>
+          )}
+        </View>
       ) : (
-      /* Timeline with hourly slots */
+      /* Timeline with hourly slots (Default Timeline Layout) */
       <ScrollView 
         ref={scrollRef}
         style={s.timelineListWrap} 
         contentContainerStyle={s.listContent} 
         showsVerticalScrollIndicator={false}
       >
+        {renderListHeader()}
         {HOUR_SLOTS.map((slot, slotIdx) => {
           const items = itemsByHour[slot.hour] || [];
           const isCurrentHour = activeDate === todayISO && slot.hour === currentHour;
-          const isNextHour = activeDate === todayISO && slot.hour === currentHour + 1;
 
           return (
             <View key={slot.hour}>
@@ -1163,7 +1458,7 @@ export default function Planner() {
                 <View style={s.hourDivider} />
               </View>
 
-              {/* Current-time indicator (positioned between the previous hour label and before events) */}
+              {/* Current-time indicator */}
               {isCurrentHour && (
                 <View style={s.currentTimeRow}>
                   <View style={s.currentTimePill}>
@@ -1484,60 +1779,6 @@ const s = StyleSheet.create({
     minHeight: 86,
     justifyContent: 'center',
   },
-  weekStripContent: {
-    paddingBottom: 2,
-  },
-  weekCenterHighlight: {
-    position: 'absolute',
-    left: '50%',
-    top: 2,
-    width: 56,
-    height: 74,
-    marginLeft: -28,
-    borderRadius: 22,
-    backgroundColor: NAVY,
-    shadowColor: NAVY,
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekDaySlot: {
-    width: CALENDAR_STRIP_SLOT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekDay: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 56,
-    height: 74,
-    borderRadius: 22,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
-  },
-  weekDayActive: {
-    transform: [{ scale: 1.02 }],
-  },
-  weekDayInactive: {
-    transform: [{ scale: 0.9 }],
-    opacity: 0.92,
-  },
-  weekDayToday: { borderWidth: 1.5, borderColor: '#d6e3f3', backgroundColor: 'rgba(248, 251, 255, 0.75)' },
-  weekDate: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 3, letterSpacing: -0.2 },
-  weekDateActive: { color: '#ffffff', fontSize: 18 },
-  weekDateInactive: { color: '#526277', opacity: 0.62 },
-  weekLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
-  weekLabelActive: { color: '#ffffff', opacity: 0.9 },
-  weekLabelInactive: { color: '#b6c0cf', opacity: 0.74 },
-  weekDayDot: {
-    marginTop: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
 
   // Month Grid
   monthCard: {
@@ -1597,6 +1838,140 @@ const s = StyleSheet.create({
   filterChipActive: { backgroundColor: NAVY, borderColor: NAVY },
   filterChipText: { fontSize: 9, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1 },
   filterChipTextActive: { color: '#ffffff' },
+  
+  // Grid Dropdown additions
+  viewDropdownDivider: { height: 1.5, backgroundColor: '#f1f5f9', marginVertical: 4 },
+  viewDropdownSection: { paddingBottom: 4 },
+  viewDropdownLabel: { fontSize: 9, fontWeight: '800', color: TEXT_SECONDARY, paddingHorizontal: 16, paddingVertical: 4, letterSpacing: 1, textTransform: 'uppercase' },
+
+  // Month Grid Styles
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: '#ffffff',
+    borderRadius: 0,
+    padding: 0,
+    borderWidth: 0,
+  },
+  monthGridHeader: {
+    width: `${100 / 7}%`,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  monthGridHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: TEXT_SECONDARY,
+  },
+  monthGridCell: {
+    width: `${100 / 7}%`,
+    minHeight: 125,
+    padding: 2,
+    borderWidth: 0.5,
+    borderColor: '#f1f5f9',
+    position: 'relative',
+    backgroundColor: '#ffffff',
+  },
+  monthGridCellActive: {
+    backgroundColor: NAVY,
+    borderColor: NAVY,
+  },
+  monthGridCellEmpty: {
+    width: `${100 / 7}%`,
+    minHeight: 125,
+    backgroundColor: '#fcfdfe',
+    borderWidth: 0.5,
+    borderColor: '#f1f5f9',
+  },
+  monthGridCellHeader: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  monthGridCellText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+  monthGridCellTextActive: {
+    color: '#ffffff',
+  },
+  monthGridTagList: {
+    gap: 1,
+  },
+  monthGridItemBlock: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 3,
+    marginBottom: 1,
+  },
+  monthGridTagText: {
+    fontSize: 8,
+    fontWeight: '700',
+    maxWidth: '100%',
+  },
+  monthGridMoreText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: TEXT_SECONDARY,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+
+  zoomControls: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  zoomBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  // Grid Nav Header (for Week Grid)
+  gridNavHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  gridNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridNavTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  gridNavSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    marginTop: 1,
+  },
 
   sortRow: {
     flexDirection: 'row',
