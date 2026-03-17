@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
@@ -6,7 +6,7 @@ import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
-import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
@@ -93,11 +93,14 @@ export default function Planner() {
     pinTask,
     unpinTask,
     getSubjectColor,
+    lastPlannerView,
+    setLastPlannerView,
     user,
     language,
   } = useApp();
   const T = useTranslations(language);
-  const [view, setView] = useState<ViewMode>('week');
+  const [view, setView] = useState<ViewMode>(lastPlannerView);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
   const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
   const [isCalendarDragging, setIsCalendarDragging] = useState(false);
@@ -119,6 +122,21 @@ export default function Planner() {
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
+  const totalWeeks = (user as any).totalWeeks ?? 14;
+  const getWeekNumberForDate = useCallback(
+    (dateISO: string): number => {
+      if (user.startDate) {
+        const start = new Date(user.startDate + 'T00:00:00');
+        const current = new Date(dateISO + 'T00:00:00');
+        const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
+        const rawWeek = Math.floor(diffDays / 7) + 1;
+        return Math.min(Math.max(rawWeek, 1), totalWeeks);
+      }
+      return typeof user.currentWeek === 'number' ? user.currentWeek : 1;
+    },
+    [user.startDate, user.currentWeek, totalWeeks]
+  );
+  const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
 
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const calendarStripSideInset = useMemo(() => {
@@ -144,6 +162,8 @@ export default function Planner() {
     () => monthDays.map((_, index) => index * CALENDAR_STRIP_SLOT),
     [monthDays]
   );
+
+  const weekDays = useMemo(() => getWeekDatesSundayFirst(activeDate), [activeDate]);
 
   const calendarStripRef = useRef<ScrollView>(null);
 
@@ -245,6 +265,13 @@ export default function Planner() {
   
   const goToToday = () => setActiveDate(todayISO);
 
+  // Count total items (tasks + study sessions) on a given date
+  const getItemCountOnDay = (dateISO: string) => {
+    const taskCount = tasks.filter((t) => t.dueDate === dateISO).length;
+    const studyCount = studyItemsForPlanner.filter((s) => s.date === dateISO).length;
+    return taskCount + studyCount;
+  };
+
   const studyItemsForPlanner = useMemo((): PlannerStudyItem[] => {
     const now = new Date();
     const todayStr = toLocalISO(now);
@@ -305,13 +332,10 @@ export default function Planner() {
     let list: import('@/src/types').Task[];
     if (view === 'all') {
       list = [...tasks];
-    } else if (view === 'week') {
-      list = tasks.filter((t) => t.dueDate === activeDate);
     } else {
-      list = tasks.filter((t) => {
-        const [y, m] = t.dueDate.split('-').map(Number);
-        return y === activeYear && m === activeMonth + 1;
-      });
+      // For both week + month views, show tasks for the *selected date* only.
+      // The calendar strip (week or month) controls which date is active.
+      list = tasks.filter((t) => t.dueDate === activeDate);
     }
     if (activeFilter !== 'all') {
       const typeMap: Record<string, string> = {
@@ -332,13 +356,8 @@ export default function Planner() {
     if (view === 'all') {
       return studyItemsForPlanner;
     }
-    if (view === 'week') {
-      return studyItemsForPlanner.filter((item) => item.date === activeDate);
-    }
-    return studyItemsForPlanner.filter((item) => {
-      const [y, m] = item.date.split('-').map(Number);
-      return y === activeYear && m === activeMonth + 1;
-    });
+    // For both week + month views, only show study sessions for the selected date.
+    return studyItemsForPlanner.filter((item) => item.date === activeDate);
   }, [studyItemsForPlanner, activeDate, view, activeYear, activeMonth]);
 
   const combinedList = useMemo((): PlannerItem[] => {
@@ -358,6 +377,10 @@ export default function Planner() {
 
   const pinnedSet = useMemo(() => new Set(pinnedTaskIds), [pinnedTaskIds]);
   const displayList = useMemo((): PlannerItem[] => {
+    // In "all" view, keep strict date grouping: no pinning, just combined sorted list.
+    if (view === 'all') {
+      return combinedList;
+    }
     const raw = combinedList;
     const isPinned = (item: PlannerItem): item is PlannerTaskItem =>
       item.itemType === 'task' && typeof (item as PlannerTaskItem).id === 'string' && pinnedSet.has((item as PlannerTaskItem).id);
@@ -632,18 +655,21 @@ export default function Planner() {
 
   // Auto-scroll to the earliest active hour when the active date changes
   useEffect(() => {
+    // Only auto-scroll in week/month timeline views, not in "all" view
+    if (view === 'all') return;
+    const HOUR_ROW_HEIGHT = 40; // conservative value to avoid overscrolling past first item
     if (earliestHourWithItems >= 0 && scrollRef.current) {
-      // 85px is the approximate height of an empty hour block
-      const offset = earliestHourWithItems * 85; 
+      // Scroll near (but not past) the earliest hour that has any items.
+      const offset = Math.max(0, earliestHourWithItems * HOUR_ROW_HEIGHT);
       setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: Math.max(0, offset - 20), animated: true });
-      }, 50);
+        scrollRef.current?.scrollTo({ y: offset, animated: true });
+      }, 100);
     } else if (scrollRef.current) {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ y: 0, animated: true });
-      }, 50);
+      }, 100);
     }
-  }, [activeDate, earliestHourWithItems]);
+  }, [activeDate, earliestHourWithItems, view]);
 
   const getCardTitle = (item: PlannerItem) => {
     if (item.itemType === 'study') {
@@ -702,6 +728,36 @@ export default function Planner() {
     }
   };
 
+  const handleItemMenu = (item: PlannerItem) => {
+    if (item.itemType === 'task') {
+      Alert.alert(
+        T('deleteTask'),
+        `"${item.title}" ${T('deleteTaskDesc')}`,
+        [
+          { text: T('cancel'), style: 'cancel' },
+          {
+            text: T('delete'),
+            style: 'destructive',
+            onPress: () => deleteTask(item.id),
+          },
+        ]
+      );
+    } else if (item.revisionId) {
+      Alert.alert(
+        T('deleteTask'),
+        `"${item.topic || T('timeToStudy')}" ${T('deleteTaskDesc')}`,
+        [
+          { text: T('cancel'), style: 'cancel' },
+          {
+            text: T('delete'),
+            style: 'destructive',
+            onPress: () => deleteStudySetting(item.revisionId!),
+          },
+        ]
+      );
+    }
+  };
+
   // Render a single event card
   const renderEventCard = (item: PlannerItem, idx: number) => {
     const title = getCardTitle(item);
@@ -712,10 +768,13 @@ export default function Planner() {
     const isOverdue = item.itemType === 'task' && daysUntil < 0;
     const isDueSoon = item.itemType === 'task' && !isOverdue && daysUntil <= 3;
     const isPinnedTask = item.itemType === 'task' && pinnedSet.has(item.id);
-    const isAllDayTimeline = view === 'all' || view === 'month';
+    // Only show the full date inline for the \"All\" view.
+    // In Week/Month timeline views, keep this compact like the original design
+    // (time + days-left + type) so text stays neat inside the card.
+    const showDateInline = view === 'all';
     const timeText = item.itemType === 'study'
-      ? `${isAllDayTimeline ? `${formatDisplayDate(item.date)} • ` : ''}${timeRange}`
-      : `${isAllDayTimeline ? `${formatDisplayDate(item.dueDate)} • ` : ''}${timeRange}`;
+      ? `${showDateInline ? `${formatDisplayDate(item.date)} • ` : ''}${timeRange}`
+      : `${showDateInline ? `${formatDisplayDate(item.dueDate)} • ` : ''}${timeRange}`;
     const statusLabel = item.isDone
       ? T('completed')
       : item.itemType === 'study'
@@ -734,11 +793,12 @@ export default function Planner() {
       ? s.taskInlineStatusDone
       : item.itemType === 'study'
         ? s.taskInlineStatusStudy
-        : isOverdue
+        : // Countdown colour for tasks (today/overdue red, near yellow, far black)
+          daysUntil <= 0
           ? s.taskInlineStatusOverdue
-          : isDueSoon
+          : daysUntil <= 3
             ? s.taskInlineStatusSoon
-            : s.taskInlineStatusNeutral;
+            : s.taskInlineStatusFar;
     const showInlineStatus = !(item.itemType === 'task' && daysUntil === 0 && !item.isDone);
     const borderColor = item.isDone
       ? '#dbe4ef'
@@ -771,8 +831,8 @@ export default function Planner() {
                   style={[
                     s.taskSubjectPill,
                     {
-                      backgroundColor: hexToRgba(subjectColor, 0.12),
-                      borderColor: hexToRgba(subjectColor, 0.2),
+                      backgroundColor: '#ffffff',
+                      borderColor: hexToRgba(subjectColor, 0.3),
                     },
                   ]}
                 >
@@ -785,6 +845,16 @@ export default function Planner() {
                   </View>
                 ) : null}
               </View>
+              <Pressable
+                style={s.taskMenuBtn}
+                hitSlop={8}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleItemMenu(item);
+                }}
+              >
+                <Feather name="more-vertical" size={16} color={TEXT_SECONDARY} />
+              </Pressable>
             </View>
 
             <View style={s.taskMainRow}>
@@ -793,26 +863,61 @@ export default function Planner() {
               </Text>
             </View>
 
-            <View style={s.taskFooterRow}>
-              <View style={s.taskMetaRow}>
-                <Feather name="clock" size={12} color={isOverdue ? '#dc2626' : '#475569'} />
-                <Text style={[s.taskMetaText, (isOverdue || isDueSoon) && s.taskMetaUrgent]}>
-                  {timeText}
-                </Text>
+              {item.itemType === 'study' ? (
+              <View style={s.studyFooter}>
+                <View style={s.studyTimeRow}>
+                  <Feather name="clock" size={12} color="#64748b" />
+                  <Text style={s.studyTimeText} numberOfLines={1}>
+                    {timeRange}
+                  </Text>
+                </View>
+                <View style={s.studyDetailRow}>
+                  <Text style={s.studyDurationText} numberOfLines={1}>
+                    {item.durationMinutes} min
+                  </Text>
+                  <View
+                    style={[
+                      s.taskDetailChip,
+                      {
+                        backgroundColor: '#ffffff',
+                        borderColor: '#cbd5e1',
+                      },
+                    ]}
+                  >
+                    <Text style={[s.taskDetailChipText, { color: '#64748b' }]} numberOfLines={1}>
+                      {T('study')}
+                    </Text>
+                  </View>
+                </View>
               </View>
-              {showInlineStatus ? (
-                <>
-                  <Text style={s.taskMetaDivider}>•</Text>
-                  <Text style={[s.taskInlineStatusText, statusTextStyle]} numberOfLines={1}>
+            ) : (
+              <View style={s.studyFooter}>
+                <View style={s.studyTimeRow}>
+                  <Feather name="clock" size={12} color="#64748b" />
+                  <Text style={s.studyTimeText} numberOfLines={1}>
+                    {timeText}
+                  </Text>
+                </View>
+                <View style={s.taskDetailRow}>
+                  <Text style={[s.taskDetailLabel, statusTextStyle]} numberOfLines={1}>
                     {statusLabel}
                   </Text>
-                </>
-              ) : null}
-              <Text style={s.taskMetaDivider}>•</Text>
-              <Text style={s.taskSecondaryMeta} numberOfLines={1}>
-                {secondaryLabel}
-              </Text>
-            </View>
+                  <View
+                    style={[
+                      s.taskDetailChip,
+                      {
+                        backgroundColor: '#ffffff',
+                        borderColor: '#cbd5e1',
+                      },
+                    ]}
+                  >
+                    <Text style={[s.taskDetailChipText, { color: '#64748b' }]} numberOfLines={1}>
+                      {secondaryLabel}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </Pressable>
       </View>
@@ -828,18 +933,59 @@ export default function Planner() {
             <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
           </Pressable>
           <Text style={s.headerTitle}>{T('academicPlanner')}</Text>
-          <Pressable style={s.headerBtn}>
-            <Feather name="more-horizontal" size={24} color={TEXT_PRIMARY} />
-          </Pressable>
+          <View style={{ position: 'relative' }}>
+            <Pressable style={s.headerBtn} onPress={() => setViewMenuOpen((v) => !v)}>
+              <Feather name="more-horizontal" size={24} color={TEXT_PRIMARY} />
+            </Pressable>
+            {viewMenuOpen && (
+              <View style={s.viewDropdown}>
+                {(['week', 'month', 'all'] as ViewMode[]).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    style={[s.viewDropdownItem, view === mode && s.viewDropdownItemActive]}
+                    onPress={() => {
+                      setView(mode);
+                      setLastPlannerView(mode);
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <Feather
+                      name={mode === 'week' ? 'columns' : mode === 'month' ? 'grid' : 'list'}
+                      size={14}
+                      color={view === mode ? '#ffffff' : TEXT_PRIMARY}
+                    />
+                    <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
+                      {mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
         </View>
 
+        {/* Calendar panel — hidden in "all" mode */}
+        {view !== 'all' && (
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
-            <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
-              <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
-            </Pressable>
+            {view === 'week' ? (
+              <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
+                <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
+              </Pressable>
+            ) : (
+              <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
+                <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
+              </Pressable>
+            )}
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
-              <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+              <View style={s.monthNavTitleCol}>
+                <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+                {view === 'week' && activeWeekNumber > 0 && (
+                  <Text style={s.weekInfoText}>
+                    Week {activeWeekNumber} of {totalWeeks}
+                  </Text>
+                )}
+              </View>
             </View>
             <View style={s.monthNavActions}>
               {activeDate !== todayISO ? (
@@ -848,13 +994,46 @@ export default function Planner() {
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
-              <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
-                <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
-              </Pressable>
+              {view === 'week' ? (
+                <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
+                  <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
+                </Pressable>
+              ) : (
+                <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
+                  <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
+                </Pressable>
+              )}
             </View>
           </View>
 
-          {/* Horizontal Calendar Strip — all days in month */}
+          {/* Week view: 7-day Sun–Sat strip */}
+          {view === 'week' && (
+            <View style={s.dayStrip}>
+              {weekDays.map((day) => {
+                const isActive = day.dateISO === activeDate;
+                const count = getItemCountOnDay(day.dateISO);
+                let dotColor: string | null = null;
+                if (count === 1) dotColor = '#22c55e';
+                else if (count >= 2 && count <= 3) dotColor = '#eab308';
+                else if (count >= 4) dotColor = '#dc2626';
+
+                return (
+                  <Pressable
+                    key={day.dateISO}
+                    style={[s.dayCell, isActive && s.dayCellActive]}
+                    onPress={() => setActiveDate(day.dateISO)}
+                  >
+                    <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label}</Text>
+                    <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
+                    {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Month view: scrollable horizontal calendar strip */}
+          {view === 'month' && (
           <View style={s.weekStrip} onLayout={handleCalendarStripLayout}>
             <View pointerEvents="none" style={s.weekCenterHighlight} />
             <ScrollView 
@@ -872,6 +1051,15 @@ export default function Planner() {
             >
               {monthDays.map((day) => {
                 const isPreviewActive = !isCalendarDragging && calendarPreviewDate === day.dateISO;
+                const count = getItemCountOnDay(day.dateISO);
+                let dotColor: string | null = null;
+                if (count === 1) {
+                  dotColor = '#22c55e';
+                } else if (count >= 2 && count <= 3) {
+                  dotColor = '#eab308';
+                } else if (count >= 4) {
+                  dotColor = '#dc2626';
+                }
 
                 return (
                   <Pressable 
@@ -890,16 +1078,58 @@ export default function Planner() {
                       <Text style={[s.weekLabel, isPreviewActive ? s.weekLabelActive : s.weekLabelInactive]}>
                         {day.label}
                       </Text>
+                      {dotColor && <View style={[s.weekDayDot, { backgroundColor: dotColor }]} />}
                     </View>
                   </Pressable>
                 );
               })}
             </ScrollView>
           </View>
+          )}
         </View>
+        )}
       </View>
 
-      {/* Timeline with hourly slots */}
+      {/* "All" view: flat scrollable list grouped by date */}
+      {view === 'all' ? (
+        <ScrollView
+          ref={scrollRef}
+          style={s.timelineListWrap}
+          contentContainerStyle={s.listContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderListHeader()}
+          {displayList.length === 0 ? (
+            <View style={s.emptyState}>
+              <Feather name="inbox" size={32} color={TEXT_SECONDARY} />
+              <Text style={s.emptyText}>{T('noTasksForDay')}</Text>
+            </View>
+          ) : (
+            (() => {
+              let lastDate = '';
+              return displayList.map((item, idx) => {
+                const itemDate = item.itemType === 'task' ? item.dueDate : item.date;
+                const showHeader = itemDate !== lastDate;
+                lastDate = itemDate;
+                return (
+                  <View key={`all-${idx}`} style={s.allRowOffset}>
+                    {showHeader && (
+                      <View style={s.allDateRow}>
+                        <Text style={s.allDateHeader}>
+                          {formatDisplayDate(itemDate)}  •  Week {getWeekNumberForDate(itemDate)} of {totalWeeks}
+                        </Text>
+                        <View style={s.allDateLine} />
+                      </View>
+                    )}
+                    {renderEventCard(item, idx)}
+                  </View>
+                );
+              });
+            })()
+          )}
+        </ScrollView>
+      ) : (
+      /* Timeline with hourly slots */
       <ScrollView 
         ref={scrollRef}
         style={s.timelineListWrap} 
@@ -944,6 +1174,7 @@ export default function Planner() {
           );
         })}
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -963,12 +1194,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 6,
     paddingBottom: 12,
+    zIndex: 10,
   },
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
+    zIndex: 20,
   },
   headerBtn: {
     width: 44,
@@ -981,6 +1214,42 @@ const s = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   headerTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.4 },
+
+  viewDropdown: {
+    position: 'absolute',
+    top: 50,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingVertical: 6,
+    width: 140,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    zIndex: 100,
+  },
+  viewDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  viewDropdownItemActive: {
+    backgroundColor: NAVY,
+  },
+  viewDropdownText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+  viewDropdownTextActive: {
+    color: '#ffffff',
+  },
 
   calendarPanel: {
     backgroundColor: '#ffffff',
@@ -1023,7 +1292,17 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  monthNavTitleCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   monthNavTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center', letterSpacing: -0.35 },
+  weekInfoText: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+  },
   monthNavActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1225,6 +1504,7 @@ const s = StyleSheet.create({
     height: 74,
     borderRadius: 22,
     backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   weekDayActive: {
     transform: [{ scale: 1.02 }],
@@ -1240,6 +1520,12 @@ const s = StyleSheet.create({
   weekLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
   weekLabelActive: { color: '#ffffff', opacity: 0.9 },
   weekLabelInactive: { color: '#b6c0cf', opacity: 0.74 },
+  weekDayDot: {
+    marginTop: 4,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
 
   // Month Grid
   monthCard: {
@@ -1247,32 +1533,30 @@ const s = StyleSheet.create({
     borderRadius: 28,
     padding: 20,
   },
-  // Universal Day Strip
+  // Week Day Strip (Sun–Sat)
   dayStrip: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 10,
   },
   dayCell: {
     alignItems: 'center',
     justifyContent: 'center',
     width: 44,
-    height: 60,
+    height: 62,
     borderRadius: 16,
   },
   dayCellActive: { backgroundColor: NAVY },
-  dayLabel: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY, marginBottom: 2 },
-  dayLabelActive: { color: '#ffffff' },
-  dayDate: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  dayLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY, marginBottom: 2, letterSpacing: 0.2 },
+  dayLabelActive: { color: 'rgba(255,255,255,0.85)' },
+  dayDate: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY },
   dayDateActive: { color: '#ffffff' },
   dayDot: {
-    position: 'absolute',
-    bottom: 4,
+    marginTop: 3,
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: GOLD,
   },
 
   // Task list header + filter
@@ -1327,24 +1611,30 @@ const s = StyleSheet.create({
   taskCardShell: {
     position: 'relative',
     width: '100%',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
   taskCard: {
     borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    width: '86%',
-    maxWidth: 380,
-    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    width: '94%',
+    maxWidth: 420,
+    alignSelf: 'flex-start',
     position: 'relative',
     backgroundColor: '#ffffff',
     borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 10,
   },
   taskCardStudy: { backgroundColor: '#f8fbff' },
   taskCardDone: { backgroundColor: '#f8fafc' },
   taskContent: { flex: 1 },
-  taskChipRow: { marginBottom: 8 },
+  taskChipRow: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   taskChipGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 },
   taskSubjectPill: {
     flexDirection: 'row',
@@ -1369,6 +1659,10 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(0,51,102,0.06)',
   },
+  taskMenuBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
   taskActionOutside: {
     width: 34,
     height: 34,
@@ -1379,7 +1673,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'absolute',
-    left: -6,
+    // Center the circle slightly more to the left of the card edge
+    left: -20,
     top: '50%',
     transform: [{ translateY: -17 }],
     zIndex: 2,
@@ -1391,10 +1686,10 @@ const s = StyleSheet.create({
   taskMainRow: { marginBottom: 6 },
   taskTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', lineHeight: 20, flex: 1 },
   taskTitleDone: { textDecorationLine: 'line-through', opacity: 0.5 },
-  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  taskMetaText: { fontSize: 12, fontWeight: '500', color: '#475569' },
+  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, flexGrow: 1 },
+  taskMetaText: { fontSize: 12, fontWeight: '500', color: TEXT_PRIMARY, flexShrink: 1, flexGrow: 1 },
   taskMetaUrgent: { fontWeight: '700', color: '#dc2626' },
-  taskFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'nowrap' },
+  taskFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' },
   taskMetaDivider: { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
   taskInlineStatusText: { fontSize: 11, fontWeight: '700' },
   taskInlineStatusNeutral: { color: NAVY },
@@ -1402,7 +1697,113 @@ const s = StyleSheet.create({
   taskInlineStatusOverdue: { color: '#b91c1c' },
   taskInlineStatusStudy: { color: '#0f766e' },
   taskInlineStatusDone: { color: '#15803d' },
-  taskSecondaryMeta: { flex: 1, fontSize: 11, fontWeight: '600', color: '#64748b' },
+  taskInlineStatusFar: { color: TEXT_PRIMARY },
+  taskSecondaryMeta: { flexShrink: 1, fontSize: 11, fontWeight: '600', color: '#64748b' },
+
+  // Study card specific layout
+  studyFooter: {
+    marginTop: 2,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  studyTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  studyTimeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    flexShrink: 1,
+  },
+  studySubjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  studySubjectLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+  },
+  studySubjectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  studyRevisionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+  },
+
+  // Task detail row (same structure as study subject row)
+  taskDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  taskDetailLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  taskDetailChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f1f5f9',
+    flexShrink: 1,
+    maxWidth: '70%',
+  },
+  taskDetailChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  studyDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    gap: 10,
+  },
+  studyDurationText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+
+  // "All" view date group header
+  allDateHeader: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.2,
+  },
+
+  allRowOffset: {
+    paddingLeft: 12,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  allDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  allDateLine: {
+    flex: 1,
+    height: 1,
+    borderRadius: 999,
+    backgroundColor: '#cbd5e1',
+  },
 
   // Empty
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12 },

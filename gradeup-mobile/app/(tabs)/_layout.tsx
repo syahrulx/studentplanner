@@ -103,6 +103,24 @@ export default function TabLayout() {
               style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {
                 closeAddMenu();
+                router.push('/revision' as any);
+              }}
+            >
+              <View style={[styles.addMenuIcon, { backgroundColor: theme.accent }]}>
+                <ThemeIcon name="clock" size={22} color={theme.textInverse} />
+              </View>
+              <View>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addStudyTime')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('scheduleStudySub')}</Text>
+              </View>
+            </Pressable>
+            
+            <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
+            
+            <Pressable
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => {
+                closeAddMenu();
                 router.push('/ai-chat' as any);
               }}
             >

@@ -239,3 +239,24 @@ export async function setCourses(courses: Course[]): Promise<void> {
     await AsyncStorage.setItem(KEY_COURSES, JSON.stringify(courses));
   } catch {}
 }
+
+// Planner view (week | month | all)
+const KEY_PLANNER_VIEW = 'plannerView';
+
+export type PlannerViewMode = 'week' | 'month' | 'all';
+
+export async function getPlannerView(): Promise<PlannerViewMode> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_PLANNER_VIEW);
+    if (raw === 'week' || raw === 'month' || raw === 'all') {
+      return raw;
+    }
+  } catch {}
+  return 'week';
+}
+
+export async function setPlannerView(view: PlannerViewMode): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
+  } catch {}
+}

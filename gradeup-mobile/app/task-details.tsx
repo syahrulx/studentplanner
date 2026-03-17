@@ -151,7 +151,7 @@ export default function TaskDetails() {
             <View style={s.badgeDone}>
               <Feather name="check" size={12} color="#16a34a" />
               <Text style={s.badgeDoneText}>{T('completed')}</Text>
-            </View>
+      </View>
           )}
         </View>
 
@@ -195,12 +195,12 @@ export default function TaskDetails() {
           <View style={s.infoCard}>
             <View style={[s.infoIconWrap, { backgroundColor: priorityConfig.bg }]}>
               <Feather name="flag" size={18} color={priorityConfig.color} />
-            </View>
+        </View>
             <View>
               <Text style={s.infoLabel}>{T('priority')}</Text>
               <Text style={[s.infoValue, { color: priorityConfig.color }]}>{priorityConfig.label}</Text>
-            </View>
-          </View>
+        </View>
+      </View>
 
           <View style={s.infoCard}>
             <View style={[s.infoIconWrap, { backgroundColor: 'rgba(245,158,11,0.06)' }]}>
@@ -224,7 +224,7 @@ export default function TaskDetails() {
                 <Text style={s.activePledgeTitle}>Accountability Goal Active</Text>
                 <Text style={s.activePledgeSub}>
                   Linked with {existingPledge.friend_profile?.name || 'a friend'}. Status: {existingPledge.status}.
-                </Text>
+        </Text>
               </View>
             </View>
           ) : (
@@ -242,7 +242,7 @@ export default function TaskDetails() {
               <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
             </Pressable>
           )}
-        </View>
+      </View>
 
         {/* Notes — only shown if notes exist */}
         {task.notes ? (
@@ -352,7 +352,7 @@ export default function TaskDetails() {
                   ))}
                 </View>
               )}
-            </ScrollView>
+    </ScrollView>
 
             <View style={s.modalFooter}>
               <Pressable 

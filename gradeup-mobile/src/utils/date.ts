@@ -87,3 +87,29 @@ export function getMonthGrid(year: number, month: number): (number | null)[] {
 export function toISO(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
+
+/** Get Sunday–Saturday dates (yyyy-mm-dd) for the week containing the given date */
+export function getWeekDatesSundayFirst(isoDate: string): { label: string; dateISO: string; dayNum: string }[] {
+  const d = new Date(isoDate + 'T12:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() - day);
+  const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return labels.map((label, i) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + i);
+    const dateISO = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    return { label, dateISO, dayNum: String(x.getDate()) };
+  });
+}
+
+/** Whether dateISO falls within the week (Sun–Sat) that contains refISO */
+export function isDateInWeek(dateISO: string, refISO: string): boolean {
+  const ref = new Date(refISO + 'T12:00:00');
+  const day = ref.getDay();
+  ref.setDate(ref.getDate() - day);
+  const y = ref.getFullYear(), m = ref.getMonth(), d = ref.getDate();
+  const sun = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const satDate = new Date(y, m, d + 6);
+  const sat = `${satDate.getFullYear()}-${String(satDate.getMonth() + 1).padStart(2, '0')}-${String(satDate.getDate()).padStart(2, '0')}`;
+  return dateISO >= sun && dateISO <= sat;
+}

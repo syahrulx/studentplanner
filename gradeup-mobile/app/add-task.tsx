@@ -57,25 +57,29 @@ export default function AddTask() {
     setIsSaving(true);
     setTimeout(() => {
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
-
-      const nextTask = {
-        id: existingTask?.id ?? createTaskId(),
-        title: title.trim(),
-        courseId: courseId || courses[0]?.id || 'General',
-        type,
-        dueDate: dueDateISO,
-        dueTime,
-        priority,
-        effort,
-        notes,
-        isDone: existingTask?.isDone ?? false,
-        deadlineRisk,
-        suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user),
-        sourceMessage: existingTask?.sourceMessage,
-      };
       if (existingTask) {
-        updateTask(nextTask);
+        updateTask(existingTask.id, {
+          dueDate: dueDateISO,
+          dueTime,
+          priority,
+          effort,
+        });
       } else {
+        const nextTask = {
+          id: createTaskId(),
+          title: title.trim(),
+          courseId: courseId || courses[0]?.id || 'General',
+          type,
+          dueDate: dueDateISO,
+          dueTime,
+          priority,
+          effort,
+          notes,
+          isDone: false,
+          deadlineRisk,
+          suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user),
+          sourceMessage: undefined,
+        };
         addTask(nextTask);
       }
       router.back();

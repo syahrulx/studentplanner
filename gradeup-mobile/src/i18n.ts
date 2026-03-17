@@ -50,7 +50,7 @@ const translations = {
     aiAcademicStrategist: 'AI ACADEMIC STRATEGIST',
     sowAlignment: 'SOW ALIGNMENT',
     swipeGestures: 'SWIPE GESTURES COMING SOON',
-    study: 'STUDY',
+    study: 'Revision',
     analysisMsg: "Hello! I've analyzed your schedule. Week 13 is critical for CSC584 & IPS551. Need help rescheduling any deadlines?",
     reOptimizedMsg: "Understood. I've re-optimized your planner. CSC584 preparation time has been allocated for Friday morning.",
     taskExtracted: 'Task extracted!',
@@ -223,6 +223,8 @@ const translations = {
     community: 'Community',
     addManually: 'Add Manually',
     createTaskYourself: 'Create a new task yourself',
+    addStudyTime: 'Study time',
+    scheduleStudySub: 'Schedule focused revision',
     aiPlanner: 'AI Planner',
     pasteMessageExtract: 'Paste message to extract tasks',
 
@@ -478,6 +480,8 @@ const translations = {
     community: 'Komuniti',
     addManually: 'Tambah Manual',
     createTaskYourself: 'Cipta tugasan baharu sendiri',
+    addStudyTime: 'Masa ulang kaji',
+    scheduleStudySub: 'Jadualkan sesi fokus',
     aiPlanner: 'Perancang AI',
     pasteMessageExtract: 'Tampal mesej untuk ekstrak tugasan',
 

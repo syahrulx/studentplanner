@@ -150,15 +150,27 @@ export default function Dashboard() {
     if (focusTask) {
       const info = getDueTimeLabelRaw(focusTask.task.dueDate);
       const subjectColor = getSubjectColor(focusTask.task.courseId);
-      const isOverdue = getDaysUntilTaskDue(focusTask.task) < 0;
+      const days = info.days;
+      let statusColor: string;
+      if (days < 0 || days === 0) {
+        // Overdue or today – very near => red
+        statusColor = '#dc2626';
+      } else if (days <= 3) {
+        // 1–3 days => medium near => yellow
+        statusColor = '#ca8a04';
+      } else {
+        // Far away => green
+        statusColor = '#15803d';
+      }
       return {
         kind: 'task' as const,
         title: focusTask.task.title,
         code: focusTask.task.courseId,
         date: focusTask.task.dueDate,
         time: focusTask.task.dueTime,
-        accentColor: isOverdue ? OVERDUE_COLOR : subjectColor,
-        badgeBackground: isOverdue ? 'rgba(220,38,38,0.10)' : hexToRgba(subjectColor, 0.10),
+        accentColor: subjectColor,
+        statusColor,
+        badgeBackground: '#ffffff',
         label:
           info.key === 'daysLeft'
             ? `${info.days} ${T('daysLeft')}`
@@ -181,7 +193,8 @@ export default function Dashboard() {
         date: nextStudyItem.date,
         time: nextStudyItem.time,
         accentColor: subjectColor,
-        badgeBackground: hexToRgba(subjectColor, 0.10),
+        statusColor: subjectColor,
+        badgeBackground: '#ffffff',
         label:
           info.key === 'daysLeft'
             ? `${info.days} ${T('daysLeft')}`
@@ -287,8 +300,16 @@ export default function Dashboard() {
                   <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
                     <Text style={[styles.focusCoursePillText, { color: focusCard.accentColor }]}>{focusCard.code}</Text>
                   </View>
-                  <View style={[styles.focusStatusPill, { backgroundColor: focusCard.badgeBackground, borderColor: hexToRgba(focusCard.accentColor, 0.14) }]}>
-                    <Text style={[styles.focusStatusPillText, { color: focusCard.accentColor }]}>
+                  <View
+                    style={[
+                      styles.focusStatusPill,
+                      {
+                        backgroundColor: focusCard.badgeBackground,
+                        borderColor: hexToRgba(focusCard.statusColor, 0.3),
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.focusStatusPillText, { color: focusCard.statusColor }]}>
                       {focusCard.label}
                     </Text>
                   </View>
@@ -374,11 +395,21 @@ export default function Dashboard() {
               const showDateHeader = idx === 0 || previewItems[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
-              const accent = studyDone
-                ? '#94a3b8'
-                : isStudy
-                  ? getSubjectColor((item as { code: string }).code)
-                  : getSubjectColor((item as { code: string }).code);
+              let accent: string;
+              if (isStudy) {
+                // Study time: always dark grey accent, independent of urgency
+                accent = '#4b5563';
+              } else {
+                // Tasks: color by how near the deadline is
+                const days = getDaysLeft(item.date);
+                if (days < 0 || days === 0) {
+                  accent = '#dc2626'; // red – very near / overdue
+                } else if (days <= 3) {
+                  accent = '#eab308'; // yellow – medium near
+                } else {
+                  accent = '#22c55e'; // green – far
+                }
+              }
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
