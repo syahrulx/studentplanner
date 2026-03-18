@@ -467,26 +467,6 @@ const s = StyleSheet.create({
   infoLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY, letterSpacing: 0.8, marginBottom: 2 },
   infoValue: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY },
 
-  // Risk Card
-  riskCard: {
-    backgroundColor: NAVY,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-  },
-  riskCardHigh: { backgroundColor: '#dc2626' },
-  riskHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  riskIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  riskTitle: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.5 },
-  riskBody: { fontSize: 14, color: 'rgba(255,255,255,0.9)', lineHeight: 21, fontWeight: '500' },
-
   // Source
   sourceSection: { marginBottom: 24 },
   sourceHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

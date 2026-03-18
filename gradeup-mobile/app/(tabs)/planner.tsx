@@ -1,12 +1,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
-import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst, isDateInWeek } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
@@ -71,9 +71,9 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
   return item.itemType === 'study';
 }
 
-type ViewMode = 'week' | 'month' | 'all';
+type ViewMode = 'day' | 'week' | 'month' | 'all';
 type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
-// CALENDAR_STRIP_SLOT is now dynamic based on width
+const CALENDAR_STRIP_SLOT = 64;
 
 export default function Planner() {
   const scrollRef = useRef<ScrollView>(null);
@@ -95,16 +95,16 @@ export default function Planner() {
     getSubjectColor,
     lastPlannerView,
     setLastPlannerView,
-    plannerLayout,
-    setPlannerLayout,
     user,
     language,
   } = useApp();
   const T = useTranslations(language);
-  const [view, setView] = useState<ViewMode>(lastPlannerView === ('day' as any) ? 'week' : lastPlannerView);
+  const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [monthZoom, setMonthZoom] = useState(1); // 0.8 to 2.0
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
+  const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
+  const [isCalendarDragging, setIsCalendarDragging] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
@@ -116,7 +116,10 @@ export default function Planner() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAiCard, setShowAiCard] = useState(false);
   const [calendarStripWidth, setCalendarStripWidth] = useState(0);
-  const calendarStripRef = useRef<ScrollView>(null);
+  const activeDateRef = useRef(activeDate);
+  const calendarPreviewDateRef = useRef(calendarPreviewDate);
+  const skipCalendarRecenteringRef = useRef(false);
+
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
@@ -137,8 +140,11 @@ export default function Planner() {
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
 
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const weekDays = useMemo(() => getWeekDatesSundayFirst(activeDate), [activeDate]);
-  
+  const calendarStripSideInset = useMemo(() => {
+    const fallbackWidth = Dimensions.get('window').width - 72;
+    const stripWidth = calendarStripWidth || fallbackWidth;
+    return Math.max(16, stripWidth / 2 - CALENDAR_STRIP_SLOT / 2);
+  }, [calendarStripWidth]);
   const monthDays = useMemo(() => {
     const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
     const result: { dateISO: string; dayNum: string; label: string }[] = [];
@@ -153,34 +159,76 @@ export default function Planner() {
     }
     return result;
   }, [activeYear, activeMonth]);
+  const calendarSnapOffsets = useMemo(
+    () => monthDays.map((_, index) => index * CALENDAR_STRIP_SLOT),
+    [monthDays]
+  );
 
-  const monthSlotWidth = useMemo(() => {
-    if (!calendarStripWidth) return 64;
-    return (calendarStripWidth - 20) / 5;
-  }, [calendarStripWidth]);
+  const weekDays = useMemo(() => getWeekDatesSundayFirst(activeDate), [activeDate]);
 
-  const centerMonthDate = useCallback((dateISO: string, animated: boolean) => {
+  const calendarStripRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    activeDateRef.current = activeDate;
+  }, [activeDate]);
+
+  useEffect(() => {
+    calendarPreviewDateRef.current = calendarPreviewDate;
+  }, [calendarPreviewDate]);
+
+  const centerCalendarDate = (dateISO: string, animated: boolean) => {
     const dayIndex = monthDays.findIndex((day) => day.dateISO === dateISO);
-    if (dayIndex < 0 || !calendarStripRef.current || !calendarStripWidth) return;
-    const x = (dayIndex * monthSlotWidth);
-    // Center it relative to the strip
-    const scrollX = x - (calendarStripWidth / 2) + (monthSlotWidth / 2) + 10; // +10 for padding
-    calendarStripRef.current.scrollTo({ x: Math.max(0, scrollX), animated });
-  }, [monthDays, calendarStripWidth, monthSlotWidth]);
+    if (dayIndex < 0) return;
+    calendarStripRef.current?.scrollTo({ x: dayIndex * CALENDAR_STRIP_SLOT, animated });
+  };
 
+  // Keep the chosen date centered unless the user just got there by scrolling.
   useEffect(() => {
-    if (view === 'month') {
-      // Small timeout to ensure layout is ready
-      const timer = setTimeout(() => centerMonthDate(activeDate, true), 50);
-      return () => clearTimeout(timer);
+    if (skipCalendarRecenteringRef.current) {
+      skipCalendarRecenteringRef.current = false;
+      return;
     }
-  }, [activeDate, view, centerMonthDate]);
+    setCalendarPreviewDate(activeDate);
+    requestAnimationFrame(() => {
+      centerCalendarDate(activeDate, true);
+    });
+  }, [activeDate, monthDays, calendarStripSideInset]);
 
-  // Auto-scroll to top when view or layout changes
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [view, plannerLayout, activeDate]);
+  const handleCalendarStripLayout = ({ nativeEvent }: LayoutChangeEvent) => {
+    const nextWidth = Math.round(nativeEvent.layout.width);
+    setCalendarStripWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+  };
 
+  const getCenteredDateFromOffset = (offsetX: number): string | null => {
+    if (monthDays.length === 0) return null;
+    const centeredIndex = Math.max(0, Math.min(monthDays.length - 1, Math.round(offsetX / CALENDAR_STRIP_SLOT)));
+    return monthDays[centeredIndex]?.dateISO ?? null;
+  };
+
+  const commitCenteredDate = (offsetX: number, animated: boolean) => {
+    const centeredDate = getCenteredDateFromOffset(offsetX);
+    setIsCalendarDragging(false);
+    if (!centeredDate) return;
+    if (centeredDate !== calendarPreviewDateRef.current) {
+      setCalendarPreviewDate(centeredDate);
+    }
+    if (centeredDate !== activeDateRef.current) {
+      skipCalendarRecenteringRef.current = true;
+      setActiveDate(centeredDate);
+    }
+    requestAnimationFrame(() => {
+      centerCalendarDate(centeredDate, animated);
+    });
+  };
+
+  const handleCalendarMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    commitCenteredDate(event.nativeEvent.contentOffset.x, false);
+  };
+
+  const handleCalendarDragEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (Math.abs(event.nativeEvent.velocity?.x ?? 0) > 0.02) return;
+    commitCenteredDate(event.nativeEvent.contentOffset.x, true);
+  };
 
   const goToPrevWeek = () => {
     const d = new Date(activeDate + 'T12:00:00');
@@ -216,13 +264,7 @@ export default function Planner() {
     setActiveDate(`${y}-${String(m + 1).padStart(2, '0')}-01`);
   };
   
-  const goToToday = () => {
-    if (activeDate === todayISO && view === 'month') {
-      centerMonthDate(todayISO, true);
-    } else {
-      setActiveDate(todayISO);
-    }
-  };
+  const goToToday = () => setActiveDate(todayISO);
 
   // Count total items (tasks + study sessions) on a given date
   const getItemCountOnDay = (dateISO: string) => {
@@ -289,21 +331,10 @@ export default function Planner() {
 
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
-    if (view === 'all') {
+    if (view === 'all' || view === 'month' || view === 'week') {
       list = [...tasks];
-    } else if (view === 'week' && plannerLayout === 'grid') {
-      // For grid week, show all tasks in the week
-      list = tasks.filter((t) => isDateInWeek(t.dueDate, activeDate));
-    } else if (view === 'month' && plannerLayout === 'grid') {
-      // For grid month, show all tasks in the month
-      const y = activeYear, m = activeMonth;
-      list = tasks.filter((t) => {
-        const d = new Date(t.dueDate + 'T12:00:00');
-        return d.getFullYear() === y && d.getMonth() === m;
-      });
     } else {
-      // For both week + month views (timeline), show tasks for the *selected date* only.
-      // The calendar strip (week or month) controls which date is active.
+      // Day view: show tasks for the selected date only
       list = tasks.filter((t) => t.dueDate === activeDate);
     }
     if (activeFilter !== 'all') {
@@ -322,22 +353,12 @@ export default function Planner() {
   }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter]);
 
   const filteredStudyItems = useMemo((): PlannerStudyItem[] => {
-    if (view === 'all') {
+    if (view === 'all' || view === 'month' || view === 'week') {
       return studyItemsForPlanner;
     }
-    if (view === 'week' && plannerLayout === 'grid') {
-      return studyItemsForPlanner.filter((item) => isDateInWeek(item.date, activeDate));
-    }
-    if (view === 'month' && plannerLayout === 'grid') {
-      const y = activeYear, m = activeMonth;
-      return studyItemsForPlanner.filter((item) => {
-        const d = new Date(item.date + 'T12:00:00');
-        return d.getFullYear() === y && d.getMonth() === m;
-      });
-    }
-    // For both week + month views (timeline), only show study sessions for the selected date.
+    // Day view: show study sessions for the selected date only
     return studyItemsForPlanner.filter((item) => item.date === activeDate);
-  }, [studyItemsForPlanner, activeDate, view, activeYear, activeMonth]);
+  }, [studyItemsForPlanner, activeDate, view]);
 
   const combinedList = useMemo((): PlannerItem[] => {
     const taskItems: PlannerItem[] = filteredTasks.map((t) => ({ ...t, itemType: 'task' as const }));
@@ -535,9 +556,7 @@ export default function Planner() {
       {/* Task list header + filter */}
       <View style={s.taskListHeader}>
         <Text style={s.taskListLabel}>
-          {view === 'all' ? T('allTasks') : 
-           view === 'month' ? `${activeMonthName} ${activeYear}` :
-           `${listCount} ${T('deadlines')} \u2022 ${activeMonthName} ${activeDateDay}`}
+          {view === 'all' ? T('allTasks') : `${listCount} ${T('deadlines')} \u2022 ${activeMonthName} ${activeDateDay}`}
         </Text>
         <Pressable onPress={() => setFilterMenuOpen((o) => !o)}>
           <Text style={s.filterLabel}>{T('filterSort')}</Text>
@@ -908,12 +927,11 @@ export default function Planner() {
   // Render month grid for the Month view
   const renderMonthGrid = () => {
     const days = monthGridCells;
-    const colWidth = 100 * monthZoom; // Adjusted to match week grid width (100)
+    const colWidth = 100 * monthZoom; 
     const cellHeight = 125; 
 
     return (
       <View style={{ flex: 1 }}>
-        {/* Month Grid Nav Header (Replacement for the hidden one) */}
         <View style={s.gridNavHeader}>
           <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
             <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
@@ -929,7 +947,6 @@ export default function Planner() {
         <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: '#ffffff' }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={true}>
             <View style={{ width: colWidth * 7 }}>
-              {/* Weekdays header */}
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
                   <View key={`day-${i}`} style={{ width: colWidth, alignItems: 'center', paddingVertical: 12 }}>
@@ -938,7 +955,6 @@ export default function Planner() {
                 ))}
               </View>
 
-              {/* Grid Cells */}
               <View style={{ width: colWidth * 7 }}>
                 {(() => {
                   const weeks: (number | null)[][] = [];
@@ -962,9 +978,8 @@ export default function Planner() {
                         const isActive = dateISO === activeDate;
                         const isToday = dateISO === todayISO;
                         
-                        const dayItems = combinedList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === dateISO);
+                        const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === dateISO);
                         const showItems = dayItems.slice(0, 6);
-                        const hiddenCount = dayItems.length - showItems.length;
 
                         return (
                           <View
@@ -975,7 +990,6 @@ export default function Planner() {
                               isActive && s.monthGridCellActive
                             ]}
                           >
-                            {/* Background Pressable for date selection */}
                             <Pressable 
                               style={StyleSheet.absoluteFill} 
                               onPress={() => setActiveDate(dateISO)} 
@@ -991,44 +1005,66 @@ export default function Planner() {
                               </Text>
                             </View>
                             <View style={[s.monthGridTagList, { zIndex: 10 }]} pointerEvents="box-none">
-                              {showItems.map((item, idx) => {
-                                const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
-                                const color = getSubjectColor(subject);
-                                const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
-                                const isDone = item.isDone;
-                                const itemCount = showItems.length;
+                              {(() => {
+                                const itemCount = dayItems.length;
+                                const hiddenCount = itemCount - 6;
                                 const dynamicFontSize = itemCount <= 2 ? 10 : itemCount <= 4 ? 9 : 8;
                                 const dynamicLines = itemCount <= 2 ? 3 : itemCount <= 4 ? 2 : 1;
 
                                 return (
-                                  <Pressable 
-                                    key={`${dateISO}-${idx}`} 
-                                    onPress={(e) => {
-                                      e.stopPropagation();
-                                      handleItemPress(item);
-                                    }}
-                                    style={[
-                                      s.monthGridItemBlock, 
-                                      { borderLeftColor: color, backgroundColor: isActive ? 'rgba(255,255,255,0.1)' : hexToRgba(color, 0.08), zIndex: 20 }
-                                    ]}
-                                  >
-                                    <View style={{ flex: 1 }}>
-                                      <Text 
-                                        style={[s.monthGridTagText, { color: isActive ? '#ffffff' : TEXT_PRIMARY, fontSize: dynamicFontSize }]} 
-                                        numberOfLines={dynamicLines}
-                                      >
-                                        {subject}: {title}
+                                  <>
+                                    {showItems.map((item, idx) => {
+                                      const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
+                                      const color = getSubjectColor(subject);
+                                      const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
+                                      const isDone = item.isDone;
+
+                                      return (
+                                        <Pressable 
+                                          key={`${dateISO}-${idx}`} 
+                                          onPress={(e) => {
+                                            e.stopPropagation();
+                                            handleItemPress(item);
+                                          }}
+                                          style={[
+                                            s.monthGridItemBlock, 
+                                            { 
+                                              borderLeftColor: color, 
+                                              backgroundColor: hexToRgba(color, 0.08), 
+                                              zIndex: 20 
+                                            }
+                                          ]}
+                                        >
+                                          <View style={{ flex: 1 }}>
+                                            <Text 
+                                              style={[
+                                                s.monthGridTagText, 
+                                                { color: TEXT_PRIMARY, fontSize: dynamicFontSize }
+                                              ]} 
+                                              numberOfLines={dynamicLines}
+                                            >
+                                              {subject}: {title}
+                                            </Text>
+                                          </View>
+                                          <View style={{ 
+                                            width: 6, 
+                                            height: 6, 
+                                            borderRadius: 3, 
+                                            borderWidth: 0.5, 
+                                            borderColor: isActive ? '#ffffff' : color, 
+                                            backgroundColor: isDone ? (isActive ? '#ffffff' : color) : 'transparent' 
+                                          }} />
+                                        </Pressable>
+                                      );
+                                    })}
+                                    {hiddenCount > 0 && (
+                                      <Text style={[s.monthGridMoreText, isActive && { color: 'rgba(255,255,255,0.7)' }]}>
+                                        +{hiddenCount}
                                       </Text>
-                                    </View>
-                                    <View style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 0.5, borderColor: isActive ? '#ffffff' : color, backgroundColor: isDone ? (isActive ? '#ffffff' : color) : 'transparent' }} />
-                                  </Pressable>
+                                    )}
+                                  </>
                                 );
-                              })}
-                              {hiddenCount > 0 && (
-                                <Text style={[s.monthGridMoreText, isActive && { color: 'rgba(255,255,255,0.7)' }]}>
-                                  +{hiddenCount}
-                                </Text>
-                              )}
+                              })()}
                             </View>
                           </View>
                         );
@@ -1041,7 +1077,6 @@ export default function Planner() {
           </ScrollView>
         </ScrollView>
 
-        {/* Zoom Controls */}
         <View style={s.zoomControls}>
           <Pressable style={s.zoomBtn} onPress={() => setMonthZoom(prev => Math.max(0.7, prev - 0.2))}>
             <Feather name="minus" size={18} color={TEXT_PRIMARY} />
@@ -1056,12 +1091,15 @@ export default function Planner() {
 
   // Render vertical week grid (7 columns)
   const renderWeekGrid = () => {
-    const hourHeight = 85;
-    const colWidth = 100;
-    
+    const hourHeight = 100; // Slightly taller for better readability
+    const colWidth = 110;  // Slightly wider columns
+    const timeColWidth = 65;
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+
     return (
-      <View style={{ flex: 1 }}>
-        {/* Grid Navigation Header */}
+      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
         <View style={s.gridNavHeader}>
           <Pressable style={s.gridNavBtn} onPress={goToPrevWeek}>
             <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
@@ -1080,132 +1118,208 @@ export default function Planner() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-      <View style={{ flexDirection: 'row', backgroundColor: '#ffffff' }}>
-        {/* Time labels column */}
-        <View style={{ width: 60, borderRightWidth: 1, borderColor: '#e2e8f0' }}>
-          <View style={{ height: 30 }} />
-          {HOUR_SLOTS.map(slot => (
-            <View key={slot.hour} style={{ height: hourHeight, justifyContent: 'flex-start', paddingTop: 4, paddingLeft: 8 }}>
-              <Text style={{ fontSize: 10, color: TEXT_SECONDARY }}>{slot.label.split(' ')[0]}</Text>
-              <Text style={{ fontSize: 8, color: TEXT_SECONDARY }}>{slot.label.split(' ')[1]}</Text>
-            </View>
-          ))}
-          {/* Pad to match 25h grid exactly */}
-          <View style={{ height: hourHeight + 30 }} />
-        </View>
-
-        {/* Days columns */}
-        {weekDays.map((day, dayIdx) => {
-          const isActive = day.dateISO === activeDate;
-          const isToday = day.dateISO === todayISO;
-          const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === day.dateISO);
-          
-          return (
-            <View key={day.dateISO} style={{ width: colWidth, borderRightWidth: 1, borderColor: '#f1f5f9' }}>
-              <Pressable 
-                onPress={() => setActiveDate(day.dateISO)}
-                style={[
-                  { height: 38, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderColor: '#e2e8f0' },
-                  isActive && { backgroundColor: 'rgba(0,51,102,0.05)' },
-                  isToday && { borderBottomWidth: 2, borderBottomColor: NAVY }
-                ]}
-              >
-                <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? NAVY : TEXT_SECONDARY, textTransform: 'uppercase' }}>{day.label[0]}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: isToday ? NAVY : TEXT_PRIMARY }}>{day.dayNum}</Text>
-              </Pressable>
-              
-              <View style={{ height: 25 * hourHeight, position: 'relative' }}>
-                {/* Hour grid lines */}
-                {HOUR_SLOTS.map(slot => (
-                  <View key={slot.hour} style={{ position: 'absolute', top: slot.hour * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
-                ))}
-                {/* 24th Hour Line (Midnight) */}
-                <View style={{ position: 'absolute', top: 24 * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
-                {/* 25th Hour Line (End of Grid) */}
-                <View style={{ position: 'absolute', top: 25 * hourHeight, left: 0, right: 0, height: 1, backgroundColor: '#f1f5f9' }} />
-
-                {/* Current time indicator line on the today column */}
-                {isToday && (
-                  <View 
-                    style={{ 
-                      position: 'absolute', 
-                      top: (currentHour + currentMinute/60) * hourHeight, 
-                      left: 0, 
-                      right: 0, 
-                      height: 2, 
-                      backgroundColor: NAVY,
-                      zIndex: 20,
-                    }} 
+          <View style={{ width: timeColWidth + colWidth * 7 }}>
+            {/* Sticky Day Header */}
+            <View style={{ flexDirection: 'row', backgroundColor: '#ffffff', borderBottomWidth: 1, borderColor: '#e2e8f0', zIndex: 30 }}>
+              <View style={{ width: timeColWidth }} />
+              {weekDays.map((day) => {
+                const isToday = day.dateISO === todayISO;
+                const isWeekend = day.label === 'Sun' || day.label === 'Sat';
+                return (
+                  <Pressable 
+                    key={day.dateISO}
+                    onPress={() => setActiveDate(day.dateISO)}
+                    style={[
+                      { width: colWidth, height: 50, alignItems: 'center', justifyContent: 'center' },
+                      isToday && { backgroundColor: 'rgba(0,51,102,0.03)' },
+                      isWeekend && !isToday && { backgroundColor: '#fcfdfe' }
+                    ]}
                   >
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: NAVY, position: 'absolute', left: -3, top: -2 }} />
-                  </View>
-                )}
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? NAVY : TEXT_SECONDARY, textTransform: 'uppercase' }}>{day.label}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: isToday ? NAVY : TEXT_PRIMARY }}>{day.dayNum}</Text>
+                    {isToday && <View style={{ position: 'absolute', bottom: 0, width: 24, height: 3, backgroundColor: NAVY, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
+                  </Pressable>
+                );
+              })}
+            </View>
 
-                {/* Event cards */}
-                {dayItems.map((item, idx) => {
-                  const timeStr = item.itemType === 'task' ? item.dueTime : item.time;
-                  const [h, m] = (timeStr || '00:00').split(':').map(Number);
-                  const top = (h + m/60) * hourHeight;
-                  const duration = item.itemType === 'study' ? item.durationMinutes : 45;
-                  const height = (duration / 60) * hourHeight;
-                  const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
-                  const color = getSubjectColor(subject);
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+              <View style={{ flexDirection: 'row' }}>
+                {/* Time Column (Sticky horizontal sync inside horizontal ScrollView) */}
+                <View style={{ width: timeColWidth, borderRightWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
+                  {HOUR_SLOTS.map(slot => {
+                    const isPast = slot.hour < currentHour;
+                    return (
+                      <View key={slot.hour} style={{ height: hourHeight, justifyContent: 'flex-start', paddingTop: 6, paddingLeft: 10 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: isPast ? '#94a3b8' : TEXT_SECONDARY }}>{slot.label.split(' ')[0]}</Text>
+                        <Text style={{ fontSize: 8, fontWeight: '600', color: isPast ? '#cbd5e1' : TEXT_SECONDARY }}>{slot.label.split(' ')[1]}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
 
+                {/* Day Columns */}
+                {weekDays.map((day) => {
+                  const isActive = day.dateISO === activeDate;
+                  const isToday = day.dateISO === todayISO;
+                  const isWeekend = day.label === 'Sun' || day.label === 'Sat';
+                  const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === day.dateISO);
+                  
                   return (
-                    <Pressable
-                      key={`${item.itemType}-${idx}`}
-                      onPress={() => handleItemPress(item)}
-                      style={{
-                        position: 'absolute',
-                        top: top,
-                        left: 0,
-                        right: 0,
-                        height: Math.max(height, 20),
-                        backgroundColor: hexToRgba(color, 0.12),
-                        borderRadius: 0,
-                        borderLeftWidth: 4,
-                        borderLeftColor: color,
-                        borderBottomWidth: 1,
-                        borderBottomColor: 'rgba(0,0,0,0.05)',
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        paddingHorizontal: 8,
-                        zIndex: 10,
-                      }}
+                    <View 
+                      key={day.dateISO} 
+                      style={[
+                        { width: colWidth, borderRightWidth: 0.5, borderColor: '#f1f5f9' },
+                        isWeekend && { backgroundColor: '#fcfdfe' },
+                        isActive && { backgroundColor: 'rgba(0,51,102,0.01)' }
+                      ]}
                     >
-                      {(() => {
-                        const isDone = item.isDone;
-                        const icon = item.itemType === 'task' ? (item.type === TaskType.Quiz ? '📝' : '📚') : '🧘';
-                        const title = item.itemType === 'task' ? item.title : (item as any).topic || T('study');
-                        const subjectDisplay = subject ? subject.substring(0, 6) : '';
-                        
-                        return (
-                          <View style={{ flex: 1, paddingVertical: 4 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                              <Text style={{ fontSize: 8, fontWeight: '700', color: color }}>{subjectDisplay}</Text>
-                              <View style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 1, borderColor: color, backgroundColor: isDone ? color : 'transparent' }} />
+                      <View style={{ height: 24 * hourHeight, position: 'relative', overflow: 'hidden' }}>
+                        {/* Hour grid lines */}
+                        {HOUR_SLOTS.map(slot => {
+                          const isPast = slot.hour < currentHour;
+                          return (
+                            <View 
+                              key={slot.hour} 
+                              style={{ 
+                                position: 'absolute', 
+                                top: slot.hour * hourHeight, 
+                                left: 0, 
+                                right: 0, 
+                                height: 1, 
+                                backgroundColor: isPast ? '#f8fafc' : '#f1f5f9' 
+                              }} 
+                            />
+                          );
+                        })}
+
+                        {/* Past Time Dimming Overlay for today */}
+                        {isToday && (
+                          <View 
+                            style={{ 
+                              position: 'absolute', 
+                              top: 0, 
+                              left: 0, 
+                              right: 0, 
+                              height: currentHour * hourHeight, 
+                              backgroundColor: 'rgba(248, 250, 252, 0.4)',
+                              zIndex: 1
+                            }} 
+                          />
+                        )}
+
+                        {/* Current time indicator line on the today column */}
+                        {isToday && (
+                          <View 
+                            style={{ 
+                              position: 'absolute', 
+                              top: (currentHour + currentMin/60) * hourHeight - 1, 
+                              left: 0, 
+                              right: 0, 
+                              height: 2, 
+                              backgroundColor: NAVY,
+                              zIndex: 40,
+                            }} 
+                          >
+                            <View style={{ 
+                              position: 'absolute', 
+                              left: -35, 
+                              top: -8, 
+                              backgroundColor: NAVY, 
+                              paddingHorizontal: 4, 
+                              paddingVertical: 2, 
+                              borderRadius: 4,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 2
+                            }}>
+                              <Text style={{ fontSize: 8, color: '#ffffff', fontWeight: '900' }}>NOW</Text>
                             </View>
-                            <Text style={{ fontSize: 9, fontWeight: '800', color: NAVY, lineHeight: 11 }} numberOfLines={2}>
-                              {title}
-                            </Text>
-                            {height > 30 && (
-                              <Text style={{ fontSize: 8, color: TEXT_SECONDARY, marginTop: 1 }}>{timeStr}</Text>
-                            )}
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: NAVY, position: 'absolute', left: -4, top: -3 }} />
                           </View>
-                        );
-                      })()}
-                    </Pressable>
+                        )}
+
+                        {/* Event cards */}
+                        {dayItems.map((item, idx) => {
+                          const timeStr = item.itemType === 'task' ? item.dueTime : item.time;
+                          const [h, m] = (timeStr || '00:00').split(':').map(Number);
+                          const top = (h + m/60) * hourHeight;
+                          const duration = item.itemType === 'study' ? item.durationMinutes : 45;
+                          const rawHeight = (duration / 60) * hourHeight;
+                          const boundedTop = Math.max(0, top);
+                          const availableHeight = 24 * hourHeight - boundedTop - 2;
+                          const boundedHeight = Math.max(0, Math.min(Math.max(rawHeight, 24), availableHeight));
+                          const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
+                          const color = getSubjectColor(subject);
+                          const isPast = isToday && h < currentHour;
+
+                          if (boundedHeight <= 0) return null;
+
+                          return (
+                            <Pressable
+                              key={`${item.itemType}-${idx}`}
+                              onPress={() => handleItemPress(item)}
+                              style={{
+                                position: 'absolute',
+                                top: boundedTop,
+                                left: 4,
+                                right: 4,
+                                height: boundedHeight,
+                                backgroundColor: hexToRgba(color, isPast ? 0.08 : 0.15),
+                                borderRadius: 8,
+                                borderLeftWidth: 4,
+                                borderLeftColor: isPast ? hexToRgba(color, 0.5) : color,
+                                borderBottomWidth: 1,
+                                borderBottomColor: 'rgba(0,0,0,0.05)',
+                                paddingHorizontal: 6,
+                                paddingVertical: 4,
+                                zIndex: 10,
+                                opacity: isPast ? 0.7 : 1,
+                                shadowColor: color,
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: isPast ? 0 : 0.1,
+                                shadowRadius: 4,
+                                elevation: isPast ? 0 : 2
+                              }}
+                            >
+                              {(() => {
+                                const isDone = item.isDone;
+                                const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
+                                const subjectDisplay = subject ? (subject.length > 8 ? subject.substring(0, 6) + '..' : subject) : '';
+                                
+                                return (
+                                  <View style={{ flex: 1 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                                      <Text style={{ fontSize: 8, fontWeight: '800', color: color }}>{subjectDisplay}</Text>
+                                      <View style={{ 
+                                        width: 7, 
+                                        height: 7, 
+                                        borderRadius: 3.5, 
+                                        borderWidth: 1, 
+                                        borderColor: color, 
+                                        backgroundColor: isDone ? color : 'transparent' 
+                                      }} />
+                                    </View>
+                                    <Text style={{ fontSize: 9, fontWeight: '800', color: NAVY, lineHeight: 11 }} numberOfLines={2}>
+                                      {title}
+                                    </Text>
+                                    {boundedHeight > 40 && (
+                                      <Text style={{ fontSize: 8, color: TEXT_SECONDARY, marginTop: 2, fontWeight: '600' }}>{timeStr}</Text>
+                                    )}
+                                  </View>
+                                );
+                              })()}
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
                   );
                 })}
               </View>
-            </View>
-          );
-        })}
-      </View>
-      </ScrollView>
-      </ScrollView>
+            </ScrollView>
+          </View>
+        </ScrollView>
       </View>
     );
   };
@@ -1220,12 +1334,29 @@ export default function Planner() {
           </Pressable>
           <Text style={s.headerTitle}>{T('academicPlanner')}</Text>
           <View style={{ position: 'relative' }}>
-            <Pressable style={s.headerBtn} onPress={() => setViewMenuOpen((v) => !v)}>
-              <Feather name="more-horizontal" size={24} color={TEXT_PRIMARY} />
+            <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
+              <Feather
+                name={
+                  view === 'day'
+                    ? 'clock'
+                    : view === 'week'
+                    ? 'columns'
+                    : view === 'month'
+                    ? 'grid'
+                    : 'list'
+                }
+                size={16}
+                color={NAVY}
+              />
+              <Text style={s.headerViewBtnText}>
+                {view.charAt(0).toUpperCase() + view.slice(1)}
+              </Text>
+              <Feather name={viewMenuOpen ? "chevron-up" : "chevron-down"} size={14} color={TEXT_SECONDARY} />
             </Pressable>
+
             {viewMenuOpen && (
               <View style={s.viewDropdown}>
-                {(['week', 'month', 'all'] as ViewMode[]).map((mode) => (
+                {(['day', 'week', 'month', 'all'] as ViewMode[]).map((mode) => (
                   <Pressable
                     key={mode}
                     style={[s.viewDropdownItem, view === mode && s.viewDropdownItemActive]}
@@ -1235,157 +1366,115 @@ export default function Planner() {
                       setViewMenuOpen(false);
                     }}
                   >
-                    <Feather
-                      name={
-                        mode === 'week' ? 'columns' : 
-                        mode === 'month' ? 'grid' : 
-                        'list'
-                      }
-                      size={14}
-                      color={view === mode ? '#ffffff' : TEXT_PRIMARY}
-                    />
-                    <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
-                      {mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'All'}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                      <Feather
+                        name={
+                          mode === 'day'
+                            ? 'clock'
+                            : mode === 'week'
+                            ? 'columns'
+                            : mode === 'month'
+                            ? 'grid'
+                            : 'list'
+                        }
+                        size={14}
+                        color={view === mode ? '#ffffff' : TEXT_PRIMARY}
+                      />
+                      <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
+                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                      </Text>
+                    </View>
+                    {view === mode && (
+                      <Feather name="check" size={12} color="#ffffff" />
+                    )}
                   </Pressable>
                 ))}
-                
-                <View style={s.viewDropdownDivider} />
-                <View style={s.viewDropdownSection}>
-                  <Text style={s.viewDropdownLabel}>{T('layout')}</Text>
-                  {(['timeline', 'grid'] as const).map((mode) => (
-                    <Pressable
-                      key={mode}
-                      style={[s.viewDropdownItem, plannerLayout === mode && s.viewDropdownItemActive]}
-                      onPress={() => {
-                        setPlannerLayout(mode);
-                        setViewMenuOpen(false);
-                      }}
-                    >
-                      <Feather
-                        name={mode === 'timeline' ? 'list' : 'grid'}
-                        size={14}
-                        color={plannerLayout === mode ? '#ffffff' : TEXT_PRIMARY}
-                      />
-                      <Text style={[s.viewDropdownText, plannerLayout === mode && s.viewDropdownTextActive]}>
-                        {mode === 'timeline' ? T('timeline') : T('grid')}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
               </View>
             )}
           </View>
         </View>
 
-        {/* Calendar panel — hidden in "all" mode and when in Grid mode (since grid has its own nav) */}
-        {view !== 'all' && plannerLayout !== 'grid' && (
+        {/* Calendar panel — only shown in "day" view, since grids have their own nav */}
+        {view === 'day' && (
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
-            {view === 'week' ? (
-              <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
-                <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
-              </Pressable>
-            ) : (
-              <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
-                <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
-              </Pressable>
-            )}
+            <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
+              <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
+            </Pressable>
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={s.monthNavTitleCol}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-                {view === 'week' && activeWeekNumber > 0 && (
-                  <Text style={s.weekInfoText}>
-                    Week {activeWeekNumber} of {totalWeeks}
-                  </Text>
-                )}
               </View>
             </View>
             <View style={s.monthNavActions}>
-              {(view === 'month' || activeDate !== todayISO) ? (
+              {activeDate !== todayISO ? (
                 <Pressable style={s.monthTodayBtn} onPress={goToToday} hitSlop={10}>
                   <Feather name="calendar" size={13} color={NAVY} />
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
-              {view === 'week' ? (
-                <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
-                  <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
-                </Pressable>
-              ) : (
-                <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
-                  <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
-                </Pressable>
-              )}
+              <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
+                <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
+              </Pressable>
             </View>
           </View>
 
-          {/* Week view: 7-day Sun–Sat strip */}
-          {view === 'week' && (
-            <View style={s.dayStrip}>
-              {weekDays.map((day) => {
-                const isActive = day.dateISO === activeDate;
-                const count = getItemCountOnDay(day.dateISO);
-                let dotColor: string | null = null;
-                if (count === 1) dotColor = '#22c55e';
-                else if (count >= 2 && count <= 3) dotColor = '#eab308';
-                else if (count >= 4) dotColor = '#dc2626';
-
-                return (
-                  <Pressable
-                    key={day.dateISO}
-                    style={[s.dayCell, isActive && s.dayCellActive]}
-                    onPress={() => setActiveDate(day.dateISO)}
-                  >
-                    <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label}</Text>
-                    <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
-                    {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Month view: Horizontal scrollable date strip */}
-          {view === 'month' && (
+          {/* Day view: center-aligned snapping calendar strip */}
+          <View style={s.dayStripContainer}>
+            <View style={s.weekCenterHighlight} pointerEvents="none" />
             <ScrollView 
               ref={calendarStripRef}
               horizontal 
               showsHorizontalScrollIndicator={false} 
               onLayout={(e) => setCalendarStripWidth(e.nativeEvent.layout.width)}
-              contentContainerStyle={{ paddingHorizontal: 10 }}
-              snapToInterval={monthSlotWidth}
+              contentContainerStyle={{ 
+                paddingHorizontal: (calendarStripWidth / 2) - (CALENDAR_STRIP_SLOT / 2) 
+              }}
+              snapToInterval={CALENDAR_STRIP_SLOT}
+              snapToAlignment="center"
               decelerationRate="fast"
+              onMomentumScrollEnd={(e) => {
+                const x = e.nativeEvent.contentOffset.x;
+                const idx = Math.round(x / CALENDAR_STRIP_SLOT);
+                if (monthDays[idx]) {
+                  setActiveDate(monthDays[idx].dateISO);
+                }
+              }}
             >
-              <View style={s.dayStrip}>
+              <View style={[s.dayStrip, { gap: 0, paddingHorizontal: 0 }]}>
                 {monthDays.map((day) => {
                   const isActive = day.dateISO === activeDate;
+                  const isToday = day.dateISO === todayISO;
                   const count = getItemCountOnDay(day.dateISO);
                   let dotColor: string | null = null;
-                  if (count === 1) dotColor = '#22c55e';
-                  else if (count >= 2 && count <= 3) dotColor = '#eab308';
-                  else if (count >= 4) dotColor = '#dc2626';
+                  if (count === 1) dotColor = '#10b981';
+                  else if (count >= 2 && count <= 3) dotColor = '#f59e0b';
+                  else if (count >= 4) dotColor = '#ef4444';
 
                   return (
                     <Pressable
                       key={day.dateISO}
-                      style={[s.dayCell, isActive && s.dayCellActive, { width: monthSlotWidth }]}
+                      style={[s.dayCell, { width: CALENDAR_STRIP_SLOT }]}
                       onPress={() => setActiveDate(day.dateISO)}
                     >
                       <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label}</Text>
                       <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
-                      {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
+                      <View style={s.dayDotRow}>
+                        {isToday && !isActive && <View style={[s.dayDot, { backgroundColor: '#ef4444' }]} />}
+                        {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
+                      </View>
                     </Pressable>
                   );
                 })}
               </View>
             </ScrollView>
-          )}
+          </View>
         </View>
         )}
       </View>
 
       {/* Content */}
+
       {view === 'all' ? (
         <ScrollView
           ref={scrollRef}
@@ -1423,30 +1512,22 @@ export default function Planner() {
             })()
           )}
         </ScrollView>
-      ) : plannerLayout === 'grid' ? (
-        <View style={{ flex: 1 }}>
-          {view === 'month' ? (
-            <View style={{ flex: 1 }}>
-              {renderMonthGrid()}
-            </View>
-          ) : (
-            <View style={{ flex: 1 }}>
-              {renderWeekGrid()}
-            </View>
-          )}
-        </View>
+      ) : view === 'week' ? (
+        renderWeekGrid()
+      ) : view === 'month' ? (
+        renderMonthGrid()
       ) : (
-      /* Timeline with hourly slots (Default Timeline Layout) */
+      /* Timeline for Day View */
       <ScrollView 
         ref={scrollRef}
         style={s.timelineListWrap} 
         contentContainerStyle={s.listContent} 
         showsVerticalScrollIndicator={false}
       >
-        {renderListHeader()}
         {HOUR_SLOTS.map((slot, slotIdx) => {
           const items = itemsByHour[slot.hour] || [];
           const isCurrentHour = activeDate === todayISO && slot.hour === currentHour;
+          const isNextHour = activeDate === todayISO && slot.hour === currentHour + 1;
 
           return (
             <View key={slot.hour}>
@@ -1458,7 +1539,7 @@ export default function Planner() {
                 <View style={s.hourDivider} />
               </View>
 
-              {/* Current-time indicator */}
+              {/* Current-time indicator (positioned between the previous hour label and before events) */}
               {isCurrentHour && (
                 <View style={s.currentTimeRow}>
                   <View style={s.currentTimePill}>
@@ -1520,42 +1601,65 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
   },
+  headerViewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(0,51,102,0.08)',
+    shadowColor: '#003366',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  headerViewBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: NAVY,
+  },
   headerTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.4 },
 
   viewDropdown: {
     position: 'absolute',
-    top: 50,
+    top: 52,
     right: 0,
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    paddingVertical: 6,
-    width: 140,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    width: 156,
+    shadowColor: '#003366',
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    zIndex: 100,
+    borderColor: 'rgba(0,51,102,0.05)',
+    zIndex: 1000,
   },
   viewDropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 2,
   },
   viewDropdownItemActive: {
     backgroundColor: NAVY,
   },
   viewDropdownText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: TEXT_PRIMARY,
   },
   viewDropdownTextActive: {
     color: '#ffffff',
+    fontWeight: '700',
   },
 
   calendarPanel: {
@@ -1570,6 +1674,62 @@ const s = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 1,
+  },
+  dayStripContainer: {
+    height: 64,
+  },
+  dayStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+  },
+  dayCell: {
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+  },
+  dayLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: TEXT_SECONDARY,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  dayLabelActive: {
+    color: NAVY,
+  },
+  dayDate: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  dayDateActive: {
+    color: NAVY,
+  },
+  dayDotRow: {
+    flexDirection: 'row',
+    gap: 2,
+    marginTop: 4,
+    height: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  weekCenterHighlight: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -32,
+    width: 64,
+    height: 64,
+    backgroundColor: 'rgba(0,51,102,0.06)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: NAVY,
   },
 
   // Month Navigator
@@ -1779,6 +1939,44 @@ const s = StyleSheet.create({
     minHeight: 86,
     justifyContent: 'center',
   },
+  weekStripContent: {
+    paddingBottom: 2,
+  },
+
+  weekDaySlot: {
+    width: CALENDAR_STRIP_SLOT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 56,
+    height: 74,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  weekDayActive: {
+    transform: [{ scale: 1.02 }],
+  },
+  weekDayInactive: {
+    transform: [{ scale: 0.9 }],
+    opacity: 0.92,
+  },
+  weekDayToday: { borderWidth: 1.5, borderColor: '#d6e3f3', backgroundColor: 'rgba(248, 251, 255, 0.75)' },
+  weekDate: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 3, letterSpacing: -0.2 },
+  weekDateActive: { color: '#ffffff', fontSize: 18 },
+  weekDateInactive: { color: '#526277', opacity: 0.62 },
+  weekLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
+  weekLabelActive: { color: '#ffffff', opacity: 0.9 },
+  weekLabelInactive: { color: '#b6c0cf', opacity: 0.74 },
+  weekDayDot: {
+    marginTop: 4,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
 
   // Month Grid
   monthCard: {
@@ -1787,30 +1985,7 @@ const s = StyleSheet.create({
     padding: 20,
   },
   // Week Day Strip (Sun–Sat)
-  dayStrip: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    paddingHorizontal: 10,
-  },
-  dayCell: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 44,
-    height: 62,
-    borderRadius: 16,
-  },
-  dayCellActive: { backgroundColor: NAVY },
-  dayLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY, marginBottom: 2, letterSpacing: 0.2 },
-  dayLabelActive: { color: 'rgba(255,255,255,0.85)' },
-  dayDate: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY },
-  dayDateActive: { color: '#ffffff' },
-  dayDot: {
-    marginTop: 3,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
+
 
   // Task list header + filter
   taskListHeader: {
@@ -1838,140 +2013,6 @@ const s = StyleSheet.create({
   filterChipActive: { backgroundColor: NAVY, borderColor: NAVY },
   filterChipText: { fontSize: 9, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1 },
   filterChipTextActive: { color: '#ffffff' },
-  
-  // Grid Dropdown additions
-  viewDropdownDivider: { height: 1.5, backgroundColor: '#f1f5f9', marginVertical: 4 },
-  viewDropdownSection: { paddingBottom: 4 },
-  viewDropdownLabel: { fontSize: 9, fontWeight: '800', color: TEXT_SECONDARY, paddingHorizontal: 16, paddingVertical: 4, letterSpacing: 1, textTransform: 'uppercase' },
-
-  // Month Grid Styles
-  monthGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    backgroundColor: '#ffffff',
-    borderRadius: 0,
-    padding: 0,
-    borderWidth: 0,
-  },
-  monthGridHeader: {
-    width: `${100 / 7}%`,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  monthGridHeaderText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: TEXT_SECONDARY,
-  },
-  monthGridCell: {
-    width: `${100 / 7}%`,
-    minHeight: 125,
-    padding: 2,
-    borderWidth: 0.5,
-    borderColor: '#f1f5f9',
-    position: 'relative',
-    backgroundColor: '#ffffff',
-  },
-  monthGridCellActive: {
-    backgroundColor: NAVY,
-    borderColor: NAVY,
-  },
-  monthGridCellEmpty: {
-    width: `${100 / 7}%`,
-    minHeight: 125,
-    backgroundColor: '#fcfdfe',
-    borderWidth: 0.5,
-    borderColor: '#f1f5f9',
-  },
-  monthGridCellHeader: {
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  monthGridCellText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-  },
-  monthGridCellTextActive: {
-    color: '#ffffff',
-  },
-  monthGridTagList: {
-    gap: 1,
-  },
-  monthGridItemBlock: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderLeftWidth: 3,
-    marginBottom: 1,
-  },
-  monthGridTagText: {
-    fontSize: 8,
-    fontWeight: '700',
-    maxWidth: '100%',
-  },
-  monthGridMoreText: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: TEXT_SECONDARY,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-
-  zoomControls: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  zoomBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-
-  // Grid Nav Header (for Week Grid)
-  gridNavHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  gridNavBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f8fafc',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridNavTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: TEXT_PRIMARY,
-  },
-  gridNavSub: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: TEXT_SECONDARY,
-    marginTop: 1,
-  },
 
   sortRow: {
     flexDirection: 'row',
@@ -2277,5 +2318,127 @@ const s = StyleSheet.create({
     backgroundColor: NAVY,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Grid Styles
+  monthGridHeader: {
+    width: `${100 / 7}%`,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  monthGridHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: TEXT_SECONDARY,
+  },
+  monthGridCell: {
+    padding: 2,
+    borderWidth: 0.5,
+    borderColor: '#f1f5f9',
+    position: 'relative',
+    backgroundColor: '#ffffff',
+  },
+  monthGridCellActive: {
+    backgroundColor: '#ffffff',
+    borderColor: NAVY,
+    borderWidth: 2,
+    zIndex: 10,
+  },
+  monthGridCellEmpty: {
+    backgroundColor: '#fcfdfe',
+    borderWidth: 0.5,
+    borderColor: '#f1f5f9',
+  },
+  monthGridCellHeader: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  monthGridCellText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+  monthGridCellTextActive: {
+    color: NAVY,
+  },
+  monthGridTagList: {
+    gap: 1,
+  },
+  monthGridItemBlock: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 3,
+    marginBottom: 1,
+    borderRadius: 2,
+  },
+  monthGridTagText: {
+    fontSize: 8,
+    fontWeight: '700',
+    maxWidth: '100%',
+    lineHeight: 10,
+  },
+  monthGridMoreText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: TEXT_SECONDARY,
+    textAlign: 'center',
+    marginTop: 1,
+  },
+
+  zoomControls: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  zoomBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  gridNavHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  gridNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  gridNavTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  gridNavSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    marginTop: 2,
   },
 });

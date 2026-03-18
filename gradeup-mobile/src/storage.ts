@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ThemeId } from '@/constants/Themes';
-import type { Course } from '../types';
+import type { Course } from './types';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_THEME = 'appTheme';
@@ -240,41 +240,23 @@ export async function setCourses(courses: Course[]): Promise<void> {
   } catch {}
 }
 
-// Planner view (day | week | month | all)
+// Planner view (week | month | all)
 const KEY_PLANNER_VIEW = 'plannerView';
-const KEY_PLANNER_LAYOUT = 'plannerLayout';
 
-export type PlannerViewMode = 'week' | 'month' | 'all';
-export type PlannerLayoutMode = 'timeline' | 'grid';
+export type PlannerViewMode = 'day' | 'week' | 'month' | 'all';
 
 export async function getPlannerView(): Promise<PlannerViewMode> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PLANNER_VIEW);
-    if (raw === 'week' || raw === 'month' || raw === 'all') {
+    if (raw === 'day' || raw === 'week' || raw === 'month' || raw === 'all') {
       return raw;
     }
   } catch {}
-  return 'week';
+  return 'day';
 }
 
 export async function setPlannerView(view: PlannerViewMode): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
-  } catch {}
-}
-
-export async function getPlannerLayout(): Promise<PlannerLayoutMode> {
-  try {
-    const raw = await AsyncStorage.getItem(KEY_PLANNER_LAYOUT);
-    if (raw === 'timeline' || raw === 'grid') {
-      return raw;
-    }
-  } catch {}
-  return 'timeline';
-}
-
-export async function setPlannerLayout(layout: PlannerLayoutMode): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEY_PLANNER_LAYOUT, layout);
   } catch {}
 }

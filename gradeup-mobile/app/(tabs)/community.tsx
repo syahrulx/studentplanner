@@ -129,6 +129,7 @@ function MapPin({
 }) {
   const emoji = getActivityEmoji(activityType);
   const isActive = activityType && activityType !== 'idle';
+
   return (
     <View style={styles.markerWrapper}>
       <View style={styles.markerInner}>
@@ -913,7 +914,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   avatarRingFocus: {
-    borderColor: '#3b82f6',
+    borderColor: '#f59e0b',
     borderWidth: 3,
     shadowColor: '#3b82f6',
     shadowOpacity: 0.8,

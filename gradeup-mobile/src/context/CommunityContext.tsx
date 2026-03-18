@@ -133,7 +133,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const locationWatchRef = useRef<any>(null);
 
   // Filtered friends based on selected circle
-  const filteredFriends = selectedCircleId && circleMemberIds.length > 0
+  const filteredFriends = selectedCircleId
     ? friendsWithStatus.filter((f) => circleMemberIds.includes(f.id))
     : friendsWithStatus;
 
