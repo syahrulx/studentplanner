@@ -14,6 +14,7 @@ import type {
   Friendship,
   SharedGoal,
 } from '../lib/communityApi';
+import type { SharedTask } from '../types';
 
 import * as Location from 'expo-location';
 
@@ -55,6 +56,17 @@ interface CommunityState {
   refreshSharedGoals: () => Promise<void>;
   createSharedGoal: (friendId: string, localTaskId: string, title: string, shareType: 'task' | 'subject', courseId: string) => Promise<SharedGoal | null>;
   updateSharedGoalStatus: (id: string, updates: Partial<Pick<SharedGoal, 'status' | 'is_completed'>>) => Promise<void>;
+
+  // Shared Tasks (Linked Task Sharing)
+  incomingSharedTasks: SharedTask[];
+  acceptedSharedTasks: SharedTask[];
+  refreshSharedTasks: () => Promise<void>;
+  shareTaskWithFriend: (taskId: string, friendId: string, message?: string) => Promise<SharedTask | null>;
+  shareTaskWithCircle: (taskId: string, circleId: string, message?: string) => Promise<SharedTask[]>;
+  shareAllTasksWithFriend: (taskIds: string[], friendId: string, message?: string) => Promise<SharedTask[]>;
+  shareAllTasksWithCircle: (taskIds: string[], circleId: string, message?: string) => Promise<SharedTask[]>;
+  respondToShare: (sharedTaskId: string, accept: boolean) => Promise<void>;
+  toggleSharedCompletion: (sharedTaskId: string, completed: boolean) => Promise<void>;
 
   // Circle filtering
   selectedCircleId: string | null;
@@ -124,6 +136,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   // Accountability Pacts
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
+
+  // Shared Tasks
+  const [incomingSharedTasks, setIncomingSharedTasks] = useState<SharedTask[]>([]);
+  const [acceptedSharedTasks, setAcceptedSharedTasks] = useState<SharedTask[]>([]);
 
   // Circle filtering
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
@@ -227,6 +243,20 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  const refreshSharedTasks = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const [incoming, accepted] = await Promise.all([
+        communityApi.getIncomingSharedTasks().catch(() => [] as SharedTask[]),
+        communityApi.getAcceptedSharedTasks().catch(() => [] as SharedTask[]),
+      ]);
+      setIncomingSharedTasks(incoming);
+      setAcceptedSharedTasks(accepted);
+    } catch (e) {
+      // Table may not exist yet
+    }
+  }, [userId]);
+
   const refreshAll = useCallback(async () => {
     try {
       await Promise.allSettled([
@@ -236,11 +266,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshUnreadCount(),
         refreshMyActivity(),
         refreshSharedGoals(),
+        refreshSharedTasks(),
       ]);
     } catch (e) {
       // Silently fail
     }
-  }, [refreshFriends, refreshCircles, refreshRequests, refreshUnreadCount, refreshMyActivity]);
+  }, [refreshFriends, refreshCircles, refreshRequests, refreshUnreadCount, refreshMyActivity, refreshSharedTasks]);
 
   // Initial load + periodic refresh
   useEffect(() => {
@@ -257,6 +288,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       refreshUnreadCount();
       refreshMyActivity();
       refreshSharedGoals();
+      refreshSharedTasks();
     }, REFRESH_INTERVAL);
 
     return () => {
@@ -471,6 +503,80 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedGoals();
   }, [userId, refreshSharedGoals]);
 
+  // ─── Shared Task actions ───
+  const shareTaskWithFriend = useCallback(async (taskId: string, friendId: string, message?: string) => {
+    if (!userId) return null;
+    const result = await communityApi.shareTaskWithFriend(taskId, friendId, message);
+    if (result) refreshSharedTasks();
+    return result;
+  }, [userId, refreshSharedTasks]);
+
+  const shareTaskWithCircle = useCallback(async (taskId: string, circleId: string, message?: string) => {
+    if (!userId) return [];
+    const results = await communityApi.shareTaskWithCircle(taskId, circleId, message);
+    if (results.length > 0) refreshSharedTasks();
+    return results;
+  }, [userId, refreshSharedTasks]);
+
+  const shareAllTasksWithFriend = useCallback(async (taskIds: string[], friendId: string, message?: string) => {
+    if (!userId) return [];
+    const results = await communityApi.shareAllTasksWithFriend(taskIds, friendId, message);
+    if (results.length > 0) refreshSharedTasks();
+    return results;
+  }, [userId, refreshSharedTasks]);
+
+  const shareAllTasksWithCircle = useCallback(async (taskIds: string[], circleId: string, message?: string) => {
+    if (!userId) return [];
+    const results = await communityApi.shareAllTasksWithCircle(taskIds, circleId, message);
+    if (results.length > 0) refreshSharedTasks();
+    return results;
+  }, [userId, refreshSharedTasks]);
+
+  const respondToShare = useCallback(async (sharedTaskId: string, accept: boolean) => {
+    if (!userId) return;
+    await communityApi.respondToSharedTask(sharedTaskId, accept);
+    refreshSharedTasks();
+  }, [userId, refreshSharedTasks]);
+
+  const toggleSharedCompletion = useCallback(async (sharedTaskId: string, completed: boolean) => {
+    if (!userId) return;
+    await communityApi.updateSharedTaskCompletion(sharedTaskId, completed);
+    setAcceptedSharedTasks(prev => prev.map(st =>
+      st.id === sharedTaskId ? { ...st, recipient_completed: completed } : st
+    ));
+  }, [userId]);
+
+  // ─── Realtime subscription for shared_tasks changes ───
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('shared-tasks-changes')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'shared_tasks',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => { refreshSharedTasks(); }
+      )
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'shared_tasks',
+          filter: `owner_id=eq.${userId}`,
+        },
+        () => { refreshSharedTasks(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, refreshSharedTasks]);
+
   const value: CommunityState = {
     friends,
     friendsWithStatus,
@@ -493,6 +599,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedGoals,
     createSharedGoal,
     updateSharedGoalStatus,
+    incomingSharedTasks,
+    acceptedSharedTasks,
+    refreshSharedTasks,
+    shareTaskWithFriend,
+    shareTaskWithCircle,
+    shareAllTasksWithFriend,
+    shareAllTasksWithCircle,
+    respondToShare,
+    toggleSharedCompletion,
     locationPermissionGranted,
     requestLocationPermission,
     myLatitude,

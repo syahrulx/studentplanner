@@ -81,6 +81,34 @@ export default function NotesHub() {
           </Pressable>
         </View>
 
+        {/* Quiz & Practice */}
+        <Text style={s.sectionLabel}>QUIZ & PRACTICE</Text>
+        <View style={s.groupCard}>
+          <Pressable
+            style={({ pressed }) => [s.row, pressed && { backgroundColor: '#f8fafc' }]}
+            onPress={() => router.push('/quiz-config' as any)}
+          >
+            <View style={[s.colorDot, { backgroundColor: '#3b82f6' }]} />
+            <View style={s.rowBody}>
+              <Text style={s.rowTitle}>Flashcard Quiz</Text>
+              <Text style={s.rowSub}>Practice from your flashcard decks</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#cbd5e1" />
+            <View style={s.divider} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [s.row, pressed && { backgroundColor: '#f8fafc' }]}
+            onPress={() => router.push('/ai-quiz-builder' as any)}
+          >
+            <View style={[s.colorDot, { backgroundColor: '#8b5cf6' }]} />
+            <View style={s.rowBody}>
+              <Text style={s.rowTitle}>AI Quiz Builder</Text>
+              <Text style={s.rowSub}>Generate quiz from your notes with AI</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#cbd5e1" />
+          </Pressable>
+        </View>
+
         {/* Leaderboard */}
         <Text style={s.sectionLabel}>{T('leaderboard').toUpperCase()}</Text>
         <View style={s.groupCard}>

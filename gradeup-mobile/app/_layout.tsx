@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppProvider } from '@/src/context/AppContext';
 import { CommunityProvider } from '@/src/context/CommunityContext';
+import { QuizProvider } from '@/src/context/QuizContext';
 import { useTheme } from '@/hooks/useTheme';
 
 export {
@@ -55,15 +56,19 @@ export default function RootLayout() {
 function RootLayoutNav() {
   useEffect(() => {
     Notifications.getLastNotificationResponseAsync().then((response) => {
-      const data = response?.notification.request.content.data as { type?: string } | undefined;
+      const data = response?.notification.request.content.data as { type?: string; sessionId?: string } | undefined;
       if (data?.type === 'revision') {
         setTimeout(() => router.push('/revision-due'), 100);
+      } else if (data?.type === 'quiz_invite' && data.sessionId) {
+        setTimeout(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any), 100);
       }
     });
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as { type?: string } | undefined;
+      const data = response.notification.request.content.data as { type?: string; sessionId?: string } | undefined;
       if (data?.type === 'revision') {
         router.push('/revision-due');
+      } else if (data?.type === 'quiz_invite' && data.sessionId) {
+        router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any);
       }
     });
     return () => sub.remove();
@@ -72,7 +77,9 @@ function RootLayoutNav() {
   return (
     <AppProvider>
       <CommunityProvider>
-        <ThemeAwareLayout />
+        <QuizProvider>
+          <ThemeAwareLayout />
+        </QuizProvider>
       </CommunityProvider>
     </AppProvider>
   );

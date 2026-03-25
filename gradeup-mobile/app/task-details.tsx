@@ -1,12 +1,14 @@
-import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Share, Alert, Platform, Modal, ActivityIndicator, TextInput } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { formatDisplayDate } from '@/src/utils/date';
 import { Priority } from '@/src/types';
+import type { SharedTask } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
+import { getSharedTaskParticipants } from '@/src/lib/communityApi';
 
 // Consistent navy/gold theme
 const NAVY = '#003366';
@@ -35,17 +37,28 @@ function getDaysUntilDue(dueDate: string): number {
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tasks, toggleTaskDone, deleteTask, language } = useApp();
-  const { filteredFriends, createSharedGoal, sharedGoals } = useCommunity();
+  const {
+    filteredFriends, circles,
+    shareTaskWithFriend, shareTaskWithCircle,
+  } = useCommunity();
   const T = useTranslations(language);
   const task = tasks.find((t) => t.id === id);
 
-  const [showPledgeModal, setShowPledgeModal] = useState(false);
-  const [pledgeType, setPledgeType] = useState<'task' | 'subject'>('task');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareTab, setShareTab] = useState<'friend' | 'circle'>('friend');
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
-  const [isPledging, setIsPledging] = useState(false);
+  const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState('');
+  const [isSharing, setIsSharing] = useState(false);
+  const [participants, setParticipants] = useState<SharedTask[]>([]);
 
-  // Check if this task is already pledged
-  const existingPledge = task ? sharedGoals.find(g => g.local_task_id === task.id || (g.share_type === 'subject' && g.course_id === task.courseId)) : null;
+  useEffect(() => {
+    if (task?.id) {
+      getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+    }
+  }, [task?.id]);
+
+  const isAlreadyShared = participants.length > 0;
 
   if (!task) {
     return (
@@ -91,28 +104,48 @@ export default function TaskDetails() {
     }
   };
 
-  const handleShare = () => {
-    Share.share({
-      message: `${task.title} (${task.courseId}) – Due ${formatDisplayDate(task.dueDate)} ${task.dueTime}`,
-      title: 'Task',
-    });
-  };
-
   const handleEdit = () => {
     router.push({ pathname: '/add-task' as any, params: { taskId: task.id } });
   };
 
-  const handleCreatePledge = async () => {
-    if (!selectedFriendId) return;
-    setIsPledging(true);
-    const result = await createSharedGoal(selectedFriendId, task.id, task.title, pledgeType, task.courseId);
-    setIsPledging(false);
-    if (result) {
-      setShowPledgeModal(false);
-      Alert.alert('Pledge Sent', 'Your friend has been notified of your accountability pact!');
-    } else {
-      Alert.alert('Error', 'Could not create pledge');
+  const handleShare = async () => {
+    if (shareTab === 'friend' && !selectedFriendId) return;
+    if (shareTab === 'circle' && !selectedCircleId) return;
+    setIsSharing(true);
+    try {
+      if (shareTab === 'friend' && selectedFriendId) {
+        const result = await shareTaskWithFriend(task.id, selectedFriendId, shareMessage || undefined);
+        if (result) {
+          setShowShareModal(false);
+          setShareMessage('');
+          setSelectedFriendId(null);
+          getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+          Alert.alert('Shared!', 'Your friend will see this task once they accept.');
+        } else {
+          Alert.alert('Error', 'Could not share task');
+        }
+      } else if (shareTab === 'circle' && selectedCircleId) {
+        const results = await shareTaskWithCircle(task.id, selectedCircleId, shareMessage || undefined);
+        if (results.length > 0) {
+          setShowShareModal(false);
+          setShareMessage('');
+          setSelectedCircleId(null);
+          getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+          Alert.alert('Shared!', `Task shared with ${results.length} circle member${results.length > 1 ? 's' : ''}.`);
+        } else {
+          Alert.alert('Error', 'Could not share task with circle');
+        }
+      }
+    } finally {
+      setIsSharing(false);
     }
+  };
+
+  const handleNativeShare = () => {
+    Share.share({
+      message: `${task.title} (${task.courseId}) – Due ${formatDisplayDate(task.dueDate)} ${task.dueTime}`,
+      title: 'Task',
+    });
   };
 
   const urgencyLabel = isOverdue
@@ -129,7 +162,7 @@ export default function TaskDetails() {
           <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
         </Pressable>
         <Text style={s.headerTitle}>{T('taskDetails')}</Text>
-        <Pressable onPress={handleShare} style={s.headerBtn}>
+        <Pressable onPress={handleNativeShare} style={s.headerBtn}>
           <Feather name="share" size={20} color={TEXT_PRIMARY} />
         </Pressable>
       </View>
@@ -213,36 +246,48 @@ export default function TaskDetails() {
           </View>
         </View>
 
-        {/* Pledge Section */}
+        {/* Share Section */}
         <View style={s.pledgeSection}>
-          {existingPledge ? (
-            <View style={s.activePledgeCard}>
-              <View style={s.activePledgeIconWrap}>
-                <Feather name="shield" size={18} color="#10b981" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.activePledgeTitle}>Accountability Goal Active</Text>
-                <Text style={s.activePledgeSub}>
-                  Linked with {existingPledge.friend_profile?.name || 'a friend'}. Status: {existingPledge.status}.
-        </Text>
-              </View>
+          <Pressable
+            style={({ pressed }) => [s.pledgeBtn, pressed && { opacity: 0.8 }]}
+            onPress={() => setShowShareModal(true)}
+          >
+            <View style={s.pledgeBtnIconWrap}>
+              <Feather name={isAlreadyShared ? 'users' : 'send'} size={20} color={NAVY} />
             </View>
-          ) : (
-            <Pressable 
-              style={({ pressed }) => [s.pledgeBtn, pressed && { opacity: 0.8 }]}
-              onPress={() => setShowPledgeModal(true)}
-            >
-              <View style={s.pledgeBtnIconWrap}>
-                <Feather name="shield" size={20} color={NAVY} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.pledgeBtnTitle}>Share with a Friend</Text>
-                <Text style={s.pledgeBtnSub}>Share this goal for mutual accountability</Text>
-              </View>
-              <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
-            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={s.pledgeBtnTitle}>
+                {isAlreadyShared ? 'Shared Task' : 'Share with Friends'}
+              </Text>
+              <Text style={s.pledgeBtnSub}>
+                {isAlreadyShared
+                  ? `Shared with ${participants.length} ${participants.length === 1 ? 'person' : 'people'}`
+                  : 'Send to a friend or circle for accountability'}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+          </Pressable>
+
+          {isAlreadyShared && (
+            <View style={s.participantRow}>
+              {participants.slice(0, 5).map((p, idx) => (
+                <View key={p.id} style={[s.participantAvatar, idx > 0 && { marginLeft: -8 }]}>
+                  <Text style={s.participantInitial}>
+                    {(p.recipient_profile?.name || p.owner_profile?.name || '?').charAt(0)}
+                  </Text>
+                  {p.recipient_completed && (
+                    <View style={s.participantCheck}>
+                      <Feather name="check" size={8} color="#ffffff" />
+                    </View>
+                  )}
+                </View>
+              ))}
+              {participants.length > 5 && (
+                <Text style={s.participantMore}>+{participants.length - 5}</Text>
+              )}
+            </View>
           )}
-      </View>
+        </View>
 
         {/* Notes — only shown if notes exist */}
         {task.notes ? (
@@ -300,70 +345,123 @@ export default function TaskDetails() {
         </Pressable>
       </View>
 
-      {/* Modal: Pledge with a Friend */}
-      <Modal visible={showPledgeModal} transparent animationType="slide">
+      {/* Modal: Share Task */}
+      <Modal visible={showShareModal} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modalContent}>
             <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>Share Goal</Text>
-              <Pressable onPress={() => setShowPledgeModal(false)} style={s.modalCloseBtn} hitSlop={10}>
+              <Text style={s.modalTitle}>Share Task</Text>
+              <Pressable onPress={() => setShowShareModal(false)} style={s.modalCloseBtn} hitSlop={10}>
                 <Feather name="x" size={24} color={TEXT_SECONDARY} />
               </Pressable>
             </View>
 
-            <ScrollView style={s.modalScroll} showsVerticalScrollIndicator={false}>
-              <Text style={s.modalSectionLabel}>Share Type</Text>
-              <View style={s.typeSelectorGrid}>
-                <Pressable 
-                  style={[s.typeCard, pledgeType === 'task' && s.typeCardActive]}
-                  onPress={() => setPledgeType('task')}
-                >
-                  <Feather name="check-square" size={20} color={pledgeType === 'task' ? NAVY : TEXT_SECONDARY} />
-                  <Text style={[s.typeCardText, pledgeType === 'task' && s.typeCardTextActive]}>Just this task</Text>
-                </Pressable>
-                <Pressable 
-                  style={[s.typeCard, pledgeType === 'subject' && s.typeCardActive]}
-                  onPress={() => setPledgeType('subject')}
-                >
-                  <Feather name="book" size={20} color={pledgeType === 'subject' ? NAVY : TEXT_SECONDARY} />
-                  <Text style={[s.typeCardText, pledgeType === 'subject' && s.typeCardTextActive]}>Whole Subject</Text>
-                </Pressable>
-              </View>
+            {/* Task Preview */}
+            <View style={s.sharePreview}>
+              <Feather name="file-text" size={16} color={NAVY} />
+              <Text style={s.sharePreviewText} numberOfLines={1}>{task.title}</Text>
+            </View>
 
-              <Text style={s.modalSectionLabel}>Select a Friend</Text>
-              {filteredFriends.length === 0 ? (
-                <Text style={s.noFriendsText}>You need to add friends in the Community tab first!</Text>
+            {/* Tab Selector */}
+            <View style={s.typeSelectorGrid}>
+              <Pressable
+                style={[s.typeCard, shareTab === 'friend' && s.typeCardActive]}
+                onPress={() => setShareTab('friend')}
+              >
+                <Feather name="user" size={18} color={shareTab === 'friend' ? NAVY : TEXT_SECONDARY} />
+                <Text style={[s.typeCardText, shareTab === 'friend' && s.typeCardTextActive]}>Friend</Text>
+              </Pressable>
+              <Pressable
+                style={[s.typeCard, shareTab === 'circle' && s.typeCardActive]}
+                onPress={() => setShareTab('circle')}
+              >
+                <Feather name="users" size={18} color={shareTab === 'circle' ? NAVY : TEXT_SECONDARY} />
+                <Text style={[s.typeCardText, shareTab === 'circle' && s.typeCardTextActive]}>Circle</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={s.modalScroll} showsVerticalScrollIndicator={false}>
+              {shareTab === 'friend' ? (
+                <>
+                  {filteredFriends.length === 0 ? (
+                    <Text style={s.noFriendsText}>Add friends in the Community tab first!</Text>
+                  ) : (
+                    <View style={s.friendsList}>
+                      {filteredFriends.map(friend => (
+                        <Pressable
+                          key={friend.id}
+                          style={[s.friendRow, selectedFriendId === friend.id && s.friendRowActive]}
+                          onPress={() => { setSelectedFriendId(friend.id); setSelectedCircleId(null); }}
+                        >
+                          <View style={s.friendAvatarWrap}>
+                            <Text style={s.friendAvatarText}>{friend.name.charAt(0)}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.friendName, selectedFriendId === friend.id && s.friendNameActive]}>{friend.name}</Text>
+                          </View>
+                          {selectedFriendId === friend.id && (
+                            <Feather name="check-circle" size={20} color={NAVY} />
+                          )}
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </>
               ) : (
-                <View style={s.friendsList}>
-                  {filteredFriends.map(friend => (
-                    <Pressable 
-                      key={friend.id} 
-                      style={[s.friendRow, selectedFriendId === friend.id && s.friendRowActive]}
-                      onPress={() => setSelectedFriendId(friend.id)}
-                    >
-                      <View style={s.friendAvatarWrap}>
-                        <Text style={s.friendAvatarText}>{friend.name.charAt(0)}</Text>
-                      </View>
-                      <Text style={[s.friendName, selectedFriendId === friend.id && s.friendNameActive]}>{friend.name}</Text>
-                      {selectedFriendId === friend.id && (
-                        <Feather name="check-circle" size={20} color={NAVY} />
-                      )}
-                    </Pressable>
-                  ))}
-                </View>
+                <>
+                  {circles.length === 0 ? (
+                    <Text style={s.noFriendsText}>Create or join a circle first!</Text>
+                  ) : (
+                    <View style={s.friendsList}>
+                      {circles.map(circle => (
+                        <Pressable
+                          key={circle.id}
+                          style={[s.friendRow, selectedCircleId === circle.id && s.friendRowActive]}
+                          onPress={() => { setSelectedCircleId(circle.id); setSelectedFriendId(null); }}
+                        >
+                          <View style={s.friendAvatarWrap}>
+                            <Text style={s.friendAvatarText}>{circle.emoji}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.friendName, selectedCircleId === circle.id && s.friendNameActive]}>{circle.name}</Text>
+                            <Text style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>
+                              {circle.member_count || 0} members
+                            </Text>
+                          </View>
+                          {selectedCircleId === circle.id && (
+                            <Feather name="check-circle" size={20} color={NAVY} />
+                          )}
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </>
               )}
-    </ScrollView>
+
+              {/* Optional message */}
+              <TextInput
+                style={s.shareMessageInput}
+                placeholder="Add a note (optional)"
+                placeholderTextColor={TEXT_SECONDARY}
+                value={shareMessage}
+                onChangeText={setShareMessage}
+                maxLength={200}
+              />
+            </ScrollView>
 
             <View style={s.modalFooter}>
-              <Pressable 
-                style={[s.confirmBtn, (!selectedFriendId || isPledging) && s.confirmBtnDisabled]}
-                disabled={!selectedFriendId || isPledging}
-                onPress={handleCreatePledge}
+              <Pressable
+                style={[
+                  s.confirmBtn,
+                  (isSharing || (shareTab === 'friend' ? !selectedFriendId : !selectedCircleId)) && s.confirmBtnDisabled,
+                ]}
+                disabled={isSharing || (shareTab === 'friend' ? !selectedFriendId : !selectedCircleId)}
+                onPress={handleShare}
               >
-                {isPledging ? (
+                {isSharing ? (
                   <ActivityIndicator color="#ffffff" />
                 ) : (
-                  <Text style={s.confirmBtnText}>Send Share Request</Text>
+                  <Text style={s.confirmBtnText}>Share</Text>
                 )}
               </Pressable>
             </View>
@@ -607,4 +705,31 @@ const s = StyleSheet.create({
   confirmBtn: { backgroundColor: NAVY, padding: 18, borderRadius: 20, alignItems: 'center' },
   confirmBtnDisabled: { opacity: 0.5 },
   confirmBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+
+  // Share-specific
+  sharePreview: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f8fafc', padding: 12, borderRadius: 12, marginBottom: 16 },
+  sharePreviewText: { flex: 1, fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY },
+  shareMessageInput: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    fontSize: 14,
+    color: TEXT_PRIMARY,
+    fontWeight: '500',
+    backgroundColor: BG,
+  },
+  participantRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingLeft: 4 },
+  participantAvatar: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,51,102,0.1)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#ffffff',
+  },
+  participantInitial: { fontSize: 12, fontWeight: '700', color: NAVY },
+  participantCheck: {
+    position: 'absolute', bottom: -2, right: -2, width: 14, height: 14,
+    borderRadius: 7, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#ffffff',
+  },
+  participantMore: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY, marginLeft: 6 },
 });

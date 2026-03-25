@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
+import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
 import { Priority, TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
@@ -53,7 +54,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-type PlannerTaskItem = { itemType: 'task'; id: string } & import('@/src/types').Task;
+type PlannerTaskItem = { itemType: 'task'; id: string; sharedBy?: string; isSharedTask?: boolean } & import('@/src/types').Task;
 type PlannerStudyItem = {
   itemType: 'study';
   studyKey: string;
@@ -98,10 +99,15 @@ export default function Planner() {
     user,
     language,
   } = useApp();
+  const {
+    acceptedSharedTasks, toggleSharedCompletion, userId: communityUserId,
+    filteredFriends: communityFriends, circles: communityCircles,
+    shareAllTasksWithFriend, shareAllTasksWithCircle,
+  } = useCommunity();
   const T = useTranslations(language);
   const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
-  const [monthZoom, setMonthZoom] = useState(1); // 0.8 to 2.0
+  const [monthExpanded, setMonthExpanded] = useState(false);
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
   const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
   const [isCalendarDragging, setIsCalendarDragging] = useState(false);
@@ -116,6 +122,12 @@ export default function Planner() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAiCard, setShowAiCard] = useState(false);
   const [calendarStripWidth, setCalendarStripWidth] = useState(0);
+  const [showShareAllModal, setShowShareAllModal] = useState(false);
+  const [shareAllTab, setShareAllTab] = useState<'friend' | 'circle'>('friend');
+  const [shareAllFriendId, setShareAllFriendId] = useState<string | null>(null);
+  const [shareAllCircleId, setShareAllCircleId] = useState<string | null>(null);
+  const [shareAllMessage, setShareAllMessage] = useState('');
+  const [isShareAllSending, setIsShareAllSending] = useState(false);
   const activeDateRef = useRef(activeDate);
   const calendarPreviewDateRef = useRef(calendarPreviewDate);
   const skipCalendarRecenteringRef = useRef(false);
@@ -360,10 +372,24 @@ export default function Planner() {
     return studyItemsForPlanner.filter((item) => item.date === activeDate);
   }, [studyItemsForPlanner, activeDate, view]);
 
+  const sharedTaskItems = useMemo((): PlannerTaskItem[] => {
+    const ownTaskIds = new Set(tasks.map(t => t.id));
+    return acceptedSharedTasks
+      .filter(st => st.recipient_id === communityUserId && st.task && !ownTaskIds.has(st.task_id))
+      .map(st => ({
+        ...st.task!,
+        itemType: 'task' as const,
+        id: st.task_id,
+        isDone: st.recipient_completed,
+        isSharedTask: true,
+        sharedBy: st.owner_profile?.name || 'Friend',
+      }));
+  }, [acceptedSharedTasks, communityUserId, tasks]);
+
   const combinedList = useMemo((): PlannerItem[] => {
     const taskItems: PlannerItem[] = filteredTasks.map((t) => ({ ...t, itemType: 'task' as const }));
     const studyItems: PlannerItem[] = filteredStudyItems;
-    const all: PlannerItem[] = [...taskItems, ...studyItems];
+    const all: PlannerItem[] = [...taskItems, ...studyItems, ...sharedTaskItems];
     all.sort((a, b) => {
       const dateA = (a.itemType === 'task' ? a.dueDate : a.date) ?? '';
       const dateB = (b.itemType === 'task' ? b.dueDate : b.date) ?? '';
@@ -373,7 +399,7 @@ export default function Planner() {
       return d !== 0 ? d : timeA.localeCompare(timeB);
     });
     return all;
-  }, [filteredTasks, filteredStudyItems]);
+  }, [filteredTasks, filteredStudyItems, sharedTaskItems]);
 
   const pinnedSet = useMemo(() => new Set(pinnedTaskIds), [pinnedTaskIds]);
   const displayList = useMemo((): PlannerItem[] => {
@@ -447,6 +473,41 @@ export default function Planner() {
   }, [combinedList, pinnedSet, pinnedTaskIds, sortMode]);
 
   const listCount = displayList.length;
+
+  const handleShareAll = async () => {
+    const undoneTasks = tasks.filter(t => !t.isDone);
+    if (undoneTasks.length === 0) {
+      Alert.alert('No Tasks', 'You have no pending tasks to share.');
+      return;
+    }
+    const taskIds = undoneTasks.map(t => t.id);
+    setIsShareAllSending(true);
+    try {
+      if (shareAllTab === 'friend' && shareAllFriendId) {
+        const results = await shareAllTasksWithFriend(taskIds, shareAllFriendId, shareAllMessage || undefined);
+        if (results.length > 0) {
+          setShowShareAllModal(false);
+          setShareAllMessage('');
+          setShareAllFriendId(null);
+          Alert.alert('Shared!', `${results.length} task${results.length > 1 ? 's' : ''} shared with your friend.`);
+        } else {
+          Alert.alert('Already Shared', 'All tasks are already shared with this friend.');
+        }
+      } else if (shareAllTab === 'circle' && shareAllCircleId) {
+        const results = await shareAllTasksWithCircle(taskIds, shareAllCircleId, shareAllMessage || undefined);
+        if (results.length > 0) {
+          setShowShareAllModal(false);
+          setShareAllMessage('');
+          setShareAllCircleId(null);
+          Alert.alert('Shared!', `Tasks shared with the circle.`);
+        } else {
+          Alert.alert('Already Shared', 'All tasks are already shared with this circle.');
+        }
+      }
+    } finally {
+      setIsShareAllSending(false);
+    }
+  };
 
   const handleAiSend = () => {
     if (!chatInput.trim()) return;
@@ -821,6 +882,7 @@ export default function Planner() {
             { borderColor },
             item.itemType === 'study' && s.taskCardStudy,
             item.isDone && s.taskCardDone,
+            item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask && s.taskCardShared,
           ]}
           onPress={() => handleItemPress(item)}
         >
@@ -842,6 +904,12 @@ export default function Planner() {
                 {isPinnedTask ? (
                   <View style={s.taskPinBadge}>
                     <Feather name="bookmark" size={11} color={NAVY} />
+                  </View>
+                ) : null}
+                {item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask ? (
+                  <View style={s.sharedBadge}>
+                    <Feather name="users" size={10} color="#6366f1" />
+                    <Text style={s.sharedBadgeText}>{(item as PlannerTaskItem).sharedBy}</Text>
                   </View>
                 ) : null}
               </View>
@@ -924,167 +992,359 @@ export default function Planner() {
     );
   };
 
-  // Render month grid for the Month view
+  // Render month grid — compact (default) or expanded (zoomed in)
   const renderMonthGrid = () => {
     const days = monthGridCells;
-    const colWidth = 100 * monthZoom; 
-    const cellHeight = 125; 
+    const screenWidth = Dimensions.get('window').width;
 
-    return (
-      <View style={{ flex: 1 }}>
-        <View style={s.gridNavHeader}>
-          <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
-            <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+    // Shared navigation header (expand/collapse lives here — avoids overlap with tab bar)
+    const monthNav = (
+      <View style={s.gridNavHeader}>
+        <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
+          <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+        </Pressable>
+        <View style={{ flex: 1, alignItems: 'center', minWidth: 0, paddingHorizontal: 6 }}>
+          <Text style={s.gridNavTitle} numberOfLines={1}>
+            {getMonthYearLabel(activeDate)}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Pressable
+            style={[s.gridNavBtn, monthExpanded && s.gridNavToggleActive]}
+            onPress={() => setMonthExpanded((prev) => !prev)}
+            accessibilityRole="button"
+            accessibilityLabel={monthExpanded ? 'Compact month view' : 'Expanded month view with task text'}
+            hitSlop={6}
+          >
+            <Feather name={monthExpanded ? 'minimize-2' : 'maximize-2'} size={18} color={NAVY} />
           </Pressable>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-          </View>
+          {activeDate !== todayISO && (
+            <Pressable style={s.monthTodayBtn} onPress={goToToday} hitSlop={10}>
+              <Feather name="calendar" size={13} color={NAVY} />
+              <Text style={s.monthTodayText}>{T('today')}</Text>
+            </Pressable>
+          )}
           <Pressable style={s.gridNavBtn} onPress={goToNextMonth}>
             <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
           </Pressable>
         </View>
+      </View>
+    );
 
-        <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: '#ffffff' }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
-            <View style={{ width: colWidth * 7 }}>
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                  <View key={`day-${i}`} style={{ width: colWidth, alignItems: 'center', paddingVertical: 12 }}>
-                    <Text style={s.monthGridHeaderText}>{d}</Text>
-                  </View>
-                ))}
-              </View>
+    // ── EXPANDED MODE (zoomed in): task text visible inside cells ──
+    if (monthExpanded) {
+      const colWidth = 100;
+      const cellHeight = 125;
 
+      return (
+        <View style={{ flex: 1 }}>
+          {monthNav}
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: '#ffffff' }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View style={{ width: colWidth * 7 }}>
-                {(() => {
-                  const weeks: (number | null)[][] = [];
-                  for (let i = 0; i < days.length; i += 7) {
-                    weeks.push(days.slice(i, i + 7));
+                <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <View key={`day-${i}`} style={{ width: colWidth, alignItems: 'center', paddingVertical: 12 }}>
+                      <Text style={s.monthGridHeaderText}>{d}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={{ width: colWidth * 7 }}>
+                  {(() => {
+                    const weeks: (number | null)[][] = [];
+                    for (let i = 0; i < days.length; i += 7) {
+                      weeks.push(days.slice(i, i + 7));
+                    }
+
+                    return weeks.map((week, weekIdx) => (
+                      <View key={`week-${weekIdx}`} style={{ flexDirection: 'row' }}>
+                        {week.map((day, i) => {
+                          if (day === null) {
+                            return (
+                              <View
+                                key={`empty-${weekIdx}-${i}`}
+                                style={[s.monthGridCellEmpty, { width: colWidth, minHeight: cellHeight }]}
+                              />
+                            );
+                          }
+
+                          const dateISO = toISO(activeYear, activeMonth, day);
+                          const isActive = dateISO === activeDate;
+                          const isToday = dateISO === todayISO;
+                          const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === dateISO);
+                          const showItems = dayItems.slice(0, 6);
+
+                          return (
+                            <View
+                              key={dateISO}
+                              style={[
+                                s.monthGridCell,
+                                { width: colWidth, minHeight: cellHeight },
+                                isActive && s.monthGridCellActive,
+                              ]}
+                            >
+                              <Pressable
+                                style={StyleSheet.absoluteFill}
+                                onPress={() => setActiveDate(dateISO)}
+                              />
+
+                              <View style={s.monthGridCellHeader} pointerEvents="none">
+                                <Text style={[
+                                  s.monthGridCellText,
+                                  isActive && s.monthGridCellTextActive,
+                                  isToday && !isActive && { color: '#ffffff', backgroundColor: '#dc2626', width: 20, height: 20, borderRadius: 10, textAlign: 'center', lineHeight: 20, overflow: 'hidden' },
+                                ]}>
+                                  {day}
+                                </Text>
+                              </View>
+                              <View style={[s.monthGridTagList, { zIndex: 10 }]} pointerEvents="box-none">
+                                {(() => {
+                                  const itemCount = dayItems.length;
+                                  const hiddenCount = itemCount - 6;
+                                  const dynamicFontSize = itemCount <= 2 ? 10 : itemCount <= 4 ? 9 : 8;
+                                  const dynamicLines = itemCount <= 2 ? 3 : itemCount <= 4 ? 2 : 1;
+
+                                  return (
+                                    <>
+                                      {showItems.map((item, idx) => {
+                                        const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
+                                        const color = getSubjectColor(subject);
+                                        const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
+                                        const isDone = item.isDone;
+
+                                        return (
+                                          <Pressable
+                                            key={`${dateISO}-${idx}`}
+                                            onPress={(e) => {
+                                              e.stopPropagation();
+                                              handleItemPress(item);
+                                            }}
+                                            style={[
+                                              s.monthGridItemBlock,
+                                              {
+                                                borderLeftColor: color,
+                                                backgroundColor: hexToRgba(color, 0.08),
+                                                zIndex: 20,
+                                              },
+                                            ]}
+                                          >
+                                            <View style={{ flex: 1 }}>
+                                              <Text
+                                                style={[
+                                                  s.monthGridTagText,
+                                                  { color: TEXT_PRIMARY, fontSize: dynamicFontSize },
+                                                ]}
+                                                numberOfLines={dynamicLines}
+                                              >
+                                                {subject}: {title}
+                                              </Text>
+                                            </View>
+                                            <View style={{
+                                              width: 6,
+                                              height: 6,
+                                              borderRadius: 3,
+                                              borderWidth: 0.5,
+                                              borderColor: isActive ? '#ffffff' : color,
+                                              backgroundColor: isDone ? (isActive ? '#ffffff' : color) : 'transparent',
+                                            }} />
+                                          </Pressable>
+                                        );
+                                      })}
+                                      {hiddenCount > 0 && (
+                                        <Text style={[s.monthGridMoreText, isActive && { color: 'rgba(255,255,255,0.7)' }]}>
+                                          +{hiddenCount}
+                                        </Text>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ));
+                  })()}
+                </View>
+              </View>
+            </ScrollView>
+          </ScrollView>
+        </View>
+      );
+    }
+
+    // ── COMPACT MODE (default): dots + detail panel below ──
+    const cellWidth = Math.floor(screenWidth / 7);
+    const cellHeight = 54;
+
+    const selectedDayItems = displayList.filter(item =>
+      (item.itemType === 'task' ? item.dueDate : item.date) === activeDate
+    );
+    const selectedDate = new Date(activeDate + 'T12:00:00');
+    const dayName = selectedDate.toLocaleDateString('en', { weekday: 'long' });
+    const monthNameStr = selectedDate.toLocaleDateString('en', { month: 'short' });
+    const dayNumSelected = selectedDate.getDate();
+
+    return (
+      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+        {monthNav}
+
+        {/* Weekday Headers */}
+        <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+            <View key={`hdr-${i}`} style={{ width: cellWidth, alignItems: 'center' }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: i === 0 || i === 6 ? '#cbd5e1' : TEXT_SECONDARY, letterSpacing: 0.2 }}>{d}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Compact Calendar Grid */}
+        <View style={{ backgroundColor: '#ffffff' }}>
+          {(() => {
+            const weeks: (number | null)[][] = [];
+            for (let i = 0; i < days.length; i += 7) {
+              weeks.push(days.slice(i, i + 7));
+            }
+            while (weeks.length < 6) {
+              weeks.push([null, null, null, null, null, null, null]);
+            }
+
+            return weeks.map((week, weekIdx) => (
+              <View key={`wk-${weekIdx}`} style={{ flexDirection: 'row' }}>
+                {week.map((day, colIdx) => {
+                  if (day === null) {
+                    return (
+                      <View
+                        key={`e-${weekIdx}-${colIdx}`}
+                        style={{ width: cellWidth, height: cellHeight }}
+                      />
+                    );
                   }
 
-                  return weeks.map((week, weekIdx) => (
-                    <View key={`week-${weekIdx}`} style={{ flexDirection: 'row' }}>
-                      {week.map((day, i) => {
-                        if (day === null) {
-                          return (
-                            <View 
-                              key={`empty-${weekIdx}-${i}`} 
-                              style={[s.monthGridCellEmpty, { width: colWidth, minHeight: cellHeight }]} 
-                            />
-                          );
-                        }
-                        
-                        const dateISO = toISO(activeYear, activeMonth, day);
-                        const isActive = dateISO === activeDate;
-                        const isToday = dateISO === todayISO;
-                        
-                        const dayItems = displayList.filter(item => (item.itemType === 'task' ? item.dueDate : item.date) === dateISO);
-                        const showItems = dayItems.slice(0, 6);
+                  const dateISO = toISO(activeYear, activeMonth, day);
+                  const isSelected = dateISO === activeDate;
+                  const isToday = dateISO === todayISO;
+                  const dayItems = displayList.filter(item =>
+                    (item.itemType === 'task' ? item.dueDate : item.date) === dateISO
+                  );
+                  const itemCount = dayItems.length;
 
-                        return (
-                          <View
-                            key={dateISO}
-                            style={[
-                              s.monthGridCell, 
-                              { width: colWidth, minHeight: cellHeight },
-                              isActive && s.monthGridCellActive
-                            ]}
-                          >
-                            <Pressable 
-                              style={StyleSheet.absoluteFill} 
-                              onPress={() => setActiveDate(dateISO)} 
-                            />
-                            
-                            <View style={s.monthGridCellHeader} pointerEvents="none">
-                              <Text style={[
-                                s.monthGridCellText, 
-                                isActive && s.monthGridCellTextActive, 
-                                isToday && !isActive && { color: '#ffffff', backgroundColor: '#dc2626', width: 20, height: 20, borderRadius: 10, textAlign: 'center', lineHeight: 20, overflow: 'hidden' }
-                              ]}>
-                                {day}
+                  const dotInfos: { color: string; isShared: boolean }[] = [];
+                  const seenColors = new Set<string>();
+                  for (const item of dayItems) {
+                    const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
+                    const color = getSubjectColor(subject);
+                    const isShared = item.itemType === 'task' && !!(item as PlannerTaskItem).isSharedTask;
+                    const key = `${color}-${isShared}`;
+                    if (!seenColors.has(key) && dotInfos.length < 3) {
+                      seenColors.add(key);
+                      dotInfos.push({ color, isShared });
+                    }
+                    if (dotInfos.length >= 3) break;
+                  }
+                  const dotColors = dotInfos.map(d => d.color);
+
+                  return (
+                    <Pressable
+                      key={dateISO}
+                      onPress={() => setActiveDate(dateISO)}
+                      style={[
+                        s.mCompactCell,
+                        { width: cellWidth, height: cellHeight },
+                      ]}
+                    >
+                      <View style={[
+                        s.mCompactDateCircle,
+                        isToday && !isSelected && s.mCompactDateToday,
+                        isSelected && s.mCompactDateSelected,
+                        isSelected && isToday && s.mCompactDateSelectedToday,
+                      ]}>
+                        <Text style={[
+                          s.mCompactDateText,
+                          isToday && !isSelected && s.mCompactDateTextToday,
+                          isSelected && !isToday && s.mCompactDateTextSelected,
+                          isSelected && isToday && s.mCompactDateTextToday,
+                        ]}>
+                          {day}
+                        </Text>
+                      </View>
+
+                      {itemCount > 0 && (
+                        <View style={s.mCompactDotRow}>
+                          {itemCount <= 3 ? (
+                            dotInfos.map((dot, idx) => (
+                              <View
+                                key={idx}
+                                style={[
+                                  s.mCompactDot,
+                                  dot.isShared
+                                    ? { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: dot.color }
+                                    : { backgroundColor: dot.color },
+                                ]}
+                              />
+                            ))
+                          ) : (
+                            <>
+                              {dotInfos.slice(0, 2).map((dot, idx) => (
+                                <View
+                                  key={idx}
+                                  style={[
+                                    s.mCompactDot,
+                                    dot.isShared
+                                      ? { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: dot.color }
+                                      : { backgroundColor: dot.color },
+                                  ]}
+                                />
+                              ))}
+                              <Text style={s.mCompactOverflow}>
+                                +{itemCount - 2}
                               </Text>
-                            </View>
-                            <View style={[s.monthGridTagList, { zIndex: 10 }]} pointerEvents="box-none">
-                              {(() => {
-                                const itemCount = dayItems.length;
-                                const hiddenCount = itemCount - 6;
-                                const dynamicFontSize = itemCount <= 2 ? 10 : itemCount <= 4 ? 9 : 8;
-                                const dynamicLines = itemCount <= 2 ? 3 : itemCount <= 4 ? 2 : 1;
-
-                                return (
-                                  <>
-                                    {showItems.map((item, idx) => {
-                                      const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
-                                      const color = getSubjectColor(subject);
-                                      const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
-                                      const isDone = item.isDone;
-
-                                      return (
-                                        <Pressable 
-                                          key={`${dateISO}-${idx}`} 
-                                          onPress={(e) => {
-                                            e.stopPropagation();
-                                            handleItemPress(item);
-                                          }}
-                                          style={[
-                                            s.monthGridItemBlock, 
-                                            { 
-                                              borderLeftColor: color, 
-                                              backgroundColor: hexToRgba(color, 0.08), 
-                                              zIndex: 20 
-                                            }
-                                          ]}
-                                        >
-                                          <View style={{ flex: 1 }}>
-                                            <Text 
-                                              style={[
-                                                s.monthGridTagText, 
-                                                { color: TEXT_PRIMARY, fontSize: dynamicFontSize }
-                                              ]} 
-                                              numberOfLines={dynamicLines}
-                                            >
-                                              {subject}: {title}
-                                            </Text>
-                                          </View>
-                                          <View style={{ 
-                                            width: 6, 
-                                            height: 6, 
-                                            borderRadius: 3, 
-                                            borderWidth: 0.5, 
-                                            borderColor: isActive ? '#ffffff' : color, 
-                                            backgroundColor: isDone ? (isActive ? '#ffffff' : color) : 'transparent' 
-                                          }} />
-                                        </Pressable>
-                                      );
-                                    })}
-                                    {hiddenCount > 0 && (
-                                      <Text style={[s.monthGridMoreText, isActive && { color: 'rgba(255,255,255,0.7)' }]}>
-                                        +{hiddenCount}
-                                      </Text>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ));
-                })()}
+                            </>
+                          )}
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })}
               </View>
-            </View>
-          </ScrollView>
-        </ScrollView>
+            ));
+          })()}
+        </View>
 
-        <View style={s.zoomControls}>
-          <Pressable style={s.zoomBtn} onPress={() => setMonthZoom(prev => Math.max(0.7, prev - 0.2))}>
-            <Feather name="minus" size={18} color={TEXT_PRIMARY} />
-          </Pressable>
-          <Pressable style={s.zoomBtn} onPress={() => setMonthZoom(prev => Math.min(2.5, prev + 0.2))}>
-            <Feather name="plus" size={18} color={TEXT_PRIMARY} />
+        {/* Selected Day Detail Panel */}
+        <View style={s.mDetailHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.mDetailTitle}>{dayName}, {monthNameStr} {dayNumSelected}</Text>
+            <Text style={s.mDetailCount}>
+              {selectedDayItems.length === 0
+                ? T('noTasksForDay')
+                : `${selectedDayItems.length} ${selectedDayItems.length === 1 ? 'item' : 'items'}`}
+            </Text>
+          </View>
+          <Pressable
+            style={s.mDetailAddBtn}
+            onPress={() => router.push('/add-task' as any)}
+          >
+            <Feather name="plus" size={16} color={NAVY} />
           </Pressable>
         </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {selectedDayItems.length === 0 ? (
+            <View style={s.mDetailEmpty}>
+              <Feather name="calendar" size={28} color="#cbd5e1" />
+              <Text style={s.mDetailEmptyText}>{T('noTasksForDay')}</Text>
+            </View>
+          ) : (
+            selectedDayItems.map((item, idx) => renderEventCard(item, idx))
+          )}
+        </ScrollView>
       </View>
     );
   };
@@ -1332,7 +1592,6 @@ export default function Planner() {
           <Pressable style={s.headerBtn} onPress={() => router.back()}>
             <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
           </Pressable>
-          <Text style={s.headerTitle}>{T('academicPlanner')}</Text>
           <View style={{ position: 'relative' }}>
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
@@ -1392,6 +1651,13 @@ export default function Planner() {
               </View>
             )}
           </View>
+          <Pressable
+            style={s.shareAllBtn}
+            onPress={() => setShowShareAllModal(true)}
+            hitSlop={6}
+          >
+            <Feather name="send" size={16} color={NAVY} />
+          </Pressable>
         </View>
 
         {/* Calendar panel — only shown in "day" view, since grids have their own nav */}
@@ -1563,6 +1829,109 @@ export default function Planner() {
         })}
       </ScrollView>
       )}
+
+      {/* Share All Tasks Modal */}
+      <Modal visible={showShareAllModal} transparent animationType="slide">
+        <View style={s.shareAllOverlay}>
+          <View style={s.shareAllContent}>
+            <View style={s.shareAllHeader}>
+              <Text style={s.shareAllTitle}>Share All Tasks</Text>
+              <Pressable onPress={() => setShowShareAllModal(false)} hitSlop={10}>
+                <Feather name="x" size={24} color={TEXT_SECONDARY} />
+              </Pressable>
+            </View>
+
+            <Text style={s.shareAllSubtitle}>
+              {tasks.filter(t => !t.isDone).length} pending task{tasks.filter(t => !t.isDone).length !== 1 ? 's' : ''} will be shared
+            </Text>
+
+            {/* Tab */}
+            <View style={s.shareAllTabs}>
+              <Pressable
+                style={[s.shareAllTab, shareAllTab === 'friend' && s.shareAllTabActive]}
+                onPress={() => setShareAllTab('friend')}
+              >
+                <Feather name="user" size={15} color={shareAllTab === 'friend' ? NAVY : TEXT_SECONDARY} />
+                <Text style={[s.shareAllTabText, shareAllTab === 'friend' && s.shareAllTabTextActive]}>Friend</Text>
+              </Pressable>
+              <Pressable
+                style={[s.shareAllTab, shareAllTab === 'circle' && s.shareAllTabActive]}
+                onPress={() => setShareAllTab('circle')}
+              >
+                <Feather name="users" size={15} color={shareAllTab === 'circle' ? NAVY : TEXT_SECONDARY} />
+                <Text style={[s.shareAllTabText, shareAllTab === 'circle' && s.shareAllTabTextActive]}>Circle</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+              {shareAllTab === 'friend' ? (
+                communityFriends.length === 0 ? (
+                  <Text style={s.shareAllEmpty}>Add friends in the Community tab first!</Text>
+                ) : (
+                  communityFriends.map(f => (
+                    <Pressable
+                      key={f.id}
+                      style={[s.shareAllRow, shareAllFriendId === f.id && s.shareAllRowActive]}
+                      onPress={() => { setShareAllFriendId(f.id); setShareAllCircleId(null); }}
+                    >
+                      <View style={s.shareAllAvatar}>
+                        <Text style={s.shareAllAvatarText}>{f.name.charAt(0)}</Text>
+                      </View>
+                      <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: NAVY }]}>{f.name}</Text>
+                      {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={NAVY} />}
+                    </Pressable>
+                  ))
+                )
+              ) : (
+                communityCircles.length === 0 ? (
+                  <Text style={s.shareAllEmpty}>Create or join a circle first!</Text>
+                ) : (
+                  communityCircles.map(c => (
+                    <Pressable
+                      key={c.id}
+                      style={[s.shareAllRow, shareAllCircleId === c.id && s.shareAllRowActive]}
+                      onPress={() => { setShareAllCircleId(c.id); setShareAllFriendId(null); }}
+                    >
+                      <View style={s.shareAllAvatar}>
+                        <Text style={s.shareAllAvatarText}>{c.emoji}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: NAVY }]}>{c.name}</Text>
+                        <Text style={{ fontSize: 11, color: TEXT_SECONDARY }}>{c.member_count || 0} members</Text>
+                      </View>
+                      {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={NAVY} />}
+                    </Pressable>
+                  ))
+                )
+              )}
+            </ScrollView>
+
+            <TextInput
+              style={s.shareAllInput}
+              placeholder="Add a note (optional)"
+              placeholderTextColor={TEXT_SECONDARY}
+              value={shareAllMessage}
+              onChangeText={setShareAllMessage}
+              maxLength={200}
+            />
+
+            <Pressable
+              style={[
+                s.shareAllSendBtn,
+                (isShareAllSending || (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId)) && { opacity: 0.5 },
+              ]}
+              disabled={isShareAllSending || (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId)}
+              onPress={handleShareAll}
+            >
+              {isShareAllSending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={s.shareAllSendText}>Share All Tasks</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2061,6 +2430,7 @@ const s = StyleSheet.create({
   },
   taskCardStudy: { backgroundColor: '#f8fbff' },
   taskCardDone: { backgroundColor: '#f8fafc' },
+  taskCardShared: { borderLeftWidth: 3, borderLeftColor: '#6366f1' },
   taskContent: { flex: 1 },
   taskChipRow: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   taskChipGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 },
@@ -2087,6 +2457,16 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(0,51,102,0.06)',
   },
+  sharedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  sharedBadgeText: { fontSize: 10, fontWeight: '700', color: '#6366f1' },
   taskMenuBtn: {
     paddingHorizontal: 4,
     paddingVertical: 4,
@@ -2389,27 +2769,129 @@ const s = StyleSheet.create({
     marginTop: 1,
   },
 
-  zoomControls: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    flexDirection: 'row',
-    gap: 12,
+  // Compact month grid cells
+  mCompactCell: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
   },
-  zoomBtn: {
+  mCompactDateCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  mCompactDateToday: {
+    backgroundColor: NAVY,
+    borderColor: NAVY,
+  },
+  mCompactDateSelected: {
+    borderColor: NAVY,
+    backgroundColor: 'transparent',
+  },
+  mCompactDateSelectedToday: {
+    backgroundColor: NAVY,
+    borderColor: NAVY,
+  },
+  mCompactDateText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: TEXT_PRIMARY,
+  },
+  mCompactDateTextToday: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  mCompactDateTextSelected: {
+    color: NAVY,
+    fontWeight: '800',
+  },
+  mCompactDotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 3,
+    height: 6,
+  },
+  mCompactDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  mCompactOverflow: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: TEXT_SECONDARY,
+  },
+
+  // Month detail panel
+  mDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
+  },
+  mDetailTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.3,
+  },
+  mDetailCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
+    marginTop: 2,
+  },
+  mDetailAddBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,51,102,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  mDetailEmpty: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    gap: 10,
+  },
+  mDetailEmptyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+
+  // Expand/collapse toggle for month view
+  mToggleWrap: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    zIndex: 50,
+  },
+  mToggleBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: '#003366',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 6,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: 'rgba(0,51,102,0.08)',
   },
 
   gridNavHeader: {
@@ -2441,4 +2923,50 @@ const s = StyleSheet.create({
     color: TEXT_SECONDARY,
     marginTop: 2,
   },
+
+  // Share All button in header
+  shareAllBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,51,102,0.06)',
+    marginLeft: 8,
+  },
+
+  // Share All Modal
+  shareAllOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  shareAllContent: {
+    backgroundColor: '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 22, paddingTop: 22, paddingBottom: 36, maxHeight: '80%',
+  },
+  shareAllHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  shareAllTitle: { fontSize: 20, fontWeight: '800', color: NAVY },
+  shareAllSubtitle: { fontSize: 13, color: TEXT_SECONDARY, fontWeight: '500', marginBottom: 16 },
+  shareAllTabs: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  shareAllTab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: BORDER, backgroundColor: BG,
+  },
+  shareAllTabActive: { borderColor: NAVY, backgroundColor: 'rgba(0,51,102,0.05)' },
+  shareAllTabText: { fontSize: 14, fontWeight: '700', color: TEXT_SECONDARY },
+  shareAllTabTextActive: { color: NAVY },
+  shareAllEmpty: { fontSize: 13, color: TEXT_SECONDARY, fontStyle: 'italic', textAlign: 'center', paddingVertical: 24 },
+  shareAllRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4,
+  },
+  shareAllRowActive: { backgroundColor: 'rgba(0,51,102,0.05)' },
+  shareAllAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(0,51,102,0.1)', alignItems: 'center', justifyContent: 'center',
+  },
+  shareAllAvatarText: { fontSize: 16, fontWeight: '700', color: NAVY },
+  shareAllRowName: { flex: 1, fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  shareAllInput: {
+    marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
+    fontSize: 14, color: TEXT_PRIMARY, fontWeight: '500', backgroundColor: BG,
+  },
+  shareAllSendBtn: {
+    marginTop: 14, backgroundColor: NAVY, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
+  },
+  shareAllSendText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
 });

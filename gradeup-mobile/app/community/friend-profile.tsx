@@ -17,9 +17,11 @@ import {
   ACTIVITY_TYPES,
   REACTION_EMOJIS,
   REACTION_TEMPLATES,
+  getSharedTasksBetweenUsers,
 } from '@/src/lib/communityApi';
 import * as communityApi from '@/src/lib/communityApi';
 import type { FriendWithStatus } from '@/src/lib/communityApi';
+import type { SharedTask } from '@/src/types';
 
 function getActivityEmoji(type?: string): string {
   return ACTIVITY_TYPES.find((a) => a.type === type)?.emoji || '⏸️';
@@ -52,6 +54,13 @@ export default function FriendProfileScreen() {
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);
   const [sentReaction, setSentReaction] = useState<string | null>(null);
+  const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
+
+  useEffect(() => {
+    if (friendId) {
+      getSharedTasksBetweenUsers(friendId).then(setSharedTasks).catch(() => {});
+    }
+  }, [friendId]);
 
   const handleReaction = async (type: string) => {
     if (!friendId) return;
@@ -188,6 +197,62 @@ export default function FriendProfileScreen() {
           </View>
         </View>
       )}
+
+      {/* Shared Tasks */}
+      {sharedTasks.length > 0 && (
+        <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Feather name="clipboard" size={16} color="#6366f1" />
+            <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+              Shared Tasks ({sharedTasks.length})
+            </Text>
+          </View>
+          {sharedTasks.map(st => {
+            const isOwner = st.owner_id === userId;
+            const ownerDone = st.task?.isDone ?? false;
+            const recipientDone = st.recipient_completed;
+            return (
+              <Pressable
+                key={st.id}
+                style={[styles.sharedTaskRow, { borderColor: theme.border }]}
+                onPress={() => {
+                  if (st.task) router.push({ pathname: '/task-details' as any, params: { id: st.task_id } });
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sharedTaskTitle, { color: theme.text }]} numberOfLines={1}>
+                    {st.task?.title || 'Task'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    {st.task?.courseId} {st.task?.dueDate ? `• Due ${st.task.dueDate}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.completionRings}>
+                  <View style={[styles.completionRing, { borderColor: isOwner ? (ownerDone ? '#10b981' : theme.border) : (recipientDone ? '#10b981' : theme.border) }]}>
+                    {(isOwner ? ownerDone : recipientDone) && (
+                      <Feather name="check" size={10} color="#10b981" />
+                    )}
+                  </View>
+                  <View style={[styles.completionRing, { borderColor: isOwner ? (recipientDone ? '#10b981' : theme.border) : (ownerDone ? '#10b981' : theme.border) }]}>
+                    {(isOwner ? recipientDone : ownerDone) && (
+                      <Feather name="check" size={10} color="#10b981" />
+                    )}
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      {/* Challenge to Quiz */}
+      <Pressable
+        style={[styles.challengeBtn, { backgroundColor: '#003366' }]}
+        onPress={() => router.push({ pathname: '/quiz-config' as any, params: { challengeFriendId: friendId } })}
+      >
+        <Feather name="zap" size={18} color="#f59e0b" />
+        <Text style={styles.challengeBtnText}>Challenge to Quiz</Text>
+      </Pressable>
 
       {/* Sent indicator */}
       {sentReaction && (
@@ -352,4 +417,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   removeBtnText: { color: '#ef4444', fontSize: 15, fontWeight: '700' },
+
+  sharedTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  sharedTaskTitle: { fontSize: 14, fontWeight: '600' },
+  completionRings: { flexDirection: 'row', gap: 6 },
+  completionRing: {
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+  },
+  challengeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  challengeBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 });

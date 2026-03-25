@@ -1,87 +1,233 @@
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useState, useEffect, useMemo } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Share, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTranslations } from '@/src/i18n';
+import { useQuiz } from '@/src/context/QuizContext';
+import * as quizApi from '@/src/lib/quizApi';
+import type { QuizParticipant } from '@/src/lib/quizApi';
 
 const PAD = 20;
-const SECTION = 24;
 const RADIUS = 20;
 const RADIUS_SM = 14;
 
 export default function ResultsPage() {
-  const { language } = useApp();
+  const { language, user } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
-  const { score, total } = useLocalSearchParams<{ score?: string; total?: string }>();
-  const s = parseInt(score ?? '0', 10);
-  const t = Math.max(1, parseInt(total ?? '5', 10));
-  const correctCount = Math.round(s / 10);
+  const { currentSession, myAnswers, opponentProgress, leaveQuiz } = useQuiz();
+
+  const { sessionId, score: paramScore, total: paramTotal } = useLocalSearchParams<{
+    sessionId?: string; score?: string; total?: string;
+  }>();
+
+  const [participants, setParticipants] = useState<QuizParticipant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const scoreNum = parseInt(paramScore ?? '0', 10);
+  const totalNum = Math.max(1, parseInt(paramTotal ?? '5', 10));
+  const correctCount = myAnswers.filter((a) => a.correct).length || Math.round(scoreNum / 10);
+  const accuracy = Math.round((correctCount / totalNum) * 100);
+  const isMultiplayer = currentSession?.mode === 'multiplayer';
+
+  // XP calculation
+  const baseXP = scoreNum;
+  const totalAnswerTime = myAnswers.reduce((sum, a) => sum + a.timeMs, 0);
+  const avgTimeMs = myAnswers.length > 0 ? totalAnswerTime / myAnswers.length : 0;
+
+  useEffect(() => {
+    const loadResults = async () => {
+      const sid = sessionId || currentSession?.id;
+      if (!sid) { setLoading(false); return; }
+      try {
+        const parts = await quizApi.getSessionParticipants(sid);
+        setParticipants(parts.sort((a, b) => (b.score || 0) - (a.score || 0)));
+      } catch {}
+      setLoading(false);
+    };
+    loadResults();
+  }, [sessionId, currentSession]);
+
+  const myRank = useMemo(() => {
+    if (!currentSession) return 1;
+    const me = participants.find((p) => p.profile?.name === user.name);
+    return me ? participants.indexOf(me) + 1 : 1;
+  }, [participants, currentSession, user]);
+
+  const isWinner = isMultiplayer && myRank === 1;
+
+  const handlePlayAgain = () => {
+    leaveQuiz();
+    router.replace('/(tabs)/notes' as any);
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `I scored ${correctCount}/${totalNum} (${accuracy}%) on a quiz! 🎯`,
+      });
+    } catch {}
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <ThemeIcon name="checkCircle" size={48} color={theme.primary} />
-        <Text style={[styles.title, { color: theme.text }]}>{T('quizComplete')}</Text>
-        <Text style={[styles.score, { color: theme.primary }]}>{correctCount} / {t}</Text>
-        <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          {s} {T('points')} • {t} {T('questions')}
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Result Header */}
+      <View style={[styles.heroCard, { backgroundColor: isWinner ? '#f59e0b' : theme.primary }]}>
+        {isWinner && <Feather name="award" size={48} color="#fff" style={{ marginBottom: 12 }} />}
+        {!isWinner && <ThemeIcon name="checkCircle" size={48} color="#fff" />}
+
+        <Text style={styles.heroTitle}>
+          {isMultiplayer ? (isWinner ? 'You Won!' : 'Game Over') : T('quizComplete')}
         </Text>
+        <Text style={styles.heroScore}>{correctCount} / {totalNum}</Text>
+        <Text style={styles.heroSub}>{accuracy}% accuracy • {scoreNum} points</Text>
+
+        {/* XP badge */}
+        <View style={styles.xpBadge}>
+          <Feather name="zap" size={16} color="#f59e0b" />
+          <Text style={styles.xpText}>+{baseXP} XP</Text>
+        </View>
       </View>
 
+      {/* Stats row */}
+      <View style={styles.statsRow}>
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="check-circle" size={18} color="#10b981" />
+          <Text style={[styles.statValue, { color: theme.text }]}>{correctCount}</Text>
+          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Correct</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="x-circle" size={18} color="#ef4444" />
+          <Text style={[styles.statValue, { color: theme.text }]}>{totalNum - correctCount}</Text>
+          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Wrong</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="clock" size={18} color="#3b82f6" />
+          <Text style={[styles.statValue, { color: theme.text }]}>{avgTimeMs > 0 ? (avgTimeMs / 1000).toFixed(1) + 's' : '-'}</Text>
+          <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Avg Time</Text>
+        </View>
+      </View>
+
+      {/* Multiplayer comparison */}
+      {isMultiplayer && participants.length > 1 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>MATCH RESULTS</Text>
+          {loading ? (
+            <ActivityIndicator color={theme.primary} />
+          ) : (
+            participants.map((p, idx) => {
+              const pCorrect = (p.answers || []).filter((a: any) => a.correct).length;
+              const pTotal = currentSession?.question_count || totalNum;
+              const isMe = p.profile?.name === user.name;
+              return (
+                <View
+                  key={p.id}
+                  style={[
+                    styles.playerRow,
+                    { backgroundColor: isMe ? theme.primary + '10' : theme.card, borderColor: isMe ? theme.primary : theme.border },
+                  ]}
+                >
+                  <View style={[styles.rankCircle, { backgroundColor: idx === 0 ? '#f59e0b' : '#e2e8f0' }]}>
+                    {idx === 0 ? (
+                      <Feather name="award" size={14} color="#fff" />
+                    ) : (
+                      <Text style={styles.rankNum}>{idx + 1}</Text>
+                    )}
+                  </View>
+                  <View style={styles.playerBody}>
+                    <Text style={[styles.playerName, { color: theme.text }]}>
+                      {isMe ? `${user.name} (You)` : p.profile?.name || 'Player'}
+                    </Text>
+                    <Text style={[styles.playerSub, { color: theme.textSecondary }]}>{pCorrect}/{pTotal} correct</Text>
+                  </View>
+                  <Text style={[styles.playerScore, { color: isMe ? theme.primary : theme.text }]}>{p.score} pts</Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+      )}
+
+      {/* Actions */}
       <View style={styles.actions}>
         <Pressable
-          style={({ pressed }) => [styles.ctaBtn, { backgroundColor: theme.primary }, pressed && styles.pressed]}
-          onPress={() => router.replace('/leaderboard' as any)}
+          style={[styles.ctaBtn, { backgroundColor: theme.primary }]}
+          onPress={() => { leaveQuiz(); router.replace('/leaderboard' as any); }}
         >
           <ThemeIcon name="leaderboard" size={20} color="#fff" />
           <Text style={styles.ctaBtnText}>{T('viewLeaderboard')}</Text>
         </Pressable>
+
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}
+            onPress={handlePlayAgain}
+          >
+            <Feather name="rotate-ccw" size={18} color={theme.primary} />
+            <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Play Again</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}
+            onPress={handleShare}
+          >
+            <Feather name="share" size={18} color={theme.primary} />
+            <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Share</Text>
+          </Pressable>
+        </View>
+
         <Pressable
-          style={({ pressed }) => [styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && styles.pressed]}
-          onPress={() => router.replace('/(tabs)/notes' as any)}
+          style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+          onPress={() => { leaveQuiz(); router.replace('/(tabs)/notes' as any); }}
         >
-          <ThemeIcon name="target" size={20} color={theme.primary} />
+          <ThemeIcon name="bookOpen" size={18} color={theme.primary} />
           <Text style={[styles.secondaryBtnText, { color: theme.text }]}>{T('backToNotesQuiz')}</Text>
         </Pressable>
       </View>
-    </View>
+
+      <View style={{ height: 48 }} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: PAD, paddingTop: 80, alignItems: 'center' },
-  card: {
-    alignItems: 'center',
-    padding: 32,
-    borderRadius: RADIUS,
-    borderWidth: 1,
-    marginBottom: SECTION,
-    width: '100%',
-  },
-  title: { fontSize: 22, fontWeight: '800', marginTop: 16, marginBottom: 8 },
-  score: { fontSize: 42, fontWeight: '800' },
-  sub: { fontSize: 14, marginTop: 8 },
-  actions: { width: '100%', gap: 12 },
-  ctaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 18,
-    borderRadius: RADIUS,
-  },
+  container: { flex: 1 },
+  content: { paddingHorizontal: PAD, paddingTop: 56, paddingBottom: 24 },
+
+  heroCard: { borderRadius: RADIUS, padding: 32, alignItems: 'center', marginBottom: 20 },
+  heroTitle: { fontSize: 24, fontWeight: '800', color: '#fff', marginTop: 12, marginBottom: 8 },
+  heroScore: { fontSize: 48, fontWeight: '800', color: '#fff' },
+  heroSub: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
+  xpBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  xpText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  statCard: { flex: 1, alignItems: 'center', padding: 16, borderRadius: RADIUS_SM, borderWidth: 1, gap: 6 },
+  statValue: { fontSize: 20, fontWeight: '800' },
+  statLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  section: { marginBottom: 20 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },
+
+  playerRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: RADIUS_SM, borderWidth: 1.5, marginBottom: 8 },
+  rankCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  rankNum: { fontSize: 14, fontWeight: '800', color: '#64748b' },
+  playerBody: { flex: 1 },
+  playerName: { fontSize: 15, fontWeight: '700' },
+  playerSub: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  playerScore: { fontSize: 16, fontWeight: '800' },
+
+  actions: { gap: 12 },
+  ctaBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: RADIUS },
   ctaBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 18,
-    borderRadius: RADIUS_SM,
-    borderWidth: 1,
-  },
-  secondaryBtnText: { fontSize: 16, fontWeight: '800' },
-  pressed: { opacity: 0.96 },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  secondaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16, borderRadius: RADIUS_SM, borderWidth: 1 },
+  secondaryBtnText: { fontSize: 14, fontWeight: '700' },
 });

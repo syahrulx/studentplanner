@@ -42,6 +42,7 @@ import * as studyTimeDb from '../lib/studyTimeDb';
 import * as coursesDb from '../lib/coursesDb';
 import * as profileDb from '../lib/profileDb';
 import * as academicCalendarDb from '../lib/academicCalendarDb';
+import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
 
 type AppState = {
   user: UserProfile;
@@ -158,8 +159,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (stored && stored.length > 0) setCourses(stored);
     });
 
+    const getAuthFallbackName = (session: any): string => {
+      const metaName =
+        session?.user?.user_metadata?.name ||
+        session?.user?.user_metadata?.full_name ||
+        session?.user?.user_metadata?.display_name;
+      const emailName = typeof session?.user?.email === 'string'
+        ? session.user.email.split('@')[0]
+        : '';
+      return (metaName || emailName || '').trim();
+    };
+
     // Helper to load all remote data for a given user id (including profile, calendar, subjects)
-    const loadRemoteData = (uid: string) => {
+    const loadRemoteData = (uid: string, authFallbackName?: string) => {
       Promise.all([
         studyDb.getNotes(uid),
         studyDb.getNoteFolders(uid),
@@ -182,7 +194,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCourses(coursesList);
           setAcademicCalendar(calendar ?? null);
           setUserState((prev) => {
-            let next = { ...prev, name: profile?.name || prev.name || 'Student' };
+            const profileName = (profile?.name || '').trim();
+            const fallbackName = (authFallbackName || '').trim();
+            let next = { ...prev, name: profileName || fallbackName || prev.name || 'Student' };
             if (profile) {
               next = { ...next, university: profile.university, academicLevel: profile.academicLevel };
             }
@@ -202,7 +216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id;
       if (!uid) return;
-      loadRemoteData(uid);
+      loadRemoteData(uid, getAuthFallbackName(session));
     });
 
     // Load remote data whenever auth state changes
@@ -223,7 +237,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAcademicCalendar(null);
         return;
       }
-      loadRemoteData(uid);
+      loadRemoteData(uid, getAuthFallbackName(session));
     });
 
     return () => {
@@ -384,6 +398,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const uid = session?.user?.id;
           if (!uid) return;
           taskDb.upsertTask(uid, updated);
+          // Propagate to shared_tasks where I'm the owner
+          getAcceptedSharedTasks().then(shared => {
+            const mine = shared.filter(s => s.task_id === taskId && s.owner_id === uid);
+            // Owner completion is reflected via the task itself (is_done); no extra update needed.
+            // But if I'm a recipient, toggle recipient_completed
+            const asRecipient = shared.filter(s => s.task_id === taskId && s.recipient_id === uid);
+            for (const st of asRecipient) {
+              updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
+            }
+          }).catch(() => {});
         });
       }
       return next;

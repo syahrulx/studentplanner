@@ -837,6 +837,7 @@ export async function createSharedGoal(params: {
   
   // Send a quick reaction as a notification
   await sendReaction(
+    user.id,
     params.friendId,
     params.shareType === 'task' ? '🤝' : '📚',
     `I pledged to complete ${params.shareType === 'task' ? 'a task' : 'my tasks'} for ${params.courseId}. Hold me accountable!`
@@ -865,4 +866,363 @@ export async function deleteSharedGoal(id: string): Promise<void> {
   if (error) {
     console.error('Error deleting shared goal:', error);
   }
+}
+
+// =============================================================================
+// SHARED TASKS (Linked Task Sharing)
+// =============================================================================
+
+import type { SharedTask } from '../types';
+
+export async function shareTaskWithFriend(
+  taskId: string,
+  friendId: string,
+  message?: string
+): Promise<SharedTask | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .insert({
+      task_id: taskId,
+      owner_id: user.id,
+      recipient_id: friendId,
+      circle_id: null,
+      status: 'pending',
+      recipient_completed: false,
+      message: message || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error sharing task with friend:', error);
+    return null;
+  }
+
+  await sendReaction(
+    user.id,
+    friendId,
+    '📋',
+    `Shared a task with you!`
+  ).catch(() => {});
+
+  return data as SharedTask;
+}
+
+export async function shareTaskWithCircle(
+  taskId: string,
+  circleId: string,
+  message?: string
+): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return [];
+
+  const memberIds = await getCircleMemberIds(circleId);
+  const recipientIds = memberIds.filter(id => id !== user.id);
+
+  if (recipientIds.length === 0) return [];
+
+  const rows = recipientIds.map(recipientId => ({
+    task_id: taskId,
+    owner_id: user.id,
+    recipient_id: recipientId,
+    circle_id: circleId,
+    status: 'pending',
+    recipient_completed: false,
+    message: message || null,
+  }));
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .insert(rows)
+    .select();
+
+  if (error) {
+    console.error('Error sharing task with circle:', error);
+    return [];
+  }
+
+  return (data || []) as SharedTask[];
+}
+
+export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return [];
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .select('*')
+    .eq('recipient_id', user.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching incoming shared tasks:', error);
+    return [];
+  }
+
+  if (!data || data.length === 0) return [];
+
+  const ownerIds = [...new Set(data.map(s => s.owner_id))];
+  const taskIds = [...new Set(data.map(s => s.task_id))];
+
+  const [profilesRes, tasksRes] = await Promise.all([
+    supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds),
+    supabase.from('tasks').select('*').in('id', taskIds),
+  ]);
+
+  const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
+  const taskMap = new Map((tasksRes.data || []).map((t: any) => [t.id, {
+    id: t.id, title: t.title, courseId: t.course_id, type: t.type,
+    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
+    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
+    suggestedWeek: Number(t.suggested_week || 0),
+  }]));
+
+  return data.map(s => ({
+    ...s,
+    owner_profile: profileMap.get(s.owner_id),
+    task: taskMap.get(s.task_id),
+  })) as SharedTask[];
+}
+
+export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return [];
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .select('*')
+    .eq('status', 'accepted')
+    .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching accepted shared tasks:', error);
+    return [];
+  }
+
+  if (!data || data.length === 0) return [];
+
+  const allUserIds = [...new Set(data.flatMap(s => [s.owner_id, s.recipient_id].filter(Boolean)))];
+  const taskIds = [...new Set(data.map(s => s.task_id))];
+
+  const [profilesRes, tasksRes] = await Promise.all([
+    supabase.from('profiles').select('id, name, avatar_url').in('id', allUserIds),
+    supabase.from('tasks').select('*').in('id', taskIds),
+  ]);
+
+  const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
+  const taskMap = new Map((tasksRes.data || []).map((t: any) => [t.id, {
+    id: t.id, title: t.title, courseId: t.course_id, type: t.type,
+    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
+    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
+    suggestedWeek: Number(t.suggested_week || 0),
+  }]));
+
+  return data.map(s => ({
+    ...s,
+    owner_profile: profileMap.get(s.owner_id),
+    recipient_profile: s.recipient_id ? profileMap.get(s.recipient_id) : undefined,
+    task: taskMap.get(s.task_id),
+  })) as SharedTask[];
+}
+
+export async function respondToSharedTask(
+  sharedTaskId: string,
+  accept: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from('shared_tasks')
+    .update({ status: accept ? 'accepted' : 'declined', updated_at: new Date().toISOString() })
+    .eq('id', sharedTaskId);
+
+  if (error) console.error('Error responding to shared task:', error);
+}
+
+export async function updateSharedTaskCompletion(
+  sharedTaskId: string,
+  completed: boolean
+): Promise<void> {
+  const { error } = await supabase
+    .from('shared_tasks')
+    .update({ recipient_completed: completed, updated_at: new Date().toISOString() })
+    .eq('id', sharedTaskId);
+
+  if (error) console.error('Error updating shared task completion:', error);
+}
+
+export async function getSharedTaskParticipants(taskId: string): Promise<SharedTask[]> {
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .select('*')
+    .eq('task_id', taskId)
+    .neq('status', 'declined');
+
+  if (error) {
+    console.error('Error fetching shared task participants:', error);
+    return [];
+  }
+
+  if (!data || data.length === 0) return [];
+
+  const allUserIds = [...new Set(data.flatMap(s => [s.owner_id, s.recipient_id].filter(Boolean)))];
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url')
+    .in('id', allUserIds);
+
+  const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+  return data.map(s => ({
+    ...s,
+    owner_profile: profileMap.get(s.owner_id),
+    recipient_profile: s.recipient_id ? profileMap.get(s.recipient_id) : undefined,
+  })) as SharedTask[];
+}
+
+export async function getSharedTasksBetweenUsers(friendId: string): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return [];
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .select('*')
+    .eq('status', 'accepted')
+    .or(
+      `and(owner_id.eq.${user.id},recipient_id.eq.${friendId}),and(owner_id.eq.${friendId},recipient_id.eq.${user.id})`
+    )
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching shared tasks between users:', error);
+    return [];
+  }
+
+  if (!data || data.length === 0) return [];
+
+  const taskIds = [...new Set(data.map(s => s.task_id))];
+  const { data: tasks } = await supabase.from('tasks').select('*').in('id', taskIds);
+
+  const taskMap = new Map((tasks || []).map((t: any) => [t.id, {
+    id: t.id, title: t.title, courseId: t.course_id, type: t.type,
+    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
+    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
+    suggestedWeek: Number(t.suggested_week || 0),
+  }]));
+
+  return data.map(s => ({ ...s, task: taskMap.get(s.task_id) })) as SharedTask[];
+}
+
+export async function shareAllTasksWithFriend(
+  taskIds: string[],
+  friendId: string,
+  message?: string
+): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id || taskIds.length === 0) return [];
+
+  // Filter out tasks already shared with this friend
+  const { data: existing } = await supabase
+    .from('shared_tasks')
+    .select('task_id')
+    .eq('owner_id', user.id)
+    .eq('recipient_id', friendId)
+    .in('task_id', taskIds)
+    .neq('status', 'declined');
+
+  const alreadyShared = new Set((existing || []).map(e => e.task_id));
+  const newTaskIds = taskIds.filter(id => !alreadyShared.has(id));
+  if (newTaskIds.length === 0) return [];
+
+  const rows = newTaskIds.map(taskId => ({
+    task_id: taskId,
+    owner_id: user.id,
+    recipient_id: friendId,
+    circle_id: null,
+    status: 'pending',
+    recipient_completed: false,
+    message: message || null,
+  }));
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .insert(rows)
+    .select();
+
+  if (error) {
+    console.error('Error bulk sharing tasks with friend:', error);
+    return [];
+  }
+
+  await sendReaction(
+    user.id,
+    friendId,
+    '📋',
+    `Shared ${newTaskIds.length} task${newTaskIds.length > 1 ? 's' : ''} with you!`
+  ).catch(() => {});
+
+  return (data || []) as SharedTask[];
+}
+
+export async function shareAllTasksWithCircle(
+  taskIds: string[],
+  circleId: string,
+  message?: string
+): Promise<SharedTask[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id || taskIds.length === 0) return [];
+
+  const memberIds = await getCircleMemberIds(circleId);
+  const recipientIds = memberIds.filter(id => id !== user.id);
+  if (recipientIds.length === 0) return [];
+
+  // Filter out already-shared combinations
+  const { data: existing } = await supabase
+    .from('shared_tasks')
+    .select('task_id, recipient_id')
+    .eq('owner_id', user.id)
+    .eq('circle_id', circleId)
+    .in('task_id', taskIds)
+    .neq('status', 'declined');
+
+  const alreadySharedKeys = new Set(
+    (existing || []).map(e => `${e.task_id}:${e.recipient_id}`)
+  );
+
+  const rows: any[] = [];
+  for (const taskId of taskIds) {
+    for (const recipientId of recipientIds) {
+      if (!alreadySharedKeys.has(`${taskId}:${recipientId}`)) {
+        rows.push({
+          task_id: taskId,
+          owner_id: user.id,
+          recipient_id: recipientId,
+          circle_id: circleId,
+          status: 'pending',
+          recipient_completed: false,
+          message: message || null,
+        });
+      }
+    }
+  }
+
+  if (rows.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('shared_tasks')
+    .insert(rows)
+    .select();
+
+  if (error) {
+    console.error('Error bulk sharing tasks with circle:', error);
+    return [];
+  }
+
+  return (data || []) as SharedTask[];
 }

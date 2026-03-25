@@ -134,3 +134,24 @@ export interface Flashcard {
   question?: string;
   answer?: string;
 }
+
+export type SharedTaskStatus = 'pending' | 'accepted' | 'declined';
+
+export interface SharedTask {
+  id: string;
+  task_id: string;
+  owner_id: string;
+  recipient_id: string | null;
+  circle_id: string | null;
+  status: SharedTaskStatus;
+  recipient_completed: boolean;
+  message: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined from the tasks table */
+  task?: Task;
+  /** Profile of the person who shared the task */
+  owner_profile?: { id: string; name: string; avatar_url?: string };
+  /** Profile of the recipient */
+  recipient_profile?: { id: string; name: string; avatar_url?: string };
+}

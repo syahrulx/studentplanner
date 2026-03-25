@@ -11,13 +11,13 @@ const PAD = 20;
 const SECTION = 24;
 const RADIUS = 20;
 const RADIUS_SM = 14;
-const QUESTION_OPTS = [5, 10, 15];
+const QUESTION_OPTS = [5, 10, 15, 20];
 
 export default function QuizConfig() {
   const { flashcardFolders, flashcards, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
-  const [folderId, setFolderId] = useState<string>(''); // '' = all
+  const [folderId, setFolderId] = useState<string>('');
   const [totalQuestions, setTotalQuestions] = useState(5);
 
   const pool = folderId ? flashcards.filter((c) => c.folderId === folderId) : flashcards;
@@ -27,7 +27,14 @@ export default function QuizConfig() {
   const handleStart = () => {
     router.push({
       pathname: '/quiz-mode-selection',
-      params: { folderId: folderId || '_all', total: String(effectiveTotal) },
+      params: {
+        folderId: folderId || '_all',
+        total: String(effectiveTotal),
+        sourceType: 'flashcards',
+        sourceId: folderId || '_all',
+        quizType: 'mcq',
+        difficulty: 'medium',
+      },
     } as any);
   };
 
@@ -44,53 +51,69 @@ export default function QuizConfig() {
         <Text style={[styles.title, { color: theme.text }]}>{T('configurePracticeQuiz')}</Text>
       </View>
 
+      {/* Folder Selection */}
       <View style={styles.section}>
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('topic')}</Text>
+
+        {/* All Folders card */}
         <Pressable
-          style={({ pressed }) => [
-            styles.subjectCard,
-            { backgroundColor: theme.card, borderColor: theme.border },
-            !folderId && { borderColor: theme.primary, backgroundColor: theme.primary + '12' },
-            pressed && styles.pressed,
+          style={[
+            styles.folderCard,
+            { backgroundColor: theme.card, borderColor: !folderId ? theme.primary : theme.border },
+            !folderId && { backgroundColor: theme.primary + '08' },
           ]}
           onPress={() => setFolderId('')}
         >
-          <View style={[styles.subjectIconWrap, { backgroundColor: theme.primary + '18' }]}>
+          <View style={[styles.folderIcon, { backgroundColor: theme.primary + '15' }]}>
             <ThemeIcon name="layers" size={20} color={theme.primary} />
           </View>
-          <View style={styles.subjectBody}>
-            <Text style={[styles.subjectCode, { color: theme.text }, !folderId && { color: theme.primary }]}>{T('allFolders')}</Text>
-            <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{flashcards.length} {T('cardsUnit')}</Text>
+          <View style={styles.folderBody}>
+            <Text style={[styles.folderName, { color: !folderId ? theme.primary : theme.text }]}>{T('allFolders')}</Text>
+            <Text style={[styles.folderCount, { color: theme.textSecondary }]}>{flashcards.length} {T('cardsUnit')}</Text>
           </View>
-          {!folderId && <ThemeIcon name="checkCircle" size={18} color={theme.primary} />}
+          {!folderId && (
+            <View style={[styles.checkBadge, { backgroundColor: theme.primary }]}>
+              <Feather name="check" size={12} color="#fff" />
+            </View>
+          )}
         </Pressable>
+
         {flashcardFolders.map((f) => {
           const count = flashcards.filter((c) => c.folderId === f.id).length;
           const isSelected = folderId === f.id;
           return (
             <Pressable
               key={f.id}
-              style={({ pressed }) => [
-                styles.subjectCard,
-                { backgroundColor: theme.card, borderColor: theme.border },
-                isSelected && { borderColor: theme.primary, backgroundColor: theme.primary + '12' },
-                pressed && styles.pressed,
+              style={[
+                styles.folderCard,
+                { backgroundColor: theme.card, borderColor: isSelected ? theme.primary : theme.border },
+                isSelected && { backgroundColor: theme.primary + '08' },
               ]}
               onPress={() => setFolderId(f.id)}
             >
-              <View style={[styles.subjectIconWrap, { backgroundColor: theme.primary + '18' }]}>
+              <View style={[styles.folderIcon, { backgroundColor: theme.primary + '15' }]}>
                 <ThemeIcon name="bookOpen" size={20} color={theme.primary} />
               </View>
-              <View style={styles.subjectBody}>
-                <Text style={[styles.subjectCode, { color: theme.text }, isSelected && { color: theme.primary }]} numberOfLines={1}>{f.name}</Text>
-                <Text style={[styles.subjectName, { color: theme.textSecondary }]}>{count} {T('cardsUnit')}</Text>
+              <View style={styles.folderBody}>
+                <Text style={[styles.folderName, { color: isSelected ? theme.primary : theme.text }]} numberOfLines={1}>{f.name}</Text>
+                <Text style={[styles.folderCount, { color: theme.textSecondary }]}>{count} {T('cardsUnit')}</Text>
               </View>
-              {isSelected && <ThemeIcon name="checkCircle" size={18} color={theme.primary} />}
+              {count > 0 && (
+                <View style={[styles.countBadge, { backgroundColor: theme.primary + '15' }]}>
+                  <Text style={[styles.countBadgeText, { color: theme.primary }]}>{count}</Text>
+                </View>
+              )}
+              {isSelected && (
+                <View style={[styles.checkBadge, { backgroundColor: theme.primary }]}>
+                  <Feather name="check" size={12} color="#fff" />
+                </View>
+              )}
             </Pressable>
           );
         })}
       </View>
 
+      {/* Question Count */}
       <View style={styles.section}>
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('numberOfQuestions')}</Text>
         <View style={styles.row}>
@@ -100,17 +123,16 @@ export default function QuizConfig() {
             return (
               <Pressable
                 key={n}
-                style={({ pressed }) => [
+                style={[
                   styles.numBtn,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  isSelected && { borderColor: theme.primary, backgroundColor: theme.primary + '15' },
-                  disabled && styles.numBtnDisabled,
-                  pressed && !disabled && styles.pressed,
+                  { backgroundColor: theme.card, borderColor: isSelected ? theme.primary : theme.border },
+                  isSelected && { backgroundColor: theme.primary + '12' },
+                  disabled && { opacity: 0.4 },
                 ]}
                 onPress={() => !disabled && setTotalQuestions(n)}
                 disabled={disabled}
               >
-                <Text style={[styles.numBtnText, { color: theme.text }, isSelected && { color: theme.primary, fontWeight: '800' }, disabled && { color: theme.textSecondary, opacity: 0.6 }]}>
+                <Text style={[styles.numBtnText, { color: isSelected ? theme.primary : theme.text }, isSelected && { fontWeight: '800' }]}>
                   {n}
                 </Text>
               </Pressable>
@@ -120,12 +142,9 @@ export default function QuizConfig() {
         <Text style={[styles.hint, { color: theme.textSecondary }]}>{maxAvailable} {T('cardsInPool')}</Text>
       </View>
 
+      {/* Start Button */}
       <Pressable
-        style={({ pressed }) => [
-          styles.ctaCard,
-          { backgroundColor: theme.primary },
-          (maxAvailable < 1 || pressed) && styles.pressed,
-        ]}
+        style={[styles.ctaCard, { backgroundColor: maxAvailable < 1 ? '#94a3b8' : theme.primary }]}
         onPress={handleStart}
         disabled={maxAvailable < 1}
       >
@@ -146,35 +165,23 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800', flex: 1 },
   section: { marginBottom: SECTION },
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 14 },
-  subjectCard: {
+  folderCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     borderRadius: RADIUS_SM,
-    borderWidth: 1,
-    marginBottom: 12,
+    borderWidth: 1.5,
+    marginBottom: 10,
   },
-  subjectIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  subjectBody: { flex: 1, minWidth: 0 },
-  subjectCode: { fontSize: 16, fontWeight: '800', marginBottom: 2 },
-  subjectName: { fontSize: 13, fontWeight: '500' },
-  pressed: { opacity: 0.96 },
+  folderIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
+  folderBody: { flex: 1, minWidth: 0 },
+  folderName: { fontSize: 16, fontWeight: '800', marginBottom: 2 },
+  folderCount: { fontSize: 13, fontWeight: '500' },
+  countBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, marginRight: 8 },
+  countBadgeText: { fontSize: 12, fontWeight: '800' },
+  checkBadge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', gap: 12 },
-  numBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: RADIUS_SM,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  numBtnDisabled: { opacity: 0.6 },
+  numBtn: { flex: 1, paddingVertical: 16, borderRadius: RADIUS_SM, borderWidth: 1.5, alignItems: 'center' },
   numBtnText: { fontSize: 18, fontWeight: '700' },
   hint: { fontSize: 12, marginTop: 10 },
   ctaCard: {

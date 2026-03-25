@@ -46,10 +46,21 @@ function timeAgo(dateStr: string): string {
 
 export default function NotificationsScreen() {
   const theme = useTheme();
-  const { userId, refreshUnreadCount } = useCommunity();
+  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks } = useCommunity();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
+
+  const handleShareResponse = async (sharedTaskId: string, accept: boolean) => {
+    setRespondingIds(prev => new Set(prev).add(sharedTaskId));
+    await respondToShare(sharedTaskId, accept);
+    setRespondingIds(prev => {
+      const next = new Set(prev);
+      next.delete(sharedTaskId);
+      return next;
+    });
+  };
 
   const loadReactions = useCallback(async () => {
     if (!userId) return;
@@ -99,9 +110,54 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Incoming Shared Task Requests */}
+        {incomingSharedTasks.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Task Share Requests</Text>
+            {incomingSharedTasks.map(st => (
+              <View
+                key={st.id}
+                style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
+              >
+                <Avatar
+                  name={st.owner_profile?.name}
+                  avatarUrl={st.owner_profile?.avatar_url}
+                  size={44}
+                />
+                <View style={styles.notifBody}>
+                  <Text style={[styles.notifName, { color: theme.text }]}>
+                    {st.owner_profile?.name || 'Someone'}
+                  </Text>
+                  <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
+                    Shared a task: {st.task?.title || 'Task'}
+                    {st.message ? `\n"${st.message}"` : ''}
+                  </Text>
+                  <View style={styles.shareActions}>
+                    <Pressable
+                      style={[styles.shareAcceptBtn, { backgroundColor: '#10b981' }]}
+                      disabled={respondingIds.has(st.id)}
+                      onPress={() => handleShareResponse(st.id, true)}
+                    >
+                      <Feather name="check" size={14} color="#fff" />
+                      <Text style={styles.shareActionText}>Accept</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.shareDeclineBtn, { borderColor: theme.border }]}
+                      disabled={respondingIds.has(st.id)}
+                      onPress={() => handleShareResponse(st.id, false)}
+                    >
+                      <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Decline</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={theme.primary} />
-        ) : reactions.length === 0 ? (
+        ) : reactions.length === 0 && incomingSharedTasks.length === 0 ? (
           <View style={styles.emptyState}>
             <Feather name="bell-off" size={48} color={theme.textSecondary} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>No notifications yet</Text>
@@ -142,10 +198,28 @@ export default function NotificationsScreen() {
                   <Text style={[styles.notifMessage, { color: theme.textSecondary }]}>
                     {isBump
                       ? '💥 Bumped you!'
+                      : reaction.reaction_type === '📋'
+                      ? `📋 ${reaction.message || 'Shared a task with you!'}`
+                      : reaction.reaction_type === '🎮'
+                      ? `🎮 ${reaction.message || 'Invited you to a quiz!'}`
                       : reaction.message
                       ? `${reaction.reaction_type} ${reaction.message}`
                       : `Sent you ${reaction.reaction_type}`}
                   </Text>
+                  {reaction.reaction_type === '🎮' && reaction.message && (
+                    <Pressable
+                      style={[styles.joinQuizBtn, { backgroundColor: theme.primary }]}
+                      onPress={() => {
+                        const sessionId = reaction.message?.match(/session:(\S+)/)?.[1];
+                        if (sessionId) {
+                          router.push({ pathname: '/match-lobby', params: { sessionId } } as any);
+                        }
+                      }}
+                    >
+                      <Feather name="play" size={12} color="#fff" />
+                      <Text style={styles.joinQuizBtnText}>Join Quiz</Text>
+                    </Pressable>
+                  )}
                 </View>
                 {!reaction.read && <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />}
               </Pressable>
@@ -201,4 +275,31 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 240 },
+
+  sectionLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10, textTransform: 'uppercase' },
+  shareRequestCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  shareActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  shareAcceptBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+  },
+  shareActionText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  shareDeclineBtn: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+    borderWidth: 1,
+  },
+  shareDeclineText: { fontSize: 13, fontWeight: '600' },
+  joinQuizBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 8, alignSelf: 'flex-start',
+  },
+  joinQuizBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

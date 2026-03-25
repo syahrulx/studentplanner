@@ -171,6 +171,7 @@ export default function CommunityMap() {
     setSelectedCircleId,
     sharedGoals,
     updateSharedGoalStatus,
+    acceptedSharedTasks,
   } = useCommunity();
 
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
@@ -189,6 +190,12 @@ export default function CommunityMap() {
   }, [locationPermissionGranted, requestLocationPermission]);
 
   const visibleFriends = filteredFriends;
+
+  const getSharedCountWith = useCallback((friendId: string) => {
+    return (acceptedSharedTasks || []).filter(
+      st => st.recipient_id === friendId || st.owner_id === friendId
+    ).length;
+  }, [acceptedSharedTasks]);
 
   const handleQuickReact = useCallback(
     async (friendId: string, emoji: string) => {
@@ -487,6 +494,18 @@ export default function CommunityMap() {
               </View>
             )}
 
+            {/* Shared Tasks mini-badge */}
+            {getSharedCountWith(selectedFriend.id) > 0 && (
+              <View style={[styles.pactsContainer, { backgroundColor: 'rgba(99,102,241,0.06)' }]}>
+                <View style={styles.pactsHeader}>
+                  <Feather name="clipboard" size={14} color="#6366f1" />
+                  <Text style={[styles.pactsTitle, { color: '#6366f1' }]}>
+                    {getSharedCountWith(selectedFriend.id)} shared task{getSharedCountWith(selectedFriend.id) > 1 ? 's' : ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.friendPopupReactions}>
               {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
                 <Pressable
@@ -656,6 +675,12 @@ export default function CommunityMap() {
                   )}
                 </View>
                 <View style={styles.personRight}>
+                  {getSharedCountWith(friend.id) > 0 && (
+                    <View style={styles.sharedTaskBadge}>
+                      <Feather name="clipboard" size={10} color="#6366f1" />
+                      <Text style={styles.sharedTaskBadgeText}>{getSharedCountWith(friend.id)}</Text>
+                    </View>
+                  )}
                   <Text style={[styles.personTime, { color: theme.textSecondary }]}>
                     {timeAgo(friend.location?.updated_at || friend.activity?.updated_at)}
                   </Text>
@@ -1044,6 +1069,11 @@ const styles = StyleSheet.create({
   personActivity: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   personRight: { alignItems: 'flex-end', gap: 6 },
   personTime: { fontSize: 11, fontWeight: '500' },
+  sharedTaskBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(99,102,241,0.08)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
+  },
+  sharedTaskBadgeText: { fontSize: 10, fontWeight: '700', color: '#6366f1' },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingTop: 32, gap: 8 },
