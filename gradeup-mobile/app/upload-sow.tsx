@@ -1,9 +1,14 @@
-import React from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import * as DocumentPicker from 'expo-document-picker';
+import { uploadSowFile, SOW_FILES_BUCKET } from '@/src/lib/sowStorage';
+import { supabase } from '@/src/lib/supabase';
+import { getTodayISO } from '@/src/utils/date';
+import { setPendingSowExtraction } from '@/src/lib/sowExtractionStore';
 
 const PAD = 20;
 const SECTION = 24;
@@ -11,11 +16,85 @@ const RADIUS = 16;
 const RADIUS_SM = 12;
 
 export default function UploadSOW() {
-  const { courses } = useApp();
+  const { courses, user } = useApp();
   const theme = useTheme();
+  const [selected, setSelected] = useState<{ name: string; uri: string; mimeType?: string | null } | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const busyRef = useRef(false);
 
-  const handleSave = () => {
-    router.push('/stress-map' as any);
+  const knownCourses = useMemo(() => courses.map((c) => ({ id: c.id, name: c.name })), [courses]);
+
+  const pickPdf = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: false,
+      });
+      if (result.canceled) return;
+      const file = result.assets[0];
+      setSelected({ name: file.name ?? 'document.pdf', uri: file.uri, mimeType: file.mimeType });
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not pick PDF.');
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  const startImport = async () => {
+    if (isBusy || !selected) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      Alert.alert('Sign in required', 'Sign in to import SOW files.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const importId = `sow-${Date.now()}`;
+      const { path, error: uploadError } = await uploadSowFile(
+        session.user.id,
+        importId,
+        selected.uri,
+        selected.name,
+        selected.mimeType ?? undefined
+      );
+      if (uploadError) {
+        Alert.alert('Upload failed', uploadError.message);
+        return;
+      }
+
+      const payload = {
+        import_id: importId,
+        storage_path: path,
+        bucket: SOW_FILES_BUCKET,
+        current_week: user.currentWeek ?? 1,
+        today_iso: getTodayISO(),
+        known_courses: knownCourses,
+      };
+
+      const { data, error } = await supabase.functions.invoke('extract_sow', { body: payload });
+      if (error) {
+        Alert.alert('AI extraction failed', error.message || 'Could not extract SOW details.');
+        return;
+      }
+      if (data?.error?.message) {
+        Alert.alert('AI extraction failed', data.error.message);
+        return;
+      }
+
+      setPendingSowExtraction({
+        importId,
+        storagePath: path,
+        fileName: selected.name,
+        extracted: data,
+      });
+      router.push('/sow-review' as any);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Import failed.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   return (
@@ -76,11 +155,42 @@ export default function UploadSOW() {
       </View>
 
       <Pressable
-        style={({ pressed }) => [styles.saveBtn, { backgroundColor: theme.primary }, pressed && styles.pressed]}
-        onPress={handleSave}
+        style={({ pressed }) => [
+          styles.pickBtn,
+          { backgroundColor: theme.card, borderColor: theme.border },
+          pressed && styles.pressed,
+        ]}
+        onPress={pickPdf}
+        disabled={isBusy}
       >
-        <Text style={styles.saveBtnText}>Save & Generate Stress Map</Text>
-        <Feather name="moon" size={20} color="#fff" />
+        <Feather name="file" size={18} color={theme.primary} />
+        <Text style={[styles.pickBtnText, { color: theme.text }]}>
+          {selected ? `Selected: ${selected.name}` : 'Choose SOW PDF'}
+        </Text>
+        <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ marginLeft: 'auto' }} />
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.saveBtn,
+          { backgroundColor: theme.primary },
+          (isBusy || !selected) && { opacity: 0.55 },
+          pressed && styles.pressed,
+        ]}
+        onPress={startImport}
+        disabled={isBusy || !selected}
+      >
+        {isBusy ? (
+          <>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.saveBtnText}>Analyzing...</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.saveBtnText}>Analyze & Review</Text>
+            <Feather name="cpu" size={20} color="#fff" />
+          </>
+        )}
       </Pressable>
 
       <View style={{ height: 48 }} />
@@ -149,6 +259,17 @@ const styles = StyleSheet.create({
   doneText: { fontSize: 12, fontWeight: '800', color: '#22c55e' },
   reuploadLink: { marginTop: 12, alignSelf: 'flex-start' },
   reuploadText: { fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+  pickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS,
+    borderWidth: 1,
+    marginTop: SECTION,
+  },
+  pickBtnText: { fontSize: 14, fontWeight: '700', flex: 1 },
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
