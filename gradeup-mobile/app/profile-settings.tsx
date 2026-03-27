@@ -266,7 +266,10 @@ export default function ProfileSettings() {
           <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
             <Feather name="trending-up" size={18} color="#d97706" />
           </View>
-          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
+            <Text style={[styles.menuSubLabel, { color: theme.textSecondary }]}>Import SOW PDF</Text>
+          </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
       </View>
@@ -428,4 +431,5 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
+  menuSubLabel: { fontSize: 12, fontWeight: '600', marginTop: 2 },
 });
