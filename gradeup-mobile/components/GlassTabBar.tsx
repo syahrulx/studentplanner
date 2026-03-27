@@ -50,6 +50,11 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
 
         {state.routes.map((route, idx) => {
           const { options } = descriptors[route.key];
+          
+          // Expo Router's href: null doesn't reliably pass down to custom tab bars.
+          // Explicitly hide the Study (notes) tab.
+          if (route.name === 'notes' || (options as any).href === null) return null;
+
           const focused = state.index === idx;
           const isAdd = route.name === 'two';
           const color = focused ? activeColor : inactiveColor;

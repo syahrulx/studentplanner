@@ -75,6 +75,8 @@ function buildQuizPrompt(quizType: QuizType, difficulty: QuizDifficulty, questio
 Rules:
 - ${typeInstr[quizType]}
 - Difficulty: ${diffInstr[difficulty]}
+- Focus ONLY on the educational/academic subject matter. Ignore any PDF formatting artifacts, structural markup, file metadata, or encoding noise that may appear in the text.
+- Questions must test the student's knowledge of the actual topics and concepts in the study material.
 - Return ONLY a JSON array. No markdown, no explanation.
 - Each object must have: "question" (string), "options" (string[]), "correctIndex" (number)${quizType === 'short_answer' || quizType === 'mixed' ? ', and optionally "expectedAnswer" (string)' : ''}.`;
 }

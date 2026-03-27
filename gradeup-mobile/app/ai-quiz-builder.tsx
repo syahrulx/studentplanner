@@ -12,6 +12,8 @@ import {
   type QuizType,
   type QuizDifficulty,
 } from '@/src/lib/studyApi';
+import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
+import { extractPdfTextFromUrlDebug } from '@/src/lib/pdfText';
 
 const PAD = 20;
 const SECTION = 24;
@@ -32,6 +34,15 @@ const DIFFICULTIES: { key: QuizDifficulty; label: string; color: string }[] = [
 ];
 
 const Q_COUNTS = [5, 10, 15, 20];
+
+/** Check if extracted text looks like real educational content vs PDF garbage. */
+function looksLikeRealContent(text: string): boolean {
+  const words = text.split(/\s+/).filter(w => w.length >= 2);
+  if (words.length < 10) return false;
+  // Real text has a decent ratio of alphabetical words vs noise tokens
+  const realWords = words.filter(w => /^[a-zA-Z]{2,}$/.test(w));
+  return realWords.length / words.length > 0.3;
+}
 
 export default function AIQuizBuilder() {
   const { courses, notes } = useApp();
@@ -77,13 +88,93 @@ export default function AIQuizBuilder() {
     }
 
     const selectedNotes = topicsForSubject.filter((n) => selectedTopicIds.has(n.id));
-    const contents = selectedNotes.map((n) => n.content).filter(Boolean);
-    if (!contents.length) {
-      Alert.alert('No Content', 'Selected notes have no text content to generate questions from.');
-      return;
-    }
+    const contentParts: string[] = [];
+    const failedPdfTitles: string[] = [];
+    const extractionIssues: string[] = [];
+    let attemptedPdfCount = 0;
 
     setLoading(true);
+    setLoadingText('Preparing note content...');
+
+    for (const note of selectedNotes) {
+      const plainText = (note.content || '').trim();
+      if (plainText.length > 0) {
+        contentParts.push(plainText);
+        continue;
+      }
+
+      if (!note.attachmentPath) continue;
+
+      const nameHint = (note.attachmentFileName || note.title || note.attachmentPath || '').toLowerCase();
+      const looksLikePdf =
+        nameHint.endsWith('.pdf') || note.attachmentPath.toLowerCase().includes('.pdf');
+
+      if (!looksLikePdf) continue;
+
+      try {
+        attemptedPdfCount++;
+        setLoadingText(`Reading PDF: ${note.title.slice(0, 24)}...`);
+        const { url, error } = await getNoteAttachmentUrl(note.attachmentPath);
+        if (error || !url) {
+          failedPdfTitles.push(note.title);
+          continue;
+        }
+        // Wrap extraction in a timeout to prevent indefinite hanging (allow up to 240s for large PDFs via OpenAI API)
+        const extractionPromise = extractPdfTextFromUrlDebug(url);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Aborted')), 240000)
+        );
+        setLoadingText(`Extracting text from: ${note.title.slice(0, 20)}...`);
+        const extracted = await Promise.race([extractionPromise, timeoutPromise]);
+        const pdfText = extracted.text;
+        if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
+          contentParts.push(pdfText);
+        } else {
+          failedPdfTitles.push(note.title);
+          const reason = pdfText.trim().length > 0 ? 'extracted text looks like PDF metadata, not content' : (extracted.stage + (extracted.detail ? ` - ${extracted.detail}` : ''));
+          extractionIssues.push(`${note.title}: ${reason}`);
+        }
+      } catch {
+        failedPdfTitles.push(note.title);
+        extractionIssues.push(`${note.title}: failed - unexpected exception in quiz builder.`);
+      }
+    }
+
+    // Last resort: try every attachment that wasn't already attempted
+    if (contentParts.length === 0) {
+      for (const note of selectedNotes) {
+        if (!note.attachmentPath) continue;
+        const nameHint = (note.attachmentFileName || note.title || note.attachmentPath || '').toLowerCase();
+        if (nameHint.endsWith('.pdf') || note.attachmentPath.toLowerCase().includes('.pdf')) continue; // already tried
+        try {
+          attemptedPdfCount++;
+          setLoadingText(`Trying attachment: ${note.title.slice(0, 24)}...`);
+          const { url, error } = await getNoteAttachmentUrl(note.attachmentPath);
+          if (error || !url) continue;
+          const extracted = await extractPdfTextFromUrlDebug(url);
+          const pdfText = extracted.text;
+          if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) contentParts.push(pdfText.trim());
+          else extractionIssues.push(`${note.title}: ${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`);
+        } catch {
+          // not a valid PDF — ignore
+        }
+      }
+    }
+
+    const contents = contentParts.filter(Boolean);
+    if (!contents.length) {
+      setLoading(false);
+      setLoadingText('');
+      if (attemptedPdfCount > 0) {
+        Alert.alert(
+          'No Content',
+          `Tried reading ${attemptedPdfCount} PDF attachment(s), but extracted text is still empty.\n\n${extractionIssues.slice(0, 2).join('\n') || 'No detailed extraction issue captured.'}`,
+        );
+      } else {
+        Alert.alert('No Content', 'Selected notes have no text content to generate questions from.');
+      }
+      return;
+    }
     setLoadingText('Analyzing your notes...');
 
     try {
@@ -98,6 +189,12 @@ export default function AIQuizBuilder() {
       }
 
       setGeneratedQuizQuestions(questions);
+      if (failedPdfTitles.length > 0) {
+        Alert.alert(
+          'Some PDFs skipped',
+          `Could not read text from ${failedPdfTitles.length} PDF(s). Quiz was generated from available content.`,
+        );
+      }
       router.push({
         pathname: '/quiz-mode-selection',
         params: {
@@ -284,23 +381,31 @@ export default function AIQuizBuilder() {
       </View>
 
       {/* CTA */}
-      <Pressable
-        style={[styles.cta, hasTopics && !loading ? { backgroundColor: theme.primary } : { backgroundColor: '#94a3b8' }]}
-        onPress={handleGenerate}
-        disabled={!hasTopics || loading}
-      >
-        {loading ? (
-          <View style={styles.ctaLoading}>
-            <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.ctaText}>{loadingText}</Text>
-          </View>
-        ) : (
-          <>
-            <ThemeIcon name="sparkles" size={18} color="#fff" />
-            <Text style={styles.ctaText}>{hasTopics ? 'GENERATE QUIZ' : 'SELECT TOPICS TO BEGIN'}</Text>
-          </>
-        )}
-      </Pressable>
+      <View style={{ gap: 12 }}>
+        <Pressable
+          style={[styles.cta, hasTopics && !loading ? { backgroundColor: theme.primary } : { backgroundColor: '#94a3b8' }]}
+          onPress={handleGenerate}
+          disabled={!hasTopics || loading}
+        >
+          {loading ? (
+            <View style={styles.ctaLoading}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.ctaText}>GENERATING...</Text>
+            </View>
+          ) : (
+            <>
+              <ThemeIcon name="sparkles" size={18} color="#fff" />
+              <Text style={styles.ctaText}>{hasTopics ? 'GENERATE QUIZ' : 'SELECT TOPICS TO BEGIN'}</Text>
+            </>
+          )}
+        </Pressable>
+
+        {loading && loadingText ? (
+          <Text style={{ textAlign: 'center', fontSize: 13, color: theme.textSecondary, fontStyle: 'italic', paddingHorizontal: 20 }}>
+            {loadingText}
+          </Text>
+        ) : null}
+      </View>
 
       <View style={{ height: 48 }} />
     </ScrollView>

@@ -80,6 +80,29 @@ function generateInviteCode(): string {
   return code;
 }
 
+function normalizeQuizTableError(error: any): never {
+  const message = String(error?.message || '');
+  const details = String(error?.details || '');
+  const hint = String(error?.hint || '');
+  const code = String(error?.code || '');
+
+  const combined = `${message} ${details} ${hint}`.toLowerCase();
+  const isExactMissingTable =
+    /could not find the table 'public\.(quiz_sessions|quiz_participants|quiz_scores)'/i.test(combined) ||
+    (code === 'PGRST205' && /quiz_sessions|quiz_participants|quiz_scores/.test(combined));
+
+  if (isExactMissingTable) {
+    throw new Error(
+      'Quiz database tables are missing. Run Supabase migration 004_quiz_system.sql, then restart the app.',
+    );
+  }
+
+  // Surface real backend error to UI for faster diagnosis.
+  const fallback = message || details || hint;
+  if (fallback) throw new Error(fallback);
+  throw error;
+}
+
 async function getCurrentUserId(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user?.id) throw new Error('Not authenticated');
@@ -126,7 +149,7 @@ export async function createSession(params: CreateSessionParams): Promise<QuizSe
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
 
   // Auto-join the host as a participant
   await joinSession(data.id);
@@ -146,7 +169,7 @@ export async function joinSession(sessionId: string): Promise<QuizParticipant> {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
   return data as QuizParticipant;
 }
 
@@ -158,7 +181,8 @@ export async function joinByInviteCode(inviteCode: string): Promise<{ session: Q
     .eq('status', 'waiting')
     .single();
 
-  if (error || !session) throw new Error('Session not found or already started');
+  if (error) normalizeQuizTableError(error);
+  if (!session) throw new Error('Session not found or already started');
 
   const participant = await joinSession(session.id);
   return { session: session as QuizSession, participant };
@@ -205,7 +229,7 @@ export async function startSession(sessionId: string): Promise<void> {
     .update({ status: 'in_progress', started_at: new Date().toISOString() })
     .eq('id', sessionId);
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
 }
 
 export async function finishSession(sessionId: string): Promise<void> {
@@ -214,7 +238,7 @@ export async function finishSession(sessionId: string): Promise<void> {
     .update({ status: 'finished', finished_at: new Date().toISOString() })
     .eq('id', sessionId);
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +270,7 @@ export async function submitAnswer(
     .update({ answers, score: newScore })
     .eq('id', participantId);
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
 }
 
 export async function finishParticipant(
@@ -288,7 +312,7 @@ export async function finishParticipant(
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) normalizeQuizTableError(error);
   return score as QuizScore;
 }
 

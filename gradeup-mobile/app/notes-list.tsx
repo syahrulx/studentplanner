@@ -6,6 +6,7 @@ import { useApp } from '@/src/context/AppContext';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
+import { extractPdfTextFromUri } from '@/src/lib/pdfText';
 
 const NAVY = '#003366';
 const BG = '#f8fafc';
@@ -56,7 +57,7 @@ export default function NotesList() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type,
-        copyToCacheDirectory: false,
+        copyToCacheDirectory: true,
       });
       if (result.canceled) return;
       const file = result.assets[0];
@@ -69,6 +70,18 @@ export default function NotesList() {
 
       const noteId = `n${Date.now()}`;
       const fileName = file.name ?? `attachment-${Date.now()}`;
+      const isPdf =
+        (file.mimeType || '').toLowerCase().includes('pdf') ||
+        fileName.toLowerCase().endsWith('.pdf');
+      let importedText = '';
+
+      if (isPdf) {
+        try {
+          importedText = await extractPdfTextFromUri(file.uri, 25);
+        } catch {
+          importedText = '';
+        }
+      }
 
       const { path, error } = await uploadNoteAttachment(session.user.id, noteId, file.uri, fileName, file.mimeType ?? undefined);
       if (error) {
@@ -81,7 +94,7 @@ export default function NotesList() {
         subjectId,
         folderId: activeFolderId === 'all' ? undefined : activeFolderId,
         title: fileName,
-        content: '',
+        content: importedText,
         tag: 'Lecture',
         updatedAt: new Date().toISOString().slice(0, 10),
         attachmentPath: path,

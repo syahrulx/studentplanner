@@ -58,11 +58,20 @@ alter table quiz_sessions enable row level security;
 alter table quiz_participants enable row level security;
 alter table quiz_scores enable row level security;
 
+drop policy if exists "Users can view sessions they participate in" on quiz_sessions;
+drop policy if exists "Users can create sessions" on quiz_sessions;
+drop policy if exists "Host can update session" on quiz_sessions;
+drop policy if exists "Users can view participants in their sessions" on quiz_participants;
+drop policy if exists "Users can join sessions" on quiz_participants;
+drop policy if exists "Users can update their own participation" on quiz_participants;
+drop policy if exists "Users can view all scores (for leaderboard)" on quiz_scores;
+drop policy if exists "Users can insert their own scores" on quiz_scores;
+
 create policy "Users can view sessions they participate in"
   on quiz_sessions for select
   using (
     auth.uid() = host_id
-    or exists (select 1 from quiz_participants where quiz_participants.session_id = quiz_sessions.id and quiz_participants.user_id = auth.uid())
+    -- Allow reading waiting sessions so others can join by invite/random.
     or status = 'waiting'
   );
 
@@ -77,7 +86,14 @@ create policy "Host can update session"
 create policy "Users can view participants in their sessions"
   on quiz_participants for select
   using (
-    exists (select 1 from quiz_sessions where quiz_sessions.id = quiz_participants.session_id and (quiz_sessions.host_id = auth.uid() or quiz_sessions.status = 'waiting'))
+    -- This direction (participants -> sessions) is safe because
+    -- sessions policy no longer queries participants (avoids recursion).
+    exists (
+      select 1
+      from quiz_sessions
+      where quiz_sessions.id = quiz_participants.session_id
+        and (quiz_sessions.host_id = auth.uid() or quiz_sessions.status = 'waiting')
+    )
     or user_id = auth.uid()
   );
 

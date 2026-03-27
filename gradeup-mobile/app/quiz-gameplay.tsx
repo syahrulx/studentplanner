@@ -32,6 +32,10 @@ export default function QuizGameplay() {
   const scoreRef = useRef(0);
   scoreRef.current = score;
   const startTimeRef = useRef(Date.now());
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expiredRef = useRef(false);
+  const qIndexRef = useRef(qIndex);
+  qIndexRef.current = qIndex;
 
   // Load session from DB if not in context
   useEffect(() => {
@@ -54,24 +58,70 @@ export default function QuizGameplay() {
 
   const current = questions[qIndex];
   const isLast = qIndex >= questions.length - 1;
+  const isLastRef = useRef(isLast);
+  isLastRef.current = isLast;
   const isShortAnswer = current?.options?.length === 0;
 
-  // Timer
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const questionsRef = useRef(questions);
+  questionsRef.current = questions;
+
+  const navigateToResults = useCallback(async () => {
+    try {
+      await finishQuiz();
+    } catch {}
+    router.replace({
+      pathname: '/results-page',
+      params: {
+        sessionId: sessionRef.current?.id || '',
+        score: String(scoreRef.current),
+        total: String(questionsRef.current.length),
+      },
+    } as any);
+  }, [finishQuiz]);
+
+  const handleTimerExpired = useCallback(() => {
+    const timeMs = timerSeconds * 1000;
+    if (myParticipantId) {
+      submitAnswer(qIndexRef.current, -1, false, timeMs);
+    }
+    setStreak(0);
+    if (isLastRef.current) {
+      navigateToResults();
+    } else {
+      setQIndex((i) => i + 1);
+      setSelectedIdx(null);
+      setShortAnswer('');
+    }
+  }, [myParticipantId, timerSeconds, submitAnswer, navigateToResults]);
+
+  // Timer — countdown only, NO side effects inside the updater
   useEffect(() => {
     if (!current) return;
     startTimeRef.current = Date.now();
+    expiredRef.current = false;
     setTimeLeft(timerSeconds);
-    const t = setInterval(() => {
+    timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          handleTimerExpired();
-          return timerSeconds;
+          expiredRef.current = true;
+          return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(t);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [qIndex, timerSeconds, current]);
+
+  // Handle timer expiry in a separate effect to avoid setState-during-render
+  useEffect(() => {
+    if (timeLeft === 0 && expiredRef.current) {
+      expiredRef.current = false;
+      if (timerRef.current) clearInterval(timerRef.current);
+      handleTimerExpired();
+    }
+  }, [timeLeft, handleTimerExpired]);
 
   // Monitor opponent progress for flashes
   useEffect(() => {
@@ -83,34 +133,6 @@ export default function QuizGameplay() {
     }
   }, [opponentProgress]);
 
-  const handleTimerExpired = useCallback(() => {
-    const timeMs = timerSeconds * 1000;
-    if (myParticipantId) {
-      submitAnswer(qIndex, -1, false, timeMs);
-    }
-    setStreak(0);
-    if (isLast) {
-      navigateToResults();
-    } else {
-      setQIndex((i) => i + 1);
-      setSelectedIdx(null);
-      setShortAnswer('');
-    }
-  }, [qIndex, isLast, myParticipantId, timerSeconds]);
-
-  const navigateToResults = useCallback(async () => {
-    try {
-      await finishQuiz();
-    } catch {}
-    router.replace({
-      pathname: '/results-page',
-      params: {
-        sessionId: session?.id || '',
-        score: String(scoreRef.current),
-        total: String(questions.length),
-      },
-    } as any);
-  }, [session, questions, finishQuiz]);
 
   const handleOption = async (idx: number) => {
     if (selectedIdx !== null) return;

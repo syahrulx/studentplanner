@@ -52,6 +52,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <ThemeIcon name="tasks" size={26} color={color} />,
           }}
         />
+        {/* The 'two' tab acts as the Add button in the custom GlassTabBar - keep in middle! */}
         <Tabs.Screen
           name="two"
           options={{
@@ -61,11 +62,11 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="notes"
+          name="timetable"
           options={{
-            title: T('studyTitle'),
-            tabBarLabel: T('studyTitle'),
-            tabBarIcon: ({ color }) => <ThemeIcon name="layers" size={26} color={color} />,
+            title: (T as any)('timetable') || 'Timetable',
+            tabBarLabel: (T as any)('timetable') || 'Timetable',
+            tabBarIcon: ({ color }) => <ThemeIcon name="calendar" size={26} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -74,6 +75,13 @@ export default function TabLayout() {
             title: T('community'),
             tabBarLabel: T('community'),
             tabBarIcon: ({ color }) => <Feather name="map-pin" size={26} color={color} />,
+          }}
+        />
+        {/* Hide previous Study tab per user request */}
+        <Tabs.Screen
+          name="notes"
+          options={{
+            href: null,
           }}
         />
       </Tabs>
