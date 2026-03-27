@@ -41,14 +41,20 @@ export default function Login() {
         password,
       });
       if (signInError) {
-        setError(signInError.message === 'Invalid login credentials' ? 'Invalid email or password' : signInError.message);
+        let msg = signInError.message;
+        if (msg === 'Invalid login credentials') msg = 'Invalid email or password';
+        else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
+          msg = 'The server is currently unavailable (504 Timeout). Please try again later.';
+        }
+        setError(msg);
         return;
       }
       if (data.session) {
         router.replace('/(tabs)');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const msg = e instanceof Error ? e.message : 'Something went wrong';
+      setError(msg.includes('504') || msg.startsWith('{') ? 'The server is currently unavailable (504 Timeout). Please try again later.' : msg);
     } finally {
       setLoading(false);
     }

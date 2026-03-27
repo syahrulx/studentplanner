@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, Platform, Modal, TextInput, Alert, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import * as DocumentPicker from 'expo-document-picker';
-import { ensureNoteAttachmentsBucket, uploadNoteAttachment } from '@/src/lib/noteStorage';
+import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 
 const NAVY = '#003366';
@@ -22,6 +22,8 @@ export default function NotesList() {
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const isImportingRef = useRef(false);
 
   const foldersForSubject = useMemo(() => noteFolders.filter((f) => f.subjectId === subjectId), [noteFolders, subjectId]);
 
@@ -47,39 +49,97 @@ export default function NotesList() {
     router.push({ pathname: '/subject-flashcards' as any, params: { subjectId } });
   };
 
-  const handleImportFile = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) {
-      Alert.alert('Sign in required', 'Sign in to import files into notes.');
-      return;
+  const handleImportFile = async (type: string | string[] = '*/*') => {
+    if (isImportingRef.current) return;
+    isImportingRef.current = true;
+    setIsImporting(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type,
+        copyToCacheDirectory: false,
+      });
+      if (result.canceled) return;
+      const file = result.assets[0];
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        Alert.alert('Sign in required', 'Sign in to import files into notes.');
+        return;
+      }
+
+      const noteId = `n${Date.now()}`;
+      const fileName = file.name ?? `attachment-${Date.now()}`;
+
+      const { path, error } = await uploadNoteAttachment(session.user.id, noteId, file.uri, fileName, file.mimeType ?? undefined);
+      if (error) {
+        Alert.alert('Upload failed', error.message);
+        return;
+      }
+
+      handleSaveNote({
+        id: noteId,
+        subjectId,
+        folderId: activeFolderId === 'all' ? undefined : activeFolderId,
+        title: fileName,
+        content: '',
+        tag: 'Lecture',
+        updatedAt: new Date().toISOString().slice(0, 10),
+        attachmentPath: path,
+        attachmentFileName: fileName,
+      });
+
+      router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not import file.');
+    } finally {
+      isImportingRef.current = false;
+      setIsImporting(false);
     }
+  };
 
-    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-    if (result.canceled) return;
-    const file = result.assets[0];
-    const noteId = `n${Date.now()}`;
-    const fileName = file.name ?? `attachment-${Date.now()}`;
-
-    await ensureNoteAttachmentsBucket();
-    const { path, error } = await uploadNoteAttachment(session.user.id, noteId, file.uri, fileName, file.mimeType ?? undefined);
-    if (error) {
-      Alert.alert('Upload failed', error.message);
-      return;
-    }
-
-    handleSaveNote({
-      id: noteId,
-      subjectId,
-      folderId: activeFolderId === 'all' ? undefined : activeFolderId,
-      title: fileName,
-      content: '',
-      tag: 'Lecture',
-      updatedAt: new Date().toISOString().slice(0, 10),
-      attachmentPath: path,
-      attachmentFileName: fileName,
-    });
-
-    router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
+  const promptImportFileType = () => {
+    if (isImportingRef.current) return;
+    Alert.alert('Import file', 'Choose what to import', [
+      {
+        text: 'PDF',
+        onPress: () => {
+          setTimeout(() => {
+            handleImportFile('application/pdf').catch(() => {});
+          }, 0);
+        },
+      },
+      {
+        text: 'Image',
+        onPress: () => {
+          setTimeout(() => {
+            handleImportFile('image/*').catch(() => {});
+          }, 0);
+        },
+      },
+      {
+        text: 'Document',
+        onPress: () => {
+          setTimeout(() => {
+            handleImportFile([
+              'application/msword',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              'application/vnd.ms-powerpoint',
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              'text/plain',
+            ]).catch(() => {});
+          }, 0);
+        },
+      },
+      {
+        text: 'Any file',
+        onPress: () => {
+          setTimeout(() => {
+            handleImportFile('*/*').catch(() => {});
+          }, 0);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const emptyComponent = (
@@ -195,28 +255,38 @@ export default function NotesList() {
       />
 
       {/* + menu */}
-      <Modal visible={showPlusMenu} transparent animationType="fade">
+      <Modal 
+        visible={showPlusMenu} 
+        transparent 
+        animationType="fade"
+      >
         <Pressable style={styles.menuBackdrop} onPress={() => setShowPlusMenu(false)}>
           <View style={styles.menuPanel} onStartShouldSetResponder={() => true}>
             <Pressable
               style={styles.menuItem}
               onPress={() => {
                 setShowPlusMenu(false);
-                openNewNote(activeFolderId === 'all' ? undefined : activeFolderId);
+                setTimeout(() => {
+                  openNewNote(activeFolderId === 'all' ? undefined : activeFolderId);
+                }, 0);
               }}
             >
               <Feather name="edit-3" size={18} color={TEXT_PRIMARY} />
               <Text style={styles.menuItemText}>New note</Text>
             </Pressable>
             <Pressable
-              style={styles.menuItem}
+              style={[styles.menuItem, isImporting && styles.menuItemDisabled]}
+              disabled={isImporting}
               onPress={() => {
+                if (isImportingRef.current) return;
                 setShowPlusMenu(false);
-                handleImportFile().catch(() => {});
+                setTimeout(() => {
+                  promptImportFileType();
+                }, 0);
               }}
             >
               <Feather name="upload" size={18} color={TEXT_PRIMARY} />
-              <Text style={styles.menuItemText}>Import file</Text>
+              <Text style={styles.menuItemText}>{isImporting ? 'Importing...' : 'Import file'}</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -395,6 +465,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  menuItemDisabled: { opacity: 0.55 },
   menuItemText: { fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
 
   newFolderPanel: {

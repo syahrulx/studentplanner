@@ -8,19 +8,10 @@ import { supabase } from './supabase';
 
 export const NOTE_ATTACHMENTS_BUCKET = 'note-attachments';
 
-export async function ensureNoteAttachmentsBucket(): Promise<void> {
-  const { data: buckets } = await supabase.storage.listBuckets();
-  const exists = buckets?.some((b) => b.name === NOTE_ATTACHMENTS_BUCKET);
-  if (!exists) {
-    await supabase.storage.createBucket(NOTE_ATTACHMENTS_BUCKET, {
-      public: false,
-      fileSizeLimit: 50 * 1024 * 1024, // 50MB
-    });
-  }
-}
-
 /**
  * Upload a file for a note from a local URI (e.g. from ImagePicker or DocumentPicker).
+ * Uses expo-file-system to read the file as base64 (works in React Native),
+ * then converts to ArrayBuffer via base64-arraybuffer for Supabase upload.
  * Path: {userId}/{noteId}/{fileName}
  * Returns the storage path to store in your note record.
  */
@@ -33,10 +24,14 @@ export async function uploadNoteAttachment(
 ): Promise<{ path: string; error: Error | null }> {
   const path = `${userId}/${noteId}/${fileName}`;
   try {
-    const res = await fetch(fileUri);
-    const blob = await res.blob();
-    const { error } = await supabase.storage.from(NOTE_ATTACHMENTS_BUCKET).upload(path, blob, {
-      contentType: mimeType ?? 'application/octet-stream',
+    const formData = new FormData();
+    formData.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: mimeType ?? 'application/octet-stream',
+    } as any);
+
+    const { error } = await supabase.storage.from(NOTE_ATTACHMENTS_BUCKET).upload(path, formData, {
       upsert: true,
     });
     return { path, error: error ?? null };

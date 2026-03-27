@@ -99,7 +99,11 @@ export default function SignUp() {
         },
       });
       if (signUpError) {
-        setError(signUpError.message);
+        let msg = signUpError.message;
+        if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
+          msg = 'The server is currently unavailable (504 Timeout). Please try again later.';
+        }
+        setError(msg);
         return;
       }
       if (data.user) {
@@ -130,7 +134,8 @@ export default function SignUp() {
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const msg = e instanceof Error ? e.message : 'Something went wrong';
+      setError(msg.includes('504') || msg.startsWith('{') ? 'The server is currently unavailable (504 Timeout). Please try again later.' : msg);
     } finally {
       setLoading(false);
     }

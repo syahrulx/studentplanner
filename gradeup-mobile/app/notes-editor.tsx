@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Alert, Platform } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, ActivityIndicator, Alert, Platform, Linking } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import Feather from '@expo/vector-icons/Feather';
+import { WebView } from 'react-native-webview';
 import { useApp } from '@/src/context/AppContext';
 import { generateFlashcardsFromNote, getOpenAIKey } from '@/src/lib/studyApi';
-import { ensureNoteAttachmentsBucket, uploadNoteAttachment } from '@/src/lib/noteStorage';
+import { uploadNoteAttachment, getNoteAttachmentUrl, NOTE_ATTACHMENTS_BUCKET } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { useTranslations } from '@/src/i18n';
 
@@ -27,6 +28,9 @@ export default function NotesEditor() {
   const [attachmentPath, setAttachmentPath] = useState<string | undefined>(existing?.attachmentPath);
   const [attachmentFileName, setAttachmentFileName] = useState<string | undefined>(existing?.attachmentFileName);
   const [attachLoading, setAttachLoading] = useState(false);
+  const attachLoadingRef = useRef(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generatedCards, setGeneratedCards] = useState<{ front: string; back: string }[] | null>(null);
   const [folderModalVisible, setFolderModalVisible] = useState(false);
@@ -49,6 +53,40 @@ export default function NotesEditor() {
       }
     }
   }, [noteId]);
+
+  const isPdfAttachment = !!attachmentFileName?.toLowerCase().endsWith('.pdf');
+  const showPdfReader = !isEditing && isPdfAttachment && !!pdfPreviewUrl;
+
+  useEffect(() => {
+    let active = true;
+    const loadPdfPreview = async () => {
+      if (!attachmentPath || !isPdfAttachment) {
+        setPdfPreviewUrl(null);
+        return;
+      }
+      setPdfPreviewLoading(true);
+      try {
+        const { url, error } = await getNoteAttachmentUrl(attachmentPath);
+        if (!active) return;
+        if (error || !url) {
+          setPdfPreviewUrl(null);
+          return;
+        }
+        setPdfPreviewUrl(url);
+      } finally {
+        if (active) setPdfPreviewLoading(false);
+      }
+    };
+    loadPdfPreview().catch(() => {
+      if (active) {
+        setPdfPreviewUrl(null);
+        setPdfPreviewLoading(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [attachmentPath, isPdfAttachment]);
 
   const onSave = () => {
     const note = {
@@ -97,23 +135,25 @@ export default function NotesEditor() {
   };
 
   const handleAttachFile = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) {
-      Alert.alert('Sign in required', 'Sign in to attach files to notes.');
-      return;
-    }
+    if (attachLoadingRef.current) return;
+    attachLoadingRef.current = true;
     setAttachLoading(true);
     try {
-      await ensureNoteAttachmentsBucket();
       const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: false,
       });
       if (result.canceled) {
         setAttachLoading(false);
         return;
       }
       const file = result.assets[0];
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        Alert.alert('Sign in required', 'Sign in to attach files to notes.');
+        return;
+      }
+
       const noteIdForPath = existing?.id ?? `n${Date.now()}`;
       const name = file.name ?? `attachment-${Date.now()}`;
       const { path, error } = await uploadNoteAttachment(
@@ -129,10 +169,25 @@ export default function NotesEditor() {
       }
       setAttachmentPath(path);
       setAttachmentFileName(name);
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not attach file');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not attach file');
     } finally {
+      attachLoadingRef.current = false;
       setAttachLoading(false);
+    }
+  };
+
+  const handleOpenAttachment = async () => {
+    if (!attachmentPath) return;
+    try {
+      const { url, error } = await getNoteAttachmentUrl(attachmentPath);
+      if (error || !url) {
+        Alert.alert('Error', 'Could not get attachment link');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not open file');
     }
   };
 
@@ -199,42 +254,76 @@ export default function NotesEditor() {
       </View>
 
       {/* Page title + content area */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.pageTitle}>Note</Text>
-
-        {isEditing ? (
-          <>
-            <TextInput
-              style={styles.noteTitleInput}
-              value={title}
-              onChangeText={setTitle}
-              placeholder={T('noteTitle')}
-              placeholderTextColor={TEXT_SECONDARY}
+      {showPdfReader ? (
+        <View style={styles.pdfReaderContainer}>
+          {pdfPreviewLoading ? (
+            <View style={styles.pdfLoadingWrap}>
+              <ActivityIndicator size="small" color={NAVY} />
+              <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
+            </View>
+          ) : (
+            <WebView
+              source={{ uri: pdfPreviewUrl }}
+              style={styles.pdfReader}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={styles.pdfLoadingWrap}>
+                  <ActivityIndicator size="small" color={NAVY} />
+                </View>
+              )}
             />
-            <TextInput
-              style={styles.noteBodyInput}
-              value={content}
-              onChangeText={setContent}
-              placeholder={T('startWriting')}
-              placeholderTextColor={TEXT_SECONDARY}
-              multiline
-            />
-          </>
-        ) : (
-          <>
-            <Text style={styles.noteTitle}>{title || T('untitledNote')}</Text>
-            <Text style={styles.noteBodyRead}>
-              {content || T('startCapturing')}
-            </Text>
-          </>
-        )}
+          )}
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.pageTitle}>Note</Text>
 
-        <View style={{ height: 48 }} />
-      </ScrollView>
+          {isEditing ? (
+            <>
+              <TextInput
+                style={styles.noteTitleInput}
+                value={title}
+                onChangeText={setTitle}
+                placeholder={T('noteTitle')}
+                placeholderTextColor={TEXT_SECONDARY}
+              />
+              <TextInput
+                style={styles.noteBodyInput}
+                value={content}
+                onChangeText={setContent}
+                placeholder={T('startWriting')}
+                placeholderTextColor={TEXT_SECONDARY}
+                multiline
+              />
+            </>
+          ) : (
+            <View style={styles.readingSheet}>
+              <Text style={styles.noteTitle}>{title || T('untitledNote')}</Text>
+              <Text style={styles.noteBodyRead}>
+                {content || T('startCapturing')}
+              </Text>
+            </View>
+          )}
+
+          {attachmentFileName && (
+            <Pressable style={styles.attachmentView} onPress={handleOpenAttachment}>
+              <View style={styles.attachmentIconBox}>
+                <Feather name="file" size={20} color={NAVY} />
+              </View>
+              <Text style={styles.attachmentText} numberOfLines={1}>
+                {attachmentFileName}
+              </Text>
+              <Feather name="external-link" size={16} color={TEXT_SECONDARY} style={{ marginLeft: 'auto' }} />
+            </Pressable>
+          )}
+
+          <View style={{ height: 48 }} />
+        </ScrollView>
+      )}
 
 
 
@@ -352,10 +441,30 @@ const styles = StyleSheet.create({
   },
 
   noteTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 44,
+    fontWeight: '700',
     color: TEXT_PRIMARY,
-    marginBottom: 4,
+    marginBottom: 20,
+    textAlign: 'center',
+    letterSpacing: -0.6,
+  },
+  pdfReaderContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  pdfReader: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  pdfLoadingWrap: {
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  pdfLoadingText: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
   },
   noteTitleInput: {
     fontSize: 24,
@@ -366,12 +475,44 @@ const styles = StyleSheet.create({
     borderColor: DIVIDER,
     paddingVertical: 4,
   },
+  readingSheet: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: DIVIDER,
+    paddingHorizontal: 18,
+    paddingVertical: 24,
+  },
   noteBodyRead: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: TEXT_PRIMARY,
-    marginTop: 8,
+    fontSize: 17,
+    color: '#1e293b',
+    lineHeight: 29,
     minHeight: 120,
+    marginTop: 2,
+    textAlign: 'justify',
+  },
+  attachmentView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  attachmentIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  attachmentText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    flex: 1,
   },
   noteBodyInput: {
     fontSize: 15,

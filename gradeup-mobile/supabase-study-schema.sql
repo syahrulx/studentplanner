@@ -6,6 +6,7 @@ create table if not exists public.notes (
   id text not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   subject_id text not null,
+  folder_id text,
   title text not null,
   content text,
   tag text not null default 'Lecture',
@@ -56,6 +57,7 @@ create policy "Users can manage own flashcards"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- If notes table already existed without attachment columns, run:
+-- If notes table already existed without these columns, run:
+-- alter table public.notes add column if not exists folder_id text;
 -- alter table public.notes add column if not exists attachment_path text;
 -- alter table public.notes add column if not exists attachment_file_name text;

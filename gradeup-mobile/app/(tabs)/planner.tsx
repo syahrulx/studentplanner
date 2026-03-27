@@ -1664,12 +1664,13 @@ export default function Planner() {
         {view === 'day' && (
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
-            <Pressable style={s.monthNavBtn} onPress={goToPrevMonth} hitSlop={12}>
+            <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
               <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
             </Pressable>
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
-              <View style={s.monthNavTitleCol}>
+              <View style={[s.monthNavTitleCol, { alignItems: 'center' }]}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
+                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, fontWeight: '600', marginTop: 2 }}>Week {activeWeekNumber} of {totalWeeks}</Text>
               </View>
             </View>
             <View style={s.monthNavActions}>
@@ -1679,61 +1680,44 @@ export default function Planner() {
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
-              <Pressable style={s.monthNavBtn} onPress={goToNextMonth} hitSlop={12}>
+              <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
                 <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
               </Pressable>
             </View>
           </View>
 
-          {/* Day view: center-aligned snapping calendar strip */}
+          {/* Day view: static 7-day calendar strip */}
           <View style={s.dayStripContainer}>
-            <View style={s.weekCenterHighlight} pointerEvents="none" />
-            <ScrollView 
-              ref={calendarStripRef}
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
-              onLayout={(e) => setCalendarStripWidth(e.nativeEvent.layout.width)}
-              contentContainerStyle={{ 
-                paddingHorizontal: (calendarStripWidth / 2) - (CALENDAR_STRIP_SLOT / 2) 
-              }}
-              snapToInterval={CALENDAR_STRIP_SLOT}
-              snapToAlignment="center"
-              decelerationRate="fast"
-              onMomentumScrollEnd={(e) => {
-                const x = e.nativeEvent.contentOffset.x;
-                const idx = Math.round(x / CALENDAR_STRIP_SLOT);
-                if (monthDays[idx]) {
-                  setActiveDate(monthDays[idx].dateISO);
-                }
-              }}
-            >
-              <View style={[s.dayStrip, { gap: 0, paddingHorizontal: 0 }]}>
-                {monthDays.map((day) => {
-                  const isActive = day.dateISO === activeDate;
-                  const isToday = day.dateISO === todayISO;
-                  const count = getItemCountOnDay(day.dateISO);
-                  let dotColor: string | null = null;
-                  if (count === 1) dotColor = '#10b981';
-                  else if (count >= 2 && count <= 3) dotColor = '#f59e0b';
-                  else if (count >= 4) dotColor = '#ef4444';
+            <View style={[s.dayStrip, { justifyContent: 'space-between', paddingHorizontal: 16 }]}>
+              {weekDays.map((day) => {
+                const isActive = day.dateISO === activeDate;
+                const isToday = day.dateISO === todayISO;
+                const count = getItemCountOnDay(day.dateISO);
+                let dotColor: string | null = null;
+                if (count === 1) dotColor = '#10b981';
+                else if (count >= 2 && count <= 3) dotColor = '#f59e0b';
+                else if (count >= 4) dotColor = '#ef4444';
 
-                  return (
-                    <Pressable
-                      key={day.dateISO}
-                      style={[s.dayCell, { width: CALENDAR_STRIP_SLOT }]}
-                      onPress={() => setActiveDate(day.dateISO)}
-                    >
-                      <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label}</Text>
-                      <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
-                      <View style={s.dayDotRow}>
-                        {isToday && !isActive && <View style={[s.dayDot, { backgroundColor: '#ef4444' }]} />}
-                        {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
+                return (
+                  <Pressable
+                    key={day.dateISO}
+                    style={[
+                      s.dayCell, 
+                      { width: 44, height: 60, borderRadius: 12 }, 
+                      isActive && { backgroundColor: '#ffffff', borderColor: NAVY, borderWidth: 1, shadowColor: '#003366', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }
+                    ]}
+                    onPress={() => setActiveDate(day.dateISO)}
+                  >
+                    <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label.toUpperCase()}</Text>
+                    <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
+                    <View style={s.dayDotRow}>
+                      {isToday && !isActive && <View style={[s.dayDot, { backgroundColor: '#ef4444' }]} />}
+                      {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
         )}
