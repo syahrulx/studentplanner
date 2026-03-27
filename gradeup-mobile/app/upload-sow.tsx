@@ -8,7 +8,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { uploadSowFile, SOW_FILES_BUCKET } from '@/src/lib/sowStorage';
 import { supabase } from '@/src/lib/supabase';
 import { getTodayISO } from '@/src/utils/date';
-import { setPendingSowExtraction } from '@/src/lib/sowExtractionStore';
+import { buildTaskFromExtraction, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
+import { Priority, TaskType, type Course } from '@/src/types';
 
 const PAD = 20;
 const SECTION = 24;
@@ -16,7 +17,7 @@ const RADIUS = 16;
 const RADIUS_SM = 12;
 
 export default function UploadSOW() {
-  const { courses, user } = useApp();
+  const { courses, user, addCourse, addTask } = useApp();
   const theme = useTheme();
   const [selected, setSelected] = useState<{ name: string; uri: string; mimeType?: string | null } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -30,7 +31,7 @@ export default function UploadSOW() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'application/pdf',
-        copyToCacheDirectory: false,
+        copyToCacheDirectory: true,
       });
       if (result.canceled) return;
       const file = result.assets[0];
@@ -83,13 +84,72 @@ export default function UploadSOW() {
         return;
       }
 
-      setPendingSowExtraction({
-        importId,
-        storagePath: path,
-        fileName: selected.name,
-        extracted: data,
+      const subjects = Array.isArray(data?.subjects) ? data.subjects : [];
+      const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+
+      // Auto-create missing courses first.
+      const subjectMap = new Set(courses.map((c) => c.id.toUpperCase()));
+      const defaultWorkload = [2, 3, 4, 6, 5, 7, 8, 4, 6, 8, 10, 9, 10, 4];
+      subjects.forEach((s: any) => {
+        const id = String(s?.subject_id ?? '').trim().toUpperCase();
+        const name = String(s?.name ?? '').trim();
+        if (!id || !name || subjectMap.has(id)) return;
+        const course: Course = {
+          id,
+          name,
+          creditHours: Math.max(1, Number(s?.credit_hours ?? 3) || 3),
+          workload: defaultWorkload,
+        };
+        addCourse(course);
+        subjectMap.add(id);
       });
-      router.push('/sow-review' as any);
+
+      // Auto-create tasks.
+      let createdTaskCount = 0;
+      tasks.forEach((t: any) => {
+        const dueDate = String(t?.due_date ?? '').slice(0, 10) || getTodayISO();
+        const courseId = String(t?.course_id ?? '').trim().toUpperCase() || courses[0]?.id || 'GENERAL';
+        const extracted = {
+          title: String(t?.title ?? '').trim() || 'Task',
+          course_id: courseId,
+          type: String(t?.type ?? 'Assignment'),
+          due_date: dueDate,
+          due_time: String(t?.due_time ?? '23:59').slice(0, 5) || '23:59',
+          priority: String(t?.priority ?? 'Medium'),
+          effort_hours: Math.max(1, Math.min(20, Number(t?.effort_hours ?? 2) || 2)),
+          notes: String(t?.notes ?? ''),
+          deadline_risk: t?.deadline_risk,
+          suggested_week: Number(t?.suggested_week ?? 0) || getSuggestedWeekForDueDate(dueDate, user),
+        };
+        const task = buildTaskFromExtraction(extracted as any, {
+          fallbackCourseId: courseId,
+          user,
+          sourceMessage: `Imported from SOW: ${selected.name}`,
+        });
+        task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
+        task.priority = Object.values(Priority).includes(task.priority) ? task.priority : Priority.Medium;
+        addTask(task);
+        createdTaskCount += 1;
+      });
+
+      await supabase.from('sow_imports').upsert({
+        id: importId,
+        user_id: session.user.id,
+        file_name: selected.name,
+        storage_path: path,
+        status: 'saved',
+        extracted_summary: {
+          subject_count: subjects.length,
+          task_count: createdTaskCount,
+        },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id,user_id' });
+
+      Alert.alert(
+        'Import complete',
+        `Added ${subjects.length} subject(s) and ${createdTaskCount} task(s) to your account.`
+      );
+      router.replace('/(tabs)/planner' as any);
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Import failed.');
     } finally {

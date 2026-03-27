@@ -67,7 +67,10 @@ function normalizeOutput(
   const tasks = (Array.isArray(payload?.tasks) ? payload.tasks : [])
     .map((t: any) => {
       const rawCourse = String(t?.course_id ?? '').trim().toLowerCase();
-      const mappedCourse = knownMap.get(rawCourse) ?? rawCourse.toUpperCase() || (args.knownCourses[0]?.id ?? 'GENERAL');
+      const fromKnown = knownMap.get(rawCourse);
+      const rawUpper = rawCourse.toUpperCase();
+      const fallbackCourse = args.knownCourses[0]?.id ?? 'GENERAL';
+      const mappedCourse = fromKnown ?? (rawUpper || fallbackCourse);
       const dueDate = String(t?.due_date ?? '').slice(0, 10);
       const diff = dueDate ? daysBetween(args.todayISO, dueDate) : 0;
       const suggestedWeek = Number(t?.suggested_week ?? 0) || Math.max(args.currentWeek, args.currentWeek + Math.floor(diff / 7));
