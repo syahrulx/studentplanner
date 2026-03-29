@@ -25,8 +25,8 @@ export function getAcademicProgress(startDateStr: string, totalWeeks: number = 1
     };
   }
 
-  const startDate = new Date(trimmed);
-  startDate.setHours(0, 0, 0, 0);
+  // Local midnight, same as dueDateToTeachingWeek in academicWeek.ts (avoids week boundary drift).
+  const startDate = new Date(`${trimmed}T00:00:00`);
   if (Number.isNaN(startDate.getTime())) {
     return {
       week: 1,

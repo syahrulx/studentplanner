@@ -11,6 +11,8 @@ import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, get
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
+import { useTheme } from '@/hooks/useTheme';
+import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
@@ -85,7 +87,10 @@ const CALENDAR_STRIP_SLOT = 64;
 
 export default function Planner() {
   const scrollRef = useRef<ScrollView>(null);
-  
+  const weekGridScrollRef = useRef<ScrollView>(null);
+  const theme = useTheme();
+  const s = useMemo(() => createPlannerStyles(theme), [theme]);
+
   const {
     tasks,
     toggleTaskDone,
@@ -105,6 +110,7 @@ export default function Planner() {
     setLastPlannerView,
     user,
     language,
+    academicCalendar,
   } = useApp();
   const {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
@@ -142,19 +148,23 @@ export default function Planner() {
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
-  const totalWeeks = (user as any).totalWeeks ?? 14;
+  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const semesterStartISO = useMemo(
+    () => (academicCalendar?.startDate ?? user.startDate ?? '').trim().slice(0, 10),
+    [academicCalendar?.startDate, user.startDate],
+  );
   const getWeekNumberForDate = useCallback(
     (dateISO: string): number => {
-      if (user.startDate) {
-        const start = new Date(user.startDate + 'T00:00:00');
-        const current = new Date(dateISO + 'T00:00:00');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
+        const start = new Date(`${semesterStartISO}T00:00:00`);
+        const current = new Date(`${dateISO.slice(0, 10)}T00:00:00`);
         const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
         const rawWeek = Math.floor(diffDays / 7) + 1;
         return Math.min(Math.max(rawWeek, 1), totalWeeks);
       }
       return typeof user.currentWeek === 'number' ? user.currentWeek : 1;
     },
-    [user.startDate, user.currentWeek, totalWeeks]
+    [semesterStartISO, user.currentWeek, totalWeeks],
   );
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
 
@@ -480,6 +490,29 @@ export default function Planner() {
     return [...pinned, ...unpinned];
   }, [combinedList, pinnedSet, pinnedTaskIds, sortMode]);
 
+  /** Week grid: scroll to first hour that has items (tasks default to 23:59 and sit at the bottom). */
+  useEffect(() => {
+    if (view !== 'week') return;
+    const weekISOs = new Set(weekDays.map((d) => d.dateISO));
+    let minHour = 24;
+    for (const item of displayList) {
+      const dateStr = item.itemType === 'task' ? item.dueDate : item.date;
+      if (!weekISOs.has(dateStr)) continue;
+      const timeStr = item.itemType === 'task' ? item.dueTime : item.time;
+      const raw = ((timeStr ?? '') as string).trim() || '12:00';
+      const h = parseInt(raw.split(':')[0], 10);
+      if (!Number.isFinite(h)) continue;
+      if (h < minHour) minHour = h;
+    }
+    if (minHour >= 24) return;
+    const hourHeight = 100;
+    const y = Math.max(0, minHour * hourHeight - 48);
+    const id = setTimeout(() => {
+      weekGridScrollRef.current?.scrollTo({ y, animated: true });
+    }, 150);
+    return () => clearTimeout(id);
+  }, [view, activeDate, displayList, weekDays]);
+
   const listCount = displayList.length;
 
   const handleShareAll = async () => {
@@ -598,7 +631,7 @@ export default function Planner() {
           style={({ pressed }) => [s.aiTriggerBtn, pressed && s.pressed]}
           onPress={() => setShowAiCard((prev) => !prev)}
         >
-          <Feather name="zap" size={16} color={COLORS.navy} />
+          <Feather name="zap" size={16} color={theme.text} />
           <Text style={s.aiTriggerText}>{T('aiAcademicStrategist')}</Text>
         </Pressable>
       </View>
@@ -913,20 +946,25 @@ export default function Planner() {
             ? s.taskInlineStatusSoon
             : s.taskInlineStatusFar;
     const showInlineStatus = !(item.itemType === 'task' && daysUntil === 0 && !item.isDone);
-    const borderColor = item.isDone
-      ? '#dbe4ef'
-      : isOverdue
-        ? 'rgba(220,38,38,0.22)'
-      : isDueSoon
-        ? 'rgba(245,158,11,0.22)'
-        : BORDER;
+    const darkSurface = themePrefersLightOutline(theme);
+    const borderColor = darkSurface
+      ? item.isDone
+        ? 'rgba(255,255,255,0.22)'
+        : 'rgba(255,255,255,0.38)'
+      : item.isDone
+        ? '#dbe4ef'
+        : isOverdue
+          ? 'rgba(220,38,38,0.22)'
+          : isDueSoon
+            ? 'rgba(245,158,11,0.22)'
+            : theme.border;
     return (
       <View key={`card-${idx}`} style={s.taskCardShell}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); handleItemAction(item); }}
           style={[s.taskActionOutside, item.isDone && s.taskActionOutsideDone]}
         >
-          <Feather name={item.isDone ? 'check' : 'circle'} size={16} color={item.isDone ? '#15803d' : NAVY} />
+          <Feather name={item.isDone ? 'check' : 'circle'} size={16} color={item.isDone ? '#15803d' : theme.primary} />
         </Pressable>
         <Pressable
           style={[
@@ -945,17 +983,27 @@ export default function Planner() {
                   style={[
                     s.taskSubjectPill,
                     {
-                      backgroundColor: '#ffffff',
+                      backgroundColor: theme.card,
                       borderColor: hexToRgba(subjectColor, 0.3),
                     },
                   ]}
                 >
                   <View style={[s.taskSubjectDot, { backgroundColor: subjectColor }]} />
-                  <Text style={[s.taskSubjectText, { color: subjectColor }]}>{subject}</Text>
+                  <Text
+                    style={[
+                      s.taskSubjectText,
+                      {
+                        color:
+                          theme.id === 'dark' || theme.id === 'midnight' ? theme.text : subjectColor,
+                      },
+                    ]}
+                  >
+                    {subject}
+                  </Text>
                 </View>
                 {isPinnedTask ? (
                   <View style={s.taskPinBadge}>
-                    <Feather name="bookmark" size={11} color={NAVY} />
+                    <Feather name="bookmark" size={11} color={theme.primary} />
                   </View>
                 ) : null}
                 {item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask ? (
@@ -973,7 +1021,7 @@ export default function Planner() {
                   handleItemMenu(item);
                 }}
               >
-                <Feather name="more-vertical" size={16} color={TEXT_SECONDARY} />
+                <Feather name="more-vertical" size={16} color={theme.textSecondary} />
               </Pressable>
             </View>
 
@@ -986,7 +1034,7 @@ export default function Planner() {
               {item.itemType === 'study' ? (
               <View style={s.studyFooter}>
                 <View style={s.studyTimeRow}>
-                  <Feather name="clock" size={12} color="#64748b" />
+                  <Feather name="clock" size={12} color={theme.textSecondary} />
                   <Text style={s.studyTimeText} numberOfLines={1}>
                     {timeRange}
                   </Text>
@@ -995,16 +1043,8 @@ export default function Planner() {
                   <Text style={s.studyDurationText} numberOfLines={1}>
                     {item.durationMinutes} min
                   </Text>
-                  <View
-                    style={[
-                      s.taskDetailChip,
-                      {
-                        backgroundColor: '#ffffff',
-                        borderColor: '#cbd5e1',
-                      },
-                    ]}
-                  >
-                    <Text style={[s.taskDetailChipText, { color: '#64748b' }]} numberOfLines={1}>
+                  <View style={s.taskDetailChip}>
+                    <Text style={s.taskDetailChipText} numberOfLines={1}>
                       {T('study')}
                     </Text>
                   </View>
@@ -1013,7 +1053,7 @@ export default function Planner() {
             ) : (
               <View style={s.studyFooter}>
                 <View style={s.studyTimeRow}>
-                  <Feather name="clock" size={12} color="#64748b" />
+                  <Feather name="clock" size={12} color={theme.textSecondary} />
                   <Text style={s.studyTimeText} numberOfLines={1}>
                     {timeText}
                   </Text>
@@ -1022,16 +1062,8 @@ export default function Planner() {
                   <Text style={[s.taskDetailLabel, statusTextStyle]} numberOfLines={1}>
                     {statusLabel}
                   </Text>
-                  <View
-                    style={[
-                      s.taskDetailChip,
-                      {
-                        backgroundColor: '#ffffff',
-                        borderColor: '#cbd5e1',
-                      },
-                    ]}
-                  >
-                    <Text style={[s.taskDetailChipText, { color: '#64748b' }]} numberOfLines={1}>
+                  <View style={s.taskDetailChip}>
+                    <Text style={s.taskDetailChipText} numberOfLines={1}>
                       {secondaryLabel}
                     </Text>
                   </View>
@@ -1053,7 +1085,7 @@ export default function Planner() {
     const monthNav = (
       <View style={s.gridNavHeader}>
         <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
-          <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+          <Feather name="chevron-left" size={20} color={theme.textSecondary} />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center', minWidth: 0, paddingHorizontal: 6 }}>
           <Text style={s.gridNavTitle} numberOfLines={1}>
@@ -1068,16 +1100,16 @@ export default function Planner() {
             accessibilityLabel={monthExpanded ? 'Compact month view' : 'Expanded month view with task text'}
             hitSlop={6}
           >
-            <Feather name={monthExpanded ? 'minimize-2' : 'maximize-2'} size={18} color={NAVY} />
+            <Feather name={monthExpanded ? 'minimize-2' : 'maximize-2'} size={18} color={theme.primary} />
           </Pressable>
           {activeDate !== todayISO && (
             <Pressable style={s.monthTodayBtn} onPress={goToToday} hitSlop={10}>
-              <Feather name="calendar" size={13} color={NAVY} />
+              <Feather name="calendar" size={13} color={theme.primary} />
               <Text style={s.monthTodayText}>{T('today')}</Text>
             </Pressable>
           )}
           <Pressable style={s.gridNavBtn} onPress={goToNextMonth}>
-            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
         </View>
       </View>
@@ -1089,13 +1121,13 @@ export default function Planner() {
       const cellHeight = 125;
 
       return (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: theme.background }}>
           {monthNav}
 
-          <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: '#ffffff' }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: theme.background }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View style={{ width: colWidth * 7 }}>
-                <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f1f5f9' }}>
+                <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: theme.border }}>
                   {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
                     <View key={`day-${i}`} style={{ width: colWidth, alignItems: 'center', paddingVertical: 12 }}>
                       <Text style={s.monthGridHeaderText}>{d}</Text>
@@ -1186,7 +1218,7 @@ export default function Planner() {
                                               <Text
                                                 style={[
                                                   s.monthGridTagText,
-                                                  { color: TEXT_PRIMARY, fontSize: dynamicFontSize },
+                                                  { color: theme.text, fontSize: dynamicFontSize },
                                                 ]}
                                                 numberOfLines={dynamicLines}
                                               >
@@ -1240,20 +1272,20 @@ export default function Planner() {
     const dayNumSelected = selectedDate.getDate();
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
         {monthNav}
 
         {/* Weekday Headers */}
         <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
             <View key={`hdr-${i}`} style={{ width: cellWidth, alignItems: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: i === 0 || i === 6 ? '#cbd5e1' : TEXT_SECONDARY, letterSpacing: 0.2 }}>{d}</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: i === 0 || i === 6 ? '#cbd5e1' : theme.textSecondary, letterSpacing: 0.2 }}>{d}</Text>
             </View>
           ))}
         </View>
 
         {/* Compact Calendar Grid */}
-        <View style={{ backgroundColor: '#ffffff' }}>
+        <View style={{ backgroundColor: theme.card }}>
           {(() => {
             const weeks: (number | null)[][] = [];
             for (let i = 0; i < days.length; i += 7) {
@@ -1379,7 +1411,7 @@ export default function Planner() {
             style={s.mDetailAddBtn}
             onPress={() => router.push('/add-task' as any)}
           >
-            <Feather name="plus" size={16} color={NAVY} />
+            <Feather name="plus" size={16} color={theme.primary} />
           </Pressable>
         </View>
 
@@ -1411,10 +1443,10 @@ export default function Planner() {
     const currentMin = now.getMinutes();
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
         <View style={s.gridNavHeader}>
           <Pressable style={s.gridNavBtn} onPress={goToPrevWeek}>
-            <Feather name="chevron-left" size={20} color={TEXT_SECONDARY} />
+            <Feather name="chevron-left" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={{ alignItems: 'center' }}>
             <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
@@ -1425,14 +1457,14 @@ export default function Planner() {
             )}
           </View>
           <Pressable style={s.gridNavBtn} onPress={goToNextWeek}>
-            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ width: timeColWidth + colWidth * 7 }}>
             {/* Sticky Day Header */}
-            <View style={{ flexDirection: 'row', backgroundColor: '#ffffff', borderBottomWidth: 1, borderColor: '#e2e8f0', zIndex: 30 }}>
+            <View style={{ flexDirection: 'row', backgroundColor: theme.card, borderBottomWidth: 1, borderColor: theme.border, zIndex: 30 }}>
               <View style={{ width: timeColWidth }} />
               {weekDays.map((day) => {
                 const isToday = day.dateISO === todayISO;
@@ -1443,28 +1475,32 @@ export default function Planner() {
                     onPress={() => setActiveDate(day.dateISO)}
                     style={[
                       { width: colWidth, height: 50, alignItems: 'center', justifyContent: 'center' },
-                      isToday && { backgroundColor: 'rgba(0,51,102,0.03)' },
-                      isWeekend && !isToday && { backgroundColor: '#fcfdfe' }
+                      isToday && { backgroundColor: `${theme.primary}14` },
+                      isWeekend && !isToday && { backgroundColor: theme.backgroundSecondary }
                     ]}
                   >
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? NAVY : TEXT_SECONDARY, textTransform: 'uppercase' }}>{day.label}</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: isToday ? NAVY : TEXT_PRIMARY }}>{day.dayNum}</Text>
-                    {isToday && <View style={{ position: 'absolute', bottom: 0, width: 24, height: 3, backgroundColor: NAVY, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? theme.primary : theme.textSecondary, textTransform: 'uppercase' }}>{day.label}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: isToday ? theme.primary : theme.text }}>{day.dayNum}</Text>
+                    {isToday && <View style={{ position: 'absolute', bottom: 0, width: 24, height: 3, backgroundColor: theme.primary, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
                   </Pressable>
                 );
               })}
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView
+              ref={weekGridScrollRef}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 100 }}
+            >
               <View style={{ flexDirection: 'row' }}>
                 {/* Time Column (Sticky horizontal sync inside horizontal ScrollView) */}
-                <View style={{ width: timeColWidth, borderRightWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
+                <View style={{ width: timeColWidth, borderRightWidth: 1, borderColor: theme.border, backgroundColor: theme.card }}>
                   {HOUR_SLOTS.map(slot => {
                     const isPast = slot.hour < currentHour;
                     return (
                       <View key={slot.hour} style={{ height: hourHeight, justifyContent: 'flex-start', paddingTop: 6, paddingLeft: 10 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: isPast ? '#94a3b8' : TEXT_SECONDARY }}>{slot.label.split(' ')[0]}</Text>
-                        <Text style={{ fontSize: 8, fontWeight: '600', color: isPast ? '#cbd5e1' : TEXT_SECONDARY }}>{slot.label.split(' ')[1]}</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: isPast ? theme.textSecondary : theme.text }}>{slot.label.split(' ')[0]}</Text>
+                        <Text style={{ fontSize: 8, fontWeight: '600', color: theme.textSecondary }}>{slot.label.split(' ')[1]}</Text>
                       </View>
                     );
                   })}
@@ -1481,9 +1517,9 @@ export default function Planner() {
                     <View 
                       key={day.dateISO} 
                       style={[
-                        { width: colWidth, borderRightWidth: 0.5, borderColor: '#f1f5f9' },
-                        isWeekend && { backgroundColor: '#fcfdfe' },
-                        isActive && { backgroundColor: 'rgba(0,51,102,0.01)' }
+                        { width: colWidth, borderRightWidth: StyleSheet.hairlineWidth, borderColor: theme.border },
+                        isWeekend && { backgroundColor: theme.backgroundSecondary },
+                        isActive && { backgroundColor: `${theme.primary}0A` }
                       ]}
                     >
                       <View style={{ height: 24 * hourHeight, position: 'relative', overflow: 'hidden' }}>
@@ -1499,7 +1535,7 @@ export default function Planner() {
                                 left: 0, 
                                 right: 0, 
                                 height: 1, 
-                                backgroundColor: isPast ? '#f8fafc' : '#f1f5f9' 
+                                backgroundColor: isPast ? theme.backgroundSecondary : theme.border 
                               }} 
                             />
                           );
@@ -1514,7 +1550,7 @@ export default function Planner() {
                               left: 0, 
                               right: 0, 
                               height: currentHour * hourHeight, 
-                              backgroundColor: 'rgba(248, 250, 252, 0.4)',
+                              backgroundColor: `${theme.background}99`,
                               zIndex: 1
                             }} 
                           />
@@ -1529,7 +1565,7 @@ export default function Planner() {
                               left: 0, 
                               right: 0, 
                               height: 2, 
-                              backgroundColor: NAVY,
+                              backgroundColor: theme.primary,
                               zIndex: 40,
                             }} 
                           >
@@ -1537,7 +1573,7 @@ export default function Planner() {
                               position: 'absolute', 
                               left: -35, 
                               top: -8, 
-                              backgroundColor: NAVY, 
+                              backgroundColor: theme.primary, 
                               paddingHorizontal: 4, 
                               paddingVertical: 2, 
                               borderRadius: 4,
@@ -1545,27 +1581,40 @@ export default function Planner() {
                               alignItems: 'center',
                               gap: 2
                             }}>
-                              <Text style={{ fontSize: 8, color: '#ffffff', fontWeight: '900' }}>NOW</Text>
+                              <Text style={{ fontSize: 8, color: theme.textInverse, fontWeight: '900' }}>NOW</Text>
                             </View>
-                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: NAVY, position: 'absolute', left: -4, top: -3 }} />
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary, position: 'absolute', left: -4, top: -3 }} />
                           </View>
                         )}
 
                         {/* Event cards */}
                         {dayItems.map((item, idx) => {
                           const timeStr = item.itemType === 'task' ? item.dueTime : item.time;
-                          const [h, m] = (timeStr || '00:00').split(':').map(Number);
-                          const top = (h + m/60) * hourHeight;
+                          const rawT = ((timeStr ?? '') as string).trim() || '12:00';
+                          let h = Number.parseInt(rawT.split(':')[0], 10);
+                          let m = Number.parseInt(rawT.split(':')[1] || '0', 10);
+                          if (!Number.isFinite(h)) h = 12;
+                          if (!Number.isFinite(m)) m = 0;
+                          h = Math.min(23, Math.max(0, h));
+                          m = Math.min(59, Math.max(0, m));
+                          const gridHeight = 24 * hourHeight;
+                          const rawTop = (h + m / 60) * hourHeight;
                           const duration = item.itemType === 'study' ? item.durationMinutes : 45;
-                          const rawHeight = (duration / 60) * hourHeight;
-                          const boundedTop = Math.max(0, top);
-                          const availableHeight = 24 * hourHeight - boundedTop - 2;
-                          const boundedHeight = Math.max(0, Math.min(Math.max(rawHeight, 24), availableHeight));
+                          const rawBlockHeight = Math.max((duration / 60) * hourHeight, 28);
+                          const minChip = 28;
+                          let boundedTop = Math.max(0, rawTop);
+                          let boundedHeight = Math.max(minChip, rawBlockHeight);
+                          if (boundedTop + boundedHeight > gridHeight) {
+                            boundedTop = Math.max(0, gridHeight - boundedHeight);
+                          }
+                          if (boundedTop + boundedHeight > gridHeight) {
+                            boundedHeight = Math.max(minChip, gridHeight - boundedTop);
+                          }
                           const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
                           const color = getSubjectColor(subject);
                           const isPast = isToday && h < currentHour;
 
-                          if (boundedHeight <= 0) return null;
+                          if (boundedHeight < minChip || boundedTop >= gridHeight) return null;
 
                           return (
                             <Pressable
@@ -1582,7 +1631,7 @@ export default function Planner() {
                                 borderLeftWidth: 4,
                                 borderLeftColor: isPast ? hexToRgba(color, 0.5) : color,
                                 borderBottomWidth: 1,
-                                borderBottomColor: 'rgba(0,0,0,0.05)',
+                                borderBottomColor: theme.border,
                                 paddingHorizontal: 6,
                                 paddingVertical: 4,
                                 zIndex: 10,
@@ -1612,11 +1661,11 @@ export default function Planner() {
                                         backgroundColor: isDone ? color : 'transparent' 
                                       }} />
                                     </View>
-                                    <Text style={{ fontSize: 9, fontWeight: '800', color: NAVY, lineHeight: 11 }} numberOfLines={2}>
+                                    <Text style={{ fontSize: 9, fontWeight: '800', color: theme.text, lineHeight: 11 }} numberOfLines={2}>
                                       {title}
                                     </Text>
                                     {boundedHeight > 40 && (
-                                      <Text style={{ fontSize: 8, color: TEXT_SECONDARY, marginTop: 2, fontWeight: '600' }}>{timeStr}</Text>
+                                      <Text style={{ fontSize: 8, color: theme.textSecondary, marginTop: 2, fontWeight: '600' }}>{timeStr}</Text>
                                     )}
                                   </View>
                                 );
@@ -1642,7 +1691,7 @@ export default function Planner() {
       <View style={s.header}>
         <View style={s.headerTopRow}>
           <Pressable style={s.headerBtn} onPress={() => router.back()}>
-            <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
+            <Feather name="chevron-left" size={24} color={theme.text} />
           </Pressable>
           <View style={{ position: 'relative' }}>
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
@@ -1657,12 +1706,12 @@ export default function Planner() {
                     : 'list'
                 }
                 size={16}
-                color={NAVY}
+                color={theme.primary}
               />
               <Text style={s.headerViewBtnText}>
                 {view.charAt(0).toUpperCase() + view.slice(1)}
               </Text>
-              <Feather name={viewMenuOpen ? "chevron-up" : "chevron-down"} size={14} color={TEXT_SECONDARY} />
+              <Feather name={viewMenuOpen ? "chevron-up" : "chevron-down"} size={14} color={theme.textSecondary} />
             </Pressable>
 
             {viewMenuOpen && (
@@ -1689,7 +1738,7 @@ export default function Planner() {
                             : 'list'
                         }
                         size={14}
-                        color={view === mode ? '#ffffff' : TEXT_PRIMARY}
+                        color={view === mode ? '#ffffff' : theme.text}
                       />
                       <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
                         {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -1708,7 +1757,7 @@ export default function Planner() {
             onPress={() => setShowShareAllModal(true)}
             hitSlop={6}
           >
-            <Feather name="send" size={16} color={NAVY} />
+            <Feather name="send" size={16} color={theme.primary} />
           </Pressable>
         </View>
 
@@ -1717,23 +1766,23 @@ export default function Planner() {
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
             <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
-              <Feather name="chevron-left" size={18} color={TEXT_SECONDARY} />
+              <Feather name="chevron-left" size={18} color={theme.textSecondary} />
             </Pressable>
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={[s.monthNavTitleCol, { alignItems: 'center' }]}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-                <Text style={{ fontSize: 13, color: TEXT_SECONDARY, fontWeight: '600', marginTop: 2 }}>Week {activeWeekNumber} of {totalWeeks}</Text>
+                <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '600', marginTop: 2 }}>Week {activeWeekNumber} of {totalWeeks}</Text>
               </View>
             </View>
             <View style={s.monthNavActions}>
               {activeDate !== todayISO ? (
                 <Pressable style={s.monthTodayBtn} onPress={goToToday} hitSlop={10}>
-                  <Feather name="calendar" size={13} color={NAVY} />
+                  <Feather name="calendar" size={13} color={theme.primary} />
                   <Text style={s.monthTodayText}>{T('today')}</Text>
                 </Pressable>
               ) : null}
               <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
-                <Feather name="chevron-right" size={18} color={TEXT_SECONDARY} />
+                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
               </Pressable>
             </View>
           </View>
@@ -1756,7 +1805,7 @@ export default function Planner() {
                     style={[
                       s.dayCell, 
                       { width: 44, height: 60, borderRadius: 12 }, 
-                      isActive && { backgroundColor: '#ffffff', borderColor: NAVY, borderWidth: 1, shadowColor: '#003366', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }
+                      isActive && { backgroundColor: theme.card, borderColor: theme.primary, borderWidth: 1, shadowColor: '#003366', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }
                     ]}
                     onPress={() => setActiveDate(day.dateISO)}
                   >
@@ -1787,7 +1836,7 @@ export default function Planner() {
           {renderListHeader()}
           {displayList.length === 0 ? (
             <View style={s.emptyState}>
-              <Feather name="inbox" size={32} color={TEXT_SECONDARY} />
+              <Feather name="inbox" size={32} color={theme.textSecondary} />
               <Text style={s.emptyText}>{T('noTasksForDay')}</Text>
             </View>
           ) : (
@@ -1873,7 +1922,7 @@ export default function Planner() {
             <View style={s.shareAllHeader}>
               <Text style={s.shareAllTitle}>Share All Tasks</Text>
               <Pressable onPress={() => setShowShareAllModal(false)} hitSlop={10}>
-                <Feather name="x" size={24} color={TEXT_SECONDARY} />
+                <Feather name="x" size={24} color={theme.textSecondary} />
               </Pressable>
             </View>
 
@@ -1887,14 +1936,14 @@ export default function Planner() {
                 style={[s.shareAllTab, shareAllTab === 'friend' && s.shareAllTabActive]}
                 onPress={() => setShareAllTab('friend')}
               >
-                <Feather name="user" size={15} color={shareAllTab === 'friend' ? NAVY : TEXT_SECONDARY} />
+                <Feather name="user" size={15} color={shareAllTab === 'friend' ? theme.primary : theme.textSecondary} />
                 <Text style={[s.shareAllTabText, shareAllTab === 'friend' && s.shareAllTabTextActive]}>Friend</Text>
               </Pressable>
               <Pressable
                 style={[s.shareAllTab, shareAllTab === 'circle' && s.shareAllTabActive]}
                 onPress={() => setShareAllTab('circle')}
               >
-                <Feather name="users" size={15} color={shareAllTab === 'circle' ? NAVY : TEXT_SECONDARY} />
+                <Feather name="users" size={15} color={shareAllTab === 'circle' ? theme.primary : theme.textSecondary} />
                 <Text style={[s.shareAllTabText, shareAllTab === 'circle' && s.shareAllTabTextActive]}>Circle</Text>
               </Pressable>
             </View>
@@ -1913,8 +1962,8 @@ export default function Planner() {
                       <View style={s.shareAllAvatar}>
                         <Text style={s.shareAllAvatarText}>{f.name.charAt(0)}</Text>
                       </View>
-                      <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: NAVY }]}>{f.name}</Text>
-                      {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={NAVY} />}
+                      <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: theme.primary }]}>{f.name}</Text>
+                      {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={theme.primary} />}
                     </Pressable>
                   ))
                 )
@@ -1932,10 +1981,10 @@ export default function Planner() {
                         <Text style={s.shareAllAvatarText}>{c.emoji}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: NAVY }]}>{c.name}</Text>
-                        <Text style={{ fontSize: 11, color: TEXT_SECONDARY }}>{c.member_count || 0} members</Text>
+                        <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: theme.primary }]}>{c.name}</Text>
+                        <Text style={{ fontSize: 11, color: theme.textSecondary }}>{c.member_count || 0} members</Text>
                       </View>
-                      {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={NAVY} />}
+                      {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={theme.primary} />}
                     </Pressable>
                   ))
                 )
@@ -1945,7 +1994,7 @@ export default function Planner() {
             <TextInput
               style={s.shareAllInput}
               placeholder="Add a note (optional)"
-              placeholderTextColor={TEXT_SECONDARY}
+              placeholderTextColor={theme.textSecondary}
               value={shareAllMessage}
               onChangeText={setShareAllMessage}
               maxLength={200}
@@ -1972,15 +2021,15 @@ export default function Planner() {
   );
 }
 
-const NAVY = '#003366';
 const GOLD = '#f59e0b';
-const BG = '#f8fafc';
-const BORDER = '#e2e8f0';
-const TEXT_PRIMARY = '#1A1C1E';
-const TEXT_SECONDARY = '#8E9AAF';
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: BG, paddingTop: 56 },
+function createPlannerStyles(theme: ThemePalette) {
+  const lightOutline = themePrefersLightOutline(theme);
+  const detailChipOutline = lightOutline ? 'rgba(255,255,255,0.82)' : theme.border;
+  const actionRingOutline = lightOutline ? 'rgba(255,255,255,0.58)' : '#d7dee8';
+  const actionRingOutlineDone = lightOutline ? 'rgba(74,222,128,0.75)' : '#bbf7d0';
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.background, paddingTop: 56 },
   pressed: { opacity: 0.7 },
 
   header: {
@@ -2001,10 +2050,10 @@ const s = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
   },
   headerViewBtn: {
     flexDirection: 'row',
@@ -2013,7 +2062,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 14,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderWidth: 1,
     borderColor: 'rgba(0,51,102,0.08)',
     shadowColor: '#003366',
@@ -2024,26 +2073,26 @@ const s = StyleSheet.create({
   headerViewBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: NAVY,
+    color: theme.primary,
   },
-  headerTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.4 },
+  headerTitle: { fontSize: 19, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
 
   viewDropdown: {
     position: 'absolute',
     top: 52,
     right: 0,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 8,
     width: 156,
-    shadowColor: '#003366',
-    shadowOpacity: 0.15,
+    shadowColor: theme.text,
+    shadowOpacity: 0.12,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
     elevation: 10,
     borderWidth: 1,
-    borderColor: 'rgba(0,51,102,0.05)',
+    borderColor: theme.cardBorder,
     zIndex: 1000,
   },
   viewDropdownItem: {
@@ -2055,12 +2104,12 @@ const s = StyleSheet.create({
     marginBottom: 2,
   },
   viewDropdownItemActive: {
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
   },
   viewDropdownText: {
     fontSize: 14,
     fontWeight: '600',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   viewDropdownTextActive: {
     color: '#ffffff',
@@ -2068,7 +2117,7 @@ const s = StyleSheet.create({
   },
 
   calendarPanel: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 24,
     paddingTop: 6,
     paddingBottom: 6,
@@ -2097,20 +2146,20 @@ const s = StyleSheet.create({
   dayLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
     textTransform: 'uppercase',
     marginBottom: 4,
   },
   dayLabelActive: {
-    color: NAVY,
+    color: theme.primary,
   },
   dayDate: {
     fontSize: 18,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   dayDateActive: {
-    color: NAVY,
+    color: theme.primary,
   },
   dayDotRow: {
     flexDirection: 'row',
@@ -2134,7 +2183,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,51,102,0.06)',
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: NAVY,
+    borderColor: theme.primary,
   },
 
   // Month Navigator
@@ -2168,12 +2217,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthNavTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center', letterSpacing: -0.35 },
+  monthNavTitle: { fontSize: 17, fontWeight: '800', color: theme.text, textAlign: 'center', letterSpacing: -0.35 },
   weekInfoText: {
     marginTop: 2,
     fontSize: 11,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
   monthNavActions: {
     flexDirection: 'row',
@@ -2193,18 +2242,18 @@ const s = StyleSheet.create({
   monthTodayText: {
     fontSize: 11,
     fontWeight: '800',
-    color: NAVY,
+    color: theme.primary,
     letterSpacing: 0.2,
   },
   viewBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 10 },
-  viewBtnActive: { backgroundColor: NAVY },
-  viewBtnText: { fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1.5 },
+  viewBtnActive: { backgroundColor: theme.primary },
+  viewBtnText: { fontSize: 10, fontWeight: '900', color: theme.textSecondary, letterSpacing: 1.5 },
   viewBtnTextActive: { color: '#ffffff' },
   addBtn: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2212,9 +2261,9 @@ const s = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2279,7 +2328,7 @@ const s = StyleSheet.create({
     paddingLeft: 4,
   },
   currentTimePill: {
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -2293,7 +2342,7 @@ const s = StyleSheet.create({
   currentTimeLine: {
     flex: 1,
     height: 2,
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     borderRadius: 1,
   },
 
@@ -2314,10 +2363,10 @@ const s = StyleSheet.create({
   aiTriggerText: {
     fontSize: 11,
     fontWeight: '700',
-    color: NAVY,
+    color: theme.primary,
   },
   aiCard: {
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
@@ -2370,10 +2419,10 @@ const s = StyleSheet.create({
     opacity: 0.92,
   },
   weekDayToday: { borderWidth: 1.5, borderColor: '#d6e3f3', backgroundColor: 'rgba(248, 251, 255, 0.75)' },
-  weekDate: { fontSize: 16, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 3, letterSpacing: -0.2 },
+  weekDate: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 3, letterSpacing: -0.2 },
   weekDateActive: { color: '#ffffff', fontSize: 18 },
   weekDateInactive: { color: '#526277', opacity: 0.62 },
-  weekLabel: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
+  weekLabel: { fontSize: 10, fontWeight: '700', color: theme.textSecondary },
   weekLabelActive: { color: '#ffffff', opacity: 0.9 },
   weekLabelInactive: { color: '#b6c0cf', opacity: 0.74 },
   weekDayDot: {
@@ -2385,7 +2434,7 @@ const s = StyleSheet.create({
 
   // Month Grid
   monthCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 28,
     padding: 20,
   },
@@ -2399,8 +2448,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
-  taskListLabel: { fontSize: 10, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1.5 },
-  filterLabel: { fontSize: 10, fontWeight: '700', color: NAVY, letterSpacing: 1 },
+  taskListLabel: { fontSize: 10, fontWeight: '900', color: theme.textSecondary, letterSpacing: 1.5 },
+  filterLabel: { fontSize: 10, fontWeight: '700', color: theme.primary, letterSpacing: 1 },
   filterRow: {
     flexDirection: 'row',
     gap: 8,
@@ -2411,12 +2460,12 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: theme.border,
   },
-  filterChipActive: { backgroundColor: NAVY, borderColor: NAVY },
-  filterChipText: { fontSize: 9, fontWeight: '900', color: TEXT_SECONDARY, letterSpacing: 1 },
+  filterChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+  filterChipText: { fontSize: 9, fontWeight: '900', color: theme.textSecondary, letterSpacing: 1 },
   filterChipTextActive: { color: '#ffffff' },
 
   sortRow: {
@@ -2425,18 +2474,18 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 14,
   },
-  sortLabel: { fontSize: 10, fontWeight: '800', color: TEXT_SECONDARY },
+  sortLabel: { fontSize: 10, fontWeight: '800', color: theme.textSecondary },
   sortChips: { flexDirection: 'row', gap: 8 },
   sortChip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: theme.border,
   },
-  sortChipActive: { backgroundColor: NAVY, borderColor: NAVY },
-  sortChipText: { fontSize: 9, fontWeight: '800', color: TEXT_SECONDARY },
+  sortChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+  sortChipText: { fontSize: 9, fontWeight: '800', color: theme.textSecondary },
   sortChipTextActive: { color: '#ffffff' },
 
   // Task Card
@@ -2455,17 +2504,17 @@ const s = StyleSheet.create({
     maxWidth: 420,
     alignSelf: 'flex-start',
     position: 'relative',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: lightOutline ? 'rgba(255,255,255,0.38)' : '#e2e8f0',
     shadowColor: '#0f172a',
     shadowOpacity: 0.18,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 14 },
     elevation: 10,
   },
-  taskCardStudy: { backgroundColor: '#f8fbff' },
-  taskCardDone: { backgroundColor: '#f8fafc' },
+  taskCardStudy: { backgroundColor: `${theme.primary}12` },
+  taskCardDone: { backgroundColor: theme.backgroundSecondary },
   taskCardShared: { borderLeftWidth: 3, borderLeftColor: '#6366f1' },
   taskContent: { flex: 1 },
   taskChipRow: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -2512,8 +2561,8 @@ const s = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
-    borderColor: '#d7dee8',
-    backgroundColor: '#ffffff',
+    borderColor: actionRingOutline,
+    backgroundColor: theme.card,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'absolute',
@@ -2524,25 +2573,25 @@ const s = StyleSheet.create({
     zIndex: 2,
   },
   taskActionOutsideDone: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#bbf7d0',
+    backgroundColor: lightOutline ? 'rgba(34,197,94,0.12)' : '#ecfdf5',
+    borderColor: actionRingOutlineDone,
   },
   taskMainRow: { marginBottom: 6 },
-  taskTitle: { fontSize: 15, fontWeight: '700', color: '#1e293b', lineHeight: 20, flex: 1 },
+  taskTitle: { fontSize: 15, fontWeight: '700', color: theme.text, lineHeight: 20, flex: 1 },
   taskTitleDone: { textDecorationLine: 'line-through', opacity: 0.5 },
   taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, flexGrow: 1 },
-  taskMetaText: { fontSize: 12, fontWeight: '500', color: TEXT_PRIMARY, flexShrink: 1, flexGrow: 1 },
+  taskMetaText: { fontSize: 12, fontWeight: '500', color: theme.text, flexShrink: 1, flexGrow: 1 },
   taskMetaUrgent: { fontWeight: '700', color: '#dc2626' },
   taskFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' },
-  taskMetaDivider: { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
+  taskMetaDivider: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
   taskInlineStatusText: { fontSize: 11, fontWeight: '700' },
-  taskInlineStatusNeutral: { color: NAVY },
+  taskInlineStatusNeutral: { color: theme.primary },
   taskInlineStatusSoon: { color: '#c2410c' },
   taskInlineStatusOverdue: { color: '#b91c1c' },
   taskInlineStatusStudy: { color: '#0f766e' },
   taskInlineStatusDone: { color: '#15803d' },
-  taskInlineStatusFar: { color: TEXT_PRIMARY },
-  taskSecondaryMeta: { flexShrink: 1, fontSize: 11, fontWeight: '600', color: '#64748b' },
+  taskInlineStatusFar: { color: theme.text },
+  taskSecondaryMeta: { flexShrink: 1, fontSize: 11, fontWeight: '600', color: theme.textSecondary },
 
   // Study card specific layout
   studyFooter: {
@@ -2558,7 +2607,7 @@ const s = StyleSheet.create({
   studyTimeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     flexShrink: 1,
   },
   studySubjectRow: {
@@ -2569,17 +2618,17 @@ const s = StyleSheet.create({
   studySubjectLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
   studySubjectText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0f172a',
+    color: theme.text,
   },
   studyRevisionText: {
     fontSize: 12,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
 
   // Task detail row (same structure as study subject row)
@@ -2601,15 +2650,15 @@ const s = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#f1f5f9',
+    borderColor: detailChipOutline,
+    backgroundColor: theme.backgroundSecondary,
     flexShrink: 1,
     maxWidth: '70%',
   },
   taskDetailChipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0f172a',
+    color: theme.textSecondary,
   },
   studyDetailRow: {
     flexDirection: 'row',
@@ -2621,14 +2670,14 @@ const s = StyleSheet.create({
   studyDurationText: {
     fontSize: 11,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
 
   // "All" view date group header
   allDateHeader: {
     fontSize: 13,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     letterSpacing: -0.2,
   },
 
@@ -2651,7 +2700,7 @@ const s = StyleSheet.create({
 
   // Empty
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 12 },
-  emptyText: { fontSize: 12, fontWeight: '700', color: TEXT_SECONDARY },
+  emptyText: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
 
   // Swipe actions
   swipeActions: { width: 100, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'stretch' },
@@ -2680,12 +2729,12 @@ const s = StyleSheet.create({
 
   // Chat Modal
   chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  chatSheet: { backgroundColor: '#ffffff', borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '80%' },
+  chatSheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '80%' },
   chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     padding: 20,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
@@ -2701,37 +2750,37 @@ const s = StyleSheet.create({
   },
   chatTitle: { fontSize: 14, fontWeight: '900', color: '#ffffff' },
   chatSub: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
-  chatMessages: { maxHeight: 300, backgroundColor: BG },
+  chatMessages: { maxHeight: 300, backgroundColor: theme.background },
   chatMessagesContent: { padding: 16, gap: 10 },
   chatBubbleWrap: { alignItems: 'flex-start' },
   chatBubbleRight: { alignItems: 'flex-end' },
   chatBubble: { maxWidth: '85%', padding: 14, borderRadius: 18 },
-  chatBubbleAi: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: BORDER, alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  chatBubbleUser: { backgroundColor: NAVY, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  chatBubbleText: { fontSize: 13, lineHeight: 19, color: TEXT_PRIMARY, fontWeight: '500' },
+  chatBubbleAi: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+  chatBubbleUser: { backgroundColor: theme.primary, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
+  chatBubbleText: { fontSize: 13, lineHeight: 19, color: theme.text, fontWeight: '500' },
   chatInputRow: {
     flexDirection: 'row',
     padding: 12,
     gap: 10,
     borderTopWidth: 1,
-    borderTopColor: BORDER,
-    backgroundColor: '#ffffff',
+    borderTopColor: theme.border,
+    backgroundColor: theme.card,
   },
   chatInput: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: theme.background,
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 14,
     fontWeight: '500',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   chatSendBtn: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2747,18 +2796,18 @@ const s = StyleSheet.create({
   monthGridHeaderText: {
     fontSize: 12,
     fontWeight: '700',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
   monthGridCell: {
     padding: 2,
     borderWidth: 0.5,
     borderColor: '#f1f5f9',
     position: 'relative',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
   },
   monthGridCellActive: {
-    backgroundColor: '#ffffff',
-    borderColor: NAVY,
+    backgroundColor: theme.card,
+    borderColor: theme.primary,
     borderWidth: 2,
     zIndex: 10,
   },
@@ -2774,10 +2823,10 @@ const s = StyleSheet.create({
   monthGridCellText: {
     fontSize: 13,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   monthGridCellTextActive: {
-    color: NAVY,
+    color: theme.primary,
   },
   monthGridTagList: {
     gap: 1,
@@ -2800,7 +2849,7 @@ const s = StyleSheet.create({
   monthGridMoreText: {
     fontSize: 8,
     fontWeight: '800',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
     textAlign: 'center',
     marginTop: 1,
   },
@@ -2821,28 +2870,28 @@ const s = StyleSheet.create({
     borderColor: 'transparent',
   },
   mCompactDateToday: {
-    backgroundColor: NAVY,
-    borderColor: NAVY,
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   mCompactDateSelected: {
-    borderColor: NAVY,
+    borderColor: theme.primary,
     backgroundColor: 'transparent',
   },
   mCompactDateSelectedToday: {
-    backgroundColor: NAVY,
-    borderColor: NAVY,
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   mCompactDateText: {
     fontSize: 14,
     fontWeight: '500',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   mCompactDateTextToday: {
     color: '#ffffff',
     fontWeight: '700',
   },
   mCompactDateTextSelected: {
-    color: NAVY,
+    color: theme.primary,
     fontWeight: '800',
   },
   mCompactDotRow: {
@@ -2860,7 +2909,7 @@ const s = StyleSheet.create({
   mCompactOverflow: {
     fontSize: 8,
     fontWeight: '800',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
 
   // Month detail panel
@@ -2872,18 +2921,18 @@ const s = StyleSheet.create({
     paddingVertical: 14,
     borderTopWidth: 1,
     borderColor: '#f1f5f9',
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
   },
   mDetailTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     letterSpacing: -0.3,
   },
   mDetailCount: {
     fontSize: 12,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
     marginTop: 2,
   },
   mDetailAddBtn: {
@@ -2904,7 +2953,7 @@ const s = StyleSheet.create({
   mDetailEmptyText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#94a3b8',
+    color: theme.textSecondary,
   },
 
   // Expand/collapse toggle for month view
@@ -2918,7 +2967,7 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#003366',
@@ -2936,9 +2985,9 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderBottomWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: theme.border,
   },
   gridNavBtn: {
     width: 36,
@@ -2946,7 +2995,7 @@ const s = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.backgroundSecondary,
   },
   gridNavToggleActive: {
     backgroundColor: 'rgba(0,51,102,0.12)',
@@ -2956,12 +3005,12 @@ const s = StyleSheet.create({
   gridNavTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   gridNavSub: {
     fontSize: 10,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
     marginTop: 2,
   },
 
@@ -2976,21 +3025,21 @@ const s = StyleSheet.create({
   // Share All Modal
   shareAllOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   shareAllContent: {
-    backgroundColor: '#ffffff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: theme.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 22, paddingTop: 22, paddingBottom: 36, maxHeight: '80%',
   },
   shareAllHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  shareAllTitle: { fontSize: 20, fontWeight: '800', color: NAVY },
-  shareAllSubtitle: { fontSize: 13, color: TEXT_SECONDARY, fontWeight: '500', marginBottom: 16 },
+  shareAllTitle: { fontSize: 20, fontWeight: '800', color: theme.primary },
+  shareAllSubtitle: { fontSize: 13, color: theme.textSecondary, fontWeight: '500', marginBottom: 16 },
   shareAllTabs: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   shareAllTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: BORDER, backgroundColor: BG,
+    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: theme.border, backgroundColor: theme.background,
   },
-  shareAllTabActive: { borderColor: NAVY, backgroundColor: 'rgba(0,51,102,0.05)' },
-  shareAllTabText: { fontSize: 14, fontWeight: '700', color: TEXT_SECONDARY },
-  shareAllTabTextActive: { color: NAVY },
-  shareAllEmpty: { fontSize: 13, color: TEXT_SECONDARY, fontStyle: 'italic', textAlign: 'center', paddingVertical: 24 },
+  shareAllTabActive: { borderColor: theme.primary, backgroundColor: 'rgba(0,51,102,0.05)' },
+  shareAllTabText: { fontSize: 14, fontWeight: '700', color: theme.textSecondary },
+  shareAllTabTextActive: { color: theme.primary },
+  shareAllEmpty: { fontSize: 13, color: theme.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: 24 },
   shareAllRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4,
@@ -3000,14 +3049,15 @@ const s = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(0,51,102,0.1)', alignItems: 'center', justifyContent: 'center',
   },
-  shareAllAvatarText: { fontSize: 16, fontWeight: '700', color: NAVY },
-  shareAllRowName: { flex: 1, fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  shareAllAvatarText: { fontSize: 16, fontWeight: '700', color: theme.primary },
+  shareAllRowName: { flex: 1, fontSize: 15, fontWeight: '600', color: theme.text },
   shareAllInput: {
-    marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
-    fontSize: 14, color: TEXT_PRIMARY, fontWeight: '500', backgroundColor: BG,
+    marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.border,
+    fontSize: 14, color: theme.text, fontWeight: '500', backgroundColor: theme.background,
   },
   shareAllSendBtn: {
-    marginTop: 14, backgroundColor: NAVY, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
+    marginTop: 14, backgroundColor: theme.primary, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
   },
   shareAllSendText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
 });
+}

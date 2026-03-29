@@ -97,8 +97,24 @@ export interface UserProfile {
   avatar?: string;
   /** University/school name – used for SOW and calendar */
   university?: string;
+  /** University portal ID (e.g. 'uitm') — set when user connects once */
+  universityId?: string;
   /** Diploma, Bachelor, Master, etc. – affects semester length and SOW intelligence */
   academicLevel?: AcademicLevel;
+  /** From MyStudent profile / CDN when linked */
+  campus?: string;
+  faculty?: string;
+  studyMode?: string;
+  /** Current semester number from portal (e.g. 5) */
+  currentSemester?: number;
+  /** DB: portal semester we last aligned academic calendar teaching-week 1 to */
+  portalTeachingAnchoredSemester?: number;
+  /** Personal email shown on MyStudent profile */
+  mystudentEmail?: string;
+  /** ISO timestamp of last portal sync */
+  lastSync?: string;
+  /** Timetable entries fetched from university portal */
+  timetable?: TimetableEntry[];
 }
 
 export interface Note {
@@ -139,6 +155,45 @@ export interface Flashcard {
   question?: string;
   answer?: string;
 }
+
+/* ── University & Timetable ─────────────────────────────── */
+
+export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+
+export interface UniversityConfig {
+  id: string;
+  name: string;
+  shortName: string;
+  loginUrl: string;
+  timetableUrl?: string;
+  mode: 'webview' | 'api';
+  logoEmoji?: string;
+}
+
+export interface TimetableEntry {
+  id: string;
+  day: DayOfWeek;
+  subjectCode: string;
+  subjectName: string;
+  /** Shown instead of subjectName when set (official name stays in subjectName). */
+  displayName?: string;
+  /** Hex override for this slot; falls back to hash of subjectCode. */
+  slotColor?: string;
+  lecturer: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  group?: string;
+}
+
+export interface UniversityConnection {
+  universityId: string;
+  studentId: string;
+  connectedAt: string;
+  lastSync?: string;
+}
+
+/* ── Shared Tasks ──────────────────────────────────────── */
 
 export type SharedTaskStatus = 'pending' | 'accepted' | 'declined';
 

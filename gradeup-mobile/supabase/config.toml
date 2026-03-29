@@ -5,3 +5,6 @@
 # This function already calls auth.getUser() with the request Authorization header.
 [functions.extract_sow]
 verify_jwt = false
+
+[functions.fetch_timetable]
+verify_jwt = false

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ThemeId } from '@/constants/Themes';
+import { THEME_IDS, type ThemeId } from '@/constants/Themes';
 import type { Course } from './types';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
@@ -26,12 +26,23 @@ export async function setHasSeenTutorial(value: boolean): Promise<void> {
   } catch {}
 }
 
-const validThemes: ThemeId[] = ['dark', 'light', 'minimal', 'modern', 'retro'];
+/** Themes removed from the app — map to closest current option */
+const LEGACY_THEME_MAP: Record<string, ThemeId> = {
+  minimal: 'light',
+  retro: 'light',
+  modern: 'emerald',
+};
 
 export async function getTheme(): Promise<ThemeId> {
   try {
     const value = await AsyncStorage.getItem(KEY_THEME);
-    if (value && validThemes.includes(value as ThemeId)) return value as ThemeId;
+    if (!value) return 'light';
+    if (THEME_IDS.includes(value as ThemeId)) return value as ThemeId;
+    const migrated = LEGACY_THEME_MAP[value];
+    if (migrated) {
+      await setTheme(migrated);
+      return migrated;
+    }
   } catch {}
   return 'light';
 }
@@ -258,5 +269,62 @@ export async function getPlannerView(): Promise<PlannerViewMode> {
 export async function setPlannerView(view: PlannerViewMode): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
+  } catch {}
+}
+
+/** First day of week for timetable / calendar-style views */
+export type WeekStartsOn = 'monday' | 'sunday';
+
+const KEY_WEEK_STARTS_ON = 'weekStartsOn';
+
+export async function getWeekStartsOn(): Promise<WeekStartsOn> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_WEEK_STARTS_ON);
+    if (raw === 'sunday' || raw === 'monday') return raw;
+  } catch {}
+  return 'monday';
+}
+
+export async function setWeekStartsOn(mode: WeekStartsOn): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_WEEK_STARTS_ON, mode);
+  } catch {}
+}
+
+/** Timetable week grid / list: optional lines per class slot */
+export type TimetableSlotDetailsVisibility = {
+  room: boolean;
+  lecturer: boolean;
+  group: boolean;
+};
+
+const KEY_TIMETABLE_SLOT_DETAILS = 'timetableSlotDetails';
+
+const DEFAULT_TIMETABLE_SLOT_DETAILS: TimetableSlotDetailsVisibility = {
+  room: true,
+  lecturer: true,
+  group: true,
+};
+
+export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlotDetailsVisibility> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_TIMETABLE_SLOT_DETAILS);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<TimetableSlotDetailsVisibility>;
+      return {
+        room: typeof parsed.room === 'boolean' ? parsed.room : DEFAULT_TIMETABLE_SLOT_DETAILS.room,
+        lecturer: typeof parsed.lecturer === 'boolean' ? parsed.lecturer : DEFAULT_TIMETABLE_SLOT_DETAILS.lecturer,
+        group: typeof parsed.group === 'boolean' ? parsed.group : DEFAULT_TIMETABLE_SLOT_DETAILS.group,
+      };
+    }
+  } catch {}
+  return { ...DEFAULT_TIMETABLE_SLOT_DETAILS };
+}
+
+export async function setTimetableSlotDetailsVisibility(
+  v: TimetableSlotDetailsVisibility,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_TIMETABLE_SLOT_DETAILS, JSON.stringify(v));
   } catch {}
 }

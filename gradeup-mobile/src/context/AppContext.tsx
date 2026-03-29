@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder, NoteFolder, AcademicCalendar } from '../types';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder, NoteFolder, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {
   initialUser,
@@ -28,10 +28,13 @@ import {
   setLoghat as persistLoghat,
   getPlannerView,
   setPlannerView as persistPlannerView,
+  getWeekStartsOn,
+  setWeekStartsOn as persistWeekStartsOn,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
   type PlannerViewMode,
+  type WeekStartsOn,
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
@@ -42,14 +45,30 @@ import * as studyTimeDb from '../lib/studyTimeDb';
 import * as coursesDb from '../lib/coursesDb';
 import * as profileDb from '../lib/profileDb';
 import * as academicCalendarDb from '../lib/academicCalendarDb';
+import * as timetableDb from '../lib/timetableDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
+import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
+import { getTodayISO } from '../utils/date';
 
 type AppState = {
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
   academicCalendar: AcademicCalendar | null;
   setAcademicCalendar: React.Dispatch<React.SetStateAction<AcademicCalendar | null>>;
-  updateProfile: (updates: { name?: string; university?: string; academicLevel?: UserProfile['academicLevel'] }) => Promise<void>;
+  updateProfile: (updates: {
+    name?: string;
+    university?: string;
+    academicLevel?: UserProfile['academicLevel'];
+    studentId?: string;
+    program?: string;
+    part?: number;
+    avatarUrl?: string | null;
+    campus?: string;
+    faculty?: string;
+    studyMode?: string;
+    currentSemester?: number;
+    mystudentEmail?: string;
+  }) => Promise<void>;
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   courses: Course[];
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
@@ -101,6 +120,32 @@ type AppState = {
   setLastPlannerView: (view: PlannerViewMode) => void;
   handleSaveNote: (note: Note) => void;
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
+  timetable: TimetableEntry[];
+  setTimetable: React.Dispatch<React.SetStateAction<TimetableEntry[]>>;
+  saveTimetableAndLink: (entries: TimetableEntry[], universityId: string, studentId: string) => Promise<void>;
+  disconnectUniversity: () => Promise<void>;
+  /** UiTM: re-fetch timetable + portal profile; overwrites saved timetable and MyStudent fields. */
+  refreshUniversityTimetable: (password: string, options?: { courses?: string[] }) => Promise<void>;
+  weekStartsOn: WeekStartsOn;
+  setWeekStartsOn: (mode: WeekStartsOn) => Promise<void>;
+  updateTimetableEntry: (
+    entryId: string,
+    patch: Partial<
+      Pick<
+        TimetableEntry,
+        | 'displayName'
+        | 'slotColor'
+        | 'lecturer'
+        | 'location'
+        | 'day'
+        | 'startTime'
+        | 'endTime'
+        | 'subjectCode'
+        | 'subjectName'
+        | 'group'
+      >
+    >,
+  ) => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -118,18 +163,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
 
   const setUser = useCallback((newUser: UserProfile | ((prev: UserProfile) => UserProfile)) => {
-    setUserState(prev => {
+    setUserState((prev) => {
       const updated = typeof newUser === 'function' ? newUser(prev) : newUser;
       const totalWeeks = academicCalendar?.totalWeeks ?? 14;
-      const progress = getAcademicProgress(updated.startDate, totalWeeks);
+      const calendarStart = (academicCalendar?.startDate ?? '').trim().slice(0, 10);
+      const newEffectiveStart = (calendarStart || (updated.startDate ?? '').trim().slice(0, 10)).trim();
+      const prevEffectiveStart = (calendarStart || (prev.startDate ?? '').trim().slice(0, 10)).trim();
+      const normalizedStartDate = academicCalendar?.startDate ?? updated.startDate ?? prev.startDate;
+
+      if (newEffectiveStart === prevEffectiveStart) {
+        return {
+          ...updated,
+          startDate: normalizedStartDate,
+          currentWeek: updated.currentWeek ?? prev.currentWeek,
+          isBreak: updated.isBreak !== undefined ? updated.isBreak : prev.isBreak,
+          semesterPhase: updated.semesterPhase ?? prev.semesterPhase,
+        };
+      }
+
+      const progress = getAcademicProgress(newEffectiveStart, totalWeeks);
       return {
         ...updated,
+        startDate: normalizedStartDate,
         currentWeek: progress.week,
         isBreak: progress.isBreak,
         semesterPhase: progress.semesterPhase,
       };
     });
-  }, [academicCalendar?.totalWeeks]);
+  }, [academicCalendar?.totalWeeks, academicCalendar?.startDate]);
 
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -139,7 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
   const [pendingExtraction, setPendingExtraction] = useState('');
-  const [theme, setThemeState] = useState<ThemeId>('dark');
+  const [theme, setThemeState] = useState<ThemeId>('light');
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
   const defaultRevision: RevisionSettings = {
@@ -157,6 +218,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
   const [lastPlannerView, setLastPlannerViewState] = useState<PlannerViewMode>('week');
+  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
+  const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
+  /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
+  const remoteUserIdRef = useRef<string | null>(null);
+
+  /** Keep teaching week in sync with the active academic calendar (same start as task week mapping). */
+  useEffect(() => {
+    setUserState((prev) => {
+      const totalW = academicCalendar?.totalWeeks ?? 14;
+      const nextStart = (academicCalendar?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
+      const startFor = (academicCalendar?.startDate ?? prev.startDate ?? '').trim();
+      const progress = getAcademicProgress(startFor, totalW);
+      if (
+        (prev.startDate ?? '').trim().slice(0, 10) === nextStart &&
+        prev.currentWeek === progress.week &&
+        prev.isBreak === progress.isBreak &&
+        prev.semesterPhase === progress.semesterPhase
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        startDate: academicCalendar?.startDate ?? prev.startDate,
+        currentWeek: progress.week,
+        isBreak: progress.isBreak,
+        semesterPhase: progress.semesterPhase,
+      };
+    });
+  }, [academicCalendar?.startDate, academicCalendar?.totalWeeks]);
 
   useEffect(() => {
     getTheme().then(setThemeState);
@@ -166,6 +256,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getPlannerView().then(setLastPlannerViewState);
     getLanguage().then(setLanguageState);
     getLoghat().then(setLoghatState);
+    getWeekStartsOn().then(setWeekStartsOnState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
     });
@@ -181,9 +272,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return (metaName || emailName || '').trim();
     };
 
+    let remoteLoadGeneration = 0;
+
     // Helper to load all remote data for a given user id (including profile, calendar, subjects)
     const loadRemoteData = (uid: string, authFallbackName?: string) => {
-      Promise.all([
+      const gen = ++remoteLoadGeneration;
+      remoteUserIdRef.current = uid;
+      Promise.allSettled([
         studyDb.getNotes(uid),
         studyDb.getNoteFolders(uid),
         studyDb.getFlashcardFolders(uid),
@@ -193,26 +288,156 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         coursesDb.getCourses(uid),
         profileDb.getProfile(uid),
         academicCalendarDb.getActiveCalendar(uid),
-      ])
-        .then(([notesList, noteFoldersList, foldersList, cardsList, tasksList, studyList, coursesList, profile, calendar]) => {
-          setNotes(notesList);
-          setNoteFolders(noteFoldersList);
-          setFlashcardFolders(foldersList);
-          setFlashcards(cardsList);
-          setTasks(tasksList);
+        timetableDb.getTimetable(uid),
+        timetableDb.getUniversityConnection(uid),
+      ]).then(async (results) => {
+        if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+
+        const r0 = results[0];
+        const r1 = results[1];
+        const r2 = results[2];
+        const r3 = results[3];
+        const r4 = results[4];
+        const r5 = results[5];
+        const r6 = results[6];
+        const r7 = results[7];
+        const r8 = results[8];
+        const r9 = results[9];
+        const r10 = results[10];
+
+        if (__DEV__) {
+          results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+              console.warn('[GradeUp] loadRemoteData: request failed', i, r.reason);
+            }
+          });
+        }
+
+        if (r0.status === 'fulfilled') setNotes(r0.value);
+        if (r1.status === 'fulfilled') setNoteFolders(r1.value);
+        if (r2.status === 'fulfilled') setFlashcardFolders(r2.value);
+        if (r3.status === 'fulfilled') setFlashcards(r3.value);
+        if (r4.status === 'fulfilled') setTasks(r4.value);
+        if (r5.status === 'fulfilled') {
+          const studyList = r5.value;
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
-          setCourses(coursesList);
+        }
+        if (r6.status === 'fulfilled') setCourses(r6.value);
+        if (r9.status === 'fulfilled') setTimetable(r9.value ?? []);
+
+        const profile = r7.status === 'fulfilled' ? r7.value : undefined;
+        const uniConn = r10.status === 'fulfilled' ? r10.value : null;
+
+        let calendar: AcademicCalendar | null | undefined = undefined;
+        if (r8.status === 'fulfilled') {
+          calendar = r8.value ?? null;
+          const uniId = profile?.universityId ?? uniConn?.universityId;
+          const portalSem = profile?.currentSemester;
+          const anchoredDb = profile?.portalTeachingAnchoredSemester;
+          const calSlice = calendar ? String(calendar.startDate ?? '').trim().slice(0, 10) : '';
+          const calStartOk = /^\d{4}-\d{2}-\d{2}$/.test(calSlice);
+          const shouldAnchor =
+            uniId === 'uitm' &&
+            typeof portalSem === 'number' &&
+            portalSem > 0 &&
+            (anchoredDb == null || anchoredDb !== portalSem || !calendar || !calStartOk);
+
+          if (shouldAnchor) {
+            try {
+              const today = getTodayISO();
+              const tw = calendar?.totalWeeks ?? 14;
+              const start = new Date(`${today}T00:00:00`);
+              const end = new Date(start);
+              end.setDate(end.getDate() + tw * 7 - 1);
+              const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+              const saved = await academicCalendarDb.upsertCalendar(uid, {
+                semesterLabel: `Programme semester ${portalSem} (portal)`,
+                startDate: today,
+                endDate: endStr,
+                totalWeeks: tw,
+                isActive: true,
+              });
+              calendar = saved;
+              await profileDb.updateProfile(uid, { portalTeachingAnchoredSemester: portalSem });
+              if (profile) {
+                (profile as { portalTeachingAnchoredSemester?: number }).portalTeachingAnchoredSemester =
+                  portalSem;
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[GradeUp] Portal teaching-week anchor on load failed', e);
+            }
+          }
+
+          if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
           setAcademicCalendar(calendar ?? null);
-          setUserState((prev) => {
+        }
+
+        if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+
+        setUserState((prev) => {
+          let next = { ...prev };
+          if (profile !== undefined) {
             const profileName = (profile?.name || '').trim();
             const fallbackName = (authFallbackName || '').trim();
-            let next = { ...prev, name: profileName || fallbackName || prev.name || 'Student' };
+            next = {
+              ...next,
+              name: profileName || fallbackName || next.name || 'Student',
+            };
             if (profile) {
-              next = { ...next, university: profile.university, academicLevel: profile.academicLevel };
+              const sid = (profile.studentId ?? '').trim();
+              const prog = (profile.program ?? '').trim();
+              const p =
+                profile.part != null && Number.isFinite(profile.part) && profile.part > 0
+                  ? Math.floor(profile.part)
+                  : 0;
+              const cs =
+                profile.currentSemester != null &&
+                Number.isFinite(profile.currentSemester) &&
+                profile.currentSemester > 0
+                  ? Math.floor(profile.currentSemester)
+                  : undefined;
+              const anchored =
+                profile.portalTeachingAnchoredSemester != null &&
+                Number.isFinite(profile.portalTeachingAnchoredSemester) &&
+                profile.portalTeachingAnchoredSemester > 0
+                  ? Math.floor(profile.portalTeachingAnchoredSemester)
+                  : undefined;
+              next = {
+                ...next,
+                university: profile.university,
+                universityId: profile.universityId,
+                academicLevel: profile.academicLevel,
+                studentId: sid,
+                program: prog,
+                part: p,
+                avatar: profile.avatarUrl,
+                campus: (profile.campus ?? '').trim(),
+                faculty: (profile.faculty ?? '').trim(),
+                studyMode: (profile.studyMode ?? '').trim(),
+                currentSemester: cs,
+                mystudentEmail: (profile.mystudentEmail ?? '').trim(),
+                lastSync: profile.lastSync,
+                portalTeachingAnchoredSemester: anchored,
+              };
             }
+          } else if ((authFallbackName || '').trim()) {
+            next = { ...next, name: (authFallbackName || '').trim() || next.name };
+          }
+
+          if (uniConn?.universityId && !next.universityId) {
+            next = { ...next, universityId: uniConn.universityId };
+          }
+          if (uniConn?.lastSync && !next.lastSync) {
+            next = { ...next, lastSync: uniConn.lastSync };
+          }
+          if (uniConn?.studentId?.trim() && !(next.studentId || '').trim()) {
+            next = { ...next, studentId: uniConn.studentId.trim() };
+          }
+
+          if (calendar !== undefined) {
             const totalW = calendar?.totalWeeks ?? 14;
-            const startForProgress = calendar?.startDate ?? prev.startDate;
+            const startForProgress = calendar?.startDate ?? next.startDate;
             const progress = getAcademicProgress(startForProgress, totalW);
             if (calendar) {
               next = {
@@ -230,12 +455,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 semesterPhase: progress.semesterPhase,
               };
             }
-            return next;
-          });
-        })
-        .catch(() => {
-          // On error, keep existing local state
+          }
+          return next;
         });
+      });
     };
 
     // Load once for current session (cold start / reload)
@@ -245,37 +468,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       loadRemoteData(uid, getAuthFallbackName(session));
     });
 
-    // Load remote data whenever auth state changes
+    // Load remote data whenever auth state changes.
+    // Important: session can be briefly null on refresh before storage restores — only clear state on SIGNED_OUT.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       const uid = session?.user?.id;
       if (!uid) {
-        setUserState(() => {
-          const p = getAcademicProgress(initialUser.startDate, 14);
-          return {
-            ...initialUser,
-            name: 'Student',
-            currentWeek: p.week,
-            isBreak: p.isBreak,
-            semesterPhase: p.semesterPhase,
-          };
-        });
-        setTasks([]);
-        setNotes(initialNotes);
-        setNoteFolders([]);
-        setFlashcardFolders(initialFlashcardFolders);
-        setFlashcards(initialFlashcards);
-        setRevisionSettingsList([]);
-        setRevisionState(defaultRevision);
-        setCourses([]);
-        setAcademicCalendar(null);
+        if (event === 'SIGNED_OUT') {
+          remoteLoadGeneration += 1;
+          remoteUserIdRef.current = null;
+          setUserState(() => {
+            const p = getAcademicProgress(initialUser.startDate, 14);
+            return {
+              ...initialUser,
+              name: 'Student',
+              currentWeek: p.week,
+              isBreak: p.isBreak,
+              semesterPhase: p.semesterPhase,
+            };
+          });
+          setTasks([]);
+          setNotes(initialNotes);
+          setNoteFolders([]);
+          setFlashcardFolders(initialFlashcardFolders);
+          setFlashcards(initialFlashcards);
+          setRevisionSettingsList([]);
+          setRevisionState(defaultRevision);
+          setCourses([]);
+          setAcademicCalendar(null);
+          setTimetable([]);
+        }
         return;
       }
       loadRemoteData(uid, getAuthFallbackName(session));
     });
 
     return () => {
+      remoteLoadGeneration += 1;
       subscription.unsubscribe();
     };
   }, []);
@@ -354,13 +584,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const updateProfile = useCallback(async (updates: { name?: string; university?: string; academicLevel?: UserProfile['academicLevel'] }) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const uid = session?.user?.id;
-    if (!uid) return;
-    await profileDb.updateProfile(uid, updates);
-    setUserState((prev) => ({ ...prev, ...updates }));
-  }, []);
+  const updateProfile = useCallback(
+    async (updates: {
+      name?: string;
+      university?: string;
+      academicLevel?: UserProfile['academicLevel'];
+      studentId?: string;
+      program?: string;
+      part?: number;
+      avatarUrl?: string | null;
+      campus?: string;
+      faculty?: string;
+      studyMode?: string;
+      currentSemester?: number;
+      mystudentEmail?: string;
+      portalTeachingAnchoredSemester?: number | null;
+    }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return;
+      await profileDb.updateProfile(uid, updates);
+      setUserState((prev) => ({
+        ...prev,
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.university !== undefined ? { university: updates.university } : {}),
+        ...(updates.academicLevel !== undefined ? { academicLevel: updates.academicLevel } : {}),
+        ...(updates.studentId !== undefined ? { studentId: updates.studentId.trim() } : {}),
+        ...(updates.program !== undefined ? { program: updates.program.trim() } : {}),
+        ...(updates.part !== undefined ? { part: updates.part > 0 ? updates.part : 0 } : {}),
+        ...(updates.avatarUrl !== undefined ? { avatar: updates.avatarUrl ?? undefined } : {}),
+        ...(updates.campus !== undefined ? { campus: updates.campus.trim() } : {}),
+        ...(updates.faculty !== undefined ? { faculty: updates.faculty.trim() } : {}),
+        ...(updates.studyMode !== undefined ? { studyMode: updates.studyMode.trim() } : {}),
+        ...(updates.currentSemester !== undefined
+          ? {
+              currentSemester:
+                updates.currentSemester > 0 ? updates.currentSemester : undefined,
+            }
+          : {}),
+        ...(updates.mystudentEmail !== undefined ? { mystudentEmail: updates.mystudentEmail.trim() } : {}),
+        ...(updates.portalTeachingAnchoredSemester !== undefined
+          ? {
+              portalTeachingAnchoredSemester:
+                updates.portalTeachingAnchoredSemester != null &&
+                updates.portalTeachingAnchoredSemester > 0
+                  ? updates.portalTeachingAnchoredSemester
+                  : undefined,
+            }
+          : {}),
+      }));
+    },
+    [],
+  );
 
   const updateAcademicCalendar = useCallback(async (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -638,6 +913,194 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const saveTimetableAndLink = useCallback(async (entries: TimetableEntry[], universityId: string, studentId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to save timetable.');
+    await timetableDb.saveTimetable(uid, entries);
+    const now = new Date().toISOString();
+    const sid = studentId.trim();
+    await timetableDb.saveUniversityConnection(uid, {
+      universityId,
+      studentId: sid,
+      connectedAt: now,
+      lastSync: now,
+    });
+    await profileDb.updateProfile(uid, { universityId, lastSync: now });
+    setTimetable(entries);
+    setUserState((prev) => ({ ...prev, universityId, lastSync: now, studentId: sid || prev.studentId, timetable: entries }));
+  }, []);
+
+  const disconnectUniversity = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await timetableDb.deleteTimetable(uid);
+    await timetableDb.deleteUniversityConnection(uid);
+    await profileDb.updateProfile(uid, {
+      universityId: null,
+      lastSync: null,
+      campus: '',
+      faculty: '',
+      studyMode: '',
+      currentSemester: 0,
+      mystudentEmail: '',
+      portalTeachingAnchoredSemester: null,
+    });
+    setTimetable([]);
+    setUserState((prev) => ({
+      ...prev,
+      universityId: undefined,
+      lastSync: undefined,
+      timetable: undefined,
+      campus: '',
+      faculty: '',
+      studyMode: '',
+      currentSemester: undefined,
+      mystudentEmail: '',
+      portalTeachingAnchoredSemester: undefined,
+    }));
+  }, []);
+
+  const refreshUniversityTimetable = useCallback(
+    async (password: string, options?: { courses?: string[] }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) throw new Error('Sign in required.');
+      const uniId = user.universityId;
+      if (!uniId) {
+        throw new Error('No university link found. Open Timetable and connect once.');
+      }
+      if (uniId !== 'uitm') {
+        throw new Error('Refresh is only supported for UiTM MyStudent.');
+      }
+      const login = (user.studentId || '').trim();
+      if (!login) throw new Error('Missing saved student ID. Disconnect and connect again.');
+      const prevPortalSemester = user.currentSemester;
+      const { entries, profile } = await fetchUitmTimetable(login, password, options?.courses);
+      if (entries.length === 0) {
+        throw new Error(
+          'No timetable returned. Add optional course codes or check MyStudent in a browser.',
+        );
+      }
+      await saveTimetableAndLink(entries, uniId, (profile?.matric || login).trim());
+
+      const newPortalSem = profile?.semester;
+      if (typeof newPortalSem === 'number' && newPortalSem > 0) {
+        const anchoredDb = user.portalTeachingAnchoredSemester;
+        const needTeachingWeekAnchor =
+          prevPortalSemester !== newPortalSem ||
+          anchoredDb == null ||
+          anchoredDb !== newPortalSem;
+
+        if (needTeachingWeekAnchor) {
+          const today = getTodayISO();
+          const tw = academicCalendar?.totalWeeks ?? 14;
+          const start = new Date(`${today}T00:00:00`);
+          const end = new Date(start);
+          end.setDate(end.getDate() + tw * 7 - 1);
+          const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+          await updateAcademicCalendar({
+            semesterLabel: `Programme semester ${newPortalSem} (portal)`,
+            startDate: today,
+            endDate: endStr,
+            totalWeeks: tw,
+            isActive: true,
+          });
+          await updateProfile({ portalTeachingAnchoredSemester: newPortalSem });
+        }
+      }
+
+      const u = profileUpdatesFromMyStudentPayload(profile, login);
+      if (Object.keys(u).length > 0) await updateProfile(u);
+    },
+    [
+      user.universityId,
+      user.studentId,
+      user.currentSemester,
+      user.portalTeachingAnchoredSemester,
+      academicCalendar?.totalWeeks,
+      saveTimetableAndLink,
+      updateProfile,
+      updateAcademicCalendar,
+    ],
+  );
+
+  const setWeekStartsOn = useCallback(async (mode: WeekStartsOn) => {
+    setWeekStartsOnState(mode);
+    await persistWeekStartsOn(mode);
+  }, []);
+
+  const updateTimetableEntry = useCallback(
+    async (
+      entryId: string,
+      patch: Partial<
+        Pick<
+          TimetableEntry,
+          | 'displayName'
+          | 'slotColor'
+          | 'lecturer'
+          | 'location'
+          | 'day'
+          | 'startTime'
+          | 'endTime'
+          | 'subjectCode'
+          | 'subjectName'
+          | 'group'
+        >
+      >,
+    ) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return;
+      const normalized: typeof patch = { ...patch };
+      if (normalized.displayName !== undefined) {
+        const t = normalized.displayName.trim();
+        normalized.displayName = t.length > 0 ? t : '';
+      }
+      if (normalized.slotColor !== undefined) {
+        const t = normalized.slotColor.trim();
+        normalized.slotColor = t.length > 0 ? t : '';
+      }
+      if (normalized.subjectCode !== undefined) {
+        normalized.subjectCode = normalized.subjectCode.trim();
+      }
+      if (normalized.subjectName !== undefined) {
+        normalized.subjectName = normalized.subjectName.trim();
+      }
+      if (normalized.startTime !== undefined) {
+        normalized.startTime = normalized.startTime.trim();
+      }
+      if (normalized.endTime !== undefined) {
+        normalized.endTime = normalized.endTime.trim();
+      }
+      if (normalized.group !== undefined) {
+        normalized.group = normalized.group.trim();
+      }
+      setTimetable((prev) =>
+        prev.map((e) => {
+          if (e.id !== entryId) return e;
+          const next = { ...e, ...normalized };
+          if (normalized.displayName !== undefined) {
+            if (normalized.displayName === '') delete next.displayName;
+            else next.displayName = normalized.displayName;
+          }
+          if (normalized.slotColor !== undefined) {
+            if (normalized.slotColor === '') delete next.slotColor;
+            else next.slotColor = normalized.slotColor;
+          }
+          if (normalized.group !== undefined) {
+            if (!normalized.group) delete next.group;
+            else next.group = normalized.group;
+          }
+          return next;
+        }),
+      );
+      await timetableDb.updateTimetableEntry(uid, entryId, normalized);
+    },
+    [],
+  );
+
   const value: AppState = {
     user,
     setUser,
@@ -695,6 +1158,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLastPlannerView,
     handleSaveNote,
     handleGenerateFlashcards,
+    timetable,
+    setTimetable,
+    saveTimetableAndLink,
+    disconnectUniversity,
+    refreshUniversityTimetable,
+    weekStartsOn,
+    setWeekStartsOn,
+    updateTimetableEntry,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

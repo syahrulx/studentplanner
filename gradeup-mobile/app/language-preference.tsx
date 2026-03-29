@@ -2,13 +2,16 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemeId } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
+import { isDarkTheme } from '@/constants/Themes';
 
 export default function LanguagePreferenceScreen() {
   const { language, setLanguage, loghat, setLoghat } = useApp();
   const theme = useTheme();
+  const themeId = useThemeId();
+  const dark = isDarkTheme(themeId);
   const T = useTranslations(language);
 
   return (
@@ -39,12 +42,12 @@ export default function LanguagePreferenceScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.optionRow,
-            language === 'en' && styles.optionRowActive,
+            language === 'en' && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
             pressed && styles.pressed,
           ]}
           onPress={() => setLanguage('en')}
         >
-          <View style={styles.radioOuter}>
+          <View style={[styles.radioOuter, { borderColor: theme.border }]}>
             {language === 'en' && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
           </View>
           <View style={styles.optionTextWrap}>
@@ -53,17 +56,17 @@ export default function LanguagePreferenceScreen() {
           </View>
         </Pressable>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
         <Pressable
           style={({ pressed }) => [
             styles.optionRow,
-            language === 'ms' && styles.optionRowActive,
+            language === 'ms' && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
             pressed && styles.pressed,
           ]}
           onPress={() => setLanguage('ms')}
         >
-          <View style={styles.radioOuter}>
+          <View style={[styles.radioOuter, { borderColor: theme.border }]}>
             {language === 'ms' && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
           </View>
           <View style={styles.optionTextWrap}>
@@ -88,11 +91,11 @@ export default function LanguagePreferenceScreen() {
           { key: 'melaka' as const, label: 'Melaka' },
         ].map((opt, index) => (
           <React.Fragment key={opt.key}>
-            {index > 0 && <View style={styles.divider} />}
+            {index > 0 && <View style={[styles.divider, { backgroundColor: theme.border }]} />}
             <Pressable
               style={({ pressed }) => [
                 styles.optionRow,
-                loghat === opt.key && styles.optionRowActive,
+                loghat === opt.key && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
                 pressed && language === 'ms' && styles.pressed,
               ]}
               onPress={() => {
@@ -100,7 +103,7 @@ export default function LanguagePreferenceScreen() {
                 setLoghat(opt.key);
               }}
             >
-              <View style={styles.radioOuter}>
+              <View style={[styles.radioOuter, { borderColor: theme.border }]}>
                 {loghat === opt.key && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
               </View>
               <View style={styles.optionTextWrap}>
@@ -141,15 +144,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  optionRowActive: {
-    backgroundColor: 'rgba(0,51,102,0.04)',
-  },
   radioOuter: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#cbd5f5',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -162,7 +161,7 @@ const styles = StyleSheet.create({
   optionTextWrap: { flex: 1 },
   optionTitle: { fontSize: 15, fontWeight: '800' },
   optionDesc: { fontSize: 12, marginTop: 2 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#e2e8f0', marginHorizontal: 16 },
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
   languageHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   languageHeaderText: { fontSize: 13, fontWeight: '800' },
   languageHeaderHint: { fontSize: 11 },
