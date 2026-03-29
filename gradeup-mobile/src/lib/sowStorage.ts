@@ -1,6 +1,8 @@
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
-export const SOW_FILES_BUCKET = 'sow-files';
+export const SOW_FILES_BUCKET =
+  (Constants.expoConfig?.extra?.sowFilesBucket as string | undefined)?.trim() || 'sow-files';
 
 export async function uploadSowFile(
   userId: string,

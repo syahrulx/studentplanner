@@ -66,6 +66,9 @@ export interface Task {
 /** Academic level for SOW/calendar (diploma, bachelor, etc.) */
 export type AcademicLevel = 'Diploma' | 'Bachelor' | 'Master' | 'PhD' | 'Foundation' | 'Other';
 
+/** Derived from semester start date + today vs teaching weeks / break */
+export type SemesterPhase = 'no_calendar' | 'before_start' | 'teaching' | 'break_after';
+
 /** Per-user academic calendar: semester dates and week count for SOW alignment */
 export interface AcademicCalendar {
   id: string;
@@ -89,6 +92,8 @@ export interface UserProfile {
   currentWeek: number;
   startDate: string;
   isBreak?: boolean;
+  /** Present when derived from academic calendar + today */
+  semesterPhase?: SemesterPhase;
   avatar?: string;
   /** University/school name – used for SOW and calendar */
   university?: string;

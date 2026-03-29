@@ -16,13 +16,13 @@ import type { LocationVisibility } from '@/src/lib/communityApi';
 const PAD = 20;
 const SECTION = 24;
 const RADIUS = 14;
-const TOTAL_WEEKS = 14;
-
 export default function ProfileSettings() {
-  const { user, language, setUser, updateProfile } = useApp();
+  const { user, language, setUser, updateProfile, academicCalendar } = useApp();
   const { locationVisibility, setLocationVisibility, spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
+  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const semesterPhase = user.semesterPhase ?? 'teaching';
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -229,21 +229,33 @@ export default function ProfileSettings() {
           <View style={styles.progressHeader}>
             <Text style={[styles.cardLabel, { color: theme.text }]}>{T('semesterProgress')}</Text>
             <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
-              {user.isBreak ? T('semesterBreak') || 'Semester Break' : `W${user.currentWeek} of ${TOTAL_WEEKS}`}
+              {semesterPhase === 'no_calendar'
+                ? T('semesterNotConfigured')
+                : semesterPhase === 'before_start'
+                  ? T('semesterNotStartedShort')
+                  : user.isBreak || semesterPhase === 'break_after'
+                    ? T('semesterBreak') || 'Semester Break'
+                    : `W${user.currentWeek} of ${totalWeeks}`}
             </Text>
           </View>
           <View style={styles.segmentBar}>
-            {Array.from({ length: TOTAL_WEEKS }, (_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.segment,
-                  i < user.currentWeek
-                    ? { backgroundColor: theme.primary }
-                    : { backgroundColor: theme.backgroundSecondary || theme.border },
-                ]}
-              />
-            ))}
+            {Array.from({ length: totalWeeks }, (_, i) => {
+              const filled =
+                semesterPhase === 'break_after' || user.isBreak
+                  ? true
+                  : semesterPhase === 'teaching' && !user.isBreak && i < user.currentWeek;
+              return (
+                <View
+                  key={i}
+                  style={[
+                    styles.segment,
+                    filled
+                      ? { backgroundColor: theme.primary }
+                      : { backgroundColor: theme.backgroundSecondary || theme.border },
+                  ]}
+                />
+              );
+            })}
           </View>
         </View>
       </View>
@@ -295,10 +307,7 @@ export default function ProfileSettings() {
           <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
             <Feather name="trending-up" size={18} color="#d97706" />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
-            <Text style={[styles.menuSubLabel, { color: theme.textSecondary }]}>Import SOW PDF</Text>
-          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
       </View>
@@ -460,5 +469,4 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
-  menuSubLabel: { fontSize: 12, fontWeight: '600', marginTop: 2 },
 });

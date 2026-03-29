@@ -9,7 +9,6 @@ import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
 
-const TOTAL_WEEKS = 14;
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 const NAVY = '#003366';
 const GOLD = '#f59e0b';
@@ -61,9 +60,21 @@ type FocusStudyItem = {
 };
 
 export default function Dashboard() {
-  const { user, tasks, courses, revisionSettingsList, completedStudyKeys, pinnedTaskIds, getSubjectColor, language } = useApp();
+  const {
+    user,
+    tasks,
+    courses,
+    revisionSettingsList,
+    completedStudyKeys,
+    pinnedTaskIds,
+    getSubjectColor,
+    language,
+    academicCalendar,
+  } = useApp();
   const { friendsWithStatus } = useCommunity();
   const T = useTranslations(language);
+  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const semesterPhase = user.semesterPhase ?? 'teaching';
   const focusTask = useMemo(
     () => selectTodaysFocusTask(tasks, pinnedTaskIds),
     [tasks, pinnedTaskIds]
@@ -76,13 +87,39 @@ export default function Dashboard() {
 
   const peakWeek = useMemo(() => {
     let max = 0;
-    let peak = TOTAL_WEEKS;
-    for (let w = 0; w < TOTAL_WEEKS; w++) {
+    let peak = totalWeeks;
+    for (let w = 0; w < totalWeeks; w++) {
       const total = courses.reduce((sum, c) => sum + (c.workload?.[w] ?? 0), 0);
-      if (total > max) { max = total; peak = w + 1; }
+      if (total > max) {
+        max = total;
+        peak = w + 1;
+      }
     }
     return peak;
-  }, [courses]);
+  }, [courses, totalWeeks]);
+
+  const headerSemesterStatus = useMemo(() => {
+    if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
+    if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
+    if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
+    return `${T('week')} ${user.currentWeek}`;
+  }, [semesterPhase, user.isBreak, user.currentWeek, T]);
+
+  const pulseMainTitle = useMemo(() => {
+    if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
+    if (semesterPhase === 'before_start') return T('notInSemester');
+    if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
+    return `${T('week')} ${user.currentWeek}`;
+  }, [semesterPhase, user.isBreak, user.currentWeek, T]);
+
+  const pulseBadgeText = useMemo(() => {
+    if (semesterPhase === 'teaching' && !user.isBreak) {
+      return `W${peakWeek} ${T('peakAlert')}`;
+    }
+    if (semesterPhase === 'break_after' || user.isBreak) return T('betweenSemestersBadge');
+    if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
+    return T('semesterNotConfigured');
+  }, [semesterPhase, user.isBreak, peakWeek, T]);
 
   const now = new Date();
   const todayStr = getTodayISO();
@@ -225,7 +262,7 @@ export default function Dashboard() {
             <View style={styles.row}>
               <View style={[styles.dot, { backgroundColor: GOLD }]} />
               <Text style={[styles.subtitle, { color: 'rgba(248,250,252,0.85)' }]}>
-                {T('part')} {user.part} • {user.isBreak ? T('semesterBreak') || 'Semester Break' : `${T('week')} ${user.currentWeek}`}
+                {T('part')} {user.part} • {headerSemesterStatus}
               </Text>
             </View>
           </View>
@@ -242,33 +279,45 @@ export default function Dashboard() {
         >
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={styles.peakAlertWeek}>
-                {user.isBreak ? T('semesterBreak') || 'Semester Break' : `${T('week')} ${user.currentWeek}`}
-              </Text>
+              <Text style={styles.peakAlertWeek}>{pulseMainTitle}</Text>
+              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
+                <Text style={styles.peakAlertSubline}>
+                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
+                </Text>
+              ) : null}
+              {semesterPhase === 'no_calendar' ? (
+                <Text style={styles.peakAlertSubline}>{T('tapToSetCalendar')}</Text>
+              ) : null}
               <Text style={styles.peakAlertLabel}>{T('semesterPulse')}</Text>
             </View>
-            <View style={styles.peakAlertBadge}>
-              <Text style={styles.peakAlertBadgeText}>W{peakWeek} {T('peakAlert')}</Text>
+            <View style={[styles.peakAlertBadge, semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted]}>
+              <Text
+                style={[styles.peakAlertBadgeText, semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted]}
+                numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
+                adjustsFontSizeToFit
+              >
+                {pulseBadgeText}
+              </Text>
             </View>
           </View>
           <View style={styles.peakAlertBottom}>
             <Text style={styles.peakAlertProgressLabel}>{T('progress')}</Text>
-            <Text style={styles.peakAlertFinalLabel}>W{TOTAL_WEEKS} {T('final')}</Text>
+            <Text style={styles.peakAlertFinalLabel}>
+              W{totalWeeks} {T('final')}
+            </Text>
           </View>
           <View style={styles.peakAlertDots}>
-            {Array.from({ length: TOTAL_WEEKS }, (_, i) => {
+            {Array.from({ length: totalWeeks }, (_, i) => {
               const weekNum = i + 1;
-              const isCurrent = weekNum === user.currentWeek;
-              return (
-                <View
-                  key={weekNum}
-                  style={[
-                    styles.peakAlertDot,
-                    isCurrent && styles.peakAlertDotCurrent,
-                    weekNum < user.currentWeek && styles.peakAlertDotPast,
-                  ]}
-                />
-              );
+              let dotStyles: object[] = [styles.peakAlertDot];
+              if (semesterPhase === 'teaching' && !user.isBreak) {
+                const isCurrent = weekNum === user.currentWeek;
+                if (isCurrent) dotStyles.push(styles.peakAlertDotCurrent);
+                else if (weekNum < user.currentWeek) dotStyles.push(styles.peakAlertDotPast);
+              } else if (semesterPhase === 'break_after' || user.isBreak) {
+                dotStyles.push(styles.peakAlertDotPast);
+              }
+              return <View key={weekNum} style={dotStyles} />;
             })}
           </View>
         </Pressable>
@@ -514,17 +563,32 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginTop: 4,
   },
+  peakAlertSubline: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 4,
+    maxWidth: 220,
+    lineHeight: 15,
+  },
   peakAlertBadge: {
     backgroundColor: '#e2e8f0',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
   },
+  peakAlertBadgeMuted: {
+    backgroundColor: '#f1f5f9',
+  },
   peakAlertBadgeText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#0f172a',
     letterSpacing: 0.4,
+  },
+  peakAlertBadgeTextMuted: {
+    fontSize: 10,
+    color: '#64748b',
   },
   peakAlertBottom: {
     flexDirection: 'row',

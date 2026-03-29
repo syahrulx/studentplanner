@@ -36,8 +36,11 @@ export async function getTasks(userId: string): Promise<Task[]> {
   return (data ?? []).map(rowToTask);
 }
 
-export async function upsertTask(userId: string, task: Task): Promise<void> {
-  await supabase.from(TASKS_TABLE).upsert(
+export async function upsertTask(
+  userId: string,
+  task: Task
+): Promise<{ error: { message: string; code?: string } | null }> {
+  const { error } = await supabase.from(TASKS_TABLE).upsert(
     {
       id: task.id,
       user_id: userId,
@@ -56,6 +59,7 @@ export async function upsertTask(userId: string, task: Task): Promise<void> {
     },
     { onConflict: 'id,user_id' }
   );
+  return { error: error ? { message: error.message, code: error.code } : null };
 }
 
 export async function deleteTask(userId: string, taskId: string): Promise<void> {

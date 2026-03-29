@@ -53,7 +53,8 @@ type AppState = {
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   courses: Course[];
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
-  addCourse: (course: Course) => void;
+  addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
+  deleteCourse: (subjectId: string) => void;
   tasks: Task[];
   tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -86,7 +87,7 @@ type AppState = {
   completedStudyKeys: string[];
   markStudyDone: (key: string) => void;
   unmarkStudyDone: (key: string) => void;
-  addTask: (task: Task) => void;
+  addTask: (task: Task, options?: { skipRemote?: boolean }) => void;
   updateTask: (taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
@@ -108,7 +109,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [academicCalendar, setAcademicCalendar] = useState<AcademicCalendar | null>(null);
   const [user, setUserState] = useState<UserProfile>(() => {
     const progress = getAcademicProgress(initialUser.startDate, 14);
-    return { ...initialUser, currentWeek: progress.week, isBreak: progress.isBreak };
+    return {
+      ...initialUser,
+      currentWeek: progress.week,
+      isBreak: progress.isBreak,
+      semesterPhase: progress.semesterPhase,
+    };
   });
 
   const setUser = useCallback((newUser: UserProfile | ((prev: UserProfile) => UserProfile)) => {
@@ -116,7 +122,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const updated = typeof newUser === 'function' ? newUser(prev) : newUser;
       const totalWeeks = academicCalendar?.totalWeeks ?? 14;
       const progress = getAcademicProgress(updated.startDate, totalWeeks);
-      return { ...updated, currentWeek: progress.week, isBreak: progress.isBreak };
+      return {
+        ...updated,
+        currentWeek: progress.week,
+        isBreak: progress.isBreak,
+        semesterPhase: progress.semesterPhase,
+      };
     });
   }, [academicCalendar?.totalWeeks]);
 
@@ -200,9 +211,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (profile) {
               next = { ...next, university: profile.university, academicLevel: profile.academicLevel };
             }
+            const totalW = calendar?.totalWeeks ?? 14;
+            const startForProgress = calendar?.startDate ?? prev.startDate;
+            const progress = getAcademicProgress(startForProgress, totalW);
             if (calendar) {
-              const progress = getAcademicProgress(calendar.startDate, calendar.totalWeeks);
-              next = { ...next, startDate: calendar.startDate, currentWeek: progress.week, isBreak: progress.isBreak };
+              next = {
+                ...next,
+                startDate: calendar.startDate,
+                currentWeek: progress.week,
+                isBreak: progress.isBreak,
+                semesterPhase: progress.semesterPhase,
+              };
+            } else {
+              next = {
+                ...next,
+                currentWeek: progress.week,
+                isBreak: progress.isBreak,
+                semesterPhase: progress.semesterPhase,
+              };
             }
             return next;
           });
@@ -225,7 +251,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const uid = session?.user?.id;
       if (!uid) {
-        setUserState({ ...initialUser, name: 'Student' });
+        setUserState(() => {
+          const p = getAcademicProgress(initialUser.startDate, 14);
+          return {
+            ...initialUser,
+            name: 'Student',
+            currentWeek: p.week,
+            isBreak: p.isBreak,
+            semesterPhase: p.semesterPhase,
+          };
+        });
         setTasks([]);
         setNotes(initialNotes);
         setNoteFolders([]);
@@ -334,17 +369,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const saved = await academicCalendarDb.upsertCalendar(uid, calendar);
     setAcademicCalendar(saved);
     const progress = getAcademicProgress(saved.startDate, saved.totalWeeks);
-    setUserState((prev) => ({ ...prev, startDate: saved.startDate, currentWeek: progress.week, isBreak: progress.isBreak }));
+    setUserState((prev) => ({
+      ...prev,
+      startDate: saved.startDate,
+      currentWeek: progress.week,
+      isBreak: progress.isBreak,
+      semesterPhase: progress.semesterPhase,
+    }));
   }, []);
 
-  const addTask = useCallback((task: Task) => {
+  const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
     setTasks((prev) => [task, ...prev]);
-    // Persist to Supabase in background
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id;
-      if (!uid) return;
-      taskDb.upsertTask(uid, task);
-    });
+    if (!options?.skipRemote) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (!uid) return;
+        taskDb.upsertTask(uid, task).then(({ error }) => {
+          if (error) console.warn('[GradeUp] Failed to sync task to Supabase:', error.message);
+        });
+      });
+    }
   }, []);
 
   const updateTask = useCallback((taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => {
@@ -378,7 +422,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         const uid = session?.user?.id;
         if (!uid) return;
-        taskDb.upsertTask(uid, updated);
+        taskDb.upsertTask(uid, updated).then(({ error }) => {
+          if (error) console.warn('[GradeUp] Failed to sync task update:', error.message);
+        });
       });
       // Return a new array with new object refs so React and list consumers see the update
       const next: Task[] = prev.map((t) =>
@@ -397,7 +443,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         supabase.auth.getSession().then(({ data: { session } }) => {
           const uid = session?.user?.id;
           if (!uid) return;
-          taskDb.upsertTask(uid, updated);
+          taskDb.upsertTask(uid, updated).then(({ error }) => {
+            if (error) console.warn('[GradeUp] Failed to sync task:', error.message);
+          });
           // Propagate to shared_tasks where I'm the owner
           getAcceptedSharedTasks().then(shared => {
             const mine = shared.filter(s => s.task_id === taskId && s.owner_id === uid);
@@ -463,20 +511,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const addCourse = useCallback((course: Course) => {
+  const addCourse = useCallback((course: Course, options?: { skipRemote?: boolean }) => {
     setCourses((prev) => {
       if (prev.some((c) => c.id.toUpperCase() === course.id.toUpperCase())) return prev;
       const next = [...prev, course];
       persistCourses(next);
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.id) {
-          coursesDb.addCourse(session.user.id, course).catch(() => {
-            // On error, local state is already updated; Supabase sync may retry later
-          });
-        }
-      });
+      if (!options?.skipRemote) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user?.id) {
+            coursesDb.addCourse(session.user.id, course).then(({ error }) => {
+              if (error) console.warn('[GradeUp] Failed to sync course to Supabase:', error.message);
+            });
+          }
+        });
+      }
       return next;
     });
+  }, []);
+
+  const deleteCourse = useCallback((subjectId: string) => {
+    const upper = subjectId.toUpperCase();
+    setCourses((prev) => {
+      const next = prev.filter((c) => c.id.toUpperCase() !== upper);
+      persistCourses(next);
+      return next;
+    });
+    setTasks((prev) => prev.filter((t) => t.courseId.toUpperCase() !== upper));
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return;
+      await coursesDb.deleteCourse(uid, subjectId);
+      const { data: relatedTasks } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('user_id', uid)
+        .eq('course_id', subjectId);
+      if (relatedTasks && relatedTasks.length > 0) {
+        for (const row of relatedTasks) {
+          await taskDb.deleteTask(uid, String(row.id));
+        }
+      }
+    })();
   }, []);
 
   const handleSaveNote = useCallback((note: Note) => {
@@ -572,6 +648,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     courses,
     setCourses,
     addCourse,
+    deleteCourse,
     tasks,
     tasksVersion,
     setTasks,

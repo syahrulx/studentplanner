@@ -1090,6 +1090,29 @@ export async function updateSharedTaskCompletion(
   if (error) console.error('Error updating shared task completion:', error);
 }
 
+/** Remove this shared_tasks row for the current user only (recipient or owner). Does not delete tasks. */
+export async function deleteSharedTaskLinkForCurrentUser(
+  sharedTaskId: string
+): Promise<{ error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return { error: 'Not signed in' };
+
+  // .select() after delete returns removed rows. RLS can block delete with **no error** and 0 rows — that caused tasks to reappear after refreshSharedTasks().
+  const { data, error } = await supabase.from('shared_tasks').delete().eq('id', sharedTaskId).select('id');
+
+  if (error) {
+    console.error('Error deleting shared task link:', error);
+    return { error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return {
+      error:
+        'Could not remove this share (nothing was deleted). In Supabase SQL Editor, run the policy from gradeup-mobile/supabase/migrations/007_shared_tasks_delete_rls.sql so DELETE is allowed for owner and recipient.',
+    };
+  }
+  return { error: null };
+}
+
 export async function getSharedTaskParticipants(taskId: string): Promise<SharedTask[]> {
   const { data, error } = await supabase
     .from('shared_tasks')
