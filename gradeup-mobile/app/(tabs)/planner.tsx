@@ -54,7 +54,14 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-type PlannerTaskItem = { itemType: 'task'; id: string; sharedBy?: string; isSharedTask?: boolean } & import('@/src/types').Task;
+type PlannerTaskItem = {
+  itemType: 'task';
+  id: string;
+  sharedBy?: string;
+  isSharedTask?: boolean;
+  /** Row id in shared_tasks — remove link for current user only, not the underlying task */
+  sharedTaskId?: string;
+} & import('@/src/types').Task;
 type PlannerStudyItem = {
   itemType: 'study';
   studyKey: string;
@@ -100,7 +107,7 @@ export default function Planner() {
     language,
   } = useApp();
   const {
-    acceptedSharedTasks, toggleSharedCompletion, userId: communityUserId,
+    acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
     filteredFriends: communityFriends, circles: communityCircles,
     shareAllTasksWithFriend, shareAllTasksWithCircle,
   } = useCommunity();
@@ -382,6 +389,7 @@ export default function Planner() {
         id: st.task_id,
         isDone: st.recipient_completed,
         isSharedTask: true,
+        sharedTaskId: st.id,
         sharedBy: st.owner_profile?.name || 'Friend',
       }));
   }, [acceptedSharedTasks, communityUserId, tasks]);
@@ -775,6 +783,21 @@ export default function Planner() {
         ]);
       }
     } else {
+      const pt = item as PlannerTaskItem;
+      if (pt.isSharedTask && pt.sharedTaskId) {
+        if (item.isDone) {
+          Alert.alert(T('markAsNotDone'), `"${item.title}" ${T('markAsIncomplete')}`, [
+            { text: T('cancel'), style: 'cancel' },
+            { text: T('undo'), onPress: () => toggleSharedCompletion(pt.sharedTaskId!, false) },
+          ]);
+        } else {
+          Alert.alert(T('markAsDoneQuestion'), `"${item.title}" ${T('markAsCompleted')}`, [
+            { text: T('cancel'), style: 'cancel' },
+            { text: T('markDone'), onPress: () => toggleSharedCompletion(pt.sharedTaskId!, true) },
+          ]);
+        }
+        return;
+      }
       if (item.isDone) {
         Alert.alert(T('markAsNotDone'), `"${item.title}" ${T('markAsIncomplete')}`, [
           { text: T('cancel'), style: 'cancel' },
@@ -791,6 +814,35 @@ export default function Planner() {
 
   const handleItemMenu = (item: PlannerItem) => {
     if (item.itemType === 'task') {
+      const pt = item as PlannerTaskItem;
+      if (pt.isSharedTask && pt.sharedTaskId) {
+        Alert.alert(
+          'Remove shared task',
+          `Remove "${item.title}" from your planner only?\n\nThis does not delete the task for the person who shared it.`,
+          [
+            { text: T('cancel'), style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => {
+                Alert.alert(
+                  'Confirm',
+                  'Remove this shared task from your account? You can ask your friend to share it again if needed.',
+                  [
+                    { text: T('cancel'), style: 'cancel' },
+                    {
+                      text: 'Yes, remove',
+                      style: 'destructive',
+                      onPress: () => removeSharedTaskLink(pt.sharedTaskId!),
+                    },
+                  ]
+                );
+              },
+            },
+          ]
+        );
+        return;
+      }
       Alert.alert(
         T('deleteTask'),
         `"${item.title}" ${T('deleteTaskDesc')}`,
@@ -2895,6 +2947,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f8fafc',
+  },
+  gridNavToggleActive: {
+    backgroundColor: 'rgba(0,51,102,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,51,102,0.25)',
   },
   gridNavTitle: {
     fontSize: 16,

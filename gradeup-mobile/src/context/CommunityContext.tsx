@@ -67,6 +67,8 @@ interface CommunityState {
   shareAllTasksWithCircle: (taskIds: string[], circleId: string, message?: string) => Promise<SharedTask[]>;
   respondToShare: (sharedTaskId: string, accept: boolean) => Promise<void>;
   toggleSharedCompletion: (sharedTaskId: string, completed: boolean) => Promise<void>;
+  /** Deletes only the shared_tasks row for you; does not delete the owner's task. */
+  removeSharedTaskLink: (sharedTaskId: string) => Promise<boolean>;
 
   // Circle filtering
   selectedCircleId: string | null;
@@ -546,6 +548,21 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     ));
   }, [userId]);
 
+  const removeSharedTaskLink = useCallback(
+    async (sharedTaskId: string): Promise<boolean> => {
+      const { error } = await communityApi.deleteSharedTaskLinkForCurrentUser(sharedTaskId);
+      if (error) {
+        Alert.alert('Could not remove', error);
+        return false;
+      }
+      setAcceptedSharedTasks((prev) => prev.filter((st) => st.id !== sharedTaskId));
+      setIncomingSharedTasks((prev) => prev.filter((st) => st.id !== sharedTaskId));
+      await refreshSharedTasks();
+      return true;
+    },
+    [refreshSharedTasks]
+  );
+
   // ─── Realtime subscription for shared_tasks changes ───
   useEffect(() => {
     if (!userId) return;
@@ -566,6 +583,26 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes' as any,
         {
           event: 'UPDATE',
+          schema: 'public',
+          table: 'shared_tasks',
+          filter: `owner_id=eq.${userId}`,
+        },
+        () => { refreshSharedTasks(); }
+      )
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'shared_tasks',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => { refreshSharedTasks(); }
+      )
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'DELETE',
           schema: 'public',
           table: 'shared_tasks',
           filter: `owner_id=eq.${userId}`,
@@ -608,6 +645,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     shareAllTasksWithCircle,
     respondToShare,
     toggleSharedCompletion,
+    removeSharedTaskLink,
     locationPermissionGranted,
     requestLocationPermission,
     myLatitude,

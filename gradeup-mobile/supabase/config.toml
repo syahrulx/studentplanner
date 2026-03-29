@@ -1,0 +1,7 @@
+# Deploy with: npx supabase functions deploy extract_sow --project-ref <your-ref>
+#
+# Kong validates JWT at the edge by default. That can return "Invalid JWT" (401)
+# even when the app anon key and user session are valid for Storage/REST.
+# This function already calls auth.getUser() with the request Authorization header.
+[functions.extract_sow]
+verify_jwt = false

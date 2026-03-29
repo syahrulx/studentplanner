@@ -33,14 +33,21 @@ export async function getCourses(userId: string): Promise<Course[]> {
   return (data ?? []).map((row) => rowToCourse(row as Record<string, unknown>));
 }
 
-export async function addCourse(userId: string, course: Course): Promise<void> {
-  await supabase.from(TABLE).insert({
-    user_id: userId,
-    subject_id: course.id,
-    name: course.name,
-    credit_hours: course.creditHours,
-    workload: course.workload,
-  });
+export async function addCourse(
+  userId: string,
+  course: Course
+): Promise<{ error: { message: string; code?: string } | null }> {
+  const { error } = await supabase.from(TABLE).upsert(
+    {
+      user_id: userId,
+      subject_id: course.id,
+      name: course.name,
+      credit_hours: course.creditHours,
+      workload: course.workload,
+    },
+    { onConflict: 'user_id,subject_id' }
+  );
+  return { error: error ? { message: error.message, code: error.code } : null };
 }
 
 export async function updateCourse(userId: string, course: Course): Promise<void> {

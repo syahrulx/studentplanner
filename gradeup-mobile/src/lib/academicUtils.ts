@@ -1,34 +1,69 @@
+import type { SemesterPhase } from '@/src/types';
+
+export type AcademicProgress = {
+  week: number;
+  isBreak: boolean;
+  label: string;
+  semesterPhase: SemesterPhase;
+};
+
 /**
- * Utility to calculate the current academic week according to UiTM rules.
- * Rule: Semester consists of 14 weeks. After that, it's Semester Break.
- * 
- * @param startDateStr ISO date string (e.g. '2025-10-14')
- * @returns { week: number, isBreak: boolean, label: string }
+ * Current position in the academic semester from a start date and total teaching weeks.
+ * - no_calendar: missing/invalid start date
+ * - before_start: today is before semester start
+ * - teaching: within weeks 1..totalWeeks
+ * - break_after: today is after the last teaching week (semester break / between semesters)
  */
-export function getAcademicProgress(startDateStr: string, totalWeeks: number = 14) {
-  const startDate = new Date(startDateStr);
-  const now = new Date();
-  
-  // Set both to midnight to ignore time-of-day diffs
+export function getAcademicProgress(startDateStr: string, totalWeeks: number = 14): AcademicProgress {
+  const trimmed = (startDateStr || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return {
+      week: 1,
+      isBreak: false,
+      label: 'Set academic calendar',
+      semesterPhase: 'no_calendar',
+    };
+  }
+
+  const startDate = new Date(trimmed);
   startDate.setHours(0, 0, 0, 0);
+  if (Number.isNaN(startDate.getTime())) {
+    return {
+      week: 1,
+      isBreak: false,
+      label: 'Set academic calendar',
+      semesterPhase: 'no_calendar',
+    };
+  }
+
+  const now = new Date();
   now.setHours(0, 0, 0, 0);
 
-  // Time difference in milliseconds
   const diffTime = now.getTime() - startDate.getTime();
-  
-  // Convert to absolute weeks (1-based)
-  // Day 0-6 = Week 1
-  // Day 7-13 = Week 2, etc.
   const weeksDiff = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)) + 1;
 
   if (weeksDiff < 1) {
-    return { week: 1, isBreak: false, label: 'Week 1' };
+    return {
+      week: 1,
+      isBreak: false,
+      label: 'Before semester',
+      semesterPhase: 'before_start',
+    };
   }
-  
-  if (weeksDiff > 14) {
-    // According to user: "after 14 week its semester break until new sem"
-    return { week: 14, isBreak: true, label: 'Semester Break' };
+
+  if (weeksDiff > totalWeeks) {
+    return {
+      week: totalWeeks,
+      isBreak: true,
+      label: 'Semester break',
+      semesterPhase: 'break_after',
+    };
   }
-  
-  return { week: weeksDiff, isBreak: false, label: `Week ${weeksDiff}` };
+
+  return {
+    week: weeksDiff,
+    isBreak: false,
+    label: `Week ${weeksDiff}`,
+    semesterPhase: 'teaching',
+  };
 }
