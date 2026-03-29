@@ -20,7 +20,7 @@ const TOTAL_WEEKS = 14;
 
 export default function ProfileSettings() {
   const { user, language, setUser, updateProfile } = useApp();
-  const { locationVisibility, setLocationVisibility } = useCommunity();
+  const { locationVisibility, setLocationVisibility, spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
@@ -117,7 +117,36 @@ export default function ProfileSettings() {
     router.replace('/(auth)/onboarding');
   };
 
+  const spotifyItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = spotifyConnected
+    ? [
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: 'Disconnect Spotify',
+          onPress: async () => {
+            await disconnectSpotify();
+            Alert.alert('Disconnected', 'Your Spotify account has been unlinked.');
+          },
+          color: '#ef4444',
+        },
+      ]
+    : [
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: 'Connect Spotify 🎵',
+          onPress: async () => {
+            try {
+              const ok = await connectSpotify();
+              if (ok) Alert.alert('Connected! 🎉', 'You can now set your music vibe!');
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Failed to connect Spotify.');
+            }
+          },
+          color: '#1DB954',
+        },
+      ];
+
   const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = [
+    ...spotifyItems,
     { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any), color: '#3b82f6' },
     { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any), color: '#8b5cf6' },
     { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any), color: '#ec4899' },

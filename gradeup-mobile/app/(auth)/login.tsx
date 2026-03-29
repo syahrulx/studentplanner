@@ -1,39 +1,54 @@
-import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '@/src/lib/supabase';
 
-const THEME = {
-  primary: '#003366',
-  primaryLight: '#004b7a',
-  accent: '#06b6d4',
-  bg: '#f0f9ff',
-  card: '#ffffff',
-  text: '#003366',
-  textSecondary: '#475569',
-  border: '#e0f2fe',
-  inputBg: '#f0f9ff',
-  danger: '#b91c1c',
-};
+WebBrowser.maybeCompleteAuthSession();
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const checkProfileAndNavigate = async (userId: string) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('university')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!profile?.university) {
+        router.replace('/(auth)/profile-setup');
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch {
+      router.replace('/(tabs)');
+    }
+  };
 
   const handleLogin = async () => {
     setError(null);
     const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setError('Please enter your email');
-      return;
-    }
-    if (!password) {
-      setError('Please enter your password');
-      return;
-    }
+    if (!trimmedEmail) { setError('Please enter your email'); return; }
+    if (!password) { setError('Please enter your password'); return; }
     setLoading(true);
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
@@ -44,174 +59,368 @@ export default function Login() {
         let msg = signInError.message;
         if (msg === 'Invalid login credentials') msg = 'Invalid email or password';
         else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
-          msg = 'The server is currently unavailable (504 Timeout). Please try again later.';
+          msg = 'Server unavailable. Please try again later.';
         }
         setError(msg);
         return;
       }
       if (data.session) {
-        router.replace('/(tabs)');
+        await checkProfileAndNavigate(data.session.user.id);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Something went wrong';
-      setError(msg.includes('504') || msg.startsWith('{') ? 'The server is currently unavailable (504 Timeout). Please try again later.' : msg);
+      setError(msg.includes('504') || msg.startsWith('{') ? 'Server unavailable. Please try again later.' : msg);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const redirectUrl = makeRedirectUri();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+      if (oauthError) {
+        setError(oauthError.message);
+        return;
+      }
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (result.type === 'success' && result.url) {
+          // Extract tokens from the redirect URL
+          const url = new URL(result.url);
+          // Supabase puts tokens in the fragment (#)
+          const params = new URLSearchParams(url.hash.replace('#', ''));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          if (accessToken && refreshToken) {
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) {
+              setError(sessionError.message);
+            } else if (sessionData.session) {
+              await checkProfileAndNavigate(sessionData.session.user.id);
+            }
+          } else {
+            setError('Authentication failed. Please try again.');
+          }
+        }
+      }
+    } catch (e) {
+      setError('Google sign-in failed. Please try email login.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const isLoading = loading || googleLoading;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.container, { backgroundColor: THEME.bg }]}
+      style={styles.container}
     >
-      <View style={[styles.hero, { backgroundColor: THEME.primary }]}>
-        <View style={styles.heroIconWrap}>
-          <Feather name="book-open" size={40} color="#fff" />
-        </View>
-        <Text style={styles.heroTitle}>GradeUp</Text>
-        <Text style={styles.heroSubtitle}>Welcome back. Sign in to continue.</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={[styles.title, { color: THEME.text }]}>Sign in</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-          placeholder="Email"
-          placeholderTextColor={THEME.textSecondary}
-          value={email}
-          onChangeText={(t) => { setEmail(t); setError(null); }}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoComplete="email"
-          editable={!loading}
-        />
-        <TextInput
-          style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-          placeholder="Password"
-          placeholderTextColor={THEME.textSecondary}
-          value={password}
-          onChangeText={(t) => { setPassword(t); setError(null); }}
-          secureTextEntry
-          autoComplete="password"
-          editable={!loading}
-        />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: THEME.primary },
-            pressed && styles.pressed,
-            loading && styles.buttonDisabled,
-          ]}
-          onPress={handleLogin}
-          disabled={loading}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Gradient Hero ── */}
+        <LinearGradient
+          colors={['#0f172a', '#1e3a5f', '#0f172a']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryButtonText}>Log in</Text>
+          <View style={styles.logoWrap}>
+            <Feather name="book-open" size={32} color="#fff" />
+          </View>
+          <Text style={styles.heroTitle}>GradeUp</Text>
+          <Text style={styles.heroSubtitle}>Your study companion</Text>
+        </LinearGradient>
+
+        {/* ── Card ── */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Welcome back 👋</Text>
+          <Text style={styles.cardSubtitle}>Sign in to continue your journey</Text>
+
+          {/* Google Button */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.googleBtn,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+              isLoading && { opacity: 0.6 },
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#333" size="small" />
+            ) : (
+              <>
+                <Text style={styles.googleBtnIcon}>G</Text>
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </>
+            )}
+          </Pressable>
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or sign in with email</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Email */}
+          <View style={styles.inputWrap}>
+            <Feather name="mail" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#94a3b8"
+              value={email}
+              onChangeText={(t) => { setEmail(t); setError(null); }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              editable={!isLoading}
+            />
+          </View>
+
+          {/* Password */}
+          <View style={styles.inputWrap}>
+            <Feather name="lock" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#94a3b8"
+              value={password}
+              onChangeText={(t) => { setPassword(t); setError(null); }}
+              secureTextEntry={!showPassword}
+              autoComplete="password"
+              editable={!isLoading}
+            />
+            <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+              <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color="#94a3b8" />
+            </Pressable>
+          </View>
+
+          {/* Forgot password */}
+          <Pressable
+            onPress={() => router.push('/(auth)/forgot-password')}
+            style={styles.forgotBtn}
+            disabled={isLoading}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </Pressable>
+
+          {/* Error */}
+          {error && (
+            <View style={styles.errorBanner}>
+              <Feather name="alert-circle" size={14} color="#ef4444" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
           )}
-        </Pressable>
-        <View style={styles.links}>
-          <Pressable onPress={() => router.push('/(auth)/sign-up')} style={styles.link} disabled={loading}>
-            <Text style={[styles.linkText, { color: THEME.primary }]}>Create account</Text>
+
+          {/* Login Button */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.loginBtn,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+              isLoading && { opacity: 0.6 },
+            ]}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginBtnText}>Sign In</Text>
+            )}
           </Pressable>
-          <Pressable onPress={() => router.push('/(auth)/forgot-password')} style={styles.link} disabled={loading}>
-            <Text style={[styles.linkTextSecondary, { color: THEME.textSecondary }]}>Forgot password?</Text>
-          </Pressable>
+
+          {/* Sign up link */}
+          <View style={styles.signUpRow}>
+            <Text style={styles.signUpLabel}>Don't have an account? </Text>
+            <Pressable onPress={() => router.push('/(auth)/sign-up')} disabled={isLoading}>
+              <Text style={styles.signUpLink}>Sign up</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  scrollContent: { flexGrow: 1 },
+
+  // Hero
   hero: {
-    paddingTop: 56,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingTop: Platform.OS === 'ios' ? 70 : 50,
+    paddingBottom: 60,
     alignItems: 'center',
   },
-  heroIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  logoWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   heroTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
     color: '#fff',
     letterSpacing: -0.5,
-    marginBottom: 6,
   },
   heroSubtitle: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.9)',
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 4,
     fontWeight: '500',
   },
+
+  // Card
   card: {
-    flex: 1,
+    marginTop: -28,
     marginHorizontal: 20,
-    marginTop: -20,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
     borderRadius: 24,
     padding: 28,
-    borderWidth: 1,
-    borderColor: '#e0f2fe',
-    shadowColor: '#003366',
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 8,
+    shadowRadius: 30,
+    elevation: 10,
+    marginBottom: 40,
   },
-  title: {
-    fontSize: 22,
+  cardTitle: {
+    fontSize: 24,
     fontWeight: '800',
-    marginBottom: 24,
+    color: '#0f172a',
     letterSpacing: -0.3,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    fontSize: 16,
-    marginBottom: 14,
-  },
-  error: {
-    color: '#b91c1c',
+  cardSubtitle: {
     fontSize: 14,
-    marginBottom: 12,
+    color: '#64748b',
+    marginTop: 4,
+    marginBottom: 24,
   },
-  primaryButton: {
-    borderRadius: 16,
-    paddingVertical: 18,
+
+  // Google button
+  googleBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    paddingVertical: 14,
+    gap: 10,
   },
-  buttonDisabled: { opacity: 0.7 },
-  pressed: { opacity: 0.95 },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
+  googleIcon: { width: 20, height: 20 },
+  googleBtnIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#4285F4',
   },
-  links: {
-    marginTop: 24,
+  googleBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginVertical: 22,
     gap: 12,
   },
-  link: { paddingVertical: 4 },
-  linkText: { fontSize: 15, fontWeight: '700' },
-  linkTextSecondary: { fontSize: 14, fontWeight: '500' },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+
+  // Inputs
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  inputIcon: { marginRight: 10 },
+  input: {
+    flex: 1,
+    paddingVertical: 15,
+    fontSize: 15,
+    color: '#0f172a',
+  },
+
+  // Forgot
+  forgotBtn: { alignSelf: 'flex-end', marginBottom: 16 },
+  forgotText: { color: '#64748b', fontSize: 13, fontWeight: '500' },
+
+  // Error
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+  errorText: { color: '#dc2626', fontSize: 13, fontWeight: '500', flex: 1 },
+
+  // Login button
+  loginBtn: {
+    backgroundColor: '#0f172a',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  loginBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // Sign up
+  signUpRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  signUpLabel: { color: '#64748b', fontSize: 14 },
+  signUpLink: { color: '#0f172a', fontSize: 14, fontWeight: '700' },
 });

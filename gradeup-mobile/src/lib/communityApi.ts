@@ -80,6 +80,11 @@ export interface UserActivity {
   activity_type: ActivityType;
   detail?: string;
   course_name?: string;
+  is_playing?: boolean;
+  song_name?: string;
+  song_artist?: string;
+  song_album_art?: string;
+  song_track_id?: string;
   started_at: string;
   updated_at: string;
 }
@@ -95,9 +100,18 @@ export interface QuickReaction {
   sender_profile?: FriendProfile;
 }
 
+export interface MusicPresence {
+  song: string;
+  artist: string;
+  albumArt: string;
+  isPlaying: boolean;
+  trackId?: string;
+}
+
 export interface FriendWithStatus extends FriendProfile {
   location?: UserLocation;
   activity?: UserActivity;
+  music?: MusicPresence;
 }
 
 // -----------------------------------------------------------------------------
@@ -527,11 +541,23 @@ export async function updateMyActivity(
   detail?: string,
   courseName?: string
 ) {
+  // Fetch current activity to preserve music fields
+  const { data: currentAct } = await supabase
+    .from('user_activities')
+    .select('is_playing, song_name, song_artist, song_album_art, song_track_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
   const { error } = await supabase.from('user_activities').upsert({
     user_id: userId,
     activity_type: activityType,
     detail: detail || null,
     course_name: courseName || null,
+    is_playing: currentAct?.is_playing || false,
+    song_name: currentAct?.song_name || null,
+    song_artist: currentAct?.song_artist || null,
+    song_album_art: currentAct?.song_album_art || null,
+    song_track_id: currentAct?.song_track_id || null,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
@@ -589,11 +615,19 @@ export async function getFriendsWithStatus(userId: string): Promise<FriendWithSt
   const locMap = new Map((locResult.data || []).map((l: any) => [l.user_id, l]));
   const actMap = new Map((actResult.data || []).map((a: any) => [a.user_id, a]));
 
-  return friends.map((f) => ({
-    ...f,
-    location: locMap.get(f.id),
-    activity: actMap.get(f.id),
-  }));
+  return friends.map((f) => {
+    const act = actMap.get(f.id) as any;
+    const music: MusicPresence | undefined =
+      act?.is_playing
+        ? { song: act.song_name || '', artist: act.song_artist || '', albumArt: act.song_album_art || '', isPlaying: true, trackId: act.song_track_id || '' }
+        : undefined;
+    return {
+      ...f,
+      location: locMap.get(f.id),
+      activity: actMap.get(f.id),
+      music,
+    };
+  });
 }
 
 // =============================================================================

@@ -22,6 +22,8 @@ import {
 import * as communityApi from '@/src/lib/communityApi';
 import type { FriendWithStatus } from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
+import NowPlayingCard from '@/components/NowPlayingCard';
+import { addTrackToLibrary } from '@/src/lib/spotifyAuth';
 
 function getActivityEmoji(type?: string): string {
   return ACTIVITY_TYPES.find((a) => a.type === type)?.emoji || '⏸️';
@@ -184,6 +186,16 @@ export default function FriendProfileScreen() {
           </View>
         </View>
       </View>
+
+      {/* Now Playing — Spotify Music Presence */}
+      {friend.music?.isPlaying && (
+        <NowPlayingCard
+          song={friend.music.song}
+          artist={friend.music.artist}
+          albumArt={friend.music.albumArt}
+          onAddToLibrary={friend.music.trackId ? () => addTrackToLibrary(friend.music!.trackId!) : undefined}
+        />
+      )}
 
       {/* Location */}
       {friend.location && (

@@ -12,23 +12,15 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '@/src/lib/supabase';
-import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
 
-const THEME = {
-  primary: '#003366',
-  primaryLight: '#004b7a',
-  accent: '#06b6d4',
-  bg: '#f0f9ff',
-  card: '#ffffff',
-  text: '#003366',
-  textSecondary: '#475569',
-  border: '#e0f2fe',
-  inputBg: '#f0f9ff',
-  danger: '#b91c1c',
-};
+WebBrowser.maybeCompleteAuthSession();
+import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -37,95 +29,116 @@ export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [university, setUniversity] = useState<UniversityItem | null>(null);
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universityModalVisible, setUniversityModalVisible] = useState(false);
+  const [uniSearch, setUniSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [emailConfirmRequired, setEmailConfirmRequired] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setUniversitiesLoading(true);
     getMalaysianUniversities()
-      .then((list) => {
-        if (!cancelled) setUniversities(list);
-      })
-      .finally(() => {
-        if (!cancelled) setUniversitiesLoading(false);
-      });
+      .then((list) => { if (!cancelled) setUniversities(list); })
+      .finally(() => { if (!cancelled) setUniversitiesLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const filteredUnis = uniSearch.trim()
+    ? universities.filter((u) => u.name.toLowerCase().includes(uniSearch.toLowerCase()))
+    : universities;
+
+  const handleGoogleSignUp = async () => {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const redirectUrl = makeRedirectUri();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+      if (oauthError) {
+        setError(oauthError.message);
+        return;
+      }
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (result.type === 'success' && result.url) {
+          const url = new URL(result.url);
+          const params = new URLSearchParams(url.hash.replace('#', ''));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          if (accessToken && refreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) {
+              setError(sessionError.message);
+            } else {
+              // Same exact check profile logic as login: redirect to user data form if needed
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                const { data: profile } = await supabase.from('profiles').select('university').eq('id', user.id).maybeSingle();
+                if (!profile?.university) router.replace('/(auth)/profile-setup');
+                else router.replace('/(tabs)');
+              } else {
+                 router.replace('/(auth)/profile-setup');
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      setError('Google sign-in failed. Please try email sign-up.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSignUp = async () => {
     setError(null);
     const trimmedName = name.trim();
     const trimmedEmail = email.trim();
-    if (!trimmedName) {
-      setError('Please enter your name');
-      return;
-    }
-    if (!trimmedEmail) {
-      setError('Please enter your email');
-      return;
-    }
-    if (!university) {
-      setError('Please select your university');
-      return;
-    }
-    if (!password) {
-      setError('Please enter a password');
-      return;
-    }
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
+    if (!trimmedName) { setError('Please enter your name'); return; }
+    if (!trimmedEmail) { setError('Please enter your email'); return; }
+    if (!university) { setError('Please select your university'); return; }
+    if (!password) { setError('Please enter a password'); return; }
+    if (password.length < MIN_PASSWORD_LENGTH) { setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+
     setLoading(true);
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
-        options: {
-          data: {
-            full_name: trimmedName,
-            university: university.name,
-          },
-        },
+        options: { data: { full_name: trimmedName, university: university.name } },
       });
       if (signUpError) {
         let msg = signUpError.message;
-        if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
-          msg = 'The server is currently unavailable (504 Timeout). Please try again later.';
-        }
+        if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{'))
+          msg = 'Server unavailable. Please try again later.';
         setError(msg);
         return;
       }
       if (data.user) {
         try {
           await supabase.from('profiles').upsert(
-            {
-              id: data.user.id,
-              name: trimmedName,
-              university: university.name,
-              updated_at: new Date().toISOString(),
-            },
+            { id: data.user.id, name: trimmedName, university: university.name, updated_at: new Date().toISOString() },
             { onConflict: 'id' }
           );
-        } catch (_) {
-          // profiles table may not have university column yet
-          try {
-            await supabase.from('profiles').upsert(
-              { id: data.user.id, name: trimmedName, updated_at: new Date().toISOString() },
-              { onConflict: 'id' }
-            );
-          } catch (_) {}
-        }
+        } catch {}
         if (data.session) {
           router.replace('/(tabs)');
         } else {
@@ -135,209 +148,225 @@ export default function SignUp() {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Something went wrong';
-      setError(msg.includes('504') || msg.startsWith('{') ? 'The server is currently unavailable (504 Timeout). Please try again later.' : msg);
+      setError(msg.includes('504') || msg.startsWith('{') ? 'Server unavailable.' : msg);
     } finally {
       setLoading(false);
     }
   };
 
+  const isLoading = loading || googleLoading;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={[styles.container, { backgroundColor: THEME.bg }]}
+      style={styles.container}
     >
-      <View style={[styles.hero, { backgroundColor: THEME.primary }]}>
-        <View style={styles.heroIconWrap}>
-          <Feather name="user-plus" size={40} color="#fff" />
-        </View>
-        <Text style={styles.heroTitle}>GradeUp</Text>
-        <Text style={styles.heroSubtitle}>Create account. Join and manage your studies.</Text>
-      </View>
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Hero ── */}
+        <LinearGradient
+          colors={['#0f172a', '#1e3a5f', '#0f172a']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
+        >
+          <View style={styles.logoWrap}>
+            <Feather name="user-plus" size={28} color="#fff" />
+          </View>
+          <Text style={styles.heroTitle}>Join GradeUp</Text>
+          <Text style={styles.heroSubtitle}>Start managing your studies today</Text>
+        </LinearGradient>
+
+        {/* ── Card ── */}
         <View style={styles.card}>
-          <Text style={[styles.title, { color: THEME.text }]}>Sign up</Text>
+          <Text style={styles.cardTitle}>Create Account</Text>
 
-          <TextInput
-            style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-            placeholder="Full name"
-            placeholderTextColor={THEME.textSecondary}
-            value={name}
-            onChangeText={(t) => { setName(t); setError(null); }}
-            autoCapitalize="words"
-            autoComplete="name"
-            editable={!loading}
-          />
-          <TextInput
-            style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-            placeholder="Email"
-            placeholderTextColor={THEME.textSecondary}
-            value={email}
-            onChangeText={(t) => { setEmail(t); setError(null); }}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoComplete="email"
-            editable={!loading}
-          />
-
-          <Text style={[styles.label, { color: THEME.textSecondary }]}>University (Malaysia)</Text>
+          {/* Google */}
           <Pressable
-            style={[
-              styles.universityPicker,
-              { backgroundColor: THEME.inputBg, borderColor: THEME.border },
-              university && { borderColor: THEME.primary },
-            ]}
-            onPress={() => setUniversityModalVisible(true)}
-            disabled={loading || universitiesLoading}
+            style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
+            onPress={handleGoogleSignUp}
+            disabled={isLoading}
           >
-            {universitiesLoading ? (
-              <ActivityIndicator size="small" color={THEME.primary} />
+            {googleLoading ? (
+              <ActivityIndicator color="#333" size="small" />
             ) : (
               <>
-                <Text
-                  style={[
-                    styles.universityPickerText,
-                    { color: university ? THEME.text : THEME.textSecondary },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {university ? university.name : 'Select your university'}
-                </Text>
-                <Feather name="chevron-down" size={20} color={THEME.textSecondary} />
+                <Text style={styles.googleBtnIcon}>G</Text>
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
               </>
             )}
           </Pressable>
 
-          <TextInput
-            style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-            placeholder={`Password (min ${MIN_PASSWORD_LENGTH} characters)`}
-            placeholderTextColor={THEME.textSecondary}
-            value={password}
-            onChangeText={(t) => { setPassword(t); setError(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-            editable={!loading}
-          />
-          <TextInput
-            style={[styles.input, { backgroundColor: THEME.inputBg, borderColor: THEME.border, color: THEME.text }]}
-            placeholder="Confirm password"
-            placeholderTextColor={THEME.textSecondary}
-            value={confirmPassword}
-            onChangeText={(t) => { setConfirmPassword(t); setError(null); }}
-            secureTextEntry
-            autoComplete="new-password"
-            editable={!loading}
-          />
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or create with email</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
-          {error ? (
-            <View style={[styles.messageBanner, emailConfirmRequired && styles.messageBannerSuccess]}>
-              <Text style={[styles.error, emailConfirmRequired && styles.messageBannerText]}>{error}</Text>
+          {/* Name */}
+          <View style={styles.inputWrap}>
+            <Feather name="user" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Full name"
+              placeholderTextColor="#94a3b8"
+              value={name}
+              onChangeText={(t) => { setName(t); setError(null); }}
+              autoCapitalize="words"
+              autoComplete="name"
+              editable={!isLoading}
+            />
+          </View>
+
+          {/* Email */}
+          <View style={styles.inputWrap}>
+            <Feather name="mail" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#94a3b8"
+              value={email}
+              onChangeText={(t) => { setEmail(t); setError(null); }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              editable={!isLoading}
+            />
+          </View>
+
+          {/* University */}
+          <Pressable
+            style={[styles.inputWrap, university && { borderColor: '#0f172a' }]}
+            onPress={() => setUniversityModalVisible(true)}
+            disabled={isLoading || universitiesLoading}
+          >
+            <Feather name="home" size={18} color="#94a3b8" style={styles.inputIcon} />
+            {universitiesLoading ? (
+              <ActivityIndicator size="small" color="#94a3b8" />
+            ) : (
+              <Text style={[styles.input, { paddingVertical: 15, color: university ? '#0f172a' : '#94a3b8' }]} numberOfLines={1}>
+                {university ? university.name : 'Select your university'}
+              </Text>
+            )}
+            <Feather name="chevron-down" size={18} color="#94a3b8" />
+          </Pressable>
+
+          {/* Password */}
+          <View style={styles.inputWrap}>
+            <Feather name="lock" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder={`Password (min ${MIN_PASSWORD_LENGTH} chars)`}
+              placeholderTextColor="#94a3b8"
+              value={password}
+              onChangeText={(t) => { setPassword(t); setError(null); }}
+              secureTextEntry={!showPassword}
+              autoComplete="new-password"
+              editable={!isLoading}
+            />
+            <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+              <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color="#94a3b8" />
+            </Pressable>
+          </View>
+
+          {/* Confirm Password */}
+          <View style={styles.inputWrap}>
+            <Feather name="check-circle" size={18} color="#94a3b8" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm password"
+              placeholderTextColor="#94a3b8"
+              value={confirmPassword}
+              onChangeText={(t) => { setConfirmPassword(t); setError(null); }}
+              secureTextEntry={!showPassword}
+              autoComplete="new-password"
+              editable={!isLoading}
+            />
+          </View>
+
+          {/* Error */}
+          {error && (
+            <View style={[styles.errorBanner, emailConfirmRequired && { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+              <Feather name={emailConfirmRequired ? 'check-circle' : 'alert-circle'} size={14} color={emailConfirmRequired ? '#16a34a' : '#ef4444'} />
+              <Text style={[styles.errorText, emailConfirmRequired && { color: '#16a34a' }]}>{error}</Text>
             </View>
-          ) : null}
+          )}
 
+          {/* Submit */}
           {emailConfirmRequired ? (
             <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { backgroundColor: THEME.primary },
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.9 }]}
               onPress={() => router.replace('/(auth)/login')}
             >
-              <Text style={styles.primaryButtonText}>Go to Login</Text>
+              <Text style={styles.loginBtnText}>Go to Login</Text>
             </Pressable>
           ) : (
             <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { backgroundColor: THEME.primary },
-                pressed && styles.pressed,
-                loading && styles.buttonDisabled,
-              ]}
+              style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
               onPress={handleSignUp}
-              disabled={loading}
+              disabled={isLoading}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Create account</Text>
-              )}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Create Account</Text>}
             </Pressable>
           )}
 
-          <View style={styles.links}>
-            <Pressable
-              onPress={() => {
-                setEmailConfirmRequired(false);
-                setError(null);
-                router.back();
-              }}
-              style={styles.link}
-              disabled={loading}
-            >
-              <Text style={[styles.linkText, { color: THEME.primary }]}>
-                {emailConfirmRequired ? 'Back to sign up' : 'Back to login'}
-              </Text>
+          <View style={styles.signUpRow}>
+            <Text style={styles.signUpLabel}>Already have an account? </Text>
+            <Pressable onPress={() => router.back()} disabled={isLoading}>
+              <Text style={styles.signUpLink}>Sign in</Text>
             </Pressable>
           </View>
         </View>
       </ScrollView>
 
-      <Modal
-        visible={universityModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setUniversityModalVisible(false)}
-      >
+      {/* ── University Modal ── */}
+      <Modal visible={universityModalVisible} transparent animationType="slide" onRequestClose={() => setUniversityModalVisible(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setUniversityModalVisible(false)}>
           <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: THEME.text }]}>Select university</Text>
+              <Text style={styles.modalTitle}>Select University</Text>
               <Pressable onPress={() => setUniversityModalVisible(false)} hitSlop={12}>
-                <Feather name="x" size={24} color={THEME.text} />
+                <Feather name="x" size={22} color="#0f172a" />
               </Pressable>
             </View>
+            <View style={styles.modalSearchWrap}>
+              <Feather name="search" size={16} color="#94a3b8" />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search universities..."
+                placeholderTextColor="#94a3b8"
+                value={uniSearch}
+                onChangeText={setUniSearch}
+                autoFocus
+              />
+              {uniSearch.length > 0 && (
+                <Pressable onPress={() => setUniSearch('')}><Feather name="x-circle" size={16} color="#94a3b8" /></Pressable>
+              )}
+            </View>
             <FlatList
-              data={universities}
+              data={filteredUnis}
               keyExtractor={(item) => item.name}
               style={styles.modalList}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.universityRow,
-                    { backgroundColor: university?.name === item.name ? THEME.inputBg : '#fff', borderColor: THEME.border },
-                    university?.name === item.name && { borderColor: THEME.primary },
-                    pressed && styles.pressedRow,
-                  ]}
-                  onPress={() => {
-                    setUniversity(item);
-                    setUniversityModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.universityRowText, { color: THEME.text }]} numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  {university?.name === item.name && (
-                    <Feather name="check" size={20} color={THEME.primary} />
-                  )}
-                </Pressable>
-              )}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const isSel = university?.name === item.name;
+                return (
+                  <Pressable
+                    style={[styles.uniRow, isSel && { backgroundColor: '#f0f9ff', borderColor: '#0f172a' }]}
+                    onPress={() => { setUniversity(item); setUniversityModalVisible(false); setUniSearch(''); }}
+                  >
+                    <Text style={[styles.uniRowText, isSel && { color: '#0f172a', fontWeight: '700' }]} numberOfLines={2}>{item.name}</Text>
+                    {isSel && <Feather name="check" size={18} color="#0f172a" />}
+                  </Pressable>
+                );
+              }}
               ListEmptyComponent={
-                universitiesLoading ? (
-                  <View style={styles.modalEmpty}>
-                    <ActivityIndicator size="large" color={THEME.primary} />
-                  </View>
-                ) : (
-                  <View style={styles.modalEmpty}>
-                    <Text style={[styles.modalEmptyText, { color: THEME.textSecondary }]}>
-                      No universities loaded. Check your connection.
-                    </Text>
-                  </View>
-                )
+                <View style={styles.modalEmpty}>
+                  <Text style={styles.modalEmptyText}>{uniSearch ? 'No results found' : 'Loading...'}</Text>
+                </View>
               }
             />
           </Pressable>
@@ -348,158 +377,116 @@ export default function SignUp() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  scrollContent: { flexGrow: 1 },
   hero: {
-    paddingTop: 56,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingTop: Platform.OS === 'ios' ? 60 : 44,
+    paddingBottom: 50,
     alignItems: 'center',
   },
-  heroIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  logoWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: -0.5,
+  heroTitle: { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  heroSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4, fontWeight: '500' },
+  card: {
+    marginTop: -24,
+    marginHorizontal: 20,
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 30,
+    elevation: 10,
+    marginBottom: 40,
+  },
+  cardTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', letterSpacing: -0.3, marginBottom: 18 },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    paddingVertical: 13,
+    gap: 10,
+  },
+  googleBtnIcon: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
+  googleBtnText: { fontSize: 15, fontWeight: '600', color: '#334155' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18, gap: 12 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#e2e8f0' },
+  dividerText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#0f172a' },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: { color: '#dc2626', fontSize: 13, fontWeight: '500', flex: 1 },
+  loginBtn: { backgroundColor: '#0f172a', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 4 },
+  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  signUpRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 18 },
+  signUpLabel: { color: '#64748b', fontSize: 14 },
+  signUpLink: { color: '#0f172a', fontSize: 14, fontWeight: '700' },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%', paddingBottom: 34 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  modalSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  modalSearchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: '#0f172a' },
+  modalList: { maxHeight: 400, paddingHorizontal: 20, paddingTop: 8 },
+  uniRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     marginBottom: 6,
   },
-  heroSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
-  },
-  scrollContent: { paddingHorizontal: 20, marginTop: 0, paddingBottom: 40 },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 28,
-    borderWidth: 1,
-    borderColor: '#e0f2fe',
-    shadowColor: '#003366',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 24,
-    letterSpacing: -0.3,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    fontSize: 16,
-    marginBottom: 14,
-  },
-  universityPicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginBottom: 14,
-  },
-  universityPickerText: {
-    fontSize: 16,
-    flex: 1,
-    marginRight: 8,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-    marginBottom: 0,
-  },
-  messageBanner: {
-    marginBottom: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-  },
-  messageBannerSuccess: {
-    backgroundColor: 'rgba(185, 28, 28, 0.08)',
-    borderRadius: 12,
-    padding: 14,
-  },
-  messageBannerText: {
-    color: '#b91c1c',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: { opacity: 0.7 },
-  pressed: { opacity: 0.95 },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  links: {
-    marginTop: 24,
-    alignItems: 'center',
-    gap: 12,
-  },
-  link: { paddingVertical: 4 },
-  linkText: { fontSize: 15, fontWeight: '700' },
-
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-    paddingBottom: 34,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0f2fe',
-  },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  modalList: { maxHeight: 400, paddingHorizontal: 20, paddingTop: 12 },
-  universityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  pressedRow: { opacity: 0.9 },
-  universityRowText: { fontSize: 15, fontWeight: '600', flex: 1 },
+  uniRowText: { fontSize: 14, fontWeight: '500', color: '#334155', flex: 1 },
   modalEmpty: { padding: 32, alignItems: 'center' },
-  modalEmptyText: { fontSize: 14 },
+  modalEmptyText: { fontSize: 14, color: '#94a3b8' },
 });

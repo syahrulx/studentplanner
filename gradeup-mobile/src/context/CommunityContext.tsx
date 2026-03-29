@@ -15,6 +15,7 @@ import type {
   SharedGoal,
 } from '../lib/communityApi';
 import type { SharedTask } from '../types';
+import * as spotifyAuth from '../lib/spotifyAuth';
 
 import * as Location from 'expo-location';
 
@@ -46,6 +47,7 @@ interface CommunityState {
   refreshCircles: () => Promise<void>;
   refreshRequests: () => Promise<void>;
   refreshUnreadCount: () => Promise<void>;
+  refreshMyActivity: () => Promise<void>;
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
   sendReaction: (receiverId: string, type: string, message?: string) => Promise<void>;
@@ -80,6 +82,11 @@ interface CommunityState {
   myLongitude: number | null;
   locationVisibility: LocationVisibility;
   setLocationVisibility: (v: LocationVisibility) => Promise<void>;
+  // Spotify Music Presence
+  spotifyConnected: boolean;
+  connectSpotify: () => Promise<boolean>;
+  disconnectSpotify: () => Promise<void>;
+  refreshMyMusic: () => Promise<void>;
 
   // Loading
   loading: boolean;
@@ -133,6 +140,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [myLongitude, setMyLongitude] = useState<number | null>(null);
   const [locationVisibility, setLocationVisibilityState] = useState<LocationVisibility>('friends');
   const [loading, setLoading] = useState(true);
+
+  // Spotify Music Presence
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
 
   // Accountability Pacts
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
@@ -267,6 +277,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshMyActivity(),
         refreshSharedGoals(),
         refreshSharedTasks(),
+        spotifyAuth.isSpotifyConnected().then((connected) => setSpotifyConnected(connected)),
       ]);
     } catch (e) {
       // Silently fail
@@ -448,13 +459,17 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         activity_type: type,
         detail: detail || undefined,
         course_name: courseName || undefined,
+        // Preserve music fields so the map marker keeps showing the song name
+        is_playing: myActivity?.is_playing,
+        song_name: myActivity?.song_name,
+        song_artist: myActivity?.song_artist,
         started_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
     } catch (e) {
       console.warn('Failed to update activity:', e);
     }
-  }, [userId]);
+  }, [userId, myActivity]);
 
   const clearMyActivity = useCallback(async () => {
     if (!userId) return;
@@ -588,6 +603,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshCircles,
     refreshRequests,
     refreshUnreadCount,
+    refreshMyActivity,
     updateActivity,
     clearMyActivity,
     sendReaction: handleSendReaction,
@@ -614,6 +630,19 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     myLongitude,
     locationVisibility,
     setLocationVisibility,
+    spotifyConnected,
+    connectSpotify: async () => {
+      const ok = await spotifyAuth.connectSpotify();
+      if (ok) setSpotifyConnected(true);
+      return ok;
+    },
+    disconnectSpotify: async () => {
+      await spotifyAuth.disconnectSpotify();
+      setSpotifyConnected(false);
+    },
+    refreshMyMusic: async () => {
+      await spotifyAuth.getMyVibe();
+    },
     loading,
     userId,
   };
