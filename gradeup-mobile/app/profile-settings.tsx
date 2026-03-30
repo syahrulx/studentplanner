@@ -95,6 +95,8 @@ export default function ProfileSettings() {
     isClassroomLinked,
     openClassroomSetup,
     formatClassroomLastSync,
+    runSync: runClassroomSync,
+    isSyncing: isClassroomSyncing,
   } = useClassroomSync(user.startDate, setTasks);
 
   useFocusEffect(
@@ -307,19 +309,28 @@ export default function ProfileSettings() {
         },
       ];
 
-  /** Connect / manage / disconnect only — sync lives on Home & Planner. */
+  /** Sync + manage + disconnect on Profile (Home & Planner have no Classroom sync bar). */
   const profileClassroomItems: {
     icon: ThemeIconKey;
     label: string;
     onPress: () => void;
     color: string;
     subtitle?: string;
+    disabled?: boolean;
   }[] = isClassroomLinked
     ? [
         {
           icon: 'settings' as ThemeIconKey,
+          label: isClassroomSyncing ? 'Syncing…' : 'Sync Google Classroom',
+          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last: ${formatClassroomLastSync(classroomPrefs!.lastSyncAt)}`,
+          onPress: () => void runClassroomSync(),
+          color: '#4285f4',
+          disabled: isClassroomSyncing,
+        },
+        {
+          icon: 'settings' as ThemeIconKey,
           label: 'Manage Courses',
-          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last sync: ${formatClassroomLastSync(classroomPrefs!.lastSyncAt)}`,
+          subtitle: 'Change which courses to sync',
           onPress: () => router.push('/classroom-sync' as any),
           color: '#fbbc05',
         },
@@ -741,7 +752,7 @@ export default function ProfileSettings() {
         </Pressable>
       </View>
 
-      {/* Google Classroom — account & course selection; sync is on Home & Planner */}
+      {/* Google Classroom — account, sync, courses, disconnect */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>GOOGLE CLASSROOM</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
         {classroomLoading ? (
@@ -751,10 +762,15 @@ export default function ProfileSettings() {
         ) : (
           <>
             {profileClassroomItems.map((item, i) => (
-              <React.Fragment key={item.label}>
+              <React.Fragment key={`gc-${i}`}>
                 <Pressable
-                  style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                  style={({ pressed }) => [
+                    styles.menuRow,
+                    pressed && !item.disabled && { backgroundColor: theme.backgroundSecondary },
+                    item.disabled && { opacity: 0.75 },
+                  ]}
                   onPress={item.onPress}
+                  disabled={item.disabled}
                 >
                   <View style={[styles.iconBox, { backgroundColor: item.color }]}>
                     <ThemeIcon name={item.icon} size={18} color="#fff" />
@@ -765,7 +781,11 @@ export default function ProfileSettings() {
                       <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>{item.subtitle}</Text>
                     ) : null}
                   </View>
-                  <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+                  {item.disabled ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+                  )}
                 </Pressable>
                 {i < profileClassroomItems.length - 1 && <View style={styles.dividerList} />}
               </React.Fragment>

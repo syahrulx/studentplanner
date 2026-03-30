@@ -1,6 +1,4 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
-import { useClassroomSync } from '@/hooks/useClassroomSync';
 import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
@@ -114,7 +112,6 @@ export default function Planner() {
     user,
     language,
     academicCalendar,
-    setTasks,
   } = useApp();
   const {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
@@ -122,20 +119,6 @@ export default function Planner() {
     shareAllTasksWithFriend, shareAllTasksWithCircle,
   } = useCommunity();
   const T = useTranslations(language);
-  const {
-    classroomPrefs,
-    isClassroomLinked,
-    isSyncing: isClassroomSyncing,
-    runSync: runClassroomSync,
-    openClassroomSetup,
-    formatClassroomLastSync,
-    refreshPrefs: refreshClassroomPrefs,
-  } = useClassroomSync(user.startDate, setTasks);
-  useFocusEffect(
-    useCallback(() => {
-      void refreshClassroomPrefs();
-    }, [refreshClassroomPrefs]),
-  );
   const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [monthExpanded, setMonthExpanded] = useState(false);
@@ -646,39 +629,6 @@ export default function Planner() {
 
   const renderListHeader = () => (
     <>
-      {/* Google Classroom quick sync */}
-      <View style={s.classroomSyncRow}>
-        <Pressable
-          style={({ pressed }) => [s.classroomSyncBtn, pressed && s.pressed]}
-          onPress={() => {
-            if (isClassroomLinked) void runClassroomSync();
-            else openClassroomSetup();
-          }}
-          disabled={isClassroomSyncing}
-        >
-          <Feather name="book-open" size={18} color="#4285f4" />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={s.classroomSyncTitle} numberOfLines={1}>
-              {isClassroomSyncing
-                ? 'Syncing Classroom…'
-                : isClassroomLinked
-                  ? 'Sync Google Classroom'
-                  : 'Connect Google Classroom'}
-            </Text>
-            <Text style={s.classroomSyncSub} numberOfLines={2}>
-              {isClassroomLinked && classroomPrefs
-                ? `${classroomPrefs.selectedCourseIds.length} courses · ${formatClassroomLastSync(classroomPrefs.lastSyncAt)}`
-                : 'Update tasks from your courses'}
-            </Text>
-          </View>
-          {isClassroomSyncing ? (
-            <ActivityIndicator size="small" color={theme.primary} />
-          ) : (
-            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-          )}
-        </Pressable>
-      </View>
-
       {/* AI Strategist trigger */}
       <View style={s.aiTriggerRow}>
         <Pressable
@@ -2418,34 +2368,6 @@ function createPlannerStyles(theme: ThemePalette) {
     height: 2,
     backgroundColor: theme.primary,
     borderRadius: 1,
-  },
-
-  // Google Classroom quick sync (full width above AI)
-  classroomSyncRow: {
-    marginBottom: 10,
-    paddingHorizontal: 20,
-  },
-  classroomSyncBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  classroomSyncTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.text,
-  },
-  classroomSyncSub: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: theme.textSecondary,
-    marginTop: 2,
   },
 
   // AI Card
