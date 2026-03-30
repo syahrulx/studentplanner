@@ -20,6 +20,10 @@ function cleanEnvString(v) {
 
 export default ({ config }) => ({
   ...config,
+  plugins: [
+    ...(config?.plugins ?? []),
+    '@react-native-community/datetimepicker',
+  ],
   extra: {
     ...config?.extra,
     geminiApiKey: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '',

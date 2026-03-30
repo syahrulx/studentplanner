@@ -1,7 +1,8 @@
-import { useMemo, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image, Alert } from 'react-native';
+import { useMemo, useEffect, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Image, Alert, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useClassroomSync } from '@/hooks/useClassroomSync';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -495,6 +496,20 @@ function createDashboardStyles(theme: ThemePalette) {
       borderWidth: 1,
       borderColor: taskCardOutline,
     },
+    classroomSyncBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: 20,
+      marginTop: 12,
+      marginBottom: 4,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      gap: 12,
+    },
+    classroomSyncTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+    classroomSyncSub: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   });
 }
 
@@ -511,6 +526,7 @@ export default function Dashboard() {
     language,
     pendingClassroomTasks,
     clearPendingClassroomTasks,
+    setTasks,
   } = useApp();
   const { friendsWithStatus } = useCommunity();
   const theme = useTheme();
@@ -567,6 +583,22 @@ export default function Dashboard() {
         ? hexToRgba(theme.text, 0.88)
         : hexToRgba(theme.textInverse, 0.88);
   const T = useTranslations(language);
+
+  const {
+    classroomPrefs,
+    isClassroomLinked,
+    isSyncing: isClassroomSyncing,
+    runSync: runClassroomSync,
+    openClassroomSetup,
+    formatClassroomLastSync,
+    refreshPrefs: refreshClassroomPrefs,
+  } = useClassroomSync(user.startDate, setTasks);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshClassroomPrefs();
+    }, [refreshClassroomPrefs]),
+  );
 
   useEffect(() => {
     if (pendingClassroomTasks.length === 0) return;
@@ -879,6 +911,40 @@ export default function Dashboard() {
           </View>
         </Pressable>
       </View>
+
+      {/* Google Classroom — quick sync (account & courses stay in Profile) */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.classroomSyncBar,
+          {
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+            opacity: pressed || isClassroomSyncing ? 0.85 : 1,
+          },
+        ]}
+        onPress={() => {
+          if (isClassroomLinked) void runClassroomSync();
+          else openClassroomSetup();
+        }}
+        disabled={isClassroomSyncing}
+      >
+        <Feather name="book-open" size={22} color="#4285f4" />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.classroomSyncTitle, { color: theme.text }]}>
+            {isClassroomSyncing
+              ? 'Syncing Classroom…'
+              : isClassroomLinked
+                ? 'Sync Google Classroom'
+                : 'Connect Google Classroom'}
+          </Text>
+          <Text style={[styles.classroomSyncSub, { color: theme.textSecondary }]} numberOfLines={2}>
+            {isClassroomLinked && classroomPrefs
+              ? `${classroomPrefs.selectedCourseIds.length} courses · ${formatClassroomLastSync(classroomPrefs.lastSyncAt)}`
+              : 'Pull the latest assignments into your planner'}
+          </Text>
+        </View>
+        {isClassroomSyncing ? <ActivityIndicator size="small" color={theme.primary} /> : <Feather name="chevron-right" size={20} color={theme.textSecondary} />}
+      </Pressable>
 
       {/* Today's focus */}
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>

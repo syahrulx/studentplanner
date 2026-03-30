@@ -19,7 +19,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar } from '@/src/lib/communityApi';
-import { setHasSeenTutorial, getClassroomPrefs, type ClassroomPrefs } from '@/src/storage';
+import { setHasSeenTutorial } from '@/src/storage';
+import { useClassroomSync } from '@/hooks/useClassroomSync';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
@@ -74,9 +75,6 @@ export default function ProfileSettings() {
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isSyncingClassroom, setIsSyncingClassroom] = useState(false);
-  const [classroomPrefs, setClassroomPrefsState] = useState<ClassroomPrefs | null>(null);
-  const [classroomLoading, setClassroomLoading] = useState(true);
   const [refreshModalOpen, setRefreshModalOpen] = useState(false);
   const [syncPassword, setSyncPassword] = useState('');
   const [syncCourses, setSyncCourses] = useState('');
@@ -90,48 +88,20 @@ export default function ProfileSettings() {
     [user.universityId],
   );
 
-  const refreshClassroomPrefs = useCallback(() => {
-    getClassroomPrefs().then(p => { setClassroomPrefsState(p); setClassroomLoading(false); });
-  }, []);
+  const {
+    classroomPrefs,
+    classroomLoading,
+    refreshPrefs,
+    isClassroomLinked,
+    openClassroomSetup,
+    formatClassroomLastSync,
+  } = useClassroomSync(user.startDate, setTasks);
 
-  useFocusEffect(refreshClassroomPrefs);
-
-  const isClassroomLinked = classroomPrefs !== null && classroomPrefs.selectedCourseIds.length > 0;
-
-  const handleClassroomSync = async () => {
-    if (isSyncingClassroom) return;
-    if (!isClassroomLinked) {
-      router.push('/classroom-sync' as any);
-      return;
-    }
-    setIsSyncingClassroom(true);
-    try {
-      const { syncSelectedCourses } = require('@/src/lib/googleClassroom');
-      const taskDbModule = require('@/src/lib/taskDb');
-      const { supabase } = require('@/src/lib/supabase');
-      const taskFilter = classroomPrefs!.selectedTaskIds?.length ? classroomPrefs!.selectedTaskIds : undefined;
-      const result = await syncSelectedCourses(
-        classroomPrefs!.selectedCourseIds,
-        undefined,
-        user.startDate,
-        taskFilter,
-      );
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        const fresh = await taskDbModule.getTasks(session.user.id);
-        setTasks(fresh);
-      }
-      refreshClassroomPrefs();
-      const msg = result.failedCount > 0
-        ? `Synced ${result.syncedCount} tasks. ${result.failedCount} failed.`
-        : `Successfully synced ${result.syncedCount} tasks!`;
-      Alert.alert('Sync Complete', msg);
-    } catch (e: any) {
-      Alert.alert('Sync Failed', e.message || 'Something went wrong.');
-    } finally {
-      setIsSyncingClassroom(false);
-    }
-  };
+  useFocusEffect(
+    useCallback(() => {
+      void refreshPrefs();
+    }, [refreshPrefs]),
+  );
 
   const handleClassroomDisconnect = () => {
     Alert.alert(
@@ -146,7 +116,7 @@ export default function ProfileSettings() {
             try {
               const { disconnectClassroom } = require('@/src/lib/googleClassroom');
               await disconnectClassroom();
-              setClassroomPrefsState(null);
+              await refreshPrefs();
               Alert.alert('Disconnected', 'Google Classroom has been unlinked.');
             } catch {
               Alert.alert('Error', 'Failed to disconnect.');
@@ -155,17 +125,6 @@ export default function ProfileSettings() {
         },
       ],
     );
-  };
-
-  const formatLastSync = (ts: number | null) => {
-    if (!ts) return 'Never synced';
-    const diff = Date.now() - ts;
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
   };
 
   const handleEditName = () => {
@@ -348,19 +307,19 @@ export default function ProfileSettings() {
         },
       ];
 
-  const classroomItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string; subtitle?: string }[] = isClassroomLinked
+  /** Connect / manage / disconnect only — sync lives on Home & Planner. */
+  const profileClassroomItems: {
+    icon: ThemeIconKey;
+    label: string;
+    onPress: () => void;
+    color: string;
+    subtitle?: string;
+  }[] = isClassroomLinked
     ? [
         {
           icon: 'settings' as ThemeIconKey,
-          label: isSyncingClassroom ? 'Syncing...' : 'Sync Google Classroom',
-          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last: ${formatLastSync(classroomPrefs!.lastSyncAt)}`,
-          onPress: handleClassroomSync,
-          color: '#4285f4',
-        },
-        {
-          icon: 'settings' as ThemeIconKey,
           label: 'Manage Courses',
-          subtitle: 'Change which courses to sync',
+          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last sync: ${formatClassroomLastSync(classroomPrefs!.lastSyncAt)}`,
           onPress: () => router.push('/classroom-sync' as any),
           color: '#fbbc05',
         },
@@ -375,8 +334,8 @@ export default function ProfileSettings() {
         {
           icon: 'settings' as ThemeIconKey,
           label: 'Connect Google Classroom',
-          subtitle: 'Import assignments and quizzes automatically',
-          onPress: handleClassroomSync,
+          subtitle: 'Link account and choose courses to import',
+          onPress: openClassroomSetup,
           color: '#4285f4',
         },
       ];
@@ -428,7 +387,6 @@ export default function ProfileSettings() {
 
   const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string; subtitle?: string }[] = [
     ...spotifyItems,
-    ...classroomItems,
     { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any), color: '#3b82f6' },
     { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any), color: '#ec4899' },
     { icon: 'weeklySummary', label: T('weeklySummary'), onPress: () => router.push('/weekly-summary' as any), color: '#f59e0b' },
@@ -781,6 +739,39 @@ export default function ProfileSettings() {
           <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
+      </View>
+
+      {/* Google Classroom — account & course selection; sync is on Home & Planner */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>GOOGLE CLASSROOM</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        {classroomLoading ? (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <ActivityIndicator color={theme.primary} />
+          </View>
+        ) : (
+          <>
+            {profileClassroomItems.map((item, i) => (
+              <React.Fragment key={item.label}>
+                <Pressable
+                  style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                  onPress={item.onPress}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: item.color }]}>
+                    <ThemeIcon name={item.icon} size={18} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
+                    {item.subtitle ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>{item.subtitle}</Text>
+                    ) : null}
+                  </View>
+                  <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+                </Pressable>
+                {i < profileClassroomItems.length - 1 && <View style={styles.dividerList} />}
+              </React.Fragment>
+            ))}
+          </>
+        )}
       </View>
 
       {/* Settings Tools */}
