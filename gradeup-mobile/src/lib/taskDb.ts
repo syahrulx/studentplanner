@@ -72,4 +72,8 @@ export async function deleteTask(userId: string, taskId: string): Promise<void> 
   await supabase.from(TASKS_TABLE).delete().eq('user_id', userId).eq('id', taskId);
 }
 
+export async function deleteAllTasksForUser(userId: string): Promise<void> {
+  const { error } = await supabase.from(TASKS_TABLE).delete().eq('user_id', userId);
+  if (error) throw new Error(error.message || 'Failed to delete tasks');
+}
 

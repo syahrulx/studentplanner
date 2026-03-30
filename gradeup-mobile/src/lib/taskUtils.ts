@@ -46,11 +46,14 @@ export function getPriorityFromDeadlineRisk(risk: DeadlineRisk): Priority {
 
 export function getSuggestedWeekForDueDate(
   dueDateISO: string,
-  user: Pick<UserProfile, 'currentWeek' | 'startDate'> | null | undefined
+  user: Pick<UserProfile, 'currentWeek' | 'startDate'> | null | undefined,
+  /** Prefer academic calendar start when set — same anchor as Semester Pulse / stress map. */
+  calendarStart?: string | null,
 ): number {
-  if (!user?.startDate) return Math.max(1, user?.currentWeek ?? 1);
-  const weekFromStart = Math.ceil((diffDays(user.startDate, dueDateISO) + 1) / 7);
-  return Math.max(user.currentWeek ?? 1, weekFromStart || 1);
+  const start = (calendarStart?.trim() || user?.startDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return Math.max(1, user?.currentWeek ?? 1);
+  const weekFromStart = Math.ceil((diffDays(start, dueDateISO) + 1) / 7);
+  return Math.max(user?.currentWeek ?? 1, weekFromStart || 1);
 }
 
 export function normalizeTaskType(rawType: string | undefined): TaskType {
@@ -163,6 +166,7 @@ export function buildTaskFromExtraction(
   options: {
     fallbackCourseId: string;
     user: Pick<UserProfile, 'currentWeek' | 'startDate'> | null | undefined;
+    calendarStart?: string | null;
     sourceMessage?: string;
   }
 ): Task {
@@ -174,7 +178,7 @@ export function buildTaskFromExtraction(
   const suggestedWeek =
     typeof extracted.suggested_week === 'number' && extracted.suggested_week > 0
       ? extracted.suggested_week
-      : getSuggestedWeekForDueDate(dueDate, options.user);
+      : getSuggestedWeekForDueDate(dueDate, options.user, options.calendarStart);
 
   return {
     id: createTaskId(),

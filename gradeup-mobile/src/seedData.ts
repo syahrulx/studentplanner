@@ -4,11 +4,12 @@ import { DEFAULT_COURSES } from './constants';
 
 export const initialUser: UserProfile = {
   name: 'Student',
-  studentId: '2022456789',
-  program: 'FSKM - Information System Engineering',
-  part: 4,
-  currentWeek: 11, // This will be overriden by AppContext now
-  startDate: '2026-03-02',
+  studentId: '',
+  program: '',
+  part: 0,
+  currentWeek: 1,
+  /** Default semester start: keep “teaching week 1” plausible for late March 2026 (avoids instant week 5 on cold start). */
+  startDate: '2026-03-24',
 };
 
 const courseNames: Record<string, string> = {

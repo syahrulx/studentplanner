@@ -18,7 +18,7 @@ const ANALYSIS_STEPS = [
 ];
 
 export default function AIExtraction() {
-  const { pendingExtraction, addTask, courses, getSubjectColor, setSubjectColor, user } = useApp();
+  const { pendingExtraction, addTask, courses, getSubjectColor, setSubjectColor, user, academicCalendar } = useApp();
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
@@ -72,7 +72,7 @@ export default function AIExtraction() {
     const suggestedWeek =
       typeof aiMeta?.suggested_week === 'number' && aiMeta.suggested_week > 0
         ? aiMeta.suggested_week
-        : getSuggestedWeekForDueDate(dueDate, user);
+        : getSuggestedWeekForDueDate(dueDate, user, academicCalendar?.startDate);
 
     const task: Task = {
       id: createTaskId(),

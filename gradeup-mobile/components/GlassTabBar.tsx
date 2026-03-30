@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { isDarkTheme } from '@/constants/Themes';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTabBarAddMenu } from '@/contexts/TabBarContext';
 
@@ -16,24 +17,49 @@ try {
 const BAR_H = 68;
 const BAR_RADIUS = 34;
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '').trim();
+  if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
+  const n = parseInt(h, 16);
+  if (Number.isNaN(n)) return `rgba(0,0,0,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const theme = useTheme();
+  const themeId = useThemeId();
+  const isDark = isDarkTheme(themeId);
   const insets = useSafeAreaInsets();
   const openAddMenu = useTabBarAddMenu();
 
   const hasBlur = BlurView && Platform.OS !== 'web';
-  const barBg = hasBlur ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.88)';
+  const barBg = isDark
+    ? hasBlur
+      ? hexToRgba(theme.card, 0.72)
+      : hexToRgba(theme.card, 0.96)
+    : hasBlur
+      ? hexToRgba(theme.card, 0.14)
+      : hexToRgba(theme.card, 0.92);
   const activeColor = theme.primary;
-  const inactiveColor = '#94a3b8';
+  const inactiveColor = theme.tabIconDefault;
   const addBtnBg = theme.primary;
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
-      <View style={[styles.barOuter, styles.barShadow]}>
+      <View
+        style={[
+          styles.barOuter,
+          styles.barShadow,
+          { shadowColor: isDark ? theme.primary : `${theme.text}33` },
+        ]}
+      >
         {hasBlur && (
           <BlurView
-            intensity={140}
-            tint="light"
+            intensity={isDark ? 48 : 140}
+            tint={isDark ? 'dark' : 'light'}
             style={[StyleSheet.absoluteFill, styles.barBlur]}
           />
         )}
@@ -73,8 +99,14 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                 onPress={onPress}
                 accessibilityLabel="Add"
               >
-                <View style={[styles.addBtn, { backgroundColor: addBtnBg }]}>
-                  <ThemeIcon name="add" size={24} color="#fff" />
+                <View
+                  style={[
+                    styles.addBtn,
+                    { backgroundColor: addBtnBg },
+                    Platform.OS === 'ios' && { shadowColor: theme.primary },
+                  ]}
+                >
+                  <ThemeIcon name="add" size={24} color={theme.textInverse} />
                 </View>
               </Pressable>
             );
@@ -186,7 +218,6 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   barShadow: {
-    shadowColor: '#003366',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.08,
     shadowRadius: 28,
@@ -231,9 +262,8 @@ const styles = StyleSheet.create({
     marginTop: -8,
     ...Platform.select({
       ios: {
-        shadowColor: '#003366',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.22,
         shadowRadius: 8,
       },
       android: { elevation: 6 },

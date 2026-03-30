@@ -1,5 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Image, Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -8,15 +9,44 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
+import { peakWeekFromTaskCounts, taskCountsByOpenDueWeek } from '@/src/lib/academicWeek';
+import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
+
+/** Home header: darker base + stronger waves (only these themes; blush/emerald unchanged). */
+const HEADER_VISUAL_BOOST_IDS: ReadonlySet<ThemeId> = new Set(['light', 'dark', 'midnight']);
+
+/**
+ * Home header navy — same base as profile hero in light mode (`#003366`).
+ * Flat gradient stops so hue matches the profile card; wave + overlay do the variation (like profile).
+ */
+const PROFILE_HERO_NAVY = '#003366';
+
+const LIGHT_HOME_HEADER = {
+  accent2: PROFILE_HERO_NAVY,
+  primary: PROFILE_HERO_NAVY,
+  secondary: PROFILE_HERO_NAVY,
+  sheenAccent: '#06b6d4',
+} as const;
+
+/** Dark theme: same navy as profile reference (not cyan-teal) so header matches the deep blue look. */
+const DARK_HEADER_DEEP = {
+  accent2: PROFILE_HERO_NAVY,
+  primary: PROFILE_HERO_NAVY,
+  secondary: PROFILE_HERO_NAVY,
+  sheenAccent: '#38bdf8',
+} as const;
+
+/** Darker antique gold header (midnight / black & gold) */
+const MIDNIGHT_HEADER_DEEP = {
+  accent2: '#4a3a0c',
+  primary: '#7a6218',
+  secondary: '#8f7318',
+  sheenAccent: '#d4af37',
+} as const;
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
-const NAVY = '#003366';
 const GOLD = '#f59e0b';
-const BG = '#f8fafc';
-const CARD_BG = '#ffffff';
-const CARD_BORDER = '#dbe4f0';
-const TEXT_PRIMARY = '#1A1C1E';
-const TEXT_SECONDARY = '#8E9AAF';
 const OVERDUE_COLOR = '#dc2626';
 
 function toLocalISO(d: Date): string {
@@ -41,7 +71,7 @@ function getDueTimeLabelRaw(dueDate: string): { key: 'overdue' | 'dueToday' | 't
 
 function hexToRgba(hex: string, alpha: number): string {
   const clean = hex.replace('#', '');
-  if (clean.length !== 6) return `rgba(0, 51, 102, ${alpha})`;
+  if (clean.length !== 6) return `rgba(0, 0, 0, ${alpha})`;
   const int = parseInt(clean, 16);
   const r = (int >> 16) & 255;
   const g = (int >> 8) & 255;
@@ -59,21 +89,483 @@ type FocusStudyItem = {
   name: string;
 };
 
+function createDashboardStyles(theme: ThemePalette) {
+  const primary = theme.primary;
+  const bg = theme.background;
+  const card = theme.card;
+  const border = theme.border;
+  const text = theme.text;
+  const textSecondary = theme.textSecondary;
+  const bgSecondary = theme.backgroundSecondary;
+  const chipTint = `${primary}33`;
+  const chipBorder = `${primary}44`;
+  const metaPillOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.82)' : border;
+  const taskCardOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.38)' : border;
+
+  return StyleSheet.create({
+    container: { flex: 1 },
+    content: { paddingTop: 0, paddingBottom: 100 },
+    headerWrap: {
+      paddingHorizontal: 16,
+      paddingTop: 56,
+      paddingBottom: 55,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.18,
+      shadowRadius: 12,
+      elevation: 4,
+      overflow: 'hidden',
+    },
+    peakAlertBox: {
+      backgroundColor: card,
+      borderRadius: 18,
+      paddingHorizontal: 20,
+      paddingVertical: 20,
+      marginTop: 22,
+      zIndex: 1,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: border,
+    },
+    peakAlertTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    peakAlertLeft: {},
+    peakAlertWeek: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: text,
+      letterSpacing: -0.3,
+    },
+    peakAlertLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: textSecondary,
+      letterSpacing: 1.2,
+      marginTop: 4,
+    },
+    peakAlertSubline: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: textSecondary,
+      marginTop: 4,
+      maxWidth: 220,
+      lineHeight: 15,
+    },
+    peakAlertBadge: {
+      backgroundColor: bgSecondary,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+    },
+    peakAlertBadgeMuted: {
+      backgroundColor: bgSecondary,
+      opacity: 0.85,
+    },
+    peakAlertBadgeText: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: text,
+      letterSpacing: 0.4,
+    },
+    peakAlertBadgeTextMuted: {
+      fontSize: 10,
+      color: textSecondary,
+    },
+    peakAlertBottom: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 16,
+      marginBottom: 10,
+    },
+    peakAlertProgressLabel: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: textSecondary,
+      letterSpacing: 1.2,
+    },
+    peakAlertFinalLabel: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: textSecondary,
+      letterSpacing: 0.5,
+    },
+    peakAlertDots: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    peakAlertDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: border,
+    },
+    peakAlertDotCurrent: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: GOLD,
+    },
+    peakAlertDotPast: {
+      backgroundColor: textSecondary,
+    },
+    peakAlertDotPeak: {
+      borderWidth: 2,
+      borderColor: '#dc2626',
+      backgroundColor: '#fecaca',
+    },
+    headerGradient: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    headerSheen: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    headerWave: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    headerTextureOverlay: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 1 },
+    greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+    dot: { width: 6, height: 6, borderRadius: 3 },
+    subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+
+    pressed: { opacity: 0.96 },
+
+    sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
+    sectionWrapperFirst: { marginTop: 24 },
+    sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: primary },
+    sectionSubcopy: { fontSize: 13, lineHeight: 19, color: textSecondary, marginBottom: 16, maxWidth: '92%' },
+
+    focusCard: {
+      borderRadius: 26,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      backgroundColor: card,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+      shadowColor: '#0f172a',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.045,
+      shadowRadius: 16,
+      elevation: 3,
+    },
+    focusCardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    focusPillsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    focusCoursePill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    focusCoursePillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+    focusStatusPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    focusStatusPillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+    focusArrowButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: bgSecondary,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+    },
+    focusTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      lineHeight: 23,
+      color: text,
+      letterSpacing: -0.4,
+    },
+    focusSupportText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: textSecondary,
+      marginTop: 6,
+    },
+    focusMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+      marginTop: 14,
+    },
+    focusMetaPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 11,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: bgSecondary,
+      borderWidth: 1,
+      borderColor: metaPillOutline,
+    },
+    focusMetaText: { fontSize: 13, fontWeight: '700', color: textSecondary },
+    focusEmptyWrap: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 156,
+      backgroundColor: card,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+      borderRadius: 28,
+      paddingHorizontal: 24,
+    },
+    focusEmptyIcon: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: chipTint,
+      marginBottom: 16,
+    },
+    focusEmpty: { fontSize: 18, fontWeight: '700', color: text, marginBottom: 6 },
+    focusEmptySub: { fontSize: 14, fontWeight: '500', color: primary },
+
+    timelineHeader: { marginBottom: 16 },
+    timelineHeaderBody: { flex: 1, minWidth: 0 },
+    upcomingPanel: {
+      backgroundColor: bgSecondary,
+      borderRadius: 26,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+    },
+    upcomingLeadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: 10,
+      marginBottom: 14,
+    },
+    upcomingLeadBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 999,
+      backgroundColor: chipTint,
+      borderWidth: 1,
+      borderColor: chipBorder,
+    },
+    upcomingLeadBadgeText: { fontSize: 12, fontWeight: '800', color: primary, letterSpacing: 0.3 },
+    upcomingSeeAllButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: card,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+    },
+    upcomingSeeAllText: { fontSize: 13, fontWeight: '700', color: primary },
+    upcomingEmptyCard: {
+      alignItems: 'center',
+      paddingVertical: 24,
+      paddingHorizontal: 18,
+      borderRadius: 20,
+      backgroundColor: card,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+    },
+    upcomingEmptyIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: chipTint,
+      marginBottom: 14,
+    },
+    upcomingEmptyTitle: { fontSize: 16, fontWeight: '700', color: text, textAlign: 'center' },
+    upcomingEmptySub: { fontSize: 13, lineHeight: 19, color: textSecondary, textAlign: 'center', marginTop: 8 },
+    upcomingEmptyButton: {
+      marginTop: 18,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 999,
+      backgroundColor: primary,
+    },
+    upcomingEmptyButtonText: { color: theme.textInverse, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+    upcomingDateRow: { marginBottom: 10 },
+    upcomingDateChip: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: chipTint,
+      borderWidth: 1,
+      borderColor: chipBorder,
+    },
+    upcomingDateChipText: { fontSize: 12, fontWeight: '800', color: primary, letterSpacing: 0.3 },
+    upcomingCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      borderRadius: 22,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      backgroundColor: card,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+      marginBottom: 12,
+    },
+    upcomingAccent: {
+      width: 6,
+      alignSelf: 'stretch',
+      borderRadius: 999,
+    },
+    upcomingCardBody: { flex: 1, minWidth: 0 },
+    upcomingCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 8,
+    },
+    upcomingTimeWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    upcomingTime: { fontSize: 13, fontWeight: '700', color: textSecondary },
+    upcomingTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      lineHeight: 22,
+      color: text,
+      letterSpacing: -0.3,
+    },
+    upcomingTitleDone: { color: textSecondary, textDecorationLine: 'line-through' },
+    upcomingMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 },
+    upcomingSubjectDot: { width: 8, height: 8, borderRadius: 4 },
+    upcomingMetaText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: textSecondary },
+    upcomingMetaDivider: { fontSize: 13, color: textSecondary, fontWeight: '700' },
+    upcomingMoreRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingTop: 8,
+      paddingBottom: 2,
+    },
+    upcomingMoreText: { fontSize: 13, fontWeight: '700', color: primary },
+
+    studyingWidget: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: 20,
+      marginBottom: 20,
+      marginTop: -10,
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      borderRadius: 16,
+      backgroundColor: chipTint,
+      borderWidth: 1,
+      borderColor: taskCardOutline,
+    },
+  });
+}
+
 export default function Dashboard() {
   const {
     user,
     tasks,
     courses,
+    academicCalendar,
     revisionSettingsList,
     completedStudyKeys,
     pinnedTaskIds,
     getSubjectColor,
     language,
-    academicCalendar,
     pendingClassroomTasks,
     clearPendingClassroomTasks,
   } = useApp();
   const { friendsWithStatus } = useCommunity();
+  const theme = useTheme();
+  const themeId = useThemeId();
+  const styles = useMemo(() => createDashboardStyles(theme), [theme]);
+
+  const headerVisualBoost = HEADER_VISUAL_BOOST_IDS.has(themeId);
+
+  let headerPrimary: string;
+  let headerAccent2: string;
+  let headerSecondary: string;
+  let headerSheenAccent: string;
+
+  if (themeId === 'light') {
+    headerAccent2 = LIGHT_HOME_HEADER.accent2;
+    headerPrimary = LIGHT_HOME_HEADER.primary;
+    headerSecondary = LIGHT_HOME_HEADER.secondary;
+    headerSheenAccent = LIGHT_HOME_HEADER.sheenAccent;
+  } else if (themeId === 'dark') {
+    const base = headerVisualBoost ? DARK_HEADER_DEEP : { accent2: theme.accent2, primary: theme.primary, secondary: theme.secondary, sheenAccent: theme.accent };
+    headerAccent2 = base.accent2;
+    headerPrimary = base.primary;
+    headerSecondary = base.secondary;
+    headerSheenAccent = base.sheenAccent;
+  } else if (themeId === 'midnight') {
+    const base = headerVisualBoost ? MIDNIGHT_HEADER_DEEP : { accent2: theme.accent2, primary: theme.primary, secondary: theme.secondary, sheenAccent: theme.accent };
+    headerAccent2 = base.accent2;
+    headerPrimary = base.primary;
+    headerSecondary = base.secondary;
+    headerSheenAccent = base.sheenAccent;
+  } else {
+    headerAccent2 = theme.accent2;
+    headerPrimary = theme.primary;
+    headerSecondary = theme.secondary;
+    headerSheenAccent = theme.accent;
+  }
+
+  /** Match profile hero: wave 0.35 + overlay rgba(0,51,102,0.35) — same recipe as profile-settings. */
+  const profileMatchTexture = themeId === 'light' || themeId === 'dark';
+  const headerWaveOpacity = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
+  const headerTextureOverlayAlpha = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
+  const headerSheenAlpha = profileMatchTexture ? 0.08 : headerVisualBoost ? 0.12 : 0.22;
+
+  const headerOnPrimary =
+    themeId === 'light' || themeId === 'midnight'
+      ? '#ffffff'
+      : themeId === 'dark' && headerVisualBoost
+        ? theme.text
+        : theme.textInverse;
+  const headerOnPrimaryMuted =
+    themeId === 'light' || themeId === 'midnight'
+      ? hexToRgba('#ffffff', 0.88)
+      : themeId === 'dark' && headerVisualBoost
+        ? hexToRgba(theme.text, 0.88)
+        : hexToRgba(theme.textInverse, 0.88);
   const T = useTranslations(language);
 
   useEffect(() => {
@@ -120,18 +612,14 @@ export default function Dashboard() {
     [friendsWithStatus]
   );
 
-  const peakWeek = useMemo(() => {
-    let max = 0;
-    let peak = totalWeeks;
-    for (let w = 0; w < totalWeeks; w++) {
-      const total = courses.reduce((sum, c) => sum + (c.workload?.[w] ?? 0), 0);
-      if (total > max) {
-        max = total;
-        peak = w + 1;
-      }
-    }
-    return peak;
-  }, [courses, totalWeeks]);
+  const taskWeekCounts = useMemo(
+    () => taskCountsByOpenDueWeek(tasks, academicCalendar, user.startDate),
+    [tasks, academicCalendar, user.startDate],
+  );
+  const { week: taskPeakWeek, max: taskPeakMax } = useMemo(
+    () => peakWeekFromTaskCounts(taskWeekCounts),
+    [taskWeekCounts],
+  );
 
   const headerSemesterStatus = useMemo(() => {
     if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
@@ -149,12 +637,16 @@ export default function Dashboard() {
 
   const pulseBadgeText = useMemo(() => {
     if (semesterPhase === 'teaching' && !user.isBreak) {
-      return `W${peakWeek} ${T('peakAlert')}`;
+      if (taskPeakMax === 0 || taskPeakWeek < 1) return T('tasksPulseNoTasks');
+      if (taskPeakWeek === user.currentWeek) {
+        return `${T('week')} ${user.currentWeek} · ${T('peakAlert')}`;
+      }
+      return `W${taskPeakWeek} ${T('peakAlert')}`;
     }
     if (semesterPhase === 'break_after' || user.isBreak) return T('betweenSemestersBadge');
     if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
     return T('semesterNotConfigured');
-  }, [semesterPhase, user.isBreak, peakWeek, T]);
+  }, [semesterPhase, user.isBreak, user.currentWeek, taskPeakWeek, taskPeakMax, T]);
 
   const now = new Date();
   const todayStr = getTodayISO();
@@ -242,7 +734,7 @@ export default function Dashboard() {
         time: focusTask.task.dueTime,
         accentColor: subjectColor,
         statusColor,
-        badgeBackground: '#ffffff',
+        badgeBackground: theme.card,
         label:
           info.key === 'daysLeft'
             ? `${info.days} ${T('daysLeft')}`
@@ -266,7 +758,7 @@ export default function Dashboard() {
         time: nextStudyItem.time,
         accentColor: subjectColor,
         statusColor: subjectColor,
-        badgeBackground: '#ffffff',
+        badgeBackground: theme.card,
         label:
           info.key === 'daysLeft'
             ? `${info.days} ${T('daysLeft')}`
@@ -277,33 +769,61 @@ export default function Dashboard() {
     }
 
     return null;
-  }, [focusTask, nextStudyItem, T, getSubjectColor]);
+  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card]);
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: BG }]} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
       {/* Header: greeting + week + profile + week peak alert (white box) */}
-      <View style={[styles.headerWrap, { backgroundColor: NAVY }]}>
+      <View
+        style={[
+          styles.headerWrap,
+          {
+            backgroundColor: headerPrimary,
+            shadowColor: headerPrimary,
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={[headerAccent2, headerPrimary, headerSecondary]}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFillObject, styles.headerGradient]}
+        />
         <Image
           source={require('../../assets/images/wave-texture.png')}
-          style={[StyleSheet.absoluteFillObject, styles.waveTexture]}
+          style={[StyleSheet.absoluteFillObject, styles.headerWave, { opacity: headerWaveOpacity }]}
           resizeMode="cover"
         />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0, 51, 102, 0.45)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }]} />
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            styles.headerTextureOverlay,
+            { backgroundColor: hexToRgba(headerPrimary, headerTextureOverlayAlpha) },
+          ]}
+        />
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            styles.headerSheen,
+            { backgroundColor: hexToRgba(headerSheenAccent, headerSheenAlpha) },
+          ]}
+        />
         <View style={styles.header}>
           <View>
-            <Text style={[styles.greeting, { color: '#f8fafc' }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
+            <Text style={[styles.greeting, { color: headerOnPrimary }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
             <View style={styles.row}>
-              <View style={[styles.dot, { backgroundColor: GOLD }]} />
-              <Text style={[styles.subtitle, { color: 'rgba(248,250,252,0.85)' }]}>
-                {T('part')} {user.part} • {headerSemesterStatus}
+              <View style={[styles.dot, { backgroundColor: theme.warning }]} />
+              <Text style={[styles.subtitle, { color: headerOnPrimaryMuted }]}>
+                {headerSemesterStatus}
               </Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Pressable onPress={() => router.push('/profile-settings' as any)}>
-              <ThemeIcon name="user" size={22} color="#f8fafc" />
+              <ThemeIcon name="user" size={22} color={headerOnPrimary} />
             </Pressable>
           </View>
         </View>
@@ -347,8 +867,10 @@ export default function Dashboard() {
               let dotStyles: object[] = [styles.peakAlertDot];
               if (semesterPhase === 'teaching' && !user.isBreak) {
                 const isCurrent = weekNum === user.currentWeek;
+                const isTaskPeak = taskPeakMax > 0 && taskPeakWeek >= 1 && weekNum === taskPeakWeek;
                 if (isCurrent) dotStyles.push(styles.peakAlertDotCurrent);
                 else if (weekNum < user.currentWeek) dotStyles.push(styles.peakAlertDotPast);
+                if (isTaskPeak && !isCurrent) dotStyles.push(styles.peakAlertDotPeak);
               } else if (semesterPhase === 'break_after' || user.isBreak) {
                 dotStyles.push(styles.peakAlertDotPast);
               }
@@ -360,7 +882,7 @@ export default function Dashboard() {
 
       {/* Today's focus */}
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>
-        <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('todaysFocus')}</Text>
+        <Text style={styles.sectionHeader}>{T('todaysFocus')}</Text>
         <Text style={styles.sectionSubcopy}>
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
         </Text>
@@ -382,7 +904,17 @@ export default function Dashboard() {
               <View style={styles.focusCardHeader}>
                 <View style={styles.focusPillsRow}>
                   <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
-                    <Text style={[styles.focusCoursePillText, { color: focusCard.accentColor }]}>{focusCard.code}</Text>
+                    <Text
+                      style={[
+                        styles.focusCoursePillText,
+                        {
+                          color:
+                            themeId === 'dark' || themeId === 'midnight' ? theme.text : focusCard.accentColor,
+                        },
+                      ]}
+                    >
+                      {focusCard.code}
+                    </Text>
                   </View>
                   <View
                     style={[
@@ -399,7 +931,7 @@ export default function Dashboard() {
                   </View>
                 </View>
                 <View style={styles.focusArrowButton}>
-                  <Feather name="arrow-up-right" size={17} color={NAVY} />
+                  <Feather name="arrow-up-right" size={17} color={theme.primary} />
                 </View>
               </View>
               <Text style={styles.focusTitle} numberOfLines={2}>{focusCard.title}</Text>
@@ -408,11 +940,11 @@ export default function Dashboard() {
               </Text>
               <View style={styles.focusMetaRow}>
                 <View style={styles.focusMetaPill}>
-                  <Feather name="calendar" size={13} color={TEXT_SECONDARY} />
+                  <Feather name="calendar" size={13} color={theme.textSecondary} />
                   <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
                 </View>
                 <View style={styles.focusMetaPill}>
-                  <Feather name="clock" size={13} color={TEXT_SECONDARY} />
+                  <Feather name="clock" size={13} color={theme.textSecondary} />
                   <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
                 </View>
               </View>
@@ -420,7 +952,7 @@ export default function Dashboard() {
           ) : (
             <View style={styles.focusEmptyWrap}>
               <View style={styles.focusEmptyIcon}>
-                <Feather name="sun" size={22} color={NAVY} />
+                <Feather name="sun" size={22} color={theme.primary} />
               </View>
               <Text style={styles.focusEmpty}>{T('noTasksToday')}</Text>
               <Text style={styles.focusEmptySub}>{T('youreAllSet')}</Text>
@@ -438,7 +970,7 @@ export default function Dashboard() {
           ]}
           onPress={() => router.push('/study-timer' as any)}
         >
-          <Text style={{ fontSize: 15, fontWeight: '800', color: NAVY, flex: 1 }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary, flex: 1 }}>
             📚 {studyingFriends.length} friend{studyingFriends.length > 1 ? 's' : ''} studying now
           </Text>
           <Text style={{ fontSize: 13, color: '#3b82f6', fontWeight: '700' }}>Join →</Text>
@@ -449,7 +981,7 @@ export default function Dashboard() {
       <View style={styles.sectionWrapper}>
         <View style={styles.timelineHeader}>
           <View style={styles.timelineHeaderBody}>
-            <Text style={[styles.sectionHeader, { color: NAVY }]}>{T('upcoming')}</Text>
+            <Text style={styles.sectionHeader}>{T('upcoming')}</Text>
             <Text style={styles.sectionSubcopy}>A tighter view of your next deadlines and study windows.</Text>
           </View>
         </View>
@@ -460,13 +992,13 @@ export default function Dashboard() {
             </View>
             <Pressable style={styles.upcomingSeeAllButton} onPress={() => router.push('/(tabs)/planner' as any)}>
               <Text style={styles.upcomingSeeAllText}>{T('seeAll')}</Text>
-              <Feather name="arrow-right" size={14} color={NAVY} />
+              <Feather name="arrow-right" size={14} color={theme.primary} />
             </Pressable>
           </View>
           {previewItems.length === 0 ? (
             <View style={styles.upcomingEmptyCard}>
               <View style={styles.upcomingEmptyIcon}>
-                <Feather name="calendar" size={20} color={NAVY} />
+                <Feather name="calendar" size={20} color={theme.primary} />
               </View>
               <Text style={styles.upcomingEmptyTitle}>{T('nothingIn30Days')}</Text>
               <Text style={styles.upcomingEmptySub}>New tasks and revision sessions will appear here automatically.</Text>
@@ -520,10 +1052,10 @@ export default function Dashboard() {
                     <View style={styles.upcomingCardBody}>
                       <View style={styles.upcomingCardTop}>
                         <View style={styles.upcomingTimeWrap}>
-                          <Feather name="clock" size={12} color="#64748b" />
+                          <Feather name="clock" size={12} color={theme.textSecondary} />
                           <Text style={styles.upcomingTime}>{(item.time || '').slice(0, 5)}</Text>
                         </View>
-                        {!isStudy ? <Feather name="chevron-right" size={18} color="#94a3b8" /> : null}
+                        {!isStudy ? <Feather name="chevron-right" size={18} color={theme.textSecondary} /> : null}
                       </View>
                       <Text style={[styles.upcomingTitle, studyDone && styles.upcomingTitleDone]} numberOfLines={2}>
                         {item.name}
@@ -543,7 +1075,7 @@ export default function Dashboard() {
           {hiddenUpcomingCount > 0 ? (
             <Pressable style={styles.upcomingMoreRow} onPress={() => router.push('/(tabs)/planner' as any)}>
               <Text style={styles.upcomingMoreText}>+{hiddenUpcomingCount} more items in planner</Text>
-              <Feather name="arrow-right" size={15} color={NAVY} />
+              <Feather name="arrow-right" size={15} color={theme.primary} />
             </Pressable>
           ) : null}
         </View>
@@ -553,377 +1085,3 @@ export default function Dashboard() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { paddingTop: 0, paddingBottom: 100 },
-  headerWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 55,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    overflow: 'hidden',
-  },
-  // Week peak alert – white box inside header
-  peakAlertBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    marginTop: 22,
-    zIndex: 1,
-  },
-  peakAlertTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  peakAlertLeft: {},
-  peakAlertWeek: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0f172a',
-    letterSpacing: -0.3,
-  },
-  peakAlertLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748b',
-    letterSpacing: 1.2,
-    marginTop: 4,
-  },
-  peakAlertSubline: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748b',
-    marginTop: 4,
-    maxWidth: 220,
-    lineHeight: 15,
-  },
-  peakAlertBadge: {
-    backgroundColor: '#e2e8f0',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  peakAlertBadgeMuted: {
-    backgroundColor: '#f1f5f9',
-  },
-  peakAlertBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0f172a',
-    letterSpacing: 0.4,
-  },
-  peakAlertBadgeTextMuted: {
-    fontSize: 10,
-    color: '#64748b',
-  },
-  peakAlertBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 10,
-  },
-  peakAlertProgressLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    letterSpacing: 1.2,
-  },
-  peakAlertFinalLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    letterSpacing: 0.5,
-  },
-  peakAlertDots: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  peakAlertDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#e2e8f0',
-  },
-  peakAlertDotCurrent: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#f59e0b',
-  },
-  peakAlertDotPast: {
-    backgroundColor: '#94a3b8',
-  },
-  waveTexture: {
-    opacity: 0.5,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-  },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 1 },
-  greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-
-  pressed: { opacity: 0.96 },
-
-  sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
-  sectionWrapperFirst: { marginTop: 24 },
-  sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: '#000000' },
-  sectionSubcopy: { fontSize: 13, lineHeight: 19, color: '#64748b', marginBottom: 16, maxWidth: '92%' },
-
-  focusCard: {
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    backgroundColor: CARD_BG,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.045,
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  focusCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  focusPillsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  focusCoursePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  focusCoursePillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
-  focusStatusPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  focusStatusPillText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
-  focusArrowButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  focusTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 23,
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.4,
-  },
-  focusSupportText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: TEXT_SECONDARY,
-    marginTop: 6,
-  },
-  focusMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-    marginTop: 14,
-  },
-  focusMetaPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  focusMetaText: { fontSize: 13, fontWeight: '700', color: '#475569' },
-  focusEmptyWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 156,
-    backgroundColor: CARD_BG,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    borderRadius: 28,
-    paddingHorizontal: 24,
-  },
-  focusEmptyIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#e0f2fe',
-    marginBottom: 16,
-  },
-  focusEmpty: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY, marginBottom: 6 },
-  focusEmptySub: { fontSize: 14, fontWeight: '500', color: NAVY },
-
-  timelineHeader: { marginBottom: 16 },
-  timelineHeaderBody: { flex: 1, minWidth: 0 },
-  upcomingPanel: {
-    backgroundColor: '#eef4fb',
-    borderRadius: 26,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#dae5f2',
-  },
-  upcomingLeadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 14,
-  },
-  upcomingLeadBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: '#dbeafe',
-  },
-  upcomingLeadBadgeText: { fontSize: 12, fontWeight: '800', color: NAVY, letterSpacing: 0.3 },
-  upcomingSeeAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d9e4f0',
-  },
-  upcomingSeeAllText: { fontSize: 13, fontWeight: '700', color: NAVY },
-  upcomingEmptyCard: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  upcomingEmptyIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#dbeafe',
-    marginBottom: 14,
-  },
-  upcomingEmptyTitle: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY, textAlign: 'center' },
-  upcomingEmptySub: { fontSize: 13, lineHeight: 19, color: TEXT_SECONDARY, textAlign: 'center', marginTop: 8 },
-  upcomingEmptyButton: {
-    marginTop: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: NAVY,
-  },
-  upcomingEmptyButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
-  upcomingDateRow: { marginBottom: 10 },
-  upcomingDateChip: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#dbeafe',
-  },
-  upcomingDateChipText: { fontSize: 12, fontWeight: '800', color: NAVY, letterSpacing: 0.3 },
-  upcomingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderRadius: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e5edf6',
-    marginBottom: 12,
-  },
-  upcomingAccent: {
-    width: 6,
-    alignSelf: 'stretch',
-    borderRadius: 999,
-  },
-  upcomingCardBody: { flex: 1, minWidth: 0 },
-  upcomingCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
-  },
-  upcomingTimeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  upcomingTime: { fontSize: 13, fontWeight: '700', color: '#475569' },
-  upcomingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 22,
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.3,
-  },
-  upcomingTitleDone: { color: TEXT_SECONDARY, textDecorationLine: 'line-through' },
-  upcomingMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9 },
-  upcomingSubjectDot: { width: 8, height: 8, borderRadius: 4 },
-  upcomingMetaText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: TEXT_SECONDARY },
-  upcomingMetaDivider: { fontSize: 13, color: '#94a3b8', fontWeight: '700' },
-  upcomingMoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingTop: 8,
-    paddingBottom: 2,
-  },
-  upcomingMoreText: { fontSize: 13, fontWeight: '700', color: NAVY },
-
-  studyingWidget: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    marginTop: -10,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#93c5fd',
-  },
-});

@@ -1,94 +1,160 @@
 import { useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
-import { COLORS } from '@/src/constants';
 import Feather from '@expo/vector-icons/Feather';
+import { useTranslations } from '@/src/i18n';
+import { useTheme } from '@/hooks/useTheme';
+import {
+  peakWeekFromTaskCounts,
+  taskTeachingWeekForWorkload,
+  workloadVelocityPointsByWeek,
+} from '@/src/lib/academicWeek';
+import { displayPortalSemester, PROFILE_PLACEHOLDER } from '@/src/lib/profileDisplay';
 
-const TOTAL_WEEKS = 14;
+/** Pull portal / teaching-week copy left to match card edges (same as content `paddingHorizontal`). */
+const HEADER_META_LEFT_OUTDENT = 44 + 6;
 
 export default function StressMap() {
-  const { user, courses } = useApp();
-  const weeks = Array.from({ length: TOTAL_WEEKS }, (_, i) => i + 1);
-  const maxWork = 10;
+  const { user, tasks, courses, academicCalendar, language } = useApp();
+  const T = useTranslations(language);
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
-  // Subject load levels: derive from workload for current week (0–10) → display as LEVEL x.x
-  const subjectLevels = useMemo(() => {
-    return courses.map((c) => {
-      const w = c.workload?.[user.currentWeek - 1] ?? 0;
-      return { id: c.id, level: Math.min(10, Math.max(0, w)) };
-    });
-  }, [courses, user.currentWeek]);
+  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const weeks = useMemo(() => Array.from({ length: totalWeeks }, (_, i) => i + 1), [totalWeeks]);
 
-  const levels = useMemo(
-    () => subjectLevels.reduce((acc, { id, level }) => ({ ...acc, [id]: level }), {} as Record<string, number>),
-    [subjectLevels]
+  /** Task count per week: calendar due-week, but if SOW suggestedWeek is earlier than that week, use suggestedWeek. */
+  const weeklyTotals = useMemo(
+    () => workloadVelocityPointsByWeek(tasks, academicCalendar, 'all', user.startDate),
+    [tasks, academicCalendar, user.startDate],
   );
 
-  const weeklyTotals = useMemo(() => {
-    return weeks.map((w) =>
-      courses.reduce((sum, c) => sum + (c.workload?.[w - 1] ?? 0), 0)
-    );
-  }, [courses, weeks]);
+  const { week: highestWeek, max: maxLoadInAnyWeek } = useMemo(
+    () => peakWeekFromTaskCounts(weeklyTotals),
+    [weeklyTotals],
+  );
 
-  const maxTotal = Math.max(...weeklyTotals, 1);
-  const highestWeek = useMemo(() => {
-    let max = 0;
-    let week = 1;
-    weeklyTotals.forEach((t, i) => {
-      if (t > max) {
-        max = t;
-        week = i + 1;
-      }
-    });
-    return week;
-  }, [weeklyTotals]);
+  const maxTotal = Math.max(0, ...weeklyTotals);
+  /** Max bar height inside the chart row (labels sit below). */
+  const VELOCITY_BAR_MAX_PX = 96;
+
+  const tasksOutsideTeachingWindow = useMemo(() => {
+    let n = 0;
+    for (const t of tasks) {
+      if (taskTeachingWeekForWorkload(t, academicCalendar, user.startDate) == null) n += 1;
+    }
+    return n;
+  }, [tasks, academicCalendar, user.startDate]);
 
   const avgStress = useMemo(() => {
     const sum = weeklyTotals.reduce((a, b) => a + b, 0);
-    return (sum / TOTAL_WEEKS).toFixed(1);
-  }, [weeklyTotals]);
+    return (sum / totalWeeks).toFixed(1);
+  }, [weeklyTotals, totalWeeks]);
+
+  const isPeakWave =
+    maxLoadInAnyWeek >= 3 &&
+    highestWeek > 0 &&
+    user.currentWeek === highestWeek &&
+    (user.semesterPhase ?? 'teaching') === 'teaching' &&
+    !user.isBreak;
+
+  const programLine = useMemo(() => {
+    const prog = (user.program || '').trim() || '—';
+    const short = prog.length > 48 ? `${prog.slice(0, 45)}…` : prog;
+    const sem = displayPortalSemester(user.currentSemester);
+    if (sem !== PROFILE_PLACEHOLDER) {
+      return `${T('portalSemester')} ${sem} • ${short}`;
+    }
+    return short;
+  }, [user.currentSemester, user.program, language, T]);
+
+  const subjectLevels = useMemo(() => {
+    const cw = user.currentWeek;
+    const byCourse: Record<string, number> = {};
+    for (const t of tasks) {
+      if (t.isDone) continue;
+      const w = taskTeachingWeekForWorkload(t, academicCalendar, user.startDate);
+      if (w !== cw) continue;
+      byCourse[t.courseId] = (byCourse[t.courseId] || 0) + 1;
+    }
+    const maxC = Math.max(...Object.values(byCourse), 0);
+    return courses.map((c) => {
+      const n = byCourse[c.id] ?? 0;
+      const level = maxC > 0 ? Math.min(10, (n / maxC) * 10) : 0;
+      return { id: c.id, level, count: n };
+    });
+  }, [tasks, courses, academicCalendar, user.currentWeek, user.startDate]);
+
+  const levels = useMemo(
+    () =>
+      subjectLevels.reduce(
+        (acc, { id, level }) => ({ ...acc, [id]: level }),
+        {} as Record<string, number>,
+      ),
+    [subjectLevels],
+  );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 14 }]}
+    >
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color={COLORS.text} />
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+        >
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
-        <View>
-          <Text style={styles.title}>SOW Intelligence</Text>
-          <Text style={styles.subtitle}>PART {user.part} ISE • AI MANAGED</Text>
+        <View style={styles.headerTextCol}>
+          <Text style={[styles.title, { color: theme.text }]}>SOW Intelligence</Text>
+          <View style={[styles.headerMetaFlush, { marginLeft: -HEADER_META_LEFT_OUTDENT }]}>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{programLine}</Text>
+          </View>
         </View>
       </View>
 
-      {/* Workload Velocity */}
-      <View style={styles.velocityCard}>
+      <View style={[styles.velocityCard, { backgroundColor: theme.primary }]}>
         <View style={styles.velocityHeader}>
           <View>
             <Text style={styles.velocityLabel}>WORKLOAD VELOCITY</Text>
             <View style={styles.criticalRow}>
-              <View style={styles.criticalDot} />
-              <Text style={styles.criticalText}>CRITICAL WAVE</Text>
+              <View
+                style={[
+                  styles.criticalDot,
+                  { backgroundColor: isPeakWave ? '#ef4444' : '#22c55e' },
+                ]}
+              />
+              <Text style={styles.criticalText}>
+                {isPeakWave ? T('workloadPeakWave') : T('workloadSteady')}
+              </Text>
             </View>
+            <Text style={styles.velocityScopeText}>{T('workloadVelocityAllTypes')}</Text>
           </View>
           <View style={styles.scaleRange}>
-            <Text style={styles.scaleW14}>W14</Text>
+            <Text style={styles.scaleW14}>W{totalWeeks}</Text>
             <Text style={styles.scaleLabel}>SCALE RANGE</Text>
           </View>
         </View>
         <View style={styles.barChart}>
           {weeks.map((w) => {
             const total = weeklyTotals[w - 1] ?? 0;
-            const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
             const isCurrent = w === user.currentWeek;
+            // No "ghost" height for empty weeks — only weeks with due tasks show a bar.
+            // Proportional to max week so e.g. 1 task vs 2 tasks reads as half height.
+            const barH =
+              maxTotal === 0 || total === 0
+                ? 0
+                : Math.max(1, Math.round((total / maxTotal) * VELOCITY_BAR_MAX_PX));
             return (
               <View key={w} style={styles.barCol}>
                 <View
                   style={[
                     styles.barBg,
-                    { height: `${Math.max(8, pct)}%` },
-                    isCurrent && styles.barCurrent,
+                    barH > 0 ? { height: barH } : styles.barBgEmpty,
+                    isCurrent && barH > 0 && styles.barCurrentRing,
                   ]}
                 />
                 <Text
@@ -102,50 +168,76 @@ export default function StressMap() {
             );
           })}
         </View>
+        {maxLoadInAnyWeek === 0 ? (
+          <Text style={styles.emptyHint}>{T('tasksPulseNoTasks')}</Text>
+        ) : null}
+        {tasksOutsideTeachingWindow > 0 ? (
+          <Text style={[styles.emptyHint, { marginTop: 8 }]}>
+            {T('stressMapTasksOutsideRange')
+              .replace('{count}', String(tasksOutsideTeachingWindow))
+              .replace('{total}', String(totalWeeks))}
+          </Text>
+        ) : null}
       </View>
 
-      {/* Summary cards */}
       <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, styles.summaryCardLeft]}>
-          <Text style={styles.summaryLabel}>AVG. STRESS</Text>
-          <Text style={styles.summaryValue}>{avgStress}</Text>
+        <View style={[styles.summaryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>AVG. LOAD / WK</Text>
+          <Text style={[styles.summaryValue, { color: theme.text }]}>{avgStress}</Text>
         </View>
-        <View style={[styles.summaryCard, styles.summaryCardRight]}>
-          <Text style={styles.summaryLabel}>HIGHEST WEEK</Text>
-          <Text style={[styles.summaryValue, styles.summaryValueRed]}>W{highestWeek}</Text>
+        <View style={[styles.summaryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>HIGHEST WEEK</Text>
+          <Text
+            style={[
+              styles.summaryValue,
+              maxLoadInAnyWeek > 0 ? styles.summaryValueRed : { color: theme.text },
+            ]}
+          >
+            {maxLoadInAnyWeek > 0
+              ? `W${highestWeek} (${Number.isInteger(maxLoadInAnyWeek) ? maxLoadInAnyWeek : maxLoadInAnyWeek.toFixed(1)})`
+              : '—'}
+          </Text>
         </View>
       </View>
 
-      {/* Subject Load Breakdown */}
       <View style={styles.breakdownSection}>
         <View style={styles.breakdownHeader}>
-          <Text style={styles.breakdownTitle}>SUBJECT LOAD BREAKDOWN</Text>
-          <Text style={styles.breakdownAi}>AI SYNC ACTIVE</Text>
+          <Text style={[styles.breakdownTitle, { color: theme.text }]}>SUBJECT LOAD (THIS WEEK)</Text>
+          <Text style={[styles.breakdownAi, { color: theme.textSecondary }]}>TASK SYNC</Text>
         </View>
-        {courses.map((course) => {
-          const level = levels[course.id] ?? subjectLevels.find((s) => s.id === course.id)?.level ?? 0;
-          const segmentCount = 10;
-          const activeIndex = Math.min(segmentCount - 1, Math.floor(level));
-          return (
-            <View key={course.id} style={styles.subjectRow}>
-              <View style={styles.subjectTopRow}>
-                <Text style={styles.subjectCode}>{course.id}</Text>
-                <Text style={styles.levelText}>LEVEL {level.toFixed(1)}</Text>
+        {courses.length === 0 ? (
+          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>No subjects yet. Add courses or connect your timetable.</Text>
+        ) : (
+          courses.map((course) => {
+            const level = levels[course.id] ?? 0;
+            const count = subjectLevels.find((s) => s.id === course.id)?.count ?? 0;
+            const segmentCount = 10;
+            const activeIndex =
+              count === 0 ? -1 : Math.min(segmentCount - 1, Math.max(0, Math.floor(level)));
+            return (
+              <View key={course.id} style={styles.subjectRow}>
+                <View style={styles.subjectTopRow}>
+                  <Text style={[styles.subjectCode, { color: theme.text }]}>{course.id}</Text>
+                  <Text style={[styles.levelText, { color: theme.textSecondary }]}>
+                    LEVEL {level.toFixed(1)}
+                  </Text>
+                </View>
+                <View style={styles.segmentBar}>
+                  {Array.from({ length: segmentCount }, (_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.segment,
+                        { backgroundColor: theme.border },
+                        activeIndex >= 0 && i === activeIndex && { backgroundColor: theme.primary },
+                      ]}
+                    />
+                  ))}
+                </View>
               </View>
-              <View style={styles.segmentBar}>
-                {Array.from({ length: segmentCount }, (_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.segment,
-                      i === activeIndex && styles.segmentActive,
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-          );
-        })}
+            );
+          })
+        )}
       </View>
 
       <View style={{ height: 48 }} />
@@ -154,41 +246,49 @@ export default function StressMap() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
-  content: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 100 },
+  container: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingBottom: 100 },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 24,
+    /** Keep in sync with HEADER_META_LEFT_OUTDENT (back width + this gap). */
+    gap: 6,
+  },
+  /** Title: vertical nudge vs 44px back control. */
+  headerTextCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 7,
+  },
+  /** Subcopy only: outdent so left edge lines up with WORKLOAD card (scroll content inset). */
+  headerMetaFlush: {
+    alignSelf: 'stretch',
   },
   backBtn: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    flexShrink: 0,
   },
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#0f172a',
     letterSpacing: -0.5,
+    lineHeight: 30,
   },
   subtitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: COLORS.gray,
-    marginTop: 4,
+    marginTop: 6,
     letterSpacing: 0.5,
+    lineHeight: 15,
   },
 
-  // Workload Velocity
   velocityCard: {
-    backgroundColor: '#1e3a5f',
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
@@ -206,8 +306,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   criticalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  criticalDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' },
+  criticalDot: { width: 8, height: 8, borderRadius: 4 },
   criticalText: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.5 },
+  velocityScopeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.72)',
+    marginTop: 8,
+    maxWidth: 220,
+    lineHeight: 14,
+  },
   scaleRange: { alignItems: 'flex-end' },
   scaleW14: { fontSize: 28, fontWeight: '900', color: '#ffffff', letterSpacing: -0.5 },
   scaleLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5 },
@@ -219,24 +327,27 @@ const styles = StyleSheet.create({
   },
   barCol: {
     flex: 1,
-    minWidth: 18,
+    minWidth: 14,
     alignItems: 'center',
     justifyContent: 'flex-end',
     marginHorizontal: 1,
   },
   barBg: {
     width: '100%',
-    minHeight: 12,
     backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 999,
+    minHeight: 0,
   },
-  barCurrent: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#ffffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
+  /** Placeholder slot when count is 0 — no fill so empty weeks are not mistaken for workload. */
+  barBgEmpty: {
+    height: 0,
+    backgroundColor: 'transparent',
+  },
+  /** Highlight current teaching week without a solid fill (that read as “full load”). */
+  barCurrentRing: {
+    backgroundColor: 'rgba(255,255,255,0.38)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.95)',
   },
   barWeekLabel: {
     fontSize: 9,
@@ -250,36 +361,35 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '800',
   },
+  emptyHint: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+  },
 
-  // Summary cards
   summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
   summaryCard: {
     flex: 1,
-    backgroundColor: COLORS.card,
     borderRadius: 16,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
-  summaryCardLeft: {},
-  summaryCardRight: {},
   summaryLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: COLORS.gray,
     letterSpacing: 1,
     marginBottom: 8,
   },
   summaryValue: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#0f172a',
   },
   summaryValueRed: {
     color: '#dc2626',
   },
 
-  // Subject Load Breakdown
   breakdownSection: {},
   breakdownHeader: {
     flexDirection: 'row',
@@ -290,13 +400,11 @@ const styles = StyleSheet.create({
   breakdownTitle: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#0f172a',
     letterSpacing: 1.2,
   },
   breakdownAi: {
     fontSize: 10,
     fontWeight: '700',
-    color: COLORS.gray,
     letterSpacing: 0.5,
   },
   subjectRow: {
@@ -311,12 +419,10 @@ const styles = StyleSheet.create({
   subjectCode: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#0f172a',
   },
   levelText: {
     fontSize: 12,
     fontWeight: '600',
-    color: COLORS.gray,
   },
   segmentBar: {
     flexDirection: 'row',
@@ -326,10 +432,6 @@ const styles = StyleSheet.create({
   segment: {
     flex: 1,
     height: 8,
-    backgroundColor: '#e2e8f0',
     borderRadius: 4,
-  },
-  segmentActive: {
-    backgroundColor: '#475569',
   },
 });

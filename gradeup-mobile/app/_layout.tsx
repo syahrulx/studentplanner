@@ -1,5 +1,6 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { ThemeProvider, DefaultTheme } from '@react-navigation/native';
+import { ThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
@@ -11,7 +12,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppProvider } from '@/src/context/AppContext';
 import { CommunityProvider } from '@/src/context/CommunityContext';
 import { QuizProvider } from '@/src/context/QuizContext';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { isDarkTheme } from '@/constants/Themes';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -87,11 +89,14 @@ function RootLayoutNav() {
 
 function ThemeAwareLayout() {
   const theme = useTheme();
+  const themeId = useThemeId();
+  const isDark = isDarkTheme(themeId);
+  const navBase = isDark ? DarkTheme : DefaultTheme;
   const navTheme = {
-    ...DefaultTheme,
-    dark: false,
+    ...navBase,
+    dark: isDark,
     colors: {
-      ...DefaultTheme.colors,
+      ...navBase.colors,
       primary: theme.primary,
       background: theme.background,
       card: theme.card,
@@ -103,6 +108,7 @@ function ThemeAwareLayout() {
 
   return (
     <ThemeProvider value={navTheme}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />

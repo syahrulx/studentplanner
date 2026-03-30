@@ -1,5 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Alert, Switch } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Image,
+  ActivityIndicator,
+  Alert,
+  Switch,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
@@ -10,16 +24,50 @@ import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
 import type { ThemeIconKey } from '@/constants/ThemeIcons';
+import { THEME_DISPLAY_ICON_KEY } from '@/constants/ThemeIcons';
+import { DEEP_SEA_PALETTE, THEME_IDS, THEMES, type ThemeId } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import type { LocationVisibility } from '@/src/lib/communityApi';
+import { getUniversityById } from '@/src/lib/universities';
+import { displayProfileText, displayPortalSemester } from '@/src/lib/profileDisplay';
 
 const PAD = 20;
 const SECTION = 24;
 const RADIUS = 14;
+
+const THEME_LABEL_KEY: Record<
+  ThemeId,
+  | 'themeOptionLight'
+  | 'themeOptionDark'
+  | 'themeOptionBlush'
+  | 'themeOptionMidnight'
+  | 'themeOptionEmerald'
+> = {
+  light: 'themeOptionLight',
+  dark: 'themeOptionDark',
+  blush: 'themeOptionBlush',
+  midnight: 'themeOptionMidnight',
+  emerald: 'themeOptionEmerald',
+};
+
 export default function ProfileSettings() {
-  const { user, language, setUser, setTasks, updateProfile, academicCalendar } = useApp();
+  const {
+    user,
+    language,
+    theme: themeId,
+    setTheme,
+    setUser,
+    setTasks,
+    updateProfile,
+    academicCalendar,
+    disconnectUniversity,
+    refreshUniversityTimetable,
+    clearSemesterData,
+  } = useApp();
   const { locationVisibility, setLocationVisibility, spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
+  /** Light mode: match home header deep navy (#003366); other themes use palette primary. */
+  const profileHeroBg = themeId === 'light' ? DEEP_SEA_PALETTE.primary : theme.primary;
   const T = useTranslations(language);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const semesterPhase = user.semesterPhase ?? 'teaching';
@@ -29,30 +77,38 @@ export default function ProfileSettings() {
   const [isSyncingClassroom, setIsSyncingClassroom] = useState(false);
   const [classroomPrefs, setClassroomPrefsState] = useState<ClassroomPrefs | null>(null);
   const [classroomLoading, setClassroomLoading] = useState(true);
+  const [refreshModalOpen, setRefreshModalOpen] = useState(false);
+  const [syncPassword, setSyncPassword] = useState('');
+  const [syncCourses, setSyncCourses] = useState('');
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
+  const [clearDataPhrase, setClearDataPhrase] = useState('');
+  const [clearDataBusy, setClearDataBusy] = useState(false);
+
+  const canSyncMyStudent = useMemo(
+    () => user.universityId === 'uitm',
+    [user.universityId],
+  );
 
   const refreshClassroomPrefs = useCallback(() => {
     getClassroomPrefs().then(p => { setClassroomPrefsState(p); setClassroomLoading(false); });
   }, []);
 
-  // Load on mount and refresh when screen regains focus (e.g. returning from classroom-sync)
   useFocusEffect(refreshClassroomPrefs);
 
   const isClassroomLinked = classroomPrefs !== null && classroomPrefs.selectedCourseIds.length > 0;
 
   const handleClassroomSync = async () => {
     if (isSyncingClassroom) return;
-
     if (!isClassroomLinked) {
       router.push('/classroom-sync' as any);
       return;
     }
-
     setIsSyncingClassroom(true);
     try {
       const { syncSelectedCourses } = require('@/src/lib/googleClassroom');
       const taskDbModule = require('@/src/lib/taskDb');
       const { supabase } = require('@/src/lib/supabase');
-
       const taskFilter = classroomPrefs!.selectedTaskIds?.length ? classroomPrefs!.selectedTaskIds : undefined;
       const result = await syncSelectedCourses(
         classroomPrefs!.selectedCourseIds,
@@ -60,15 +116,12 @@ export default function ProfileSettings() {
         user.startDate,
         taskFilter,
       );
-
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         const fresh = await taskDbModule.getTasks(session.user.id);
         setTasks(fresh);
       }
-
       refreshClassroomPrefs();
-
       const msg = result.failedCount > 0
         ? `Synced ${result.syncedCount} tasks. ${result.failedCount} failed.`
         : `Successfully synced ${result.syncedCount} tasks!`;
@@ -143,29 +196,91 @@ export default function ProfileSettings() {
 
   const handleEditStudentId = () => {
     Alert.prompt(
-      'Edit Student ID',
-      'Please enter your student ID',
+      T('studentIdEditTitle'),
+      T('studentIdEditMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Save', 
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('save'),
           onPress: async (newId: string | undefined) => {
-            if (!newId?.trim()) return;
             setIsUpdating(true);
             try {
-              // Note: updateProfile in AppContext might need studentId support if we want to persist it
-              setUser({ ...user, studentId: newId.trim() });
+              await updateProfile({ studentId: (newId ?? '').trim() });
             } catch (e) {
-              Alert.alert('Error', 'Failed to update ID');
+              Alert.alert(T('error'), T('studentIdUpdateFailed'));
             } finally {
               setIsUpdating(false);
             }
-          } 
-        }
+          },
+        },
       ],
       'plain-text',
-      user.studentId
+      user.studentId,
     );
+  };
+
+  const handleEditProgram = () => {
+    Alert.prompt(
+      T('editPrimaryProgram'),
+      T('enterPrimaryProgram'),
+      [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('save'),
+          onPress: async (v: string | undefined) => {
+            setIsUpdating(true);
+            try {
+              await updateProfile({ program: (v ?? '').trim() });
+            } catch {
+              Alert.alert(T('error'), T('programUpdateFailed'));
+            } finally {
+              setIsUpdating(false);
+            }
+          },
+        },
+      ],
+      'plain-text',
+      user.program,
+    );
+  };
+
+  const promptRefreshFromMyStudent = () => {
+    Alert.alert(T('refreshUniversityTitle'), T('refreshUniversityWarning'), [
+      { text: T('cancel'), style: 'cancel' },
+      {
+        text: T('continue'),
+        style: 'destructive',
+        onPress: () => {
+          setSyncPassword('');
+          setSyncCourses('');
+          setRefreshModalOpen(true);
+        },
+      },
+    ]);
+  };
+
+  const runFullMyStudentRefresh = async () => {
+    const pwd = syncPassword;
+    if (!pwd.trim()) {
+      Alert.alert(T('error'), T('passwordRequiredForRefresh'));
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      const coursesList = syncCourses
+        .split(/[,\s]+/)
+        .map((c) => c.trim().toUpperCase())
+        .filter((c) => c.length >= 4);
+      await refreshUniversityTimetable(pwd, coursesList.length > 0 ? { courses: coursesList } : undefined);
+      setRefreshModalOpen(false);
+      setSyncPassword('');
+      setSyncCourses('');
+      Alert.alert(T('syncProfile'), T('refreshComplete'));
+    } catch (e) {
+      Alert.alert(T('error'), e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncBusy(false);
+    }
   };
 
   const handleEditAvatar = async () => {
@@ -266,11 +381,55 @@ export default function ProfileSettings() {
         },
       ];
 
+  const CLEAR_DATA_PHRASE = 'delete data';
+
+  const openClearDataStep1 = () => {
+    Alert.alert(T('clearDataStep1Title'), T('clearDataStep1Body'), [
+      { text: T('cancel'), style: 'cancel' },
+      {
+        text: T('continue'),
+        style: 'destructive',
+        onPress: () => {
+          setClearDataPhrase('');
+          setClearDataModalOpen(true);
+        },
+      },
+    ]);
+  };
+
+  const openClearDataStep3 = () => {
+    const typed = clearDataPhrase.trim().toLowerCase();
+    if (typed !== CLEAR_DATA_PHRASE) return;
+    setClearDataModalOpen(false);
+    setTimeout(() => {
+      Alert.alert(T('clearDataStep3Title'), T('clearDataStep3Body'), [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('clearDataDeleteAll'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setClearDataBusy(true);
+              try {
+                await clearSemesterData();
+                setClearDataPhrase('');
+                Alert.alert(T('clearData'), T('clearDataSuccess'));
+              } catch (e) {
+                Alert.alert(T('error'), e instanceof Error ? e.message : T('clearDataError'));
+              } finally {
+                setClearDataBusy(false);
+              }
+            })();
+          },
+        },
+      ]);
+    }, 320);
+  };
+
   const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string; subtitle?: string }[] = [
     ...spotifyItems,
     ...classroomItems,
     { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any), color: '#3b82f6' },
-    { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any), color: '#8b5cf6' },
     { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any), color: '#ec4899' },
     { icon: 'weeklySummary', label: T('weeklySummary'), onPress: () => router.push('/weekly-summary' as any), color: '#f59e0b' },
     { icon: 'leaderboard', label: T('leaderboard'), onPress: () => router.push('/leaderboard' as any), color: '#10b981' },
@@ -284,6 +443,7 @@ export default function ProfileSettings() {
   ];
 
   return (
+    <>
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
@@ -300,7 +460,7 @@ export default function ProfileSettings() {
       </View>
 
       {/* Dark blue hero with avatar, name, ID */}
-      <View style={[styles.heroWrap, { backgroundColor: theme.primary }]}>
+      <View style={[styles.heroWrap, { backgroundColor: profileHeroBg }]}>
         <Image
           source={require('../assets/images/wave-texture.png')}
           style={[StyleSheet.absoluteFillObject, styles.heroTexture]}
@@ -329,7 +489,7 @@ export default function ProfileSettings() {
             <Feather name="edit-2" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 8 }} />
           </Pressable>
           <Pressable style={styles.nameRow} onPress={handleEditStudentId}>
-            <Text style={styles.heroId}>{user.studentId}</Text>
+            <Text style={styles.heroId}>{displayProfileText(user.studentId)}</Text>
             <Feather name="edit-2" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
           </Pressable>
         </View>
@@ -337,14 +497,56 @@ export default function ProfileSettings() {
 
       {/* Academic Info */}
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-        <View style={styles.cardRow}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={handleEditProgram}
+          disabled={isUpdating}
+        >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('primaryProgram')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>{user.program}</Text>
+          <View style={styles.cardValueWrap}>
+            <Text
+              style={[styles.cardValue, { color: theme.textSecondary }]}
+              numberOfLines={3}
+            >
+              {displayProfileText(user.program)}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
+        <View style={styles.divider} />
+        <View style={styles.cardRow}>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('campus')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={3}>
+            {displayProfileText(user.campus)}
+          </Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.cardRow}>
-          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('part')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>{user.part}</Text>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('faculty')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={4}>
+            {displayProfileText(user.faculty)}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.cardRow}>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('portalSemester')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+            {displayPortalSemester(user.currentSemester)}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.cardRow}>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('studyModeLabel')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+            {displayProfileText(user.studyMode)}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.cardRow}>
+          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('mystudentEmailLabel')}</Text>
+          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+            {displayProfileText(user.mystudentEmail)}
+          </Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.progressContainer}>
@@ -408,6 +610,153 @@ export default function ProfileSettings() {
         ))}
       </View>
 
+      {/* University — link once; data stored in Supabase */}
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('university').toUpperCase()}</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        {!user.universityId ? (
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/university-connect' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#dbeafe' }]}>
+              <Feather name="globe" size={18} color="#2563eb" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('connectUniversity')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('tapToConnect')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        ) : (
+          <>
+            <View style={[styles.menuRow, { opacity: 1 }]}>
+              <View style={[styles.iconBox, { backgroundColor: '#dbeafe' }]}>
+                <Feather name="link" size={18} color="#2563eb" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.menuLabel, { color: theme.text }]}>
+                  {getUniversityById(user.universityId)?.shortName || user.university || T('university')}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#22c55e', fontWeight: '600', marginTop: 2 }}>
+                  ✓ {T('connected')}
+                </Text>
+                {user.lastSync ? (
+                  <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                    {T('lastSynced')}: {new Date(user.lastSync).toLocaleString()}
+                  </Text>
+                ) : null}
+                <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                  {T('savedStudentId')}: {displayProfileText(user.studentId)}
+                </Text>
+              </View>
+            </View>
+            {canSyncMyStudent ? (
+              <>
+                <View style={styles.dividerList} />
+                <Pressable
+                  style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                  onPress={promptRefreshFromMyStudent}
+                  disabled={syncBusy}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: '#bfdbfe' }]}>
+                    <Feather name="refresh-cw" size={18} color="#1d4ed8" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.menuLabel, { color: theme.text }]}>{T('refreshFromMyStudent')}</Text>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                      {T('refreshFromMyStudentShort')}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+                </Pressable>
+              </>
+            ) : null}
+            <View style={styles.dividerList} />
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() =>
+                Alert.alert(T('disconnectUniversity'), T('disconnectUniversityConfirm'), [
+                  { text: T('cancel'), style: 'cancel' },
+                  {
+                    text: T('disconnectUniversity'),
+                    style: 'destructive',
+                    onPress: () => disconnectUniversity(),
+                  },
+                ])
+              }
+            >
+              <View style={[styles.iconBox, { backgroundColor: '#fee2e2' }]}>
+                <Feather name="x-circle" size={18} color="#b91c1c" />
+              </View>
+              <Text style={[styles.menuLabel, { color: '#b91c1c' }]}>{T('disconnectUniversity')}</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('preferencesSection').toUpperCase()}</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <View style={styles.menuRow}>
+          <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>
+            <ThemeIcon name="sparkles" size={18} color={theme.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('themeAppearance')}</Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('themeAppearanceDesc')}</Text>
+          </View>
+        </View>
+        {THEME_IDS.map((id) => (
+          <React.Fragment key={id}>
+            <View style={styles.dividerList} />
+            <Pressable
+              style={({ pressed }) => [
+                styles.menuRow,
+                pressed && { backgroundColor: theme.backgroundSecondary },
+                themeId === id && { backgroundColor: theme.backgroundSecondary },
+              ]}
+              onPress={() => setTheme(id)}
+            >
+              <View style={[styles.iconBox, { backgroundColor: THEMES[id].accent3 }]}>
+                <ThemeIcon
+                  name={THEME_DISPLAY_ICON_KEY[id]}
+                  size={18}
+                  color={THEMES[id].primary}
+                  themeId={id}
+                />
+              </View>
+              <Text style={[styles.menuLabel, { flex: 1, color: theme.text }]}>{T(THEME_LABEL_KEY[id])}</Text>
+              {themeId === id ? (
+                <Feather name="check" size={22} color={theme.primary} />
+              ) : (
+                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+              )}
+            </Pressable>
+          </React.Fragment>
+        ))}
+        <View style={styles.dividerList} />
+        <Pressable
+          style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/language-preference' as any)}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
+            <Feather name="globe" size={18} color="#fff" />
+          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('languagePref')}</Text>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+        <View style={styles.dividerList} />
+        <Pressable
+          style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/week-start-preference' as any)}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#0ea5e9' }]}>
+            <Feather name="calendar" size={18} color="#fff" />
+          </View>
+          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('weekStartPref')}</Text>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
       {/* Semester Config */}
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('semesterConfig').toUpperCase()}</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
@@ -463,10 +812,147 @@ export default function ProfileSettings() {
             Using your student email allows one-tap sync with Classroom and Teams.
           </Text>
         </View>
+        <View style={styles.dividerList} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.menuRow,
+            pressed && { backgroundColor: 'rgba(254, 226, 226, 0.6)' },
+            clearDataBusy && { opacity: 0.6 },
+          ]}
+          onPress={openClearDataStep1}
+          disabled={clearDataBusy}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#fecaca' }]}>
+            <Feather name="trash-2" size={18} color="#dc2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('clearData')}</Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('clearDataDesc')}</Text>
+          </View>
+          {clearDataBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
+        </Pressable>
       </View>
 
       <View style={{ height: 60 }} />
     </ScrollView>
+
+    <Modal
+      visible={refreshModalOpen}
+      animationType="fade"
+      transparent
+      onRequestClose={() => !syncBusy && setRefreshModalOpen(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.syncBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => !syncBusy && setRefreshModalOpen(false)} />
+        <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
+          <Text style={[styles.syncTitle, { color: theme.text }]}>{T('refreshModalTitle')}</Text>
+          <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>{T('refreshModalBody')}</Text>
+          {user.studentId ? (
+            <Text style={[styles.syncFieldLabel, { color: theme.textSecondary, marginTop: 8, fontWeight: '500' }]}>
+              {T('savedStudentId')}: {user.studentId}
+            </Text>
+          ) : null}
+          <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 14 }]}>{T('myStudentPasswordLabel')}</Text>
+          <TextInput
+            value={syncPassword}
+            onChangeText={setSyncPassword}
+            secureTextEntry
+            placeholder="••••••••"
+            placeholderTextColor={theme.textSecondary}
+            style={[styles.syncInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+            editable={!syncBusy}
+          />
+          <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 12 }]}>{T('optionalCourseCodes')}</Text>
+          <TextInput
+            value={syncCourses}
+            onChangeText={setSyncCourses}
+            placeholder="CSP600, …"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="characters"
+            style={[styles.syncInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+            editable={!syncBusy}
+          />
+          <Text style={[styles.syncDesc, { color: theme.textSecondary, marginTop: 6, fontSize: 12 }]}>
+            {T('optionalCourseCodesRefreshHint')}
+          </Text>
+          <View style={styles.syncActions}>
+            <Pressable
+              style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
+              onPress={() => !syncBusy && setRefreshModalOpen(false)}
+              disabled={syncBusy}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600' }}>{T('cancel')}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.syncBtnPrimary, { backgroundColor: theme.primary }]}
+              onPress={runFullMyStudentRefresh}
+              disabled={syncBusy}
+            >
+              {syncBusy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{T('refreshNow')}</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    <Modal
+      visible={clearDataModalOpen}
+      animationType="fade"
+      transparent
+      onRequestClose={() => !clearDataBusy && setClearDataModalOpen(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.syncBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => !clearDataBusy && setClearDataModalOpen(false)} />
+        <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
+          <Text style={[styles.syncTitle, { color: '#b91c1c' }]}>{T('clearDataStep2Title')}</Text>
+          <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>{T('clearDataStep2Body')}</Text>
+          <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 14 }]}>{T('clearDataPhraseHint')}</Text>
+          <TextInput
+            value={clearDataPhrase}
+            onChangeText={setClearDataPhrase}
+            placeholder={CLEAR_DATA_PHRASE}
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!clearDataBusy}
+            style={[styles.syncInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+          />
+          <View style={styles.syncActions}>
+            <Pressable
+              style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
+              onPress={() => !clearDataBusy && setClearDataModalOpen(false)}
+              disabled={clearDataBusy}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600' }}>{T('cancel')}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.syncBtnPrimary,
+                {
+                  backgroundColor:
+                    clearDataPhrase.trim().toLowerCase() === CLEAR_DATA_PHRASE ? '#b91c1c' : theme.border,
+                },
+              ]}
+              onPress={openClearDataStep3}
+              disabled={clearDataBusy || clearDataPhrase.trim().toLowerCase() !== CLEAR_DATA_PHRASE}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>{T('continue')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </>
   );
 }
 
@@ -555,8 +1041,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  cardLabel: { fontSize: 16, fontWeight: '400' },
-  cardValue: { fontSize: 16, fontWeight: '400' },
+  cardRowPressable: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  cardValueWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+  },
+  cardLabel: { fontSize: 16, fontWeight: '400', maxWidth: '42%' },
+  cardValue: { fontSize: 16, fontWeight: '400', flexShrink: 1, textAlign: 'right' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)' },
   dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },
   progressContainer: {
@@ -601,7 +1101,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
-  menuLabel: { fontSize: 16, fontWeight: '400' },
+  menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
   hintBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -612,5 +1112,48 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
     lineHeight: 16,
+  },
+  syncBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+  },
+  syncSheet: {
+    borderRadius: RADIUS,
+    padding: 20,
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  syncTitle: { fontSize: 18, fontWeight: '800' },
+  syncDesc: { fontSize: 13, marginTop: 8, lineHeight: 18 },
+  syncFieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  syncInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  syncActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 22,
+  },
+  syncBtnSecondary: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  syncBtnPrimary: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
   },
 });
