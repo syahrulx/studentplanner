@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
-import { formatDisplayDate } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
 import { Priority } from '@/src/types';
 import type { SharedTask } from '@/src/types';
 import { useTranslations } from '@/src/i18n';
@@ -36,13 +36,19 @@ function getDaysUntilDue(dueDate: string): number {
 
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, toggleTaskDone, deleteTask, language } = useApp();
+  const { tasks, courses, toggleTaskDone, deleteTask, language } = useApp();
   const {
     filteredFriends, circles,
     shareTaskWithFriend, shareTaskWithCircle,
   } = useCommunity();
   const T = useTranslations(language);
   const task = tasks.find((t) => t.id === id);
+  const courseDisplayName = (() => {
+    if (!task) return '';
+    const found = courses.find(c => c.id === task.courseId);
+    if (found && task.courseId.startsWith('gc-course-')) return `gc-${found.name}`;
+    return task.courseId;
+  })();
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareTab, setShareTab] = useState<'friend' | 'circle'>('friend');
@@ -74,7 +80,9 @@ export default function TaskDetails() {
     );
   }
 
-  const daysLeft = getDaysUntilDue(task.dueDate);
+  // Undated tasks are treated as due today for urgency purposes
+  const effectiveDueDate = task.needsDate ? getTodayISO() : task.dueDate;
+  const daysLeft = getDaysUntilDue(effectiveDueDate);
   const isOverdue = daysLeft < 0;
   const isDueSoon = !isOverdue && daysLeft <= 3;
   const priorityConfig = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG[Priority.Low];
@@ -175,11 +183,27 @@ export default function TaskDetails() {
         {/* Status Badge Row */}
         <View style={s.badgeRow}>
           <View style={s.badgeCourse}>
-            <Text style={s.badgeCourseText}>{task.courseId}</Text>
+            <Text style={s.badgeCourseText}>{courseDisplayName}</Text>
           </View>
           <View style={s.badgeType}>
             <Text style={s.badgeTypeText}>{task.type}</Text>
           </View>
+          {task.id.startsWith('gc-') ? (
+            <View style={s.badgeClassroom}>
+              <Feather name="book-open" size={12} color="#0f9d58" />
+              <Text style={s.badgeClassroomText}>Classroom</Text>
+            </View>
+          ) : participants.length > 0 ? (
+            <View style={s.badgeShared}>
+              <Feather name="users" size={12} color="#6366f1" />
+              <Text style={s.badgeSharedText}>Shared</Text>
+            </View>
+          ) : (
+            <View style={s.badgePersonal}>
+              <Feather name="user" size={12} color="#64748b" />
+              <Text style={s.badgePersonalText}>Personal</Text>
+            </View>
+          )}
           {task.isDone && (
             <View style={s.badgeDone}>
               <Feather name="check" size={12} color="#16a34a" />
@@ -191,17 +215,27 @@ export default function TaskDetails() {
         {/* Title */}
         <Text style={s.title}>{task.title}</Text>
 
-        {/* Urgency Pill */}
+        {/* Urgency Pill — undated tasks are treated as due today */}
         <View style={[s.urgencyPill, isOverdue && s.urgencyOverdue, isDueSoon && s.urgencySoon]}>
-          <Feather 
-            name={isOverdue ? 'alert-triangle' : 'clock'} 
-            size={14} 
-            color={isOverdue ? RED : isDueSoon ? '#d97706' : NAVY} 
+          <Feather
+            name={isOverdue ? 'alert-triangle' : 'clock'}
+            size={14}
+            color={isOverdue ? RED : isDueSoon ? '#d97706' : NAVY}
           />
           <Text style={[s.urgencyText, isOverdue && { color: RED }, isDueSoon && { color: '#d97706' }]}>
             {urgencyLabel}
           </Text>
         </View>
+
+        {/* No due date banner */}
+        {task.needsDate ? (
+          <View style={s.needsDateBanner}>
+            <Feather name="alert-circle" size={14} color="#d97706" />
+            <Text style={s.needsDateBannerText}>
+              No due date set in Google Classroom — tap Edit to add one
+            </Text>
+          </View>
+        ) : null}
 
         {/* Info Cards */}
         <View style={s.infoGrid}>
@@ -211,7 +245,9 @@ export default function TaskDetails() {
             </View>
             <View>
               <Text style={s.infoLabel}>{T('dueDate')}</Text>
-              <Text style={s.infoValue}>{formatDisplayDate(task.dueDate)}</Text>
+              <Text style={[s.infoValue, task.needsDate && { color: '#d97706' }]}>
+                {task.needsDate ? 'No due date' : formatDisplayDate(task.dueDate)}
+              </Text>
             </View>
           </View>
 
@@ -302,27 +338,46 @@ export default function TaskDetails() {
         </View>
         ) : null}
 
-        {/* Source Section — only shown for AI-extracted tasks */}
-        {task.sourceMessage ? (
-        <View style={s.sourceSection}>
-          <View style={s.sourceHeaderRow}>
-            <Text style={s.sourceSectionTitle}>{T('whatsappSource')}</Text>
-            <View style={s.verifiedPill}>
-              <View style={s.verifiedDot} />
-              <Text style={s.verifiedLabel}>{T('verifiedByAi')}</Text>
+        {/* Source Section */}
+        {task.id.startsWith('gc-') ? (
+          <View style={s.sourceSection}>
+            <View style={s.sourceHeaderRow}>
+              <Text style={s.sourceSectionTitle}>Google Classroom</Text>
+              <View style={[s.verifiedPill, { backgroundColor: 'rgba(15,157,88,0.08)' }]}>
+                <View style={[s.verifiedDot, { backgroundColor: '#0f9d58' }]} />
+                <Text style={[s.verifiedLabel, { color: '#0f9d58' }]}>Auto-synced</Text>
+              </View>
+            </View>
+            <View style={[s.sourceCard, { borderLeftWidth: 3, borderLeftColor: '#0f9d58' }]}>
+              <View style={s.sourceTagWrap}>
+                <Feather name="book-open" size={12} color="#0f9d58" />
+                <Text style={[s.sourceTagText, { color: '#0f9d58' }]}>Google Classroom</Text>
+              </View>
+              {task.sourceMessage ? (
+                <Text style={s.sourceBody} numberOfLines={1}>{task.sourceMessage}</Text>
+              ) : null}
             </View>
           </View>
-          <View style={s.sourceCard}>
-            <View style={s.sourceTagWrap}>
-              <Feather name="message-circle" size={12} color={TEXT_SECONDARY} />
-              <Text style={s.sourceTagText}>{T('messageLog')}</Text>
+        ) : task.sourceMessage ? (
+          <View style={s.sourceSection}>
+            <View style={s.sourceHeaderRow}>
+              <Text style={s.sourceSectionTitle}>{T('whatsappSource')}</Text>
+              <View style={s.verifiedPill}>
+                <View style={s.verifiedDot} />
+                <Text style={s.verifiedLabel}>{T('verifiedByAi')}</Text>
+              </View>
             </View>
-            <Text style={s.sourceBody}>"{task.sourceMessage}"</Text>
-            <Text style={s.sourceTimestamp}>
-              {`${T('extractedOn')} ${formatDisplayDate(task.dueDate)} • ${(task.dueTime || '').slice(0, 5)}`}
-            </Text>
+            <View style={s.sourceCard}>
+              <View style={s.sourceTagWrap}>
+                <Feather name="message-circle" size={12} color={TEXT_SECONDARY} />
+                <Text style={s.sourceTagText}>{T('messageLog')}</Text>
+              </View>
+              <Text style={s.sourceBody}>"{task.sourceMessage}"</Text>
+              <Text style={s.sourceTimestamp}>
+                {`${T('extractedOn')} ${formatDisplayDate(task.dueDate)} • ${(task.dueTime || '').slice(0, 5)}`}
+              </Text>
+            </View>
           </View>
-        </View>
         ) : null}
       </ScrollView>
 
@@ -517,6 +572,12 @@ const s = StyleSheet.create({
   badgeTypeText: { color: TEXT_SECONDARY, fontSize: 12, fontWeight: '700' },
   badgeDone: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(34,197,94,0.08)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   badgeDoneText: { color: '#16a34a', fontSize: 12, fontWeight: '700' },
+  badgeClassroom: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(15,157,88,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  badgeClassroomText: { color: '#0f9d58', fontSize: 12, fontWeight: '700' },
+  badgeShared: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(99,102,241,0.08)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  badgeSharedText: { color: '#6366f1', fontSize: 12, fontWeight: '700' },
+  badgePersonal: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(100,116,139,0.08)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  badgePersonalText: { color: '#64748b', fontSize: 12, fontWeight: '700' },
 
   // Title
   title: { fontSize: 26, fontWeight: '800', color: TEXT_PRIMARY, lineHeight: 32, letterSpacing: -0.5, marginBottom: 14 },
@@ -536,6 +597,19 @@ const s = StyleSheet.create({
   urgencyOverdue: { backgroundColor: 'rgba(239,68,68,0.06)' },
   urgencySoon: { backgroundColor: 'rgba(245,158,11,0.06)' },
   urgencyText: { fontSize: 13, fontWeight: '700', color: NAVY },
+  needsDateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 20,
+  },
+  needsDateBannerText: { flex: 1, fontSize: 13, color: '#92400e', fontWeight: '500', lineHeight: 18 },
 
   // Info Grid
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 24 },

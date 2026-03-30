@@ -30,6 +30,7 @@ export default ({ config }) => ({
     supabaseAnonKey: cleanEnvString(process.env.EXPO_PUBLIC_SUPABASE_KEY || ''),
     openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
     spotifyClientId: process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID || '',
+    googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
     /** Must match Storage bucket id in the same Supabase project as supabaseUrl */
     sowFilesBucket: process.env.EXPO_PUBLIC_SOW_BUCKET || 'sow-files',
   },

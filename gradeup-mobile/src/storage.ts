@@ -260,3 +260,66 @@ export async function setPlannerView(view: PlannerViewMode): Promise<void> {
     await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
   } catch {}
 }
+
+// ---------- Google Classroom sync ----------
+
+const KEY_CLASSROOM_TOKEN = 'classroomToken';
+const KEY_CLASSROOM_PREFS = 'classroomPrefs';
+
+export interface ClassroomTokenCache {
+  accessToken: string;
+  expiresAt: number;
+  refreshToken?: string;
+}
+
+export interface ClassroomPrefs {
+  selectedCourseIds: string[];
+  selectedTaskIds: string[];
+  autoSync: boolean;
+  lastSyncAt: number | null;
+  dismissedNewTaskIds?: string[];
+}
+
+export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_CLASSROOM_TOKEN);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.accessToken && typeof parsed.expiresAt === 'number') return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export async function setClassroomToken(token: ClassroomTokenCache): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_CLASSROOM_TOKEN, JSON.stringify(token));
+  } catch {}
+}
+
+export async function clearClassroomToken(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(KEY_CLASSROOM_TOKEN);
+  } catch {}
+}
+
+export async function getClassroomPrefs(): Promise<ClassroomPrefs | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_CLASSROOM_PREFS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.selectedCourseIds)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export async function setClassroomPrefs(prefs: ClassroomPrefs | null): Promise<void> {
+  try {
+    if (!prefs) {
+      await AsyncStorage.removeItem(KEY_CLASSROOM_PREFS);
+    } else {
+      await AsyncStorage.setItem(KEY_CLASSROOM_PREFS, JSON.stringify(prefs));
+    }
+  } catch {}
+}

@@ -74,6 +74,8 @@ type AppState = {
   deleteFlashcard: (cardId: string) => void;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
+  pendingClassroomTasks: import('../lib/googleClassroom').PendingNewTask[];
+  clearPendingClassroomTasks: () => void;
   theme: ThemeId;
   setTheme: (theme: ThemeId) => void;
   language: AppLanguage;
@@ -139,6 +141,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
   const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
   const [pendingExtraction, setPendingExtraction] = useState('');
+  const [pendingClassroomTasks, setPendingClassroomTasks] = useState<import('../lib/googleClassroom').PendingNewTask[]>([]);
+  const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
   const [theme, setThemeState] = useState<ThemeId>('dark');
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
@@ -181,7 +185,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return (metaName || emailName || '').trim();
     };
 
-    // Helper to load all remote data for a given user id (including profile, calendar, subjects)
     const loadRemoteData = (uid: string, authFallbackName?: string) => {
       Promise.all([
         studyDb.getNotes(uid),
@@ -194,7 +197,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         profileDb.getProfile(uid),
         academicCalendarDb.getActiveCalendar(uid),
       ])
-        .then(([notesList, noteFoldersList, foldersList, cardsList, tasksList, studyList, coursesList, profile, calendar]) => {
+        .then(async ([notesList, noteFoldersList, foldersList, cardsList, tasksList, studyList, coursesList, profile, calendar]) => {
           setNotes(notesList);
           setNoteFolders(noteFoldersList);
           setFlashcardFolders(foldersList);
@@ -232,10 +235,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
             return next;
           });
+
+          // Check for new Google Classroom tasks in the background (no silent import)
+          try {
+            const { checkForNewTasks } = require('../lib/googleClassroom');
+            const newTasks = await checkForNewTasks();
+            if (newTasks && newTasks.length > 0) {
+              setPendingClassroomTasks(newTasks);
+            }
+          } catch {}
         })
-        .catch(() => {
-          // On error, keep existing local state
-        });
+        .catch(() => {});
     };
 
     // Load once for current session (cold start / reload)
@@ -668,6 +678,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteFlashcard,
     pendingExtraction,
     setPendingExtraction,
+    pendingClassroomTasks,
+    clearPendingClassroomTasks,
     theme,
     setTheme,
     language,

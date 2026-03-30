@@ -61,6 +61,8 @@ export interface Task {
   deadlineRisk: 'High' | 'Medium' | 'Low';
   suggestedWeek: number;
   sourceMessage?: string;
+  /** True when imported from Google Classroom without a real due date — placeholder is today */
+  needsDate?: boolean;
 }
 
 /** Academic level for SOW/calendar (diploma, bachelor, etc.) */

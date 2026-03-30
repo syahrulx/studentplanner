@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image } from 'react-native';
+import { useMemo, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -70,9 +70,44 @@ export default function Dashboard() {
     getSubjectColor,
     language,
     academicCalendar,
+    pendingClassroomTasks,
+    clearPendingClassroomTasks,
   } = useApp();
   const { friendsWithStatus } = useCommunity();
   const T = useTranslations(language);
+
+  useEffect(() => {
+    if (pendingClassroomTasks.length === 0) return;
+    const count = pendingClassroomTasks.length;
+    const courseNames = [...new Set(pendingClassroomTasks.map(t => t.courseName))].join(', ');
+    Alert.alert(
+      'New Classroom Tasks',
+      `${count} new task${count !== 1 ? 's' : ''} found in Google Classroom:\n\n${courseNames}\n\nWould you like to review and import them?`,
+      [
+        {
+          text: 'Later',
+          style: 'cancel',
+          onPress: async () => {
+            const { getClassroomPrefs, setClassroomPrefs } = require('@/src/storage');
+            const prefs = await getClassroomPrefs();
+            if (prefs) {
+              const dismissed = new Set(prefs.dismissedNewTaskIds ?? []);
+              pendingClassroomTasks.forEach((t: { workId: string }) => dismissed.add(t.workId));
+              await setClassroomPrefs({ ...prefs, dismissedNewTaskIds: [...dismissed] });
+            }
+            clearPendingClassroomTasks();
+          },
+        },
+        {
+          text: 'Review',
+          onPress: () => {
+            clearPendingClassroomTasks();
+            router.push('/classroom-sync' as any);
+          },
+        },
+      ],
+    );
+  }, [pendingClassroomTasks.length]);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const semesterPhase = user.semesterPhase ?? 'teaching';
   const focusTask = useMemo(

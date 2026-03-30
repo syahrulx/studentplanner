@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Alert, Switch } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar } from '@/src/lib/communityApi';
-import { setHasSeenTutorial } from '@/src/storage';
+import { setHasSeenTutorial, getClassroomPrefs, type ClassroomPrefs } from '@/src/storage';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
@@ -17,7 +17,7 @@ const PAD = 20;
 const SECTION = 24;
 const RADIUS = 14;
 export default function ProfileSettings() {
-  const { user, language, setUser, updateProfile, academicCalendar } = useApp();
+  const { user, language, setUser, setTasks, updateProfile, academicCalendar } = useApp();
   const { locationVisibility, setLocationVisibility, spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
@@ -26,6 +26,94 @@ export default function ProfileSettings() {
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSyncingClassroom, setIsSyncingClassroom] = useState(false);
+  const [classroomPrefs, setClassroomPrefsState] = useState<ClassroomPrefs | null>(null);
+  const [classroomLoading, setClassroomLoading] = useState(true);
+
+  const refreshClassroomPrefs = useCallback(() => {
+    getClassroomPrefs().then(p => { setClassroomPrefsState(p); setClassroomLoading(false); });
+  }, []);
+
+  // Load on mount and refresh when screen regains focus (e.g. returning from classroom-sync)
+  useFocusEffect(refreshClassroomPrefs);
+
+  const isClassroomLinked = classroomPrefs !== null && classroomPrefs.selectedCourseIds.length > 0;
+
+  const handleClassroomSync = async () => {
+    if (isSyncingClassroom) return;
+
+    if (!isClassroomLinked) {
+      router.push('/classroom-sync' as any);
+      return;
+    }
+
+    setIsSyncingClassroom(true);
+    try {
+      const { syncSelectedCourses } = require('@/src/lib/googleClassroom');
+      const taskDbModule = require('@/src/lib/taskDb');
+      const { supabase } = require('@/src/lib/supabase');
+
+      const taskFilter = classroomPrefs!.selectedTaskIds?.length ? classroomPrefs!.selectedTaskIds : undefined;
+      const result = await syncSelectedCourses(
+        classroomPrefs!.selectedCourseIds,
+        undefined,
+        user.startDate,
+        taskFilter,
+      );
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const fresh = await taskDbModule.getTasks(session.user.id);
+        setTasks(fresh);
+      }
+
+      refreshClassroomPrefs();
+
+      const msg = result.failedCount > 0
+        ? `Synced ${result.syncedCount} tasks. ${result.failedCount} failed.`
+        : `Successfully synced ${result.syncedCount} tasks!`;
+      Alert.alert('Sync Complete', msg);
+    } catch (e: any) {
+      Alert.alert('Sync Failed', e.message || 'Something went wrong.');
+    } finally {
+      setIsSyncingClassroom(false);
+    }
+  };
+
+  const handleClassroomDisconnect = () => {
+    Alert.alert(
+      'Disconnect Google Classroom',
+      'Auto-sync will stop. Your imported tasks will remain in the planner.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { disconnectClassroom } = require('@/src/lib/googleClassroom');
+              await disconnectClassroom();
+              setClassroomPrefsState(null);
+              Alert.alert('Disconnected', 'Google Classroom has been unlinked.');
+            } catch {
+              Alert.alert('Error', 'Failed to disconnect.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const formatLastSync = (ts: number | null) => {
+    if (!ts) return 'Never synced';
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
 
   const handleEditName = () => {
     Alert.prompt(
@@ -145,8 +233,42 @@ export default function ProfileSettings() {
         },
       ];
 
-  const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = [
+  const classroomItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string; subtitle?: string }[] = isClassroomLinked
+    ? [
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: isSyncingClassroom ? 'Syncing...' : 'Sync Google Classroom',
+          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last: ${formatLastSync(classroomPrefs!.lastSyncAt)}`,
+          onPress: handleClassroomSync,
+          color: '#4285f4',
+        },
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: 'Manage Courses',
+          subtitle: 'Change which courses to sync',
+          onPress: () => router.push('/classroom-sync' as any),
+          color: '#fbbc05',
+        },
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: 'Disconnect Classroom',
+          onPress: handleClassroomDisconnect,
+          color: '#ef4444',
+        },
+      ]
+    : [
+        {
+          icon: 'settings' as ThemeIconKey,
+          label: 'Connect Google Classroom',
+          subtitle: 'Import assignments and quizzes automatically',
+          onPress: handleClassroomSync,
+          color: '#4285f4',
+        },
+      ];
+
+  const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string; subtitle?: string }[] = [
     ...spotifyItems,
+    ...classroomItems,
     { icon: 'settings', label: T('subjectColours'), onPress: () => router.push('/subject-colors' as any), color: '#3b82f6' },
     { icon: 'settings', label: T('languagePref'), onPress: () => router.push('/language-preference' as any), color: '#8b5cf6' },
     { icon: 'stressMap', label: T('stressMap'), onPress: () => router.push('/stress-map' as any), color: '#ec4899' },
@@ -324,12 +446,23 @@ export default function ProfileSettings() {
               <View style={[styles.iconBox, { backgroundColor: item.color }]}>
                 <ThemeIcon name={item.icon} size={18} color="#fff" />
               </View>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
+                {item.subtitle ? (
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>{item.subtitle}</Text>
+                ) : null}
+              </View>
               <Feather name="chevron-right" size={20} color={theme.textSecondary} />
             </Pressable>
             {i < menuItems.length - 1 && <View style={styles.dividerList} />}
           </React.Fragment>
         ))}
+        <View style={styles.hintBox}>
+          <Feather name="info" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
+          <Text style={[styles.hintSmall, { color: theme.textSecondary }]}>
+            Using your student email allows one-tap sync with Classroom and Teams.
+          </Text>
+        </View>
       </View>
 
       <View style={{ height: 60 }} />
@@ -468,5 +601,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
-  menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
+  menuLabel: { fontSize: 16, fontWeight: '400' },
+  hintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: 'rgba(150,150,150,0.05)',
+  },
+  hintSmall: {
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 16,
+  },
 });

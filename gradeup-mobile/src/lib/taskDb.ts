@@ -1,15 +1,19 @@
 import { supabase } from './supabase';
 import type { Task } from '../types';
+import { getTodayISO } from '../utils/date';
 
 const TASKS_TABLE = 'tasks';
 
 function rowToTask(row: Record<string, unknown>): Task {
+  const id = String(row.id);
+  const needsDate = Boolean(row.needs_date);
+  const dueDate = needsDate ? getTodayISO() : String(row.due_date ?? getTodayISO());
   return {
-    id: String(row.id),
+    id,
     title: String(row.title ?? ''),
     courseId: String(row.course_id ?? ''),
     type: row.type as Task['type'],
-    dueDate: String(row.due_date ?? ''),
+    dueDate,
     dueTime: String(row.due_time ?? ''),
     priority: row.priority as Task['priority'],
     effort: Number(row.effort_hours ?? 0) || 0,
@@ -18,6 +22,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     deadlineRisk: (row.deadline_risk as Task['deadlineRisk']) ?? 'Medium',
     suggestedWeek: Number(row.suggested_week ?? 0) || 0,
     sourceMessage: row.source_message != null ? String(row.source_message) : undefined,
+    needsDate,
   };
 }
 
@@ -48,6 +53,7 @@ export async function upsertTask(
       title: task.title,
       type: task.type,
       due_date: task.dueDate,
+      needs_date: task.needsDate ?? false,
       due_time: task.dueTime,
       priority: task.priority,
       effort_hours: task.effort,

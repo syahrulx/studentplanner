@@ -199,6 +199,10 @@ export default function SignUp() {
               </>
             )}
           </Pressable>
+          
+          <Text style={styles.hintText}>
+            💡 Tip: Use your university email to easily sync Google Classroom & Teams!
+          </Text>
 
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
@@ -424,6 +428,14 @@ const styles = StyleSheet.create({
   },
   googleBtnIcon: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
   googleBtnText: { fontSize: 15, fontWeight: '600', color: '#334155' },
+  hintText: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+    paddingHorizontal: 10,
+  },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 18, gap: 12 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#e2e8f0' },
   dividerText: { fontSize: 12, color: '#94a3b8', fontWeight: '500' },

@@ -61,6 +61,7 @@ type PlannerTaskItem = {
   isSharedTask?: boolean;
   /** Row id in shared_tasks — remove link for current user only, not the underlying task */
   sharedTaskId?: string;
+  needsDate?: boolean;
 } & import('@/src/types').Task;
 type PlannerStudyItem = {
   itemType: 'study';
@@ -760,7 +761,12 @@ export default function Planner() {
   };
 
   const getCardSubject = (item: PlannerItem) => {
-    return item.itemType === 'task' ? item.courseId : item.subjectId;
+    if (item.itemType !== 'task') return item.subjectId;
+    if (item.courseId?.startsWith('gc-course-')) {
+      const found = courses.find(c => c.id === item.courseId);
+      return found ? `gc-${found.name}` : item.courseId;
+    }
+    return item.courseId;
   };
 
   const handleItemPress = (item: PlannerItem) => {
@@ -885,9 +891,12 @@ export default function Planner() {
     // In Week/Month timeline views, keep this compact like the original design
     // (time + days-left + type) so text stays neat inside the card.
     const showDateInline = view === 'all';
+    const isUndated = item.itemType === 'task' && (item as PlannerTaskItem).needsDate;
     const timeText = item.itemType === 'study'
       ? `${showDateInline ? `${formatDisplayDate(item.date)} • ` : ''}${timeRange}`
-      : `${showDateInline ? `${formatDisplayDate(item.dueDate)} • ` : ''}${timeRange}`;
+      : isUndated
+        ? 'No due date'
+        : `${showDateInline ? `${formatDisplayDate(item.dueDate)} • ` : ''}${timeRange}`;
     const statusLabel = item.isDone
       ? T('completed')
       : item.itemType === 'study'
@@ -962,6 +971,18 @@ export default function Planner() {
                   <View style={s.sharedBadge}>
                     <Feather name="users" size={10} color="#6366f1" />
                     <Text style={s.sharedBadgeText}>{(item as PlannerTaskItem).sharedBy}</Text>
+                  </View>
+                ) : null}
+                {item.itemType === 'task' && !(item as PlannerTaskItem).isSharedTask && item.id.startsWith('gc-') ? (
+                  <View style={s.classroomBadge}>
+                    <Feather name="book-open" size={10} color="#0f9d58" />
+                    <Text style={s.classroomBadgeText}>Classroom</Text>
+                  </View>
+                ) : null}
+                {item.itemType === 'task' && (item as PlannerTaskItem).needsDate ? (
+                  <View style={s.needsDateBadge}>
+                    <Feather name="alert-circle" size={10} color="#d97706" />
+                    <Text style={s.needsDateText}>Needs date</Text>
                   </View>
                 ) : null}
               </View>
@@ -2503,6 +2524,26 @@ const s = StyleSheet.create({
     borderRadius: 10,
   },
   sharedBadgeText: { fontSize: 10, fontWeight: '700', color: '#6366f1' },
+  classroomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(15,157,88,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  classroomBadgeText: { fontSize: 10, fontWeight: '700', color: '#0f9d58' },
+  needsDateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  needsDateText: { fontSize: 10, fontWeight: '700', color: '#d97706' },
   taskMenuBtn: {
     paddingHorizontal: 4,
     paddingVertical: 4,
