@@ -388,6 +388,8 @@ const translations = {
     workloadSteady: 'STEADY LOAD',
     workloadPeakWave: 'PEAK WEEK LOAD',
     workloadTaskSync: 'Based on your planner tasks',
+    workloadVelocityAllTypes:
+      'All planner types: assignments, quizzes, labs, projects & tests.',
     stressMapTeachingWeekLine:
       'Teaching week {current} of {total} (from Academic calendar start). Not the same as portal semester (e.g. semester 5 ≠ week 5).',
     stressMapTasksOutsideRange:
@@ -819,6 +821,8 @@ const translations = {
     workloadSteady: 'BEBAN STABIL',
     workloadPeakWave: 'BEBAN PUNCAK',
     workloadTaskSync: 'Berdasarkan tugas dalam perancang',
+    workloadVelocityAllTypes:
+      'Semua jenis dalam perancang: tugasan, kuiz, makmal, projek & ujian.',
     stressMapTeachingWeekLine:
       'Minggu pengajian {current} daripada {total} (dari tarikh mula kalendar akademik). Bukan sama dengan semester portal (cth. semester 5 ≠ minggu 5).',
     stressMapTasksOutsideRange:

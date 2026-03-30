@@ -7,10 +7,9 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import {
-  dueDateToTeachingWeek,
   peakWeekFromTaskCounts,
-  taskCountsByDueWeek,
-  taskCountsByOpenDueWeek,
+  taskTeachingWeekForWorkload,
+  workloadVelocityPointsByWeek,
 } from '@/src/lib/academicWeek';
 import { displayPortalSemester, PROFILE_PLACEHOLDER } from '@/src/lib/profileDisplay';
 
@@ -26,23 +25,25 @@ export default function StressMap() {
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const weeks = useMemo(() => Array.from({ length: totalWeeks }, (_, i) => i + 1), [totalWeeks]);
 
-  /** All tasks (done + open). Use profile start when calendar row has no startDate so bars match the planner. */
+  /** Task count per week: calendar due-week, but if SOW suggestedWeek is earlier than that week, use suggestedWeek. */
   const weeklyTotals = useMemo(
-    () => taskCountsByDueWeek(tasks, academicCalendar, 'all', user.startDate),
+    () => workloadVelocityPointsByWeek(tasks, academicCalendar, 'all', user.startDate),
     [tasks, academicCalendar, user.startDate],
   );
 
-  const { week: highestWeek, max: maxTasksInAnyWeek } = useMemo(
+  const { week: highestWeek, max: maxLoadInAnyWeek } = useMemo(
     () => peakWeekFromTaskCounts(weeklyTotals),
     [weeklyTotals],
   );
 
   const maxTotal = Math.max(0, ...weeklyTotals);
+  /** Max bar height inside the chart row (labels sit below). */
+  const VELOCITY_BAR_MAX_PX = 96;
 
   const tasksOutsideTeachingWindow = useMemo(() => {
     let n = 0;
     for (const t of tasks) {
-      if (dueDateToTeachingWeek(t.dueDate, academicCalendar, user.startDate) == null) n += 1;
+      if (taskTeachingWeekForWorkload(t, academicCalendar, user.startDate) == null) n += 1;
     }
     return n;
   }, [tasks, academicCalendar, user.startDate]);
@@ -53,7 +54,7 @@ export default function StressMap() {
   }, [weeklyTotals, totalWeeks]);
 
   const isPeakWave =
-    maxTasksInAnyWeek >= 3 &&
+    maxLoadInAnyWeek >= 3 &&
     highestWeek > 0 &&
     user.currentWeek === highestWeek &&
     (user.semesterPhase ?? 'teaching') === 'teaching' &&
@@ -74,7 +75,7 @@ export default function StressMap() {
     const byCourse: Record<string, number> = {};
     for (const t of tasks) {
       if (t.isDone) continue;
-      const w = dueDateToTeachingWeek(t.dueDate, academicCalendar, user.startDate);
+      const w = taskTeachingWeekForWorkload(t, academicCalendar, user.startDate);
       if (w !== cw) continue;
       byCourse[t.courseId] = (byCourse[t.courseId] || 0) + 1;
     }
@@ -130,6 +131,7 @@ export default function StressMap() {
                 {isPeakWave ? T('workloadPeakWave') : T('workloadSteady')}
               </Text>
             </View>
+            <Text style={styles.velocityScopeText}>{T('workloadVelocityAllTypes')}</Text>
           </View>
           <View style={styles.scaleRange}>
             <Text style={styles.scaleW14}>W{totalWeeks}</Text>
@@ -140,19 +142,19 @@ export default function StressMap() {
           {weeks.map((w) => {
             const total = weeklyTotals[w - 1] ?? 0;
             const isCurrent = w === user.currentWeek;
+            // No "ghost" height for empty weeks — only weeks with due tasks show a bar.
+            // Proportional to max week so e.g. 1 task vs 2 tasks reads as half height.
             const barH =
-              maxTotal === 0
-                ? 4
-                : total === 0
-                  ? 3
-                  : Math.max(14, Math.round((total / maxTotal) * 96));
+              maxTotal === 0 || total === 0
+                ? 0
+                : Math.max(1, Math.round((total / maxTotal) * VELOCITY_BAR_MAX_PX));
             return (
               <View key={w} style={styles.barCol}>
                 <View
                   style={[
                     styles.barBg,
-                    { height: barH },
-                    isCurrent && styles.barCurrent,
+                    barH > 0 ? { height: barH } : styles.barBgEmpty,
+                    isCurrent && barH > 0 && styles.barCurrentRing,
                   ]}
                 />
                 <Text
@@ -166,7 +168,7 @@ export default function StressMap() {
             );
           })}
         </View>
-        {maxTasksInAnyWeek === 0 ? (
+        {maxLoadInAnyWeek === 0 ? (
           <Text style={styles.emptyHint}>{T('tasksPulseNoTasks')}</Text>
         ) : null}
         {tasksOutsideTeachingWindow > 0 ? (
@@ -180,7 +182,7 @@ export default function StressMap() {
 
       <View style={styles.summaryRow}>
         <View style={[styles.summaryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>AVG. TASKS / WK</Text>
+          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>AVG. LOAD / WK</Text>
           <Text style={[styles.summaryValue, { color: theme.text }]}>{avgStress}</Text>
         </View>
         <View style={[styles.summaryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -188,10 +190,12 @@ export default function StressMap() {
           <Text
             style={[
               styles.summaryValue,
-              maxTasksInAnyWeek > 0 ? styles.summaryValueRed : { color: theme.text },
+              maxLoadInAnyWeek > 0 ? styles.summaryValueRed : { color: theme.text },
             ]}
           >
-            {maxTasksInAnyWeek > 0 ? `W${highestWeek} (${maxTasksInAnyWeek})` : '—'}
+            {maxLoadInAnyWeek > 0
+              ? `W${highestWeek} (${Number.isInteger(maxLoadInAnyWeek) ? maxLoadInAnyWeek : maxLoadInAnyWeek.toFixed(1)})`
+              : '—'}
           </Text>
         </View>
       </View>
@@ -304,6 +308,14 @@ const styles = StyleSheet.create({
   criticalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   criticalDot: { width: 8, height: 8, borderRadius: 4 },
   criticalText: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.5 },
+  velocityScopeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.72)',
+    marginTop: 8,
+    maxWidth: 220,
+    lineHeight: 14,
+  },
   scaleRange: { alignItems: 'flex-end' },
   scaleW14: { fontSize: 28, fontWeight: '900', color: '#ffffff', letterSpacing: -0.5 },
   scaleLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5 },
@@ -324,14 +336,18 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 999,
+    minHeight: 0,
   },
-  barCurrent: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#ffffff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
+  /** Placeholder slot when count is 0 — no fill so empty weeks are not mistaken for workload. */
+  barBgEmpty: {
+    height: 0,
+    backgroundColor: 'transparent',
+  },
+  /** Highlight current teaching week without a solid fill (that read as “full load”). */
+  barCurrentRing: {
+    backgroundColor: 'rgba(255,255,255,0.38)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.95)',
   },
   barWeekLabel: {
     fontSize: 9,

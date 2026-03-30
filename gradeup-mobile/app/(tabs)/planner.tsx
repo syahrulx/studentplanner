@@ -156,7 +156,9 @@ export default function Planner() {
   const getWeekNumberForDate = useCallback(
     (dateISO: string): number => {
       if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
-        const start = new Date(`${semesterStartISO}T00:00:00`);
+        const raw = new Date(`${semesterStartISO}T00:00:00`);
+        const dow = raw.getDay();
+        const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() + (7 - dow));
         const current = new Date(`${dateISO.slice(0, 10)}T00:00:00`);
         const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
         const rawWeek = Math.floor(diffDays / 7) + 1;
@@ -589,6 +591,7 @@ export default function Planner() {
                 buildTaskFromExtraction(task, {
                   fallbackCourseId: courses[0]?.id || 'General',
                   user,
+                  calendarStart: academicCalendar?.startDate,
                   sourceMessage: originalMsg,
                 })
               );

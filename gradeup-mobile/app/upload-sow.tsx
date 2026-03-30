@@ -219,7 +219,8 @@ export default function UploadSOW() {
         deadline_risk: t?.deadline_risk,
         suggested_week: Number(t?.suggested_week ?? 0) || getSuggestedWeekForDueDate(
           String(t?.due_date ?? '').slice(0, 10) || getTodayISO(),
-          user
+          user,
+          academicCalendar?.startDate,
         ),
       })).filter((t: ExtractedTask) => t.title);
 
@@ -300,11 +301,12 @@ export default function UploadSOW() {
             effort_hours: Math.max(1, Math.min(20, Number(t.effort_hours) || 2)),
             notes: t.notes ?? '',
             deadline_risk: t.deadline_risk,
-            suggested_week: getSuggestedWeekForDueDate(dueDate, user),
+            suggested_week: getSuggestedWeekForDueDate(dueDate, user, academicCalendar?.startDate),
           } as any,
           {
             fallbackCourseId: courseId,
             user,
+            calendarStart: academicCalendar?.startDate,
             sourceMessage: `Imported from SOW: ${extraction.fileName}`,
           }
         );

@@ -163,11 +163,12 @@ export default function SowReview() {
           effort_hours: Math.max(1, Math.min(20, Number(t.effort_hours) || 2)),
           notes: t.notes ?? '',
           deadline_risk: t.deadline_risk,
-          suggested_week: t.suggested_week || getSuggestedWeekForDueDate(dueDate, user),
+          suggested_week: t.suggested_week || getSuggestedWeekForDueDate(dueDate, user, academicCalendar?.startDate),
         };
         const task = buildTaskFromExtraction(extracted as any, {
           fallbackCourseId: courseId,
           user,
+          calendarStart: academicCalendar?.startDate,
           sourceMessage: `Imported from SOW: ${pending.fileName}`,
         });
         task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;

@@ -25,9 +25,9 @@ export function getAcademicProgress(startDateStr: string, totalWeeks: number = 1
     };
   }
 
-  // Local midnight, same as dueDateToTeachingWeek in academicWeek.ts (avoids week boundary drift).
-  const startDate = new Date(`${trimmed}T00:00:00`);
-  if (Number.isNaN(startDate.getTime())) {
+  // Snap forward to the next Sunday so week boundaries match the planner's Sun–Sat view.
+  const raw = new Date(`${trimmed}T00:00:00`);
+  if (Number.isNaN(raw.getTime())) {
     return {
       week: 1,
       isBreak: false,
@@ -35,6 +35,8 @@ export function getAcademicProgress(startDateStr: string, totalWeeks: number = 1
       semesterPhase: 'no_calendar',
     };
   }
+  const dow = raw.getDay();
+  const startDate = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() + (7 - dow));
 
   const now = new Date();
   now.setHours(0, 0, 0, 0);

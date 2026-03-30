@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
@@ -9,9 +11,27 @@ import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
 import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 
+function dueDateTimeToDate(iso: string, time: string): Date {
+  const [y, mo, d] = iso.slice(0, 10).split('-').map((x) => parseInt(x, 10));
+  const [hStr, mStr] = (time || '00:00').split(':');
+  const h = Number.isFinite(Number(hStr)) ? Number(hStr) : 0;
+  const m = Number.isFinite(Number(mStr)) ? Number(mStr) : 0;
+  return new Date(y, mo - 1, d, h, m, 0, 0);
+}
+
+function formatTimeHM(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function addCalendarMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const x = new Date(year, month + delta, 1);
+  return { year: x.getFullYear(), month: x.getMonth() };
+}
+
 export default function AddTask() {
   const { taskId: rawTaskId } = useLocalSearchParams<{ taskId?: string | string[] }>();
-  const { courses, tasks, addTask, updateTask, getSubjectColor, setSubjectColor, language, user } = useApp();
+  const { courses, tasks, addTask, updateTask, getSubjectColor, setSubjectColor, language, user, academicCalendar } =
+    useApp();
   const T = useTranslations(language);
   const taskId = Array.isArray(rawTaskId) ? rawTaskId[0] : rawTaskId;
   const existingTask = tasks.find((task) => task.id === taskId);
@@ -29,11 +49,19 @@ export default function AddTask() {
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  /** Month shown in calendar (can differ from due date while browsing months) */
+  const [pickerYear, setPickerYear] = useState(() => new Date(dueDateISO + 'T12:00:00').getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(() => new Date(dueDateISO + 'T12:00:00').getMonth());
 
-  const activeDate = dueDateISO;
-  const activeYear = new Date(activeDate + 'T12:00:00').getFullYear();
-  const activeMonth = new Date(activeDate + 'T12:00:00').getMonth();
-  const monthGridCells = getMonthGrid(activeYear, activeMonth);
+  useEffect(() => {
+    if (!showDatePicker) return;
+    const d = new Date(dueDateISO + 'T12:00:00');
+    setPickerYear(d.getFullYear());
+    setPickerMonth(d.getMonth());
+  }, [showDatePicker]);
+
+  const monthGridCells = getMonthGrid(pickerYear, pickerMonth);
+  const pickerHeaderISO = toISO(pickerYear, pickerMonth, 1);
 
   useEffect(() => {
     if (!existingTask) return;
@@ -77,7 +105,7 @@ export default function AddTask() {
           notes,
           isDone: false,
           deadlineRisk,
-          suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user),
+          suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate),
           sourceMessage: undefined,
         };
         addTask(nextTask);
@@ -183,7 +211,29 @@ export default function AddTask() {
       {showDatePicker && (
         <View style={styles.calendarCard}>
           <View style={styles.calendarHeader}>
-            <Text style={styles.calendarTitle}>{getMonthYearLabel(activeDate)}</Text>
+            <Pressable
+              hitSlop={12}
+              style={styles.calendarNavBtn}
+              onPress={() => {
+                const { year, month } = addCalendarMonth(pickerYear, pickerMonth, -1);
+                setPickerYear(year);
+                setPickerMonth(month);
+              }}
+            >
+              <Feather name="chevron-left" size={22} color={COLORS.navy} />
+            </Pressable>
+            <Text style={styles.calendarTitle}>{getMonthYearLabel(pickerHeaderISO)}</Text>
+            <Pressable
+              hitSlop={12}
+              style={styles.calendarNavBtn}
+              onPress={() => {
+                const { year, month } = addCalendarMonth(pickerYear, pickerMonth, 1);
+                setPickerYear(year);
+                setPickerMonth(month);
+              }}
+            >
+              <Feather name="chevron-right" size={22} color={COLORS.navy} />
+            </Pressable>
           </View>
           <View style={styles.calendarWeekHeader}>
             {['S','M','T','W','T','F','S'].map((d, idx) => (
@@ -195,7 +245,7 @@ export default function AddTask() {
               if (d == null) {
                 return <View key={idx} style={styles.calendarCellEmpty} />;
               }
-              const iso = toISO(activeYear, activeMonth, d);
+              const iso = toISO(pickerYear, pickerMonth, d);
               const isSelected = iso === dueDateISO;
               return (
                 <Pressable
@@ -264,59 +314,94 @@ export default function AddTask() {
       </Pressable>
       <View style={{ height: 48 }} />
 
-      {/* Time picker modal */}
-      <Modal visible={showTimePicker} transparent animationType="fade">
-        <Pressable style={styles.timeModalBackdrop} onPress={() => setShowTimePicker(false)}>
-          <View style={styles.timeModalPanel} onStartShouldSetResponder={() => true}>
-            <Text style={styles.timeModalTitle}>{T('time')}</Text>
-            <View style={styles.timePickerRow}>
-              <View style={styles.timeColumn}>
-                <Text style={styles.timeColumnLabel}>HH</Text>
-                <ScrollView style={styles.timeList}>
-                  {Array.from({ length: 24 }, (_, h) => h).map((h) => {
-                    const hh = String(h).padStart(2, '0');
-                    const isActive = dueTime.slice(0, 2) === hh;
-                    return (
-                      <Pressable
-                        key={hh}
-                        style={[styles.timeItem, isActive && styles.timeItemActive]}
-                        onPress={() => {
-                          setDueTime(`${hh}:${dueTime.slice(3, 5) || '00'}`);
-                        }}
-                      >
-                        <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{hh}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-              <View style={styles.timeColumn}>
-                <Text style={styles.timeColumnLabel}>MM</Text>
-                <ScrollView style={styles.timeList}>
-                  {Array.from({ length: 60 }, (_, m) => m).map((m) => {
-                    const mm = String(m).padStart(2, '0');
-                    const isActive = dueTime.slice(3, 5) === mm;
-                    return (
-                      <Pressable
-                        key={mm}
-                        style={[styles.timeItem, isActive && styles.timeItemActive]}
-                        onPress={() => {
-                          setDueTime(`${dueTime.slice(0, 2) || '00'}:${mm}`);
-                        }}
-                      >
-                        <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{mm}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+      {/* Native time picker (iOS modal + Android system dialog); web uses scroll lists */}
+      {Platform.OS === 'ios' && showTimePicker && (
+        <Modal visible transparent animationType="fade">
+          <Pressable style={styles.timeModalBackdrop} onPress={() => setShowTimePicker(false)}>
+            <View style={styles.timeModalPanel} onStartShouldSetResponder={() => true}>
+              <Text style={styles.timeModalTitle}>{T('time')}</Text>
+              <DateTimePicker
+                value={dueDateTimeToDate(dueDateISO, dueTime)}
+                mode="time"
+                display="spinner"
+                is24Hour
+                onChange={(_, date) => {
+                  if (date) setDueTime(formatTimeHM(date));
+                }}
+              />
+              <Pressable style={styles.timeDoneBtn} onPress={() => setShowTimePicker(false)}>
+                <Text style={styles.timeDoneText}>{T('done')}</Text>
+              </Pressable>
             </View>
-            <Pressable style={styles.timeDoneBtn} onPress={() => setShowTimePicker(false)}>
-              <Text style={styles.timeDoneText}>{T('done')}</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
+          </Pressable>
+        </Modal>
+      )}
+      {Platform.OS === 'android' && showTimePicker && (
+        <DateTimePicker
+          value={dueDateTimeToDate(dueDateISO, dueTime)}
+          mode="time"
+          display="default"
+          is24Hour
+          onChange={(event, date) => {
+            setShowTimePicker(false);
+            if (event.type === 'set' && date) setDueTime(formatTimeHM(date));
+          }}
+        />
+      )}
+      {Platform.OS === 'web' && (
+        <Modal visible={showTimePicker} transparent animationType="fade">
+          <Pressable style={styles.timeModalBackdrop} onPress={() => setShowTimePicker(false)}>
+            <View style={styles.timeModalPanel} onStartShouldSetResponder={() => true}>
+              <Text style={styles.timeModalTitle}>{T('time')}</Text>
+              <View style={styles.timePickerRow}>
+                <View style={styles.timeColumn}>
+                  <Text style={styles.timeColumnLabel}>HH</Text>
+                  <ScrollView style={styles.timeList}>
+                    {Array.from({ length: 24 }, (_, h) => h).map((h) => {
+                      const hh = String(h).padStart(2, '0');
+                      const isActive = dueTime.slice(0, 2) === hh;
+                      return (
+                        <Pressable
+                          key={hh}
+                          style={[styles.timeItem, isActive && styles.timeItemActive]}
+                          onPress={() => {
+                            setDueTime(`${hh}:${dueTime.slice(3, 5) || '00'}`);
+                          }}
+                        >
+                          <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{hh}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+                <View style={styles.timeColumn}>
+                  <Text style={styles.timeColumnLabel}>MM</Text>
+                  <ScrollView style={styles.timeList}>
+                    {Array.from({ length: 60 }, (_, m) => m).map((m) => {
+                      const mm = String(m).padStart(2, '0');
+                      const isActive = dueTime.slice(3, 5) === mm;
+                      return (
+                        <Pressable
+                          key={mm}
+                          style={[styles.timeItem, isActive && styles.timeItemActive]}
+                          onPress={() => {
+                            setDueTime(`${dueTime.slice(0, 2) || '00'}:${mm}`);
+                          }}
+                        >
+                          <Text style={[styles.timeItemText, isActive && styles.timeItemTextActive]}>{mm}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+              <Pressable style={styles.timeDoneBtn} onPress={() => setShowTimePicker(false)}>
+                <Text style={styles.timeDoneText}>{T('done')}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
@@ -373,8 +458,24 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: 12,
   },
-  calendarHeader: { alignItems: 'center', marginBottom: 8 },
-  calendarTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  calendarNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  calendarTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, flex: 1, textAlign: 'center' },
   calendarWeekHeader: { flexDirection: 'row', marginBottom: 4 },
   calendarWeekText: {
     flex: 1,

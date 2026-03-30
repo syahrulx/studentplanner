@@ -20,7 +20,7 @@ const GREEN = '#059669';
 type Message = { role: 'ai' | 'user'; text: string };
 
 export default function AiChat() {
-  const { language, addTask, courses, user } = useApp();
+  const { language, addTask, courses, user, academicCalendar } = useApp();
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -71,6 +71,7 @@ export default function AiChat() {
               buildTaskFromExtraction(task, {
                 fallbackCourseId: courses[0]?.id || 'General',
                 user,
+                calendarStart: academicCalendar?.startDate,
                 sourceMessage: pastedText,
               })
             );
