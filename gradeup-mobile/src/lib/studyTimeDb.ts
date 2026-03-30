@@ -68,3 +68,8 @@ export async function deleteStudySetting(userId: string, id: string): Promise<vo
     .eq('id', id);
 }
 
+export async function deleteAllStudyTimesForUser(userId: string): Promise<void> {
+  const { error } = await supabase.from(STUDY_TABLE).delete().eq('user_id', userId);
+  if (error) throw new Error(error.message || 'Failed to delete study times');
+}
+

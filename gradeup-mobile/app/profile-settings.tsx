@@ -60,6 +60,7 @@ export default function ProfileSettings() {
     academicCalendar,
     disconnectUniversity,
     refreshUniversityTimetable,
+    clearSemesterData,
   } = useApp();
   const { locationVisibility, setLocationVisibility, spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
@@ -75,6 +76,9 @@ export default function ProfileSettings() {
   const [syncPassword, setSyncPassword] = useState('');
   const [syncCourses, setSyncCourses] = useState('');
   const [syncBusy, setSyncBusy] = useState(false);
+  const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
+  const [clearDataPhrase, setClearDataPhrase] = useState('');
+  const [clearDataBusy, setClearDataBusy] = useState(false);
 
   const canSyncMyStudent = useMemo(
     () => user.universityId === 'uitm',
@@ -260,6 +264,51 @@ export default function ProfileSettings() {
           color: '#1DB954',
         },
       ];
+
+  const CLEAR_DATA_PHRASE = 'delete data';
+
+  const openClearDataStep1 = () => {
+    Alert.alert(T('clearDataStep1Title'), T('clearDataStep1Body'), [
+      { text: T('cancel'), style: 'cancel' },
+      {
+        text: T('continue'),
+        style: 'destructive',
+        onPress: () => {
+          setClearDataPhrase('');
+          setClearDataModalOpen(true);
+        },
+      },
+    ]);
+  };
+
+  const openClearDataStep3 = () => {
+    const typed = clearDataPhrase.trim().toLowerCase();
+    if (typed !== CLEAR_DATA_PHRASE) return;
+    setClearDataModalOpen(false);
+    setTimeout(() => {
+      Alert.alert(T('clearDataStep3Title'), T('clearDataStep3Body'), [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('clearDataDeleteAll'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setClearDataBusy(true);
+              try {
+                await clearSemesterData();
+                setClearDataPhrase('');
+                Alert.alert(T('clearData'), T('clearDataSuccess'));
+              } catch (e) {
+                Alert.alert(T('error'), e instanceof Error ? e.message : T('clearDataError'));
+              } finally {
+                setClearDataBusy(false);
+              }
+            })();
+          },
+        },
+      ]);
+    }, 320);
+  };
 
   const menuItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = [
     ...spotifyItems,
@@ -635,6 +684,25 @@ export default function ProfileSettings() {
             {i < menuItems.length - 1 && <View style={styles.dividerList} />}
           </React.Fragment>
         ))}
+        <View style={styles.dividerList} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.menuRow,
+            pressed && { backgroundColor: 'rgba(254, 226, 226, 0.6)' },
+            clearDataBusy && { opacity: 0.6 },
+          ]}
+          onPress={openClearDataStep1}
+          disabled={clearDataBusy}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#fecaca' }]}>
+            <Feather name="trash-2" size={18} color="#dc2626" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('clearData')}</Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('clearDataDesc')}</Text>
+          </View>
+          {clearDataBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
+        </Pressable>
       </View>
 
       <View style={{ height: 60 }} />
@@ -700,6 +768,57 @@ export default function ProfileSettings() {
               ) : (
                 <Text style={{ color: '#fff', fontWeight: '700' }}>{T('refreshNow')}</Text>
               )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    <Modal
+      visible={clearDataModalOpen}
+      animationType="fade"
+      transparent
+      onRequestClose={() => !clearDataBusy && setClearDataModalOpen(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.syncBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => !clearDataBusy && setClearDataModalOpen(false)} />
+        <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
+          <Text style={[styles.syncTitle, { color: '#b91c1c' }]}>{T('clearDataStep2Title')}</Text>
+          <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>{T('clearDataStep2Body')}</Text>
+          <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 14 }]}>{T('clearDataPhraseHint')}</Text>
+          <TextInput
+            value={clearDataPhrase}
+            onChangeText={setClearDataPhrase}
+            placeholder={CLEAR_DATA_PHRASE}
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!clearDataBusy}
+            style={[styles.syncInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+          />
+          <View style={styles.syncActions}>
+            <Pressable
+              style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
+              onPress={() => !clearDataBusy && setClearDataModalOpen(false)}
+              disabled={clearDataBusy}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600' }}>{T('cancel')}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.syncBtnPrimary,
+                {
+                  backgroundColor:
+                    clearDataPhrase.trim().toLowerCase() === CLEAR_DATA_PHRASE ? '#b91c1c' : theme.border,
+                },
+              ]}
+              onPress={openClearDataStep3}
+              disabled={clearDataBusy || clearDataPhrase.trim().toLowerCase() !== CLEAR_DATA_PHRASE}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>{T('continue')}</Text>
             </Pressable>
           </View>
         </View>

@@ -46,6 +46,7 @@ import * as coursesDb from '../lib/coursesDb';
 import * as profileDb from '../lib/profileDb';
 import * as academicCalendarDb from '../lib/academicCalendarDb';
 import * as timetableDb from '../lib/timetableDb';
+import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO } from '../utils/date';
@@ -146,6 +147,8 @@ type AppState = {
       >
     >,
   ) => Promise<void>;
+  /** Wipes timetable, subjects, tasks, academic calendar, study times, SOW imports (DB + storage). Triple-confirm in UI. */
+  clearSemesterData: () => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -931,34 +934,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUserState((prev) => ({ ...prev, universityId, lastSync: now, studentId: sid || prev.studentId, timetable: entries }));
   }, []);
 
+  const clearSemesterData = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to clear data.');
+    await clearSemesterDataFromDatabase(uid);
+    await cancelAllRevisionNotifications();
+    await persistRevision(defaultRevision);
+    setRevisionState(defaultRevision);
+    setRevisionSettingsList([]);
+    await persistCourses([]);
+    setCourses([]);
+    setTasks([]);
+    setTasksVersion((v) => v + 1);
+    setTimetable([]);
+    setAcademicCalendar(null);
+    await persistSubjectColors({});
+    setSubjectColorsState({});
+    await persistPinnedTaskIds([]);
+    setPinnedTaskIds([]);
+    await persistCompletedStudies([]);
+    setCompletedStudyKeys([]);
+    setPendingExtraction('');
+    const progress = getAcademicProgress(initialUser.startDate, 14);
+    setUserState((prev) => ({
+      ...prev,
+      startDate: initialUser.startDate,
+      currentWeek: progress.week,
+      isBreak: progress.isBreak,
+      semesterPhase: progress.semesterPhase,
+      timetable: undefined,
+    }));
+  }, []);
+
   const disconnectUniversity = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const uid = session?.user?.id;
     if (!uid) return;
-    await timetableDb.deleteTimetable(uid);
     await timetableDb.deleteUniversityConnection(uid);
     await profileDb.updateProfile(uid, {
       universityId: null,
       lastSync: null,
-      campus: '',
-      faculty: '',
-      studyMode: '',
-      currentSemester: 0,
-      mystudentEmail: '',
-      portalTeachingAnchoredSemester: null,
     });
-    setTimetable([]);
     setUserState((prev) => ({
       ...prev,
       universityId: undefined,
       lastSync: undefined,
-      timetable: undefined,
-      campus: '',
-      faculty: '',
-      studyMode: '',
-      currentSemester: undefined,
-      mystudentEmail: '',
-      portalTeachingAnchoredSemester: undefined,
     }));
   }, []);
 
@@ -1166,6 +1187,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     weekStartsOn,
     setWeekStartsOn,
     updateTimetableEntry,
+    clearSemesterData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

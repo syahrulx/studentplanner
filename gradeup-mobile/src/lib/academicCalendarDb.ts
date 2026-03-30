@@ -53,3 +53,8 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
   if (error || !data) return rowToCalendar(row as Record<string, unknown>);
   return rowToCalendar(data as Record<string, unknown>);
 }
+
+export async function deleteAllCalendarsForUser(userId: string): Promise<void> {
+  const { error } = await supabase.from(TABLE).delete().eq('user_id', userId);
+  if (error) throw new Error(error.message || 'Failed to delete academic calendar');
+}
