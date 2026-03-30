@@ -32,5 +32,7 @@ export default ({ config }) => ({
     spotifyClientId: process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID || '',
     /** Must match Storage bucket id in the same Supabase project as supabaseUrl */
     sowFilesBucket: process.env.EXPO_PUBLIC_SOW_BUCKET || 'sow-files',
+    /** UiTM MyStudent Firebase API key (Identity Toolkit Web API). */
+    firebaseWebApiKey: process.env.EXPO_PUBLIC_FIREBASE_WEB_API_KEY || '',
   },
 });

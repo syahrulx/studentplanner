@@ -22,7 +22,10 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 /** Public Firebase Web API key from MyStudent PWA bundle (client-exposed). */
-const FIREBASE_WEB_API_KEY = 'AIzaSyCzaZT_qsgrbWBmtFJ0Sg3I-eJbZtntbpM';
+const FIREBASE_WEB_API_KEY_FALLBACK = 'AIzaSyCzaZT_qsgrbWBmtFJ0Sg3I-eJbZtntbpM';
+const FIREBASE_WEB_API_KEY =
+  (typeof Deno !== 'undefined' ? Deno.env.get('FIREBASE_WEB_API_KEY') : undefined)?.trim() ||
+  FIREBASE_WEB_API_KEY_FALLBACK;
 
 /** Same project as mystudent.uitm.edu.my (from app bundle). */
 const FIRESTORE_PROJECT_ID = 'universiti-tekno-1581783266917';
@@ -134,6 +137,13 @@ async function firebaseSignIn(
   };
   if (!res.ok) {
     const code = j.error?.message || '';
+    if (
+      /api key expired|key expired|api_key_expired|invalid api key|not valid api key/i.test(code)
+    ) {
+      throw new Error(
+        'MyStudent Firebase API key has expired. Renew it and set `FIREBASE_WEB_API_KEY` for the Supabase function (or update the hardcoded fallback).',
+      );
+    }
     if (
       code.includes('INVALID_PASSWORD') ||
       code.includes('INVALID_LOGIN_CREDENTIALS') ||

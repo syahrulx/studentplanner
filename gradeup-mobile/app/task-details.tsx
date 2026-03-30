@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
+import { useTheme } from '@/hooks/useTheme';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { formatDisplayDate } from '@/src/utils/date';
 import { Priority } from '@/src/types';
@@ -37,6 +38,7 @@ function getDaysUntilDue(dueDate: string): number {
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tasks, toggleTaskDone, deleteTask, language } = useApp();
+  const theme = useTheme();
   const {
     filteredFriends, circles,
     shareTaskWithFriend, shareTaskWithCircle,
@@ -62,13 +64,16 @@ export default function TaskDetails() {
 
   if (!task) {
     return (
-      <View style={s.emptyContainer}>
-        <View style={s.emptyIcon}>
-          <Feather name="alert-circle" size={32} color={TEXT_SECONDARY} />
+      <View style={[s.emptyContainer, { backgroundColor: theme.background }]}>
+        <View style={[s.emptyIcon, { backgroundColor: theme.backgroundSecondary }]}>
+          <Feather name="alert-circle" size={32} color={theme.textSecondary} />
         </View>
-        <Text style={s.emptyTitle}>{T('taskNotFound')}</Text>
-        <Pressable onPress={() => router.back()} style={s.emptyBackBtn}>
-          <Text style={s.emptyBackText}>{T('back')}</Text>
+        <Text style={[s.emptyTitle, { color: theme.textSecondary }]}>{T('taskNotFound')}</Text>
+        <Pressable
+          onPress={() => router.back()}
+          style={[s.emptyBackBtn, { backgroundColor: theme.primary }]}
+        >
+          <Text style={[s.emptyBackText, { color: theme.textInverse }]}>{T('back')}</Text>
         </Pressable>
       </View>
     );
@@ -155,15 +160,21 @@ export default function TaskDetails() {
     : `${daysLeft} days left`;
 
   return (
-    <View style={s.container}>
+    <View style={[s.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={s.header}>
-        <Pressable onPress={() => router.back()} style={s.headerBtn}>
-          <Feather name="chevron-left" size={24} color={TEXT_PRIMARY} />
+      <View style={[s.header, { backgroundColor: theme.background }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[s.headerBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+        >
+          <Feather name="chevron-left" size={24} color={theme.text} />
         </Pressable>
-        <Text style={s.headerTitle}>{T('taskDetails')}</Text>
-        <Pressable onPress={handleNativeShare} style={s.headerBtn}>
-          <Feather name="share" size={20} color={TEXT_PRIMARY} />
+        <Text style={[s.headerTitle, { color: theme.text }]}>{T('taskDetails')}</Text>
+        <Pressable
+          onPress={handleNativeShare}
+          style={[s.headerBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+        >
+          <Feather name="share" size={20} color={theme.text} />
         </Pressable>
       </View>
 
@@ -178,70 +189,77 @@ export default function TaskDetails() {
             <Text style={s.badgeCourseText}>{task.courseId}</Text>
           </View>
           <View style={s.badgeType}>
-            <Text style={s.badgeTypeText}>{task.type}</Text>
+            <Text style={[s.badgeTypeText, { color: theme.textSecondary }]}>{task.type}</Text>
           </View>
           {task.isDone && (
             <View style={s.badgeDone}>
               <Feather name="check" size={12} color="#16a34a" />
-              <Text style={s.badgeDoneText}>{T('completed')}</Text>
+              <Text style={[s.badgeDoneText, { color: theme.success }]}>{T('completed')}</Text>
       </View>
           )}
         </View>
 
         {/* Title */}
-        <Text style={s.title}>{task.title}</Text>
+        <Text style={[s.title, { color: theme.text }]}>{task.title}</Text>
 
         {/* Urgency Pill */}
         <View style={[s.urgencyPill, isOverdue && s.urgencyOverdue, isDueSoon && s.urgencySoon]}>
           <Feather 
             name={isOverdue ? 'alert-triangle' : 'clock'} 
             size={14} 
-            color={isOverdue ? RED : isDueSoon ? '#d97706' : NAVY} 
+            color={isOverdue ? theme.danger : isDueSoon ? theme.warning : theme.primary} 
           />
-          <Text style={[s.urgencyText, isOverdue && { color: RED }, isDueSoon && { color: '#d97706' }]}>
+          <Text
+            style={[
+              s.urgencyText,
+              { color: theme.text },
+              isOverdue && { color: theme.danger },
+              isDueSoon && { color: theme.warning },
+            ]}
+          >
             {urgencyLabel}
           </Text>
         </View>
 
         {/* Info Cards */}
         <View style={s.infoGrid}>
-          <View style={s.infoCard}>
+          <View style={[s.infoCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
             <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
-              <Feather name="calendar" size={18} color={NAVY} />
+              <Feather name="calendar" size={18} color={theme.primary} />
             </View>
             <View>
-              <Text style={s.infoLabel}>{T('dueDate')}</Text>
-              <Text style={s.infoValue}>{formatDisplayDate(task.dueDate)}</Text>
+              <Text style={[s.infoLabel, { color: theme.textSecondary }]}>{T('dueDate')}</Text>
+              <Text style={[s.infoValue, { color: theme.text }]}>{formatDisplayDate(task.dueDate)}</Text>
             </View>
           </View>
 
-          <View style={s.infoCard}>
+          <View style={[s.infoCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
             <View style={[s.infoIconWrap, { backgroundColor: 'rgba(0,51,102,0.06)' }]}>
-              <Feather name="clock" size={18} color={NAVY} />
+              <Feather name="clock" size={18} color={theme.primary} />
             </View>
             <View>
-              <Text style={s.infoLabel}>{T('deadline')}</Text>
-              <Text style={s.infoValue}>{(task.dueTime || '').slice(0, 5)}</Text>
+              <Text style={[s.infoLabel, { color: theme.textSecondary }]}>{T('deadline')}</Text>
+              <Text style={[s.infoValue, { color: theme.text }]}>{(task.dueTime || '').slice(0, 5)}</Text>
             </View>
           </View>
 
-          <View style={s.infoCard}>
+          <View style={[s.infoCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
             <View style={[s.infoIconWrap, { backgroundColor: priorityConfig.bg }]}>
               <Feather name="flag" size={18} color={priorityConfig.color} />
         </View>
             <View>
-              <Text style={s.infoLabel}>{T('priority')}</Text>
+              <Text style={[s.infoLabel, { color: theme.textSecondary }]}>{T('priority')}</Text>
               <Text style={[s.infoValue, { color: priorityConfig.color }]}>{priorityConfig.label}</Text>
         </View>
       </View>
 
-          <View style={s.infoCard}>
+          <View style={[s.infoCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
             <View style={[s.infoIconWrap, { backgroundColor: 'rgba(245,158,11,0.06)' }]}>
-              <Feather name="zap" size={18} color={GOLD} />
+              <Feather name="zap" size={18} color={theme.accent} />
             </View>
             <View>
-              <Text style={s.infoLabel}>{T('estEffort')}</Text>
-              <Text style={s.infoValue}>{task.effort} {T('hours')}</Text>
+              <Text style={[s.infoLabel, { color: theme.textSecondary }]}>{T('estEffort')}</Text>
+              <Text style={[s.infoValue, { color: theme.text }]}>{task.effort} {T('hours')}</Text>
             </View>
           </View>
         </View>
@@ -249,30 +267,38 @@ export default function TaskDetails() {
         {/* Share Section */}
         <View style={s.pledgeSection}>
           <Pressable
-            style={({ pressed }) => [s.pledgeBtn, pressed && { opacity: 0.8 }]}
+            style={({ pressed }) => [
+              s.pledgeBtn,
+              { backgroundColor: theme.focusCard, borderColor: theme.cardBorder },
+              pressed && { opacity: 0.8 },
+            ]}
             onPress={() => setShowShareModal(true)}
           >
-            <View style={s.pledgeBtnIconWrap}>
-              <Feather name={isAlreadyShared ? 'users' : 'send'} size={20} color={NAVY} />
+            <View style={[s.pledgeBtnIconWrap, { backgroundColor: theme.primary + '20' }]}>
+              <Feather
+                name={isAlreadyShared ? 'users' : 'send'}
+                size={20}
+                color={theme.primary}
+              />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.pledgeBtnTitle}>
+              <Text style={[s.pledgeBtnTitle, { color: theme.text }]}>
                 {isAlreadyShared ? 'Shared Task' : 'Share with Friends'}
               </Text>
-              <Text style={s.pledgeBtnSub}>
+              <Text style={[s.pledgeBtnSub, { color: theme.primary }]}>
                 {isAlreadyShared
                   ? `Shared with ${participants.length} ${participants.length === 1 ? 'person' : 'people'}`
                   : 'Send to a friend or circle for accountability'}
               </Text>
             </View>
-            <Feather name="chevron-right" size={20} color={TEXT_SECONDARY} />
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
 
           {isAlreadyShared && (
             <View style={s.participantRow}>
               {participants.slice(0, 5).map((p, idx) => (
                 <View key={p.id} style={[s.participantAvatar, idx > 0 && { marginLeft: -8 }]}>
-                  <Text style={s.participantInitial}>
+                  <Text style={[s.participantInitial, { color: theme.text }]}>
                     {(p.recipient_profile?.name || p.owner_profile?.name || '?').charAt(0)}
                   </Text>
                   {p.recipient_completed && (
@@ -283,7 +309,7 @@ export default function TaskDetails() {
                 </View>
               ))}
               {participants.length > 5 && (
-                <Text style={s.participantMore}>+{participants.length - 5}</Text>
+                <Text style={[s.participantMore, { color: theme.textSecondary }]}>+{participants.length - 5}</Text>
               )}
             </View>
           )}
@@ -293,11 +319,11 @@ export default function TaskDetails() {
         {task.notes ? (
         <View style={s.notesSection}>
           <View style={s.notesSectionHeader}>
-            <Feather name="file-text" size={14} color={TEXT_SECONDARY} />
-            <Text style={s.notesSectionTitle}>{T('notesLabel')}</Text>
+            <Feather name="file-text" size={14} color={theme.textSecondary} />
+            <Text style={[s.notesSectionTitle, { color: theme.textSecondary }]}>{T('notesLabel')}</Text>
           </View>
-          <View style={s.notesCard}>
-            <Text style={s.notesBody}>{task.notes}</Text>
+          <View style={[s.notesCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+            <Text style={[s.notesBody, { color: theme.text }]}>{task.notes}</Text>
           </View>
         </View>
         ) : null}
@@ -306,19 +332,21 @@ export default function TaskDetails() {
         {task.sourceMessage ? (
         <View style={s.sourceSection}>
           <View style={s.sourceHeaderRow}>
-            <Text style={s.sourceSectionTitle}>{T('whatsappSource')}</Text>
+            <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>{T('whatsappSource')}</Text>
             <View style={s.verifiedPill}>
               <View style={s.verifiedDot} />
-              <Text style={s.verifiedLabel}>{T('verifiedByAi')}</Text>
+              <Text style={[s.verifiedLabel, { color: theme.success }]}>{T('verifiedByAi')}</Text>
             </View>
           </View>
-          <View style={s.sourceCard}>
+          <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
             <View style={s.sourceTagWrap}>
-              <Feather name="message-circle" size={12} color={TEXT_SECONDARY} />
-              <Text style={s.sourceTagText}>{T('messageLog')}</Text>
+              <Feather name="message-circle" size={12} color={theme.textSecondary} />
+              <Text style={[s.sourceTagText, { color: theme.textSecondary }]}>{T('messageLog')}</Text>
             </View>
-            <Text style={s.sourceBody}>"{task.sourceMessage}"</Text>
-            <Text style={s.sourceTimestamp}>
+            <Text style={[s.sourceBody, { color: theme.text }]}>
+              "{task.sourceMessage}"
+            </Text>
+            <Text style={[s.sourceTimestamp, { color: theme.textSecondary }]}>
               {`${T('extractedOn')} ${formatDisplayDate(task.dueDate)} • ${(task.dueTime || '').slice(0, 5)}`}
             </Text>
           </View>
@@ -327,19 +355,46 @@ export default function TaskDetails() {
       </ScrollView>
 
       {/* Sticky Bottom Actions */}
-      <View style={s.bottomBar}>
-        <Pressable onPress={handleDelete} style={({ pressed }) => [s.actionBtn, s.deleteBtn, pressed && { opacity: 0.7 }]}>
-          <Feather name="trash-2" size={20} color={RED} />
-        </Pressable>
-        <Pressable onPress={handleEdit} style={({ pressed }) => [s.actionBtn, s.editBtn, pressed && { opacity: 0.7 }]}>
-          <Feather name="edit-2" size={18} color={NAVY} />
+      <View style={[s.bottomBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+        <Pressable
+          onPress={handleDelete}
+          style={({ pressed }) => [
+            s.actionBtn,
+            s.deleteBtn,
+            pressed && { opacity: 0.7 },
+            {
+              backgroundColor: theme.danger + '22',
+              borderColor: theme.danger + '33',
+            },
+          ]}
+        >
+          <Feather name="trash-2" size={20} color={theme.danger} />
         </Pressable>
         <Pressable
-          style={({ pressed }) => [s.mainActionBtn, task.isDone && s.mainActionBtnDone, pressed && { opacity: 0.85 }]}
+          onPress={handleEdit}
+          style={({ pressed }) => [
+            s.actionBtn,
+            s.editBtn,
+            pressed && { opacity: 0.7 },
+            {
+              backgroundColor: theme.primary + '22',
+              borderColor: theme.primary + '33',
+            },
+          ]}
+        >
+          <Feather name="edit-2" size={18} color={theme.primary} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            s.mainActionBtn,
+            task.isDone && s.mainActionBtnDone,
+            pressed && { opacity: 0.85 },
+            { backgroundColor: task.isDone ? theme.textSecondary : theme.primary },
+          ]}
           onPress={handleToggle}
         >
-          <Feather name={task.isDone ? 'rotate-ccw' : 'check'} size={20} color="#ffffff" />
-          <Text style={s.mainActionText}>
+          <Feather name={task.isDone ? 'rotate-ccw' : 'check'} size={20} color={theme.textInverse} />
+          <Text style={[s.mainActionText, { color: theme.textInverse }]}>
             {task.isDone ? T('completed') : T('markAsDone')}
           </Text>
         </Pressable>
@@ -348,18 +403,20 @@ export default function TaskDetails() {
       {/* Modal: Share Task */}
       <Modal visible={showShareModal} transparent animationType="slide">
         <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
+          <View style={[s.modalContent, { backgroundColor: theme.card }]}>
             <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>Share Task</Text>
+              <Text style={[s.modalTitle, { color: theme.text }]}>Share Task</Text>
               <Pressable onPress={() => setShowShareModal(false)} style={s.modalCloseBtn} hitSlop={10}>
-                <Feather name="x" size={24} color={TEXT_SECONDARY} />
+                <Feather name="x" size={24} color={theme.textSecondary} />
               </Pressable>
             </View>
 
             {/* Task Preview */}
-            <View style={s.sharePreview}>
-              <Feather name="file-text" size={16} color={NAVY} />
-              <Text style={s.sharePreviewText} numberOfLines={1}>{task.title}</Text>
+            <View style={[s.sharePreview, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="file-text" size={16} color={theme.primary} />
+              <Text style={[s.sharePreviewText, { color: theme.text }]} numberOfLines={1}>
+                {task.title}
+              </Text>
             </View>
 
             {/* Tab Selector */}
@@ -368,15 +425,27 @@ export default function TaskDetails() {
                 style={[s.typeCard, shareTab === 'friend' && s.typeCardActive]}
                 onPress={() => setShareTab('friend')}
               >
-                <Feather name="user" size={18} color={shareTab === 'friend' ? NAVY : TEXT_SECONDARY} />
-                <Text style={[s.typeCardText, shareTab === 'friend' && s.typeCardTextActive]}>Friend</Text>
+                <Feather
+                  name="user"
+                  size={18}
+                  color={shareTab === 'friend' ? theme.primary : theme.textSecondary}
+                />
+                <Text style={[s.typeCardText, { color: shareTab === 'friend' ? theme.primary : theme.textSecondary }]}>
+                  Friend
+                </Text>
               </Pressable>
               <Pressable
                 style={[s.typeCard, shareTab === 'circle' && s.typeCardActive]}
                 onPress={() => setShareTab('circle')}
               >
-                <Feather name="users" size={18} color={shareTab === 'circle' ? NAVY : TEXT_SECONDARY} />
-                <Text style={[s.typeCardText, shareTab === 'circle' && s.typeCardTextActive]}>Circle</Text>
+                <Feather
+                  name="users"
+                  size={18}
+                  color={shareTab === 'circle' ? theme.primary : theme.textSecondary}
+                />
+                <Text style={[s.typeCardText, { color: shareTab === 'circle' ? theme.primary : theme.textSecondary }]}>
+                  Circle
+                </Text>
               </Pressable>
             </View>
 
@@ -384,7 +453,7 @@ export default function TaskDetails() {
               {shareTab === 'friend' ? (
                 <>
                   {filteredFriends.length === 0 ? (
-                    <Text style={s.noFriendsText}>Add friends in the Community tab first!</Text>
+                    <Text style={[s.noFriendsText, { color: theme.textSecondary }]}>Add friends in the Community tab first!</Text>
                   ) : (
                     <View style={s.friendsList}>
                       {filteredFriends.map(friend => (
@@ -394,13 +463,17 @@ export default function TaskDetails() {
                           onPress={() => { setSelectedFriendId(friend.id); setSelectedCircleId(null); }}
                         >
                           <View style={s.friendAvatarWrap}>
-                            <Text style={s.friendAvatarText}>{friend.name.charAt(0)}</Text>
+                            <Text style={[s.friendAvatarText, { color: theme.text }]}>
+                              {friend.name.charAt(0)}
+                            </Text>
                           </View>
                           <View style={{ flex: 1 }}>
-                            <Text style={[s.friendName, selectedFriendId === friend.id && s.friendNameActive]}>{friend.name}</Text>
+                            <Text style={[s.friendName, { color: selectedFriendId === friend.id ? theme.primary : theme.text }]}>
+                              {friend.name}
+                            </Text>
                           </View>
                           {selectedFriendId === friend.id && (
-                            <Feather name="check-circle" size={20} color={NAVY} />
+                            <Feather name="check-circle" size={20} color={theme.primary} />
                           )}
                         </Pressable>
                       ))}
@@ -410,7 +483,7 @@ export default function TaskDetails() {
               ) : (
                 <>
                   {circles.length === 0 ? (
-                    <Text style={s.noFriendsText}>Create or join a circle first!</Text>
+                    <Text style={[s.noFriendsText, { color: theme.textSecondary }]}>Create or join a circle first!</Text>
                   ) : (
                     <View style={s.friendsList}>
                       {circles.map(circle => (
@@ -420,16 +493,20 @@ export default function TaskDetails() {
                           onPress={() => { setSelectedCircleId(circle.id); setSelectedFriendId(null); }}
                         >
                           <View style={s.friendAvatarWrap}>
-                            <Text style={s.friendAvatarText}>{circle.emoji}</Text>
+                            <Text style={[s.friendAvatarText, { color: theme.text }]}>
+                              {circle.emoji}
+                            </Text>
                           </View>
                           <View style={{ flex: 1 }}>
-                            <Text style={[s.friendName, selectedCircleId === circle.id && s.friendNameActive]}>{circle.name}</Text>
-                            <Text style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>
+                            <Text style={[s.friendName, { color: selectedCircleId === circle.id ? theme.primary : theme.text }]}>
+                              {circle.name}
+                            </Text>
+                            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                               {circle.member_count || 0} members
                             </Text>
                           </View>
                           {selectedCircleId === circle.id && (
-                            <Feather name="check-circle" size={20} color={NAVY} />
+                            <Feather name="check-circle" size={20} color={theme.primary} />
                           )}
                         </Pressable>
                       ))}
@@ -442,7 +519,7 @@ export default function TaskDetails() {
               <TextInput
                 style={s.shareMessageInput}
                 placeholder="Add a note (optional)"
-                placeholderTextColor={TEXT_SECONDARY}
+                placeholderTextColor={theme.textSecondary}
                 value={shareMessage}
                 onChangeText={setShareMessage}
                 maxLength={200}
@@ -454,14 +531,15 @@ export default function TaskDetails() {
                 style={[
                   s.confirmBtn,
                   (isSharing || (shareTab === 'friend' ? !selectedFriendId : !selectedCircleId)) && s.confirmBtnDisabled,
+                  { backgroundColor: theme.primary },
                 ]}
                 disabled={isSharing || (shareTab === 'friend' ? !selectedFriendId : !selectedCircleId)}
                 onPress={handleShare}
               >
                 {isSharing ? (
-                  <ActivityIndicator color="#ffffff" />
+                  <ActivityIndicator color={theme.textInverse} />
                 ) : (
-                  <Text style={s.confirmBtnText}>Share</Text>
+                  <Text style={[s.confirmBtnText, { color: theme.textInverse }]}>Share</Text>
                 )}
               </Pressable>
             </View>

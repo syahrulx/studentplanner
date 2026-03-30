@@ -17,6 +17,10 @@
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+      },
+      "bundleIdentifier": "com.anonymous.gradeupmobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -30,7 +34,8 @@
         "googleMaps": {
           "apiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
         }
-      }
+      },
+      "package": "com.anonymous.gradeupmobile"
     },
     "web": {
       "bundler": "metro",
