@@ -506,13 +506,18 @@ export default function UploadSOW() {
           <View
             style={[
               styles.weekSyncBanner,
-              { backgroundColor: '#fef3c7', borderColor: '#f59e0b' },
+              { backgroundColor: theme.warning + '22', borderColor: theme.warning },
             ]}
           >
-            <Feather name="alert-triangle" size={18} color="#b45309" style={{ marginRight: 10, marginTop: 2 }} />
+            <Feather
+              name="alert-triangle"
+              size={18}
+              color={theme.warning}
+              style={{ marginRight: 10, marginTop: 2 }}
+            />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.weekSyncBannerTitle, { color: '#92400e' }]}>Calendar / SOW mismatch</Text>
-              <Text style={[styles.weekSyncBannerBody, { color: '#78350f' }]}>
+              <Text style={[styles.weekSyncBannerTitle, { color: theme.warning }]}>Calendar / SOW mismatch</Text>
+              <Text style={[styles.weekSyncBannerBody, { color: theme.textSecondary }]}>
                 Semester Pulse shows week {user.isBreak ? 'break' : user.currentWeek} of {totalSemesterWeeks}. Some
                 imported dates or week hints don’t line up — saving will show which weeks are affected.
               </Text>
@@ -582,7 +587,7 @@ export default function UploadSOW() {
                       onPress={() => confirmRemoveSubjectFromImport(i, s)}
                       style={({ pressed }) => [styles.cardActionBtn, pressed && { opacity: 0.65 }]}
                     >
-                      <Feather name="trash-2" size={18} color="#ef4444" />
+                      <Feather name="trash-2" size={18} color={theme.danger} />
                     </Pressable>
                   </View>
                 </View>
@@ -748,7 +753,7 @@ export default function UploadSOW() {
                       onPress={() => confirmRemoveTaskFromImport(i, t.title)}
                       style={({ pressed }) => [styles.cardActionBtn, pressed && { opacity: 0.65 }]}
                     >
-                      <Feather name="trash-2" size={18} color="#ef4444" />
+                      <Feather name="trash-2" size={18} color={theme.danger} />
                     </Pressable>
                   </View>
                 </View>
@@ -924,13 +929,13 @@ export default function UploadSOW() {
         >
           {isSaving ? (
             <>
-              <ActivityIndicator size="small" color="#fff" />
-              <Text style={styles.saveBtnText}>Saving...</Text>
+              <ActivityIndicator size="small" color={theme.textInverse} />
+              <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>Saving...</Text>
             </>
           ) : (
             <>
-              <Feather name="check" size={20} color="#fff" />
-              <Text style={styles.saveBtnText}>
+              <Feather name="check" size={20} color={theme.textInverse} />
+              <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>
                 Confirm & Save to My Account
               </Text>
             </>
@@ -952,7 +957,7 @@ export default function UploadSOW() {
   // ---------- DEFAULT / PICK FILE VIEW ----------
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: '#ffffff' }]}
+      style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
@@ -970,7 +975,7 @@ export default function UploadSOW() {
       </View>
 
       {/* How it works */}
-      <View style={[styles.howItWorks, { backgroundColor: '#e0f2fe', borderColor: theme.border }]}>
+      <View style={[styles.howItWorks, { backgroundColor: theme.focusCard, borderColor: theme.border }]}>
         <View style={[styles.howIconWrap, { backgroundColor: theme.primary + '20' }]}>
           <Feather name="upload" size={22} color={theme.primary} />
         </View>
@@ -997,7 +1002,7 @@ export default function UploadSOW() {
                 (t) => t.courseId.toUpperCase() === course.id.toUpperCase()
               ).length;
               return (
-          <View key={course.id} style={[styles.subjectCard, { borderColor: '#86efac', backgroundColor: '#ffffff' }]}>
+          <View key={course.id} style={[styles.subjectCard, { borderColor: theme.cardBorder, backgroundColor: theme.card }]}>
             <View style={styles.subjectCardTop}>
               <View style={[styles.codePill, { backgroundColor: theme.primary }]}>
                 <Text style={styles.codePillText}>{course.id}</Text>
@@ -1014,7 +1019,7 @@ export default function UploadSOW() {
                       style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.6 }]}
                       onPress={() => handleDeleteCourse(course.id, course.name)}
                     >
-                      <Feather name="trash-2" size={18} color="#ef4444" />
+                      <Feather name="trash-2" size={18} color={theme.danger} />
                     </Pressable>
               </View>
             </View>
@@ -1054,13 +1059,13 @@ export default function UploadSOW() {
       >
         {isBusy ? (
           <>
-            <ActivityIndicator size="small" color="#fff" />
-            <Text style={styles.saveBtnText}>Analyzing PDF...</Text>
+            <ActivityIndicator size="small" color={theme.textInverse} />
+            <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>Analyzing PDF...</Text>
           </>
         ) : (
           <>
-            <Feather name="cpu" size={20} color="#fff" />
-            <Text style={styles.saveBtnText}>Extract Subjects & Tasks</Text>
+            <Feather name="cpu" size={20} color={theme.textInverse} />
+            <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>Extract Subjects & Tasks</Text>
           </>
         )}
       </Pressable>

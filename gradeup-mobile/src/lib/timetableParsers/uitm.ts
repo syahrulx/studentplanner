@@ -1,4 +1,5 @@
-import type { TimetableEntry } from '../../types';
+import type { DayOfWeek, TimetableEntry } from '../../types';
+import Constants from 'expo-constants';
 
 /**
  * UiTM MyStudent timetable fetcher — runs entirely on the client.
@@ -13,7 +14,10 @@ import type { TimetableEntry } from '../../types';
  * comes from the MyStudent PWA bundle — it is client-exposed by design.
  */
 
-const FIREBASE_WEB_API_KEY = 'AIzaSyCzaZT_qsgrbWBmtFJ0Sg3I-eJbZtntbpM';
+const FIREBASE_WEB_API_KEY_FALLBACK = 'AIzaSyCzaZT_qsgrbWBmtFJ0Sg3I-eJbZtntbpM';
+const FIREBASE_WEB_API_KEY =
+  ((Constants.expoConfig?.extra as any)?.firebaseWebApiKey as string | undefined)?.trim() ||
+  FIREBASE_WEB_API_KEY_FALLBACK;
 const FIRESTORE_PROJECT_ID = 'universiti-tekno-1581783266917';
 const MYSTUDENT_CDN = 'https://cdn.uitm.link/jadual/baru/';
 
@@ -201,18 +205,29 @@ async function firebaseSignIn(
       body,
     });
     const raw = await res.text();
-    let j: {
+    type FirebaseSignInResponse = {
       idToken?: string;
       email?: string;
       displayName?: string;
       error?: { message?: string };
-    } | null = null;
+    };
+
+    let j: FirebaseSignInResponse | null = null;
     try {
-      j = raw ? (JSON.parse(raw) as typeof j) : null;
+      j = raw ? (JSON.parse(raw) as FirebaseSignInResponse) : null;
     } catch {
       j = null;
     }
     const errMsg = (j?.error?.message || (raw && !j ? raw : '') || '').trim();
+
+    const apiKeyExpired =
+      /api key expired|key expired|api_key_expired|invalid api key|not valid api key/i.test(errMsg) ||
+      /api key expired|key expired|api_key_expired|invalid api key|not valid api key/i.test(raw);
+    if (apiKeyExpired) {
+      throw new Error(
+        'MyStudent Firebase API key has expired. Renew the API key in Google Cloud/Firebase and set it as `EXPO_PUBLIC_FIREBASE_WEB_API_KEY` (or `firebaseWebApiKey` in `app.config.js` extra).',
+      );
+    }
 
     if (res.ok && j?.idToken) {
       const resolved = (j.email || email).trim();
@@ -673,17 +688,23 @@ async function fetchIcressStudentPage(matric: string): Promise<TimetableRow[]> {
 
 function rowsToEntries(rows: TimetableRow[]): TimetableEntry[] {
   let idCounter = 0;
-  return rows.map((r) => ({
-    id: `uitm-${++idCounter}`,
-    day: r.day,
-    subjectCode: r.subjectCode,
-    subjectName: r.subjectName,
-    lecturer: r.lecturer || '-',
-    startTime: r.startTime,
-    endTime: r.endTime,
-    location: r.location || '-',
-    group: r.group || undefined,
-  }));
+  const out: TimetableEntry[] = [];
+  for (const r of rows) {
+    const day = normalizeDay(r.day);
+    if (!day) continue; // Skip malformed rows so we always satisfy DayOfWeek
+    out.push({
+      id: `uitm-${++idCounter}`,
+      day: day as DayOfWeek,
+      subjectCode: r.subjectCode,
+      subjectName: r.subjectName,
+      lecturer: r.lecturer || '-',
+      startTime: r.startTime,
+      endTime: r.endTime,
+      location: r.location || '-',
+      group: r.group || undefined,
+    });
+  }
+  return out;
 }
 
 // ── Public API ──────────────────────────────────────────────
