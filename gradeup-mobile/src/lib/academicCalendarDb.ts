@@ -1,13 +1,23 @@
 import { supabase } from './supabase';
 import type { AcademicCalendar } from '../types';
 
-const TABLE = 'academic_calendar';
+const TABLE = 'academic_calendars';
 
 function rowToCalendar(row: Record<string, unknown>): AcademicCalendar {
   const start = row.start_date != null ? String(row.start_date).slice(0, 10) : '';
   const end = row.end_date != null ? String(row.end_date).slice(0, 10) : '';
   const breakStart = row.break_start_date != null ? String(row.break_start_date).slice(0, 10) : undefined;
   const breakEnd = row.break_end_date != null ? String(row.break_end_date).slice(0, 10) : undefined;
+  const periodsRaw = (row.periods_json as unknown) ?? undefined;
+  const periods =
+    Array.isArray(periodsRaw)
+      ? (periodsRaw as any[]).filter(Boolean).map((p) => ({
+          type: String((p as any)?.type ?? 'other'),
+          label: String((p as any)?.label ?? ''),
+          startDate: String((p as any)?.startDate ?? '').slice(0, 10),
+          endDate: String((p as any)?.endDate ?? '').slice(0, 10),
+        }))
+      : undefined;
   return {
     id: String(row.id),
     userId: row.user_id != null ? String(row.user_id) : undefined,
@@ -17,6 +27,7 @@ function rowToCalendar(row: Record<string, unknown>): AcademicCalendar {
     totalWeeks: Number(row.total_weeks) || 14,
     breakStartDate: breakStart || undefined,
     breakEndDate: breakEnd || undefined,
+    periods: periods && periods.length > 0 ? (periods as any) : undefined,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at != null ? String(row.created_at) : undefined,
   };
@@ -43,6 +54,7 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     total_weeks: calendar.totalWeeks,
     break_start_date: calendar.breakStartDate ?? null,
     break_end_date: calendar.breakEndDate ?? null,
+    periods_json: calendar.periods ?? null,
     is_active: calendar.isActive ?? true,
   };
   const { data, error } = await supabase

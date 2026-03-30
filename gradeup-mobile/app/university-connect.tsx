@@ -10,8 +10,10 @@ import { useTheme } from '@/hooks/useTheme';
 import { useTranslations, type TranslationKey } from '@/src/i18n';
 import { searchUniversities, getUniversityById } from '@/src/lib/universities';
 import { getTodayISO } from '@/src/utils/date';
+import { fetchUitmAcademicCalendar } from '@/src/lib/uitmAcademicCalendar';
 import {
   fetchUitmTimetable,
+  fetchUitmTimetablePublic,
   matricFromStudentLoginInput,
   profileUpdatesFromMyStudentPayload,
   type MyStudentProfilePayload,
@@ -42,35 +44,30 @@ export default function UniversityConnectScreen() {
   const {
     language,
     user,
-    saveTimetableAndLink,
+    saveTimetableOnly,
     addCourse,
     courses,
     academicCalendar,
     updateAcademicCalendar,
     updateProfile,
-    disconnectUniversity,
   } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
 
-  const [step, setStep] = useState<Step>('university');
-  const [selectedUni, setSelectedUni] = useState<UniversityConfig | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [step, setStep] = useState<Step>('login');
+  const [selectedUni, setSelectedUni] = useState<UniversityConfig | null>(() => getUniversityById('uitm') ?? null);
+  const [searchQuery, setSearchQuery] = useState(''); // legacy (kept to minimize churn)
   const [studentEmail, setStudentEmail] = useState('');
   const [resolvedMatric, setResolvedMatric] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] = useState(''); // no longer required (kept for backwards UI stability)
+  const [showPassword, setShowPassword] = useState(false); // no longer required
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [campusInfo, setCampusInfo] = useState<string | undefined>();
   const [coursesInput, setCoursesInput] = useState('');
   const [lastMyStudentProfile, setLastMyStudentProfile] = useState<MyStudentProfilePayload | null>(null);
 
-  const filteredUnis = searchUniversities(searchQuery);
-
-  useEffect(() => {
-    if (user.universityId) setStep('already_connected');
-  }, [user.universityId]);
+  const filteredUnis = searchUniversities(searchQuery); // legacy
 
   useEffect(() => {
     if (step === 'terms' && !selectedUni) setStep('university');
@@ -91,10 +88,6 @@ export default function UniversityConnectScreen() {
       Alert.alert(T('error'), T('studentEmailLabel'));
       return;
     }
-    if (!password.trim()) {
-      Alert.alert(T('error'), T('passwordLabel'));
-      return;
-    }
 
     const coursesList = coursesInput
       .split(/[,\s]+/)
@@ -104,24 +97,36 @@ export default function UniversityConnectScreen() {
     setStep('validating');
     setLoading(true);
 
-    const timetablePromise = fetchUitmTimetable(
-      studentEmail.trim(),
-      password,
-      coursesList.length > 0 ? coursesList : undefined,
-    );
+    const usePublicOnly = selectedUni?.id === 'uitm';
+    const timetablePromise = usePublicOnly
+      ? fetchUitmTimetablePublic(
+          studentEmail.trim(),
+          coursesList.length > 0 ? coursesList : undefined,
+        )
+      : fetchUitmTimetable(
+          studentEmail.trim(),
+          password,
+          coursesList.length > 0 ? coursesList : undefined,
+        );
     const minValidateMs = 500;
     const minDelay = new Promise<void>((r) => setTimeout(r, minValidateMs));
 
     try {
       await minDelay;
       setStep('fetching');
-      const { entries: fetched, campus, matric: m, profile: mystudentProfile } = await timetablePromise;
+      const result: any = await timetablePromise;
+      const fetched = (result?.entries || []) as TimetableEntry[];
+      const campus = result?.campus as string | undefined;
+      const m = result?.matric as string | undefined;
+      const mystudentProfile = (result?.profile as MyStudentProfilePayload | undefined) ?? undefined;
       setResolvedMatric(m || matricFromStudentLoginInput(studentEmail.trim()));
 
       if (fetched.length === 0) {
         Alert.alert(
           T('noTimetable'),
-          'No timetable slots were found. Add your course codes in the optional field and try again.',
+          usePublicOnly
+            ? 'No timetable slots were found from public sources. Try adding your course codes, or enter your MyStudent password to fetch via portal login.'
+            : 'No timetable slots were found. Add your course codes in the optional field and try again.',
           [{ text: 'OK', onPress: () => setStep('login') }],
         );
         return;
@@ -129,7 +134,7 @@ export default function UniversityConnectScreen() {
 
       setCampusInfo(campus);
       setEntries(fetched);
-      setLastMyStudentProfile(mystudentProfile ?? null);
+      setLastMyStudentProfile(usePublicOnly ? null : (mystudentProfile ?? null));
       setStep('review');
     } catch (e) {
       Alert.alert(T('error'), e instanceof Error ? e.message : 'Failed to fetch timetable');
@@ -144,10 +149,13 @@ export default function UniversityConnectScreen() {
     setLoading(true);
     try {
       const studentId = resolvedMatric || matricFromStudentLoginInput(studentEmail.trim());
-      await saveTimetableAndLink(entries, selectedUni.id, studentId);
+      await saveTimetableOnly(entries);
+
+      if (studentId) {
+        await updateProfile({ studentId: studentId.trim() });
+      }
 
       await updateProfile({
-        university: selectedUni.shortName,
         ...profileUpdatesFromMyStudentPayload(lastMyStudentProfile, studentId),
       });
 
@@ -181,7 +189,21 @@ export default function UniversityConnectScreen() {
       const portalLabel =
         typeof newSem === 'number' && newSem > 0 ? `Programme semester ${newSem} (portal)` : `Teaching ${today.slice(0, 7)}`;
 
-      if (!academicCalendar) {
+      // Prefer official HEA academic calendar for UiTM so teaching weeks skip breaks/holidays.
+      // Default to Group B (Diploma/Bachelor/Master/PhD). Group A can be added as a selector later.
+      const official =
+        selectedUni?.id === 'uitm' ? await fetchUitmAcademicCalendar('B', { targetDateISO: today }) : null;
+
+      if (official?.startDate && official?.endDate) {
+        await updateAcademicCalendar({
+          semesterLabel: official.semesterLabel,
+          startDate: official.startDate,
+          endDate: official.endDate,
+          totalWeeks: official.totalWeeks ?? tw,
+          periods: official.periods,
+          isActive: true,
+        });
+      } else if (!academicCalendar) {
         await updateAcademicCalendar({
           semesterLabel: portalLabel,
           startDate: today,
@@ -368,41 +390,22 @@ export default function UniversityConnectScreen() {
           <View style={styles.loginHeader}>
             <Text style={styles.loginEmoji}>{selectedUni?.logoEmoji || '🏫'}</Text>
             <View>
-              <Text style={[styles.loginUniName, { color: theme.text }]}>{selectedUni?.shortName}</Text>
-              <Text style={[styles.loginSubtext, { color: theme.textSecondary }]}>MyStudent · mystudent.uitm.edu.my</Text>
+              <Text style={[styles.loginUniName, { color: theme.text }]}>Generate Timetable</Text>
+              <Text style={[styles.loginSubtext, { color: theme.textSecondary }]}>UiTM · Student ID only (public sources)</Text>
             </View>
           </View>
 
-          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>{T('studentEmailLabel')}</Text>
+          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Student ID</Text>
           <TextInput
             style={[styles.textField, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
             value={studentEmail}
             onChangeText={setStudentEmail}
-            placeholder={T('studentEmailPlaceholder')}
+            placeholder="e.g. 2024xxxxxx"
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="email-address"
+            keyboardType="default"
           />
-
-          <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginTop: 20 }]}>
-            {T('passwordLabel')}
-          </Text>
-          <View style={[styles.passwordWrap, { backgroundColor: theme.background, borderColor: theme.border }]}>
-            <TextInput
-              style={[styles.passwordInput, { color: theme.text }]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder={T('mystudentPasswordPlaceholder')}
-              placeholderTextColor={theme.textSecondary}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Pressable onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-              <Feather name={showPassword ? 'eye-off' : 'eye'} size={20} color={theme.textSecondary} />
-            </Pressable>
-          </View>
 
           <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginTop: 20 }]}>
             {T('optionalCourseCodes')}
@@ -418,12 +421,9 @@ export default function UniversityConnectScreen() {
           />
           <Text style={[styles.hintText, { color: theme.textSecondary }]}>{T('optionalCourseCodesHint')}</Text>
 
-          <View style={[styles.securityBanner, { backgroundColor: '#22c55e10' }]}>
-            <Feather name="lock" size={16} color="#22c55e" />
-            <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-              {T('mystudentSecurityNote')}
-            </Text>
-          </View>
+          <Text style={[styles.hintText, { color: theme.textSecondary }]}>
+            This uses public timetable sources (CDN/ICRESS). If no results, add course codes.
+          </Text>
         </View>
 
         <Pressable
@@ -431,13 +431,13 @@ export default function UniversityConnectScreen() {
             styles.primaryBtn,
             { backgroundColor: theme.primary },
             pressed && { opacity: 0.85 },
-            (!studentEmail.trim() || !password.trim()) && { opacity: 0.5 },
+            !studentEmail.trim() && { opacity: 0.5 },
           ]}
           onPress={handleFetchTimetable}
-          disabled={!studentEmail.trim() || !password.trim()}
+          disabled={!studentEmail.trim()}
         >
-          <Feather name="log-in" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.primaryBtnText}>{T('loginToPortal')}</Text>
+          <Feather name="zap" size={20} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.primaryBtnText}>Generate Timetable</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -590,15 +590,11 @@ export default function UniversityConnectScreen() {
         <Pressable onPress={goBack} style={styles.backBtn}>
           <Feather name="chevron-left" size={24} color={theme.primary} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>{T('connectUniversity')}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Generate Timetable</Text>
         <View style={{ width: 32 }} />
       </View>
 
-      {step !== 'already_connected' ? renderStepIndicator() : null}
-
-      {step === 'already_connected' && renderAlreadyConnected()}
-      {step === 'terms' && renderTerms()}
-      {step === 'university' && renderUniversityPicker()}
+      {/* University connect steps are now deprecated; we only generate timetable via public sources. */}
       {step === 'login' && renderLoginForm()}
       {step === 'validating' && renderValidating()}
       {step === 'fetching' && renderFetching()}

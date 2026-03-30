@@ -27,6 +27,7 @@ export async function getProfile(userId: string): Promise<{
   faculty?: string;
   studyMode?: string;
   currentSemester?: number;
+  heaTermCode?: string;
   mystudentEmail?: string;
   lastSync?: string;
   portalTeachingAnchoredSemester?: number;
@@ -34,7 +35,7 @@ export async function getProfile(userId: string): Promise<{
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, mystudent_email, last_sync, portal_teaching_anchored_semester',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester',
     )
     .eq('id', userId)
     .single();
@@ -53,6 +54,7 @@ export async function getProfile(userId: string): Promise<{
     faculty: string | null;
     study_mode: string | null;
     current_semester: number | null;
+    hea_term_code: string | null;
     mystudent_email: string | null;
     last_sync: string | null;
     portal_teaching_anchored_semester: number | null;
@@ -74,6 +76,7 @@ export async function getProfile(userId: string): Promise<{
       row.current_semester != null && Number.isFinite(Number(row.current_semester))
         ? Number(row.current_semester)
         : undefined,
+    heaTermCode: row.hea_term_code ? String(row.hea_term_code).trim() || undefined : undefined,
     mystudentEmail: row.mystudent_email ? String(row.mystudent_email) : undefined,
     lastSync: row.last_sync ? String(row.last_sync) : undefined,
     portalTeachingAnchoredSemester:
@@ -99,6 +102,7 @@ export async function updateProfile(
     faculty?: string;
     studyMode?: string;
     currentSemester?: number;
+    heaTermCode?: string | null;
     mystudentEmail?: string;
     lastSync?: string | null;
     portalTeachingAnchoredSemester?: number | null;
@@ -119,6 +123,7 @@ export async function updateProfile(
   if (updates.currentSemester !== undefined) {
     payload.current_semester = updates.currentSemester > 0 ? updates.currentSemester : null;
   }
+  if (updates.heaTermCode !== undefined) payload.hea_term_code = updates.heaTermCode ? String(updates.heaTermCode).trim() : null;
   if (updates.mystudentEmail !== undefined) payload.mystudent_email = updates.mystudentEmail.trim() || null;
   if (updates.lastSync !== undefined) payload.last_sync = updates.lastSync;
   if (updates.portalTeachingAnchoredSemester !== undefined) {

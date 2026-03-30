@@ -591,8 +591,10 @@ export default function ProfileSettings() {
               <Feather name="globe" size={18} color="#2563eb" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('connectUniversity')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('tapToConnect')}</Text>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Generate Timetable</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Enter your student ID to fetch timetable (no password)
+              </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
@@ -731,12 +733,17 @@ export default function ProfileSettings() {
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
         <Pressable
           style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-          onPress={() => router.push('/stress-map' as any)}
+          onPress={() => router.push('/academic-calendar' as any)}
         >
           <View style={[styles.iconBox, { backgroundColor: '#e0e7ff' }]}>
             <ThemeIcon name="calendar" size={18} color="#4f46e5" />
           </View>
-          <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
+              Group A: Foundation/Professional • Group B: Diploma/Bachelor/Master/PhD
+            </Text>
+          </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
         <View style={styles.dividerList} />

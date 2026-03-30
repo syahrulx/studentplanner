@@ -785,6 +785,48 @@ export async function fetchUitmTimetable(
   };
 }
 
+/**
+ * Public UiTM timetable fetch (no password).
+ *
+ * This mimics “student ID only” sites by relying on public sources:
+ * - UiTM CDN JSON (if available)
+ * - ICRESS student page
+ * - Optional ICRESS course pages (if user provides course codes)
+ *
+ * Note: Profile fields (name/program/semester/etc) cannot be fetched without login.
+ */
+export async function fetchUitmTimetablePublic(
+  matricOrEmail: string,
+  courses?: string[],
+): Promise<{
+  entries: TimetableEntry[];
+  coursesFound: string[];
+  matric?: string;
+}> {
+  const matric = matricFromStudentLoginInput(matricOrEmail.trim());
+  if (!matric) return { entries: [], coursesFound: [], matric: undefined };
+
+  let rows = await fetchMystudentCdn(matric);
+  if (rows.length === 0) {
+    rows = await fetchIcressStudentPage(matric);
+  }
+  if (rows.length === 0 && courses && courses.length > 0) {
+    const merged: TimetableRow[] = [];
+    for (const c of courses) {
+      const code = c.toUpperCase().trim();
+      if (code.length < 4) continue;
+      merged.push(...(await fetchStaticIcress(code)));
+    }
+    rows = merged;
+  }
+
+  return {
+    entries: rowsToEntries(rows),
+    coursesFound: [...new Set(rows.map((r) => r.subjectCode))],
+    matric,
+  };
+}
+
 export async function fetchUitmProfileOnly(
   emailOrMatric: string,
   password: string,

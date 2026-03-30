@@ -71,6 +71,24 @@ export type AcademicLevel = 'Diploma' | 'Bachelor' | 'Master' | 'PhD' | 'Foundat
 /** Derived from semester start date + today vs teaching weeks / break */
 export type SemesterPhase = 'no_calendar' | 'before_start' | 'teaching' | 'break_after';
 
+export type AcademicPeriodType =
+  | 'lecture'
+  | 'registration'
+  | 'test'
+  | 'revision'
+  | 'exam'
+  | 'break'
+  | 'special_break'
+  | 'other';
+
+/** A dated range within a semester (inclusive). */
+export interface AcademicPeriod {
+  type: AcademicPeriodType;
+  label: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+}
+
 /** Per-user academic calendar: semester dates and week count for SOW alignment */
 export interface AcademicCalendar {
   id: string;
@@ -81,6 +99,8 @@ export interface AcademicCalendar {
   totalWeeks: number;
   breakStartDate?: string;
   breakEndDate?: string;
+  /** Optional detailed schedule. When present, teaching week excludes non-lecture periods. */
+  periods?: AcademicPeriod[];
   isActive: boolean;
   createdAt?: string;
 }
@@ -109,6 +129,8 @@ export interface UserProfile {
   studyMode?: string;
   /** Current semester number from portal (e.g. 5) */
   currentSemester?: number;
+  /** UiTM HEA term/semester code (e.g. 20262) to select correct calendar segment */
+  heaTermCode?: string;
   /** DB: portal semester we last aligned academic calendar teaching-week 1 to */
   portalTeachingAnchoredSemester?: number;
   /** Personal email shown on MyStudent profile */

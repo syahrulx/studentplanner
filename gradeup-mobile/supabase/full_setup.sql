@@ -49,6 +49,7 @@ alter table public.profiles
   add column if not exists faculty         text,       -- faculty / college line
   add column if not exists study_mode      text,       -- Sepenuh Masa / Separuh Masa / etc.
   add column if not exists current_semester smallint,  -- current semester number from portal
+  add column if not exists hea_term_code   text,       -- HEA term/semester code (e.g. 20262) to pick correct calendar segment
   add column if not exists mystudent_email text,       -- personal email from portal profile
   add column if not exists university_id   text,       -- linked portal key (e.g. 'uitm')
   add column if not exists last_sync       timestamptz,-- last successful portal sync time
@@ -62,6 +63,7 @@ comment on column public.profiles.campus          is 'Campus name from portal pr
 comment on column public.profiles.faculty         is 'Faculty / college line from portal';
 comment on column public.profiles.study_mode      is 'Mode of study (e.g. Sepenuh Masa)';
 comment on column public.profiles.current_semester is 'Current semester number from portal';
+comment on column public.profiles.hea_term_code   is 'UiTM HEA academic calendar term/semester code (e.g. 20262) used to select the correct calendar segment';
 comment on column public.profiles.mystudent_email is 'Personal email shown on portal profile';
 comment on column public.profiles.university_id   is 'Linked portal id (e.g. uitm); set when user saves imported timetable';
 comment on column public.profiles.last_sync       is 'ISO timestamp of last successful portal timetable/profile sync';
@@ -147,6 +149,7 @@ create table if not exists public.academic_calendars (
   start_date      date not null,
   end_date        date not null,
   total_weeks     smallint not null default 14,
+  periods_json    jsonb,
   is_active       boolean not null default true,
   created_at      timestamptz not null default now()
 );
@@ -165,6 +168,9 @@ create index if not exists academic_calendars_user_active_idx
 
 comment on table public.academic_calendars is
   'Per-user semester calendar; teaching week calculation is derived from start_date + total_weeks.';
+
+comment on column public.academic_calendars.periods_json is
+  'Optional detailed academic periods (lecture/break/exam/etc). When present, teaching week excludes non-lecture weeks.';
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════════╗

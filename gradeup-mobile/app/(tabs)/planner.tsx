@@ -159,7 +159,7 @@ export default function Planner() {
       if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
         const raw = new Date(`${semesterStartISO}T00:00:00`);
         const dow = raw.getDay();
-        const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() + (7 - dow));
+        const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() - dow);
         const current = new Date(`${dateISO.slice(0, 10)}T00:00:00`);
         const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
         const rawWeek = Math.floor(diffDays / 7) + 1;
@@ -1848,6 +1848,7 @@ export default function Planner() {
         )}
       </View>
 
+
       {/* Content */}
 
       {view === 'all' ? (
@@ -2100,6 +2101,7 @@ function createPlannerStyles(theme: ThemePalette) {
     color: theme.primary,
   },
   headerTitle: { fontSize: 19, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
+
 
   viewDropdown: {
     position: 'absolute',

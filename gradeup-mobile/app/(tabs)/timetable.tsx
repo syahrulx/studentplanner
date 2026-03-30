@@ -139,9 +139,9 @@ export default function TimetableScreen() {
             style={({ pressed }) => [s.connectBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
             onPress={() => router.push('/university-connect' as any)}
           >
-            <Feather name="globe" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Feather name="zap" size={18} color={theme.textInverse} style={{ marginRight: 8 }} />
             <Text style={s.connectBtnText}>
-              {linkedButEmpty ? T('resync') : T('connectUniversity')}
+              {linkedButEmpty ? T('resync') : 'Generate Timetable'}
             </Text>
           </Pressable>
         </View>

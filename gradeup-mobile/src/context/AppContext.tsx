@@ -9,7 +9,7 @@ import {
   initialFlashcards,
   initialFlashcardFolders,
 } from '../seedData';
-import { getAcademicProgress } from '../lib/academicUtils';
+import { getAcademicProgress, getAcademicProgressFromCalendar } from '../lib/academicUtils';
 import {
   getTheme,
   setTheme as persistTheme,
@@ -125,6 +125,8 @@ type AppState = {
   handleGenerateFlashcards: (newCards: Flashcard[]) => void;
   timetable: TimetableEntry[];
   setTimetable: React.Dispatch<React.SetStateAction<TimetableEntry[]>>;
+  /** Save timetable to DB without linking a university portal. */
+  saveTimetableOnly: (entries: TimetableEntry[], options?: { semesterLabel?: string }) => Promise<void>;
   saveTimetableAndLink: (entries: TimetableEntry[], universityId: string, studentId: string) => Promise<void>;
   disconnectUniversity: () => Promise<void>;
   /** UiTM: re-fetch timetable + portal profile; overwrites saved timetable and MyStudent fields. */
@@ -236,7 +238,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const totalW = academicCalendar?.totalWeeks ?? 14;
       const nextStart = (academicCalendar?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
       const startFor = (academicCalendar?.startDate ?? prev.startDate ?? '').trim();
-      const progress = getAcademicProgress(startFor, totalW);
+      const progress =
+        academicCalendar?.periods && academicCalendar.periods.length > 0
+          ? getAcademicProgressFromCalendar(academicCalendar, prev.startDate)
+          : getAcademicProgress(startFor, totalW);
       if (
         (prev.startDate ?? '').trim().slice(0, 10) === nextStart &&
         prev.currentWeek === progress.week &&
@@ -253,7 +258,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         semesterPhase: progress.semesterPhase,
       };
     });
-  }, [academicCalendar?.startDate, academicCalendar?.totalWeeks]);
+  }, [academicCalendar?.startDate, academicCalendar?.totalWeeks, academicCalendar?.periods]);
 
   useEffect(() => {
     getTheme().then(setThemeState);
@@ -613,6 +618,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       faculty?: string;
       studyMode?: string;
       currentSemester?: number;
+      heaTermCode?: string | null;
       mystudentEmail?: string;
       portalTeachingAnchoredSemester?: number | null;
     }) => {
@@ -638,6 +644,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 updates.currentSemester > 0 ? updates.currentSemester : undefined,
             }
           : {}),
+        ...(updates.heaTermCode !== undefined
+          ? { heaTermCode: updates.heaTermCode ? String(updates.heaTermCode).trim() : undefined }
+          : {}),
         ...(updates.mystudentEmail !== undefined ? { mystudentEmail: updates.mystudentEmail.trim() } : {}),
         ...(updates.portalTeachingAnchoredSemester !== undefined
           ? {
@@ -659,7 +668,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!uid) return;
     const saved = await academicCalendarDb.upsertCalendar(uid, calendar);
     setAcademicCalendar(saved);
-    const progress = getAcademicProgress(saved.startDate, saved.totalWeeks);
+    const progress =
+      saved?.periods && Array.isArray(saved.periods) && saved.periods.length > 0
+        ? getAcademicProgressFromCalendar(saved, user?.startDate)
+        : getAcademicProgress(saved.startDate, saved.totalWeeks);
     setUserState((prev) => ({
       ...prev,
       startDate: saved.startDate,
@@ -947,6 +959,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUserState((prev) => ({ ...prev, universityId, lastSync: now, studentId: sid || prev.studentId, timetable: entries }));
   }, []);
 
+  const saveTimetableOnly = useCallback(async (entries: TimetableEntry[], options?: { semesterLabel?: string }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to save timetable.');
+    await timetableDb.saveTimetable(uid, entries, options?.semesterLabel);
+    setTimetable(entries);
+    setUserState((prev) => ({ ...prev, timetable: entries }));
+  }, []);
+
   const clearSemesterData = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const uid = session?.user?.id;
@@ -1196,6 +1217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     handleGenerateFlashcards,
     timetable,
     setTimetable,
+    saveTimetableOnly,
     saveTimetableAndLink,
     disconnectUniversity,
     refreshUniversityTimetable,
