@@ -82,6 +82,7 @@ export default function ProfileSettings() {
   const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
   const [clearDataPhrase, setClearDataPhrase] = useState('');
   const [clearDataBusy, setClearDataBusy] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
 
   const canSyncMyStudent = useMemo(
     () => user.universityId === 'uitm',
@@ -667,43 +668,24 @@ export default function ProfileSettings() {
 
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('preferencesSection').toUpperCase()}</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-        <View style={styles.menuRow}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.menuRow,
+            pressed && { backgroundColor: theme.backgroundSecondary },
+          ]}
+          onPress={() => setThemePickerOpen(true)}
+        >
           <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>
             <ThemeIcon name="sparkles" size={18} color={theme.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('themeAppearance')}</Text>
-            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('themeAppearanceDesc')}</Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+              {T(THEME_LABEL_KEY[themeId])}
+            </Text>
           </View>
-        </View>
-        {THEME_IDS.map((id) => (
-          <React.Fragment key={id}>
-            <View style={styles.dividerList} />
-            <Pressable
-              style={({ pressed }) => [
-                styles.menuRow,
-                pressed && { backgroundColor: theme.backgroundSecondary },
-                themeId === id && { backgroundColor: theme.backgroundSecondary },
-              ]}
-              onPress={() => setTheme(id)}
-            >
-              <View style={[styles.iconBox, { backgroundColor: THEMES[id].accent3 }]}>
-                <ThemeIcon
-                  name={THEME_DISPLAY_ICON_KEY[id]}
-                  size={18}
-                  color={THEMES[id].primary}
-                  themeId={id}
-                />
-              </View>
-              <Text style={[styles.menuLabel, { flex: 1, color: theme.text }]}>{T(THEME_LABEL_KEY[id])}</Text>
-              {themeId === id ? (
-                <Feather name="check" size={22} color={theme.primary} />
-              ) : (
-                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-              )}
-            </Pressable>
-          </React.Fragment>
-        ))}
+          <Feather name="chevron-down" size={20} color={theme.textSecondary} />
+        </Pressable>
         <View style={styles.dividerList} />
         <Pressable
           style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
@@ -965,6 +947,67 @@ export default function ProfileSettings() {
               disabled={clearDataBusy || clearDataPhrase.trim().toLowerCase() !== CLEAR_DATA_PHRASE}
             >
               <Text style={{ color: '#fff', fontWeight: '700' }}>{T('continue')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+
+    <Modal
+      visible={themePickerOpen}
+      animationType="fade"
+      transparent
+      onRequestClose={() => setThemePickerOpen(false)}
+    >
+      <KeyboardAvoidingView
+        style={styles.syncBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setThemePickerOpen(false)} />
+        <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
+          <Text style={[styles.syncTitle, { color: theme.text }]}>{T('themeAppearance')}</Text>
+          <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>
+            {T('themeAppearanceDesc')}
+          </Text>
+
+          <View style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden' }}>
+            {THEME_IDS.map((id, idx) => (
+              <React.Fragment key={id}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuRow,
+                    pressed && { backgroundColor: theme.backgroundSecondary },
+                    themeId === id && { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                  onPress={() => {
+                    setTheme(id);
+                    setThemePickerOpen(false);
+                  }}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: THEMES[id].accent3 }]}>
+                    <ThemeIcon
+                      name={THEME_DISPLAY_ICON_KEY[id]}
+                      size={18}
+                      color={THEMES[id].primary}
+                      themeId={id}
+                    />
+                  </View>
+                  <Text style={[styles.menuLabel, { flex: 1, color: theme.text }]}>{T(THEME_LABEL_KEY[id])}</Text>
+                  {themeId === id ? (
+                    <Feather name="check" size={22} color={theme.primary} />
+                  ) : null}
+                </Pressable>
+                {idx < THEME_IDS.length - 1 && <View style={styles.dividerList} />}
+              </React.Fragment>
+            ))}
+          </View>
+
+          <View style={[styles.syncActions, { marginTop: 14 }]}>
+            <Pressable
+              style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
+              onPress={() => setThemePickerOpen(false)}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600' }}>{T('close') || 'Close'}</Text>
             </Pressable>
           </View>
         </View>

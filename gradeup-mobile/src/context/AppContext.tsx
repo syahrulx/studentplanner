@@ -50,6 +50,7 @@ import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO } from '../utils/date';
+import { getCalendarProvider } from '../lib/calendarProviders';
 
 type AppState = {
   user: UserProfile;
@@ -59,6 +60,7 @@ type AppState = {
   updateProfile: (updates: {
     name?: string;
     university?: string;
+    universityId?: string;
     academicLevel?: UserProfile['academicLevel'];
     studentId?: string;
     program?: string;
@@ -233,6 +235,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
+  /** Prevents calendar auto-sync from running more than once per session. */
+  const calendarAutoSyncedRef = useRef(false);
 
   /** Keep teaching week in sync with the active academic calendar (same start as task week mapping). */
   useEffect(() => {
@@ -417,6 +421,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 profile.portalTeachingAnchoredSemester > 0
                   ? Math.floor(profile.portalTeachingAnchoredSemester)
                   : undefined;
+              const heaTc = (profile.heaTermCode ?? '').trim() || undefined;
               next = {
                 ...next,
                 university: profile.university,
@@ -430,6 +435,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 faculty: (profile.faculty ?? '').trim(),
                 studyMode: (profile.studyMode ?? '').trim(),
                 currentSemester: cs,
+                heaTermCode: heaTc,
                 mystudentEmail: (profile.mystudentEmail ?? '').trim(),
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
@@ -473,6 +479,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return next;
         });
 
+        // Auto-sync academic calendar via university provider (once per session)
+        if (!calendarAutoSyncedRef.current) {
+          calendarAutoSyncedRef.current = true;
+          // Infer universityId from profile, connection, or student ID pattern
+          const explicitUniId = profile?.universityId ?? uniConn?.universityId;
+          const inferredUniId =
+            !explicitUniId && profile?.studentId && /^\d{10,}$/.test(profile.studentId.trim())
+              ? 'uitm'
+              : undefined;
+          const uniId = explicitUniId || inferredUniId;
+          const provider = getCalendarProvider(uniId);
+          if (provider && profile) {
+            try {
+              const profileForSync = {
+                ...initialUser,
+                ...(profile as any),
+                universityId: uniId,
+              };
+              const newCal = await provider.autoSync(profileForSync, calendar ?? undefined);
+              if (newCal && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+                const saved = await academicCalendarDb.upsertCalendar(uid, newCal);
+                setAcademicCalendar(saved);
+                const prog =
+                  saved?.periods && Array.isArray(saved.periods) && saved.periods.length > 0
+                    ? getAcademicProgressFromCalendar(saved)
+                    : getAcademicProgress(saved.startDate, saved.totalWeeks);
+                setUserState((prev) => ({
+                  ...prev,
+                  startDate: saved.startDate,
+                  currentWeek: prog.week,
+                  isBreak: prog.isBreak,
+                  semesterPhase: prog.semesterPhase,
+                }));
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[GradeUp] Calendar auto-sync failed', e);
+            }
+          }
+        }
+
         // Check for new Google Classroom tasks in the background (no silent import)
         try {
           const { checkForNewTasks } = require('../lib/googleClassroom');
@@ -502,6 +548,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_OUT') {
           remoteLoadGeneration += 1;
           remoteUserIdRef.current = null;
+          calendarAutoSyncedRef.current = false;
           setUserState(() => {
             const p = getAcademicProgress(initialUser.startDate, 14);
             return {
@@ -612,6 +659,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (updates: {
       name?: string;
       university?: string;
+      universityId?: string;
       academicLevel?: UserProfile['academicLevel'];
       studentId?: string;
       program?: string;
@@ -633,6 +681,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         ...(updates.name !== undefined ? { name: updates.name } : {}),
         ...(updates.university !== undefined ? { university: updates.university } : {}),
+        ...(updates.universityId !== undefined ? { universityId: updates.universityId } : {}),
         ...(updates.academicLevel !== undefined ? { academicLevel: updates.academicLevel } : {}),
         ...(updates.studentId !== undefined ? { studentId: updates.studentId.trim() } : {}),
         ...(updates.program !== undefined ? { program: updates.program.trim() } : {}),

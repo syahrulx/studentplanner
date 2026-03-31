@@ -10,7 +10,6 @@ import { useTheme } from '@/hooks/useTheme';
 import { useTranslations, type TranslationKey } from '@/src/i18n';
 import { searchUniversities, getUniversityById } from '@/src/lib/universities';
 import { getTodayISO } from '@/src/utils/date';
-import { fetchUitmAcademicCalendar } from '@/src/lib/uitmAcademicCalendar';
 import {
   fetchUitmTimetable,
   fetchUitmTimetablePublic,
@@ -152,11 +151,9 @@ export default function UniversityConnectScreen() {
       const studentId = resolvedMatric || matricFromStudentLoginInput(studentEmail.trim());
       await saveTimetableOnly(entries);
 
-      if (studentId) {
-        await updateProfile({ studentId: studentId.trim() });
-      }
-
       await updateProfile({
+        ...(studentId ? { studentId: studentId.trim() } : {}),
+        universityId: selectedUni.id,
         ...profileUpdatesFromMyStudentPayload(lastMyStudentProfile, studentId),
       });
 
@@ -174,54 +171,25 @@ export default function UniversityConnectScreen() {
         }
       }
 
-      const prevSem = user.currentSemester;
-      const newSem = lastMyStudentProfile?.semester;
-      const portalSemChanged =
-        typeof newSem === 'number' && newSem > 0 && prevSem !== newSem;
-      const calendarFromPortal = academicCalendar?.semesterLabel?.includes('(portal)');
-      const today = getTodayISO();
-      const tw = academicCalendar?.totalWeeks ?? 14;
-      const endFrom = (startISO: string) => {
-        const start = new Date(`${startISO}T00:00:00`);
+      // Calendar auto-sync is handled by AppContext on next load via CalendarProvider.
+      // Only create a placeholder if no calendar exists at all yet.
+      if (!academicCalendar) {
+        const today = getTodayISO();
+        const tw = 14;
+        const start = new Date(`${today}T00:00:00`);
         const end = new Date(start);
         end.setDate(end.getDate() + tw * 7 - 1);
-        return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-      };
-      const portalLabel =
-        typeof newSem === 'number' && newSem > 0 ? `Programme semester ${newSem} (portal)` : `Teaching ${today.slice(0, 7)}`;
-
-      // Prefer official HEA academic calendar for UiTM so teaching weeks skip breaks/holidays.
-      // Default to Group B (Diploma/Bachelor/Master/PhD). Group A can be added as a selector later.
-      const official =
-        selectedUni?.id === 'uitm' ? await fetchUitmAcademicCalendar('B', { targetDateISO: today }) : null;
-
-      if (official?.startDate && official?.endDate) {
+        const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
         await updateAcademicCalendar({
-          semesterLabel: official.semesterLabel,
-          startDate: official.startDate,
-          endDate: official.endDate,
-          totalWeeks: official.totalWeeks ?? tw,
-          periods: official.periods,
-          isActive: true,
-        });
-      } else if (!academicCalendar) {
-        await updateAcademicCalendar({
-          semesterLabel: portalLabel,
+          semesterLabel: `Pending auto-sync`,
           startDate: today,
-          endDate: endFrom(today),
-          totalWeeks: tw,
-          isActive: true,
-        });
-      } else if (portalSemChanged || !calendarFromPortal) {
-        await updateAcademicCalendar({
-          semesterLabel: portalLabel,
-          startDate: today,
-          endDate: endFrom(today),
+          endDate: endStr,
           totalWeeks: tw,
           isActive: true,
         });
       }
 
+      const newSem = lastMyStudentProfile?.semester;
       if (typeof newSem === 'number' && newSem > 0) {
         await updateProfile({ portalTeachingAnchoredSemester: newSem });
       }
