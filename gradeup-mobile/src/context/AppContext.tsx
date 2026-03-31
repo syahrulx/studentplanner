@@ -68,7 +68,9 @@ type AppState = {
     faculty?: string;
     studyMode?: string;
     currentSemester?: number;
+    heaTermCode?: string | null;
     mystudentEmail?: string;
+    portalTeachingAnchoredSemester?: number | null;
   }) => Promise<void>;
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   courses: Course[];
@@ -479,6 +481,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setPendingClassroomTasks(newTasks);
           }
         } catch {}
+
       });
     };
 

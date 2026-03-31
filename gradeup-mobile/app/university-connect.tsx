@@ -50,6 +50,7 @@ export default function UniversityConnectScreen() {
     academicCalendar,
     updateAcademicCalendar,
     updateProfile,
+    disconnectUniversity,
   } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
