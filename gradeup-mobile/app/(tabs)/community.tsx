@@ -488,7 +488,7 @@ export default function CommunityMap() {
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <Pressable
-          onPress={() => router.push('/profile-settings' as any)}
+          onPress={() => router.push('/settings' as any)}
           style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
         >
           <Feather name="settings" size={22} color={theme.text} />

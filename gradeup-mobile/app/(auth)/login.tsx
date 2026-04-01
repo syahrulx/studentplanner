@@ -57,8 +57,21 @@ export default function Login() {
       });
       if (signInError) {
         let msg = signInError.message;
-        if (msg === 'Invalid login credentials') msg = 'Invalid email or password';
-        else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
+        const invalidCreds =
+          msg === 'Invalid login credentials' ||
+          (signInError as { code?: string }).code === 'invalid_credentials';
+        if (invalidCreds) {
+          const { data: emailExists, error: rpcError } = await supabase.rpc('auth_email_exists', {
+            check_email: trimmedEmail,
+          });
+          if (rpcError) {
+            msg = 'Invalid email or password';
+          } else if (emailExists === true) {
+            msg = 'Wrong password';
+          } else {
+            msg = 'No account yet';
+          }
+        } else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
           msg = 'Server unavailable. Please try again later.';
         }
         setError(msg);

@@ -112,7 +112,8 @@ function ThemeAwareLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="profile-settings" />
+        <Stack.Screen name="profile" />
+        <Stack.Screen name="settings" />
         <Stack.Screen name="classroom-sync" />
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="community" />

@@ -8,3 +8,7 @@ verify_jwt = false
 
 [functions.fetch_timetable]
 verify_jwt = false
+
+# Validates JWT inside the function via auth.getUser (same pattern as extract_sow).
+[functions.delete_account]
+verify_jwt = false

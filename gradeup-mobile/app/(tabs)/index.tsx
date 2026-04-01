@@ -240,6 +240,7 @@ function createDashboardStyles(theme: ThemePalette) {
     dot: { width: 6, height: 6, borderRadius: 3 },
     subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    headerIconBtn: { padding: 4 },
 
     pressed: { opacity: 0.96 },
 
@@ -548,7 +549,7 @@ export default function Dashboard() {
     headerSheenAccent = theme.accent;
   }
 
-  /** Match profile hero: wave 0.35 + overlay rgba(0,51,102,0.35) — same recipe as profile-settings. */
+  /** Match profile hero: wave 0.35 + overlay rgba(0,51,102,0.35) — same recipe as profile. */
   const profileMatchTexture = themeId === 'light' || themeId === 'dark';
   const headerWaveOpacity = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
   const headerTextureOverlayAlpha = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
@@ -822,8 +823,17 @@ export default function Dashboard() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <Pressable onPress={() => router.push('/profile-settings' as any)}>
+            <Pressable
+              onPress={() => router.push('/profile' as any)}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
+            >
               <ThemeIcon name="user" size={22} color={headerOnPrimary} />
+            </Pressable>
+            <Pressable
+              onPress={() => router.push('/settings' as any)}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Feather name="settings" size={22} color={headerOnPrimary} />
             </Pressable>
           </View>
         </View>

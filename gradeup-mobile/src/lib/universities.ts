@@ -183,3 +183,9 @@ export function searchUniversities(query: string): UniversityConfig[] {
 export function getUniversityById(id: string): UniversityConfig | undefined {
   return UNIVERSITIES.find((u) => u.id === id);
 }
+
+export type UniversityItem = UniversityConfig;
+
+export async function getMalaysianUniversities(): Promise<UniversityItem[]> {
+  return UNIVERSITIES;
+}

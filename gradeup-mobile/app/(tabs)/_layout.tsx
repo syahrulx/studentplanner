@@ -114,8 +114,8 @@ export default function TabLayout() {
                 router.push('/revision' as any);
               }}
             >
-              <View style={[styles.addMenuIcon, { backgroundColor: theme.accent }]}>
-                <ThemeIcon name="clock" size={22} color={theme.textInverse} />
+              <View style={[styles.addMenuIcon, { backgroundColor: '#7c3aed' }]}>
+                <ThemeIcon name="clock" size={22} color="#fff" />
               </View>
               <View>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addStudyTime')}</Text>
@@ -132,8 +132,8 @@ export default function TabLayout() {
                 router.push('/ai-chat' as any);
               }}
             >
-              <View style={[styles.addMenuIcon, { backgroundColor: theme.accent3 }]}>
-                <ThemeIcon name="sparkles" size={22} color={theme.textInverse} />
+              <View style={[styles.addMenuIcon, { backgroundColor: '#0891b2' }]}>
+                <ThemeIcon name="sparkles" size={22} color="#fff" />
               </View>
               <View>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
