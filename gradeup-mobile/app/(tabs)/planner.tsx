@@ -11,6 +11,7 @@ import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, get
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
+import { dueDateToTeachingWeekRaw } from '@/src/lib/academicWeek';
 import { useTheme } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 
@@ -149,13 +150,28 @@ export default function Planner() {
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
-  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const maxTaskWeek = useMemo(() => {
+    if (!academicCalendar) return baseTotalWeeks;
+    let maxW = baseTotalWeeks;
+    for (const t of tasks) {
+      const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
+      if (typeof w === 'number' && w > maxW) maxW = w;
+    }
+    return maxW;
+  }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
+  const totalWeeks = Math.max(baseTotalWeeks, maxTaskWeek);
   const semesterStartISO = useMemo(
     () => (academicCalendar?.startDate ?? user.startDate ?? '').trim().slice(0, 10),
     [academicCalendar?.startDate, user.startDate],
   );
   const getWeekNumberForDate = useCallback(
     (dateISO: string): number => {
+      // If we have HEA periods, compute week by skipping break weeks.
+      if (academicCalendar?.periods && Array.isArray(academicCalendar.periods) && academicCalendar.periods.length > 0) {
+        const w = dueDateToTeachingWeekRaw(dateISO, academicCalendar, user.startDate);
+        if (typeof w === 'number' && w > 0) return Math.min(w, totalWeeks);
+      }
       if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
         const raw = new Date(`${semesterStartISO}T00:00:00`);
         const dow = raw.getDay();
@@ -167,9 +183,48 @@ export default function Planner() {
       }
       return typeof user.currentWeek === 'number' ? user.currentWeek : 1;
     },
-    [semesterStartISO, user.currentWeek, totalWeeks],
+    [academicCalendar?.periods, academicCalendar, user.startDate, semesterStartISO, user.currentWeek, totalWeeks],
   );
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
+  const activeDateIsBreak = useMemo(() => {
+    const iso = (activeDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const periods = academicCalendar?.periods;
+    if (!periods || !Array.isArray(periods) || periods.length === 0) return Boolean(user.isBreak);
+    for (const p of periods) {
+      const type = String((p as any)?.type ?? '');
+      if (type !== 'break' && type !== 'special_break') continue;
+      const start = String((p as any)?.startDate ?? '').slice(0, 10);
+      const end = String((p as any)?.endDate ?? '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+      if (iso >= start && iso <= end) return true;
+    }
+    return Boolean(user.isBreak);
+  }, [activeDate, academicCalendar?.periods, user.isBreak]);
+  const activeDateIsInAcademicCalendar = useMemo(() => {
+    const iso = (activeDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const periods = academicCalendar?.periods;
+    if (!periods || !Array.isArray(periods) || periods.length === 0) {
+      // Fallback: if we don't have periods, assume we're "in calendar" during teaching/break screens.
+      return user.semesterPhase !== 'no_calendar';
+    }
+    // Consider a date "in calendar" if it's covered by any known period (including break).
+    for (const p of periods) {
+      const start = String((p as any)?.startDate ?? '').slice(0, 10);
+      const end = String((p as any)?.endDate ?? '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+      if (iso >= start && iso <= end) return true;
+    }
+    return false;
+  }, [activeDate, academicCalendar?.periods, user.semesterPhase]);
+  const activeWeekLabel = useMemo(() => {
+    if (!activeDateIsInAcademicCalendar) return '-';
+    if (activeDateIsBreak) return '-';
+    if (user.semesterPhase === 'break_after') return '-';
+    return String(activeWeekNumber);
+  }, [activeDateIsInAcademicCalendar, activeDateIsBreak, user.semesterPhase, activeWeekNumber]);
+  const totalWeeksLabel = useMemo(() => (activeDateIsInAcademicCalendar ? String(totalWeeks) : '-'), [activeDateIsInAcademicCalendar, totalWeeks]);
 
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const calendarStripSideInset = useMemo(() => {
@@ -1477,7 +1532,7 @@ export default function Planner() {
             <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
             {activeWeekNumber > 0 && (
               <Text style={s.gridNavSub}>
-                Week {activeWeekNumber} of {totalWeeks}
+                Week {activeWeekLabel} of {totalWeeksLabel}
               </Text>
             )}
           </View>
@@ -1796,7 +1851,9 @@ export default function Planner() {
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={[s.monthNavTitleCol, { alignItems: 'center' }]}>
                 <Text style={s.monthNavTitle}>{getMonthYearLabel(activeDate)}</Text>
-                <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '600', marginTop: 2 }}>Week {activeWeekNumber} of {totalWeeks}</Text>
+                <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '600', marginTop: 2 }}>
+                  Week {activeWeekLabel} of {totalWeeksLabel}
+                </Text>
               </View>
             </View>
             <View style={s.monthNavActions}>

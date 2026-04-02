@@ -9,7 +9,10 @@ import {
   Alert,
   FlatList,
   TextInput,
+  Modal,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -68,6 +71,35 @@ function normalizeDateInput(value: string): string {
   return getTodayISO();
 }
 
+function clampInt(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function isoToDate(iso: string): Date {
+  // Use noon to avoid timezone shifting at midnight.
+  return new Date(`${(iso || getTodayISO()).slice(0, 10)}T12:00:00`);
+}
+
+function dueDateTimeToDate(iso: string, time: string): Date {
+  const date = isoToDate(iso);
+  const [hStr, mStr] = (time || '00:00').split(':');
+  const h = Number.isFinite(Number(hStr)) ? Number(hStr) : 0;
+  const m = Number.isFinite(Number(mStr)) ? Number(mStr) : 0;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0, 0);
+}
+
+function formatISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatTimeHM(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export default function UploadSOW() {
   const { courses, user, academicCalendar, addCourse, addTask, deleteCourse, tasks: existingTasks } = useApp();
   const theme = useTheme();
@@ -80,6 +112,22 @@ export default function UploadSOW() {
   const [editedTasks, setEditedTasks] = useState<ExtractedTask[]>([]);
   const [editingSubjectIndex, setEditingSubjectIndex] = useState<number | null>(null);
   const [editingTaskIndex, setEditingTaskIndex] = useState<number | null>(null);
+
+  // Confirm week/date before running extract_sow so dates map correctly.
+  const totalSemesterWeeks = academicCalendar?.totalWeeks ?? 14;
+  const defaultWeek = clampInt(Number(user.currentWeek ?? 1) || 1, 1, totalSemesterWeeks);
+  const defaultToday = getTodayISO();
+  const defaultSemesterStart = (academicCalendar?.startDate || user.startDate || '').slice(0, 10);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmWeekText, setConfirmWeekText] = useState(String(defaultWeek));
+  const [confirmTodayText, setConfirmTodayText] = useState(defaultToday);
+  const [confirmEndOfWeek, setConfirmEndOfWeek] = useState<'FRI' | 'SAT' | 'SUN'>('SUN');
+  const [extractContext, setExtractContext] = useState<{ currentWeek: number; todayISO: string }>(() => ({
+    currentWeek: defaultWeek,
+    todayISO: defaultToday,
+  }));
+
+  const [picker, setPicker] = useState<null | { taskIndex: number; mode: 'date' | 'time'; value: Date }>(null);
 
   useEffect(() => {
     if (!extraction) {
@@ -95,19 +143,27 @@ export default function UploadSOW() {
     setEditingTaskIndex(null);
   }, [extraction]);
 
-  const totalSemesterWeeks = academicCalendar?.totalWeeks ?? 14;
-
   const sowWeekAlignment = useMemo(
     () =>
       analyzeSowWeekAlignment(editedTasks, {
         semesterStart: user.startDate,
         totalWeeks: totalSemesterWeeks,
         currentWeek: Math.max(1, user.currentWeek ?? 1),
+        periods: academicCalendar?.periods,
         isBreak: user.isBreak,
-        todayISO: getTodayISO(),
+        todayISO: extractContext.todayISO,
         semesterPhase: user.semesterPhase,
       }),
-    [editedTasks, user.startDate, user.currentWeek, user.isBreak, user.semesterPhase, totalSemesterWeeks]
+    [
+      editedTasks,
+      user.startDate,
+      user.currentWeek,
+      user.isBreak,
+      user.semesterPhase,
+      totalSemesterWeeks,
+      extractContext.todayISO,
+      academicCalendar?.periods,
+    ]
   );
 
   // known_courses is no longer sent to the AI — extraction is purely from the file
@@ -131,7 +187,7 @@ export default function UploadSOW() {
     }
   };
 
-  const startExtract = async () => {
+  const runExtract = async (ctx: { currentWeek: number; todayISO: string }) => {
     if (isBusy || !selected) return;
     const { data: { session: initialSession } } = await supabase.auth.getSession();
     if (!initialSession?.user?.id) {
@@ -165,8 +221,14 @@ export default function UploadSOW() {
         import_id: importId,
         storage_path: path,
         bucket: SOW_FILES_BUCKET,
-        current_week: user.currentWeek ?? 1,
-        today_iso: getTodayISO(),
+        current_week: ctx.currentWeek,
+        today_iso: ctx.todayISO,
+        // Used by Edge Function to map "Week N" items and fill missing due dates.
+        semester_start_iso: defaultSemesterStart,
+        total_weeks: totalSemesterWeeks,
+        end_of_week_day: confirmEndOfWeek,
+        // Optional detailed calendar schedule (used to skip break weeks for UiTM HEA).
+        periods: academicCalendar?.periods ?? null,
       };
 
       const { httpStatus, data } = await invokeExtractSow(payload);
@@ -245,6 +307,51 @@ export default function UploadSOW() {
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const openTaskPicker = (taskIndex: number, mode: 'date' | 'time') => {
+    const t = editedTasks[taskIndex];
+    if (!t) return;
+    setPicker({ taskIndex, mode, value: dueDateTimeToDate(t.due_date, t.due_time) });
+  };
+
+  const onPickerChange = (_event: unknown, selected?: Date) => {
+    if (!picker) return;
+    // On Android, dismiss fires with undefined selected.
+    if (!selected) {
+      setPicker(null);
+      return;
+    }
+    const idx = picker.taskIndex;
+    if (picker.mode === 'date') {
+      const nextISO = formatISODate(selected);
+      setEditedTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_date: nextISO } : row)));
+    } else {
+      const nextTime = formatTimeHM(selected);
+      setEditedTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_time: nextTime } : row)));
+    }
+    // Keep it simple: close after selection on all platforms.
+    setPicker(null);
+  };
+
+  const startExtract = () => {
+    if (isBusy || !selected) return;
+    // Reset defaults each time the user extracts.
+    const nextDefaultWeek = clampInt(Number(user.currentWeek ?? 1) || 1, 1, totalSemesterWeeks);
+    const nextDefaultToday = getTodayISO();
+    setConfirmWeekText(String(nextDefaultWeek));
+    setConfirmTodayText(nextDefaultToday);
+    setConfirmEndOfWeek('SUN');
+    setConfirmOpen(true);
+  };
+
+  const confirmAndExtract = async () => {
+    const weekNum = clampInt(parseInt(confirmWeekText, 10) || 1, 1, totalSemesterWeeks);
+    const todayISO = normalizeDateInput(confirmTodayText);
+    setConfirmOpen(false);
+    const ctx = { currentWeek: weekNum, todayISO };
+    setExtractContext(ctx);
+    await runExtract(ctx);
   };
 
   const performSowSave = async () => {
@@ -835,32 +942,30 @@ export default function UploadSOW() {
                       })}
                     </View>
                     <View style={styles.editRow}>
-                      <TextInput
-                        style={[
-                          styles.editInput,
+                      <Pressable
+                        onPress={() => openTaskPicker(i, 'date')}
+                        style={({ pressed }) => [
+                          styles.pickerField,
                           styles.halfGrow,
-                          { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
+                          { borderColor: theme.border, backgroundColor: theme.background },
+                          pressed && { opacity: 0.85 },
                         ]}
-                        value={t.due_date}
-                        onChangeText={(v) =>
-                          setEditedTasks((prev) => prev.map((row, j) => (j === i ? { ...row, due_date: v } : row)))
-                        }
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={theme.textSecondary}
-                      />
-                      <TextInput
-                        style={[
-                          styles.editInput,
+                      >
+                        <Feather name="calendar" size={14} color={theme.textSecondary} />
+                        <Text style={[styles.pickerFieldText, { color: theme.text }]}>{t.due_date}</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => openTaskPicker(i, 'time')}
+                        style={({ pressed }) => [
+                          styles.pickerField,
                           styles.halfGrow,
-                          { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
+                          { borderColor: theme.border, backgroundColor: theme.background },
+                          pressed && { opacity: 0.85 },
                         ]}
-                        value={t.due_time}
-                        onChangeText={(v) =>
-                          setEditedTasks((prev) => prev.map((row, j) => (j === i ? { ...row, due_time: v } : row)))
-                        }
-                        placeholder="HH:mm"
-                        placeholderTextColor={theme.textSecondary}
-                      />
+                      >
+                        <Feather name="clock" size={14} color={theme.textSecondary} />
+                        <Text style={[styles.pickerFieldText, { color: theme.text }]}>{t.due_time}</Text>
+                      </Pressable>
                     </View>
                     <View style={styles.editRow}>
                       <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Effort (h)</Text>
@@ -948,6 +1053,42 @@ export default function UploadSOW() {
         >
           <Text style={[styles.cancelBtnText, { color: theme.textSecondary }]}>Discard & Pick Another File</Text>
         </Pressable>
+
+      {picker ? (
+        Platform.OS === 'ios' ? (
+          <Modal transparent animationType="fade" visible onRequestClose={() => setPicker(null)}>
+            <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>
+              <View
+                style={[styles.datePickerPanel, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onStartShouldSetResponder={() => true}
+              >
+                <Text style={[styles.datePickerTitle, { color: theme.text }]}>
+                  {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
+                </Text>
+                <DateTimePicker
+                  value={picker.value}
+                  mode={picker.mode}
+                  display="spinner"
+                  onChange={(_e, d) => onPickerChange(_e, d ?? undefined)}
+                  is24Hour
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.datePickerDone,
+                    { backgroundColor: theme.primary },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  onPress={() => setPicker(null)}
+                >
+                  <Text style={[styles.datePickerDoneText, { color: theme.textInverse }]}>Done</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Modal>
+        ) : (
+          <DateTimePicker value={picker.value} mode={picker.mode} onChange={onPickerChange as any} is24Hour />
+        )
+      ) : null}
 
         <View style={{ height: 48 }} />
       </ScrollView>
@@ -1069,6 +1210,115 @@ export default function UploadSOW() {
           </>
         )}
       </Pressable>
+
+      <Modal visible={confirmOpen} transparent animationType="fade" onRequestClose={() => setConfirmOpen(false)}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setConfirmOpen(false)}
+        >
+          <View
+            style={[styles.modalPanel, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm week & date</Text>
+              <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
+                This helps the AI map SOW dates into the correct semester week and prevents wrong task deadlines.
+              </Text>
+            </View>
+
+            <View style={styles.modalRow}>
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Current week</Text>
+                <TextInput
+                  value={confirmWeekText}
+                  onChangeText={setConfirmWeekText}
+                  keyboardType="number-pad"
+                  placeholder="1"
+                  placeholderTextColor={theme.textSecondary}
+                  style={[
+                    styles.modalInput,
+                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
+                  ]}
+                />
+                <Text style={[styles.modalHint, { color: theme.textSecondary }]}>
+                  App: week {user.isBreak ? 'break' : user.currentWeek} / {totalSemesterWeeks}
+                </Text>
+              </View>
+
+              <View style={styles.modalField}>
+                <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Today (YYYY-MM-DD)</Text>
+                <TextInput
+                  value={confirmTodayText}
+                  onChangeText={setConfirmTodayText}
+                  autoCapitalize="none"
+                  placeholder="2026-04-02"
+                  placeholderTextColor={theme.textSecondary}
+                  style={[
+                    styles.modalInput,
+                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
+                  ]}
+                />
+                <Text style={[styles.modalHint, { color: theme.textSecondary }]}>Default: {defaultToday}</Text>
+              </View>
+            </View>
+
+            <View style={{ marginTop: 6 }}>
+              <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>
+                If PDF has no date, set due date to end of week
+              </Text>
+              <View style={styles.eowRow}>
+                {(['FRI', 'SAT', 'SUN'] as const).map((d) => {
+                  const active = confirmEndOfWeek === d;
+                  return (
+                    <Pressable
+                      key={d}
+                      onPress={() => setConfirmEndOfWeek(d)}
+                      style={({ pressed }) => [
+                        styles.eowChip,
+                        { borderColor: theme.border, backgroundColor: theme.background },
+                        active && { backgroundColor: theme.primary, borderColor: theme.primary },
+                        pressed && { opacity: 0.9 },
+                      ]}
+                    >
+                      <Text style={[styles.eowChipText, { color: active ? theme.textInverse : theme.text }]}>
+                        {d}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.modalHint, { color: theme.textSecondary }]}>
+                Applies only when the PDF doesn’t state a date.
+              </Text>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBtn,
+                  { backgroundColor: theme.background, borderColor: theme.border },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => setConfirmOpen(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalBtn,
+                  styles.modalPrimaryBtn,
+                  { backgroundColor: theme.primary, borderColor: theme.primary },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => void confirmAndExtract()}
+              >
+                <Text style={[styles.modalBtnText, { color: theme.textInverse }]}>Confirm & Extract</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
 
       <View style={{ height: 48 }} />
     </ScrollView>
@@ -1259,4 +1509,71 @@ const styles = StyleSheet.create({
   },
   weekSyncBannerTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
   weekSyncBannerBody: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  modalPanel: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  modalHeader: { marginBottom: 10 },
+  modalTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.2 },
+  modalSub: { fontSize: 13, fontWeight: '600', marginTop: 6, lineHeight: 18 },
+  modalRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  modalField: { flex: 1, minWidth: 160 },
+  modalLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8, marginTop: 8 },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalHint: { fontSize: 11, fontWeight: '600', marginTop: 6 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  modalBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPrimaryBtn: { flex: 1.4 },
+  modalBtnText: { fontSize: 13, fontWeight: '900' },
+  eowRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  eowChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eowChipText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.2 },
+
+  pickerField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  pickerFieldText: { fontSize: 14, fontWeight: '700' },
+  datePickerPanel: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  datePickerTitle: { fontSize: 14, fontWeight: '900', marginBottom: 8, letterSpacing: -0.2 },
+  datePickerDone: { marginTop: 10, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  datePickerDoneText: { fontSize: 13, fontWeight: '900' },
 });

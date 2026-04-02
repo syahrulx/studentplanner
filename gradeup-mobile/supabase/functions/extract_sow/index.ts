@@ -124,7 +124,14 @@ function computeRisk(diffDays: number): 'High' | 'Medium' | 'Low' {
 
 function normalizeOutput(
   payload: any,
-  args: { currentWeek: number; todayISO: string }
+  args: {
+    currentWeek: number;
+    todayISO: string;
+    semesterStartISO?: string;
+    totalWeeks?: number;
+    endOfWeekDay?: 'FRI' | 'SAT' | 'SUN';
+    periods?: Array<{ type?: string; label?: string; startDate?: string; endDate?: string }> | null;
+  }
 ): { subjects: ExtractedSubject[]; tasks: ExtractedTask[] } {
   const subjects = (Array.isArray(payload?.subjects) ? payload.subjects : [])
     .map((s: any) => ({
@@ -141,30 +148,159 @@ function normalizeOutput(
 
   const extractedSubjectIds = new Set(subjects.map((s) => s.subject_id.toUpperCase()));
 
+  function safeISO(value: unknown): string {
+    const s = String(value ?? '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+  }
+
+  function addDays(iso: string, days: number): string {
+    const d = new Date(`${iso}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function snapToWeekSunday(iso: string): string {
+    const d = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    const dow = d.getDay(); // 0=Sun
+    if (dow === 0) return iso;
+    d.setDate(d.getDate() - dow);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function buildLectureWeekStartsFromPeriods(): string[] {
+    const periods = Array.isArray(args.periods) ? args.periods : [];
+    // UiTM HEA calendars contain `lecture` + `exam` (and sometimes `test` / `revision`) periods.
+    // Week numbering in SOW PDFs often goes beyond teaching weeks (e.g. Week 15/16 final).
+    // We therefore count any "instructional/assessment" week that contains at least one day from
+    // these periods, and we skip break periods entirely.
+    const countedTypes = new Set(['lecture', 'exam', 'test', 'revision']);
+    const counted = periods.filter((p) => countedTypes.has(String(p?.type ?? '')));
+    if (counted.length === 0) return [];
+
+    const countedDays = new Set<string>();
+    let latestCountedDay = '';
+    for (const p of counted) {
+      const s = safeISO(p?.startDate);
+      const e = safeISO(p?.endDate);
+      if (!s || !e) continue;
+      const cur = new Date(`${s}T00:00:00`);
+      const end = new Date(`${e}T00:00:00`);
+      if (Number.isNaN(cur.getTime()) || Number.isNaN(end.getTime())) continue;
+      while (cur.getTime() <= end.getTime()) {
+        const iso = cur.toISOString().slice(0, 10);
+        countedDays.add(iso);
+        if (!latestCountedDay || iso > latestCountedDay) latestCountedDay = iso;
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    if (countedDays.size === 0) return [];
+
+    const earliestCounted = [...countedDays].sort()[0];
+    const startSunday = snapToWeekSunday(earliestCounted);
+
+    const weekStarts: string[] = [];
+    let cursor = new Date(`${startSunday}T00:00:00`);
+    // Iterate calendar weeks and count a week if it has any counted day.
+    // Keep going until we cover the latest counted day and also satisfy any higher week index.
+    const wantWeeks = Math.max(1, Math.floor(Number(args.totalWeeks ?? 14) || 14));
+    const capWeeks = Math.max(wantWeeks, 20); // allow SOW week 15/16 etc
+    const last = latestCountedDay ? new Date(`${latestCountedDay}T00:00:00`).getTime() : 0;
+    // Cap to avoid infinite loops on malformed data.
+    for (let guard = 0; guard < 120 && weekStarts.length < capWeeks; guard++) {
+      const weekStartISO = cursor.toISOString().slice(0, 10);
+      let hasLecture = false;
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(cursor);
+        d.setDate(d.getDate() + i);
+        const iso = d.toISOString().slice(0, 10);
+        if (countedDays.has(iso)) {
+          hasLecture = true;
+          break;
+        }
+      }
+      if (hasLecture) weekStarts.push(weekStartISO);
+      cursor.setDate(cursor.getDate() + 7);
+      if (last && cursor.getTime() > last && weekStarts.length >= wantWeeks) {
+        // Past the official calendar end and we already built enough weeks.
+        // Keep only if we still need more (e.g. Week 16) - otherwise stop early.
+        // (If a SOW asks for Week 16 and calendar provides it, it will still be in counted days.)
+        // Break condition is conservative.
+        // eslint-disable-next-line no-empty
+      }
+    }
+    return weekStarts;
+  }
+
+  const lectureWeekStarts = buildLectureWeekStartsFromPeriods();
+
+  function computeWeekEndDate(weekNum: number): string {
+    const wk = Math.max(1, Math.floor(Number(weekNum) || 1));
+    const start =
+      lectureWeekStarts.length >= wk
+        ? lectureWeekStarts[wk - 1]
+        : safeISO(args.semesterStartISO);
+    if (!start) return '';
+    const eow = args.endOfWeekDay ?? 'SUN';
+    const dayOffset = eow === 'FRI' ? 4 : eow === 'SAT' ? 5 : 6; // week start + (Fri/Sat/Sun)
+    // start is already the week-1 start for this teaching week index.
+    return addDays(start, dayOffset);
+  }
+
   const tasks = (Array.isArray(payload?.tasks) ? payload.tasks : [])
     .map((t: any) => {
       const rawCourse = String(t?.course_id ?? '').trim().toUpperCase();
       const courseId = rawCourse || (subjects[0]?.subject_id ?? 'GENERAL');
-      const dueDate = String(t?.due_date ?? '').slice(0, 10);
+      // Handle common "Week 15/16" or "Week 15-16" formats by taking the later week.
+      let suggestedWeekRaw = Number(t?.suggested_week ?? 0) || 0;
+      if (!suggestedWeekRaw) {
+        const swText = String(t?.suggested_week_text ?? t?.week ?? t?.due_week ?? '').trim();
+        const m = swText.match(/(\d{1,2})\s*(?:\/|\-|to)\s*(\d{1,2})/i);
+        if (m) suggestedWeekRaw = Math.max(parseInt(m[1], 10) || 0, parseInt(m[2], 10) || 0);
+      }
+      if (!suggestedWeekRaw) {
+        // Last resort: parse "Week N" or "Week N/M" from the task text itself.
+        // Some model outputs omit suggested_week but include the week in title/notes.
+        const hay = `${String(t?.title ?? '')} ${String(t?.notes ?? '')}`.toLowerCase();
+        const m2 = hay.match(/\bweek\s*(\d{1,2})(?:\s*(?:\/|\-)\s*(\d{1,2}))?\b/i);
+        if (m2) {
+          const a = parseInt(m2[1], 10) || 0;
+          const b = m2[2] ? parseInt(m2[2], 10) || 0 : 0;
+          suggestedWeekRaw = Math.max(a, b || a);
+        }
+      }
+      const dueDateFromModel = safeISO(t?.due_date);
+      const dueDateFromWeek = suggestedWeekRaw > 0 ? computeWeekEndDate(suggestedWeekRaw) : '';
+      // Do NOT auto-fallback tasks with no date/week to the current week.
+      // If model violates instructions and emits tasks without a due, we drop them later.
+      // If a week number exists, ALWAYS trust the academic calendar mapping over any model date.
+      const dueDate = suggestedWeekRaw > 0 ? dueDateFromWeek : (dueDateFromModel || '');
+
       const diff = dueDate ? daysBetween(args.todayISO, dueDate) : 0;
-      const suggestedWeek = Number(t?.suggested_week ?? 0) || Math.max(args.currentWeek, args.currentWeek + Math.floor(diff / 7));
-      const deadlineRisk = String(t?.deadline_risk ?? '') || computeRisk(diff);
+      const suggestedWeek = suggestedWeekRaw > 0 ? suggestedWeekRaw : undefined;
+      const deadlineRisk = dueDate ? (String(t?.deadline_risk ?? '') || computeRisk(diff)) : undefined;
       return {
         title: String(t?.title ?? '').trim(),
         course_id: courseId,
         type: String(t?.type ?? 'Assignment'),
-        due_date: dueDate || args.todayISO,
+        due_date: dueDate,
         due_time: String(t?.due_time ?? '23:59').slice(0, 5) || '23:59',
         priority: String(t?.priority ?? 'Medium'),
         effort_hours: Number(t?.effort_hours ?? 2) || 2,
         notes: t?.notes ? String(t.notes) : '',
-        deadline_risk: deadlineRisk === 'High' || deadlineRisk === 'Medium' || deadlineRisk === 'Low' ? deadlineRisk : computeRisk(diff),
+        deadline_risk:
+          deadlineRisk === 'High' || deadlineRisk === 'Medium' || deadlineRisk === 'Low'
+            ? deadlineRisk
+            : deadlineRisk != null
+              ? computeRisk(diff)
+              : undefined,
         suggested_week: suggestedWeek,
         confidence: Number(t?.confidence ?? 0) || undefined,
         is_unknown_course: !extractedSubjectIds.has(courseId),
       } satisfies ExtractedTask;
     })
-    .filter((t: ExtractedTask) => !!t.title);
+    // Drop model hallucinations or kickoff items that slipped through with no due date/week mapping.
+    .filter((t: ExtractedTask) => !!t.title && !!safeISO(t.due_date));
 
   return { subjects, tasks };
 }
@@ -197,20 +333,58 @@ const SYSTEM_INSTRUCTIONS =
 
 function buildExtractionRulesBlock(): string {
   return [
-    'You are an academic Scheme of Work (SOW) parser.',
-    'CRITICAL: Extract ONLY information that is explicitly written in the document. Do NOT invent, guess, or copy from any other source.',
-    'Return STRICT JSON with this shape:',
-    '{ "subjects": [{ "subject_id": "CSC301", "name": "Data Structures", "credit_hours": 3, "confidence": 0.9 }],',
-    '  "tasks": [{ "title":"Assignment 1", "course_id":"CSC301", "type":"Assignment|Quiz|Project|Lab|Test", "due_date":"YYYY-MM-DD", "due_time":"HH:MM", "priority":"High|Medium|Low", "effort_hours":2, "notes":"", "confidence": 0.9 }] }',
+    'You are a STRICT academic task extractor for Scheme of Work (SOW) documents.',
+    'CRITICAL: Extract ONLY what is explicitly written in the document. Do NOT invent, guess, or add extra tasks.',
+    '',
+    'GOAL: Extract ONLY real deliverables with a DUE date or a DUE week.',
+    'Ignore start dates, kickoff weeks, teaching plan weeks, and syllabus topics.',
+    '',
+    'Return STRICT JSON with this shape (JSON only):',
+    '{ "subjects": [{ "subject_id": "ISP611", "name": "Optimization Algorithms and Application", "credit_hours": 3 }],',
+    '  "tasks": [{ "title":"Task Name", "course_id":"ISP611", "type":"Assignment|Project|Presentation|Test|Quiz|Lab|Tutorial", "due_date":"YYYY-MM-DD", "due_time":"HH:MM", "priority":"High|Medium|Low", "effort_hours":2, "notes":"", "suggested_week": 8, "suggested_week_text": "Week 15/16" }] }',
     '',
     'Rules:',
-    '- subject_id = the SHORT course/subject code in the document (e.g. CSC259, LCC222, TMC401). If you see codes like these, you MUST list them in subjects with a sensible name from nearby text.',
-    '- Extract tasks for every assignment, quiz, test, lab, project, or deadline mentioned with a date or week number.',
-    '- course_id in each task must match a subject_id you listed.',
-    '- Messy line breaks are normal — read across lines to recover table rows and schedules.',
-    '- If dates are "Week 5" style, infer YYYY-MM-DD from context or use a reasonable date in the current semester.',
-    '- If a task has no clear date, still include it with your best-guess due_date or the week midpoint.',
-    '- Prefer partial extraction over empty: return subjects/tasks for anything clearly in the document, even if incomplete.',
+    '- subject_id MUST be the course/subject code exactly as written in the PDF (short code). Do not normalize into a different code.',
+    '- course_id in each task MUST match a subject_id you listed (if unclear, pick the closest matching subject code on the same row/section).',
+    '',
+    'Include a task ONLY if it has:',
+    '- an explicit calendar due date (e.g. 2026-05-24, 24/05/2026, 24 May 2026), OR',
+    '- an explicit due week number (e.g. "Week 8", "Wk 8") indicating submission/deadline.',
+    '',
+    'Allowed task types:',
+    '- Assignment',
+    '- Project (report / case study)',
+    '- Presentation (ONLY if it has a due date/week)',
+    '- Test (final assessment)',
+    '- Quiz',
+    '- Lab / Tutorial (ONLY if it clearly implies submission/deadline AND has a due date/week)',
+    '',
+    'Ignore (do not output as tasks):',
+    '- Kick-off / start week (e.g. "Assignment Kick-off Week 3")',
+    '- Teaching schedule / weekly topics / CLO / syllabus content',
+    '- General weekly activities with no deadline',
+    '',
+    'Due date rules (VERY IMPORTANT):',
+    '- If the PDF states an actual calendar date, set due_date to that exact date in YYYY-MM-DD.',
+    '- If the PDF states ONLY a week number (e.g. "Week 8", "Wk 8") and does NOT show a calendar date:',
+    '  - You MUST set suggested_week to that number.',
+    '  - You MUST set suggested_week_text to the exact original week text from the PDF.',
+    '  - You MUST set due_date to an empty string.',
+    '  - NEVER convert Week→Date yourself (server will compute correct date from the user academic calendar and will skip holiday weeks).',
+    '- If the PDF uses a week range like "Week 15/16" or "Week 15-16":',
+    '  - You MUST set suggested_week to the LATER week number (e.g. 16).',
+    '  - You MUST set suggested_week_text to the exact original text (e.g. "Week 15/16").',
+    '  - You MUST set due_date to an empty string.',
+    '- If neither date nor week is stated, do NOT include the task.',
+    '- If time is not stated, use due_time = "23:59".',
+    '',
+    'Output quality:',
+    '- Keep titles short and specific (e.g. "Assignment 2", "Lab Report 3", "Quiz 1", "Project Proposal").',
+    '- notes must be empty unless the PDF includes a short requirement that clarifies what the deliverable is.',
+    '- Use effort_hours = 2 by default unless the PDF explicitly indicates otherwise.',
+    '- Use priority = "Medium" unless the PDF explicitly indicates a final/exam-like assessment (then "High").',
+    '',
+    'Return JSON only. No explanation.',
   ].join('\n');
 }
 
@@ -310,7 +484,13 @@ async function openAiExtractViaTextChat(args: {
 
 function tryNormalizeFromModelJson(
   raw: string,
-  ctx: { currentWeek: number; todayISO: string }
+  ctx: {
+    currentWeek: number;
+    todayISO: string;
+    semesterStartISO?: string;
+    totalWeeks?: number;
+    endOfWeekDay?: 'FRI' | 'SAT' | 'SUN';
+  }
 ): { subjects: ExtractedSubject[]; tasks: ExtractedTask[] } | null {
   try {
     return normalizeOutput(JSON.parse(raw), ctx);
@@ -357,6 +537,14 @@ Deno.serve(async (req) => {
     const bucket = String(body?.bucket ?? 'sow-files').trim() || 'sow-files';
     const currentWeek = Math.max(1, Number(body?.current_week ?? 1) || 1);
     const todayISO = String(body?.today_iso ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const semesterStartISO = String(body?.semester_start_iso ?? '').slice(0, 10);
+    const totalWeeks = Number(body?.total_weeks ?? 0) || undefined;
+    const endOfWeekDayRaw = String(body?.end_of_week_day ?? '').toUpperCase();
+    const endOfWeekDay =
+      endOfWeekDayRaw === 'FRI' || endOfWeekDayRaw === 'SAT' || endOfWeekDayRaw === 'SUN'
+        ? (endOfWeekDayRaw as 'FRI' | 'SAT' | 'SUN')
+        : undefined;
+    const periods = Array.isArray(body?.periods) ? (body.periods as any[]) : null;
     const importId = String(body?.import_id ?? `sow-${Date.now()}`);
     const fileName = storagePath.split('/').pop() || 'sow.pdf';
 
@@ -424,7 +612,7 @@ Deno.serve(async (req) => {
     const textForModel = mergedText.trim();
     const pdfModel = (Deno.env.get('OPENAI_SOW_MODEL') ?? 'gpt-4o').trim();
     const textModel = (Deno.env.get('OPENAI_SOW_TEXT_MODEL') ?? 'gpt-4o-mini').trim();
-    const normCtx = { currentWeek, todayISO };
+    const normCtx = { currentWeek, todayISO, semesterStartISO, totalWeeks, endOfWeekDay, periods };
 
     let normalized: { subjects: ExtractedSubject[]; tasks: ExtractedTask[] } | null = null;
     let extractionMode: 'pdf_native' | 'text_chat' = 'text_chat';

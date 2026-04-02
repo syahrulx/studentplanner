@@ -1,5 +1,7 @@
 import { getTodayISO } from '@/src/utils/date';
 import type { SemesterPhase } from '@/src/types';
+import type { AcademicCalendar } from '@/src/types';
+import { dueDateToTeachingWeek } from '@/src/lib/academicWeek';
 
 function diffCalendarDays(fromISO: string, toISO: string): number {
   const from = new Date(`${fromISO.slice(0, 10)}T12:00:00`);
@@ -52,6 +54,7 @@ export function analyzeSowWeekAlignment(
     semesterStart: string;
     totalWeeks: number;
     currentWeek: number;
+    periods?: AcademicCalendar['periods'];
     isBreak?: boolean;
     todayISO?: string;
     semesterPhase?: SemesterPhase;
@@ -94,7 +97,27 @@ export function analyzeSowWeekAlignment(
     const due = (t.due_date || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) continue;
 
-    const derived = deriveSemesterWeekForDueDate(due, semesterStart, totalWeeks);
+    const derived =
+      ctx.periods && Array.isArray(ctx.periods) && ctx.periods.length > 0
+        ? (() => {
+            const w = dueDateToTeachingWeek(
+              due,
+              {
+                id: 'tmp',
+                semesterLabel: '',
+                startDate: semesterStart,
+                endDate: '',
+                totalWeeks,
+                periods: ctx.periods as any,
+                isActive: true,
+              } as any,
+              semesterStart,
+            );
+            if (w == null) return { week: 1, beforeSemester: false, afterSemester: false, inSemester: true };
+            if (w > totalWeeks) return { week: w, beforeSemester: false, afterSemester: true, inSemester: false };
+            return { week: w, beforeSemester: false, afterSemester: false, inSemester: true };
+          })()
+        : deriveSemesterWeekForDueDate(due, semesterStart, totalWeeks);
     if (derived.beforeSemester) {
       beforeTitles.push(`• ${title} (${due})`);
       affected.add(0);

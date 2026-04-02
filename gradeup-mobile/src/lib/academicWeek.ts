@@ -28,40 +28,57 @@ export function dueDateToTeachingWeek(
   calendar: AcademicCalendar | null | undefined,
   profileStartFallback?: string | null,
 ): number | null {
-  // If detailed HEA-style periods exist, compute teaching week by counting only lecture days.
+  const raw = dueDateToTeachingWeekRaw(dueDateStr, calendar, profileStartFallback);
+  if (raw == null) return null;
+  const totalWeeks = Math.max(1, calendar?.totalWeeks ?? 14);
+  return Math.min(Math.max(raw, 1), totalWeeks);
+}
+
+/**
+ * Same mapping as `dueDateToTeachingWeek` but WITHOUT clamping to calendar.totalWeeks.
+ * Used to extend UI week ranges when tasks exist beyond the configured teaching-week count
+ * (e.g. exam weeks 15/16).
+ */
+export function dueDateToTeachingWeekRaw(
+  dueDateStr: string,
+  calendar: AcademicCalendar | null | undefined,
+  profileStartFallback?: string | null,
+): number | null {
+  // If detailed HEA-style periods exist, compute week by counting instructional/assessment weeks
+  // (lecture + revision + test + exam), skipping breaks.
   if (calendar?.periods && Array.isArray(calendar.periods) && calendar.periods.length > 0) {
     const due = (dueDateStr || '').trim().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
     const dueDate = new Date(`${due}T00:00:00`);
     if (Number.isNaN(dueDate.getTime())) return null;
 
-    const lectures = calendar.periods.filter((p: AcademicPeriod) => p.type === 'lecture');
-    if (lectures.length === 0) return null;
-    const start = lectures.map((p) => p.startDate).sort()[0];
+    const countedTypes = new Set(['lecture', 'revision', 'test', 'exam']);
+    const counted = calendar.periods.filter((p: AcademicPeriod) => countedTypes.has(p.type));
+    if (counted.length === 0) return null;
+    const start = counted.map((p) => p.startDate).sort()[0];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return null;
 
     // Snap start back to week-Sunday for UI alignment.
     const startDate = snapToWeekSunday(new Date(`${start}T00:00:00`));
-    const totalWeeks = Math.max(1, calendar?.totalWeeks ?? 14);
     if (dueDate.getTime() < startDate.getTime()) return 1;
 
-    // Build a set of "lecture days" between start..due inclusive.
-    const lectureDays = new Set<string>();
-    for (const p of lectures) {
+    // Build a set of "counted days" between start..due inclusive.
+    const countedDays = new Set<string>();
+    for (const p of counted) {
       const s = new Date(`${p.startDate}T00:00:00`);
       const e = new Date(`${p.endDate}T00:00:00`);
       if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue;
       const cur = new Date(s);
       while (cur.getTime() <= e.getTime()) {
-        lectureDays.add(
+        countedDays.add(
           `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`,
         );
         cur.setDate(cur.getDate() + 1);
       }
     }
 
-    // Count how many lecture weeks (Sun–Sat blocks) have started up to this due date.
-    // We consider a week "counted" if it contains at least 1 lecture day.
+    // Count how many counted weeks (Sun–Sat blocks) have started up to this due date.
+    // A week "counts" if it contains at least 1 counted day.
     let week = 1;
     let cursor = new Date(startDate);
     while (cursor.getTime() <= dueDate.getTime()) {
@@ -73,7 +90,7 @@ export function dueDateToTeachingWeek(
         const d = new Date(weekStart);
         d.setDate(d.getDate() + i);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        if (lectureDays.has(key)) {
+        if (countedDays.has(key)) {
           hasLecture = true;
           break;
         }
@@ -85,7 +102,7 @@ export function dueDateToTeachingWeek(
       }
       cursor.setDate(cursor.getDate() + 7);
     }
-    return Math.min(Math.max(week, 1), totalWeeks);
+    return Math.max(week, 1);
   }
 
   const start = (calendar?.startDate ?? profileStartFallback ?? '').trim().slice(0, 10);
@@ -94,10 +111,9 @@ export function dueDateToTeachingWeek(
   const startDate = snapToWeekSunday(new Date(`${start}T00:00:00`));
   const dueDate = new Date(`${due}T00:00:00`);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(dueDate.getTime())) return null;
-  const totalWeeks = Math.max(1, calendar?.totalWeeks ?? 14);
   const diffDays = Math.floor((dueDate.getTime() - startDate.getTime()) / 864e5);
   const rawWeek = Math.floor(diffDays / 7) + 1;
-  return Math.min(Math.max(rawWeek, 1), totalWeeks);
+  return Math.max(rawWeek, 1);
 }
 
 /**

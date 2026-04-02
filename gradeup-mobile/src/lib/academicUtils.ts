@@ -8,6 +8,76 @@ export type AcademicProgress = {
   semesterPhase: SemesterPhase;
 };
 
+type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
+
+function snapToWeekSunday(d: Date): Date {
+  const dow = d.getDay(); // 0=Sun
+  if (dow === 0) return d;
+  const snapped = new Date(d);
+  snapped.setDate(snapped.getDate() - dow);
+  return snapped;
+}
+
+function iso(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Compute how many "counted weeks" exist in a HEA-style calendar.
+ * A week (Sun–Sat) counts if it contains at least 1 day from the counted period types.
+ * Break weeks are naturally skipped because they have no counted days.
+ */
+export function computeCountedWeeksFromPeriods(
+  periods: AcademicPeriod[] | null | undefined,
+  countedTypes: Set<string> = new Set(['lecture', 'revision', 'test', 'exam']),
+): number | null {
+  if (!periods || !Array.isArray(periods) || periods.length === 0) return null;
+  const counted = periods.filter((p) => countedTypes.has(p.type));
+  if (counted.length === 0) return null;
+
+  const countedDays = new Set<string>();
+  let earliest = '';
+  let latest = '';
+  for (const p of counted) {
+    const s = (p.startDate || '').slice(0, 10);
+    const e = (p.endDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e)) continue;
+    const cur = new Date(`${s}T00:00:00`);
+    const end = new Date(`${e}T00:00:00`);
+    if (Number.isNaN(cur.getTime()) || Number.isNaN(end.getTime())) continue;
+    while (cur.getTime() <= end.getTime()) {
+      const k = iso(cur);
+      countedDays.add(k);
+      if (!earliest || k < earliest) earliest = k;
+      if (!latest || k > latest) latest = k;
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  if (countedDays.size === 0 || !earliest || !latest) return null;
+
+  const startSunday = snapToWeekSunday(new Date(`${earliest}T00:00:00`));
+  startSunday.setHours(0, 0, 0, 0);
+  const last = new Date(`${latest}T00:00:00`);
+  last.setHours(0, 0, 0, 0);
+
+  let weeks = 0;
+  const cursor = new Date(startSunday);
+  for (let guard = 0; guard < 120 && cursor.getTime() <= last.getTime(); guard++) {
+    let hasCounted = false;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(cursor);
+      d.setDate(d.getDate() + i);
+      if (countedDays.has(iso(d))) {
+        hasCounted = true;
+        break;
+      }
+    }
+    if (hasCounted) weeks += 1;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return weeks > 0 ? weeks : null;
+}
+
 /**
  * Current position in the academic semester from a start date and total teaching weeks.
  * - no_calendar: missing/invalid start date
@@ -79,17 +149,23 @@ export function getAcademicProgressFromCalendar(
   calendar: AcademicCalendar | null | undefined,
   profileStartFallback?: string,
 ): AcademicProgress {
-  const totalWeeks = Math.max(1, calendar?.totalWeeks ?? 14);
+  const totalWeeks = Math.max(
+    1,
+    calendar?.totalWeeks ??
+      computeCountedWeeksFromPeriods(calendar?.periods as any) ??
+      14,
+  );
   const periods = calendar?.periods;
   if (!periods || !Array.isArray(periods) || periods.length === 0) {
     return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
   }
-  const lectures = periods.filter((p) => p.type === 'lecture');
-  if (lectures.length === 0) {
+  const countedTypes = new Set(['lecture', 'revision', 'test', 'exam']);
+  const counted = periods.filter((p) => countedTypes.has(p.type));
+  if (counted.length === 0) {
     return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
   }
 
-  const startISO = lectures.map((p) => p.startDate).sort()[0];
+  const startISO = counted.map((p) => p.startDate).sort()[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startISO)) {
     return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
   }
@@ -107,15 +183,15 @@ export function getAcademicProgressFromCalendar(
     return { week: 1, isBreak: false, label: 'Before semester', semesterPhase: 'before_start' };
   }
 
-  // Build lecture day set.
-  const lectureDays = new Set<string>();
-  for (const p of lectures) {
+  // Build counted day set.
+  const countedDays = new Set<string>();
+  for (const p of counted) {
     const s = new Date(`${p.startDate}T00:00:00`);
     const e = new Date(`${p.endDate}T00:00:00`);
     if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue;
     const cur = new Date(s);
     while (cur.getTime() <= e.getTime()) {
-      lectureDays.add(
+      countedDays.add(
         `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`,
       );
       cur.setDate(cur.getDate() + 1);
@@ -131,7 +207,7 @@ export function getAcademicProgressFromCalendar(
         const d = new Date(cursor);
         d.setDate(d.getDate() + i);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        if (lectureDays.has(key)) {
+        if (countedDays.has(key)) {
           hasLecture = true;
           break;
         }

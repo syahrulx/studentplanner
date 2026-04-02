@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
@@ -43,11 +44,35 @@ function normalizeDate(value: string): string {
   return getTodayISO();
 }
 
+function isoToDate(iso: string): Date {
+  return new Date(`${normalizeDate(iso).slice(0, 10)}T12:00:00`);
+}
+
+function dueDateTimeToDate(iso: string, time: string): Date {
+  const date = isoToDate(iso);
+  const [hStr, mStr] = (time || '00:00').split(':');
+  const h = Number.isFinite(Number(hStr)) ? Number(hStr) : 0;
+  const m = Number.isFinite(Number(mStr)) ? Number(mStr) : 0;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0, 0);
+}
+
+function formatISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatTimeHM(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export default function SowReview() {
   const theme = useTheme();
   const { courses, addCourse, addTask, user, academicCalendar } = useApp();
   const pending = getPendingSowExtraction();
   const [saving, setSaving] = useState(false);
+  const [picker, setPicker] = useState<null | { taskIndex: number; mode: 'date' | 'time'; value: Date }>(null);
 
   const [subjects, setSubjects] = useState<EditableSubject[]>(
     (pending?.extracted?.subjects ?? []).map((s) => ({
@@ -215,6 +240,29 @@ export default function SowReview() {
       return;
     }
     void performSowReviewSave();
+  };
+
+  const openTaskPicker = (taskIndex: number, mode: 'date' | 'time') => {
+    const t = tasks[taskIndex];
+    if (!t) return;
+    setPicker({ taskIndex, mode, value: dueDateTimeToDate(t.due_date, t.due_time) });
+  };
+
+  const onPickerChange = (_event: unknown, selected?: Date) => {
+    if (!picker) return;
+    if (!selected) {
+      setPicker(null);
+      return;
+    }
+    const idx = picker.taskIndex;
+    if (picker.mode === 'date') {
+      const iso = formatISODate(selected);
+      setTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_date: iso } : row)));
+    } else {
+      const tm = formatTimeHM(selected);
+      setTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_time: tm } : row)));
+    }
+    setPicker(null);
   };
 
   if (!pending) {
@@ -387,20 +435,30 @@ export default function SowReview() {
             })}
           </View>
           <View style={styles.row}>
-            <TextInput
-              style={[styles.input, styles.half, { color: theme.text, borderColor: theme.border }]}
-              value={t.due_date}
-              onChangeText={(v) => setTasks((prev) => prev.map((it, i) => (i === idx ? { ...it, due_date: v } : it)))}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.textSecondary}
-            />
-            <TextInput
-              style={[styles.input, styles.half, { color: theme.text, borderColor: theme.border }]}
-              value={t.due_time}
-              onChangeText={(v) => setTasks((prev) => prev.map((it, i) => (i === idx ? { ...it, due_time: v } : it)))}
-              placeholder="HH:mm"
-              placeholderTextColor={theme.textSecondary}
-            />
+            <Pressable
+              onPress={() => openTaskPicker(idx, 'date')}
+              style={({ pressed }) => [
+                styles.pickerField,
+                styles.half,
+                { borderColor: theme.border, backgroundColor: theme.background },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Feather name="calendar" size={14} color={theme.textSecondary} />
+              <Text style={[styles.pickerFieldText, { color: theme.text }]}>{t.due_date}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => openTaskPicker(idx, 'time')}
+              style={({ pressed }) => [
+                styles.pickerField,
+                styles.half,
+                { borderColor: theme.border, backgroundColor: theme.background },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Feather name="clock" size={14} color={theme.textSecondary} />
+              <Text style={[styles.pickerFieldText, { color: theme.text }]}>{t.due_time}</Text>
+            </Pressable>
           </View>
           <View style={styles.row}>
             <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Effort (h)</Text>
@@ -449,6 +507,42 @@ export default function SowReview() {
       >
         <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save to Supabase'}</Text>
       </Pressable>
+
+      {picker ? (
+        Platform.OS === 'ios' ? (
+          <Modal transparent animationType="fade" visible onRequestClose={() => setPicker(null)}>
+            <Pressable style={styles.pickerBackdrop} onPress={() => setPicker(null)}>
+              <View
+                style={[styles.pickerPanel, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onStartShouldSetResponder={() => true}
+              >
+                <Text style={[styles.pickerTitle, { color: theme.text }]}>
+                  {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
+                </Text>
+                <DateTimePicker
+                  value={picker.value}
+                  mode={picker.mode}
+                  display="spinner"
+                  onChange={(_e, d) => onPickerChange(_e, d ?? undefined)}
+                  is24Hour
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.pickerDone,
+                    { backgroundColor: theme.primary },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  onPress={() => setPicker(null)}
+                >
+                  <Text style={[styles.pickerDoneText, { color: theme.textInverse }]}>Done</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Modal>
+        ) : (
+          <DateTimePicker value={picker.value} mode={picker.mode} onChange={onPickerChange as any} is24Hour />
+        )
+      ) : null}
       <View style={{ height: 60 }} />
     </ScrollView>
   );
@@ -492,6 +586,27 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 11, fontWeight: '800' },
   notes: { minHeight: 56, textAlignVertical: 'top' },
   warn: { fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  pickerField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+  pickerFieldText: { fontSize: 14, fontWeight: '700' },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  pickerPanel: { borderRadius: 16, borderWidth: 1, padding: 14 },
+  pickerTitle: { fontSize: 14, fontWeight: '900', marginBottom: 8, letterSpacing: -0.2 },
+  pickerDone: { marginTop: 10, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  pickerDoneText: { fontSize: 13, fontWeight: '900' },
   saveBtn: {
     marginTop: 14,
     alignItems: 'center',

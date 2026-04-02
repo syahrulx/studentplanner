@@ -9,7 +9,7 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
-import { peakWeekFromTaskCounts, taskCountsByOpenDueWeek } from '@/src/lib/academicWeek';
+import { dueDateToTeachingWeekRaw, peakWeekFromTaskCounts, taskCountsByOpenDueWeek } from '@/src/lib/academicWeek';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
 
@@ -601,7 +601,21 @@ export default function Dashboard() {
       ],
     );
   }, [pendingClassroomTasks.length]);
-  const totalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const maxTaskWeek = useMemo(() => {
+    if (!academicCalendar) return baseTotalWeeks;
+    let maxW = baseTotalWeeks;
+    for (const t of tasks) {
+      const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
+      if (typeof w === 'number' && w > maxW) maxW = w;
+    }
+    return maxW;
+  }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
+  const effectiveCalendar = useMemo(
+    () => (academicCalendar ? { ...academicCalendar, totalWeeks: Math.max(baseTotalWeeks, maxTaskWeek) } : academicCalendar),
+    [academicCalendar, baseTotalWeeks, maxTaskWeek],
+  );
+  const totalWeeks = effectiveCalendar?.totalWeeks ?? baseTotalWeeks;
   const semesterPhase = user.semesterPhase ?? 'teaching';
   const focusTask = useMemo(
     () => selectTodaysFocusTask(tasks, pinnedTaskIds),
@@ -614,8 +628,8 @@ export default function Dashboard() {
   );
 
   const taskWeekCounts = useMemo(
-    () => taskCountsByOpenDueWeek(tasks, academicCalendar, user.startDate),
-    [tasks, academicCalendar, user.startDate],
+    () => taskCountsByOpenDueWeek(tasks, effectiveCalendar, user.startDate),
+    [tasks, effectiveCalendar, user.startDate],
   );
   const { week: taskPeakWeek, max: taskPeakMax } = useMemo(
     () => peakWeekFromTaskCounts(taskWeekCounts),

@@ -10,6 +10,7 @@ import {
   initialFlashcardFolders,
 } from '../seedData';
 import { getAcademicProgress, getAcademicProgressFromCalendar } from '../lib/academicUtils';
+import { computeCountedWeeksFromPeriods } from '../lib/academicUtils';
 import {
   getTheme,
   setTheme as persistTheme,
@@ -238,10 +239,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
 
+  const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
+    if (!cal) return null;
+    const computed =
+      cal.periods && Array.isArray(cal.periods) && cal.periods.length > 0
+        ? computeCountedWeeksFromPeriods(cal.periods as any) ?? null
+        : null;
+    const effective = computed != null ? Math.max(Number(cal.totalWeeks) || 14, computed) : (Number(cal.totalWeeks) || 14);
+    if (effective === cal.totalWeeks) return cal;
+    return { ...cal, totalWeeks: effective };
+  }, []);
+
   /** Keep teaching week in sync with the active academic calendar (same start as task week mapping). */
   useEffect(() => {
     setUserState((prev) => {
-      const totalW = academicCalendar?.totalWeeks ?? 14;
+      const computedTotal =
+        academicCalendar?.periods && academicCalendar.periods.length > 0
+          ? computeCountedWeeksFromPeriods(academicCalendar.periods as any) ?? academicCalendar.totalWeeks
+          : academicCalendar?.totalWeeks;
+      const totalW = computedTotal ?? 14;
       const nextStart = (academicCalendar?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
       const startFor = (academicCalendar?.startDate ?? prev.startDate ?? '').trim();
       const progress =
@@ -388,7 +404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
-          setAcademicCalendar(calendar ?? null);
+          setAcademicCalendar(withEffectiveTotalWeeks(calendar));
         }
 
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
@@ -456,13 +472,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (calendar !== undefined) {
-            const totalW = calendar?.totalWeeks ?? 14;
-            const startForProgress = calendar?.startDate ?? next.startDate;
-            const progress = getAcademicProgress(startForProgress, totalW);
+            const calEff = withEffectiveTotalWeeks(calendar);
+            const totalW = calEff?.totalWeeks ?? 14;
+            const startForProgress = calEff?.startDate ?? next.startDate;
+            const progress =
+              calEff?.periods && Array.isArray(calEff.periods) && calEff.periods.length > 0
+                ? getAcademicProgressFromCalendar(calEff, next.startDate)
+                : getAcademicProgress(startForProgress, totalW);
             if (calendar) {
               next = {
                 ...next,
-                startDate: calendar.startDate,
+                startDate: calEff?.startDate ?? calendar.startDate,
                 currentWeek: progress.week,
                 isBreak: progress.isBreak,
                 semesterPhase: progress.semesterPhase,
@@ -500,14 +520,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const newCal = await provider.autoSync(profileForSync, calendar ?? undefined);
               if (newCal && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
                 const saved = await academicCalendarDb.upsertCalendar(uid, newCal);
-                setAcademicCalendar(saved);
+                const savedEff = withEffectiveTotalWeeks(saved);
+                setAcademicCalendar(savedEff);
                 const prog =
-                  saved?.periods && Array.isArray(saved.periods) && saved.periods.length > 0
-                    ? getAcademicProgressFromCalendar(saved)
-                    : getAcademicProgress(saved.startDate, saved.totalWeeks);
+                  savedEff?.periods && Array.isArray(savedEff.periods) && savedEff.periods.length > 0
+                    ? getAcademicProgressFromCalendar(savedEff)
+                    : getAcademicProgress(savedEff?.startDate ?? saved.startDate, savedEff?.totalWeeks ?? saved.totalWeeks);
                 setUserState((prev) => ({
                   ...prev,
-                  startDate: saved.startDate,
+                  startDate: savedEff?.startDate ?? saved.startDate,
                   currentWeek: prog.week,
                   isBreak: prog.isBreak,
                   semesterPhase: prog.semesterPhase,
