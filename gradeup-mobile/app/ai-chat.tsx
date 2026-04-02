@@ -1,28 +1,59 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
-import { COLORS } from '@/src/constants';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
 import { getTodayISO } from '@/src/utils/date';
-
-const NAVY = '#003366';
-const GOLD = '#f59e0b';
-const BG = '#f8fafc';
-const BORDER = '#e2e8f0';
-const TEXT_PRIMARY = '#0f172a';
-const TEXT_SECONDARY = '#64748b';
-const GREEN = '#059669';
+import { useTheme } from '@/hooks/useTheme';
 
 type Message = { role: 'ai' | 'user'; text: string };
 
+function hexLuminance(hex: string): number | null {
+  const raw = hex.replace('#', '').trim();
+  if (raw.length !== 6) return null;
+  const n = parseInt(raw, 16);
+  if (Number.isNaN(n)) return null;
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const raw = hex.replace('#', '').trim();
+  if (raw.length !== 6) return hex;
+  const n = parseInt(raw, 16);
+  if (Number.isNaN(n)) return hex;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/** Muted label on `theme.primary`: uses inverse text color so light gold → dark subtitle, dark blue → light subtitle */
+function onPrimaryMuted(inverseHex: string, primaryHex: string): string {
+  const L = hexLuminance(primaryHex);
+  const a = L != null && L > 0.5 ? 0.62 : 0.78;
+  return hexToRgba(inverseHex, a);
+}
+
+function onPrimaryChipBg(inverseHex: string): string {
+  return hexToRgba(inverseHex, 0.14);
+}
+
 export default function AiChat() {
   const { language, addTask, courses, user, academicCalendar } = useApp();
+  const theme = useTheme();
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
+  const headerSubColor = useMemo(
+    () => onPrimaryMuted(theme.textInverse, theme.primary),
+    [theme.textInverse, theme.primary],
+  );
+  const headerIconBg = useMemo(() => onPrimaryChipBg(theme.textInverse), [theme.textInverse]);
 
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
@@ -113,64 +144,82 @@ export default function AiChat() {
     <View style={s.overlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} />
       <KeyboardAvoidingView 
-        style={s.sheetContainer} 
+        style={[s.sheetContainer, { backgroundColor: theme.background }]} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={s.header}>
+        <View style={[s.header, { backgroundColor: theme.primary }]}>
           <View style={s.headerLeft}>
             <Pressable onPress={() => router.back()} style={s.backBtn}>
-              <Feather name="arrow-down" size={24} color={COLORS.white} />
+              <Feather name="arrow-down" size={24} color={theme.textInverse} />
             </Pressable>
-            <View style={s.headerIcon}>
-              <Feather name="clipboard" size={18} color={GOLD} />
+            <View style={[s.headerIcon, { backgroundColor: headerIconBg }]}>
+              <Feather name="clipboard" size={18} color={theme.textInverse} />
             </View>
             <View>
-              <Text style={s.headerTitle}>AI Task Scanner</Text>
-              <Text style={s.headerSub}>PASTE WHATSAPP MESSAGE</Text>
+              <Text style={[s.headerTitle, { color: theme.textInverse }]}>AI Task Scanner</Text>
+              <Text style={[s.headerSub, { color: headerSubColor }]}>PASTE WHATSAPP MESSAGE</Text>
             </View>
           </View>
         </View>
 
         <ScrollView 
           ref={scrollRef}
-          style={s.messagesList} 
+          style={[s.messagesList, { backgroundColor: theme.background }]} 
           contentContainerStyle={s.messagesContent}
         >
           {messages.map((m, i) => (
             <View key={i} style={[s.bubbleWrap, m.role === 'user' && s.bubbleRight]}>
-              <View style={[s.bubble, m.role === 'user' ? s.bubbleUser : s.bubbleAi]}>
-                <Text style={[s.bubbleText, m.role === 'user' && { color: COLORS.white }]}>{m.text}</Text>
+              <View
+                style={[
+                  s.bubble,
+                  m.role === 'user'
+                    ? [s.bubbleUser, { backgroundColor: theme.primary }]
+                    : [s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }],
+                ]}
+              >
+                <Text
+                  style={[
+                    s.bubbleText,
+                    { color: m.role === 'user' ? theme.textInverse : theme.text },
+                  ]}
+                >
+                  {m.text}
+                </Text>
               </View>
             </View>
           ))}
           {isProcessing && (
             <View style={s.bubbleWrap}>
-              <View style={[s.bubble, s.bubbleAi]}>
+              <View style={[s.bubble, s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.processingRow}>
-                  <Feather name="search" size={14} color={NAVY} />
-                  <Text style={s.bubbleText}>Scanning message for tasks...</Text>
+                  <Feather name="search" size={14} color={theme.primary} />
+                  <Text style={[s.bubbleText, { color: theme.text }]}>Scanning message for tasks...</Text>
                 </View>
               </View>
             </View>
           )}
         </ScrollView>
 
-        <View style={s.inputRow}>
+        <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
           <TextInput
-            style={s.input}
+            style={[s.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
             value={chatInput}
             onChangeText={setChatInput}
             placeholder="Paste lecturer's message here..."
-            placeholderTextColor="#8E9AAF"
+            placeholderTextColor={theme.textSecondary}
             multiline
             textAlignVertical="top"
           />
           <Pressable
-            style={[s.sendBtn, (!chatInput.trim() || isProcessing) && { opacity: 0.5 }]}
+            style={[
+              s.sendBtn,
+              { backgroundColor: theme.primary },
+              (!chatInput.trim() || isProcessing) && { opacity: 0.5 },
+            ]}
             onPress={handleSend}
             disabled={!chatInput.trim() || isProcessing}
           >
-            <Feather name="search" size={18} color={COLORS.white} />
+            <Feather name="search" size={18} color={theme.textInverse} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -186,7 +235,6 @@ const s = StyleSheet.create({
   },
   sheetContainer: { 
     height: '70%',
-    backgroundColor: BG,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     overflow: 'hidden',
@@ -195,7 +243,6 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: NAVY,
     paddingTop: 24,
     paddingBottom: 20,
     paddingHorizontal: 20,
@@ -206,21 +253,20 @@ const s = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: '900', color: '#ffffff', letterSpacing: -0.3 },
-  headerSub: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 1.5 },
+  headerTitle: { fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
+  headerSub: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
   
-  messagesList: { flex: 1, backgroundColor: BG },
+  messagesList: { flex: 1 },
   messagesContent: { padding: 20, paddingBottom: 40, gap: 12 },
   bubbleWrap: { alignItems: 'flex-start' },
   bubbleRight: { alignItems: 'flex-end' },
   bubble: { maxWidth: '85%', padding: 16, borderRadius: 20 },
-  bubbleAi: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: BORDER, alignSelf: 'flex-start', borderBottomLeftRadius: 6 },
-  bubbleUser: { backgroundColor: NAVY, alignSelf: 'flex-end', borderBottomRightRadius: 6 },
-  bubbleText: { fontSize: 15, lineHeight: 22, color: TEXT_PRIMARY, fontWeight: '500' },
+  bubbleAi: { borderWidth: 1, alignSelf: 'flex-start', borderBottomLeftRadius: 6 },
+  bubbleUser: { alignSelf: 'flex-end', borderBottomRightRadius: 6 },
+  bubbleText: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
   processingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   
   inputRow: {
@@ -229,27 +275,21 @@ const s = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 32 : 16,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: BORDER,
-    backgroundColor: '#ffffff',
   },
   input: {
     flex: 1,
-    backgroundColor: BG,
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingVertical: 14,
     fontSize: 15,
     fontWeight: '500',
-    color: TEXT_PRIMARY,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
     maxHeight: 100,
   },
   sendBtn: {
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: NAVY,
     alignItems: 'center',
     justifyContent: 'center',
   },

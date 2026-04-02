@@ -1165,7 +1165,7 @@ export default function Planner() {
     const monthNav = (
       <View style={s.gridNavHeader}>
         <Pressable style={s.gridNavBtn} onPress={goToPrevMonth}>
-          <Feather name="chevron-left" size={20} color={theme.textSecondary} />
+          <Feather name="chevron-left" size={20} color={theme.text} />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center', minWidth: 0, paddingHorizontal: 6 }}>
           <Text style={s.gridNavTitle} numberOfLines={1}>
@@ -1189,7 +1189,7 @@ export default function Planner() {
             </Pressable>
           )}
           <Pressable style={s.gridNavBtn} onPress={goToNextMonth}>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+            <Feather name="chevron-right" size={20} color={theme.text} />
           </Pressable>
         </View>
       </View>
@@ -1526,7 +1526,7 @@ export default function Planner() {
       <View style={{ flex: 1, backgroundColor: theme.background }}>
         <View style={s.gridNavHeader}>
           <Pressable style={s.gridNavBtn} onPress={goToPrevWeek}>
-            <Feather name="chevron-left" size={20} color={theme.textSecondary} />
+            <Feather name="chevron-left" size={20} color={theme.text} />
           </Pressable>
           <View style={{ alignItems: 'center' }}>
             <Text style={s.gridNavTitle}>{getMonthYearLabel(activeDate)}</Text>
@@ -1537,7 +1537,7 @@ export default function Planner() {
             )}
           </View>
           <Pressable style={s.gridNavBtn} onPress={goToNextWeek}>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+            <Feather name="chevron-right" size={20} color={theme.text} />
           </Pressable>
         </View>
 
@@ -1846,7 +1846,7 @@ export default function Planner() {
         <View style={s.calendarPanel}>
           <View style={s.monthNavRow}>
             <Pressable style={s.monthNavBtn} onPress={goToPrevWeek} hitSlop={12}>
-              <Feather name="chevron-left" size={18} color={theme.textSecondary} />
+              <Feather name="chevron-left" size={18} color={theme.text} />
             </Pressable>
             <View pointerEvents="none" style={s.monthNavTitleWrap}>
               <View style={[s.monthNavTitleCol, { alignItems: 'center' }]}>
@@ -1864,7 +1864,7 @@ export default function Planner() {
                 </Pressable>
               ) : null}
               <Pressable style={s.monthNavBtn} onPress={goToNextWeek} hitSlop={12}>
-                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                <Feather name="chevron-right" size={18} color={theme.text} />
               </Pressable>
             </View>
           </View>
@@ -2286,7 +2286,9 @@ function createPlannerStyles(theme: ThemePalette) {
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   monthNavTitleWrap: {
     position: 'absolute',
@@ -3044,10 +3046,10 @@ function createPlannerStyles(theme: ThemePalette) {
     height: 36,
     borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: 'rgba(0,51,102,0.12)',
+    borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: theme.backgroundSecondary,
   },
   mDetailEmpty: {
     alignItems: 'center',
@@ -3100,6 +3102,8 @@ function createPlannerStyles(theme: ThemePalette) {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: theme.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   gridNavToggleActive: {
     backgroundColor: 'rgba(0,51,102,0.12)',

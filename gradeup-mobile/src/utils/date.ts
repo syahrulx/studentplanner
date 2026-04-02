@@ -40,6 +40,23 @@ export function getTodayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** True if task due date+time (local) is strictly before now. Invalid/missing date → false (never auto-delete). */
+export function isTaskPastDueNow(task: { dueDate: string; dueTime: string }): boolean {
+  const d = (task.dueDate ?? '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  let t = (task.dueTime ?? '').trim().replace(/\s/g, '');
+  if (t.length < 4) t = '23:59';
+  const parts = t.slice(0, 5).split(':');
+  const hh = parseInt(parts[0] ?? '23', 10);
+  const mm = parseInt(parts[1] ?? '59', 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
+  const due = new Date(
+    `${d}T${String(Math.min(23, Math.max(0, hh))).padStart(2, '0')}:${String(Math.min(59, Math.max(0, mm))).padStart(2, '0')}:00`,
+  );
+  if (Number.isNaN(due.getTime())) return false;
+  return Date.now() > due.getTime();
+}
+
 /** Get Monday–Sunday dates (yyyy-mm-dd) for the week containing the given date */
 export function getWeekDatesFor(isoDate: string): { label: string; dateISO: string; dayNum: number }[] {
   const d = new Date(isoDate + 'T12:00:00');

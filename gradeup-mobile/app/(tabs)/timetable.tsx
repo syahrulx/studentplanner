@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import ViewShot, { captureRef } from 'react-native-view-shot';
+import * as MediaLibrary from 'expo-media-library';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
@@ -79,6 +81,11 @@ export default function TimetableScreen() {
   const { width: winW, height: winH } = useWindowDimensions();
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
+  const [exportPreset, setExportPreset] = useState<'screen' | 'portrait' | 'landscape'>('portrait');
+  const [exporting, setExporting] = useState(false);
+  const exportShotRef = useRef<ViewShot | null>(null);
   const [slotDetails, setSlotDetails] = useState<TimetableSlotDetailsVisibility>({
     room: true,
     lecturer: true,
@@ -110,6 +117,35 @@ export default function TimetableScreen() {
   const gridBodyHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
   const gridContentWidth = TIME_GUTTER + daysOrdered.length * DAY_COLUMN_MIN_W;
   const gridScrollMaxH = Math.max(280, Math.min(gridBodyHeight + 8, winH - (Platform.OS === 'ios' ? 210 : 190)));
+
+  const exportSize = useMemo(() => {
+    // Wallpaper-friendly defaults (high-res) + screen option.
+    if (exportPreset === 'screen') {
+      return { label: 'Current screen', width: Math.round(winW), height: Math.round(winH) };
+    }
+    if (exportPreset === 'landscape') {
+      return { label: 'Wallpaper (landscape)', width: 2400, height: 1080 };
+    }
+    return { label: 'Wallpaper (portrait)', width: 1080, height: 2400 };
+  }, [exportPreset, winW, winH]);
+
+  const naturalGrid = useMemo(() => {
+    // Natural timetable grid size (before scaling).
+    const w = Math.max(gridContentWidth, winW);
+    const h = 48 + gridBodyHeight; // header row + grid body
+    return { w, h };
+  }, [gridContentWidth, winW, gridBodyHeight]);
+
+  const exportScale = useMemo(() => {
+    return Math.min(exportSize.width / naturalGrid.w, exportSize.height / naturalGrid.h);
+  }, [exportSize.width, exportSize.height, naturalGrid.w, naturalGrid.h]);
+
+  const previewScale = useMemo(() => {
+    // Preview box is limited; scale down to fit visually.
+    const pw = winW - 32 - 28; // panel padding + frame padding-ish
+    const ph = 220;
+    return Math.min(pw / naturalGrid.w, ph / naturalGrid.h);
+  }, [winW, naturalGrid.w, naturalGrid.h]);
 
   const allDaysGrouped = useMemo(() => {
     return daysOrdered
@@ -193,6 +229,16 @@ export default function TimetableScreen() {
               <Feather name="edit-2" size={18} color={theme.primary} />
               <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableEditClasses')}</Text>
             </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setMenuOpen(false);
+                setExportOpen(true);
+              }}
+            >
+              <Feather name="download" size={18} color={theme.primary} />
+              <Text style={[s.menuItemText, { color: theme.text }]}>Download as wallpaper</Text>
+            </Pressable>
             <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
             <Pressable
               style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
@@ -248,6 +294,158 @@ export default function TimetableScreen() {
               />
             </View>
           </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  async function saveExportedImage() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        setExporting(false);
+        return;
+      }
+      if (!exportShotRef.current) {
+        setExporting(false);
+        return;
+      }
+      const uri = await captureRef(exportShotRef.current, {
+        format: exportFormat,
+        quality: exportFormat === 'jpg' ? 0.95 : 1,
+        result: 'tmpfile',
+      });
+      await MediaLibrary.saveToLibraryAsync(uri);
+      setExportOpen(false);
+    } catch {
+      // ignore
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function renderExportModal() {
+    if (!exportOpen) return null;
+
+    return (
+      <Modal visible={exportOpen} transparent animationType="fade" onRequestClose={() => setExportOpen(false)}>
+        <View style={s.exportRoot}>
+          <Pressable style={s.exportBackdrop} onPress={() => !exporting && setExportOpen(false)} />
+          <View style={[s.exportPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[s.exportTitle, { color: theme.text }]}>Download timetable</Text>
+            <Text style={[s.exportSub, { color: theme.textSecondary }]}>
+              Choose a size for wallpaper. We’ll export the full timetable grid.
+            </Text>
+
+            <View style={s.exportOptionsRow}>
+              {(['portrait', 'landscape', 'screen'] as const).map((id) => {
+                const active = exportPreset === id;
+                const label = id === 'portrait' ? 'Portrait' : id === 'landscape' ? 'Landscape' : 'Screen';
+                return (
+                  <Pressable
+                    key={id}
+                    onPress={() => setExportPreset(id)}
+                    style={({ pressed }) => [
+                      s.exportChip,
+                      { borderColor: theme.border, backgroundColor: theme.background },
+                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
+                      pressed && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={[s.exportChipText, { color: active ? theme.textInverse : theme.text }]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={s.exportOptionsRow}>
+              {(['png', 'jpg'] as const).map((id) => {
+                const active = exportFormat === id;
+                const label = id.toUpperCase();
+                return (
+                  <Pressable
+                    key={id}
+                    onPress={() => setExportFormat(id)}
+                    style={({ pressed }) => [
+                      s.exportChip,
+                      { borderColor: theme.border, backgroundColor: theme.background },
+                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
+                      pressed && { opacity: 0.9 },
+                    ]}
+                  >
+                    <Text style={[s.exportChipText, { color: active ? theme.textInverse : theme.text }]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={[s.exportPreviewFrame, { borderColor: theme.border, backgroundColor: theme.background }]}>
+              <View style={s.exportPreviewInner}>
+                <View
+                  style={{
+                    width: Math.floor(naturalGrid.w * previewScale),
+                    height: Math.floor(naturalGrid.h * previewScale),
+                    transform: [{ scale: previewScale }],
+                  }}
+                >
+                  {renderWeekGridStatic(naturalGrid.w, { suppressTodayHighlight: true })}
+                </View>
+              </View>
+            </View>
+
+            <View style={s.exportActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  s.exportBtn,
+                  { borderColor: theme.border, backgroundColor: theme.background },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => setExportOpen(false)}
+                disabled={exporting}
+              >
+                <Text style={[s.exportBtnText, { color: theme.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  s.exportBtn,
+                  s.exportBtnPrimary,
+                  { borderColor: theme.primary, backgroundColor: theme.primary },
+                  (exporting || pressed) && { opacity: 0.9 },
+                ]}
+                onPress={() => void saveExportedImage()}
+                disabled={exporting}
+              >
+                <Text style={[s.exportBtnText, { color: theme.textInverse }]}>{exporting ? 'Saving…' : 'Save'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Hidden full-size capture canvas (not constrained by preview frame). */}
+        <View style={s.exportHiddenCanvas} pointerEvents="none">
+          <ViewShot
+            ref={(r) => (exportShotRef.current = r)}
+            options={{ format: exportFormat, quality: exportFormat === 'jpg' ? 0.95 : 1, result: 'tmpfile' }}
+            style={{
+              width: exportSize.width,
+              height: exportSize.height,
+              backgroundColor: theme.background,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: naturalGrid.w,
+                height: naturalGrid.h,
+                transform: [{ scale: exportScale }],
+              }}
+            >
+              {renderWeekGridStatic(naturalGrid.w, { suppressTodayHighlight: true })}
+            </View>
+          </ViewShot>
         </View>
       </Modal>
     );
@@ -410,6 +608,149 @@ export default function TimetableScreen() {
     );
   }
 
+  function renderWeekGridStatic(
+    minTableW: number,
+    opts?: { suppressTodayHighlight?: boolean },
+  ) {
+    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+    const showTodayHighlight = !opts?.suppressTodayHighlight;
+    return (
+      <View style={[s.gridRoot, { paddingHorizontal: 0, paddingBottom: 0 }]}>
+        <View style={{ width: minTableW }}>
+          <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
+            <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
+            {daysOrdered.map(({ key, shortKey }) => {
+              const isToday = showTodayHighlight && key === todayDayKey;
+              const count = timetable.filter((e) => e.day === key).length;
+              return (
+                <View
+                  key={key}
+                  style={[
+                    s.gridColHead,
+                    {
+                      width: DAY_COLUMN_MIN_W,
+                      borderLeftColor: theme.border,
+                      backgroundColor: isToday ? `${theme.primary}14` : theme.backgroundSecondary ?? theme.card,
+                    },
+                  ]}
+                >
+                  <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
+                  {count > 0 ? (
+                    <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
+                      <Text style={s.gridColCountText}>{count}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={[s.gridBodyRow, { minHeight: gridBodyHeight }]}>
+            <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
+              {hours.map((h) => (
+                <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
+                  <Text style={[s.gridHourText, { color: theme.textSecondary }]}>
+                    {h.toString().padStart(2, '0')}:00
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {daysOrdered.map(({ key }) => {
+              const items = timetable
+                .filter((e) => e.day === key)
+                .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+              const isToday = showTodayHighlight && key === todayDayKey;
+              return (
+                <View
+                  key={key}
+                  style={[
+                    s.gridDayCol,
+                    {
+                      width: DAY_COLUMN_MIN_W,
+                      minHeight: gridBodyHeight,
+                      borderLeftColor: theme.border,
+                      backgroundColor: isToday ? `${theme.primary}0A` : 'transparent',
+                    },
+                  ]}
+                >
+                  {hours.map((h) => (
+                    <View
+                      key={h}
+                      style={[
+                        s.gridHourLine,
+                        {
+                          top: (h - START_HOUR) * HOUR_HEIGHT,
+                          borderBottomColor: theme.border,
+                        },
+                      ]}
+                    />
+                  ))}
+                  {items.map((entry) => {
+                    const startMin = timeToMinutes(entry.startTime);
+                    const endMin = timeToMinutes(entry.endTime);
+                    const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
+                    const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
+                    const color = entrySlotColor(entry);
+                    const title = entryDisplayTitle(entry);
+                    return (
+                      <View
+                        key={entry.id}
+                        style={[
+                          s.gridSlot,
+                          {
+                            top,
+                            height,
+                            backgroundColor: color + '24',
+                            borderLeftColor: color,
+                          },
+                        ]}
+                      >
+                        <Text style={[s.gridSlotCode, { color }]} numberOfLines={2}>
+                          {entry.subjectCode}
+                        </Text>
+                        {height > 38 && (
+                          <Text style={[s.gridSlotTitle, { color: theme.text }]} numberOfLines={height > 90 ? 4 : 2}>
+                            {title}
+                          </Text>
+                        )}
+                        {height > 48 && (
+                          <Text style={[s.gridSlotWhen, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {entry.startTime}–{entry.endTime}
+                          </Text>
+                        )}
+                        {slotDetails.room && height > 72 && entry.location && entry.location !== '-' && (
+                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {T('timetableRoom')}: {entry.location}
+                          </Text>
+                        )}
+                        {slotDetails.lecturer && height > 88 && entry.lecturer && entry.lecturer !== '-' && (
+                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {T('timetableLecturer')}: {entry.lecturer}
+                          </Text>
+                        )}
+                        {slotDetails.group && height > 102 && entry.group && (
+                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {T('timetableGroup')}: {entry.group}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                  {items.length === 0 && (
+                    <View style={[s.gridEmptyCol, { top: gridBodyHeight * 0.35 }]}>
+                      <Text style={[s.gridEmptyText, { color: theme.textSecondary }]}>—</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   /* ── List view ────────────────────────────────────── */
   function renderListView() {
     return (
@@ -494,6 +835,7 @@ export default function TimetableScreen() {
     <View style={[s.container, { backgroundColor: theme.background }]}>
       {renderHeader(true)}
       {renderTimetableMenu()}
+      {renderExportModal()}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
   );
@@ -563,6 +905,55 @@ const s = StyleSheet.create({
   },
   headerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
   headerSub: { fontSize: 13, fontWeight: '500', marginTop: 2 },
+  exportRoot: { flex: 1 },
+  exportBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
+  exportPanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: Platform.OS === 'ios' ? 100 : 84,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+  },
+  exportTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.2 },
+  exportSub: { fontSize: 13, fontWeight: '600', marginTop: 6, lineHeight: 18 },
+  exportOptionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  exportChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportChipText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.2 },
+  exportPreviewFrame: {
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginTop: 12,
+    height: 220,
+  },
+  exportPreviewInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  exportHiddenCanvas: {
+    position: 'absolute',
+    left: -10000,
+    top: -10000,
+    width: 1,
+    height: 1,
+  },
+  exportActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  exportBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportBtnPrimary: { flex: 1.3 },
+  exportBtnText: { fontSize: 13, fontWeight: '900' },
   gridRoot: { flex: 1, paddingHorizontal: 6, paddingBottom: 12 },
   gridHScroll: { flexGrow: 1 },
   gridHeaderRow: {

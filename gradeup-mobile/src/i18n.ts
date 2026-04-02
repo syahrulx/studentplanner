@@ -422,6 +422,13 @@ const translations = {
     themeOptionEmerald: 'Emerald & mint',
     weekStartPref: 'First day of week',
     weekStartPrefDesc: 'Order of days on your timetable.',
+    autoDeletePastTasks: 'Auto-delete past tasks',
+    autoDeletePastTasksDesc:
+      'Remove tasks from your planner after their due date and time have passed. Default is off — past tasks stay until you delete them.',
+    autoDeletePastTasksConfirmTitle: 'Delete past tasks?',
+    autoDeletePastTasksConfirmBody:
+      'You have {count} task(s) whose due date and time have already passed. Enabling this will remove them from your planner. This cannot be undone.',
+    autoDeletePastTasksConfirmAction: 'Enable & delete',
     weekStartsMonday: 'Monday',
     weekStartsSunday: 'Sunday',
     timetableHeader: 'Timetable',
@@ -873,6 +880,13 @@ const translations = {
     themeOptionEmerald: 'Zamrud & pudina',
     weekStartPref: 'Hari pertama minggu',
     weekStartPrefDesc: 'Susunan hari pada tab jadual.',
+    autoDeletePastTasks: 'Padam tugas lepas tarikh tamat secara automatik',
+    autoDeletePastTasksDesc:
+      'Buang tugas daripada perancang selepas tarikh dan masa tamat berlalu. Lalai dimatikan — tugas lepas kekal sehingga anda padam sendiri.',
+    autoDeletePastTasksConfirmTitle: 'Padam tugas yang sudah lepas?',
+    autoDeletePastTasksConfirmBody:
+      'Anda ada {count} tugas yang tarikh dan masa tamatnya sudah berlalu. Membolehkan ini akan membuangnya daripada perancang. Tindakan ini tidak boleh dibuat asal.',
+    autoDeletePastTasksConfirmAction: 'Bolehkan & padam',
     weekStartsMonday: 'Isnin',
     weekStartsSunday: 'Ahad',
     timetableHeader: 'Jadual Waktu',

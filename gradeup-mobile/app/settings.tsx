@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -26,6 +27,7 @@ import { THEME_IDS, THEMES, type ThemeId } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
+import { isTaskPastDueNow } from '@/src/utils/date';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -56,6 +58,9 @@ export default function Settings() {
     setTheme,
     setTasks,
     clearSemesterData,
+    tasks,
+    autoDeletePastTasks,
+    setAutoDeletePastTasks,
   } = useApp();
   const { spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
@@ -105,6 +110,30 @@ export default function Settings() {
               Alert.alert('Error', 'Failed to disconnect.');
             }
           },
+        },
+      ],
+    );
+  };
+
+  const handleAutoDeletePastTasksToggle = (enable: boolean) => {
+    if (!enable) {
+      void setAutoDeletePastTasks(false);
+      return;
+    }
+    const pastCount = tasks.filter(isTaskPastDueNow).length;
+    if (pastCount === 0) {
+      void setAutoDeletePastTasks(true);
+      return;
+    }
+    Alert.alert(
+      T('autoDeletePastTasksConfirmTitle'),
+      T('autoDeletePastTasksConfirmBody').replace('{count}', String(pastCount)),
+      [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('autoDeletePastTasksConfirmAction'),
+          style: 'destructive',
+          onPress: () => void setAutoDeletePastTasks(true),
         },
       ],
     );
@@ -400,6 +429,24 @@ export default function Settings() {
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('weekStartPref')}</Text>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
+          <View style={styles.dividerList} />
+          <View style={styles.menuRow}>
+            <View style={[styles.iconBox, { backgroundColor: '#f97316' }]}>
+              <Feather name="clock" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('autoDeletePastTasks')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                {T('autoDeletePastTasksDesc')}
+              </Text>
+            </View>
+            <Switch
+              value={autoDeletePastTasks}
+              onValueChange={handleAutoDeletePastTasksToggle}
+              trackColor={{ false: theme.border, true: theme.accent3 }}
+              thumbColor={autoDeletePastTasks ? theme.primary : theme.textSecondary}
+            />
+          </View>
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

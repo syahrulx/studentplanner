@@ -356,6 +356,24 @@ export async function setWeekStartsOn(mode: WeekStartsOn): Promise<void> {
   } catch {}
 }
 
+const KEY_AUTO_DELETE_PAST_TASKS = 'autoDeletePastTasks';
+
+/** When true, tasks whose due date+time have passed are removed (planner + cloud). Default: false. */
+export async function getAutoDeletePastTasks(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_AUTO_DELETE_PAST_TASKS);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+  } catch {}
+  return false;
+}
+
+export async function setAutoDeletePastTasks(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_AUTO_DELETE_PAST_TASKS, enabled ? 'true' : 'false');
+  } catch {}
+}
+
 /** Timetable week grid / list: optional lines per class slot */
 export type TimetableSlotDetailsVisibility = {
   room: boolean;

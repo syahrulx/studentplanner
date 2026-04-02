@@ -64,11 +64,6 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
           />
         )}
         <View style={[StyleSheet.absoluteFill, styles.barFill, { backgroundColor: barBg }]} />
-        {/* Liquid glass: top highlight (main crest) */}
-        <View style={styles.liquidCrest} />
-        <View style={styles.liquidCrestSoft} />
-        {/* Secondary highlight for curvature */}
-        <View style={styles.liquidCrestInner} />
         {/* Bottom inner edge for glass thickness */}
         <View style={styles.liquidBottomEdge} />
         <View style={[StyleSheet.absoluteFill, styles.barBorder]} />
@@ -154,44 +149,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    /** Equal-width slots (flex:1 on children). Avoid space-around — it skews outer tabs vs center Add. */
+    justifyContent: 'flex-start',
   },
   barBlur: {
     borderRadius: BAR_RADIUS,
   },
   barFill: {
     borderRadius: BAR_RADIUS,
-  },
-  liquidCrest: {
-    position: 'absolute',
-    top: 0,
-    left: '15%',
-    right: '15%',
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderBottomLeftRadius: 3,
-    borderBottomRightRadius: 3,
-    pointerEvents: 'none',
-  },
-  liquidCrestSoft: {
-    position: 'absolute',
-    top: 1,
-    left: '20%',
-    right: '20%',
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderBottomLeftRadius: 2,
-    borderBottomRightRadius: 2,
-    pointerEvents: 'none',
-  },
-  liquidCrestInner: {
-    position: 'absolute',
-    top: 4,
-    left: 24,
-    right: 24,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    pointerEvents: 'none',
   },
   liquidBottomEdge: {
     position: 'absolute',
@@ -225,14 +190,19 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     height: BAR_H,
     paddingTop: 8,
     paddingBottom: 6,
     gap: 4,
+    paddingHorizontal: 2,
   },
+  /** Same box for every tab icon so Feather vs ThemeIcon optical center matches. */
   tabIconWrap: {
+    width: 32,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -240,6 +210,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 0.3,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   indicator: {
     width: 4,
@@ -249,6 +221,7 @@ const styles = StyleSheet.create({
   },
   addTab: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     height: BAR_H,

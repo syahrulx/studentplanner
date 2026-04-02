@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { AppState as RNAppState } from 'react-native';
 import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder, NoteFolder, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {
@@ -31,6 +32,8 @@ import {
   setPlannerView as persistPlannerView,
   getWeekStartsOn,
   setWeekStartsOn as persistWeekStartsOn,
+  getAutoDeletePastTasks,
+  setAutoDeletePastTasks as persistAutoDeletePastTasks,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
@@ -50,7 +53,7 @@ import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
-import { getTodayISO } from '../utils/date';
+import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 
 type AppState = {
@@ -138,6 +141,9 @@ type AppState = {
   refreshUniversityTimetable: (password: string, options?: { courses?: string[] }) => Promise<void>;
   weekStartsOn: WeekStartsOn;
   setWeekStartsOn: (mode: WeekStartsOn) => Promise<void>;
+  /** When true, past-due tasks are removed automatically (local + Supabase when signed in). Default false. */
+  autoDeletePastTasks: boolean;
+  setAutoDeletePastTasks: (enabled: boolean) => Promise<void>;
   updateTimetableEntry: (
     entryId: string,
     patch: Partial<
@@ -234,6 +240,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [lastPlannerView, setLastPlannerViewState] = useState<PlannerViewMode>('week');
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
+  const [autoDeletePastTasks, setAutoDeletePastTasksState] = useState(false);
+  const tasksRef = useRef<Task[]>([]);
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
   /** Prevents calendar auto-sync from running more than once per session. */
@@ -283,6 +291,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [academicCalendar?.startDate, academicCalendar?.totalWeeks, academicCalendar?.periods]);
 
   useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  const purgePastDueTasks = useCallback(async () => {
+    const list = tasksRef.current;
+    const past = list.filter(isTaskPastDueNow);
+    if (past.length === 0) return;
+    const pastIds = new Set(past.map((t) => t.id));
+
+    setTasks((prev) => prev.filter((t) => !pastIds.has(t.id)));
+    setPinnedTaskIds((prev) => {
+      const next = prev.filter((id) => !pastIds.has(id));
+      if (next.length !== prev.length) persistPinnedTaskIds(next);
+      return next;
+    });
+    setTasksVersion((v) => v + 1);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (uid) {
+      for (const id of pastIds) {
+        await taskDb.deleteTask(uid, id).catch(() => {});
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!autoDeletePastTasks) return;
+    void purgePastDueTasks();
+  }, [autoDeletePastTasks, tasks, purgePastDueTasks]);
+
+  useEffect(() => {
+    if (!autoDeletePastTasks) return;
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state === 'active') void purgePastDueTasks();
+    });
+    return () => sub.remove();
+  }, [autoDeletePastTasks, purgePastDueTasks]);
+
+  useEffect(() => {
     getTheme().then(setThemeState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
@@ -291,6 +339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getLanguage().then(setLanguageState);
     getLoghat().then(setLoghatState);
     getWeekStartsOn().then(setWeekStartsOnState);
+    getAutoDeletePastTasks().then(setAutoDeletePastTasksState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
     });
@@ -1159,6 +1208,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await persistWeekStartsOn(mode);
   }, []);
 
+  const setAutoDeletePastTasks = useCallback(async (enabled: boolean) => {
+    setAutoDeletePastTasksState(enabled);
+    await persistAutoDeletePastTasks(enabled);
+  }, []);
+
   const updateTimetableEntry = useCallback(
     async (
       entryId: string,
@@ -1296,6 +1350,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshUniversityTimetable,
     weekStartsOn,
     setWeekStartsOn,
+    autoDeletePastTasks,
+    setAutoDeletePastTasks,
     updateTimetableEntry,
     clearSemesterData,
   };
