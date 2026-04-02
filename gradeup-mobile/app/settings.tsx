@@ -16,7 +16,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
-import { setHasSeenTutorial, getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
+import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
@@ -295,11 +295,6 @@ export default function Settings() {
     }, 320);
   };
 
-  const resetTutorial = async () => {
-    await setHasSeenTutorial(false);
-    router.replace('/(auth)/login');
-  };
-
   const spotifyItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = spotifyConnected
     ? [
         {
@@ -392,18 +387,6 @@ export default function Settings() {
       label: T('weeklySummary'),
       onPress: () => router.push('/weekly-summary' as any),
       color: '#f59e0b',
-    },
-    {
-      icon: 'leaderboard',
-      label: T('leaderboard'),
-      onPress: () => router.push('/leaderboard' as any),
-      color: '#10b981',
-    },
-    {
-      icon: 'helpCircle',
-      label: T('resetTutorial'),
-      onPress: resetTutorial,
-      color: '#64748b',
     },
   ];
 
@@ -786,6 +769,9 @@ export default function Settings() {
             </>
           )}
         </View>
+        <Text style={[styles.notifSectionHint, { color: theme.textSecondary }]}>
+          Using your student email allows one-tap sync with Google Classroom.
+        </Text>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>INTEGRATIONS & TOOLS</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
@@ -823,13 +809,6 @@ export default function Settings() {
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>DATA MANAGEMENT</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <View style={styles.hintBox}>
-            <Feather name="info" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
-            <Text style={[styles.hintSmall, { color: theme.textSecondary }]}>
-              Using your student email allows one-tap sync with Google Classroom.
-            </Text>
-          </View>
-          <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [
               styles.menuRow,
@@ -1158,17 +1137,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },
-  hintBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: 'rgba(150,150,150,0.05)',
-  },
-  hintSmall: {
-    fontSize: 12,
-    flex: 1,
-    lineHeight: 16,
-  },
   syncBackdrop: {
     flex: 1,
     justifyContent: 'center',
