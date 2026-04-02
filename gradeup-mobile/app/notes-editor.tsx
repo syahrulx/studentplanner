@@ -19,7 +19,7 @@ const DIVIDER = '#f1f5f9';
 
 export default function NotesEditor() {
   const { subjectId, noteId, folderId } = useLocalSearchParams<{ subjectId: string; noteId?: string; folderId?: string }>();
-  const { notes, handleSaveNote, deleteNote, courses, flashcardFolders, addFlashcard, language } = useApp();
+  const { notes, handleSaveNote, deleteNote, courses, flashcardFolders, addFlashcard, language, user } = useApp();
   const T = useTranslations(language);
   const existing = noteId ? notes.find((n) => n.id === noteId) : null;
   const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(existing?.id);
@@ -203,7 +203,7 @@ export default function NotesEditor() {
     setGenerateLoading(true);
     setGeneratedCards(null);
     try {
-      const cards = await generateFlashcardsFromNote(text);
+      const cards = await generateFlashcardsFromNote(text, user?.id);
       setGeneratedCards(cards);
       setFolderModalVisible(true);
     } finally {

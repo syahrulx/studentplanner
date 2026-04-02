@@ -18,14 +18,17 @@ create index if not exists idx_shared_tasks_status on shared_tasks(status);
 
 alter table shared_tasks enable row level security;
 
+drop policy if exists "Users can view their own shared tasks" on shared_tasks;
 create policy "Users can view their own shared tasks"
   on shared_tasks for select
   using (auth.uid() = owner_id or auth.uid() = recipient_id);
 
+drop policy if exists "Users can insert shared tasks they own" on shared_tasks;
 create policy "Users can insert shared tasks they own"
   on shared_tasks for insert
   with check (auth.uid() = owner_id);
 
+drop policy if exists "Recipients can update shared task status and completion" on shared_tasks;
 create policy "Recipients can update shared task status and completion"
   on shared_tasks for update
   using (auth.uid() = recipient_id or auth.uid() = owner_id);

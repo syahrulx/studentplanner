@@ -12,3 +12,12 @@ verify_jwt = false
 # Validates JWT inside the function via auth.getUser (same pattern as extract_sow).
 [functions.delete_account]
 verify_jwt = false
+
+[functions.admin_test_fetch]
+verify_jwt = false
+
+[functions.admin_users]
+verify_jwt = false
+
+[functions.admin_data]
+verify_jwt = false

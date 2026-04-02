@@ -577,6 +577,7 @@ export default function Planner() {
               courses,
               todayISO,
               currentWeek: user.currentWeek,
+              userId: user.id,
             });
 
             if (extractedTasks.length === 0) {

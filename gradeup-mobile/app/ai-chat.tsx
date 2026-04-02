@@ -51,6 +51,7 @@ export default function AiChat() {
             courses,
             todayISO,
             currentWeek: user.currentWeek,
+            userId: user.id,
           });
 
           if (tasks.length === 0) {
