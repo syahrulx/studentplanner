@@ -1,0 +1,33 @@
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { LoginRoute } from './routes/LoginRoute';
+import { AdminLayout } from './routes/AdminLayout';
+import { DashboardRoute } from './routes/DashboardRoute';
+import { UsersRoute } from './routes/UsersRoute';
+import { UniversitiesRoute } from './routes/UniversitiesRoute';
+import { TimetablesRoute } from './routes/TimetablesRoute';
+import { LogsRoute } from './routes/LogsRoute';
+import { SettingsRoute } from './routes/SettingsRoute';
+import { AuthProvider } from './state/AuthProvider';
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Keep /login reachable even when bypass is on so you can sign in and satisfy RLS. */}
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/" element={<AdminLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardRoute />} />
+            <Route path="users" element={<UsersRoute />} />
+            <Route path="universities" element={<UniversitiesRoute />} />
+            <Route path="timetables" element={<TimetablesRoute />} />
+            <Route path="logs" element={<LogsRoute />} />
+            <Route path="settings" element={<SettingsRoute />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}

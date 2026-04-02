@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { getOpenAIKey } from './studyApi';
+import { supabase } from './supabase';
 
 export type PdfExtractStage =
   | 'local_pdfjs'
@@ -25,7 +26,11 @@ export async function extractPdfTextFromUrl(url: string, _maxPages?: number): Pr
  * Downloads the PDF to a temp local file (Hermes-compatible),
  * uploads it to OpenAI, extracts text via Chat Completions, then cleans up.
  */
-export async function extractPdfTextFromUrlDebug(url: string, _maxPages?: number): Promise<PdfExtractDebug> {
+export async function extractPdfTextFromUrlDebug(
+  url: string,
+  userId?: string,
+  _maxPages?: number,
+): Promise<PdfExtractDebug> {
   const key = getOpenAIKey();
   if (!key) return { text: '', stage: 'failed', detail: 'Missing OpenAI API key.' };
 
@@ -100,6 +105,23 @@ export async function extractPdfTextFromUrlDebug(url: string, _maxPages?: number
         stage: 'openai_response',
         detail: chatJson?.error?.message ?? `Chat failed (${chatRes.status}).`,
       };
+    }
+
+    // Best-effort token usage logging (never break extraction if logging fails).
+    try {
+      if (userId) {
+        const usage = chatJson?.usage;
+        await supabase.from('ai_token_usage').insert({
+          user_id: userId,
+          kind: 'pdf_text_extraction',
+          model: 'gpt-4o-mini',
+          prompt_tokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null,
+          completion_tokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : null,
+          total_tokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : null,
+        });
+      }
+    } catch {
+      // ignore
     }
 
     const outputText = (chatJson?.choices?.[0]?.message?.content ?? '').trim();

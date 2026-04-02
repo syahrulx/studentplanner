@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.fetch_timetable]
 verify_jwt = false
+
+[functions.admin_test_fetch]
+verify_jwt = false
+
+[functions.admin_users]
+verify_jwt = false
+
+[functions.admin_data]
+verify_jwt = false

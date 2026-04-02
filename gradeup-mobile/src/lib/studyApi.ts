@@ -2,6 +2,7 @@
  * Study API – flashcards and quiz generation via OpenAI.
  */
 import Constants from 'expo-constants';
+import { supabase } from './supabase';
 
 const getOpenAIKey = (): string => {
   return (Constants.expoConfig?.extra?.openaiApiKey as string) || '';
@@ -20,10 +21,38 @@ export type GeneratedQuizQuestion = {
 export type QuizType = 'mcq' | 'true_false' | 'mixed' | 'short_answer';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
+async function logAiTokenUsage(params: {
+  userId?: string;
+  kind: string;
+  model: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+}): Promise<void> {
+  try {
+    const user_id = params.userId;
+    if (!user_id) return;
+    const u = params.usage ?? null;
+    const prompt_tokens = u?.prompt_tokens;
+    const completion_tokens = u?.completion_tokens;
+    const total_tokens = u?.total_tokens;
+
+    // Best-effort: never break AI generation if logging fails.
+    await supabase.from('ai_token_usage').insert({
+      user_id,
+      kind: params.kind,
+      model: params.model,
+      prompt_tokens: typeof prompt_tokens === 'number' ? prompt_tokens : null,
+      completion_tokens: typeof completion_tokens === 'number' ? completion_tokens : null,
+      total_tokens: typeof total_tokens === 'number' ? total_tokens : null,
+    });
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Generate flashcards from note content using OpenAI.
  */
-export async function generateFlashcardsFromNote(noteContent: string): Promise<GeneratedFlashcard[]> {
+export async function generateFlashcardsFromNote(noteContent: string, userId?: string): Promise<GeneratedFlashcard[]> {
   const key = getOpenAIKey();
   if (!key) return [];
   try {
@@ -47,6 +76,12 @@ export async function generateFlashcardsFromNote(noteContent: string): Promise<G
       }),
     });
     const data = await response.json();
+    await logAiTokenUsage({
+      userId,
+      kind: 'flashcards',
+      model: 'gpt-4o-mini',
+      usage: data?.usage,
+    });
     const content = data.choices?.[0]?.message?.content ?? '';
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const cards = JSON.parse(cleaned) as GeneratedFlashcard[];
@@ -89,6 +124,7 @@ export async function generateQuizFromNotes(
   questionCount: number,
   quizType: QuizType = 'mcq',
   difficulty: QuizDifficulty = 'medium',
+  userId?: string,
 ): Promise<GeneratedQuizQuestion[]> {
   const key = getOpenAIKey();
   if (!key) return [];
@@ -109,6 +145,12 @@ export async function generateQuizFromNotes(
       }),
     });
     const data = await response.json();
+    await logAiTokenUsage({
+      userId,
+      kind: 'quiz',
+      model: 'gpt-4o-mini',
+      usage: data?.usage,
+    });
     const content = data.choices?.[0]?.message?.content ?? '';
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const questions = JSON.parse(cleaned) as GeneratedQuizQuestion[];

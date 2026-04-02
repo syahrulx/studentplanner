@@ -120,7 +120,7 @@ export default function AIQuizBuilder() {
           continue;
         }
         // Wrap extraction in a timeout to prevent indefinite hanging (allow up to 240s for large PDFs via OpenAI API)
-        const extractionPromise = extractPdfTextFromUrlDebug(url);
+        const extractionPromise = extractPdfTextFromUrlDebug(url, user.id);
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Aborted')), 240000)
         );
@@ -151,7 +151,7 @@ export default function AIQuizBuilder() {
           setLoadingText(`Trying attachment: ${note.title.slice(0, 24)}...`);
           const { url, error } = await getNoteAttachmentUrl(note.attachmentPath);
           if (error || !url) continue;
-          const extracted = await extractPdfTextFromUrlDebug(url);
+          const extracted = await extractPdfTextFromUrlDebug(url, user.id);
           const pdfText = extracted.text;
           if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) contentParts.push(pdfText.trim());
           else extractionIssues.push(`${note.title}: ${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`);
@@ -181,7 +181,7 @@ export default function AIQuizBuilder() {
       setTimeout(() => setLoadingText('Generating questions...'), 2000);
       setTimeout(() => setLoadingText('Almost ready...'), 5000);
 
-      const questions = await generateQuizFromNotes(contents, questionCount, quizType, difficulty);
+      const questions = await generateQuizFromNotes(contents, questionCount, quizType, difficulty, user.id);
 
       if (!questions.length) {
         Alert.alert('Generation Failed', 'Could not generate questions. Try different notes or settings.');
