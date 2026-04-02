@@ -14,6 +14,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { scheduleStudyTimerComplete, cancelStudyTimerNotification } from '@/src/notificationManager';
 
 // Duration presets (milliseconds)
 const PRESETS = [
@@ -121,6 +122,7 @@ export default function StudyTimerScreen() {
     if (phase === 'idle') {
       setPhase('focus');
       startTimer(focusSecs, 'focus');
+      scheduleStudyTimerComplete(preset.focus, selectedCourseId || undefined).catch(() => {});
       if (broadcastEnabled) {
         const course = courses.find((c) => c.id === selectedCourseId);
         await updateActivity('studying', course?.id || 'Studying', course?.id);
@@ -128,16 +130,18 @@ export default function StudyTimerScreen() {
     } else if (phase === 'break') {
       startTimer(breakSecs, 'break');
     }
-  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, updateActivity]);
+  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, updateActivity, preset.focus]);
 
   const handlePause = useCallback(() => {
     clearTimer();
     stopPulse();
+    cancelStudyTimerNotification().catch(() => {});
   }, [clearTimer, stopPulse]);
 
   const handleReset = useCallback(async () => {
     clearTimer();
     stopPulse();
+    cancelStudyTimerNotification().catch(() => {});
     setPhase('idle');
     setSecondsLeft(focusSecs);
     if (broadcastEnabled) {

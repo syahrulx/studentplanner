@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, ActivityIndic
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { COLORS, Icons } from '@/src/constants';
-import { TaskType, Priority } from '@/src/types';
+import { TaskType } from '@/src/types';
 import type { Task } from '@/src/types';
 import type { TaskExtractionDTO } from '@/src/lib/taskExtraction';
 import { formatDisplayDate, getTodayISO, parseDisplayDate } from '@/src/utils/date';
@@ -28,8 +28,6 @@ export default function AIExtraction() {
     type: TaskType.Assignment,
     dueDate: getTodayISO(),
     dueTime: '23:59',
-    priority: Priority.Medium,
-    effort: 2,
     notes: '',
   });
 
@@ -81,8 +79,6 @@ export default function AIExtraction() {
       type: formData.type ?? TaskType.Assignment,
       dueDate,
       dueTime: formData.dueTime ?? '23:59',
-      priority: formData.priority ?? Priority.High,
-      effort: formData.effort ?? 4,
       notes: formData.notes ?? '',
       isDone: false,
       deadlineRisk,

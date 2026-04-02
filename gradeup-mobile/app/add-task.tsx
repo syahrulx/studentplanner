@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -17,13 +17,19 @@ import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
-import { TaskType, Priority } from '@/src/types';
+import { TaskType } from '@/src/types';
 import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
 import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { isDarkTheme } from '@/constants/Themes';
 import type { ThemePalette } from '@/constants/Themes';
+import type { Course } from '@/src/types';
+
+function syntheticCourse(id: string): Course {
+  return { id, name: id, creditHours: 0, workload: [] };
+}
 
 function dueDateTimeToDate(iso: string, time: string): Date {
   const [y, mo, d] = iso.slice(0, 10).split('-').map((x) => parseInt(x, 10));
@@ -118,6 +124,7 @@ export default function AddTask() {
   const { courses, tasks, addTask, updateTask, getSubjectColor, setSubjectColor, language, user, academicCalendar } =
     useApp();
   const theme = useTheme();
+  const themeId = useThemeId();
   const insets = useSafeAreaInsets();
   const T = useTranslations(language);
   const taskId = Array.isArray(rawTaskId) ? rawTaskId[0] : rawTaskId;
@@ -149,6 +156,19 @@ export default function AddTask() {
   const monthGridCells = getMonthGrid(pickerYear, pickerMonth);
   const pickerHeaderISO = toISO(pickerYear, pickerMonth, 1);
 
+  /** Real courses plus current task course when unknown / not in list; fallback so the picker is never empty. */
+  const subjectPickerCourses = useMemo(() => {
+    const list: Course[] = courses.map((c) => ({ ...c }));
+    const hasId = (id: string) => list.some((c) => c.id === id);
+    if (courseId && !hasId(courseId)) {
+      list.unshift(syntheticCourse(courseId));
+    }
+    if (list.length === 0) {
+      list.push(syntheticCourse('General'));
+    }
+    return list;
+  }, [courses, courseId]);
+
   useEffect(() => {
     if (!existingTask) return;
     setTitle(existingTask.title);
@@ -171,10 +191,13 @@ export default function AddTask() {
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
       if (existingTask) {
         updateTask(existingTask.id, {
+          title: title.trim(),
+          courseId: courseId || courses[0]?.id || 'General',
+          type,
+          notes,
           dueDate: dueDateISO,
           dueTime,
-          priority: existingTask.priority,
-          effort: existingTask.effort,
+          needsDate: false,
         });
       } else {
         addTask({
@@ -184,8 +207,6 @@ export default function AddTask() {
           type,
           dueDate: dueDateISO,
           dueTime,
-          priority: Priority.Medium,
-          effort: 4,
           notes,
           isDone: false,
           deadlineRisk,
@@ -450,14 +471,15 @@ export default function AddTask() {
             </View>
             <View style={[styles.sheetListCard, { backgroundColor: theme.card }]}>
               <FlatList
-                data={courses}
-                keyExtractor={(c) => c.id}
+                data={subjectPickerCourses}
+                keyExtractor={(c, index) => `${c.id}__${index}`}
+                style={styles.sheetFlatList}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item, index }) => (
                   <Pressable
                     style={({ pressed }) => [
                       styles.sheetRow,
-                      index < courses.length - 1 && {
+                      index < subjectPickerCourses.length - 1 && {
                         borderBottomColor: theme.border,
                         borderBottomWidth: StyleSheet.hairlineWidth,
                       },
@@ -480,8 +502,8 @@ export default function AddTask() {
             <Pressable style={[styles.androidSheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
               <Text style={[styles.sheetTitle, { color: theme.text, marginBottom: 12 }]}>{T('subjectLabel')}</Text>
               <FlatList
-                data={courses}
-                keyExtractor={(c) => c.id}
+                data={subjectPickerCourses}
+                keyExtractor={(c, index) => `${c.id}__${index}`}
                 style={{ maxHeight: 320 }}
                 renderItem={({ item }) => (
                   <Pressable
@@ -530,18 +552,24 @@ export default function AddTask() {
       </Modal>
 
       {Platform.OS === 'ios' && showTimePicker && (
-        <Modal visible transparent animationType="fade">
+        <Modal visible={showTimePicker} transparent animationType="fade" onRequestClose={() => setShowTimePicker(false)}>
           <Pressable style={styles.modalBg} onPress={() => setShowTimePicker(false)}>
             <View style={[styles.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
-              <DateTimePicker
-                value={dueDateTimeToDate(dueDateISO, dueTime)}
-                mode="time"
-                display="spinner"
-                is24Hour
-                onChange={(_, date) => {
-                  if (date) setDueTime(formatTimeHM(date));
-                }}
-              />
+              {/* UIDatePicker wheel needs explicit height or it collapses to ~0 inside Modal */}
+              <View style={styles.iosTimePickerWrap}>
+                <DateTimePicker
+                  value={dueDateTimeToDate(dueDateISO, dueTime)}
+                  mode="time"
+                  display="spinner"
+                  is24Hour
+                  themeVariant={isDarkTheme(themeId) ? 'dark' : 'light'}
+                  textColor={theme.text}
+                  style={styles.iosTimePicker}
+                  onChange={(_, date) => {
+                    if (date) setDueTime(formatTimeHM(date));
+                  }}
+                />
+              </View>
               <Pressable style={[styles.timeDoneBtn, { backgroundColor: theme.primary }]} onPress={() => setShowTimePicker(false)}>
                 <Text style={{ color: theme.textInverse, fontWeight: '600', fontSize: 17 }}>{T('done')}</Text>
               </Pressable>
@@ -772,7 +800,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 10,
     overflow: 'hidden',
+    flex: 1,
     maxHeight: 420,
+    minHeight: 200,
+  },
+  sheetFlatList: {
+    flex: 1,
   },
   sheetRow: {
     flexDirection: 'row',
@@ -808,6 +841,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: 400,
+  },
+  iosTimePickerWrap: {
+    height: 216,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  iosTimePicker: {
+    height: 216,
+    width: '100%',
   },
   timeDoneBtn: {
     marginTop: 12,

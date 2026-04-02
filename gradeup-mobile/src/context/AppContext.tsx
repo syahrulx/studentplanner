@@ -42,6 +42,13 @@ import {
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
+import {
+  requestNotificationPermissions,
+  scheduleTaskNotifications,
+  cancelTaskNotifications,
+  rescheduleAllTaskNotifications,
+  fireClassroomSyncNotification,
+} from '../notificationManager';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import * as taskDb from '../lib/taskDb';
@@ -118,7 +125,10 @@ type AppState = {
   markStudyDone: (key: string) => void;
   unmarkStudyDone: (key: string) => void;
   addTask: (task: Task, options?: { skipRemote?: boolean }) => void;
-  updateTask: (taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => void;
+  updateTask: (
+    taskId: string,
+    updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'courseId' | 'title' | 'type' | 'notes' | 'needsDate'>>,
+  ) => void;
   toggleTaskDone: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
   pinnedTaskIds: string[];
@@ -400,7 +410,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r1.status === 'fulfilled') setNoteFolders(r1.value);
         if (r2.status === 'fulfilled') setFlashcardFolders(r2.value);
         if (r3.status === 'fulfilled') setFlashcards(r3.value);
-        if (r4.status === 'fulfilled') setTasks(r4.value);
+        if (r4.status === 'fulfilled') {
+          setTasks(r4.value);
+          rescheduleAllTaskNotifications(r4.value).catch(() => {});
+        }
         if (r5.status === 'fulfilled') {
           const studyList = r5.value;
           setRevisionSettingsList(studyList);
@@ -595,11 +608,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const newTasks = await checkForNewTasks();
           if (newTasks && newTasks.length > 0) {
             setPendingClassroomTasks(newTasks);
+            fireClassroomSyncNotification(newTasks.length).catch(() => {});
           }
         } catch {}
 
       });
     };
+
+    requestNotificationPermissions().catch(() => {});
 
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -805,6 +821,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
     setTasks((prev) => [task, ...prev]);
+    scheduleTaskNotifications(task).catch(() => {});
     if (!options?.skipRemote) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         const uid = session?.user?.id;
@@ -816,34 +833,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const updateTask = useCallback((taskId: string, updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'priority' | 'effort'>>) => {
+  const updateTask = useCallback(
+    (
+      taskId: string,
+      updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'courseId' | 'title' | 'type' | 'notes' | 'needsDate'>>,
+    ) => {
     const id = String(taskId).trim();
     setTasks((prev) => {
       const task = prev.find((t) => String(t.id).trim() === id);
       if (!task) return prev;
-      const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : task.dueDate;
+      const mergedBase: Task = {
+        ...task,
+        ...(updates.courseId !== undefined ? { courseId: String(updates.courseId).trim() || task.courseId } : {}),
+        ...(updates.title !== undefined ? { title: String(updates.title).trim() } : {}),
+        ...(updates.type !== undefined ? { type: updates.type } : {}),
+        ...(updates.notes !== undefined ? { notes: String(updates.notes) } : {}),
+        ...(updates.needsDate !== undefined ? { needsDate: updates.needsDate } : {}),
+      };
+      const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : mergedBase.dueDate;
       const dueDate = (rawDueDate ?? '').trim().slice(0, 10);
-      const rawDueTime = updates.dueTime !== undefined ? updates.dueTime : task.dueTime;
+      const rawDueTime = updates.dueTime !== undefined ? updates.dueTime : mergedBase.dueTime;
       const dueTime = (rawDueTime ?? '').trim().length >= 5 ? (rawDueTime ?? '').trim().slice(0, 5) : (rawDueTime ?? '23:59').trim();
       const todayISO = new Date().toISOString().slice(0, 10);
       const today = new Date(todayISO + 'T00:00:00');
       const due = new Date(dueDate + 'T00:00:00');
-      const diffDays = Math.floor((due.getTime() - today.getTime()) / 864e5);
+      const dueDateValid = !Number.isNaN(due.getTime()) && dueDate.length === 10;
+      const diffDays = dueDateValid ? Math.floor((due.getTime() - today.getTime()) / 864e5) : 30;
       const deadlineRisk: Task['deadlineRisk'] = diffDays <= 2 ? 'High' : diffDays <= 7 ? 'Medium' : 'Low';
       const suggestedWeek = (() => {
-        const start = user?.startDate ? new Date(user.startDate + 'T00:00:00') : new Date(todayISO + 'T00:00:00');
+        if (!dueDateValid) return mergedBase.suggestedWeek || 1;
+        const start = user?.startDate ? new Date(user.startDate + 'T00:00:00') : today;
         const diff = Math.floor((due.getTime() - start.getTime()) / 864e5);
-        return Math.max(1, Math.ceil(diff / 7));
+        const computed = Math.max(1, Math.ceil(diff / 7));
+        return Number.isFinite(computed) ? computed : mergedBase.suggestedWeek || 1;
       })();
       const updated: Task = {
-        ...task,
+        ...mergedBase,
         dueDate,
         dueTime,
-        priority: updates.priority !== undefined ? updates.priority : task.priority,
-        effort: updates.effort !== undefined ? updates.effort : task.effort,
         deadlineRisk,
         suggestedWeek,
       };
+      cancelTaskNotifications(updated.id).then(() => scheduleTaskNotifications(updated)).catch(() => {});
       supabase.auth.getSession().then(({ data: { session } }) => {
         const uid = session?.user?.id;
         if (!uid) return;
@@ -865,6 +896,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
       const updated = next.find((t) => t.id === taskId);
       if (updated) {
+        if (updated.isDone) {
+          cancelTaskNotifications(taskId).catch(() => {});
+        } else {
+          scheduleTaskNotifications(updated).catch(() => {});
+        }
         supabase.auth.getSession().then(({ data: { session } }) => {
           const uid = session?.user?.id;
           if (!uid) return;
@@ -888,6 +924,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteTask = useCallback((taskId: string) => {
+    cancelTaskNotifications(taskId).catch(() => {});
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     setPinnedTaskIds((prev) => {
       const next = prev.filter((id) => id !== taskId);

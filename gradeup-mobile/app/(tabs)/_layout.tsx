@@ -93,6 +93,24 @@ export default function TabLayout() {
               style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {
                 closeAddMenu();
+                router.push('/ai-chat' as any);
+              }}
+            >
+              <View style={[styles.addMenuIcon, { backgroundColor: '#0891b2' }]}>
+                <ThemeIcon name="sparkles" size={22} color="#fff" />
+              </View>
+              <View>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('pasteMessageExtract')}</Text>
+              </View>
+            </Pressable>
+
+            <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
+
+            <Pressable
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => {
+                closeAddMenu();
                 router.push('/add-task' as any);
               }}
             >
@@ -104,9 +122,9 @@ export default function TabLayout() {
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('createTaskYourself')}</Text>
               </View>
             </Pressable>
-            
+
             <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
-            
+
             <Pressable
               style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={() => {
@@ -120,24 +138,6 @@ export default function TabLayout() {
               <View>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addStudyTime')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('scheduleStudySub')}</Text>
-              </View>
-            </Pressable>
-            
-            <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
-            
-            <Pressable
-              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
-              onPress={() => {
-                closeAddMenu();
-                router.push('/ai-chat' as any);
-              }}
-            >
-              <View style={[styles.addMenuIcon, { backgroundColor: '#0891b2' }]}>
-                <ThemeIcon name="sparkles" size={22} color="#fff" />
-              </View>
-              <View>
-                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
-                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('pasteMessageExtract')}</Text>
               </View>
             </Pressable>
           </View>

@@ -1,4 +1,4 @@
-import { TaskType, Priority } from './types';
+import { TaskType } from './types';
 import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder } from './types';
 import { DEFAULT_COURSES } from './constants';
 
@@ -31,10 +31,10 @@ export const initialCourses = DEFAULT_COURSES.map(id => ({
 }));
 
 export const initialTasks: Task[] = [
-  { id: 't1', title: 'Final Project: Backend API', courseId: 'CSC584', type: TaskType.Project, dueDate: '2024-12-27', dueTime: '23:59', priority: Priority.High, effort: 12, notes: 'Implement JWT.', isDone: false, deadlineRisk: 'High', suggestedWeek: 11 },
-  { id: 't7', title: 'ISP573: Case Study Analysis', courseId: 'ISP573', type: TaskType.Assignment, dueDate: '2024-12-26', dueTime: '12:00', priority: Priority.Medium, effort: 5, notes: 'Analyze process.', isDone: false, deadlineRisk: 'Medium', suggestedWeek: 11 },
-  { id: 't9', title: 'LCC401: Critical Reading Exercise', courseId: 'LCC401', type: TaskType.Assignment, dueDate: '2024-12-26', dueTime: '17:00', priority: Priority.Low, effort: 2, notes: 'Submit summary.', isDone: false, deadlineRisk: 'Low', suggestedWeek: 11 },
-  { id: 't11', title: 'IPS551: Requirements Report', courseId: 'IPS551', type: TaskType.Assignment, dueDate: '2024-12-20', dueTime: '23:59', priority: Priority.High, effort: 6, notes: 'SRS.', isDone: true, deadlineRisk: 'Low', suggestedWeek: 10 },
+  { id: 't1', title: 'Final Project: Backend API', courseId: 'CSC584', type: TaskType.Project, dueDate: '2024-12-27', dueTime: '23:59', notes: 'Implement JWT.', isDone: false, deadlineRisk: 'High', suggestedWeek: 11 },
+  { id: 't7', title: 'ISP573: Case Study Analysis', courseId: 'ISP573', type: TaskType.Assignment, dueDate: '2024-12-26', dueTime: '12:00', notes: 'Analyze process.', isDone: false, deadlineRisk: 'Medium', suggestedWeek: 11 },
+  { id: 't9', title: 'LCC401: Critical Reading Exercise', courseId: 'LCC401', type: TaskType.Assignment, dueDate: '2024-12-26', dueTime: '17:00', notes: 'Submit summary.', isDone: false, deadlineRisk: 'Low', suggestedWeek: 11 },
+  { id: 't11', title: 'IPS551: Requirements Report', courseId: 'IPS551', type: TaskType.Assignment, dueDate: '2024-12-20', dueTime: '23:59', notes: 'SRS.', isDone: true, deadlineRisk: 'Low', suggestedWeek: 10 },
 ];
 
 export const initialNotes: Note[] = [

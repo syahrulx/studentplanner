@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
-import { Priority, TaskType } from '@/src/types';
+import { TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
 import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
@@ -16,12 +16,6 @@ import { useTheme } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
-
-const PRIORITY_COLORS = {
-  [Priority.Low]: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
-  [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#ca8a04' },
-  [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#b91c1c' },
-} as const;
 
 function getDaysUntilDue(dueDate: string): number {
   const today = new Date();
@@ -84,7 +78,7 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
 }
 
 type ViewMode = 'day' | 'week' | 'month' | 'all';
-type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
+type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab' | 'test';
 const CALENDAR_STRIP_SLOT = 64;
 
 export default function Planner() {
@@ -130,7 +124,7 @@ export default function Planner() {
   const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [sortMode, setSortMode] = useState<'nearest' | 'priority-desc' | 'subject'>('nearest');
+  const [sortMode, setSortMode] = useState<'nearest' | 'subject'>('nearest');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
     { role: 'ai', text: '' },
   ]);
@@ -430,6 +424,7 @@ export default function Planner() {
         quiz: TaskType.Quiz,
         project: TaskType.Project,
         lab: TaskType.Lab,
+        test: TaskType.Test,
       };
       const targetType = typeMap[activeFilter];
       if (targetType) {
@@ -497,17 +492,6 @@ export default function Planner() {
     const compareTasks = (a: PlannerTaskItem, b: PlannerTaskItem): number => {
       // Incomplete above completed
       if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
-
-      if (sortMode === 'priority-desc') {
-        const rank: Record<Priority, number> = {
-          [Priority.High]: 3,
-          [Priority.Medium]: 2,
-          [Priority.Low]: 1,
-        };
-        if (rank[a.priority] !== rank[b.priority]) {
-          return rank[b.priority] - rank[a.priority];
-        }
-      }
 
       if (sortMode === 'subject') {
         const c = a.courseId.localeCompare(b.courseId);
@@ -654,13 +638,22 @@ export default function Planner() {
               );
             }
 
+            const missingDate = extractedTasks.filter((t) => t.needs_date);
+
             const summary = extractedTasks
-              .map((task) => `${task.title}\nDue: ${task.due_date} ${task.due_time}\nCourse: ${task.course_id}`)
+              .map((task) => {
+                const dateLabel = task.needs_date ? 'Date TBA — set manually' : `${task.due_date} ${task.due_time}`;
+                return `${task.title}\nDue: ${dateLabel}\nCourse: ${task.course_id}`;
+              })
               .join('\n\n');
+
+            const warningNote = missingDate.length > 0
+              ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
+              : '';
 
             setMessages((prev) => [
               ...prev,
-              { role: 'ai', text: `${T('taskExtracted')}\n\n${summary}\n\n${T('addedToPlanner')}` },
+              { role: 'ai', text: `${T('taskExtracted')}\n\n${summary}${warningNote}\n\n${T('addedToPlanner')}` },
             ]);
           } else {
             setMessages((prev) => [
@@ -732,6 +725,7 @@ export default function Planner() {
               { key: 'all' as FilterType, label: T('all') },
               { key: 'assignment' as FilterType, label: T('assign') },
               { key: 'quiz' as FilterType, label: T('quiz') },
+              { key: 'test' as FilterType, label: T('test') },
               { key: 'project' as FilterType, label: T('project') },
               { key: 'lab' as FilterType, label: T('lab') },
             ].map((f) => (
@@ -753,12 +747,6 @@ export default function Planner() {
                 onPress={() => setSortMode('nearest')}
               >
                 <Text style={[s.sortChipText, sortMode === 'nearest' && s.sortChipTextActive]}>{T('nearestDue')}</Text>
-              </Pressable>
-              <Pressable
-                style={[s.sortChip, sortMode === 'priority-desc' && s.sortChipActive]}
-                onPress={() => setSortMode('priority-desc')}
-              >
-                <Text style={[s.sortChipText, sortMode === 'priority-desc' && s.sortChipTextActive]}>{T('priorityHighLow')}</Text>
               </Pressable>
               <Pressable
                 style={[s.sortChip, sortMode === 'subject' && s.sortChipActive]}
@@ -1002,7 +990,7 @@ export default function Planner() {
               : `${daysUntil} ${T('daysLeft')}`;
     const secondaryLabel = item.itemType === 'study'
       ? (item.topic ? `${item.durationMinutes} min • ${item.topic}` : `${item.durationMinutes} min`)
-      : `${item.type} • ${item.priority}`;
+      : `${item.type} • ${item.courseId}`;
     const statusTextStyle = item.isDone
       ? s.taskInlineStatusDone
       : item.itemType === 'study'

@@ -96,14 +96,6 @@ export function compareTasksByDueDate(a: Task, b: Task): number {
   const timeCompare = normalizeTime(a.dueTime).localeCompare(normalizeTime(b.dueTime));
   if (timeCompare !== 0) return timeCompare;
 
-  const rank: Record<Priority, number> = {
-    [Priority.High]: 3,
-    [Priority.Medium]: 2,
-    [Priority.Low]: 1,
-  };
-  const priorityCompare = rank[b.priority] - rank[a.priority];
-  if (priorityCompare !== 0) return priorityCompare;
-
   return a.title.localeCompare(b.title);
 }
 
@@ -137,15 +129,6 @@ export function selectTodaysFocusTask(
 
     if (daysA < 0 && daysB < 0 && daysA !== daysB) {
       return daysB - daysA;
-    }
-
-    if (pinnedSet.has(a.id) && pinnedSet.has(b.id) && a.priority !== b.priority) {
-      const rank: Record<Priority, number> = {
-        [Priority.High]: 3,
-        [Priority.Medium]: 2,
-        [Priority.Low]: 1,
-      };
-      return rank[b.priority] - rank[a.priority];
     }
 
     return compareTasksByDueDate(a, b);
@@ -187,12 +170,11 @@ export function buildTaskFromExtraction(
     type: normalizeTaskType(extracted.type),
     dueDate,
     dueTime: normalizeTime(extracted.due_time),
-    priority: normalizeTaskPriority(extracted.priority) ?? getPriorityFromDeadlineRisk(deadlineRisk),
-    effort: clampEffort(extracted.effort_hours),
     notes: extracted.notes ?? '',
     isDone: false,
     deadlineRisk,
     suggestedWeek,
     sourceMessage: options.sourceMessage,
+    needsDate: extracted.needs_date || extracted.is_inferred_date || false,
   };
 }

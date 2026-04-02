@@ -350,6 +350,41 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId]);
 
+  // ─── Listen for incoming shared tasks → local push notification ───
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('shared-task-notifications')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'shared_tasks',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        async (payload: any) => {
+          const row = payload.new;
+          if (!row) return;
+          try {
+            const { fireSharedTaskNotification } = require('../notificationManager');
+            await fireSharedTaskNotification(
+              row.owner_name ?? 'Someone',
+              row.task_title ?? 'a task',
+            );
+          } catch (e) {
+            console.warn('Failed to show shared task notification:', e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
   // ─── Location watching ───
   const requestLocationPermission = useCallback(async (): Promise<boolean> => {
     try {

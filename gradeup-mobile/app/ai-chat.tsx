@@ -109,18 +109,24 @@ export default function AiChat() {
             );
           }
 
+          const missingDate = tasks.filter((t) => t.needs_date);
+
           const taskSummary = tasks
-            .map(
-              (t) =>
-                `• "${t.title}"\n   📅 ${t.due_date}  ⏰ ${t.due_time}${t.course_id ? `  📚 ${t.course_id}` : ''}`,
-            )
+            .map((t) => {
+              const dateLabel = t.needs_date ? '📅 Date TBA — set manually' : `📅 ${t.due_date}  ⏰ ${t.due_time}`;
+              return `• "${t.title}"\n   ${dateLabel}${t.course_id ? `  📚 ${t.course_id}` : ''}`;
+            })
             .join('\n\n');
+
+          const warningNote = missingDate.length > 0
+            ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
+            : '';
 
           setMessages((prev) => [
             ...prev,
             {
               role: 'ai',
-              text: `✅ Task extracted and added to your planner!\n\n${taskSummary}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
+              text: `✅ Task extracted and added to your planner!\n\n${taskSummary}${warningNote}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
             },
           ]);
         } catch {

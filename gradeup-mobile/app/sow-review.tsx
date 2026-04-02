@@ -197,7 +197,6 @@ export default function SowReview() {
           sourceMessage: `Imported from SOW: ${pending.fileName}`,
         });
         task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
-        task.priority = Object.values(Priority).includes(task.priority) ? task.priority : Priority.Medium;
         const { error: taskErr } = await taskDb.upsertTask(uid, task);
         if (taskErr) {
           Alert.alert('Could not save tasks', `${taskErr.message}${dbHint}`);

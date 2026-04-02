@@ -756,8 +756,8 @@ export default function Dashboard() {
             : T(info.key),
         subtitle:
           focusTask.reason === 'pinned'
-            ? `${T('subject')} • ${focusTask.task.priority}`
-            : `${focusTask.task.type} • ${focusTask.task.priority}`,
+            ? `${T('subject')} • ${focusTask.task.courseId}`
+            : `${focusTask.task.type} • ${focusTask.task.courseId}`,
         onPress: () => router.push({ pathname: '/task-details', params: { id: focusTask.task.id } } as any),
       };
     }

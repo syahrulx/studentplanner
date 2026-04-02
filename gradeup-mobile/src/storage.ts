@@ -335,6 +335,55 @@ export async function setClassroomPrefs(prefs: ClassroomPrefs | null): Promise<v
   } catch {}
 }
 
+// ---------- Notification preferences ----------
+
+const KEY_NOTIFICATION_PREFS = 'notificationPrefs';
+
+export interface NotificationPrefs {
+  tasksEnabled: boolean;
+  taskLeadDays: number[];
+  studyTimerEnabled: boolean;
+  classroomSyncEnabled: boolean;
+  sharedTasksEnabled: boolean;
+  weeklySummaryEnabled: boolean;
+  weeklySummaryDay: number;   // 0=Sun … 6=Sat
+  weeklySummaryTime: string;  // "HH:mm"
+}
+
+const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  tasksEnabled: true,
+  taskLeadDays: [3, 1, 0],
+  studyTimerEnabled: true,
+  classroomSyncEnabled: true,
+  sharedTasksEnabled: true,
+  weeklySummaryEnabled: true,
+  weeklySummaryDay: 0,
+  weeklySummaryTime: '20:00',
+};
+
+export async function getNotificationPrefs(): Promise<NotificationPrefs> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_NOTIFICATION_PREFS);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<NotificationPrefs>;
+      return {
+        ...DEFAULT_NOTIFICATION_PREFS,
+        ...parsed,
+        taskLeadDays: Array.isArray(parsed.taskLeadDays)
+          ? parsed.taskLeadDays.filter((n) => typeof n === 'number')
+          : DEFAULT_NOTIFICATION_PREFS.taskLeadDays,
+      };
+    }
+  } catch {}
+  return { ...DEFAULT_NOTIFICATION_PREFS };
+}
+
+export async function setNotificationPrefs(prefs: NotificationPrefs): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_NOTIFICATION_PREFS, JSON.stringify(prefs));
+  } catch {}
+}
+
 // ---------- Timetable / week preferences ----------
 
 /** First day of week for timetable / calendar-style views */

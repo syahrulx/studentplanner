@@ -21,7 +21,8 @@
       "bundleIdentifier": "com.anonymous.gradeupmobile",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "appleTeamId": "29GLPZC3G3"
     },
     "android": {
       "adaptiveIcon": {
@@ -43,7 +44,15 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-dev-client",
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#003366",
+          "defaultChannel": "tasks"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

@@ -16,7 +16,7 @@ export interface TaskExtractionDTO {
   title: string;
   course_id: string;
   type: string;
-  due_date: string; // ISO yyyy-mm-dd
+  due_date: string; // ISO yyyy-mm-dd — empty string when date is unknown/TBA
   due_time: string; // HH:mm
   priority: string;
   effort_hours: number;
@@ -26,6 +26,7 @@ export interface TaskExtractionDTO {
   confidence?: number;
   is_inferred_date?: boolean;
   is_unknown_course?: boolean;
+  needs_date?: boolean; // true when no concrete date was found in the message
 }
 
 export interface ExtractTasksArgs {
@@ -136,16 +137,26 @@ function normalizeCourseId(raw: string, courses: Pick<Course, 'id' | 'name'>[]):
   return { id: courses[0]?.id ?? 'UNKNOWN', isUnknown: true };
 }
 
-function safeDateISO(raw: string | undefined, todayISO: string): { iso: string; inferred: boolean } {
-  if (!raw) return { iso: todayISO, inferred: true };
+// Phrases that signal the model explicitly flagged the date as unknown.
+const DATE_UNKNOWN_SENTINELS = ['null', 'unknown', 'tba', 'tbd', 'n/a', '', 'none', 'not specified'];
+
+function safeDateISO(
+  raw: string | null | undefined,
+  todayISO: string,
+): { iso: string; inferred: boolean; needsDate: boolean } {
+  if (raw == null) return { iso: todayISO, inferred: true, needsDate: true };
+  const trimmed = String(raw).trim().toLowerCase();
+  if (DATE_UNKNOWN_SENTINELS.includes(trimmed)) {
+    return { iso: todayISO, inferred: true, needsDate: true };
+  }
   const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return { iso: todayISO, inferred: true };
-  return { iso: d.toISOString().slice(0, 10), inferred: false };
+  if (Number.isNaN(d.getTime())) return { iso: todayISO, inferred: true, needsDate: true };
+  return { iso: d.toISOString().slice(0, 10), inferred: false, needsDate: false };
 }
 
 function safeTime(raw: string | undefined): string {
   if (!raw) return '23:59';
-  const match = raw.match(/^(\\d{1,2}):(\\d{2})/);
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
   if (!match) return '23:59';
   const h = Math.min(23, Math.max(0, parseInt(match[1], 10)));
   const m = Math.min(59, Math.max(0, parseInt(match[2], 10)));
@@ -182,7 +193,8 @@ function toDtos(raw: any, args: ExtractTasksArgs): TaskExtractionDTO[] {
     }
     const courseRaw = String(t.course_id ?? '');
     const { id: courseId, isUnknown } = normalizeCourseId(courseRaw, args.courses);
-    const { iso, inferred } = safeDateISO(t.due_date, args.todayISO);
+    const { iso, inferred, needsDate } = safeDateISO(t.due_date, args.todayISO);
+    const taskNeedsDate = needsDate || !!t.needs_date || !!t.is_inferred_date;
     const dueTime = safeTime(t.due_time);
     const { risk, suggestedWeek } = computeRiskAndSuggestedWeek(iso, args);
     tasks.push({
@@ -199,6 +211,7 @@ function toDtos(raw: any, args: ExtractTasksArgs): TaskExtractionDTO[] {
       confidence: typeof t.confidence === 'number' ? t.confidence : undefined,
       is_inferred_date: inferred || !!t.is_inferred_date,
       is_unknown_course: isUnknown || !!t.is_unknown_course,
+      needs_date: taskNeedsDate,
     });
   }
   return tasks;
@@ -209,6 +222,12 @@ function buildPrompt(args: ExtractTasksArgs): string {
   return [
     'You are an academic task extraction assistant for a Malaysian university student.',
     'Extract all assessment tasks from the message as strict JSON ONLY, no extra text.',
+    '',
+    'IMPORTANT DATE RULE: Only populate "due_date" when a specific, real calendar date can be determined',
+    'from the message (e.g. "15 March", "next Monday", "Week 10"). If the date is vague, relative without',
+    'enough context, TBA, "last week of semester", or otherwise unknown, set "due_date" to null and',
+    '"needs_date" to true. NEVER invent or guess a date.',
+    '',
     'JSON schema:',
     '{',
     '  \"tasks\": [',
@@ -216,8 +235,9 @@ function buildPrompt(args: ExtractTasksArgs): string {
     '      \"title\": string,',
     '      \"course_id\": string,  // use one of the known course codes when possible',
     '      \"type\": \"Assignment\" | \"Quiz\" | \"Project\" | \"Lab\" | \"Test\",',
-    '      \"due_date\": \"YYYY-MM-DD\" (ISO),',
+    '      \"due_date\": \"YYYY-MM-DD\" | null,  // null if date unknown/TBA/vague',
     '      \"due_time\": \"HH:MM\" (24h),',
+    '      \"needs_date\": boolean,  // true when due_date is null',
     '      \"priority\": \"High\" | \"Medium\" | \"Low\",',
     '      \"effort_hours\": number,',
     '      \"notes\"?: string,',
