@@ -491,179 +491,223 @@ export default function Settings() {
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>NOTIFICATIONS</Text>
         {notifPrefs ? (
-          <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-            {/* Task reminders */}
-            <View style={styles.menuRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#3b82f6' }]}>
-                <Feather name="bell" size={18} color="#fff" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>Task Reminders</Text>
-                <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
-                  {notifPrefs.taskLeadDays.map((d) => (d === 0 ? 'Day of' : `${d}d before`)).join(', ')}
-                </Text>
-              </View>
-              <Switch
-                value={notifPrefs.tasksEnabled}
-                onValueChange={(v) => updateNotifPref({ tasksEnabled: v })}
-                trackColor={{ false: theme.border, true: theme.primary }}
-              />
-            </View>
-
-            {notifPrefs.tasksEnabled && (
-              <>
-                <View style={styles.dividerList} />
-                <View style={[styles.menuRow, { flexWrap: 'wrap', gap: 8 }]}>
-                  <Text style={[styles.menuLabel, { color: theme.textSecondary, fontSize: 13, width: '100%' }]}>
-                    Remind me:
-                  </Text>
-                  {[3, 1, 0].map((d) => {
-                    const active = notifPrefs.taskLeadDays.includes(d);
-                    return (
-                      <Pressable
-                        key={d}
-                        onPress={() => {
-                          const next = active
-                            ? notifPrefs.taskLeadDays.filter((x) => x !== d)
-                            : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
-                          if (next.length > 0) updateNotifPref({ taskLeadDays: next });
-                        }}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 16,
-                          backgroundColor: active ? theme.primary : theme.backgroundSecondary,
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, color: active ? '#fff' : theme.text }}>
-                          {d === 0 ? 'Day of' : d === 1 ? '1 day before' : `${d} days before`}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+          <>
+            {/* Card 1: simple on/off alerts (iOS Settings–style rows) */}
+            <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: '#3b82f6' }]}>
+                  <Feather name="bell" size={18} color="#fff" />
                 </View>
-              </>
-            )}
-
-            <View style={styles.dividerList} />
-
-            {/* Study timer */}
-            <View style={styles.menuRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#10b981' }]}>
-                <Feather name="clock" size={18} color="#fff" />
-              </View>
-              <Text style={[styles.menuLabel, { color: theme.text, flex: 1 }]}>Study Timer</Text>
-              <Switch
-                value={notifPrefs.studyTimerEnabled}
-                onValueChange={(v) => updateNotifPref({ studyTimerEnabled: v })}
-                trackColor={{ false: theme.border, true: theme.primary }}
-              />
-            </View>
-
-            <View style={styles.dividerList} />
-
-            {/* Google Classroom sync */}
-            <View style={styles.menuRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#4285f4' }]}>
-                <Feather name="download-cloud" size={18} color="#fff" />
-              </View>
-              <Text style={[styles.menuLabel, { color: theme.text, flex: 1 }]}>Classroom Sync</Text>
-              <Switch
-                value={notifPrefs.classroomSyncEnabled}
-                onValueChange={(v) => updateNotifPref({ classroomSyncEnabled: v })}
-                trackColor={{ false: theme.border, true: theme.primary }}
-              />
-            </View>
-
-            <View style={styles.dividerList} />
-
-            {/* Shared tasks */}
-            <View style={styles.menuRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
-                <Feather name="users" size={18} color="#fff" />
-              </View>
-              <Text style={[styles.menuLabel, { color: theme.text, flex: 1 }]}>Shared Tasks</Text>
-              <Switch
-                value={notifPrefs.sharedTasksEnabled}
-                onValueChange={(v) => updateNotifPref({ sharedTasksEnabled: v })}
-                trackColor={{ false: theme.border, true: theme.primary }}
-              />
-            </View>
-
-            <View style={styles.dividerList} />
-
-            {/* Weekly summary */}
-            <View style={styles.menuRow}>
-              <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
-                <Feather name="bar-chart-2" size={18} color="#fff" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>Weekly Summary</Text>
-                {notifPrefs.weeklySummaryEnabled && (
-                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][notifPrefs.weeklySummaryDay]} at{' '}
-                    {notifPrefs.weeklySummaryTime}
-                  </Text>
-                )}
-              </View>
-              <Switch
-                value={notifPrefs.weeklySummaryEnabled}
-                onValueChange={(v) => updateNotifPref({ weeklySummaryEnabled: v })}
-                trackColor={{ false: theme.border, true: theme.primary }}
-              />
-            </View>
-
-            {notifPrefs.weeklySummaryEnabled && (
-              <>
-                <View style={styles.dividerList} />
-                <View style={[styles.menuRow, { flexWrap: 'wrap', gap: 8 }]}>
-                  <Text style={[styles.menuLabel, { color: theme.textSecondary, fontSize: 13, width: '100%' }]}>
-                    Day:
-                  </Text>
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, i) => {
-                    const active = notifPrefs.weeklySummaryDay === i;
-                    return (
-                      <Pressable
-                        key={label}
-                        onPress={() => updateNotifPref({ weeklySummaryDay: i })}
-                        style={{
-                          paddingHorizontal: 10,
-                          paddingVertical: 5,
-                          borderRadius: 14,
-                          backgroundColor: active ? theme.primary : theme.backgroundSecondary,
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, color: active ? '#fff' : theme.text }}>{label}</Text>
-                      </Pressable>
-                    );
-                  })}
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Task Reminders</Text>
+                  {!notifPrefs.tasksEnabled ? (
+                    <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
+                      Alerts before due dates
+                    </Text>
+                  ) : null}
                 </View>
-                <View style={styles.dividerList} />
-                <View style={[styles.menuRow, { flexWrap: 'wrap', gap: 8 }]}>
-                  <Text style={[styles.menuLabel, { color: theme.textSecondary, fontSize: 13, width: '100%' }]}>
-                    Time:
-                  </Text>
-                  {['08:00', '12:00', '17:00', '20:00'].map((t) => {
-                    const active = notifPrefs.weeklySummaryTime === t;
-                    return (
-                      <Pressable
-                        key={t}
-                        onPress={() => updateNotifPref({ weeklySummaryTime: t })}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 16,
-                          backgroundColor: active ? theme.primary : theme.backgroundSecondary,
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, color: active ? '#fff' : theme.text }}>{t}</Text>
-                      </Pressable>
-                    );
-                  })}
+                <Switch
+                  value={notifPrefs.tasksEnabled}
+                  onValueChange={(v) => updateNotifPref({ tasksEnabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                />
+              </View>
+
+              {notifPrefs.tasksEnabled ? (
+                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Before due date</Text>
+                  <View style={styles.notifChipWrap}>
+                    {[3, 1, 0].map((d) => {
+                      const active = notifPrefs.taskLeadDays.includes(d);
+                      const label = d === 0 ? 'Due day' : d === 1 ? '1 day' : '3 days';
+                      return (
+                        <Pressable
+                          key={d}
+                          onPress={() => {
+                            const next = active
+                              ? notifPrefs.taskLeadDays.filter((x) => x !== d)
+                              : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
+                            if (next.length > 0) updateNotifPref({ taskLeadDays: next });
+                          }}
+                          style={[
+                            styles.notifChip,
+                            {
+                              borderColor: active ? theme.primary : theme.border,
+                              backgroundColor: active ? theme.primary + '22' : theme.card,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.notifChipText,
+                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
-              </>
-            )}
-          </View>
+              ) : null}
+
+              <View style={styles.dividerList} />
+
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: '#10b981' }]}>
+                  <Feather name="clock" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Study Timer</Text>
+                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
+                    When a focus session ends
+                  </Text>
+                </View>
+                <Switch
+                  value={notifPrefs.studyTimerEnabled}
+                  onValueChange={(v) => updateNotifPref({ studyTimerEnabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                />
+              </View>
+
+              <View style={styles.dividerList} />
+
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: '#4285f4' }]}>
+                  <Feather name="download-cloud" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Classroom Sync</Text>
+                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
+                    New work from Google Classroom
+                  </Text>
+                </View>
+                <Switch
+                  value={notifPrefs.classroomSyncEnabled}
+                  onValueChange={(v) => updateNotifPref({ classroomSyncEnabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                />
+              </View>
+
+              <View style={styles.dividerList} />
+
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
+                  <Feather name="users" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Shared Tasks</Text>
+                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
+                    When someone shares a task with you
+                  </Text>
+                </View>
+                <Switch
+                  value={notifPrefs.sharedTasksEnabled}
+                  onValueChange={(v) => updateNotifPref({ sharedTasksEnabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                />
+              </View>
+            </View>
+
+            {/* Card 2: weekly digest (schedule isolated, Apple-like second group) */}
+            <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
+                  <Feather name="bar-chart-2" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Weekly Summary</Text>
+                  {notifPrefs.weeklySummaryEnabled ? (
+                    <Text style={[styles.notifRowFootnote, { color: theme.primary }]} numberOfLines={1}>
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][notifPrefs.weeklySummaryDay]} ·{' '}
+                      {notifPrefs.weeklySummaryTime}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
+                      Planner digest once a week
+                    </Text>
+                  )}
+                </View>
+                <Switch
+                  value={notifPrefs.weeklySummaryEnabled}
+                  onValueChange={(v) => updateNotifPref({ weeklySummaryEnabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                />
+              </View>
+
+              {notifPrefs.weeklySummaryEnabled ? (
+                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Day</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.notifChipScrollContent}
+                  >
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, i) => {
+                      const active = notifPrefs.weeklySummaryDay === i;
+                      return (
+                        <Pressable
+                          key={label}
+                          onPress={() => updateNotifPref({ weeklySummaryDay: i })}
+                          style={[
+                            styles.notifChip,
+                            styles.notifChipCompact,
+                            {
+                              borderColor: active ? theme.primary : theme.border,
+                              backgroundColor: active ? theme.primary + '22' : theme.card,
+                              marginRight: 8,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.notifChipText,
+                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary, marginTop: 14 }]}>Time</Text>
+                  <View style={styles.notifChipWrap}>
+                    {['08:00', '12:00', '17:00', '20:00'].map((t) => {
+                      const active = notifPrefs.weeklySummaryTime === t;
+                      return (
+                        <Pressable
+                          key={t}
+                          onPress={() => updateNotifPref({ weeklySummaryTime: t })}
+                          style={[
+                            styles.notifChip,
+                            {
+                              borderColor: active ? theme.primary : theme.border,
+                              backgroundColor: active ? theme.primary + '22' : theme.card,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.notifChipText,
+                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={[styles.notifSectionHint, { color: theme.textSecondary }]}>
+              Allow notifications for GradeUp in system Settings if alerts are muted.
+            </Text>
+          </>
         ) : (
           <View style={[styles.cardGroup, { backgroundColor: theme.card, paddingVertical: 24, alignItems: 'center' }]}>
             <ActivityIndicator color={theme.primary} />
@@ -1062,6 +1106,57 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
+  notifRowFootnote: {
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 16,
+    opacity: 0.85,
+  },
+  notifInset: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    marginTop: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  notifInsetCaption: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  notifChipScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 4,
+  },
+  notifChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  notifChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  notifChipCompact: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  notifChipText: {
+    fontSize: 14,
+  },
+  notifSectionHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginHorizontal: PAD + 4,
+    marginTop: 10,
+    marginBottom: 4,
+  },
   dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },
   hintBox: {
     flexDirection: 'row',
