@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
+import { useAdminSearch } from '../state/AdminSearchContext';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
 import { IconBell, IconChevronDown, IconSearch } from '../ui/icons';
@@ -15,6 +16,7 @@ export function Topbar({
   setTheme: (t: 'light' | 'dark') => void;
 }) {
   const { user, admin, loading, logout } = useAuth();
+  const { searchQuery, setSearchQuery, clearSearch } = useAdminSearch();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const toggleTheme = useCallback(() => {
@@ -45,9 +47,29 @@ export function Topbar({
           <div className="relative w-full max-w-xl">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              placeholder="Search users, universities, logs…"
-              className="h-10 w-full rounded-2xl border border-slate-200 bg-white/70 pl-9 pr-3 text-sm font-semibold text-slate-900 shadow-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') clearSearch();
+              }}
+              placeholder="Search this page (users, courses, logs…)"
+              aria-label="Search current admin page"
+              autoComplete="off"
+              className={cn(
+                'h-10 w-full rounded-2xl border border-slate-200 bg-white/70 pl-9 text-sm font-semibold text-slate-900 shadow-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100',
+                searchQuery ? 'pr-10' : 'pr-3',
+              )}
             />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-xl text-sm font-black text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -63,7 +85,7 @@ export function Topbar({
           <button
             type="button"
             onClick={toggleTheme}
-            className="hidden h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 md:inline-flex dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="hidden h-10 min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold leading-none text-slate-900 shadow-sm transition hover:bg-slate-50 md:inline-flex dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
             {theme === 'dark' ? 'Dark' : 'Light'}
           </button>

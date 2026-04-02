@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { deleteUser, listUsers, setUserStatus, type AdminUserRow } from '../lib/api';
+import { matchesAdminSearch } from '../lib/adminSearch';
+import { useAdminSearch } from '../state/AdminSearchContext';
+import { MotionPanel, MotionSection } from '../ui/motion';
 
 function Chip({ children, tone }: { children: string; tone: 'green' | 'amber' | 'rose' | 'slate' }) {
   const cls =
@@ -14,6 +17,7 @@ function Chip({ children, tone }: { children: string; tone: 'green' | 'amber' | 
 }
 
 export function UsersRoute() {
+  const { searchQuery } = useAdminSearch();
   const [query, setQuery] = useState('');
   const [universityId, setUniversityId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,16 +44,30 @@ export function UsersRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => items, [items]);
+  const rows = useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    return items.filter((u) =>
+      matchesAdminSearch(searchQuery, u.id, u.name, u.student_id, u.university_id, u.status, u.created_at),
+    );
+  }, [items, searchQuery]);
 
   return (
     <div>
-      <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Users</div>
-      <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-        Search, view, disable/ban, and delete users.
-      </div>
+      <MotionSection>
+        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Users</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Search, view, disable/ban, and delete users.
+          {searchQuery.trim() ? (
+            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
+              Also filtering loaded rows by the top search bar.
+            </span>
+          ) : null}
+        </div>
+      </MotionSection>
 
-      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+      <MotionSection delay={0.05} className="mt-6">
+        <MotionPanel>
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row">
             <label className="block flex-1">
@@ -160,7 +178,9 @@ export function UsersRoute() {
               {rows.length === 0 && !busy ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                    No users found.
+                    {searchQuery.trim() && items.length > 0
+                      ? 'No loaded users match the top search. Clear it or run Search again.'
+                      : 'No users found.'}
                   </td>
                 </tr>
               ) : null}
@@ -168,6 +188,8 @@ export function UsersRoute() {
           </table>
         </div>
       </div>
+        </MotionPanel>
+      </MotionSection>
     </div>
   );
 }

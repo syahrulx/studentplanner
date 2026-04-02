@@ -1,4 +1,4 @@
-// Admin CRUD + reads that normally require RLS (universities, logs, timetables, test fetch).
+// Admin CRUD + reads that normally require RLS (universities, logs, timetables, public locations, test fetch).
 // Auth: JWT (admin_users row) OR Bearer ADMIN_WEB_DEV_SECRET (set on the function; never use service role in the browser).
 // Deploy: npx supabase functions deploy admin_data
 // Secrets: supabase secrets set ADMIN_WEB_DEV_SECRET="$(openssl rand -hex 32)"   # optional; local dev bypass
@@ -108,6 +108,30 @@ serve(async (req) => {
           items = items.filter((t: { user_id: string }) => map.get(t.user_id) === universityId);
         }
       }
+      return json(200, { items });
+    }
+
+    if (action === 'public_locations_list') {
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      const { data: locs, error: le } = await admin
+        .from('user_locations')
+        .select('user_id,latitude,longitude,place_name,visibility,updated_at')
+        .eq('visibility', 'public')
+        .order('updated_at', { ascending: false })
+        .limit(lim);
+      if (le) return json(400, { error: le.message });
+      const ids = Array.from(new Set((locs ?? []).map((l: { user_id: string }) => l.user_id)));
+      if (!ids.length) return json(200, { items: [] });
+      const { data: profs, error: pe } = await admin
+        .from('profiles')
+        .select('id,name,student_id,university_id')
+        .in('id', ids);
+      if (pe) return json(400, { error: pe.message });
+      const pmap = new Map((profs ?? []).map((p: { id: string }) => [p.id, p]));
+      const items = (locs ?? []).map((l: Record<string, unknown>) => ({
+        ...l,
+        profile: pmap.get(l.user_id as string) ?? null,
+      }));
       return json(200, { items });
     }
 

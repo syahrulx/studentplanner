@@ -8,6 +8,9 @@ import {
   type CourseUsageRow,
   type DashboardOverview,
 } from '../lib/api';
+import { matchesAdminSearch } from '../lib/adminSearch';
+import { useAdminSearch } from '../state/AdminSearchContext';
+import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 
 function Card({ title, value }: { title: string; value: string }) {
   return (
@@ -19,6 +22,7 @@ function Card({ title, value }: { title: string; value: string }) {
 }
 
 export function DashboardRoute() {
+  const { searchQuery } = useAdminSearch();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string>('');
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
@@ -88,22 +92,55 @@ export function DashboardRoute() {
     ];
   }, [overview, busy]);
 
+  const cardsFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return cards;
+    return cards.filter((c) => matchesAdminSearch(searchQuery, c.title, c.value));
+  }, [cards, searchQuery]);
+
+  const aiSeriesFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return aiSeries;
+    return aiSeries.filter((p) => matchesAdminSearch(searchQuery, p.name, p.tokens));
+  }, [aiSeries, searchQuery]);
+
+  const courseUsageFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return courseUsage;
+    return courseUsage.filter((r) => matchesAdminSearch(searchQuery, r.course_id, r.course_name, r.user_count));
+  }, [courseUsage, searchQuery]);
+
   return (
     <div className="space-y-6">
-      <div>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Overview</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Activity and key totals.
+      <MotionSection>
+        <div>
+          <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Overview</div>
+          <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+            Activity and key totals.
+            {searchQuery.trim() ? (
+              <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
+                Top search active — stat cards, AI chart, and course table are filtered.
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </MotionSection>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((c) => (
-          <Card key={c.title} title={c.title} value={c.value} />
-        ))}
-      </div>
+      <MotionStagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cardsFiltered.length === 0 && searchQuery.trim() ? (
+          <div className="col-span-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
+            No overview stats match “{searchQuery.trim()}”. Clear the top search to see all cards.
+          </div>
+        ) : (
+          cardsFiltered.map((c) => (
+            <MotionStaggerItem key={c.title}>
+              <MotionPanel className="h-full">
+                <Card title={c.title} value={c.value} />
+              </MotionPanel>
+            </MotionStaggerItem>
+          ))
+        )}
+      </MotionStagger>
 
       {err ? (
+        <MotionSection delay={0.06}>
         <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
           {err}
           <div className="mt-3 space-y-2 text-xs font-semibold opacity-90">
@@ -139,8 +176,11 @@ export function DashboardRoute() {
             </p>
           </div>
         </div>
+        </MotionSection>
       ) : null}
 
+      <MotionSection delay={0.04}>
+        <MotionPanel>
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -152,7 +192,7 @@ export function DashboardRoute() {
         </div>
         <div className="mt-4 h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={aiSeries} margin={{ left: 6, right: 6, top: 10, bottom: 0 }}>
+            <AreaChart data={aiSeriesFiltered} margin={{ left: 6, right: 6, top: 10, bottom: 0 }}>
               <defs>
                 <linearGradient id="aiTokensFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
@@ -171,6 +211,9 @@ export function DashboardRoute() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        {searchQuery.trim() && aiSeriesFiltered.length === 0 && !aiErr ? (
+          <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">No AI usage points match the search.</div>
+        ) : null}
 
         {aiErr ? (
           <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
@@ -178,7 +221,11 @@ export function DashboardRoute() {
           </div>
         ) : null}
       </div>
+        </MotionPanel>
+      </MotionSection>
 
+      <MotionSection delay={0.08}>
+        <MotionPanel>
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -204,14 +251,14 @@ export function DashboardRoute() {
               </tr>
             </thead>
             <tbody>
-              {courseUsage.length === 0 ? (
+              {courseUsageFiltered.length === 0 ? (
                 <tr>
                   <td colSpan={2} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                    No course usage yet.
+                    {searchQuery.trim() ? 'No courses match the top search.' : 'No course usage yet.'}
                   </td>
                 </tr>
               ) : null}
-              {courseUsage.map((r) => (
+              {courseUsageFiltered.map((r) => (
                 <tr
                   key={r.course_id}
                   className="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40"
@@ -227,6 +274,8 @@ export function DashboardRoute() {
           </table>
         </div>
       </div>
+        </MotionPanel>
+      </MotionSection>
     </div>
   );
 }

@@ -3,6 +3,9 @@ import { deleteUniversity, getMapping, listUniversities, saveMapping, testFetch,
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
 import { Label, TextInput } from '../ui/Input';
+import { matchesAdminSearch } from '../lib/adminSearch';
+import { useAdminSearch } from '../state/AdminSearchContext';
+import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 
 function Input({
   label,
@@ -29,6 +32,7 @@ function Input({
 }
 
 export function UniversitiesRoute() {
+  const { searchQuery } = useAdminSearch();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [items, setItems] = useState<UniversityRow[]>([]);
@@ -67,19 +71,36 @@ export function UniversitiesRoute() {
   }, [editing]);
 
   const filtered = useMemo(() => {
+    let list = items;
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((u) => u.id.toLowerCase().includes(q) || u.name.toLowerCase().includes(q));
-  }, [items, query]);
+    if (q) {
+      list = list.filter((u) => u.id.toLowerCase().includes(q) || u.name.toLowerCase().includes(q));
+    }
+    if (searchQuery.trim()) {
+      list = list.filter((u) =>
+        matchesAdminSearch(searchQuery, u.id, u.name, u.request_method, u.login_method, u.api_endpoint),
+      );
+    }
+    return list;
+  }, [items, query, searchQuery]);
 
   return (
     <div>
-      <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Universities</div>
-      <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-        Manage universities and integrations.
-      </div>
+      <MotionSection>
+        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Universities</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Manage universities and integrations.
+          {searchQuery.trim() ? (
+            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
+              List filtered by the top search bar.
+            </span>
+          ) : null}
+        </div>
+      </MotionSection>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-[420px_1fr]">
+      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[420px_1fr]">
+        <MotionStaggerItem>
+          <MotionPanel className="h-full">
         <Card>
           <CardHeader>
             <div>
@@ -166,7 +187,9 @@ export function UniversitiesRoute() {
                     {filtered.length === 0 && !busy ? (
                       <tr>
                         <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                          No universities found.
+                          {items.length > 0 && (query.trim() || searchQuery.trim())
+                            ? 'No universities match your filters. Adjust the list search or clear the top search.'
+                            : 'No universities found.'}
                         </td>
                       </tr>
                     ) : null}
@@ -176,7 +199,11 @@ export function UniversitiesRoute() {
             </div>
           </CardContent>
         </Card>
+          </MotionPanel>
+        </MotionStaggerItem>
 
+        <MotionStaggerItem>
+          <MotionPanel className="h-full">
         <Card className="min-h-[420px]">
           <CardHeader>
             <div>
@@ -210,7 +237,9 @@ export function UniversitiesRoute() {
             )}
           </CardContent>
         </Card>
-      </div>
+          </MotionPanel>
+        </MotionStaggerItem>
+      </MotionStagger>
     </div>
   );
 }

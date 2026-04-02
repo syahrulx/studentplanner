@@ -6,6 +6,7 @@ import { UsersRoute } from './routes/UsersRoute';
 import { UniversitiesRoute } from './routes/UniversitiesRoute';
 import { TimetablesRoute } from './routes/TimetablesRoute';
 import { LogsRoute } from './routes/LogsRoute';
+import { LocationsRoute } from './routes/LocationsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { AuthProvider } from './state/AuthProvider';
 
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="users" element={<UsersRoute />} />
             <Route path="universities" element={<UniversitiesRoute />} />
             <Route path="timetables" element={<TimetablesRoute />} />
+            <Route path="locations" element={<LocationsRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>

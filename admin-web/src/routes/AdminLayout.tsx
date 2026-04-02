@@ -1,9 +1,12 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { RequireAdmin } from '../components/RequireAdmin';
 import { Sidebar } from '../components/Sidebar';
 import { Topbar } from '../components/Topbar';
 import { useAuth } from '../state/AuthProvider';
+import { AdminSearchProvider } from '../state/AdminSearchContext';
+import { pageTransition, pageVariants } from '../ui/motion';
 
 const bypassAuth = import.meta.env.VITE_BYPASS_ADMIN_AUTH === 'true';
 const devSecretSet = Boolean(String(import.meta.env.VITE_ADMIN_WEB_DEV_SECRET || '').trim());
@@ -15,6 +18,8 @@ function getStoredTheme(): 'light' | 'dark' {
 
 export function AdminLayout() {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  const reduceMotion = useReducedMotion();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => getStoredTheme());
 
@@ -50,6 +55,7 @@ export function AdminLayout() {
             <Sidebar />
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
+            <AdminSearchProvider>
             <Topbar onOpenMobileNav={() => setMobileOpen(true)} theme={theme} setTheme={setTheme} />
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
               {bypassAuth && !loading && !user && !devSecretSet ? (
@@ -73,8 +79,25 @@ export function AdminLayout() {
                   can load this app can use that key — keep it local, rotate it, and never ship it in a public build.
                 </div>
               ) : null}
-              <Outlet />
+              {reduceMotion ? (
+                <Outlet key={location.pathname} />
+              ) : (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={location.pathname}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    variants={pageVariants}
+                    transition={pageTransition}
+                    className="will-change-[opacity,transform]"
+                  >
+                    <Outlet />
+                  </motion.div>
+                </AnimatePresence>
+              )}
             </main>
+            </AdminSearchProvider>
           </div>
         </div>
       </div>

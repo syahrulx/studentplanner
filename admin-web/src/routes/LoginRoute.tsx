@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
+import { pageTransition, pageVariants } from '../ui/motion';
 
 type LoginLocationState = {
   from?: string;
@@ -21,6 +23,7 @@ export function LoginRoute() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>('');
   const [continueErr, setContinueErr] = useState<string>('');
+  const reduceMotion = useReducedMotion();
 
   if (loading) {
     return (
@@ -144,7 +147,13 @@ on conflict (user_id) do update
   return (
     <div className="min-h-dvh bg-slate-50 px-4 py-10 dark:bg-slate-950">
       <div className="mx-auto max-w-md">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+        <motion.div
+          className="rounded-3xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+          initial={reduceMotion ? false : 'initial'}
+          animate="animate"
+          variants={pageVariants}
+          transition={{ ...pageTransition, delay: 0.06 }}
+        >
           <div className="text-xl font-black tracking-tight text-slate-900 dark:text-slate-100">
             GradeUp <span className="text-brand-600 dark:text-brand-400">Admin</span>
           </div>
@@ -218,7 +227,7 @@ on conflict (user_id) do update
           <div className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-400">
             Admin access is controlled via Supabase RLS + <code className="text-slate-600 dark:text-slate-300">admin_users</code>.
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

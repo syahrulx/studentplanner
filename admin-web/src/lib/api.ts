@@ -451,6 +451,57 @@ export async function listTimetableEntries(opts: { userId?: string; universityId
   return res.items;
 }
 
+export type PublicLocationProfile = {
+  id: string;
+  name: string | null;
+  student_id: string | null;
+  university_id: string | null;
+};
+
+export type PublicLocationRow = {
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  place_name: string | null;
+  visibility: string;
+  updated_at: string;
+  profile: PublicLocationProfile | null;
+};
+
+export async function listPublicUserLocations(opts?: { limit?: number }) {
+  if (await hasSessionJwt()) {
+    const lim = Math.max(1, Math.min(500, Number(opts?.limit ?? 200)));
+    const { data: locs, error } = await supabase
+      .from('user_locations')
+      .select('user_id,latitude,longitude,place_name,visibility,updated_at')
+      .eq('visibility', 'public')
+      .order('updated_at', { ascending: false })
+      .limit(lim);
+    if (error) throw toError(error);
+    const ids = Array.from(new Set((locs ?? []).map((l: { user_id: string }) => l.user_id)));
+    if (!ids.length) return [] as PublicLocationRow[];
+    const { data: profs, error: pe } = await supabase
+      .from('profiles')
+      .select('id,name,student_id,university_id')
+      .in('id', ids);
+    if (pe) throw toError(pe);
+    const pmap = new Map((profs ?? []).map((p: PublicLocationProfile) => [p.id, p]));
+    return (locs ?? []).map((l) => ({
+      ...(l as Omit<PublicLocationRow, 'profile'>),
+      profile: pmap.get((l as { user_id: string }).user_id) ?? null,
+    })) as PublicLocationRow[];
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'public_locations_list', limit: opts?.limit ?? 200 },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: PublicLocationRow[] }>(data, error);
+  return res.items;
+}
+
 export async function deleteTimetableEntry(id: string, userId: string) {
   if (await hasSessionJwt()) {
     const { error } = await supabase.from('timetable_entries').delete().eq('id', id).eq('user_id', userId);

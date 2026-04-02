@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { deleteTimetableEntry, listTimetableEntries, type TimetableEntryRow } from '../lib/api';
+import { matchesAdminSearch } from '../lib/adminSearch';
+import { useAdminSearch } from '../state/AdminSearchContext';
+import { MotionPanel, MotionSection } from '../ui/motion';
 
 type TimetableRow = TimetableEntryRow;
 
@@ -18,6 +21,7 @@ function formatUserLabel(p: ProfileRow | null | undefined): string {
 }
 
 export function TimetablesRoute() {
+  const { searchQuery } = useAdminSearch();
   const [universityId, setUniversityId] = useState('');
   const [userId, setUserId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -84,16 +88,46 @@ export function TimetablesRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const groupedCount = useMemo(() => new Set(rows.map((r) => r.user_id)).size, [rows]);
+  const rowsFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return rows;
+    return rows.filter((r) => {
+      const p = profilesByUserId[r.user_id];
+      return matchesAdminSearch(
+        searchQuery,
+        r.user_id,
+        r.day,
+        r.subject_code,
+        r.subject_name,
+        r.start_time,
+        r.end_time,
+        r.location,
+        r.lecturer,
+        p?.name,
+        p?.student_id,
+        p?.university_id,
+      );
+    });
+  }, [rows, searchQuery, profilesByUserId]);
+
+  const groupedFilteredCount = useMemo(() => new Set(rowsFiltered.map((r) => r.user_id)).size, [rowsFiltered]);
 
   return (
     <div>
-      <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Timetables</div>
-      <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-        View and manage generated timetables.
-      </div>
+      <MotionSection>
+        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Timetables</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          View and manage generated timetables.
+          {searchQuery.trim() ? (
+            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
+              Table filtered by the top search bar.
+            </span>
+          ) : null}
+        </div>
+      </MotionSection>
 
-      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+      <MotionSection delay={0.06} className="mt-6">
+        <MotionPanel>
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row">
             <label className="block md:w-64">
@@ -162,7 +196,8 @@ export function TimetablesRoute() {
         ) : null}
 
         <div className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Showing {rows.length} entries across {groupedCount} users (max 200 rows)
+          Showing {rowsFiltered.length} entries across {groupedFilteredCount} users
+          {searchQuery.trim() ? ' (filtered)' : ''} (max 200 rows loaded)
         </div>
 
         <div className="mt-3 overflow-x-auto">
@@ -178,7 +213,7 @@ export function TimetablesRoute() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rowsFiltered.map((r) => (
                 <tr key={`${r.user_id}-${r.id}-${r.day}-${r.start_time}`} className="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40">
                   <td className="px-3 py-3 text-xs font-black text-slate-900 dark:text-slate-100">
                     <div>{formatUserLabel(profilesByUserId[r.user_id])}</div>
@@ -210,10 +245,12 @@ export function TimetablesRoute() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && !busy ? (
+              {rowsFiltered.length === 0 && !busy ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                    No timetable entries found.
+                    {searchQuery.trim() && rows.length > 0
+                      ? 'No rows match the top search.'
+                      : 'No timetable entries found.'}
                   </td>
                 </tr>
               ) : null}
@@ -221,6 +258,8 @@ export function TimetablesRoute() {
           </table>
         </div>
       </div>
+        </MotionPanel>
+      </MotionSection>
     </div>
   );
 }

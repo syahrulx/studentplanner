@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listAdminLogs, type AdminLogRow } from '../lib/api';
+import { matchesAdminSearch } from '../lib/adminSearch';
+import { useAdminSearch } from '../state/AdminSearchContext';
+import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 
 type LogRow = AdminLogRow;
 
 export function LogsRoute() {
+  const { searchQuery } = useAdminSearch();
   const [type, setType] = useState<string>('all');
   const [status, setStatus] = useState<string>('all');
   const [busy, setBusy] = useState(false);
@@ -29,14 +33,37 @@ export function LogsRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const rowsFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return rows;
+    return rows.filter((r) =>
+      matchesAdminSearch(
+        searchQuery,
+        r.id,
+        r.type,
+        r.status,
+        r.created_at,
+        typeof r.meta === 'object' && r.meta != null ? JSON.stringify(r.meta) : String(r.meta ?? ''),
+      ),
+    );
+  }, [rows, searchQuery]);
+
   return (
     <div>
-      <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Logs</div>
-      <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-        API requests, errors, and monitoring.
-      </div>
+      <MotionSection>
+        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Logs</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          API requests, errors, and monitoring.
+          {searchQuery.trim() ? (
+            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
+              Rows filtered by the top search (including JSON meta).
+            </span>
+          ) : null}
+        </div>
+      </MotionSection>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <MotionStagger className="mt-6 grid gap-4 lg:grid-cols-2">
+        <MotionStaggerItem>
+          <MotionPanel className="h-full">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="grid flex-1 gap-3 md:grid-cols-2">
@@ -92,7 +119,7 @@ export function LogsRoute() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rowsFiltered.map((r) => (
                   <tr
                     key={r.id}
                     className="cursor-pointer rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-950/70"
@@ -108,10 +135,12 @@ export function LogsRoute() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && !busy ? (
+                {rowsFiltered.length === 0 && !busy ? (
                   <tr>
                     <td colSpan={4} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      No logs found yet.
+                      {searchQuery.trim() && rows.length > 0
+                        ? 'No logs match the top search.'
+                        : 'No logs found yet.'}
                     </td>
                   </tr>
                 ) : null}
@@ -119,13 +148,17 @@ export function LogsRoute() {
             </table>
           </div>
 
-          {rows.length === 0 && !busy ? (
+          {rows.length === 0 && !busy && !searchQuery.trim() ? (
             <div className="mt-3 text-xs font-semibold text-slate-500">
               Logs are recorded when you perform admin actions like <code>Test Fetch</code>, user status changes (Activate/Disable/Ban), or deleting timetable rows.
             </div>
           ) : null}
         </div>
+          </MotionPanel>
+        </MotionStaggerItem>
 
+        <MotionStaggerItem>
+          <MotionPanel className="h-full">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
           <div className="text-sm font-black text-slate-900 dark:text-slate-100">Log details</div>
           <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Click a row to inspect full JSON.</div>
@@ -138,7 +171,9 @@ export function LogsRoute() {
             <div className="mt-6 text-sm font-semibold text-slate-500 dark:text-slate-400">No log selected.</div>
           )}
         </div>
-      </div>
+          </MotionPanel>
+        </MotionStaggerItem>
+      </MotionStagger>
     </div>
   );
 }
