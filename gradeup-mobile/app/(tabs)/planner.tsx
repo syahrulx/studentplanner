@@ -5,9 +5,19 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
-import { Priority, TaskType } from '@/src/types';
+import { TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
-import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
+import {
+  formatDisplayDate,
+  getTodayISO,
+  getWeekDatesFor,
+  getMonthYearLabel,
+  getWeekNumber,
+  getMonthGrid,
+  toISO,
+  getWeekDatesSundayFirst,
+  isTaskPastDueNow,
+} from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
@@ -16,12 +26,6 @@ import { useTheme } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
-
-const PRIORITY_COLORS = {
-  [Priority.Low]: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
-  [Priority.Medium]: { bg: 'rgba(234,179,8,0.15)', text: '#ca8a04' },
-  [Priority.High]: { bg: 'rgba(239,68,68,0.15)', text: '#b91c1c' },
-} as const;
 
 function getDaysUntilDue(dueDate: string): number {
   const today = new Date();
@@ -84,7 +88,7 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
 }
 
 type ViewMode = 'day' | 'week' | 'month' | 'all';
-type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab';
+type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab' | 'test';
 const CALENDAR_STRIP_SLOT = 64;
 
 export default function Planner() {
@@ -130,7 +134,7 @@ export default function Planner() {
   const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [sortMode, setSortMode] = useState<'nearest' | 'priority-desc' | 'subject'>('nearest');
+  const [sortMode, setSortMode] = useState<'nearest' | 'subject'>('nearest');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
     { role: 'ai', text: '' },
   ]);
@@ -430,6 +434,7 @@ export default function Planner() {
         quiz: TaskType.Quiz,
         project: TaskType.Project,
         lab: TaskType.Lab,
+        test: TaskType.Test,
       };
       const targetType = typeMap[activeFilter];
       if (targetType) {
@@ -497,17 +502,6 @@ export default function Planner() {
     const compareTasks = (a: PlannerTaskItem, b: PlannerTaskItem): number => {
       // Incomplete above completed
       if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
-
-      if (sortMode === 'priority-desc') {
-        const rank: Record<Priority, number> = {
-          [Priority.High]: 3,
-          [Priority.Medium]: 2,
-          [Priority.Low]: 1,
-        };
-        if (rank[a.priority] !== rank[b.priority]) {
-          return rank[b.priority] - rank[a.priority];
-        }
-      }
 
       if (sortMode === 'subject') {
         const c = a.courseId.localeCompare(b.courseId);
@@ -654,13 +648,22 @@ export default function Planner() {
               );
             }
 
+            const missingDate = extractedTasks.filter((t) => t.needs_date);
+
             const summary = extractedTasks
-              .map((task) => `${task.title}\nDue: ${task.due_date} ${task.due_time}\nCourse: ${task.course_id}`)
+              .map((task) => {
+                const dateLabel = task.needs_date ? 'Date TBA — set manually' : `${task.due_date} ${task.due_time}`;
+                return `${task.title}\nDue: ${dateLabel}\nCourse: ${task.course_id}`;
+              })
               .join('\n\n');
+
+            const warningNote = missingDate.length > 0
+              ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
+              : '';
 
             setMessages((prev) => [
               ...prev,
-              { role: 'ai', text: `${T('taskExtracted')}\n\n${summary}\n\n${T('addedToPlanner')}` },
+              { role: 'ai', text: `${T('taskExtracted')}\n\n${summary}${warningNote}\n\n${T('addedToPlanner')}` },
             ]);
           } else {
             setMessages((prev) => [
@@ -732,6 +735,7 @@ export default function Planner() {
               { key: 'all' as FilterType, label: T('all') },
               { key: 'assignment' as FilterType, label: T('assign') },
               { key: 'quiz' as FilterType, label: T('quiz') },
+              { key: 'test' as FilterType, label: T('test') },
               { key: 'project' as FilterType, label: T('project') },
               { key: 'lab' as FilterType, label: T('lab') },
             ].map((f) => (
@@ -753,12 +757,6 @@ export default function Planner() {
                 onPress={() => setSortMode('nearest')}
               >
                 <Text style={[s.sortChipText, sortMode === 'nearest' && s.sortChipTextActive]}>{T('nearestDue')}</Text>
-              </Pressable>
-              <Pressable
-                style={[s.sortChip, sortMode === 'priority-desc' && s.sortChipActive]}
-                onPress={() => setSortMode('priority-desc')}
-              >
-                <Text style={[s.sortChipText, sortMode === 'priority-desc' && s.sortChipTextActive]}>{T('priorityHighLow')}</Text>
               </Pressable>
               <Pressable
                 style={[s.sortChip, sortMode === 'subject' && s.sortChipActive]}
@@ -976,7 +974,13 @@ export default function Planner() {
     const subject = getCardSubject(item);
     const subjectColor = getSubjectColor(subject);
     const daysUntil = item.itemType === 'task' ? getDaysUntilDue(item.dueDate) : 99;
-    const isOverdue = item.itemType === 'task' && daysUntil < 0;
+    const taskRow = item.itemType === 'task' ? (item as PlannerTaskItem) : null;
+    const isOverdue =
+      item.itemType === 'task' &&
+      !item.isDone &&
+      !!taskRow &&
+      !taskRow.needsDate &&
+      isTaskPastDueNow({ dueDate: taskRow.dueDate, dueTime: taskRow.dueTime ?? '23:59' });
     const isDueSoon = item.itemType === 'task' && !isOverdue && daysUntil <= 3;
     const isPinnedTask = item.itemType === 'task' && pinnedSet.has(item.id);
     // Only show the full date inline for the \"All\" view.
@@ -1002,18 +1006,17 @@ export default function Planner() {
               : `${daysUntil} ${T('daysLeft')}`;
     const secondaryLabel = item.itemType === 'study'
       ? (item.topic ? `${item.durationMinutes} min • ${item.topic}` : `${item.durationMinutes} min`)
-      : `${item.type} • ${item.priority}`;
+      : `${item.type} • ${item.courseId}`;
     const statusTextStyle = item.isDone
       ? s.taskInlineStatusDone
       : item.itemType === 'study'
         ? s.taskInlineStatusStudy
         : // Countdown colour for tasks (today/overdue red, near yellow, far black)
-          daysUntil <= 0
+          isOverdue || daysUntil < 0
           ? s.taskInlineStatusOverdue
           : daysUntil <= 3
             ? s.taskInlineStatusSoon
             : s.taskInlineStatusFar;
-    const showInlineStatus = !(item.itemType === 'task' && daysUntil === 0 && !item.isDone);
     const darkSurface = themePrefersLightOutline(theme);
     const borderColor = darkSurface
       ? item.isDone
@@ -1770,10 +1773,12 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <Pressable style={s.headerBtn} onPress={() => router.back()}>
-            <Feather name="chevron-left" size={24} color={theme.text} />
-          </Pressable>
-          <View style={{ position: 'relative' }}>
+          <View style={[s.headerSide, s.headerSideLeft]}>
+            <Pressable style={s.headerBtn} onPress={() => router.back()}>
+              <Feather name="chevron-left" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <View style={s.headerCenter}>
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
                 name={
@@ -1832,13 +1837,15 @@ export default function Planner() {
               </View>
             )}
           </View>
-          <Pressable
-            style={s.shareAllBtn}
-            onPress={() => setShowShareAllModal(true)}
-            hitSlop={6}
-          >
-            <Feather name="send" size={16} color={theme.primary} />
-          </Pressable>
+          <View style={[s.headerSide, s.headerSideRight]}>
+            <Pressable
+              style={s.headerBtn}
+              onPress={() => setShowShareAllModal(true)}
+              hitSlop={6}
+            >
+              <Feather name="user-plus" size={20} color={theme.text} />
+            </Pressable>
+          </View>
         </View>
 
         {/* Calendar panel — only shown in "day" view, since grids have their own nav */}
@@ -2123,10 +2130,24 @@ function createPlannerStyles(theme: ThemePalette) {
   },
   headerTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
     zIndex: 20,
+  },
+  headerSide: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerSideLeft: {
+    justifyContent: 'flex-start',
+  },
+  headerSideRight: {
+    justifyContent: 'flex-end',
+  },
+  headerCenter: {
+    position: 'relative',
+    alignItems: 'center',
   },
   headerBtn: {
     width: 44,
@@ -2164,12 +2185,13 @@ function createPlannerStyles(theme: ThemePalette) {
   viewDropdown: {
     position: 'absolute',
     top: 52,
-    right: 0,
+    left: 0,
+    minWidth: '100%',
     backgroundColor: theme.card,
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 8,
-    width: 156,
+    width: 168,
     shadowColor: theme.text,
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -3120,14 +3142,6 @@ function createPlannerStyles(theme: ThemePalette) {
     fontWeight: '600',
     color: theme.textSecondary,
     marginTop: 2,
-  },
-
-  // Share All button in header
-  shareAllBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,51,102,0.06)',
-    marginLeft: 8,
   },
 
   // Share All Modal

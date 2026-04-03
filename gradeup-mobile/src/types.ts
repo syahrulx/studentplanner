@@ -1,5 +1,4 @@
 export type Page =
-  | 'onboarding'
   | 'login'
   | 'profileSetup'
   | 'dashboard'
@@ -54,8 +53,6 @@ export interface Task {
   type: TaskType;
   dueDate: string;
   dueTime: string;
-  priority: Priority;
-  effort: number;
   notes: string;
   isDone: boolean;
   deadlineRisk: 'High' | 'Medium' | 'Low';

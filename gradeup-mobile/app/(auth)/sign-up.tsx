@@ -135,7 +135,13 @@ export default function SignUp() {
       if (data.user) {
         try {
           await supabase.from('profiles').upsert(
-            { id: data.user.id, name: trimmedName, university: university.name, updated_at: new Date().toISOString() },
+            {
+              id: data.user.id,
+              name: trimmedName,
+              university: university.name,
+              university_id: university.id,
+              updated_at: new Date().toISOString(),
+            },
             { onConflict: 'id' }
           );
         } catch {}

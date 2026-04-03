@@ -73,6 +73,7 @@ export default function ProfileSetup() {
           id: user.id,
           name: name.trim(),
           university: university.name,
+          university_id: university.id,
           ...(academicLevel ? { academicLevel } : {}),
           updated_at: new Date().toISOString(),
         },

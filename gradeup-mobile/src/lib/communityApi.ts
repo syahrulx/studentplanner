@@ -1010,10 +1010,13 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
   const taskMap = new Map((tasksRes.data || []).map((t: any) => [t.id, {
     id: t.id, title: t.title, courseId: t.course_id, type: t.type,
-    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
-    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    dueDate: t.needs_date ? new Date().toISOString().slice(0, 10) : (t.due_date || ''),
+    dueTime: t.due_time || '',
+    notes: t.notes || '',
     isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
     suggestedWeek: Number(t.suggested_week || 0),
+    needsDate: Boolean(t.needs_date),
+    sourceMessage: t.source_message ?? undefined,
   }]));
 
   return data.map(s => ({
@@ -1052,10 +1055,13 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
   const taskMap = new Map((tasksRes.data || []).map((t: any) => [t.id, {
     id: t.id, title: t.title, courseId: t.course_id, type: t.type,
-    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
-    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    dueDate: t.needs_date ? new Date().toISOString().slice(0, 10) : (t.due_date || ''),
+    dueTime: t.due_time || '',
+    notes: t.notes || '',
     isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
     suggestedWeek: Number(t.suggested_week || 0),
+    needsDate: Boolean(t.needs_date),
+    sourceMessage: t.source_message ?? undefined,
   }]));
 
   return data.map(s => ({
@@ -1167,10 +1173,13 @@ export async function getSharedTasksBetweenUsers(friendId: string): Promise<Shar
 
   const taskMap = new Map((tasks || []).map((t: any) => [t.id, {
     id: t.id, title: t.title, courseId: t.course_id, type: t.type,
-    dueDate: t.due_date, dueTime: t.due_time, priority: t.priority,
-    effort: Number(t.effort_hours || 0), notes: t.notes || '',
+    dueDate: t.needs_date ? new Date().toISOString().slice(0, 10) : (t.due_date || ''),
+    dueTime: t.due_time || '',
+    notes: t.notes || '',
     isDone: Boolean(t.is_done), deadlineRisk: t.deadline_risk || 'Medium',
     suggestedWeek: Number(t.suggested_week || 0),
+    needsDate: Boolean(t.needs_date),
+    sourceMessage: t.source_message ?? undefined,
   }]));
 
   return data.map(s => ({ ...s, task: taskMap.get(s.task_id) })) as SharedTask[];

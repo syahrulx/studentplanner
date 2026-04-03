@@ -6,7 +6,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { ThemeIcon } from '@/components/ThemeIcon';
-import { formatDisplayDate, getTodayISO } from '@/src/utils/date';
+import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
 import { dueDateToTeachingWeekRaw, peakWeekFromTaskCounts, taskCountsByOpenDueWeek } from '@/src/lib/academicWeek';
@@ -61,9 +61,14 @@ function getDaysLeft(dueDate: string): number {
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
 
-function getDueTimeLabelRaw(dueDate: string): { key: 'overdue' | 'dueToday' | 'tomorrow' | 'daysLeft'; days: number } {
+function getDueTimeLabelRaw(
+  dueDate: string,
+  dueTime?: string,
+): { key: 'overdue' | 'dueToday' | 'tomorrow' | 'daysLeft'; days: number } {
   const days = getDaysLeft(dueDate);
-  if (days < 0) return { key: 'overdue', days };
+  const pastByDeadline =
+    dueTime !== undefined && isTaskPastDueNow({ dueDate, dueTime: dueTime || '23:59' });
+  if (days < 0 || pastByDeadline) return { key: 'overdue', days };
   if (days === 0) return { key: 'dueToday', days };
   if (days === 1) return { key: 'tomorrow', days };
   return { key: 'daysLeft', days };
@@ -727,12 +732,12 @@ export default function Dashboard() {
 
   const focusCard = useMemo(() => {
     if (focusTask) {
-      const info = getDueTimeLabelRaw(focusTask.task.dueDate);
+      const info = getDueTimeLabelRaw(focusTask.task.dueDate, focusTask.task.dueTime);
       const subjectColor = getSubjectColor(focusTask.task.courseId);
       const days = info.days;
       let statusColor: string;
-      if (days < 0 || days === 0) {
-        // Overdue or today – very near => red
+      if (info.key === 'overdue' || days === 0) {
+        // Overdue or due today – very near => red
         statusColor = '#dc2626';
       } else if (days <= 3) {
         // 1–3 days => medium near => yellow
@@ -756,8 +761,8 @@ export default function Dashboard() {
             : T(info.key),
         subtitle:
           focusTask.reason === 'pinned'
-            ? `${T('subject')} • ${focusTask.task.priority}`
-            : `${focusTask.task.type} • ${focusTask.task.priority}`,
+            ? `${T('subject')} • ${focusTask.task.courseId}`
+            : `${focusTask.task.type} • ${focusTask.task.courseId}`,
         onPress: () => router.push({ pathname: '/task-details', params: { id: focusTask.task.id } } as any),
       };
     }
@@ -1042,7 +1047,9 @@ export default function Dashboard() {
               } else {
                 // Tasks: color by how near the deadline is
                 const days = getDaysLeft(item.date);
-                if (days < 0 || days === 0) {
+                const taskPast =
+                  isTaskPastDueNow({ dueDate: item.date, dueTime: item.time || '23:59' });
+                if (days < 0 || taskPast || days === 0) {
                   accent = '#dc2626'; // red – very near / overdue
                 } else if (days <= 3) {
                   accent = '#eab308'; // yellow – medium near

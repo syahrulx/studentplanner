@@ -57,21 +57,33 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   useEffect(() => {
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      const data = response?.notification.request.content.data as { type?: string; sessionId?: string } | undefined;
-      if (data?.type === 'revision') {
-        setTimeout(() => router.push('/revision-due'), 100);
-      } else if (data?.type === 'quiz_invite' && data.sessionId) {
-        setTimeout(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any), 100);
+    const handleNotificationData = (data: Record<string, any> | undefined, delayed?: boolean) => {
+      if (!data?.type) return;
+      const nav = (fn: () => void) => delayed ? setTimeout(fn, 100) : fn();
+      switch (data.type) {
+        case 'revision':
+          nav(() => router.push('/revision-due')); break;
+        case 'quiz_invite':
+          if (data.sessionId) nav(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any)); break;
+        case 'task_reminder':
+        case 'task_overdue':
+          if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any)); break;
+        case 'shared_task':
+          nav(() => router.push('/(tabs)/community' as any)); break;
+        case 'classroom_sync':
+          nav(() => router.push('/(tabs)/planner' as any)); break;
+        case 'weekly_summary':
+          nav(() => router.push('/(tabs)/planner' as any)); break;
+        case 'study_complete':
+          nav(() => router.push('/study-timer' as any)); break;
       }
+    };
+
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      handleNotificationData(response?.notification.request.content.data as Record<string, any> | undefined, true);
     });
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as { type?: string; sessionId?: string } | undefined;
-      if (data?.type === 'revision') {
-        router.push('/revision-due');
-      } else if (data?.type === 'quiz_invite' && data.sessionId) {
-        router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any);
-      }
+      handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined);
     });
     return () => sub.remove();
   }, []);

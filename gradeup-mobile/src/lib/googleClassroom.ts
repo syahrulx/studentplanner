@@ -5,7 +5,7 @@ import { upsertTask } from './taskDb';
 import * as coursesDb from './coursesDb';
 import type { Task, Course } from '../types';
 import { getTodayISO } from '../utils/date';
-import { TaskType, Priority } from '../types';
+import { TaskType } from '../types';
 import {
   getClassroomToken,
   setClassroomToken,
@@ -303,8 +303,6 @@ export function buildTask(
     type,
     dueDate: dateStr,
     dueTime: timeStr,
-    priority: existing?.priority ?? Priority.Medium,
-    effort: existing?.effort ?? 1,
     notes: work.description || `From Google Classroom: ${courseName}`,
     isDone: existing?.isDone ?? false,
     deadlineRisk: deadlineRisk(taskNeedsDate ? new Date().toISOString().slice(0, 10) : dateStr),
@@ -334,8 +332,6 @@ async function fetchExistingGcTasks(userId: string): Promise<Task[]> {
       type: r.type as TaskType,
       dueDate,
       dueTime: String(r.due_time ?? ''),
-      priority: r.priority as Priority,
-      effort: Number(r.effort_hours ?? 0),
       notes: String(r.notes ?? ''),
       isDone: Boolean(r.is_done),
       deadlineRisk: (r.deadline_risk ?? 'Medium') as Task['deadlineRisk'],

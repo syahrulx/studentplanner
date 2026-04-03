@@ -241,9 +241,9 @@ export function revisionStudyLoadByWeek(
   return loads;
 }
 
-/** Sum of estimated task hours per teaching week (`effort` hours per task, minimum 1). */
+/** Sum of placeholder hours per teaching week (1 hour per open task per week; effort field removed). */
 export function taskEffortHoursByDueWeek(
-  tasks: { dueDate: string; isDone: boolean; suggestedWeek?: number; effort?: number }[],
+  tasks: { dueDate: string; isDone: boolean; suggestedWeek?: number }[],
   calendar: AcademicCalendar | null | undefined,
   mode: 'open' | 'all' = 'all',
   profileStartFallback?: string | null,
@@ -256,15 +256,14 @@ export function taskEffortHoursByDueWeek(
     if (mode === 'open' && t.isDone) continue;
     const w = taskTeachingWeekForWorkload(t, calendar, profileStartFallback);
     if (w == null) continue;
-    const h = Number(t.effort);
-    sums[w - 1] += Number.isFinite(h) && h > 0 ? h : 1;
+    sums[w - 1] += 1;
   }
   return sums;
 }
 
 /** Task estimated hours per week + revision/study hours per week (same length). */
 export function combinedWorkloadByWeek(
-  tasks: { dueDate: string; isDone: boolean; suggestedWeek?: number; effort?: number }[],
+  tasks: { dueDate: string; isDone: boolean; suggestedWeek?: number }[],
   revisions: RevisionSettings[],
   calendar: AcademicCalendar | null | undefined,
   taskMode: 'open' | 'all' = 'all',

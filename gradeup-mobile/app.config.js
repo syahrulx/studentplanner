@@ -20,6 +20,8 @@ function cleanEnvString(v) {
 
 export default ({ config }) => ({
   ...config,
+  /** Required for dev-client deep links / Metro “open in app”; must match native build after prebuild. */
+  scheme: config?.scheme ?? 'gradeupmobile',
   plugins: [
     ...(config?.plugins ?? []),
     '@react-native-community/datetimepicker',

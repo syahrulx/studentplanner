@@ -184,6 +184,39 @@ export function getUniversityById(id: string): UniversityConfig | undefined {
   return UNIVERSITIES.find((u) => u.id === id);
 }
 
+/**
+ * UiTM-only: map stored profile `university` label to portal id for calendar auto-sync.
+ * Matches the name we save from the picker or common variants.
+ */
+export function inferUniversityIdFromUniversityName(
+  universityName: string | undefined | null,
+): string | undefined {
+  const n = (universityName ?? '').trim().toLowerCase();
+  if (!n) return undefined;
+  const uitm = UNIVERSITIES.find((u) => u.id === 'uitm');
+  if (!uitm) return undefined;
+  if (n === uitm.name.toLowerCase()) return 'uitm';
+  if (n.includes('teknologi mara')) return 'uitm';
+  if (/\buitm\b/.test(n)) return 'uitm';
+  return undefined;
+}
+
+/** Resolve portal university id for calendar features (explicit profile/connection, then UiTM heuristics). */
+export function resolveUniversityIdForCalendar(opts: {
+  profileUniversityId?: string | null;
+  connectionUniversityId?: string | null;
+  studentId?: string | null;
+  universityName?: string | null;
+}): string | undefined {
+  const a = (opts.profileUniversityId ?? '').trim();
+  if (a) return a;
+  const b = (opts.connectionUniversityId ?? '').trim();
+  if (b) return b;
+  const sid = (opts.studentId ?? '').trim();
+  if (sid && /^\d{10,}$/.test(sid)) return 'uitm';
+  return inferUniversityIdFromUniversityName(opts.universityName);
+}
+
 export type UniversityItem = UniversityConfig;
 
 export async function getMalaysianUniversities(): Promise<UniversityItem[]> {

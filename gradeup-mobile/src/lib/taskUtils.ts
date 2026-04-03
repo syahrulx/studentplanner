@@ -1,6 +1,6 @@
 import { Priority, TaskType, type Task, type UserProfile } from '../types';
 import type { TaskExtractionDTO } from './taskExtraction';
-import { getTodayISO } from '../utils/date';
+import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 
 type DeadlineRisk = Task['deadlineRisk'];
 type FocusReason = 'dueToday' | 'overdue' | 'pinned' | 'tomorrow' | 'upcoming';
@@ -96,14 +96,6 @@ export function compareTasksByDueDate(a: Task, b: Task): number {
   const timeCompare = normalizeTime(a.dueTime).localeCompare(normalizeTime(b.dueTime));
   if (timeCompare !== 0) return timeCompare;
 
-  const rank: Record<Priority, number> = {
-    [Priority.High]: 3,
-    [Priority.Medium]: 2,
-    [Priority.Low]: 1,
-  };
-  const priorityCompare = rank[b.priority] - rank[a.priority];
-  if (priorityCompare !== 0) return priorityCompare;
-
   return a.title.localeCompare(b.title);
 }
 
@@ -122,6 +114,7 @@ export function selectTodaysFocusTask(
   const pinnedSet = new Set(pinnedTaskIds);
 
   const bucketFor = (task: Task, daysUntilDue: number): number => {
+    if (!task.needsDate && isTaskPastDueNow(task)) return 1;
     if (daysUntilDue === 0) return 0;
     if (daysUntilDue < 0) return 1;
     if (pinnedSet.has(task.id)) return 2;
@@ -139,21 +132,15 @@ export function selectTodaysFocusTask(
       return daysB - daysA;
     }
 
-    if (pinnedSet.has(a.id) && pinnedSet.has(b.id) && a.priority !== b.priority) {
-      const rank: Record<Priority, number> = {
-        [Priority.High]: 3,
-        [Priority.Medium]: 2,
-        [Priority.Low]: 1,
-      };
-      return rank[b.priority] - rank[a.priority];
-    }
-
     return compareTasksByDueDate(a, b);
   });
 
   const task = sorted[0];
   const daysUntilDue = getDaysUntilTaskDue(task, todayISO);
 
+  if (!task.needsDate && isTaskPastDueNow(task)) {
+    return { task, reason: 'overdue', daysUntilDue };
+  }
   if (daysUntilDue === 0) return { task, reason: 'dueToday', daysUntilDue };
   if (daysUntilDue < 0) return { task, reason: 'overdue', daysUntilDue };
   if (pinnedSet.has(task.id)) return { task, reason: 'pinned', daysUntilDue };
@@ -187,12 +174,11 @@ export function buildTaskFromExtraction(
     type: normalizeTaskType(extracted.type),
     dueDate,
     dueTime: normalizeTime(extracted.due_time),
-    priority: normalizeTaskPriority(extracted.priority) ?? getPriorityFromDeadlineRisk(deadlineRisk),
-    effort: clampEffort(extracted.effort_hours),
     notes: extracted.notes ?? '',
     isDone: false,
     deadlineRisk,
     suggestedWeek,
     sourceMessage: options.sourceMessage,
+    needsDate: extracted.needs_date || extracted.is_inferred_date || false,
   };
 }
