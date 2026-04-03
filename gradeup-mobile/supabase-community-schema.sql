@@ -103,15 +103,9 @@ drop policy if exists "Users can join circles" on public.circle_members;
 drop policy if exists "Members can update" on public.circle_members;
 drop policy if exists "Members can leave circles" on public.circle_members;
 
--- Members can see other members of their circles
 create policy "Members can read circle members"
   on public.circle_members for select
-  using (
-    exists (
-      select 1 from public.circle_members cm2
-      where cm2.circle_id = circle_members.circle_id and cm2.user_id = auth.uid()
-    )
-  );
+  using (auth.uid() = user_id);
 
 -- Users can join circles (insert themselves)
 create policy "Users can join circles"
@@ -148,7 +142,7 @@ create table if not exists public.user_locations (
   longitude double precision not null,
   place_name text,
   updated_at timestamptz not null default now(),
-  visibility text not null default 'friends' check (visibility in ('public', 'friends', 'off'))
+  visibility text not null default 'friends' check (visibility in ('public', 'friends', 'circles', 'off'))
 );
 
 alter table public.user_locations enable row level security;
@@ -164,7 +158,7 @@ create policy "Users can read own location"
   on public.user_locations for select
   using (auth.uid() = user_id);
 
--- Users can read friends' locations (if visibility allows)
+-- Users can read friends' or circle members' locations (if visibility allows)
 create policy "Friends can read locations"
   on public.user_locations for select
   using (
@@ -178,6 +172,17 @@ create policy "Friends can read locations"
           (f.requester_id = auth.uid() and f.addressee_id = user_locations.user_id)
           or (f.addressee_id = auth.uid() and f.requester_id = user_locations.user_id)
         )
+      )
+    )
+    or (
+      visibility = 'circles'
+      and exists (
+        select 1
+        from public.circle_members cm_me
+        join public.circle_members cm_them
+          on cm_me.circle_id = cm_them.circle_id
+        where cm_me.user_id = auth.uid()
+          and cm_them.user_id = user_locations.user_id
       )
     )
   );

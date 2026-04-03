@@ -833,6 +833,23 @@ export default function Settings() {
           ))}
         </View>
 
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('accountSection')}</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={handleLogout}
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#64748b' }]}>
+              <Feather name="log-out" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('logOut')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('logOutDesc')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>DATA MANAGEMENT</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
@@ -852,23 +869,6 @@ export default function Settings() {
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('clearDataDesc')}</Text>
             </View>
             {clearDataBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
-          </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('accountSection')}</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={handleLogout}
-          >
-            <View style={[styles.iconBox, { backgroundColor: '#64748b' }]}>
-              <Feather name="log-out" size={18} color="#fff" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('logOut')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('logOutDesc')}</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={styles.dividerList} />
           <Pressable

@@ -1,15 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  TextInput,
-  StyleSheet,
-  Platform,
-  Alert,
-  Share,
-} from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, StyleSheet, Platform, Alert, Share, Modal, FlatList } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
@@ -27,6 +18,7 @@ export default function CirclesScreen() {
   const [selectedEmoji, setSelectedEmoji] = useState('👥');
   const [joinCode, setJoinCode] = useState('');
   const [creating, setCreating] = useState(false);
+  const [inviteCircleId, setInviteCircleId] = useState<string | null>(null);
 
   const handleCreate = useCallback(async () => {
     if (!userId || !newName.trim()) return;
@@ -66,6 +58,42 @@ export default function CirclesScreen() {
       });
     } catch (e) {}
   }, []);
+
+  const handleCopyCode = useCallback(async (code?: string | null) => {
+    if (!code) return;
+    try {
+      await Clipboard.setStringAsync(code);
+      Alert.alert('Copied', 'Invite code copied to clipboard');
+    } catch {
+      Alert.alert('Error', 'Failed to copy invite code');
+    }
+  }, []);
+
+  const handleInviteFriend = useCallback(
+    (circleId: string) => {
+      if (!friends.length) {
+        Alert.alert('No friends yet', 'Add friends first in the Community tab before inviting them to a circle.');
+        return;
+      }
+      setInviteCircleId(circleId);
+    },
+    [friends]
+  );
+
+  const handleSelectFriendToInvite = useCallback(
+    async (friendId: string) => {
+      if (!inviteCircleId) return;
+      try {
+        await communityApi.inviteToCircle(inviteCircleId, friendId);
+        Alert.alert('Invited', 'Friend has been added to this circle.');
+        setInviteCircleId(null);
+        await refreshCircles();
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to invite friend');
+      }
+    },
+    [inviteCircleId, refreshCircles]
+  );
 
   const handleLeave = useCallback(
     async (circle: communityApi.Circle) => {
@@ -203,7 +231,14 @@ export default function CirclesScreen() {
                 onPress={() => handleShare(circle)}
               >
                 <Feather name="share-2" size={14} color={theme.primary} />
-                <Text style={[styles.circleActionText, { color: theme.primary }]}>Invite</Text>
+                <Text style={[styles.circleActionText, { color: theme.primary }]}>Share</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.circleActionBtn, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                onPress={() => handleInviteFriend(circle.id)}
+              >
+                <Feather name="user-plus" size={14} color={theme.primary} />
+                <Text style={[styles.circleActionText, { color: theme.primary }]}>Invite Friend</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.circleActionBtn, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
@@ -215,13 +250,67 @@ export default function CirclesScreen() {
             </View>
             <View style={[styles.codeRow, { backgroundColor: theme.background }]}>
               <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>Invite code:</Text>
-              <Text style={[styles.codeValue, { color: theme.text }]}>{circle.invite_code}</Text>
+              <Pressable
+                style={styles.codePill}
+                onPress={() => handleCopyCode(circle.invite_code)}
+              >
+                <Text style={[styles.codeValue, { color: theme.text }]}>{circle.invite_code}</Text>
+                <Feather name="copy" size={14} color={theme.textSecondary} />
+              </Pressable>
             </View>
           </View>
         ))
       )}
 
       <View style={{ height: 60 }} />
+
+      <Modal
+        visible={!!inviteCircleId}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setInviteCircleId(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Invite Friend</Text>
+              <Pressable onPress={() => setInviteCircleId(null)}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            {friends.length === 0 ? (
+              <Text style={[styles.modalEmpty, { color: theme.textSecondary }]}>
+                You have no friends yet. Add friends in the Community tab first.
+              </Text>
+            ) : (
+              <FlatList
+                data={friends}
+                keyExtractor={(f) => f.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={({ pressed }) => [styles.friendRow, { borderBottomColor: theme.border }, pressed && { opacity: 0.7 }]}
+                    onPress={() => handleSelectFriendToInvite(item.id)}
+                  >
+                    <View style={styles.friendAvatar}>
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>
+                        {(item.name || item.username || '?').slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.friendName, { color: theme.text }]}>{item.name || item.username || 'Friend'}</Text>
+                      {item.university && (
+                        <Text style={[styles.friendSub, { color: theme.textSecondary }]}>{item.university}</Text>
+                      )}
+                    </View>
+                    <Feather name="plus-circle" size={18} color={theme.primary} />
+                  </Pressable>
+                )}
+                style={{ maxHeight: 320 }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -262,9 +351,67 @@ const styles = StyleSheet.create({
   circleActionText: { fontSize: 13, fontWeight: '600' },
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   codeLabel: { fontSize: 12, fontWeight: '500' },
-  codeValue: { fontSize: 13, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  codePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  codeValue: { fontSize: 13, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginRight: 4 },
 
   emptyState: { alignItems: 'center', paddingTop: 48, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 260 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalEmpty: {
+    fontSize: 14,
+    fontWeight: '500',
+    paddingVertical: 16,
+  },
+  friendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  friendAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  friendSub: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
 });

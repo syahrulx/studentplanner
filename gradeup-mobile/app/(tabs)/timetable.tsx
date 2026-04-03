@@ -91,6 +91,8 @@ export default function TimetableScreen() {
     lecturer: true,
     group: true,
   });
+  const [selectedEntry, setSelectedEntry] = useState<TimetableEntry | null>(null);
+  const [entryModalOpen, setEntryModalOpen] = useState(false);
 
   useEffect(() => {
     getTimetableSlotDetailsVisibility().then(setSlotDetails);
@@ -549,7 +551,7 @@ export default function TimetableScreen() {
                         const color = entrySlotColor(entry);
                         const title = entryDisplayTitle(entry);
                         return (
-                          <View
+                          <Pressable
                             key={entry.id}
                             style={[
                               s.gridSlot,
@@ -560,6 +562,10 @@ export default function TimetableScreen() {
                                 borderLeftColor: color,
                               },
                             ]}
+                            onPress={() => {
+                              setSelectedEntry(entry);
+                              setEntryModalOpen(true);
+                            }}
                           >
                             <Text style={[s.gridSlotCode, { color }]} numberOfLines={2}>
                               {entry.subjectCode}
@@ -589,7 +595,7 @@ export default function TimetableScreen() {
                                 {T('timetableGroup')}: {entry.group}
                               </Text>
                             )}
-                          </View>
+                          </Pressable>
                         );
                       })}
                       {items.length === 0 && (
@@ -789,9 +795,13 @@ export default function TimetableScreen() {
                   const color = entrySlotColor(e);
                   const title = entryDisplayTitle(e);
                   return (
-                    <View
+                    <Pressable
                       key={e.id}
                       style={[s.listCard, { backgroundColor: theme.background, borderLeftColor: color }]}
+                      onPress={() => {
+                        setSelectedEntry(e);
+                        setEntryModalOpen(true);
+                      }}
                     >
                       <View style={s.listTimeCol}>
                         <Text style={[s.listTime, { color: theme.primary }]}>{e.startTime}</Text>
@@ -820,7 +830,7 @@ export default function TimetableScreen() {
                           </View>
                         )}
                       </View>
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -836,6 +846,55 @@ export default function TimetableScreen() {
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
+      {selectedEntry && entryModalOpen && (
+        <Modal
+          transparent
+          animationType="fade"
+          visible={entryModalOpen}
+          onRequestClose={() => setEntryModalOpen(false)}
+        >
+          <View style={s.entryModalRoot}>
+            <Pressable style={s.entryModalBackdrop} onPress={() => setEntryModalOpen(false)} />
+            <View style={[s.entryModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[s.entryModalTitle, { color: theme.text }]}>
+                {selectedEntry.subjectCode}{' '}
+                <Text style={{ fontWeight: '400' }}>{entryDisplayTitle(selectedEntry)}</Text>
+              </Text>
+              <Text style={[s.entryModalWhen, { color: theme.textSecondary }]}>
+                {selectedEntry.day} · {selectedEntry.startTime}–{selectedEntry.endTime}
+              </Text>
+              {selectedEntry.location && selectedEntry.location !== '-' && (
+                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
+                  {T('timetableRoom')}: {selectedEntry.location}
+                </Text>
+              )}
+              {selectedEntry.lecturer && selectedEntry.lecturer !== '-' && (
+                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
+                  {T('timetableLecturer')}: {selectedEntry.lecturer}
+                </Text>
+              )}
+              {selectedEntry.group && (
+                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
+                  {T('timetableGroup')}: {selectedEntry.group}
+                </Text>
+              )}
+
+              <View style={s.entryModalActions}>
+                <Pressable
+                  style={({ pressed }) => [
+                    s.entryModalBtn,
+                    { backgroundColor: theme.background, borderColor: theme.border },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPress={() => setEntryModalOpen(false)}
+                >
+                  <Text style={[s.entryModalBtnText, { color: theme.text }]}>Close</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
   );
@@ -951,6 +1010,51 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  entryModalRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  entryModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  entryModalCard: {
+    maxWidth: 340,
+    width: '86%',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  entryModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  entryModalWhen: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  entryModalLine: {
+    fontSize: 13,
+    marginTop: 4,
+  },
+  entryModalActions: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  entryModalBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  entryModalBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   exportBtnPrimary: { flex: 1.3 },
   exportBtnText: { fontSize: 13, fontWeight: '900' },

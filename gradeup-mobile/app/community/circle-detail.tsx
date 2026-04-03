@@ -1,15 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Platform,
-  Image,
-  Share,
-  Alert,
-} from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Image, Share, Alert } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
@@ -56,6 +47,16 @@ export default function CircleDetailScreen() {
   const handleViewOnMap = () => {
     setSelectedCircleId(circleId);
     router.back();
+  };
+
+  const handleCopyCode = async () => {
+    if (!circle?.invite_code) return;
+    try {
+      await Clipboard.setStringAsync(circle.invite_code);
+      Alert.alert('Copied', 'Invite code copied to clipboard');
+    } catch {
+      Alert.alert('Error', 'Failed to copy invite code');
+    }
   };
 
   const handleShareInvite = async () => {
@@ -125,12 +126,15 @@ export default function CircleDetailScreen() {
               onPress={handleShareInvite}
             >
               <Feather name="share-2" size={16} color={theme.text} />
-              <Text style={[styles.actionBtnText, { color: theme.text }]}>Invite</Text>
+              <Text style={[styles.actionBtnText, { color: theme.text }]}>Share</Text>
             </Pressable>
           </View>
           <View style={[styles.codeRow, { backgroundColor: theme.background }]}>
             <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>Invite Code:</Text>
-            <Text style={[styles.codeValue, { color: theme.primary }]}>{circle?.invite_code}</Text>
+            <Pressable style={styles.codePill} onPress={handleCopyCode}>
+              <Text style={[styles.codeValue, { color: theme.primary }]}>{circle?.invite_code}</Text>
+              <Feather name="copy" size={14} color={theme.textSecondary} />
+            </Pressable>
           </View>
         </View>
 

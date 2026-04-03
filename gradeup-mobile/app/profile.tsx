@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
-import { uploadAvatar } from '@/src/lib/communityApi';
+import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
 import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { DEEP_SEA_PALETTE } from '@/constants/Themes';
@@ -30,7 +30,7 @@ export default function Profile() {
     updateProfile,
     academicCalendar,
   } = useApp();
-  const { locationVisibility, setLocationVisibility } = useCommunity();
+  const { locationVisibility, setLocationVisibility, circles, userId } = useCommunity();
   const theme = useTheme();
   const profileHeroBg = themeId === 'light' ? DEEP_SEA_PALETTE.primary : theme.primary;
   const T = useTranslations(language);
@@ -39,6 +39,31 @@ export default function Profile() {
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [circleVisibilityIds, setCircleVisibilityIds] = useState<string[]>([]);
+  const [loadingCircleVisibility, setLoadingCircleVisibility] = useState(false);
+  const [circleDropdownOpen, setCircleDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (!userId || locationVisibility !== 'circles') return;
+    setLoadingCircleVisibility(true);
+    getCircleLocationVisibility(userId)
+      .then(setCircleVisibilityIds)
+      .catch(() => setCircleVisibilityIds([]))
+      .finally(() => setLoadingCircleVisibility(false));
+  }, [userId, locationVisibility]);
+
+  const toggleCircleVisibility = async (circleId: string) => {
+    if (!userId) return;
+    const prev = circleVisibilityIds;
+    const next = prev.includes(circleId) ? prev.filter((id) => id !== circleId) : [...prev, circleId];
+    setCircleVisibilityIds(next);
+    try {
+      await setCircleLocationVisibility(userId, next);
+    } catch (e) {
+      setCircleVisibilityIds(prev);
+      Alert.alert('Error', 'Failed to update circle visibility. Please try again.');
+    }
+  };
 
   const handleEditName = () => {
     Alert.prompt(
@@ -148,9 +173,10 @@ export default function Profile() {
   };
 
   const privacyOptions: { value: LocationVisibility; label: string; icon: string; desc: string }[] = [
-    { value: 'public', label: 'Public', icon: '🌍', desc: 'Everyone can see you' },
-    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'Only friends can see you' },
-    { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see you' },
+    { value: 'public', label: 'Public', icon: '🌍', desc: 'Everyone can see your location' },
+    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'Only friends can see your location' },
+    { value: 'circles', label: 'Circles', icon: '⭕️', desc: 'Only people in your circles can see your location' },
+    { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see your location' },
   ];
 
   return (
@@ -299,15 +325,75 @@ export default function Profile() {
           <React.Fragment key={opt.value}>
             <Pressable
               style={({ pressed }) => [styles.privacyRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-              onPress={() => setLocationVisibility(opt.value)}
+              onPress={async () => {
+                await setLocationVisibility(opt.value);
+                if (opt.value === 'circles') {
+                  setCircleDropdownOpen((open) => !open);
+                } else {
+                  setCircleDropdownOpen(false);
+                }
+              }}
             >
               <Text style={styles.privacyEmoji}>{opt.icon}</Text>
               <View style={styles.privacyBody}>
                 <Text style={[styles.privacyLabel, { color: theme.text }]}>{opt.label}</Text>
                 <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>{opt.desc}</Text>
               </View>
-              {locationVisibility === opt.value && <Feather name="check" size={20} color={theme.primary} />}
+              {opt.value === 'circles' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {locationVisibility === 'circles' && (
+                    <Feather name="check" size={18} color={theme.primary} />
+                  )}
+                  <Feather
+                    name={circleDropdownOpen && locationVisibility === 'circles' ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={theme.textSecondary}
+                  />
+                </View>
+              ) : (
+                locationVisibility === opt.value && <Feather name="check" size={20} color={theme.primary} />
+              )}
             </Pressable>
+            {opt.value === 'circles' && circleDropdownOpen && locationVisibility === 'circles' && (
+              <View style={{ paddingHorizontal: 4, paddingBottom: 6 }}>
+                {loadingCircleVisibility ? (
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                    <Text style={[styles.cardValue, { color: theme.textSecondary }]}>Loading circles…</Text>
+                  </View>
+                ) : circles.length === 0 ? (
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                    <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+                      You do not have any circles yet. Create a circle in the Community tab first.
+                    </Text>
+                  </View>
+                ) : (
+                  circles.map((c, index) => {
+                    const selected = circleVisibilityIds.includes(c.id);
+                    return (
+                      <React.Fragment key={c.id}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.circleVisibilityRow,
+                            pressed && { backgroundColor: theme.backgroundSecondary },
+                          ]}
+                          onPress={() => toggleCircleVisibility(c.id)}
+                        >
+                          <Text style={styles.circleVisibilityEmoji}>{c.emoji}</Text>
+                          <View style={styles.circleVisibilityBody}>
+                            <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{c.name}</Text>
+                            <Text style={[styles.circleVisibilityDesc, { color: theme.textSecondary }]}>
+                              {selected ? 'Can see your location' : 'Hidden from this circle'}
+                            </Text>
+                          </View>
+                          {selected && <Feather name="check" size={18} color={theme.primary} />}
+                        </Pressable>
+                        {index < circles.length - 1 && <View style={styles.dividerList} />}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </View>
+            )}
             {i < privacyOptions.length - 1 && <View style={styles.dividerList} />}
           </React.Fragment>
         ))}
@@ -457,4 +543,26 @@ const styles = StyleSheet.create({
   privacyBody: { flex: 1 },
   privacyLabel: { fontSize: 16, fontWeight: '400', marginBottom: 2 },
   privacyDesc: { fontSize: 13, fontWeight: '400' },
+  circleVisibilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  circleVisibilityEmoji: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  circleVisibilityBody: {
+    flex: 1,
+  },
+  circleVisibilityLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  circleVisibilityDesc: {
+    fontSize: 12,
+    marginTop: 2,
+  },
 });

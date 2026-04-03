@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 // =============================================================================
 
 export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
-export type LocationVisibility = 'public' | 'friends' | 'off';
+export type LocationVisibility = 'public' | 'friends' | 'circles' | 'off';
 export type ActivityType =
   | 'studying'
   | 'in_class'
@@ -767,6 +767,32 @@ export async function updateLocationVisibility(userId: string, visibility: Locat
 
   if (locErr) console.warn('Failed to update location visibility:', locErr);
   if (profErr) console.warn('Failed to update profile visibility:', profErr);
+}
+
+/** Get list of circle IDs that are allowed to see the user's location when visibility = 'circles'. */
+export async function getCircleLocationVisibility(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('circle_location_visibility')
+    .select('circle_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data ?? []).map((r: { circle_id: string }) => r.circle_id);
+}
+
+/** Replace the user's circle location allowlist with a new set of circle IDs. */
+export async function setCircleLocationVisibility(userId: string, circleIds: string[]): Promise<void> {
+  // Clear existing rows, then insert the new allowlist.
+  const { error: delErr } = await supabase
+    .from('circle_location_visibility')
+    .delete()
+    .eq('user_id', userId);
+  if (delErr) throw delErr;
+
+  if (!circleIds.length) return;
+
+  const rows = circleIds.map((circleId) => ({ user_id: userId, circle_id: circleId }));
+  const { error } = await supabase.from('circle_location_visibility').insert(rows);
+  if (error) throw error;
 }
 
 // =============================================================================
