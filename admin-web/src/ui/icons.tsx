@@ -189,3 +189,32 @@ export function IconChevronDown({ className }: Props) {
   );
 }
 
+export function IconPencil({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4.2 20.8 9 19.9l11-11a1.6 1.6 0 0 0 0-2.26l-1.64-1.64a1.6 1.6 0 0 0-2.26 0l-11 11-.9 4.8 4.8-.9Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M13.2 6.8 17.2 10.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconSubscription({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4.5 8.2h15v9.6a1.8 1.8 0 0 1-1.8 1.8H6.3a1.8 1.8 0 0 1-1.8-1.8V8.2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M4.5 10.8h15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.85" />
+      <path d="M8.2 14.2h4.2M8.2 16.8h7.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.75" />
+    </svg>
+  );
+}
+

@@ -290,6 +290,119 @@ serve(async (req) => {
       return json(200, { ok, httpStatus, elapsedMs, data: parsed });
     }
 
+    if (action === 'subscription_plan_features_list') {
+      const { data, error: e } = await admin
+        .from('subscription_plan_features')
+        .select('id,tier,label,enabled,sort_order')
+        .order('tier', { ascending: true })
+        .order('sort_order', { ascending: true });
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
+    if (action === 'calendar_offers_list') {
+      const universityId = String(payload.universityId || '').trim();
+      const lim = Math.max(1, Math.min(300, Number(payload.limit || 120)));
+      let q = admin
+        .from('university_calendar_offers')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(lim);
+      if (universityId) q = q.eq('university_id', universityId);
+      const { data, error: e } = await q;
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
+    if (action === 'calendar_offers_insert') {
+      const raw = payload.rows;
+      if (!Array.isArray(raw) || raw.length === 0) return json(400, { error: 'missing_rows' });
+      const cleaned: Record<string, unknown>[] = [];
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        const o = item as Record<string, unknown>;
+        const university_id = String(o.university_id || '').trim();
+        if (!university_id || university_id === 'uitm') continue;
+        const semester_label = String(o.semester_label || '').trim();
+        const start_date = String(o.start_date || '').trim().slice(0, 10);
+        const end_date = String(o.end_date || '').trim().slice(0, 10);
+        const total_weeks = Math.max(1, Math.min(52, Number(o.total_weeks) || 14));
+        if (!semester_label || !/^\d{4}-\d{2}-\d{2}$/.test(start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(end_date)) {
+          continue;
+        }
+        const bs = o.break_start_date != null ? String(o.break_start_date).trim().slice(0, 10) : '';
+        const be = o.break_end_date != null ? String(o.break_end_date).trim().slice(0, 10) : '';
+        cleaned.push({
+          university_id,
+          semester_label,
+          start_date,
+          end_date,
+          total_weeks,
+          break_start_date: /^\d{4}-\d{2}-\d{2}$/.test(bs) ? bs : null,
+          break_end_date: /^\d{4}-\d{2}-\d{2}$/.test(be) ? be : null,
+          periods_json: o.periods_json ?? null,
+          official_url: o.official_url ? String(o.official_url).trim() || null : null,
+          reference_pdf_url: o.reference_pdf_url ? String(o.reference_pdf_url).trim() || null : null,
+          admin_note: o.admin_note ? String(o.admin_note).trim() || null : null,
+          created_by: o.created_by ? String(o.created_by) : null,
+        });
+      }
+      if (!cleaned.length) return json(400, { error: 'invalid_rows' });
+      const { data, error: e } = await admin.from('university_calendar_offers').insert(cleaned).select();
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, count: cleaned.length },
+      });
+      return json(200, { items: data ?? [] });
+    }
+
+    if (action === 'subscription_plan_features_save') {
+      const tier = String(payload.tier || '').trim();
+      if (!['free', 'plus', 'pro'].includes(tier)) return json(400, { error: 'invalid_tier' });
+      const raw = payload.items;
+      if (!Array.isArray(raw)) return json(400, { error: 'invalid_items' });
+
+      const rows: Array<{ id: string; tier: string; label: string; enabled: boolean; sort_order: number }> = [];
+      let i = 0;
+      for (const it of raw as unknown[]) {
+        if (!it || typeof it !== 'object') continue;
+        const o = it as Record<string, unknown>;
+        const id = String(o.id || '').trim();
+        const label = String(o.label ?? '').trim().slice(0, 2000);
+        if (!label) continue;
+        const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const rowId = uuidRe.test(id) ? id : crypto.randomUUID();
+        rows.push({
+          id: rowId,
+          tier,
+          label,
+          enabled: Boolean(o.enabled),
+          sort_order: i++,
+        });
+      }
+
+      const { data: existing, error: exErr } = await admin.from('subscription_plan_features').select('id').eq('tier', tier);
+      if (exErr) return json(400, { error: exErr.message });
+      const keep = new Set(rows.map((r) => r.id));
+      const toDelete = ((existing ?? []) as Array<{ id: string }>).map((r) => r.id).filter((id) => !keep.has(id));
+      if (toDelete.length) {
+        const { error: delErr } = await admin.from('subscription_plan_features').delete().in('id', toDelete);
+        if (delErr) return json(400, { error: delErr.message });
+      }
+      if (rows.length) {
+        const { error: upErr } = await admin.from('subscription_plan_features').upsert(rows, { onConflict: 'id' });
+        if (upErr) return json(400, { error: upErr.message });
+      }
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, tier, count: rows.length },
+      });
+      return json(200, { ok: true });
+    }
+
     return json(400, { error: 'unknown_action' });
   } catch (e) {
     return json(500, { error: e instanceof Error ? e.message : 'unknown_error' });

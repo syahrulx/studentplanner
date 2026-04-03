@@ -207,33 +207,64 @@ export async function getAiTokenUsageSeriesLast14Days(): Promise<AiTokenUsagePoi
   return days.map((d) => ({ name: d.name, tokens: totalsByDay.get(d.key) ?? 0 }));
 }
 
+export type SubscriptionPlan = 'free' | 'plus' | 'pro';
+
+export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = ['free', 'plus', 'pro'] as const;
+
+export function normalizeSubscriptionPlan(raw: string | null | undefined): SubscriptionPlan {
+  if (raw === 'plus' || raw === 'pro') return raw;
+  return 'free';
+}
+
 export type AdminUserRow = {
   id: string;
   name: string | null;
   student_id: string | null;
   university_id: string | null;
   status: 'active' | 'disabled' | 'banned';
+  subscription_plan: SubscriptionPlan;
   created_at: string;
   updated_at?: string | null;
 };
 
-export async function listUsers(opts: { query?: string; universityId?: string; limit?: number; offset?: number }) {
+function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
+  return (rows as Array<Partial<AdminUserRow> & { subscription_plan?: string | null }>).map((r) => ({
+    id: String(r.id ?? ''),
+    name: r.name ?? null,
+    student_id: r.student_id ?? null,
+    university_id: r.university_id ?? null,
+    status: (r.status as AdminUserRow['status']) ?? 'active',
+    subscription_plan: normalizeSubscriptionPlan(r.subscription_plan),
+    created_at: String(r.created_at ?? ''),
+    updated_at: r.updated_at ?? null,
+  }));
+}
+
+export async function listUsers(opts: {
+  query?: string;
+  universityId?: string;
+  plan?: 'all' | SubscriptionPlan;
+  limit?: number;
+  offset?: number;
+}) {
   if (await hasSessionJwt()) {
     const limit = Math.max(1, Math.min(200, Number(opts.limit ?? 50)));
     const offset = Math.max(0, Number(opts.offset ?? 0));
+    const plan = opts.plan ?? 'all';
     let query = supabase
       .from('profiles')
-      .select('id,name,student_id,university_id,created_at,status,updated_at', { count: 'exact' })
+      .select('id,name,student_id,university_id,created_at,status,updated_at,subscription_plan', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     const q = (opts.query ?? '').trim();
     const universityId = (opts.universityId ?? '').trim();
     if (universityId) query = query.eq('university_id', universityId);
+    if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
     if (q) query = query.or(`name.ilike.%${q}%,student_id.ilike.%${q}%`);
     const { data, error, count } = await query;
     if (error) throw toError(error);
     return {
-      items: (data ?? []) as AdminUserRow[],
+      items: mapAdminUserRows(data ?? []),
       count: count ?? 0,
       offset,
       limit,
@@ -242,7 +273,8 @@ export async function listUsers(opts: { query?: string; universityId?: string; l
 
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_users', { action: 'list', ...opts }, headers);
-  return unwrapFunctionData<{ items: AdminUserRow[]; count: number; offset: number; limit: number }>(data, error);
+  const res = unwrapFunctionData<{ items: AdminUserRow[]; count: number; offset: number; limit: number }>(data, error);
+  return { ...res, items: mapAdminUserRows(res.items as unknown[]) };
 }
 
 export async function setUserStatus(userId: string, status: AdminUserRow['status']) {
@@ -260,6 +292,119 @@ export async function setUserStatus(userId: string, status: AdminUserRow['status
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_users', { action: 'set_status', userId, status }, headers);
   return unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export async function setUserSubscriptionPlan(userId: string, subscription_plan: SubscriptionPlan) {
+  if (await hasSessionJwt()) {
+    const { error } = await supabase.from('profiles').update({ subscription_plan }).eq('id', userId);
+    if (error) throw toError(error);
+    await supabase.from('admin_logs').insert({
+      type: 'api_request',
+      status: 'success',
+      meta: { action: 'set_subscription_plan', userId, subscription_plan },
+    });
+    return { ok: true as const };
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_users',
+    { action: 'set_subscription_plan', userId, subscription_plan },
+    headers,
+  );
+  return unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export type SubscriptionFeatureRow = {
+  id: string;
+  tier: SubscriptionPlan;
+  label: string;
+  enabled: boolean;
+  sort_order: number;
+};
+
+async function persistSubscriptionTierFeaturesDb(
+  tier: SubscriptionPlan,
+  items: Array<{ id: string; label: string; enabled: boolean }>,
+) {
+  const trimmed = items
+    .map((it) => ({ ...it, label: it.label.trim() }))
+    .filter((it) => it.label.length > 0);
+  const rows = trimmed.map((it, i) => ({
+    id: it.id,
+    tier,
+    label: it.label.slice(0, 2000),
+    enabled: Boolean(it.enabled),
+    sort_order: i,
+  }));
+  const { data: existing, error: e1 } = await supabase.from('subscription_plan_features').select('id').eq('tier', tier);
+  if (e1) throw toError(e1);
+  const keep = new Set(rows.map((r) => r.id));
+  const toDelete = ((existing ?? []) as Array<{ id: string }>).map((r) => r.id).filter((id) => !keep.has(id));
+  if (toDelete.length) {
+    const { error: e2 } = await supabase.from('subscription_plan_features').delete().in('id', toDelete);
+    if (e2) throw toError(e2);
+  }
+  if (rows.length) {
+    const { error: e3 } = await supabase.from('subscription_plan_features').upsert(rows, { onConflict: 'id' });
+    if (e3) throw toError(e3);
+  }
+}
+
+export async function listSubscriptionPlanFeatures(): Promise<SubscriptionFeatureRow[]> {
+  if (await hasSessionJwt()) {
+    const { data, error } = await supabase
+      .from('subscription_plan_features')
+      .select('id,tier,label,enabled,sort_order')
+      .order('tier', { ascending: true })
+      .order('sort_order', { ascending: true });
+    if (error) throw toError(error);
+    return (data ?? []) as SubscriptionFeatureRow[];
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'subscription_plan_features_list' }, headers);
+  const res = unwrapFunctionData<{ items: SubscriptionFeatureRow[] }>(data, error);
+  return res.items ?? [];
+}
+
+export async function saveSubscriptionPlanTierFeatures(
+  tier: SubscriptionPlan,
+  items: Array<{ id: string; label: string; enabled: boolean }>,
+): Promise<{ ok: true }> {
+  if (await hasSessionJwt()) {
+    await persistSubscriptionTierFeaturesDb(tier, items);
+    return { ok: true as const };
+  }
+
+  const trimmed = items
+    .map((it) => ({ ...it, label: it.label.trim() }))
+    .filter((it) => it.label.length > 0);
+  const rows = trimmed.map((it, i) => ({
+    id: it.id,
+    tier,
+    label: it.label.slice(0, 2000),
+    enabled: Boolean(it.enabled),
+    sort_order: i,
+  }));
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'subscription_plan_features_save', tier, items: rows },
+    headers,
+  );
+  unwrapFunctionData<{ ok: boolean }>(data, error);
+  return { ok: true as const };
+}
+
+export async function saveAllSubscriptionPlanFeatures(
+  byTier: Record<SubscriptionPlan, Array<{ id: string; label: string; enabled: boolean }>>,
+): Promise<{ ok: true }> {
+  for (const tier of SUBSCRIPTION_PLANS) {
+    await saveSubscriptionPlanTierFeatures(tier, byTier[tier] ?? []);
+  }
+  return { ok: true as const };
 }
 
 export async function deleteUser(userId: string) {
@@ -578,4 +723,78 @@ export async function deleteTimetableEntry(id: string, userId: string) {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_data', { action: 'timetable_delete', id, userId }, headers);
   unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export type AdminCalendarOfferRow = {
+  id: string;
+  university_id: string;
+  semester_label: string;
+  start_date: string;
+  end_date: string;
+  total_weeks: number;
+  break_start_date: string | null;
+  break_end_date: string | null;
+  periods_json: unknown | null;
+  official_url: string | null;
+  reference_pdf_url: string | null;
+  admin_note: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+export type AdminCalendarOfferInsert = {
+  university_id: string;
+  semester_label: string;
+  start_date: string;
+  end_date: string;
+  total_weeks: number;
+  break_start_date?: string | null;
+  break_end_date?: string | null;
+  periods_json?: unknown | null;
+  official_url?: string | null;
+  reference_pdf_url?: string | null;
+  admin_note?: string | null;
+  created_by?: string | null;
+};
+
+export async function listUniversityCalendarOffers(opts?: { universityId?: string; limit?: number }) {
+  const lim = Math.max(1, Math.min(300, opts?.limit ?? 120));
+  if (await hasSessionJwt()) {
+    let q = supabase
+      .from('university_calendar_offers')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(lim);
+    const u = (opts?.universityId ?? '').trim();
+    if (u) q = q.eq('university_id', u);
+    const { data, error } = await q;
+    if (error) throw toError(error);
+    return (data ?? []) as AdminCalendarOfferRow[];
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'calendar_offers_list', universityId: opts?.universityId ?? '', limit: lim },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: AdminCalendarOfferRow[] }>(data, error);
+  return res.items;
+}
+
+export async function insertUniversityCalendarOffers(rows: AdminCalendarOfferInsert[]): Promise<AdminCalendarOfferRow[]> {
+  if (!rows.length) return [];
+  if (await hasSessionJwt()) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const uid = userRes.user?.id;
+    const withCreator = rows.map((r) => ({ ...r, created_by: uid ?? r.created_by ?? null }));
+    const { data, error } = await supabase.from('university_calendar_offers').insert(withCreator).select();
+    if (error) throw toError(error);
+    return (data ?? []) as AdminCalendarOfferRow[];
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'calendar_offers_insert', rows }, headers);
+  const res = unwrapFunctionData<{ items: AdminCalendarOfferRow[] }>(data, error);
+  return res.items;
 }

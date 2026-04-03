@@ -85,6 +85,7 @@ type AppState = {
     heaTermCode?: string | null;
     mystudentEmail?: string;
     portalTeachingAnchoredSemester?: number | null;
+    subscriptionPlan?: import('../types').SubscriptionPlan;
   }) => Promise<void>;
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   courses: Course[];
@@ -523,6 +524,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 mystudentEmail: (profile.mystudentEmail ?? '').trim(),
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
+                subscriptionPlan: profile.subscriptionPlan ?? 'free',
               };
             }
           } else if ((authFallbackName || '').trim()) {
@@ -763,6 +765,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       heaTermCode?: string | null;
       mystudentEmail?: string;
       portalTeachingAnchoredSemester?: number | null;
+      subscriptionPlan?: import('../types').SubscriptionPlan;
     }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
@@ -800,6 +803,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   : undefined,
             }
           : {}),
+        ...(updates.subscriptionPlan !== undefined ? { subscriptionPlan: updates.subscriptionPlan } : {}),
       }));
     },
     [],
