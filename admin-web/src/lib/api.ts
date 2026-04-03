@@ -502,6 +502,73 @@ export async function listPublicUserLocations(opts?: { limit?: number }) {
   return res.items;
 }
 
+export type AdminCircleRow = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  invite_code: string;
+  created_by: string;
+  created_at: string;
+  member_count: number;
+};
+
+export type AdminCircleMemberRow = {
+  circle_id: string;
+  user_id: string;
+  role: 'admin' | 'member';
+  joined_at: string;
+  profile: { id: string; name: string | null; student_id: string | null; university_id: string | null; avatar_url?: string | null } | null;
+};
+
+export async function listCircles(opts?: { query?: string; limit?: number }) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'circles_list', query: opts?.query ?? '', limit: opts?.limit ?? 200 },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: AdminCircleRow[] }>(data, error);
+  return res.items;
+}
+
+export async function listCircleMembers(opts: { circleId: string; limit?: number }) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'circle_members_list', circleId: opts.circleId, limit: opts.limit ?? 500 },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: AdminCircleMemberRow[] }>(data, error);
+  return res.items;
+}
+
+export async function updateCircle(opts: { id: string; name: string; emoji?: string }) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'circle_update', id: opts.id, name: opts.name, emoji: opts.emoji ?? '' },
+    headers,
+  );
+  const res = unwrapFunctionData<{ row: AdminCircleRow }>(data, error);
+  return res.row;
+}
+
+export async function removeCircleMember(opts: { circleId: string; userId: string }) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'circle_member_remove', circleId: opts.circleId, userId: opts.userId },
+    headers,
+  );
+  unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export async function deleteCircleAdmin(opts: { id: string }) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'circle_delete', id: opts.id }, headers);
+  unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
 export async function deleteTimetableEntry(id: string, userId: string) {
   if (await hasSessionJwt()) {
     const { error } = await supabase.from('timetable_entries').delete().eq('id', id).eq('user_id', userId);

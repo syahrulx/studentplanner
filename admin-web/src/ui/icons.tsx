@@ -143,6 +143,31 @@ export function IconMapPin({ className }: Props) {
   );
 }
 
+export function IconCircles({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M8.2 11a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M16.6 21.4a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        opacity="0.9"
+      />
+      <path
+        d="M13 11.5c1.2-.8 2.5-1.2 3.9-1.2 2.3 0 4.4 1.1 5.6 2.9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        opacity="0.8"
+      />
+    </svg>
+  );
+}
+
 export function IconSearch({ className }: Props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">

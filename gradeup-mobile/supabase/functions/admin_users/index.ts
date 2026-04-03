@@ -7,15 +7,22 @@ import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 
 type Json = Record<string, unknown>;
 
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
   });
 }
 
 serve(async (req) => {
   try {
+    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
     const auth = await authorizeAdminRequest(req);

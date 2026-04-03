@@ -8,15 +8,22 @@ import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 
 type Json = Record<string, unknown>;
 
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
   });
 }
 
 serve(async (req) => {
   try {
+    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
     const auth = await authorizeAdminRequest(req);
@@ -133,6 +140,87 @@ serve(async (req) => {
         profile: pmap.get(l.user_id as string) ?? null,
       }));
       return json(200, { items });
+    }
+
+    if (action === 'circles_list') {
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      const q = String(payload.query || '').trim().toLowerCase();
+      let cq = admin
+        .from('circles')
+        .select('id,name,emoji,invite_code,created_by,created_at')
+        .order('created_at', { ascending: false })
+        .limit(lim);
+      if (q) cq = cq.ilike('name', `%${q}%`);
+      const { data: circles, error: ce } = await cq;
+      if (ce) return json(400, { error: ce.message });
+      const ids = Array.from(new Set((circles ?? []).map((c: { id: string }) => c.id)));
+      if (!ids.length) return json(200, { items: [] });
+      const { data: members, error: me } = await admin.from('circle_members').select('circle_id').in('circle_id', ids);
+      if (me) return json(400, { error: me.message });
+      const countMap = new Map<string, number>();
+      for (const m of members ?? []) {
+        const cid = (m as { circle_id: string }).circle_id;
+        countMap.set(cid, (countMap.get(cid) || 0) + 1);
+      }
+      const items = (circles ?? []).map((c: Record<string, unknown>) => ({
+        ...c,
+        member_count: countMap.get(c.id as string) ?? 0,
+      }));
+      return json(200, { items });
+    }
+
+    if (action === 'circle_members_list') {
+      const circleId = String(payload.circleId || '').trim();
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      if (!circleId) return json(400, { error: 'missing_circleId' });
+      const { data: mem, error: me } = await admin
+        .from('circle_members')
+        .select('circle_id,user_id,role,joined_at')
+        .eq('circle_id', circleId)
+        .order('joined_at', { ascending: true })
+        .limit(lim);
+      if (me) return json(400, { error: me.message });
+      const userIds = Array.from(new Set((mem ?? []).map((m: { user_id: string }) => m.user_id)));
+      const { data: profs, error: pe } = userIds.length
+        ? await admin.from('profiles').select('id,name,student_id,university_id,avatar_url').in('id', userIds)
+        : { data: [], error: null };
+      if (pe) return json(400, { error: pe.message });
+      const pmap = new Map((profs ?? []).map((p: { id: string }) => [p.id, p]));
+      const items = (mem ?? []).map((m: Record<string, unknown>) => ({
+        ...m,
+        profile: pmap.get(m.user_id as string) ?? null,
+      }));
+      return json(200, { items });
+    }
+
+    if (action === 'circle_update') {
+      const id = String(payload.id || '').trim();
+      const name = String(payload.name || '').trim();
+      const emoji = String(payload.emoji || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      if (!name) return json(400, { error: 'missing_name' });
+      const patch: Record<string, unknown> = { name };
+      if (emoji) patch.emoji = emoji;
+      const { data, error: e } = await admin.from('circles').update(patch).eq('id', id).select().single();
+      if (e) return json(400, { error: e.message });
+      return json(200, { row: data });
+    }
+
+    if (action === 'circle_member_remove') {
+      const circleId = String(payload.circleId || '').trim();
+      const userId = String(payload.userId || '').trim();
+      if (!circleId || !userId) return json(400, { error: 'missing_circleId_or_userId' });
+      const { error: e } = await admin.from('circle_members').delete().eq('circle_id', circleId).eq('user_id', userId);
+      if (e) return json(400, { error: e.message });
+      return json(200, { ok: true });
+    }
+
+    if (action === 'circle_delete') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const { error: e } = await admin.from('circles').delete().eq('id', id);
+      if (e) return json(400, { error: e.message });
+      return json(200, { ok: true });
     }
 
     if (action === 'timetable_delete') {

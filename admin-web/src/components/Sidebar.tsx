@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '../ui/cn';
 import { MotionSidebarItem } from '../ui/motion';
-import { IconCalendar, IconFileText, IconGrid, IconMapPin, IconSchool, IconSettings, IconUsers } from '../ui/icons';
+import { IconCalendar, IconCircles, IconFileText, IconGrid, IconMapPin, IconSchool, IconSettings, IconUsers } from '../ui/icons';
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
@@ -9,6 +9,7 @@ const nav = [
   { to: '/universities', label: 'Universities', Icon: IconSchool },
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
   { to: '/locations', label: 'Locations', Icon: IconMapPin },
+  { to: '/circles', label: 'Circles', Icon: IconCircles },
   { to: '/logs', label: 'Logs', Icon: IconFileText },
   { to: '/settings', label: 'Settings', Icon: IconSettings },
 ] as const;

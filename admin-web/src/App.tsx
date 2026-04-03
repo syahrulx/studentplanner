@@ -7,6 +7,7 @@ import { UniversitiesRoute } from './routes/UniversitiesRoute';
 import { TimetablesRoute } from './routes/TimetablesRoute';
 import { LogsRoute } from './routes/LogsRoute';
 import { LocationsRoute } from './routes/LocationsRoute';
+import { CirclesRoute } from './routes/CirclesRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { AuthProvider } from './state/AuthProvider';
 
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="universities" element={<UniversitiesRoute />} />
             <Route path="timetables" element={<TimetablesRoute />} />
             <Route path="locations" element={<LocationsRoute />} />
+            <Route path="circles" element={<CirclesRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>
