@@ -27,6 +27,7 @@ import {
   getMonthYearLabel,
   getMonthGrid,
   toISO,
+  isTaskPastDueNow,
 } from '@/src/utils/date';
 import type { SharedTask, Course } from '@/src/types';
 import { TaskType } from '@/src/types';
@@ -163,13 +164,17 @@ export default function TaskDetails() {
   // ── Derived display values ──────────────────────────────────────────────────
   const effectiveDueDate = task.needsDate ? getTodayISO() : task.dueDate;
   const daysLeft = getDaysUntilDue(effectiveDueDate);
-  const isOverdue = daysLeft < 0;
+  const isOverdue = task.needsDate ? daysLeft < 0 : isTaskPastDueNow({ dueDate: task.dueDate, dueTime: task.dueTime || '23:59' });
   const isDueSoon = !isOverdue && daysLeft <= 3;
   const urgencyLabel = isOverdue
-    ? `${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} overdue`
-    : daysLeft === 0 ? 'Due today'
-    : daysLeft === 1 ? 'Due tomorrow'
-    : `${daysLeft} days left`;
+    ? daysLeft < 0
+      ? `${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'} — ${T('overdue')}`
+      : T('overdue')
+    : daysLeft === 0
+      ? T('dueToday')
+      : daysLeft === 1
+        ? T('tomorrow')
+        : `${daysLeft} ${T('daysLeft')}`;
 
   // ── Save helpers ────────────────────────────────────────────────────────────
   const saveField = (field: Parameters<typeof updateTask>[1]) => {

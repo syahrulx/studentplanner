@@ -62,6 +62,7 @@ import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/commu
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
+import { resolveUniversityIdForCalendar } from '../lib/universities';
 
 type AppState = {
   user: UserProfile;
@@ -428,7 +429,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let calendar: AcademicCalendar | null | undefined = undefined;
         if (r8.status === 'fulfilled') {
           calendar = r8.value ?? null;
-          const uniId = profile?.universityId ?? uniConn?.universityId;
+          const uniId = resolveUniversityIdForCalendar({
+            profileUniversityId: profile?.universityId,
+            connectionUniversityId: uniConn?.universityId,
+            studentId: profile?.studentId,
+            universityName: profile?.university,
+          });
           const portalSem = profile?.currentSemester;
           const anchoredDb = profile?.portalTeachingAnchoredSemester;
           const calSlice = calendar ? String(calendar.startDate ?? '').trim().slice(0, 10) : '';
@@ -564,13 +570,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Auto-sync academic calendar via university provider (once per session)
         if (!calendarAutoSyncedRef.current) {
           calendarAutoSyncedRef.current = true;
-          // Infer universityId from profile, connection, or student ID pattern
-          const explicitUniId = profile?.universityId ?? uniConn?.universityId;
-          const inferredUniId =
-            !explicitUniId && profile?.studentId && /^\d{10,}$/.test(profile.studentId.trim())
-              ? 'uitm'
-              : undefined;
-          const uniId = explicitUniId || inferredUniId;
+          const uniId = resolveUniversityIdForCalendar({
+            profileUniversityId: profile?.universityId,
+            connectionUniversityId: uniConn?.universityId,
+            studentId: profile?.studentId,
+            universityName: profile?.university,
+          });
           const provider = getCalendarProvider(uniId);
           if (provider && profile) {
             try {

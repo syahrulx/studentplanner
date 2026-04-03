@@ -7,7 +7,17 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType } from '@/src/types';
 import Feather from '@expo/vector-icons/Feather';
-import { formatDisplayDate, getTodayISO, getWeekDatesFor, getMonthYearLabel, getWeekNumber, getMonthGrid, toISO, getWeekDatesSundayFirst } from '@/src/utils/date';
+import {
+  formatDisplayDate,
+  getTodayISO,
+  getWeekDatesFor,
+  getMonthYearLabel,
+  getWeekNumber,
+  getMonthGrid,
+  toISO,
+  getWeekDatesSundayFirst,
+  isTaskPastDueNow,
+} from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
@@ -964,7 +974,13 @@ export default function Planner() {
     const subject = getCardSubject(item);
     const subjectColor = getSubjectColor(subject);
     const daysUntil = item.itemType === 'task' ? getDaysUntilDue(item.dueDate) : 99;
-    const isOverdue = item.itemType === 'task' && daysUntil < 0;
+    const taskRow = item.itemType === 'task' ? (item as PlannerTaskItem) : null;
+    const isOverdue =
+      item.itemType === 'task' &&
+      !item.isDone &&
+      !!taskRow &&
+      !taskRow.needsDate &&
+      isTaskPastDueNow({ dueDate: taskRow.dueDate, dueTime: taskRow.dueTime ?? '23:59' });
     const isDueSoon = item.itemType === 'task' && !isOverdue && daysUntil <= 3;
     const isPinnedTask = item.itemType === 'task' && pinnedSet.has(item.id);
     // Only show the full date inline for the \"All\" view.
@@ -996,12 +1012,11 @@ export default function Planner() {
       : item.itemType === 'study'
         ? s.taskInlineStatusStudy
         : // Countdown colour for tasks (today/overdue red, near yellow, far black)
-          daysUntil <= 0
+          isOverdue || daysUntil < 0
           ? s.taskInlineStatusOverdue
           : daysUntil <= 3
             ? s.taskInlineStatusSoon
             : s.taskInlineStatusFar;
-    const showInlineStatus = !(item.itemType === 'task' && daysUntil === 0 && !item.isDone);
     const darkSurface = themePrefersLightOutline(theme);
     const borderColor = darkSurface
       ? item.isDone
@@ -1758,10 +1773,12 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <Pressable style={s.headerBtn} onPress={() => router.back()}>
-            <Feather name="chevron-left" size={24} color={theme.text} />
-          </Pressable>
-          <View style={{ position: 'relative' }}>
+          <View style={[s.headerSide, s.headerSideLeft]}>
+            <Pressable style={s.headerBtn} onPress={() => router.back()}>
+              <Feather name="chevron-left" size={24} color={theme.text} />
+            </Pressable>
+          </View>
+          <View style={s.headerCenter}>
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
                 name={
@@ -1820,13 +1837,15 @@ export default function Planner() {
               </View>
             )}
           </View>
-          <Pressable
-            style={s.shareAllBtn}
-            onPress={() => setShowShareAllModal(true)}
-            hitSlop={6}
-          >
-            <Feather name="send" size={16} color={theme.primary} />
-          </Pressable>
+          <View style={[s.headerSide, s.headerSideRight]}>
+            <Pressable
+              style={s.headerBtn}
+              onPress={() => setShowShareAllModal(true)}
+              hitSlop={6}
+            >
+              <Feather name="user-plus" size={20} color={theme.text} />
+            </Pressable>
+          </View>
         </View>
 
         {/* Calendar panel — only shown in "day" view, since grids have their own nav */}
@@ -2111,10 +2130,24 @@ function createPlannerStyles(theme: ThemePalette) {
   },
   headerTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
     zIndex: 20,
+  },
+  headerSide: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerSideLeft: {
+    justifyContent: 'flex-start',
+  },
+  headerSideRight: {
+    justifyContent: 'flex-end',
+  },
+  headerCenter: {
+    position: 'relative',
+    alignItems: 'center',
   },
   headerBtn: {
     width: 44,
@@ -2152,12 +2185,13 @@ function createPlannerStyles(theme: ThemePalette) {
   viewDropdown: {
     position: 'absolute',
     top: 52,
-    right: 0,
+    left: 0,
+    minWidth: '100%',
     backgroundColor: theme.card,
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 8,
-    width: 156,
+    width: 168,
     shadowColor: theme.text,
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -3108,14 +3142,6 @@ function createPlannerStyles(theme: ThemePalette) {
     fontWeight: '600',
     color: theme.textSecondary,
     marginTop: 2,
-  },
-
-  // Share All button in header
-  shareAllBtn: {
-    width: 38, height: 38, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,51,102,0.06)',
-    marginLeft: 8,
   },
 
   // Share All Modal

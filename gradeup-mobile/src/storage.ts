@@ -342,6 +342,8 @@ const KEY_NOTIFICATION_PREFS = 'notificationPrefs';
 export interface NotificationPrefs {
   tasksEnabled: boolean;
   taskLeadDays: number[];
+  /** One alert shortly after the due date and time if the task is still incomplete. */
+  taskOverdueEnabled: boolean;
   studyTimerEnabled: boolean;
   classroomSyncEnabled: boolean;
   sharedTasksEnabled: boolean;
@@ -353,10 +355,11 @@ export interface NotificationPrefs {
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   tasksEnabled: true,
   taskLeadDays: [3, 1, 0],
+  taskOverdueEnabled: true,
   studyTimerEnabled: true,
   classroomSyncEnabled: true,
   sharedTasksEnabled: true,
-  weeklySummaryEnabled: true,
+  weeklySummaryEnabled: false,
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
 };
@@ -372,6 +375,10 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
         taskLeadDays: Array.isArray(parsed.taskLeadDays)
           ? parsed.taskLeadDays.filter((n) => typeof n === 'number')
           : DEFAULT_NOTIFICATION_PREFS.taskLeadDays,
+        taskOverdueEnabled:
+          typeof parsed.taskOverdueEnabled === 'boolean'
+            ? parsed.taskOverdueEnabled
+            : DEFAULT_NOTIFICATION_PREFS.taskOverdueEnabled,
       };
     }
   } catch {}

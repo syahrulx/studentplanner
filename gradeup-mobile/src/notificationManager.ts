@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { Task } from './types';
 import { getNotificationPrefs, type NotificationPrefs } from './storage';
+import { getTaskDueDateTimeEnd } from './utils/date';
 
 // ── Android Channels ──────────────────────────────────────────────────────────
 
@@ -44,6 +45,10 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 function taskNotifId(taskId: string, daysBefore: number): string {
   return `task-${taskId}-${daysBefore}d`;
+}
+
+function taskOverdueNotifId(taskId: string): string {
+  return `task-${taskId}-overdue`;
 }
 
 export async function cancelTaskNotifications(taskId: string): Promise<void> {
@@ -92,15 +97,41 @@ export async function scheduleTaskNotifications(task: Task, prefs?: Notification
       },
     });
   }
+
+  if (p.taskOverdueEnabled) {
+    const dueEnd = getTaskDueDateTimeEnd(task);
+    if (dueEnd) {
+      // One alert shortly after the real deadline (due date + due time), not the next calendar morning.
+      const overdueFire = new Date(dueEnd.getTime() + 60_000);
+      if (overdueFire.getTime() > Date.now()) {
+        await Notifications.scheduleNotificationAsync({
+          identifier: taskOverdueNotifId(task.id),
+          content: {
+            title: `⚠️ Overdue: ${task.title}`,
+            body: `Past due ${task.dueDate} ${(task.dueTime ?? '').slice(0, 5)} · ${task.courseId} · ${task.type}`,
+            sound: true,
+            data: { type: 'task_overdue', taskId: task.id },
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_TASKS } : {}),
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: overdueFire,
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_TASKS } : {}),
+          },
+        });
+      }
+    }
+  }
 }
 
 export async function rescheduleAllTaskNotifications(tasks: Task[]): Promise<void> {
   const prefs = await getNotificationPrefs();
-  if (!prefs.tasksEnabled) return;
 
   const all = await Notifications.getAllScheduledNotificationsAsync();
   const taskIds = all.filter((n) => n.identifier.startsWith('task-')).map((n) => n.identifier);
   await Promise.all(taskIds.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
+
+  if (!prefs.tasksEnabled) return;
 
   const active = tasks.filter((t) => !t.isDone && !t.needsDate);
   for (const task of active) {

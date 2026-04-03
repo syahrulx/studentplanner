@@ -92,10 +92,12 @@ export default function Settings() {
         const next = { ...prev, ...patch };
         setNotificationPrefs(next).catch(() => {});
 
-        if ('tasksEnabled' in patch || 'taskLeadDays' in patch) {
-          if (next.tasksEnabled) {
-            rescheduleAllTaskNotifications(tasks).catch(() => {});
-          }
+        if (
+          'tasksEnabled' in patch ||
+          'taskLeadDays' in patch ||
+          'taskOverdueEnabled' in patch
+        ) {
+          rescheduleAllTaskNotifications(tasks).catch(() => {});
         }
         if (
           'weeklySummaryEnabled' in patch ||
@@ -531,6 +533,30 @@ export default function Settings() {
                         </Pressable>
                       );
                     })}
+                  </View>
+                  <View
+                    style={{
+                      height: StyleSheet.hairlineWidth,
+                      backgroundColor: theme.border,
+                      marginTop: 14,
+                      marginBottom: 4,
+                    }}
+                  />
+                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary, marginBottom: 8 }]}>
+                    After due date
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[styles.menuLabel, { color: theme.text }]}>Overdue alert</Text>
+                      <Text style={[styles.notifRowFootnote, { color: theme.textSecondary, marginTop: 2 }]}>
+                        After the due date and time if still not done
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notifPrefs.taskOverdueEnabled}
+                      onValueChange={(v) => updateNotifPref({ taskOverdueEnabled: v })}
+                      trackColor={{ false: theme.border, true: theme.primary }}
+                    />
                   </View>
                 </View>
               ) : null}

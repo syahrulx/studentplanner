@@ -1,6 +1,6 @@
 import { Priority, TaskType, type Task, type UserProfile } from '../types';
 import type { TaskExtractionDTO } from './taskExtraction';
-import { getTodayISO } from '../utils/date';
+import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 
 type DeadlineRisk = Task['deadlineRisk'];
 type FocusReason = 'dueToday' | 'overdue' | 'pinned' | 'tomorrow' | 'upcoming';
@@ -114,6 +114,7 @@ export function selectTodaysFocusTask(
   const pinnedSet = new Set(pinnedTaskIds);
 
   const bucketFor = (task: Task, daysUntilDue: number): number => {
+    if (!task.needsDate && isTaskPastDueNow(task)) return 1;
     if (daysUntilDue === 0) return 0;
     if (daysUntilDue < 0) return 1;
     if (pinnedSet.has(task.id)) return 2;
@@ -137,6 +138,9 @@ export function selectTodaysFocusTask(
   const task = sorted[0];
   const daysUntilDue = getDaysUntilTaskDue(task, todayISO);
 
+  if (!task.needsDate && isTaskPastDueNow(task)) {
+    return { task, reason: 'overdue', daysUntilDue };
+  }
   if (daysUntilDue === 0) return { task, reason: 'dueToday', daysUntilDue };
   if (daysUntilDue < 0) return { task, reason: 'overdue', daysUntilDue };
   if (pinnedSet.has(task.id)) return { task, reason: 'pinned', daysUntilDue };

@@ -66,6 +66,7 @@ function RootLayoutNav() {
         case 'quiz_invite':
           if (data.sessionId) nav(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any)); break;
         case 'task_reminder':
+        case 'task_overdue':
           if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any)); break;
         case 'shared_task':
           nav(() => router.push('/(tabs)/community' as any)); break;
