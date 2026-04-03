@@ -151,6 +151,14 @@ async function withPgrstRetry<T>(fn: () => Promise<{ data: T | null; error: any 
   return last;
 }
 
+function logCommunityQueryError(label: string, error: any): void {
+  if (isPgrstSchemaCacheError(error)) {
+    if (__DEV__) console.warn(`[Community] ${label} (transient, will retry on next refresh):`, error?.message || error?.code);
+  } else {
+    console.error(label, error);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Accountability Pacts (Shared Goals)
 // -----------------------------------------------------------------------------
@@ -967,18 +975,20 @@ export async function fetchSharedGoals(): Promise<SharedGoal[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];
 
-  const { data, error } = await supabase
-    .from('shared_goals')
-    .select(`
+  const { data, error } = await withPgrstRetry(() =>
+    supabase
+      .from('shared_goals')
+      .select(`
       *,
       creator_profile:profiles!shared_goals_user_id_fkey(id, name, avatar_url),
       friend_profile:profiles!shared_goals_friend_id_fkey(id, name, avatar_url)
     `)
-    .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
-    .order('updated_at', { ascending: false });
+      .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+      .order('updated_at', { ascending: false }),
+  );
 
   if (error) {
-    console.error('Error fetching shared goals:', error);
+    logCommunityQueryError('Error fetching shared goals:', error);
     return [];
   }
   return data as SharedGoal[];
@@ -1138,7 +1148,7 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   );
 
   if (error) {
-    console.error('Error fetching incoming shared tasks:', error);
+    logCommunityQueryError('Error fetching incoming shared tasks:', error);
     return [];
   }
 
@@ -1185,7 +1195,7 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   );
 
   if (error) {
-    console.error('Error fetching accepted shared tasks:', error);
+    logCommunityQueryError('Error fetching accepted shared tasks:', error);
     return [];
   }
 

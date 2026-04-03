@@ -340,7 +340,7 @@ export default function CommunityMap() {
   const {
     filteredFriends,
     circles,
-    unreadReactionCount,
+    communityBadgeCount,
     myLatitude,
     myLongitude,
     myActivity,
@@ -524,10 +524,10 @@ export default function CommunityMap() {
           style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
         >
           <Feather name="bell" size={22} color={theme.text} />
-          {unreadReactionCount > 0 && (
+          {communityBadgeCount > 0 && (
             <View style={styles.notifBadge}>
               <Text style={styles.notifBadgeText}>
-                {unreadReactionCount > 9 ? '9+' : unreadReactionCount}
+                {communityBadgeCount > 99 ? '99+' : communityBadgeCount}
               </Text>
             </View>
           )}

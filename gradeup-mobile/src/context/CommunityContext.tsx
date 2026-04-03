@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
@@ -40,6 +40,8 @@ interface CommunityState {
   circles: Circle[];
   incomingRequests: Friendship[];
   unreadReactionCount: number;
+  /** Total items to surface on the Community tab badge (reactions + pending shares + friend requests). */
+  communityBadgeCount: number;
   myActivity: UserActivity | null;
 
   // Actions
@@ -164,6 +166,11 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const filteredFriends = selectedCircleId
     ? friendsWithStatus.filter((f) => circleMemberIds.includes(f.id))
     : friendsWithStatus;
+
+  const communityBadgeCount = useMemo(() => {
+    const pendingShares = incomingSharedTasks.filter((s) => s.status === 'pending').length;
+    return unreadReactionCount + pendingShares + incomingRequests.length;
+  }, [unreadReactionCount, incomingSharedTasks, incomingRequests]);
 
   // Get current user on mount
   useEffect(() => {
@@ -298,6 +305,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     refreshTimerRef.current = setInterval(() => {
       refreshFriends();
+      refreshRequests();
       refreshUnreadCount();
       refreshMyActivity();
       refreshSharedGoals();
@@ -307,7 +315,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
-  }, [userId, refreshAll, refreshFriends, refreshUnreadCount, refreshMyActivity]);
+  }, [userId, refreshAll, refreshFriends, refreshRequests, refreshUnreadCount, refreshMyActivity]);
 
   // ─── Listen for incoming bumps → local push notification ───
   useEffect(() => {
@@ -670,6 +678,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     circles,
     incomingRequests,
     unreadReactionCount,
+    communityBadgeCount,
     myActivity,
     refreshFriends,
     refreshCircles,

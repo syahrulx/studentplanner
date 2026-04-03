@@ -6,6 +6,7 @@ import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTabBarAddMenu } from '@/contexts/TabBarContext';
+import { useCommunity } from '@/src/context/CommunityContext';
 
 let BlurView: React.ComponentType<any> | null = null;
 try {
@@ -34,6 +35,7 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
   const isDark = isDarkTheme(themeId);
   const insets = useSafeAreaInsets();
   const openAddMenu = useTabBarAddMenu();
+  const { communityBadgeCount } = useCommunity();
 
   const hasBlur = BlurView && Platform.OS !== 'web';
   const barBg = isDark
@@ -115,6 +117,13 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
             >
               <View style={styles.tabIconWrap}>
                 {options.tabBarIcon?.({ focused, color, size: 24 })}
+                {route.name === 'community' && communityBadgeCount > 0 ? (
+                  <View style={[styles.communityBadge, { borderColor: theme.card }]}>
+                    <Text style={styles.communityBadgeText} numberOfLines={1}>
+                      {communityBadgeCount > 99 ? '99+' : String(communityBadgeCount)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text
                 style={[styles.label, { color }]}
@@ -205,6 +214,26 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  communityBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    minWidth: 17,
+    height: 17,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  communityBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 11,
   },
   label: {
     fontSize: 10,
