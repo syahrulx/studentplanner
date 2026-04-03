@@ -101,17 +101,132 @@ drop policy if exists "Users can join circles" on public.circle_members;
 drop policy if exists "Members can update" on public.circle_members;
 drop policy if exists "Members can leave circles" on public.circle_members;
 
+create or replace function public.is_circle_member(p_circle_id uuid, p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.circle_members cm
+    where cm.circle_id = p_circle_id
+      and cm.user_id = p_user_id
+  );
+$$;
+
+revoke all on function public.is_circle_member(uuid, uuid) from public;
+grant execute on function public.is_circle_member(uuid, uuid) to authenticated;
+
 create policy "Members can read circle members"
 on public.circle_members for select
-using (auth.uid() = user_id);
-create policy "Users can join circles" on public.circle_members for insert with check (auth.uid() = user_id);
-create policy "Members can update" on public.circle_members for update using (auth.uid() = user_id or role = 'admin');
-create policy "Members can leave circles" on public.circle_members for delete using (auth.uid() = user_id);
+using (public.is_circle_member(circle_members.circle_id, auth.uid()));
+create policy "Users can join circles" on public.circle_members for insert with check (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.circle_members cm_admin
+    where cm_admin.circle_id = circle_members.circle_id
+      and cm_admin.user_id = auth.uid()
+      and cm_admin.role = 'admin'
+  )
+);
+create policy "Members can update" on public.circle_members for update using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.circle_members cm_admin
+    where cm_admin.circle_id = circle_members.circle_id
+      and cm_admin.user_id = auth.uid()
+      and cm_admin.role = 'admin'
+  )
+  or exists (
+    select 1
+    from public.circles c
+    where c.id = circle_members.circle_id
+      and c.created_by = auth.uid()
+  )
+);
+create policy "Members can leave circles" on public.circle_members for delete using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from public.circle_members cm_admin
+    where cm_admin.circle_id = circle_members.circle_id
+      and cm_admin.user_id = auth.uid()
+      and cm_admin.role = 'admin'
+  )
+  or exists (
+    select 1
+    from public.circles c
+    where c.id = circle_members.circle_id
+      and c.created_by = auth.uid()
+  )
+);
 
 -- Add the deferred circles policy now that members table exists
 create policy "Members can read own circles" on public.circles for select using (
   exists (select 1 from public.circle_members cm where cm.circle_id = circles.id and cm.user_id = auth.uid())
   or created_by = auth.uid()
+);
+
+-- --- Circle Invitations ---
+create table if not exists public.circle_invitations (
+  id uuid primary key default gen_random_uuid(),
+  circle_id uuid not null references public.circles(id) on delete cascade,
+  inviter_id uuid not null references auth.users(id) on delete cascade,
+  invitee_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected')),
+  created_at timestamptz not null default now(),
+  unique (circle_id, invitee_id)
+);
+
+alter table public.circle_invitations enable row level security;
+drop policy if exists "Invitee can read circle invitations" on public.circle_invitations;
+create policy "Invitee can read circle invitations"
+on public.circle_invitations for select
+using (auth.uid() = invitee_id);
+
+drop policy if exists "Invitee can respond to circle invitations" on public.circle_invitations;
+create policy "Invitee can respond to circle invitations"
+on public.circle_invitations for update
+using (auth.uid() = invitee_id)
+with check (auth.uid() = invitee_id and status in ('pending', 'accepted', 'rejected'));
+
+drop policy if exists "Circle admins can invite" on public.circle_invitations;
+create policy "Circle admins can invite"
+on public.circle_invitations for insert
+with check (
+  auth.uid() = inviter_id
+  and exists (
+    select 1 from public.circle_members cm
+    where cm.circle_id = circle_invitations.circle_id
+      and cm.user_id = auth.uid()
+      and cm.role = 'admin'
+  )
+);
+
+drop policy if exists "Circle admins can update invites" on public.circle_invitations;
+create policy "Circle admins can update invites"
+on public.circle_invitations for update
+using (
+  auth.uid() = inviter_id
+  and exists (
+    select 1 from public.circle_members cm
+    where cm.circle_id = circle_invitations.circle_id
+      and cm.user_id = auth.uid()
+      and cm.role = 'admin'
+  )
+)
+with check (
+  auth.uid() = inviter_id
+  and exists (
+    select 1 from public.circle_members cm
+    where cm.circle_id = circle_invitations.circle_id
+      and cm.user_id = auth.uid()
+      and cm.role = 'admin'
+  )
 );
 
 -- --- User Locations ---

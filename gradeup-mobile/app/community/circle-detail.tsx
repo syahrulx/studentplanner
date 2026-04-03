@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Image, Share, Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -34,6 +34,9 @@ export default function CircleDetailScreen() {
   const circle = circles.find((c) => c.id === circleId);
   const [members, setMembers] = useState<CircleMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const myMemberRole = useMemo(() => members.find((m) => m.user_id === userId)?.role ?? null, [members, userId]);
+  const isCreator = Boolean(userId && circle?.created_by === userId);
+  const canManageMembers = isCreator || myMemberRole === 'admin';
 
   useEffect(() => {
     if (!circleId) return;
@@ -131,7 +134,10 @@ export default function CircleDetailScreen() {
           </View>
           <View style={[styles.codeRow, { backgroundColor: theme.background }]}>
             <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>Invite Code:</Text>
-            <Pressable style={styles.codePill} onPress={handleCopyCode}>
+            <Pressable
+              style={[styles.codePill, { borderColor: theme.border, backgroundColor: theme.card }]}
+              onPress={handleCopyCode}
+            >
               <Text style={[styles.codeValue, { color: theme.primary }]}>{circle?.invite_code}</Text>
               <Feather name="copy" size={14} color={theme.textSecondary} />
             </Pressable>
@@ -139,47 +145,138 @@ export default function CircleDetailScreen() {
         </View>
 
         {/* Members List */}
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Members</Text>
-        {loading ? (
-          <Text style={{ color: theme.textSecondary, textAlign: 'center', paddingTop: 20 }}>Loading...</Text>
-        ) : (
-          members.map((m) => (
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Members</Text>
+          <Text style={[styles.sectionHint, { color: theme.textSecondary }]}>{members.length}</Text>
+        </View>
+
+        <View style={[styles.membersCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          {loading ? (
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading…</Text>
+          ) : (
+            members.map((m, idx) => {
+              const isMe = m.user_id === userId;
+              const showDivider = idx < members.length - 1;
+              return (
+                <React.Fragment key={m.user_id}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.memberRow,
+                      pressed && !isMe && { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                    onPress={() => {
+                      if (!isMe) {
+                        router.push({ pathname: '/community/friend-profile', params: { friendId: m.user_id } } as any);
+                      }
+                    }}
+                  >
+                    <Avatar name={m.profile?.name} avatarUrl={m.profile?.avatar_url} size={44} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.memberName, { color: theme.text }]} numberOfLines={1}>
+                        {m.profile?.name || 'Unknown'}
+                        {isMe ? ' (You)' : ''}
+                      </Text>
+                      <Text style={[styles.memberSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                        {m.role === 'admin' ? 'Circle admin' : 'Circle member'}
+                        {m.profile?.university ? ` · ${m.profile.university}` : ''}
+                      </Text>
+                    </View>
+
+                    {m.role === 'admin' ? (
+                      <View style={[styles.adminPill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}33` }]}>
+                        <Text style={[styles.adminPillText, { color: theme.primary }]}>Admin</Text>
+                      </View>
+                    ) : null}
+
+                    {canManageMembers && !isMe ? (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Alert.alert('Remove member', `Remove ${m.profile?.name || 'this user'} from the circle?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Remove',
+                              style: 'destructive',
+                              onPress: async () => {
+                                if (!circleId) return;
+                                try {
+                                  await communityApi.removeCircleMember(circleId, m.user_id);
+                                  const next = await communityApi.getCircleMembers(circleId);
+                                  setMembers(next);
+                                  await refreshCircles();
+                                } catch {
+                                  Alert.alert('Error', 'Failed to remove member');
+                                }
+                              },
+                            },
+                          ]);
+                        }}
+                        style={({ pressed }) => [
+                          styles.kickBtn,
+                          { borderColor: theme.border, backgroundColor: theme.background },
+                          pressed && { opacity: 0.85 },
+                        ]}
+                        hitSlop={8}
+                      >
+                        <Feather name="user-x" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    ) : (
+                      <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                    )}
+                  </Pressable>
+                  {showDivider ? <View style={[styles.divider, { backgroundColor: theme.border }]} /> : null}
+                </React.Fragment>
+              );
+            })
+          )}
+        </View>
+
+        {/* Actions */}
+        <View style={styles.actionsRow}>
+          {isCreator ? (
             <Pressable
-              key={m.user_id}
-              style={[styles.memberRow, { borderBottomColor: theme.border }]}
+              style={({ pressed }) => [
+                styles.actionDangerBtn,
+                { borderColor: theme.border, backgroundColor: theme.card },
+                pressed && { opacity: 0.85 },
+              ]}
               onPress={() => {
-                if (m.user_id !== userId) {
-                  router.push({ pathname: '/community/friend-profile', params: { friendId: m.user_id } } as any);
-                }
+                if (!circleId) return;
+                Alert.alert('Delete Circle', `Delete "${circle?.name}"? This cannot be undone.`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await communityApi.deleteCircle(circleId);
+                        await refreshCircles();
+                        router.back();
+                      } catch {
+                        Alert.alert('Error', 'Failed to delete circle');
+                      }
+                    },
+                  },
+                ]);
               }}
             >
-              <Avatar name={m.profile?.name} avatarUrl={m.profile?.avatar_url} size={44} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.memberName, { color: theme.text }]}>
-                  {m.profile?.name || 'Unknown'}
-                  {m.user_id === userId ? ' (You)' : ''}
-                </Text>
-                {m.profile?.university && (
-                  <Text style={[styles.memberSub, { color: theme.textSecondary }]}>{m.profile.university}</Text>
-                )}
-              </View>
-              {m.role === 'admin' && (
-                <View style={[styles.adminBadge, { backgroundColor: '#f59e0b20' }]}>
-                  <Text style={styles.adminBadgeText}>Admin</Text>
-                </View>
-              )}
+              <Feather name="trash-2" size={16} color="#ef4444" />
+              <Text style={styles.actionDangerText}>Delete</Text>
             </Pressable>
-          ))
-        )}
+          ) : null}
 
-        {/* Leave Button */}
-        <Pressable
-          style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.7 }]}
-          onPress={handleLeave}
-        >
-          <Feather name="log-out" size={16} color="#ef4444" />
-          <Text style={styles.leaveBtnText}>Leave Circle</Text>
-        </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionDangerBtn,
+              { borderColor: theme.border, backgroundColor: theme.card },
+              pressed && { opacity: 0.85 },
+            ]}
+            onPress={handleLeave}
+          >
+            <Feather name="log-out" size={16} color="#ef4444" />
+            <Text style={styles.actionDangerText}>Leave</Text>
+          </Pressable>
+        </View>
 
         <View style={{ height: 60 }} />
       </ScrollView>
@@ -232,33 +329,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   codeLabel: { fontSize: 13, fontWeight: '600' },
-  codeValue: { fontSize: 16, fontWeight: '800', letterSpacing: 1 },
-
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
-
-  memberRow: {
+  codePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  memberName: { fontSize: 16, fontWeight: '700' },
-  memberSub: { fontSize: 13, marginTop: 2 },
-  adminBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  adminBadgeText: { fontSize: 12, fontWeight: '700', color: '#f59e0b' },
+  codeValue: { fontSize: 16, fontWeight: '800', letterSpacing: 1, lineHeight: 18 },
 
-  leaveBtn: {
+  sectionHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 },
+  sectionTitle: { fontSize: 17, fontWeight: '800' },
+  sectionHint: { fontSize: 13, fontWeight: '700' },
+  loadingText: { textAlign: 'center', paddingVertical: 16, fontWeight: '600' },
+
+  membersCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  memberName: { fontSize: 15, fontWeight: '800' },
+  memberSub: { fontSize: 12, marginTop: 2, fontWeight: '600' },
+  divider: { height: StyleSheet.hairlineWidth, width: '100%' },
+
+  adminPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginRight: 8 },
+  adminPillText: { fontSize: 12, fontWeight: '800' },
+
+  kickBtn: { marginLeft: 8, width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  actionDangerBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 16,
-    marginTop: 24,
   },
-  leaveBtnText: { color: '#ef4444', fontSize: 15, fontWeight: '700' },
+  actionDangerText: { color: '#ef4444', fontSize: 14, fontWeight: '800' },
 });

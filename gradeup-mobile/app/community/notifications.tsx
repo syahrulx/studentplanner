@@ -14,7 +14,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useCommunity } from '@/src/context/CommunityContext';
 import * as communityApi from '@/src/lib/communityApi';
-import type { QuickReaction } from '@/src/lib/communityApi';
+import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -46,11 +46,13 @@ function timeAgo(dateStr: string): string {
 
 export default function NotificationsScreen() {
   const theme = useTheme();
-  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks } = useCommunity();
+  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles } = useCommunity();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
+  const [circleInvites, setCircleInvites] = useState<CircleInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
+  const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
 
   const handleShareResponse = async (sharedTaskId: string, accept: boolean) => {
     setRespondingIds(prev => new Set(prev).add(sharedTaskId));
@@ -68,6 +70,8 @@ export default function NotificationsScreen() {
     try {
       const data = await communityApi.getMyReactions(userId);
       setReactions(data);
+      const invites = await communityApi.getMyCircleInvitations(userId).catch(() => [] as CircleInvitation[]);
+      setCircleInvites(invites.filter((i) => i.status === 'pending'));
       // Mark all as read
       await communityApi.markReactionsRead(userId);
       await refreshUnreadCount();
@@ -110,6 +114,70 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Circle Invites */}
+        {circleInvites.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Circle Invites</Text>
+            {circleInvites.map((inv) => (
+              <View
+                key={inv.id}
+                style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
+              >
+                <Avatar name={inv.inviter_profile?.name} avatarUrl={inv.inviter_profile?.avatar_url} size={44} />
+                <View style={styles.notifBody}>
+                  <Text style={[styles.notifName, { color: theme.text }]}>
+                    {inv.inviter_profile?.name || 'Someone'}
+                  </Text>
+                  <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
+                    Invited you to join {inv.circle ? `${inv.circle.emoji} ${inv.circle.name}` : 'a circle'}
+                  </Text>
+                  <View style={styles.shareActions}>
+                    <Pressable
+                      style={[styles.shareAcceptBtn, { backgroundColor: '#10b981' }]}
+                      disabled={respondingInviteIds.has(inv.id)}
+                      onPress={async () => {
+                        setRespondingInviteIds((prev) => new Set(prev).add(inv.id));
+                        try {
+                          await communityApi.respondToCircleInvitation(inv.id, true);
+                          await refreshCircles();
+                          await loadReactions();
+                        } finally {
+                          setRespondingInviteIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(inv.id);
+                            return next;
+                          });
+                        }
+                      }}
+                    >
+                      <Feather name="check" size={14} color="#fff" />
+                      <Text style={styles.shareActionText}>Accept</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.shareDeclineBtn, { borderColor: theme.border }]}
+                      disabled={respondingInviteIds.has(inv.id)}
+                      onPress={async () => {
+                        setRespondingInviteIds((prev) => new Set(prev).add(inv.id));
+                        try {
+                          await communityApi.respondToCircleInvitation(inv.id, false);
+                          await loadReactions();
+                        } finally {
+                          setRespondingInviteIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(inv.id);
+                            return next;
+                          });
+                        }
+                      }}
+                    >
+                      <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Decline</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
         {/* Incoming Shared Task Requests */}
         {incomingSharedTasks.length > 0 && (
           <View style={{ marginBottom: 16 }}>
@@ -157,7 +225,7 @@ export default function NotificationsScreen() {
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={theme.primary} />
-        ) : reactions.length === 0 && incomingSharedTasks.length === 0 ? (
+        ) : reactions.length === 0 && incomingSharedTasks.length === 0 && circleInvites.length === 0 ? (
           <View style={styles.emptyState}>
             <Feather name="bell-off" size={48} color={theme.textSecondary} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>No notifications yet</Text>

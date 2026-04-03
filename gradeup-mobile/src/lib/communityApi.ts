@@ -66,6 +66,19 @@ export interface CircleMember {
   profile?: FriendProfile;
 }
 
+export type CircleInvitationStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface CircleInvitation {
+  id: string;
+  circle_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  status: CircleInvitationStatus;
+  created_at: string;
+  circle?: Pick<Circle, 'id' | 'name' | 'emoji'>;
+  inviter_profile?: FriendProfile;
+}
+
 export interface UserLocation {
   user_id: string;
   latitude: number;
@@ -112,6 +125,30 @@ export interface FriendWithStatus extends FriendProfile {
   location?: UserLocation;
   activity?: UserActivity;
   music?: MusicPresence;
+}
+
+function isPgrstSchemaCacheError(err: any): boolean {
+  return Boolean(
+    err &&
+      typeof err === 'object' &&
+      (err.code === 'PGRST002' ||
+        String(err.message || '').includes('schema cache') ||
+        String(err.message || '').includes('Could not query the database for the schema cache')),
+  );
+}
+
+async function withPgrstRetry<T>(fn: () => Promise<{ data: T | null; error: any }>, opts?: { retries?: number }): Promise<{ data: T | null; error: any }> {
+  const retries = Math.max(0, Math.min(3, opts?.retries ?? 2));
+  let last: { data: T | null; error: any } = { data: null, error: null };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    last = await fn();
+    if (!last.error) return last;
+    if (!isPgrstSchemaCacheError(last.error)) return last;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+  }
+  return last;
 }
 
 // -----------------------------------------------------------------------------
@@ -470,12 +507,92 @@ export async function leaveCircle(circleId: string, userId: string) {
   if (error) throw error;
 }
 
-/** Invite a friend to a circle */
-export async function inviteToCircle(circleId: string, friendId: string) {
+export async function removeCircleMember(circleId: string, memberId: string) {
   const { error } = await supabase
     .from('circle_members')
-    .insert({ circle_id: circleId, user_id: friendId, role: 'member' });
+    .delete()
+    .eq('circle_id', circleId)
+    .eq('user_id', memberId);
   if (error) throw error;
+}
+
+export async function deleteCircle(circleId: string) {
+  const { error } = await supabase.from('circles').delete().eq('id', circleId);
+  if (error) throw error;
+}
+
+/** Invite a friend to a circle */
+export async function inviteToCircle(circleId: string, inviterId: string, friendId: string) {
+  // Unique constraint is (circle_id, invitee_id). Make this idempotent:
+  // - First invite creates a pending row
+  // - Re-inviting updates status back to pending (e.g. after reject) without throwing.
+  const { error } = await supabase
+    .from('circle_invitations')
+    .upsert(
+      {
+        circle_id: circleId,
+        inviter_id: inviterId,
+        invitee_id: friendId,
+        status: 'pending',
+      },
+      { onConflict: 'circle_id,invitee_id' },
+    );
+  if (error) throw error;
+}
+
+export async function getMyCircleInvitations(userId: string): Promise<CircleInvitation[]> {
+  const { data, error } = await supabase
+    .from('circle_invitations')
+    .select('id,circle_id,inviter_id,invitee_id,status,created_at')
+    .eq('invitee_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const invites = (data ?? []) as CircleInvitation[];
+  if (!invites.length) return [];
+
+  const circleIds = Array.from(new Set(invites.map((i) => i.circle_id)));
+  const inviterIds = Array.from(new Set(invites.map((i) => i.inviter_id)));
+
+  const [{ data: circles, error: ce }, { data: profs, error: pe }] = await Promise.all([
+    supabase.from('circles').select('id,name,emoji').in('id', circleIds),
+    supabase.from('profiles').select('id,name,university,avatar_url,bio,faculty,course,class_group').in('id', inviterIds),
+  ]);
+  if (ce) throw ce;
+  if (pe) throw pe;
+
+  const circleMap = new Map((circles ?? []).map((c: any) => [c.id, c]));
+  const profMap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+
+  return invites.map((i) => ({
+    ...i,
+    circle: circleMap.get(i.circle_id) ?? undefined,
+    inviter_profile: profMap.get(i.inviter_id) ?? undefined,
+  }));
+}
+
+export async function respondToCircleInvitation(inviteId: string, accept: boolean) {
+  // Load invite first (RLS: invitee can read their own invites)
+  const { data: inv, error: ie } = await supabase
+    .from('circle_invitations')
+    .select('id,circle_id,invitee_id,status')
+    .eq('id', inviteId)
+    .single();
+  if (ie) throw ie;
+  if (!inv) throw new Error('Invitation not found');
+  if (inv.status !== 'pending') return;
+
+  const status: CircleInvitationStatus = accept ? 'accepted' : 'rejected';
+  const { error: ue } = await supabase.from('circle_invitations').update({ status }).eq('id', inviteId);
+  if (ue) throw ue;
+
+  if (accept) {
+    // Join circle (self insert is allowed by circle_members RLS)
+    const { error: je } = await supabase
+      .from('circle_members')
+      .insert({ circle_id: inv.circle_id, user_id: inv.invitee_id, role: 'member' });
+    // Ignore "already a member" errors (PK conflict)
+    if (je && !/duplicate key value|already exists/i.test(je.message)) throw je;
+  }
 }
 
 // =============================================================================
@@ -1011,12 +1128,14 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];
 
-  const { data, error } = await supabase
-    .from('shared_tasks')
-    .select('*')
-    .eq('recipient_id', user.id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false });
+  const { data, error } = await withPgrstRetry(() =>
+    supabase
+      .from('shared_tasks')
+      .select('*')
+      .eq('recipient_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false }),
+  );
 
   if (error) {
     console.error('Error fetching incoming shared tasks:', error);
@@ -1056,12 +1175,14 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];
 
-  const { data, error } = await supabase
-    .from('shared_tasks')
-    .select('*')
-    .eq('status', 'accepted')
-    .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
-    .order('created_at', { ascending: false });
+  const { data, error } = await withPgrstRetry(() =>
+    supabase
+      .from('shared_tasks')
+      .select('*')
+      .eq('status', 'accepted')
+      .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
+      .order('created_at', { ascending: false }),
+  );
 
   if (error) {
     console.error('Error fetching accepted shared tasks:', error);

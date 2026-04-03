@@ -83,16 +83,16 @@ export default function CirclesScreen() {
   const handleSelectFriendToInvite = useCallback(
     async (friendId: string) => {
       if (!inviteCircleId) return;
+      if (!userId) return;
       try {
-        await communityApi.inviteToCircle(inviteCircleId, friendId);
-        Alert.alert('Invited', 'Friend has been added to this circle.');
+        await communityApi.inviteToCircle(inviteCircleId, userId, friendId);
+        Alert.alert('Invite sent', 'They will appear in the circle after they accept.');
         setInviteCircleId(null);
-        await refreshCircles();
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to invite friend');
       }
     },
-    [inviteCircleId, refreshCircles]
+    [inviteCircleId, userId]
   );
 
   const handleLeave = useCallback(
@@ -360,7 +360,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  codeValue: { fontSize: 13, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginRight: 4 },
+  codeValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    lineHeight: 16,
+  },
 
   emptyState: { alignItems: 'center', paddingTop: 48, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },

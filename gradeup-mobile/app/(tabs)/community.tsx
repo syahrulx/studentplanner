@@ -24,6 +24,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
+import * as communityApi from '@/src/lib/communityApi';
 import { ACTIVITY_TYPES } from '@/src/lib/communityApi';
 import type { FriendWithStatus, Circle, SharedGoal, ActivityType } from '@/src/lib/communityApi';
 
@@ -494,15 +495,29 @@ export default function CommunityMap() {
           <Feather name="settings" size={22} color={theme.text} />
         </Pressable>
 
-        <Pressable
-          onPress={() => setShowCircleSelector(!showCircleSelector)}
-          style={({ pressed }) => [styles.circleSelector, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={[styles.circleName, { color: theme.text }]}>
-            {selectedCircle?.name || 'All Friends'}
-          </Text>
-          <Feather name="chevron-down" size={16} color={theme.textSecondary} />
-        </Pressable>
+        <View style={styles.circleSelector}>
+          <Pressable
+            onPress={() => {
+              if (selectedCircle?.id) {
+                router.push({ pathname: '/community/circle-detail', params: { circleId: selectedCircle.id } } as any);
+              } else {
+                setShowCircleSelector((v) => !v);
+              }
+            }}
+            style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
+              {selectedCircle?.name || 'All Friends'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setShowCircleSelector((v) => !v)}
+            style={({ pressed }) => [styles.circleSelectorChevronBtn, pressed && { opacity: 0.7 }]}
+            hitSlop={10}
+          >
+            <Feather name="chevron-down" size={16} color={theme.textSecondary} />
+          </Pressable>
+        </View>
 
         <Pressable
           onPress={() => router.push('/community/notifications' as any)}
@@ -1328,6 +1343,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   circleName: { fontSize: 17, fontWeight: '700' },
+  circleSelectorNameBtn: { maxWidth: 180 },
+  circleSelectorChevronBtn: { paddingLeft: 2, paddingVertical: 2 },
   notifBadge: {
     position: 'absolute',
     top: 4,
