@@ -293,11 +293,11 @@ export default function CirclesScreen() {
                   >
                     <View style={styles.friendAvatar}>
                       <Text style={{ color: '#fff', fontWeight: '700' }}>
-                        {(item.name || item.username || '?').slice(0, 2).toUpperCase()}
+                        {(item.name || '?').slice(0, 2).toUpperCase()}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.friendName, { color: theme.text }]}>{item.name || item.username || 'Friend'}</Text>
+                      <Text style={[styles.friendName, { color: theme.text }]}>{item.name || 'Friend'}</Text>
                       {item.university && (
                         <Text style={[styles.friendSub, { color: theme.textSecondary }]}>{item.university}</Text>
                       )}

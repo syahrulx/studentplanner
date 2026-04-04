@@ -54,6 +54,8 @@ const START_HOUR = 7;
 const END_HOUR = 22;
 const TIME_GUTTER = 46;
 const DAY_COLUMN_MIN_W = 84;
+/** gridRoot paddingHorizontal 6 + 6 */
+const GRID_OUTER_H_PAD = 12;
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -68,6 +70,63 @@ function entryDisplayTitle(e: TimetableEntry): string {
 function entrySlotColor(e: TimetableEntry): string {
   const c = e.slotColor?.trim();
   return c || getSlotColorForSubjectCode(e.subjectCode);
+}
+
+function formatRoomDisplay(location: string | undefined | null, onlineLabel: string): string {
+  const t = location?.trim();
+  if (t && t !== '-') return t;
+  return onlineLabel;
+}
+
+type WeekGridMetaParts = {
+  room: string | null;
+  lecturer: string | null;
+  group: string | null;
+};
+
+/**
+ * Room / lecturer / group for week grid (same visibility rules as before).
+ */
+function weekGridMetaParts(
+  entry: TimetableEntry,
+  v: TimetableSlotDetailsVisibility,
+  slotHeight: number,
+  hasCourseTitle: boolean,
+  onlineLabel: string,
+): WeekGridMetaParts | null {
+  const minH = hasCourseTitle ? 48 : 32;
+  if (slotHeight < minH) return null;
+  const room = v.room ? formatRoomDisplay(entry.location, onlineLabel) : null;
+  const lecturer = v.lecturer && entry.lecturer && entry.lecturer !== '-' ? entry.lecturer.trim() : null;
+  const group = v.group && entry.group ? String(entry.group).trim() : null;
+  if (!room && !lecturer && !group) return null;
+  return { room, lecturer, group };
+}
+
+/** Joined meta string — kept so older bundles / stale code paths do not throw. Prefer weekGridMetaParts + WeekGridSlotMetaText. */
+function weekGridDenseMeta(
+  entry: TimetableEntry,
+  v: TimetableSlotDetailsVisibility,
+  slotHeight: number,
+  hasCourseTitle: boolean,
+  onlineLabel: string,
+): string | null {
+  const p = weekGridMetaParts(entry, v, slotHeight, hasCourseTitle, onlineLabel);
+  if (!p) return null;
+  const segments: string[] = [];
+  if (p.room) segments.push(p.room);
+  if (p.lecturer) segments.push(p.lecturer);
+  if (p.group) segments.push(p.group);
+  return segments.length ? segments.join(' · ') : null;
+}
+
+/** Separate caps so a multi-line room does not steal the lecturer's line budget. */
+function weekGridMetaLineCaps(slotHeight: number): { roomLines: number; lectLines: number } {
+  if (slotHeight < 36) return { roomLines: 1, lectLines: 1 };
+  if (slotHeight < 52) return { roomLines: 2, lectLines: 2 };
+  if (slotHeight < 80) return { roomLines: 3, lectLines: 4 };
+  if (slotHeight < 112) return { roomLines: 3, lectLines: 5 };
+  return { roomLines: 4, lectLines: 6 };
 }
 
 const JS_TO_DAY: DayOfWeek[] = [
@@ -87,6 +146,8 @@ export default function TimetableScreen() {
   const [exporting, setExporting] = useState(false);
   const exportShotRef = useRef<ViewShot | null>(null);
   const [slotDetails, setSlotDetails] = useState<TimetableSlotDetailsVisibility>({
+    courseName: false,
+    scrollAllDaysInCompact: false,
     room: true,
     lecturer: true,
     group: true,
@@ -108,6 +169,25 @@ export default function TimetableScreen() {
 
   const daysOrdered = useMemo(() => orderedDays(weekStartsOn), [weekStartsOn]);
 
+  /**
+   * Full week when course names on (may scroll).
+   * Compact + “scroll all days”: all 7 columns, horizontal scroll.
+   * Compact otherwise: first five days of the week (Settings → week starts on…), no horizontal scroll.
+   */
+  const daysForWeekGrid = useMemo(() => {
+    if (slotDetails.courseName) return daysOrdered;
+    if (slotDetails.scrollAllDaysInCompact) return daysOrdered;
+    return daysOrdered.slice(0, 5);
+  }, [daysOrdered, slotDetails.courseName, slotDetails.scrollAllDaysInCompact]);
+
+  const dayColumnWidth = useMemo(() => {
+    const n = Math.max(1, daysForWeekGrid.length);
+    if (slotDetails.courseName) return DAY_COLUMN_MIN_W;
+    if (slotDetails.scrollAllDaysInCompact) return DAY_COLUMN_MIN_W;
+    const innerW = winW - GRID_OUTER_H_PAD - TIME_GUTTER;
+    return Math.max(50, Math.floor(innerW / n));
+  }, [slotDetails.courseName, slotDetails.scrollAllDaysInCompact, daysForWeekGrid.length, winW]);
+
   const todayDayKey = useMemo(() => JS_TO_DAY[new Date().getDay()], []);
 
   const hasData = timetable.length > 0;
@@ -117,7 +197,7 @@ export default function TimetableScreen() {
     : null;
 
   const gridBodyHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
-  const gridContentWidth = TIME_GUTTER + daysOrdered.length * DAY_COLUMN_MIN_W;
+  const gridContentWidth = TIME_GUTTER + daysForWeekGrid.length * dayColumnWidth;
   const gridScrollMaxH = Math.max(280, Math.min(gridBodyHeight + 8, winH - (Platform.OS === 'ios' ? 210 : 190)));
 
   const exportSize = useMemo(() => {
@@ -132,11 +212,14 @@ export default function TimetableScreen() {
   }, [exportPreset, winW, winH]);
 
   const naturalGrid = useMemo(() => {
-    // Natural timetable grid size (before scaling).
-    const w = Math.max(gridContentWidth, winW);
+    // Natural grid width: compact 5-day fits screen; full week or compact+scroll is wider than screen.
+    const scrollsHorizontally =
+      slotDetails.courseName ||
+      (!slotDetails.courseName && slotDetails.scrollAllDaysInCompact);
+    const w = scrollsHorizontally ? Math.max(gridContentWidth, winW) : gridContentWidth;
     const h = 48 + gridBodyHeight; // header row + grid body
     return { w, h };
-  }, [gridContentWidth, winW, gridBodyHeight]);
+  }, [gridContentWidth, winW, gridBodyHeight, slotDetails.courseName, slotDetails.scrollAllDaysInCompact]);
 
   const exportScale = useMemo(() => {
     return Math.min(exportSize.width / naturalGrid.w, exportSize.height / naturalGrid.h);
@@ -266,6 +349,16 @@ export default function TimetableScreen() {
             </Pressable>
             <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
             <View style={s.menuSwitchRow}>
+              <Feather name="book-open" size={18} color={theme.primary} />
+              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowCourseName')}</Text>
+              <Switch
+                value={slotDetails.courseName}
+                onValueChange={(courseName) => patchSlotDetails({ courseName })}
+                trackColor={{ false: theme.border, true: `${theme.primary}55` }}
+                thumbColor={slotDetails.courseName ? theme.primary : theme.textSecondary}
+              />
+            </View>
+            <View style={s.menuSwitchRow}>
               <Feather name="map-pin" size={18} color={theme.primary} />
               <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowRoom')}</Text>
               <Switch
@@ -285,6 +378,20 @@ export default function TimetableScreen() {
                 thumbColor={slotDetails.lecturer ? theme.primary : theme.textSecondary}
               />
             </View>
+            {!slotDetails.courseName ? (
+              <View style={s.menuSwitchRow}>
+                <Feather name="sidebar" size={18} color={theme.primary} />
+                <Text style={[s.menuItemText, { color: theme.text, flex: 1 }]}>
+                  {T('timetableScrollAllDaysCompact')}
+                </Text>
+                <Switch
+                  value={slotDetails.scrollAllDaysInCompact}
+                  onValueChange={(scrollAllDaysInCompact) => patchSlotDetails({ scrollAllDaysInCompact })}
+                  trackColor={{ false: theme.border, true: `${theme.primary}55` }}
+                  thumbColor={slotDetails.scrollAllDaysInCompact ? theme.primary : theme.textSecondary}
+                />
+              </View>
+            ) : null}
             <View style={[s.menuSwitchRow, s.menuSwitchRowLast]}>
               <Feather name="users" size={18} color={theme.primary} />
               <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowGroup')}</Text>
@@ -392,7 +499,7 @@ export default function TimetableScreen() {
                     transform: [{ scale: previewScale }],
                   }}
                 >
-                  {renderWeekGridStatic(naturalGrid.w, { suppressTodayHighlight: true })}
+                  {renderWeekGridStatic(naturalGrid.w)}
                 </View>
               </View>
             </View>
@@ -445,7 +552,7 @@ export default function TimetableScreen() {
                 transform: [{ scale: exportScale }],
               }}
             >
-              {renderWeekGridStatic(naturalGrid.w, { suppressTodayHighlight: true })}
+              {renderWeekGridStatic(naturalGrid.w)}
             </View>
           </ViewShot>
         </View>
@@ -456,13 +563,17 @@ export default function TimetableScreen() {
   /* ── Week grid: one column per day (scroll horizontally if needed) ─ */
   function renderWeekGrid() {
     const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-    const minTableW = Math.max(gridContentWidth, winW);
+    const hScrollWeekOrCompactAllDays =
+      slotDetails.courseName ||
+      (!slotDetails.courseName && slotDetails.scrollAllDaysInCompact);
+    const minTableW = hScrollWeekOrCompactAllDays ? Math.max(gridContentWidth, winW) : gridContentWidth;
 
     return (
       <View style={s.gridRoot}>
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator
+          scrollEnabled={hScrollWeekOrCompactAllDays}
+          showsHorizontalScrollIndicator={hScrollWeekOrCompactAllDays}
           nestedScrollEnabled
           style={s.gridHScroll}
           contentContainerStyle={{ minWidth: minTableW }}
@@ -470,8 +581,7 @@ export default function TimetableScreen() {
           <View style={{ width: minTableW }}>
             <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
               <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
-              {daysOrdered.map(({ key, shortKey }) => {
-                const isToday = key === todayDayKey;
+              {daysForWeekGrid.map(({ key, shortKey }) => {
                 const count = timetable.filter((e) => e.day === key).length;
                 return (
                   <View
@@ -479,9 +589,9 @@ export default function TimetableScreen() {
                     style={[
                       s.gridColHead,
                       {
-                        width: DAY_COLUMN_MIN_W,
+                        width: dayColumnWidth,
                         borderLeftColor: theme.border,
-                        backgroundColor: isToday ? `${theme.primary}14` : theme.backgroundSecondary ?? theme.card,
+                        backgroundColor: theme.backgroundSecondary ?? theme.card,
                       },
                     ]}
                   >
@@ -513,21 +623,20 @@ export default function TimetableScreen() {
                   ))}
                 </View>
 
-                {daysOrdered.map(({ key }) => {
+                {daysForWeekGrid.map(({ key }) => {
                   const items = timetable
                     .filter((e) => e.day === key)
                     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-                  const isToday = key === todayDayKey;
                   return (
                     <View
                       key={key}
                       style={[
                         s.gridDayCol,
                         {
-                          width: DAY_COLUMN_MIN_W,
+                          width: dayColumnWidth,
                           minHeight: gridBodyHeight,
                           borderLeftColor: theme.border,
-                          backgroundColor: isToday ? `${theme.primary}0A` : 'transparent',
+                          backgroundColor: 'transparent',
                         },
                       ]}
                     >
@@ -550,6 +659,15 @@ export default function TimetableScreen() {
                         const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
                         const color = entrySlotColor(entry);
                         const title = entryDisplayTitle(entry);
+                        const hasTitle = Boolean(slotDetails.courseName && height > 38);
+                        const metaParts = weekGridMetaParts(
+                          entry,
+                          slotDetails,
+                          height,
+                          hasTitle,
+                          T('timetableRoomOnline'),
+                        );
+                        const stackTight = hasTitle || Boolean(metaParts);
                         return (
                           <Pressable
                             key={entry.id}
@@ -558,7 +676,7 @@ export default function TimetableScreen() {
                               {
                                 top,
                                 height,
-                                backgroundColor: color + '24',
+                                backgroundColor: color + '32',
                                 borderLeftColor: color,
                               },
                             ]}
@@ -567,34 +685,40 @@ export default function TimetableScreen() {
                               setEntryModalOpen(true);
                             }}
                           >
-                            <Text style={[s.gridSlotCode, { color }]} numberOfLines={2}>
-                              {entry.subjectCode}
-                            </Text>
-                            {height > 38 && (
-                              <Text style={[s.gridSlotTitle, { color: theme.text }]} numberOfLines={height > 90 ? 4 : 2}>
-                                {title}
+                            <View
+                              style={[
+                                s.gridSlotInner,
+                                stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
+                              ]}
+                            >
+                              <Text
+                                includeFontPadding={false}
+                                style={[
+                                  s.gridSlotCode,
+                                  !slotDetails.courseName && s.gridSlotCodeCompact,
+                                  { color },
+                                ]}
+                                numberOfLines={2}
+                              >
+                                {entry.subjectCode}
                               </Text>
-                            )}
-                            {height > 48 && (
-                              <Text style={[s.gridSlotWhen, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {entry.startTime}–{entry.endTime}
-                              </Text>
-                            )}
-                            {slotDetails.room && height > 72 && entry.location && entry.location !== '-' && (
-                              <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {T('timetableRoom')}: {entry.location}
-                              </Text>
-                            )}
-                            {slotDetails.lecturer && height > 88 && entry.lecturer && entry.lecturer !== '-' && (
-                              <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {T('timetableLecturer')}: {entry.lecturer}
-                              </Text>
-                            )}
-                            {slotDetails.group && height > 102 && entry.group && (
-                              <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {T('timetableGroup')}: {entry.group}
-                              </Text>
-                            )}
+                              {hasTitle ? (
+                                <Text
+                                  includeFontPadding={false}
+                                  style={[s.gridSlotTitle, { color: theme.text }]}
+                                  numberOfLines={height > 90 ? 4 : 2}
+                                >
+                                  {title}
+                                </Text>
+                              ) : null}
+                              {metaParts ? (
+                                <WeekGridSlotMetaText
+                                  parts={metaParts}
+                                  theme={theme}
+                                  slotHeight={height}
+                                />
+                              ) : null}
+                            </View>
                           </Pressable>
                         );
                       })}
@@ -614,19 +738,14 @@ export default function TimetableScreen() {
     );
   }
 
-  function renderWeekGridStatic(
-    minTableW: number,
-    opts?: { suppressTodayHighlight?: boolean },
-  ) {
+  function renderWeekGridStatic(minTableW: number) {
     const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-    const showTodayHighlight = !opts?.suppressTodayHighlight;
     return (
       <View style={[s.gridRoot, { paddingHorizontal: 0, paddingBottom: 0 }]}>
         <View style={{ width: minTableW }}>
           <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
             <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
-            {daysOrdered.map(({ key, shortKey }) => {
-              const isToday = showTodayHighlight && key === todayDayKey;
+            {daysForWeekGrid.map(({ key, shortKey }) => {
               const count = timetable.filter((e) => e.day === key).length;
               return (
                 <View
@@ -634,9 +753,9 @@ export default function TimetableScreen() {
                   style={[
                     s.gridColHead,
                     {
-                      width: DAY_COLUMN_MIN_W,
+                      width: dayColumnWidth,
                       borderLeftColor: theme.border,
-                      backgroundColor: isToday ? `${theme.primary}14` : theme.backgroundSecondary ?? theme.card,
+                      backgroundColor: theme.backgroundSecondary ?? theme.card,
                     },
                   ]}
                 >
@@ -662,21 +781,20 @@ export default function TimetableScreen() {
               ))}
             </View>
 
-            {daysOrdered.map(({ key }) => {
+            {daysForWeekGrid.map(({ key }) => {
               const items = timetable
                 .filter((e) => e.day === key)
                 .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-              const isToday = showTodayHighlight && key === todayDayKey;
               return (
                 <View
                   key={key}
                   style={[
                     s.gridDayCol,
                     {
-                      width: DAY_COLUMN_MIN_W,
+                      width: dayColumnWidth,
                       minHeight: gridBodyHeight,
                       borderLeftColor: theme.border,
-                      backgroundColor: isToday ? `${theme.primary}0A` : 'transparent',
+                      backgroundColor: 'transparent',
                     },
                   ]}
                 >
@@ -699,6 +817,15 @@ export default function TimetableScreen() {
                     const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
                     const color = entrySlotColor(entry);
                     const title = entryDisplayTitle(entry);
+                    const hasTitle = Boolean(slotDetails.courseName && height > 38);
+                    const metaParts = weekGridMetaParts(
+                      entry,
+                      slotDetails,
+                      height,
+                      hasTitle,
+                      T('timetableRoomOnline'),
+                    );
+                    const stackTight = hasTitle || Boolean(metaParts);
                     return (
                       <View
                         key={entry.id}
@@ -707,39 +834,45 @@ export default function TimetableScreen() {
                           {
                             top,
                             height,
-                            backgroundColor: color + '24',
+                            backgroundColor: color + '32',
                             borderLeftColor: color,
                           },
                         ]}
                       >
-                        <Text style={[s.gridSlotCode, { color }]} numberOfLines={2}>
-                          {entry.subjectCode}
-                        </Text>
-                        {height > 38 && (
-                          <Text style={[s.gridSlotTitle, { color: theme.text }]} numberOfLines={height > 90 ? 4 : 2}>
-                            {title}
+                        <View
+                          style={[
+                            s.gridSlotInner,
+                            stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
+                          ]}
+                        >
+                          <Text
+                            includeFontPadding={false}
+                            style={[
+                              s.gridSlotCode,
+                              !slotDetails.courseName && s.gridSlotCodeCompact,
+                              { color },
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {entry.subjectCode}
                           </Text>
-                        )}
-                        {height > 48 && (
-                          <Text style={[s.gridSlotWhen, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {entry.startTime}–{entry.endTime}
-                          </Text>
-                        )}
-                        {slotDetails.room && height > 72 && entry.location && entry.location !== '-' && (
-                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {T('timetableRoom')}: {entry.location}
-                          </Text>
-                        )}
-                        {slotDetails.lecturer && height > 88 && entry.lecturer && entry.lecturer !== '-' && (
-                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {T('timetableLecturer')}: {entry.lecturer}
-                          </Text>
-                        )}
-                        {slotDetails.group && height > 102 && entry.group && (
-                          <Text style={[s.gridSlotMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {T('timetableGroup')}: {entry.group}
-                          </Text>
-                        )}
+                          {hasTitle ? (
+                            <Text
+                              includeFontPadding={false}
+                              style={[s.gridSlotTitle, { color: theme.text }]}
+                              numberOfLines={height > 90 ? 4 : 2}
+                            >
+                              {title}
+                            </Text>
+                          ) : null}
+                          {metaParts ? (
+                            <WeekGridSlotMetaText
+                              parts={metaParts}
+                              theme={theme}
+                              slotHeight={height}
+                            />
+                          ) : null}
+                        </View>
                       </View>
                     );
                   })}
@@ -810,11 +943,17 @@ export default function TimetableScreen() {
                       </View>
                       <View style={s.listCardBody}>
                         <Text style={[s.listCode, { color }]}>{e.subjectCode}</Text>
-                        <Text style={[s.listName, { color: theme.text }]} numberOfLines={2}>{title}</Text>
-                        {slotDetails.room && e.location && e.location !== '-' && (
+                        {slotDetails.courseName ? (
+                          <Text style={[s.listName, { color: theme.text }]} numberOfLines={2}>
+                            {title}
+                          </Text>
+                        ) : null}
+                        {slotDetails.room && (
                           <View style={s.listMeta}>
                             <Text style={[s.listMetaLabel, { color: theme.primary }]}>{T('timetableRoom')}:</Text>
-                            <Text style={[s.listMetaValue, { color: theme.textSecondary }]}>{e.location}</Text>
+                            <Text style={[s.listMetaValue, { color: theme.textSecondary }]}>
+                              {formatRoomDisplay(e.location, T('timetableRoomOnline'))}
+                            </Text>
                           </View>
                         )}
                         {slotDetails.lecturer && e.lecturer && e.lecturer !== '-' && (
@@ -863,9 +1002,9 @@ export default function TimetableScreen() {
               <Text style={[s.entryModalWhen, { color: theme.textSecondary }]}>
                 {selectedEntry.day} · {selectedEntry.startTime}–{selectedEntry.endTime}
               </Text>
-              {selectedEntry.location && selectedEntry.location !== '-' && (
+              {slotDetails.room && (
                 <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
-                  {T('timetableRoom')}: {selectedEntry.location}
+                  {T('timetableRoom')}: {formatRoomDisplay(selectedEntry.location, T('timetableRoomOnline'))}
                 </Text>
               )}
               {selectedEntry.lecturer && selectedEntry.lecturer !== '-' && (
@@ -1100,18 +1239,37 @@ const s = StyleSheet.create({
   },
   gridSlot: {
     position: 'absolute',
-    left: 2,
-    right: 2,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    paddingHorizontal: 5,
-    paddingVertical: 3,
+    left: 1,
+    right: 1,
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     overflow: 'hidden',
   },
-  gridSlotCode: { fontSize: 10, fontWeight: '800', lineHeight: 13 },
-  gridSlotTitle: { fontSize: 9, fontWeight: '600', marginTop: 1, lineHeight: 12 },
-  gridSlotWhen: { fontSize: 8, marginTop: 2 },
-  gridSlotMeta: { fontSize: 7, marginTop: 2, lineHeight: 10 },
+  gridSlotInner: { flex: 1, minHeight: 0, width: '100%' },
+  gridSlotInnerStacked: { justifyContent: 'flex-start', gap: 1 },
+  gridSlotInnerCodeOnly: { justifyContent: 'center' },
+  gridSlotCode: {
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 12,
+    letterSpacing: 0.2,
+  },
+  gridSlotCodeCompact: { fontSize: 12, lineHeight: 14, letterSpacing: 0.35 },
+  gridSlotTitle: { fontSize: 8, fontWeight: '600', lineHeight: 12 },
+  /** Room on its own row(s); lecturer/group below — independent line limits. */
+  gridSlotMetaColumn: { width: '100%', gap: 2 },
+  gridSlotMetaRoom: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
+  },
+  gridSlotMetaLect: {
+    fontSize: 8,
+    lineHeight: 11,
+    fontWeight: '500',
+  },
   gridEmptyCol: {
     position: 'absolute',
     left: 0,
@@ -1176,3 +1334,42 @@ const s = StyleSheet.create({
   },
   connectBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });
+
+function WeekGridSlotMetaText({
+  parts,
+  theme,
+  slotHeight,
+}: {
+  parts: WeekGridMetaParts;
+  theme: { text: string; textSecondary: string };
+  slotHeight: number;
+}) {
+  const { room, lecturer, group } = parts;
+  const { roomLines, lectLines } = weekGridMetaLineCaps(slotHeight);
+  const tail = [lecturer, group].filter(Boolean).join(' · ');
+  if (!room && !tail) return null;
+  return (
+    <View style={s.gridSlotMetaColumn}>
+      {room ? (
+        <Text
+          includeFontPadding={false}
+          style={[s.gridSlotMetaRoom, { color: theme.text }]}
+          numberOfLines={roomLines}
+          ellipsizeMode="tail"
+        >
+          {room}
+        </Text>
+      ) : null}
+      {tail ? (
+        <Text
+          includeFontPadding={false}
+          style={[s.gridSlotMetaLect, { color: theme.textSecondary }]}
+          numberOfLines={lectLines}
+          ellipsizeMode="tail"
+        >
+          {tail}
+        </Text>
+      ) : null}
+    </View>
+  );
+}

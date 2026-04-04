@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   FlatList,
+  Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -76,10 +77,16 @@ export default function TaskDetails() {
   const theme = useTheme();
   const themeId = useThemeId();
   const insets = useSafeAreaInsets();
-  const { filteredFriends, circles, shareTaskWithFriend, shareTaskWithCircle } = useCommunity();
+  const { filteredFriends, circles, shareTaskWithFriend, shareTaskWithCircle, acceptedSharedTasks, shareStreams, toggleShareStream, toggleCircleShareStream } = useCommunity();
   const T = useTranslations(language);
 
-  const task = tasks.find((t) => t.id === id);
+  // First look in own tasks; fall back to a shared task (recipient view)
+  const ownTask = tasks.find((t) => t.id === id);
+  const sharedTaskRecord = !ownTask
+    ? acceptedSharedTasks.find((st) => st.task_id === id)
+    : undefined;
+  const task = ownTask ?? sharedTaskRecord?.task ?? undefined;
+  const isReadOnlySharedTask = !ownTask && !!task;
 
   // ── Local edit state ────────────────────────────────────────────────────────
   const [localTitle, setLocalTitle] = useState('');
@@ -132,6 +139,9 @@ export default function TaskDetails() {
       getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
     }
   }, [task?.id]);
+
+  // For shared tasks viewed by the recipient, use the shared task record id as the task id displayed
+  const sharedBy = sharedTaskRecord?.owner_profile?.name;
 
   const isAlreadyShared = participants.length > 0;
 
@@ -333,8 +343,17 @@ export default function TaskDetails() {
           )}
         </View>
 
+        {/* ── Shared-by banner (recipient view) ─────────────────────────────── */}
+        {isReadOnlySharedTask && sharedBy ? (
+          <View style={s.sharedByBanner}>
+            <Feather name="users" size={14} color="#6366f1" />
+            <Text style={s.sharedByBannerText}>Shared by <Text style={{ fontWeight: '700' }}>{sharedBy}</Text></Text>
+          </View>
+        ) : null}
+
         {/* ── Title (inline edit) ────────────────────────────────────────────── */}
         <View style={[s.titleRow]}>
+
           {editingTitle ? (
             <TextInput
               ref={titleRef}
@@ -351,20 +370,22 @@ export default function TaskDetails() {
           ) : (
             <Text style={[s.title, { color: theme.text }]}>{localTitle}</Text>
           )}
-          <Pressable
-            hitSlop={12}
-            style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => {
-              if (editingTitle) {
-                commitTitle();
-              } else {
-                setEditingTitle(true);
-                setTimeout(() => titleRef.current?.focus(), 50);
-              }
-            }}
-          >
-            <Feather name={editingTitle ? 'check' : 'edit-2'} size={14} color={theme.primary} />
-          </Pressable>
+          {!isReadOnlySharedTask && (
+            <Pressable
+              hitSlop={12}
+              style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => {
+                if (editingTitle) {
+                  commitTitle();
+                } else {
+                  setEditingTitle(true);
+                  setTimeout(() => titleRef.current?.focus(), 50);
+                }
+              }}
+            >
+              <Feather name={editingTitle ? 'check' : 'edit-2'} size={14} color={theme.primary} />
+            </Pressable>
+          )}
         </View>
 
         {/* ── Urgency pill ──────────────────────────────────────────────────── */}
@@ -547,12 +568,14 @@ export default function TaskDetails() {
 
       {/* ── Sticky Bottom Bar ─────────────────────────────────────────────────── */}
       <View style={[s.bottomBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
-        <Pressable
-          onPress={handleDelete}
-          style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.7 }, { backgroundColor: theme.danger + '22', borderColor: theme.danger + '33' }]}
-        >
-          <Feather name="trash-2" size={20} color={theme.danger} />
-        </Pressable>
+        {!isReadOnlySharedTask && (
+          <Pressable
+            onPress={handleDelete}
+            style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.7 }, { backgroundColor: theme.danger + '22', borderColor: theme.danger + '33' }]}
+          >
+            <Feather name="trash-2" size={20} color={theme.danger} />
+          </Pressable>
+        )}
         <Pressable
           style={({ pressed }) => [
             s.mainActionBtn,
@@ -753,43 +776,58 @@ export default function TaskDetails() {
                     const alreadySharedWith = participants.some(
                       (p) => p.recipient_id === friend.id || p.owner_id === friend.id,
                     );
+                    const isAutoShareOn = shareStreams.find(st => st.recipient_id === friend.id)?.enabled ?? false;
                     return (
-                      <Pressable
-                        key={friend.id}
-                        style={({ pressed }) => [
-                          s.sharePersonRow,
-                          { backgroundColor: theme.card, borderColor: theme.border },
-                          pressed && { opacity: 0.7 },
-                          alreadySharedWith && { opacity: 0.5 },
-                        ]}
-                        disabled={alreadySharedWith || isSharing}
-                        onPress={async () => {
-                          setIsSharing(true);
-                          try {
-                            const ok = await shareTaskWithFriend(task.id, friend.id, undefined);
-                            if (ok) {
-                              getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+                      <View key={friend.id}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            s.sharePersonRow,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                            pressed && { opacity: 0.7 },
+                            alreadySharedWith && { opacity: 0.5 },
+                          ]}
+                          disabled={alreadySharedWith || isSharing}
+                          onPress={async () => {
+                            setIsSharing(true);
+                            try {
+                              const ok = await shareTaskWithFriend(task.id, friend.id, undefined);
+                              if (ok) {
+                                getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+                              }
+                            } finally {
+                              setIsSharing(false);
                             }
-                          } finally {
-                            setIsSharing(false);
-                          }
-                        }}
-                      >
-                        <View style={s.shareAvatar}>
-                          <Text style={s.shareAvatarText}>{friend.name.charAt(0).toUpperCase()}</Text>
-                        </View>
-                        <Text style={[s.sharePersonName, { color: theme.text }]}>{friend.name}</Text>
-                        {alreadySharedWith ? (
-                          <View style={s.sharedBadge}>
-                            <Feather name="check" size={12} color="#059669" />
-                            <Text style={s.sharedBadgeText}>Shared</Text>
+                          }}
+                        >
+                          <View style={s.shareAvatar}>
+                            <Text style={s.shareAvatarText}>{friend.name.charAt(0).toUpperCase()}</Text>
                           </View>
-                        ) : isSharing ? (
-                          <ActivityIndicator size="small" color={theme.primary} />
-                        ) : (
-                          <Feather name="send" size={16} color={theme.primary} />
-                        )}
-                      </Pressable>
+                          <Text style={[s.sharePersonName, { color: theme.text }]}>{friend.name}</Text>
+                          {alreadySharedWith ? (
+                            <View style={s.sharedBadge}>
+                              <Feather name="check" size={12} color="#059669" />
+                              <Text style={s.sharedBadgeText}>Shared</Text>
+                            </View>
+                          ) : isSharing ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                          ) : (
+                            <Feather name="send" size={16} color={theme.primary} />
+                          )}
+                        </Pressable>
+                        {/* Auto-share toggle */}
+                        <View style={s.autoShareInline}>
+                          <Feather name="refresh-cw" size={12} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
+                          <Text style={[s.autoShareInlineText, { color: isAutoShareOn ? '#10b981' : theme.textSecondary }]}>
+                            Auto-share new tasks
+                          </Text>
+                          <Switch
+                            value={isAutoShareOn}
+                            onValueChange={(val) => toggleShareStream(friend.id, val)}
+                            trackColor={{ false: theme.border, true: '#10b981' }}
+                            style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                          />
+                        </View>
+                      </View>
                     );
                   })}
                 </>
@@ -799,39 +837,56 @@ export default function TaskDetails() {
               {circles.length > 0 && (
                 <>
                   <Text style={[s.shareGroupLabel, { color: theme.textSecondary, marginTop: 12 }]}>CIRCLES</Text>
-                  {circles.map((circle) => (
-                    <Pressable
-                      key={circle.id}
-                      style={({ pressed }) => [
-                        s.sharePersonRow,
-                        { backgroundColor: theme.card, borderColor: theme.border },
-                        pressed && { opacity: 0.7 },
-                      ]}
-                      disabled={isSharing}
-                      onPress={async () => {
-                        setIsSharing(true);
-                        try {
-                          await shareTaskWithCircle(task.id, circle.id, undefined);
-                          getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
-                        } finally {
-                          setIsSharing(false);
-                        }
-                      }}
-                    >
-                      <View style={s.shareAvatar}>
-                        <Text style={s.shareAvatarText}>{circle.emoji || '●'}</Text>
+                  {circles.map((circle) => {
+                    const isAutoShareOn = shareStreams.find(st => st.circle_id === circle.id)?.enabled ?? false;
+                    return (
+                      <View key={circle.id}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            s.sharePersonRow,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                            pressed && { opacity: 0.7 },
+                          ]}
+                          disabled={isSharing}
+                          onPress={async () => {
+                            setIsSharing(true);
+                            try {
+                              await shareTaskWithCircle(task.id, circle.id, undefined);
+                              getSharedTaskParticipants(task.id).then(setParticipants).catch(() => {});
+                            } finally {
+                              setIsSharing(false);
+                            }
+                          }}
+                        >
+                          <View style={s.shareAvatar}>
+                            <Text style={s.shareAvatarText}>{circle.emoji || '●'}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.sharePersonName, { color: theme.text }]}>{circle.name}</Text>
+                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>{circle.member_count || 0} members</Text>
+                          </View>
+                          {isSharing ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                          ) : (
+                            <Feather name="send" size={16} color={theme.primary} />
+                          )}
+                        </Pressable>
+                        {/* Auto-share toggle for circle */}
+                        <View style={s.autoShareInline}>
+                          <Feather name="refresh-cw" size={12} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
+                          <Text style={[s.autoShareInlineText, { color: isAutoShareOn ? '#10b981' : theme.textSecondary }]}>
+                            Auto-share new tasks
+                          </Text>
+                          <Switch
+                            value={isAutoShareOn}
+                            onValueChange={(val) => toggleCircleShareStream(circle.id, val)}
+                            trackColor={{ false: theme.border, true: '#10b981' }}
+                            style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                          />
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.sharePersonName, { color: theme.text }]}>{circle.name}</Text>
-                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>{circle.member_count || 0} members</Text>
-                      </View>
-                      {isSharing ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <Feather name="send" size={16} color={theme.primary} />
-                      )}
-                    </Pressable>
-                  ))}
+                    );
+                  })}
                 </>
               )}
 
@@ -920,6 +975,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20,
   },
   needsDateBannerText: { flex: 1, fontSize: 13, color: '#92400e', fontWeight: '500', lineHeight: 18 },
+  sharedByBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(99,102,241,0.07)', borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.18)', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16,
+  },
+  sharedByBannerText: { flex: 1, fontSize: 13, color: '#4f46e5', fontWeight: '500' },
 
   sectionLabel: {
     fontSize: 12, fontWeight: '700', letterSpacing: 0.5,
@@ -1029,5 +1091,14 @@ const s = StyleSheet.create({
   iosTimePickerWrap: { height: 216, width: '100%', overflow: 'hidden' },
   iosTimePicker: { height: 216, width: '100%' },
   timeDoneBtn: { marginTop: 12, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+
+  // Auto-share inline toggle (inside share modal per friend)
+  autoShareInline: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginLeft: 52, marginRight: 14, marginTop: -4, marginBottom: 8,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 10, backgroundColor: 'rgba(16,185,129,0.06)',
+  },
+  autoShareInlineText: { flex: 1, fontSize: 12, fontWeight: '600' },
 
 });

@@ -241,3 +241,13 @@ export interface SharedTask {
   /** Profile of the recipient */
   recipient_profile?: { id: string; name: string; avatar_url?: string };
 }
+
+export interface TaskShareStream {
+  id: string;
+  owner_id: string;
+  recipient_id?: string | null;
+  circle_id?: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}

@@ -1,5 +1,5 @@
-import { FunctionsHttpError } from '@supabase/functions-js';
 import { supabase } from '@/src/lib/supabase';
+import Constants from 'expo-constants';
 
 export type DeleteAccountResult =
   | { ok: true }
@@ -27,43 +27,40 @@ export async function invokeDeleteAccount(): Promise<DeleteAccountResult> {
     }
   }
 
-  const accessToken = session.access_token;
+  const accessToken = session!.access_token;
+  const config = Constants.expoConfig?.extra || {};
+  const supabaseUrl = config.supabaseUrl as string;
+  const anonKey = config.supabaseAnonKey as string;
 
-  const { data, error } = await supabase.functions.invoke('delete_account', {
-    method: 'POST',
-    body: {},
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const body = data as { ok?: boolean; error?: { message?: string; code?: string } } | null;
-
-  if (!error) {
-    if (body && typeof body === 'object' && body.ok === true) return { ok: true };
-    if (body?.error?.message) {
-      return { ok: false, message: body.error.message, code: body.error.code };
-    }
-    return { ok: true };
+  if (!supabaseUrl || !anonKey) {
+    return { ok: false, message: 'Missing Supabase URL/Key config', code: 'CONFIG_ERR' };
   }
 
-  // Non-2xx: body may still be in `data` for some SDK paths
-  if (body?.error?.message) {
-    return { ok: false, message: body.error.message, code: body.error.code };
-  }
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/delete_account`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: anonKey,
+        'Content-Type': 'application/json',
+      },
+    });
 
-  if (error instanceof FunctionsHttpError) {
-    const res = error.context as Response;
     const rawText = await res.text();
-    try {
-      const parsed = JSON.parse(rawText) as { error?: { message?: string; code?: string } };
-      const msg = parsed?.error?.message || rawText.slice(0, 200) || `HTTP ${res.status}`;
-      return { ok: false, message: msg, code: parsed?.error?.code };
-    } catch {
-      return { ok: false, message: rawText.slice(0, 200) || `HTTP ${res.status}` };
-    }
-  }
+    let body: any = null;
+    try { body = JSON.parse(rawText); } catch (e) {}
 
-  const msg = error instanceof Error ? error.message : 'Edge function request failed';
-  return { ok: false, message: msg, code: 'INVOKE_FAILED' };
+    if (res.ok) {
+      if (body?.ok === true) return { ok: true };
+      if (body?.error?.message) {
+        return { ok: false, message: body.error.message, code: body.error.code };
+      }
+      return { ok: true };
+    } else {
+      const msg = body?.error?.message || rawText.slice(0, 200) || `HTTP ${res.status}`;
+      return { ok: false, message: msg, code: body?.error?.code };
+    }
+  } catch (e: any) {
+    return { ok: false, message: e.message || 'Edge function request failed', code: 'INVOKE_FAILED' };
+  }
 }

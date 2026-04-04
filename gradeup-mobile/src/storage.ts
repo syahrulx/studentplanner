@@ -432,6 +432,13 @@ export async function setAutoDeletePastTasks(enabled: boolean): Promise<void> {
 
 /** Timetable week grid / list: optional lines per class slot */
 export type TimetableSlotDetailsVisibility = {
+  /** When true, show full course name under the code; when false, code only (compact). Default false. */
+  courseName: boolean;
+  /**
+   * When course name is off: if true, show all 7 day columns and scroll horizontally.
+   * If false, fit first 5 days of the week on screen (no horizontal scroll).
+   */
+  scrollAllDaysInCompact: boolean;
   room: boolean;
   lecturer: boolean;
   group: boolean;
@@ -440,6 +447,8 @@ export type TimetableSlotDetailsVisibility = {
 const KEY_TIMETABLE_SLOT_DETAILS = 'timetableSlotDetails';
 
 const DEFAULT_TIMETABLE_SLOT_DETAILS: TimetableSlotDetailsVisibility = {
+  courseName: false,
+  scrollAllDaysInCompact: false,
   room: true,
   lecturer: true,
   group: true,
@@ -451,6 +460,14 @@ export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlot
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TimetableSlotDetailsVisibility>;
       return {
+        courseName:
+          typeof parsed.courseName === 'boolean'
+            ? parsed.courseName
+            : DEFAULT_TIMETABLE_SLOT_DETAILS.courseName,
+        scrollAllDaysInCompact:
+          typeof parsed.scrollAllDaysInCompact === 'boolean'
+            ? parsed.scrollAllDaysInCompact
+            : DEFAULT_TIMETABLE_SLOT_DETAILS.scrollAllDaysInCompact,
         room: typeof parsed.room === 'boolean' ? parsed.room : DEFAULT_TIMETABLE_SLOT_DETAILS.room,
         lecturer: typeof parsed.lecturer === 'boolean' ? parsed.lecturer : DEFAULT_TIMETABLE_SLOT_DETAILS.lecturer,
         group: typeof parsed.group === 'boolean' ? parsed.group : DEFAULT_TIMETABLE_SLOT_DETAILS.group,

@@ -1,5 +1,16 @@
-import { useMemo, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Image, Alert } from 'react-native';
+import { useMemo, useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Image,
+  Alert,
+  Platform,
+  useWindowDimensions,
+  ActivityIndicator,
+} from 'react-native';
+import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -9,9 +20,17 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
-import { dueDateToTeachingWeekRaw, peakWeekFromTaskCounts, taskCountsByOpenDueWeek } from '@/src/lib/academicWeek';
+import {
+  dueDateToTeachingWeekRaw,
+  peakWeekFromTaskCounts,
+  taskCountsByOpenDueWeek,
+  teachingWeekNumberForDate,
+} from '@/src/lib/academicWeek';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
+import { Avatar } from '@/components/Avatar';
+import { useFocusEffect } from '@react-navigation/native';
+const DASHBOARD_LIST = [{ key: 'home' as const }];
 
 /** Home header: darker base + stronger waves (only these themes; blush/emerald unchanged). */
 const HEADER_VISUAL_BOOST_IDS: ReadonlySet<ThemeId> = new Set(['light', 'dark', 'midnight']);
@@ -240,12 +259,21 @@ function createDashboardStyles(theme: ThemePalette) {
       borderBottomRightRadius: 28,
     },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 1 },
+    /** Centered spinner only while pull-refresh runs (no copy). */
+    homeRefreshOverlayCenter: {
+      ...StyleSheet.absoluteFillObject,
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 20,
+    },
     greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
     dot: { width: 6, height: 6, borderRadius: 3 },
     subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
     headerIconBtn: { padding: 4 },
+    notifBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#ef4444', minWidth: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+    notifBadgeText: { color: '#fff', fontSize: 8, fontWeight: '800' },
 
     pressed: { opacity: 0.96 },
 
@@ -517,8 +545,15 @@ export default function Dashboard() {
     language,
     pendingClassroomTasks,
     clearPendingClassroomTasks,
+    refreshRemoteData,
   } = useApp();
-  const { friendsWithStatus } = useCommunity();
+  const {
+    friendsWithStatus,
+    communityBadgeCount,
+    acceptedSharedTasks,
+    userId: communityUserId,
+    refreshAll: refreshCommunityAll,
+  } = useCommunity();
   const theme = useTheme();
   const themeId = useThemeId();
   const styles = useMemo(() => createDashboardStyles(theme), [theme]);
@@ -566,12 +601,6 @@ export default function Dashboard() {
       : themeId === 'dark' && headerVisualBoost
         ? theme.text
         : theme.textInverse;
-  const headerOnPrimaryMuted =
-    themeId === 'light' || themeId === 'midnight'
-      ? hexToRgba('#ffffff', 0.88)
-      : themeId === 'dark' && headerVisualBoost
-        ? hexToRgba(theme.text, 0.88)
-        : hexToRgba(theme.textInverse, 0.88);
   const T = useTranslations(language);
 
   useEffect(() => {
@@ -607,24 +636,78 @@ export default function Dashboard() {
     );
   }, [pendingClassroomTasks.length]);
   const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
+  const allTasks = useMemo(() => {
+    const ownTaskIds = new Set(tasks.map(t => t.id));
+    const sharedTasks = (acceptedSharedTasks || [])
+      .filter(st => st.recipient_id === communityUserId && st.task && !ownTaskIds.has(st.task_id))
+      .map(st => ({
+        ...st.task!,
+        isDone: st.recipient_completed,
+        isSharedTask: true,
+        sharedBy: st.owner_profile?.name || 'Friend',
+        sharedByAvatar: st.owner_profile?.avatar_url,
+      }));
+    return [...tasks, ...sharedTasks];
+  }, [tasks, acceptedSharedTasks, communityUserId]);
+
   const maxTaskWeek = useMemo(() => {
     if (!academicCalendar) return baseTotalWeeks;
     let maxW = baseTotalWeeks;
-    for (const t of tasks) {
+    for (const t of allTasks) {
       const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
       if (typeof w === 'number' && w > maxW) maxW = w;
     }
     return maxW;
-  }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
+  }, [allTasks, academicCalendar, user.startDate, baseTotalWeeks]);
   const effectiveCalendar = useMemo(
     () => (academicCalendar ? { ...academicCalendar, totalWeeks: Math.max(baseTotalWeeks, maxTaskWeek) } : academicCalendar),
     [academicCalendar, baseTotalWeeks, maxTaskWeek],
   );
   const totalWeeks = effectiveCalendar?.totalWeeks ?? baseTotalWeeks;
+  /** Same teaching-week index as Planner (HEA / UITM periods + fallbacks); not only profile currentWeek */
+  const [todayISO, setTodayISO] = useState(() => getTodayISO());
+  useFocusEffect(
+    useCallback(() => {
+      setTodayISO(getTodayISO());
+    }, []),
+  );
+  const [refreshingHome, setRefreshingHome] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
+  const onRefreshHome = useCallback(async () => {
+    setRefreshingHome(true);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const started = Date.now();
+    try {
+      setTodayISO(getTodayISO());
+      await Promise.all([
+        refreshRemoteData(),
+        refreshCommunityAll().catch(() => {}),
+      ]);
+    } catch (e) {
+      if (__DEV__) console.warn('[Home] pull refresh failed', e);
+    } finally {
+      const elapsed = Date.now() - started;
+      if (elapsed < 240) {
+        await new Promise((r) => setTimeout(r, 240 - elapsed));
+      }
+      setRefreshingHome(false);
+    }
+  }, [refreshRemoteData, refreshCommunityAll]);
+  const homeTeachingWeek = useMemo(
+    () =>
+      teachingWeekNumberForDate(
+        todayISO,
+        effectiveCalendar,
+        user.startDate,
+        totalWeeks,
+        user.currentWeek ?? 1,
+      ),
+    [todayISO, effectiveCalendar, user.startDate, totalWeeks, user.currentWeek],
+  );
   const semesterPhase = user.semesterPhase ?? 'teaching';
   const focusTask = useMemo(
-    () => selectTodaysFocusTask(tasks, pinnedTaskIds),
-    [tasks, pinnedTaskIds]
+    () => selectTodaysFocusTask(allTasks, pinnedTaskIds),
+    [allTasks, pinnedTaskIds]
   );
 
   const studyingFriends = useMemo(
@@ -633,8 +716,8 @@ export default function Dashboard() {
   );
 
   const taskWeekCounts = useMemo(
-    () => taskCountsByOpenDueWeek(tasks, effectiveCalendar, user.startDate),
-    [tasks, effectiveCalendar, user.startDate],
+    () => taskCountsByOpenDueWeek(allTasks, effectiveCalendar, user.startDate),
+    [allTasks, effectiveCalendar, user.startDate],
   );
   const { week: taskPeakWeek, max: taskPeakMax } = useMemo(
     () => peakWeekFromTaskCounts(taskWeekCounts),
@@ -645,28 +728,28 @@ export default function Dashboard() {
     if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
     if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
     if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
-    return `${T('week')} ${user.currentWeek}`;
-  }, [semesterPhase, user.isBreak, user.currentWeek, T]);
+    return `${T('week')} ${homeTeachingWeek}`;
+  }, [semesterPhase, user.isBreak, homeTeachingWeek, T]);
 
   const pulseMainTitle = useMemo(() => {
     if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
     if (semesterPhase === 'before_start') return T('notInSemester');
     if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
-    return `${T('week')} ${user.currentWeek}`;
-  }, [semesterPhase, user.isBreak, user.currentWeek, T]);
+    return `${T('week')} ${homeTeachingWeek}`;
+  }, [semesterPhase, user.isBreak, homeTeachingWeek, T]);
 
   const pulseBadgeText = useMemo(() => {
     if (semesterPhase === 'teaching' && !user.isBreak) {
       if (taskPeakMax === 0 || taskPeakWeek < 1) return T('tasksPulseNoTasks');
-      if (taskPeakWeek === user.currentWeek) {
-        return `${T('week')} ${user.currentWeek} · ${T('peakAlert')}`;
+      if (taskPeakWeek === homeTeachingWeek) {
+        return `${T('week')} ${homeTeachingWeek} · ${T('peakAlert')}`;
       }
       return `W${taskPeakWeek} ${T('peakAlert')}`;
     }
     if (semesterPhase === 'break_after' || user.isBreak) return T('betweenSemestersBadge');
     if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
     return T('semesterNotConfigured');
-  }, [semesterPhase, user.isBreak, user.currentWeek, taskPeakWeek, taskPeakMax, T]);
+  }, [semesterPhase, user.isBreak, homeTeachingWeek, taskPeakWeek, taskPeakMax, T]);
 
   const now = new Date();
   const todayStr = getTodayISO();
@@ -674,7 +757,7 @@ export default function Dashboard() {
   in30Days.setDate(in30Days.getDate() + 30);
   const in30Str = toLocalISO(in30Days);
 
-  const deadlineItems = tasks
+  const deadlineItems = allTasks
     .filter((t) => !t.isDone && t.dueDate >= todayStr && t.dueDate <= in30Str)
     .map((t) => ({
       taskId: t.id,
@@ -684,6 +767,9 @@ export default function Dashboard() {
       room: T('onlineSubmission'),
       type: 'DEADLINE' as const,
       name: t.title,
+      isSharedTask: (t as any).isSharedTask,
+      sharedBy: (t as any).sharedBy,
+      sharedByAvatar: (t as any).sharedByAvatar,
     }));
 
   const studyItems: FocusStudyItem[] = [];
@@ -763,6 +849,9 @@ export default function Dashboard() {
           focusTask.reason === 'pinned'
             ? `${T('subject')} • ${focusTask.task.courseId}`
             : `${focusTask.task.type} • ${focusTask.task.courseId}`,
+        isSharedTask: (focusTask.task as any).isSharedTask,
+        sharedBy: (focusTask.task as any).sharedBy,
+        sharedByAvatar: (focusTask.task as any).sharedByAvatar,
         onPress: () => router.push({ pathname: '/task-details', params: { id: focusTask.task.id } } as any),
       };
     }
@@ -793,8 +882,39 @@ export default function Dashboard() {
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
+  /** iOS tint + Android ring: use on-header contrast (navy-on-navy was invisible). */
+  const refreshSpinnerColor = headerOnPrimary;
+  const refreshGlassBg = hexToRgba(
+    headerOnPrimary.startsWith('#') && headerOnPrimary.length >= 7 ? headerOnPrimary : '#ffffff',
+    0.13,
+  );
+
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.background }]} contentContainerStyle={styles.content}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <FlatList
+        data={DASHBOARD_LIST}
+        keyExtractor={(row) => row.key}
+        style={styles.container}
+        contentContainerStyle={[styles.content, { flexGrow: 1, minHeight: windowHeight + 1 }]}
+        showsVerticalScrollIndicator={false}
+        bounces
+        keyboardShouldPersistTaps="handled"
+        removeClippedSubviews={false}
+        {...(Platform.OS === 'android'
+          ? ({ overScrollMode: 'always' as const, nestedScrollEnabled: true } as const)
+          : { alwaysBounceVertical: true })}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshingHome}
+            onRefresh={onRefreshHome}
+            tintColor={refreshSpinnerColor}
+            colors={[refreshSpinnerColor]}
+            progressBackgroundColor={Platform.OS === 'android' ? refreshGlassBg : undefined}
+            progressViewOffset={0}
+          />
+        }
+        renderItem={() => (
+          <>
       {/* Header: greeting + week + profile + week peak alert (white box) */}
       <View
         style={[
@@ -834,14 +954,21 @@ export default function Dashboard() {
         <View style={styles.header}>
           <View>
             <Text style={[styles.greeting, { color: headerOnPrimary }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
-            <View style={styles.row}>
-              <View style={[styles.dot, { backgroundColor: theme.warning }]} />
-              <Text style={[styles.subtitle, { color: headerOnPrimaryMuted }]}>
-                {headerSemesterStatus}
-              </Text>
-            </View>
           </View>
           <View style={styles.headerRight}>
+            <Pressable
+              onPress={() => router.push('/community/notifications' as any)}
+              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Feather name="bell" size={22} color={headerOnPrimary} />
+              {communityBadgeCount > 0 && (
+                <View style={[styles.notifBadge, { borderColor: headerPrimary, borderWidth: 1 }]}>
+                  <Text style={styles.notifBadgeText}>
+                    {communityBadgeCount > 99 ? '99+' : communityBadgeCount}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
             <Pressable
               onPress={() => router.push('/profile' as any)}
               style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
@@ -895,10 +1022,10 @@ export default function Dashboard() {
               const weekNum = i + 1;
               let dotStyles: object[] = [styles.peakAlertDot];
               if (semesterPhase === 'teaching' && !user.isBreak) {
-                const isCurrent = weekNum === user.currentWeek;
+                const isCurrent = weekNum === homeTeachingWeek;
                 const isTaskPeak = taskPeakMax > 0 && taskPeakWeek >= 1 && weekNum === taskPeakWeek;
                 if (isCurrent) dotStyles.push(styles.peakAlertDotCurrent);
-                else if (weekNum < user.currentWeek) dotStyles.push(styles.peakAlertDotPast);
+                else if (weekNum < homeTeachingWeek) dotStyles.push(styles.peakAlertDotPast);
                 if (isTaskPeak && !isCurrent) dotStyles.push(styles.peakAlertDotPeak);
               } else if (semesterPhase === 'break_after' || user.isBreak) {
                 dotStyles.push(styles.peakAlertDotPast);
@@ -945,6 +1072,9 @@ export default function Dashboard() {
                       {focusCard.code}
                     </Text>
                   </View>
+                  {focusCard.isSharedTask ? (
+                    <Avatar name={focusCard.sharedBy} avatarUrl={focusCard.sharedByAvatar} size={18} />
+                  ) : null}
                   <View
                     style={[
                       styles.focusStatusPill,
@@ -1092,6 +1222,9 @@ export default function Dashboard() {
                         {item.name}
                       </Text>
                       <View style={styles.upcomingMetaRow}>
+                        {('isSharedTask' in item && item.isSharedTask) ? (
+                          <Avatar name={(item as any).sharedBy} avatarUrl={(item as any).sharedByAvatar} size={18} />
+                        ) : null}
                         <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
                         <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.code}</Text>
                         <Text style={styles.upcomingMetaDivider}>•</Text>
@@ -1113,6 +1246,14 @@ export default function Dashboard() {
       </View>
 
       <View style={{ height: 48 }} />
-    </ScrollView>
+          </>
+        )}
+      />
+      {refreshingHome ? (
+        <View style={styles.homeRefreshOverlayCenter} pointerEvents="none">
+          <ActivityIndicator size="large" color={theme.primary} />
+        </View>
+      ) : null}
+    </View>
   );
 }

@@ -58,11 +58,22 @@ import * as profileDb from '../lib/profileDb';
 import * as academicCalendarDb from '../lib/academicCalendarDb';
 import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
-import { getAcceptedSharedTasks, updateSharedTaskCompletion } from '../lib/communityApi';
+import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStreams } from '../lib/communityApi';
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
+import { buildHomeWidgetProps } from '../lib/homeWidgetProps';
+import { syncHomeScreenWidget } from '../homeWidgetSync';
+
+function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
+  const u = session?.user;
+  if (!u) return '';
+  const meta = u.user_metadata ?? {};
+  const metaName = (meta.name || meta.full_name || meta.display_name) as string | undefined;
+  const emailName = typeof u.email === 'string' ? u.email.split('@')[0] : '';
+  return (String(metaName || '').trim() || emailName || '').trim();
+}
 
 type AppState = {
   user: UserProfile;
@@ -176,6 +187,8 @@ type AppState = {
   ) => Promise<void>;
   /** Wipes timetable, subjects, tasks, academic calendar, study times, SOW imports (DB + storage). Triple-confirm in UI. */
   clearSemesterData: () => Promise<void>;
+  /** Re-fetch profile, tasks, calendar, study settings, courses, timetable from Supabase (same as cold start). */
+  refreshRemoteData: () => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -258,6 +271,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const remoteUserIdRef = useRef<string | null>(null);
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
+  const academicCalendarRef = useRef<AcademicCalendar | null>(null);
+  const loadRemoteDataRef = useRef<(uid: string, authFallbackName?: string) => Promise<void>>(async () => {});
+  const homeWidgetInputsRef = useRef({
+    tasks,
+    courses,
+    timetable,
+    pinnedTaskIds,
+    userName: user.name,
+  });
 
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
@@ -301,6 +323,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     });
   }, [academicCalendar?.startDate, academicCalendar?.totalWeeks, academicCalendar?.periods]);
+
+  useEffect(() => {
+    academicCalendarRef.current = academicCalendar;
+  }, [academicCalendar]);
+
+  /** Recompute teaching week when the app returns to foreground (e.g. new calendar day). */
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const ac = academicCalendarRef.current;
+      setUserState((prev) => {
+        const computedTotal =
+          ac?.periods && ac.periods.length > 0
+            ? computeCountedWeeksFromPeriods(ac.periods as any) ?? ac.totalWeeks
+            : ac?.totalWeeks;
+        const totalW = computedTotal ?? 14;
+        const nextStart = (ac?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
+        const startFor = (ac?.startDate ?? prev.startDate ?? '').trim();
+        const progress =
+          ac?.periods && ac.periods.length > 0
+            ? getAcademicProgressFromCalendar(ac, prev.startDate)
+            : getAcademicProgress(startFor, totalW);
+        if (
+          (prev.startDate ?? '').trim().slice(0, 10) === nextStart &&
+          prev.currentWeek === progress.week &&
+          prev.isBreak === progress.isBreak &&
+          prev.semesterPhase === progress.semesterPhase
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          startDate: ac?.startDate ?? prev.startDate,
+          currentWeek: progress.week,
+          isBreak: progress.isBreak,
+          semesterPhase: progress.semesterPhase,
+        };
+      });
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -356,24 +419,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (stored && stored.length > 0) setCourses(stored);
     });
 
-    const getAuthFallbackName = (session: any): string => {
-      const metaName =
-        session?.user?.user_metadata?.name ||
-        session?.user?.user_metadata?.full_name ||
-        session?.user?.user_metadata?.display_name;
-      const emailName = typeof session?.user?.email === 'string'
-        ? session.user.email.split('@')[0]
-        : '';
-      return (metaName || emailName || '').trim();
-    };
-
     let remoteLoadGeneration = 0;
 
     // Helper to load all remote data for a given user id (including profile, calendar, subjects)
     const loadRemoteData = (uid: string, authFallbackName?: string) => {
       const gen = ++remoteLoadGeneration;
       remoteUserIdRef.current = uid;
-      Promise.allSettled([
+      return Promise.allSettled([
         studyDb.getNotes(uid),
         studyDb.getNoteFolders(uid),
         studyDb.getFlashcardFolders(uid),
@@ -622,13 +674,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
+    loadRemoteDataRef.current = loadRemoteData;
+
     requestNotificationPermissions().catch(() => {});
 
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id;
       if (!uid) return;
-      loadRemoteData(uid, getAuthFallbackName(session));
+      void loadRemoteData(uid, getAuthFallbackName(session));
     });
 
     // Load remote data whenever auth state changes.
@@ -665,13 +719,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
-      loadRemoteData(uid, getAuthFallbackName(session));
+      void loadRemoteData(uid, getAuthFallbackName(session));
     });
 
     return () => {
       remoteLoadGeneration += 1;
       subscription.unsubscribe();
     };
+  }, []);
+
+  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name };
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      syncHomeScreenWidget(
+        buildHomeWidgetProps({
+          tasks,
+          courses,
+          timetable,
+          pinnedTaskIds,
+          userName: user.name,
+          signedIn: Boolean(session?.user?.id),
+        }),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name]);
+
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const r = homeWidgetInputsRef.current;
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        syncHomeScreenWidget(
+          buildHomeWidgetProps({
+            tasks: r.tasks,
+            courses: r.courses,
+            timetable: r.timetable,
+            pinnedTaskIds: r.pinnedTaskIds,
+            userName: r.userName,
+            signedIn: Boolean(session?.user?.id),
+          }),
+        );
+      });
+    });
+    return () => sub.remove();
+  }, []);
+
+  const refreshRemoteData = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await loadRemoteDataRef.current(uid, getAuthFallbackName(session));
   }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
@@ -836,7 +939,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const uid = session?.user?.id;
         if (!uid) return;
         taskDb.upsertTask(uid, task).then(({ error }) => {
-          if (error) console.warn('[GradeUp] Failed to sync task to Supabase:', error.message);
+          if (error) {
+            console.warn('[GradeUp] Failed to sync task to Supabase:', error.message);
+          } else {
+            syncNewTaskToStreams(task.id, uid).catch(err => {
+              console.warn('[GradeUp] Failed to auto-sync task to streams:', err);
+            });
+          }
         });
       });
     }
@@ -1400,6 +1509,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAutoDeletePastTasks,
     updateTimetableEntry,
     clearSemesterData,
+    refreshRemoteData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

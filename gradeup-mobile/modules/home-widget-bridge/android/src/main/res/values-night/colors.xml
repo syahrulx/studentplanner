@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="gradeup_widget_bg">#FF1C1C1E</color>
+  <color name="gradeup_widget_text_primary">#FFF5F5F5</color>
+  <color name="gradeup_widget_text_secondary">#FFE5E5EA</color>
+  <color name="gradeup_widget_text_tertiary">#FFAEAEB2</color>
+</resources>

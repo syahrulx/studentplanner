@@ -117,6 +117,40 @@ export function dueDateToTeachingWeekRaw(
 }
 
 /**
+ * Single source of truth for “which teaching week is this date?” — matches planner
+ * `getWeekNumberForDate` / HEA period rules (UITM and other configured calendars).
+ * Use this on the home dashboard so “Week N” stays aligned with the calendar strip.
+ */
+export function teachingWeekNumberForDate(
+  dateISO: string,
+  calendar: AcademicCalendar | null | undefined,
+  profileStartFallback: string | null | undefined,
+  totalWeeksCap: number,
+  fallbackWeek = 1,
+): number {
+  const trimmed = (dateISO || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return fallbackWeek;
+
+  if (calendar?.periods && Array.isArray(calendar.periods) && calendar.periods.length > 0) {
+    const w = dueDateToTeachingWeekRaw(trimmed, calendar, profileStartFallback);
+    if (typeof w === 'number' && w > 0) return Math.min(w, Math.max(1, totalWeeksCap));
+  }
+
+  const semesterStartISO = (calendar?.startDate ?? profileStartFallback ?? '').trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
+    const raw = new Date(`${semesterStartISO}T00:00:00`);
+    const dow = raw.getDay();
+    const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() - dow);
+    const current = new Date(`${trimmed}T00:00:00`);
+    const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
+    const rawWeek = Math.floor(diffDays / 7) + 1;
+    return Math.min(Math.max(rawWeek, 1), Math.max(1, totalWeeksCap));
+  }
+
+  return fallbackWeek > 0 ? fallbackWeek : 1;
+}
+
+/**
  * Teaching week for pulse / stress / workload — **due date only**, exactly the same formula as the
  * planner week strip. `suggestedWeek` is intentionally ignored so the graph always matches what
  * the user sees in the planner.

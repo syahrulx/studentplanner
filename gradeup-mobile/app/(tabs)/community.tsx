@@ -18,6 +18,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 import { WebView } from 'react-native-webview';
+import { Avatar } from '@/components/Avatar';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -82,39 +83,6 @@ function getInitials(name?: string): string {
 }
 
 // =============================================================================
-// AVATAR COMPONENT
-// =============================================================================
-
-function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: string; size?: number }) {
-  const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
-  const colorIdx = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length;
-
-  if (avatarUrl) {
-    return (
-      <Image
-        source={{ uri: avatarUrl }}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
-      />
-    );
-  }
-
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: colors[colorIdx],
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.38 }}>
-        {getInitials(name)}
-      </Text>
-    </View>
-  );
-}
 
 
 
@@ -519,19 +487,7 @@ export default function CommunityMap() {
           </Pressable>
         </View>
 
-        <Pressable
-          onPress={() => router.push('/community/notifications' as any)}
-          style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="bell" size={22} color={theme.text} />
-          {communityBadgeCount > 0 && (
-            <View style={styles.notifBadge}>
-              <Text style={styles.notifBadgeText}>
-                {communityBadgeCount > 99 ? '99+' : communityBadgeCount}
-              </Text>
-            </View>
-          )}
-        </Pressable>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* ─── CIRCLE SELECTOR DROPDOWN ─── */}
@@ -848,7 +804,7 @@ export default function CommunityMap() {
         </View>
 
         <View style={styles.bottomSheetTabs}>
-          <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>People</Text>
+          <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>Friends</Text>
           <View style={styles.bottomSheetActions}>
             <Pressable
               style={({ pressed }) => [
@@ -877,7 +833,7 @@ export default function CommunityMap() {
           </View>
         </View>
 
-        {/* People list */}
+        {/* Friends list */}
         <ScrollView
           style={styles.peopleList}
           contentContainerStyle={styles.peopleListContent}
@@ -1763,7 +1719,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // People list
+  // Friends list
   peopleList: { flex: 1 },
   peopleListContent: { paddingHorizontal: 16 },
   personRow: {

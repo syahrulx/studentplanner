@@ -28,6 +28,7 @@ try {
 
 const LOCATION_TASK_NAME = 'community-background-location';
 const REFRESH_INTERVAL = 30000; // 30 seconds
+const SHARED_TASKS_REFRESH_INTERVAL = 120000; // 2 minutes (shared tasks have realtime; this is a safety fallback)
 
 // =============================================================================
 // CONTEXT TYPE
@@ -74,6 +75,12 @@ interface CommunityState {
   /** Deletes only the shared_tasks row for you; does not delete the owner's task. */
   removeSharedTaskLink: (sharedTaskId: string) => Promise<boolean>;
 
+  // Auto-share tasks streams
+  shareStreams: import('../types').TaskShareStream[];
+  refreshShareStreams: () => Promise<void>;
+  toggleShareStream: (friendId: string, enabled: boolean) => Promise<void>;
+  toggleCircleShareStream: (circleId: string, enabled: boolean) => Promise<void>;
+
   // Circle filtering
   selectedCircleId: string | null;
   setSelectedCircleId: (id: string | null) => void;
@@ -91,6 +98,8 @@ interface CommunityState {
   connectSpotify: () => Promise<boolean>;
   disconnectSpotify: () => Promise<void>;
   refreshMyMusic: () => Promise<void>;
+  /** One-shot refresh of friends, circles, shared tasks, activity, etc. */
+  refreshAll: () => Promise<void>;
 
   // Loading
   loading: boolean;
@@ -155,11 +164,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [incomingSharedTasks, setIncomingSharedTasks] = useState<SharedTask[]>([]);
   const [acceptedSharedTasks, setAcceptedSharedTasks] = useState<SharedTask[]>([]);
 
+  // Task Share Streams
+  const [shareStreams, setShareStreams] = useState<import('../types').TaskShareStream[]>([]);
+
   // Circle filtering
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [circleMemberIds, setCircleMemberIds] = useState<string[]>([]);
 
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sharedTasksTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<any>(null);
 
   // Filtered friends based on selected circle
@@ -276,6 +289,36 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  const refreshShareStreams = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const data = await communityApi.getTaskShareStreams().catch(() => []);
+      setShareStreams(data);
+    } catch (e) {
+      // Ignore
+    }
+  }, [userId]);
+
+  const toggleShareStream = useCallback(async (friendId: string, enabled: boolean) => {
+    if (!userId) return;
+    try {
+      await communityApi.setTaskShareStreamEnabled(friendId, enabled);
+      await refreshShareStreams();
+    } catch (e) {
+      console.warn('Failed to toggle share stream:', e);
+    }
+  }, [userId, refreshShareStreams]);
+
+  const toggleCircleShareStream = useCallback(async (circleId: string, enabled: boolean) => {
+    if (!userId) return;
+    try {
+      await communityApi.setCircleShareStreamEnabled(circleId, enabled);
+      await refreshShareStreams();
+    } catch (e) {
+      console.warn('Failed to toggle circle share stream:', e);
+    }
+  }, [userId, refreshShareStreams]);
+
   const refreshAll = useCallback(async () => {
     try {
       await Promise.allSettled([
@@ -286,12 +329,22 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshMyActivity(),
         refreshSharedGoals(),
         refreshSharedTasks(),
+        refreshShareStreams(),
         spotifyAuth.isSpotifyConnected().then((connected) => setSpotifyConnected(connected)),
       ]);
     } catch (e) {
       // Silently fail
     }
-  }, [refreshFriends, refreshCircles, refreshRequests, refreshUnreadCount, refreshMyActivity, refreshSharedTasks]);
+  }, [
+    refreshFriends,
+    refreshCircles,
+    refreshRequests,
+    refreshUnreadCount,
+    refreshMyActivity,
+    refreshSharedGoals,
+    refreshSharedTasks,
+    refreshShareStreams,
+  ]);
 
   // Initial load + periodic refresh
   useEffect(() => {
@@ -305,17 +358,35 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     refreshTimerRef.current = setInterval(() => {
       refreshFriends();
+      refreshCircles();
       refreshRequests();
       refreshUnreadCount();
       refreshMyActivity();
       refreshSharedGoals();
-      refreshSharedTasks();
     }, REFRESH_INTERVAL);
+
+    // Separate slower fallback poll for shared tasks (realtime covers most updates)
+    sharedTasksTimerRef.current = setInterval(() => {
+      refreshSharedTasks();
+      refreshShareStreams();
+    }, SHARED_TASKS_REFRESH_INTERVAL);
 
     return () => {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (sharedTasksTimerRef.current) clearInterval(sharedTasksTimerRef.current);
     };
-  }, [userId, refreshAll, refreshFriends, refreshRequests, refreshUnreadCount, refreshMyActivity]);
+  }, [
+    userId,
+    refreshAll,
+    refreshFriends,
+    refreshCircles,
+    refreshRequests,
+    refreshUnreadCount,
+    refreshMyActivity,
+    refreshSharedGoals,
+    refreshSharedTasks,
+    refreshShareStreams,
+  ]);
 
   // ─── Listen for incoming bumps → local push notification ───
   useEffect(() => {
@@ -359,39 +430,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   // ─── Listen for incoming shared tasks → local push notification ───
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel('shared-task-notifications')
-      .on(
-        'postgres_changes' as any,
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'shared_tasks',
-          filter: `recipient_id=eq.${userId}`,
-        },
-        async (payload: any) => {
-          const row = payload.new;
-          if (!row) return;
-          try {
-            const { fireSharedTaskNotification } = require('../notificationManager');
-            await fireSharedTaskNotification(
-              row.owner_name ?? 'Someone',
-              row.task_title ?? 'a task',
-            );
-          } catch (e) {
-            console.warn('Failed to show shared task notification:', e);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId]);
+  // (notification is fired from the unified shared-tasks-changes channel below)
 
   // ─── Location watching ───
   const requestLocationPermission = useCallback(async (): Promise<boolean> => {
@@ -627,6 +666,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     const channel = supabase
       .channel('shared-tasks-changes')
+      // Recipient: any event (INSERT / UPDATE / DELETE)
       .on(
         'postgres_changes' as any,
         {
@@ -635,32 +675,33 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           table: 'shared_tasks',
           filter: `recipient_id=eq.${userId}`,
         },
-        () => { refreshSharedTasks(); }
+        async (payload: any) => {
+          refreshSharedTasks();
+          // Fire push notification for new incoming shares (INSERT only)
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            if (!row) return;
+            try {
+              // Look up owner profile and task title for a meaningful notification
+              const [profileRes, taskRes] = await Promise.all([
+                supabase.from('profiles').select('name').eq('id', row.owner_id).single(),
+                supabase.from('tasks').select('title').eq('id', row.task_id).single(),
+              ]);
+              const ownerName = profileRes.data?.name ?? 'Someone';
+              const taskTitle = taskRes.data?.title ?? 'a task';
+              const { fireSharedTaskNotification } = require('../notificationManager');
+              await fireSharedTaskNotification(ownerName, taskTitle);
+            } catch (e) {
+              console.warn('Failed to show shared task notification:', e);
+            }
+          }
+        }
       )
+      // Owner: any event (INSERT from auto-share, UPDATE when recipient responds, DELETE)
       .on(
         'postgres_changes' as any,
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'shared_tasks',
-          filter: `owner_id=eq.${userId}`,
-        },
-        () => { refreshSharedTasks(); }
-      )
-      .on(
-        'postgres_changes' as any,
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'shared_tasks',
-          filter: `recipient_id=eq.${userId}`,
-        },
-        () => { refreshSharedTasks(); }
-      )
-      .on(
-        'postgres_changes' as any,
-        {
-          event: 'DELETE',
+          event: '*',
           schema: 'public',
           table: 'shared_tasks',
           filter: `owner_id=eq.${userId}`,
@@ -706,6 +747,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     respondToShare,
     toggleSharedCompletion,
     removeSharedTaskLink,
+    shareStreams,
+    refreshShareStreams,
+    toggleShareStream,
+    toggleCircleShareStream,
     locationPermissionGranted,
     requestLocationPermission,
     myLatitude,
@@ -725,6 +770,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshMyMusic: async () => {
       await spotifyAuth.getMyVibe();
     },
+    refreshAll,
     loading,
     userId,
   };

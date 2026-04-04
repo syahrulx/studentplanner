@@ -10,6 +10,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/ui": "~0.2.0-beta.9",
     "@expo/vector-icons": "^15.0.3",
     "@google/genai": "^1.42.0",
     "@gorhom/bottom-sheet": "^5.2.8",
@@ -42,6 +43,7 @@
     "expo-task-manager": "~14.0.9",
     "expo-web-browser": "~15.0.10",
     "expo-widgets": "^55.0.8",
+    "home-widget-bridge": "file:./modules/home-widget-bridge",
     "pdfjs-dist": "^2.16.105",
     "react": "19.1.0",
     "react-dom": "19.1.0",

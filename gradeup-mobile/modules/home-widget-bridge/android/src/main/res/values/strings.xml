@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="gradeup_widget_name">GradeUp Today</string>
+  <string name="gradeup_widget_description">Today\'s tasks and timetable</string>
+</resources>

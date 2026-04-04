@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { supabase } from '@/src/lib/supabase';
 import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
+import { useApp } from '@/src/context/AppContext';
 
 const ACADEMIC_LEVELS = [
   { key: 'foundation', label: 'Foundation / Pre-U', icon: '📚' },
@@ -26,6 +27,7 @@ const ACADEMIC_LEVELS = [
 ] as const;
 
 export default function ProfileSetup() {
+  const { updateProfile } = useApp();
   const [name, setName] = useState('');
   const [university, setUniversity] = useState<UniversityItem | null>(null);
   const [academicLevel, setAcademicLevel] = useState<string>('');
@@ -37,9 +39,10 @@ export default function ProfileSetup() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Pre-fill name from auth metadata
-    supabase.auth.getUser().then(({ data }) => {
-      const meta = data?.user?.user_metadata;
+    // Pre-fill name from auth metadata using local session to avoid network race conditions
+    supabase.auth.getSession().then(({ data }) => {
+      const user = data?.session?.user;
+      const meta = user?.user_metadata;
       if (meta?.full_name) setName(meta.full_name);
       else if (meta?.name) setName(meta.name);
     });
@@ -65,20 +68,17 @@ export default function ProfileSetup() {
 
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setError('Session expired'); return; }
-
-      await supabase.from('profiles').upsert(
-        {
-          id: user.id,
-          name: name.trim(),
-          university: university.name,
-          university_id: university.id,
-          ...(academicLevel ? { academicLevel } : {}),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      // Use getSession to rely on the local auth state directly after OAuth redirect
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) { throw new Error('Session expired'); }
+      // Update the local AppContext and Supabase concurrently to ensure instant UI sync
+      await updateProfile({
+        name: name.trim(),
+        university: university.name,
+        universityId: university.id,
+        academicLevel: academicLevel as any,
+      });
 
       router.replace('/(tabs)');
     } catch (e) {

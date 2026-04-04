@@ -27,22 +27,7 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const checkProfileAndNavigate = async (userId: string) => {
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('university')
-        .eq('id', userId)
-        .maybeSingle();
-      if (!profile?.university) {
-        router.replace('/(auth)/profile-setup');
-      } else {
-        router.replace('/(tabs)');
-      }
-    } catch {
-      router.replace('/(tabs)');
-    }
-  };
+
 
   const handleLogin = async () => {
     setError(null);
@@ -78,7 +63,7 @@ export default function Login() {
         return;
       }
       if (data.session) {
-        await checkProfileAndNavigate(data.session.user.id);
+        router.replace('/(tabs)');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Something went wrong';
@@ -124,7 +109,7 @@ export default function Login() {
             if (sessionError) {
               setError(sessionError.message);
             } else if (sessionData.session) {
-              await checkProfileAndNavigate(sessionData.session.user.id);
+              router.replace('/(tabs)');
             }
           } else {
             setError('Authentication failed. Please try again.');

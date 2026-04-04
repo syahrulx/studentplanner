@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -21,8 +21,9 @@ import {
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
-import { dueDateToTeachingWeekRaw } from '@/src/lib/academicWeek';
+import { dueDateToTeachingWeekRaw, teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { useTheme } from '@/hooks/useTheme';
+import { Avatar } from '@/components/Avatar'; // Trigger reload
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
@@ -122,6 +123,7 @@ export default function Planner() {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
     filteredFriends: communityFriends, circles: communityCircles,
     shareAllTasksWithFriend, shareAllTasksWithCircle,
+    shareStreams, toggleShareStream, toggleCircleShareStream,
   } = useCommunity();
   const T = useTranslations(language);
   const [view, setView] = useState<ViewMode>(lastPlannerView);
@@ -145,7 +147,6 @@ export default function Planner() {
   const [shareAllTab, setShareAllTab] = useState<'friend' | 'circle'>('friend');
   const [shareAllFriendId, setShareAllFriendId] = useState<string | null>(null);
   const [shareAllCircleId, setShareAllCircleId] = useState<string | null>(null);
-  const [shareAllMessage, setShareAllMessage] = useState('');
   const [isShareAllSending, setIsShareAllSending] = useState(false);
   const activeDateRef = useRef(activeDate);
   const calendarPreviewDateRef = useRef(calendarPreviewDate);
@@ -165,29 +166,10 @@ export default function Planner() {
     return maxW;
   }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
   const totalWeeks = Math.max(baseTotalWeeks, maxTaskWeek);
-  const semesterStartISO = useMemo(
-    () => (academicCalendar?.startDate ?? user.startDate ?? '').trim().slice(0, 10),
-    [academicCalendar?.startDate, user.startDate],
-  );
   const getWeekNumberForDate = useCallback(
-    (dateISO: string): number => {
-      // If we have HEA periods, compute week by skipping break weeks.
-      if (academicCalendar?.periods && Array.isArray(academicCalendar.periods) && academicCalendar.periods.length > 0) {
-        const w = dueDateToTeachingWeekRaw(dateISO, academicCalendar, user.startDate);
-        if (typeof w === 'number' && w > 0) return Math.min(w, totalWeeks);
-      }
-      if (/^\d{4}-\d{2}-\d{2}$/.test(semesterStartISO)) {
-        const raw = new Date(`${semesterStartISO}T00:00:00`);
-        const dow = raw.getDay();
-        const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() - dow);
-        const current = new Date(`${dateISO.slice(0, 10)}T00:00:00`);
-        const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
-        const rawWeek = Math.floor(diffDays / 7) + 1;
-        return Math.min(Math.max(rawWeek, 1), totalWeeks);
-      }
-      return typeof user.currentWeek === 'number' ? user.currentWeek : 1;
-    },
-    [academicCalendar?.periods, academicCalendar, user.startDate, semesterStartISO, user.currentWeek, totalWeeks],
+    (dateISO: string): number =>
+      teachingWeekNumberForDate(dateISO, academicCalendar, user.startDate, totalWeeks, user.currentWeek ?? 1),
+    [academicCalendar, user.startDate, user.currentWeek, totalWeeks],
   );
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
   const activeDateIsBreak = useMemo(() => {
@@ -454,7 +436,7 @@ export default function Planner() {
 
   const sharedTaskItems = useMemo((): PlannerTaskItem[] => {
     const ownTaskIds = new Set(tasks.map(t => t.id));
-    return acceptedSharedTasks
+    let items = acceptedSharedTasks
       .filter(st => st.recipient_id === communityUserId && st.task && !ownTaskIds.has(st.task_id))
       .map(st => ({
         ...st.task!,
@@ -464,8 +446,19 @@ export default function Planner() {
         isSharedTask: true,
         sharedTaskId: st.id,
         sharedBy: st.owner_profile?.name || 'Friend',
+        sharedByAvatar: st.owner_profile?.avatar_url,
       }));
-  }, [acceptedSharedTasks, communityUserId, tasks]);
+    // In day view, apply the same date restriction as own tasks:
+    // show shared task only if its dueDate matches the selected date.
+    // Tasks with no dueDate (empty string) are treated as today.
+    if (view === 'day') {
+      items = items.filter(item => {
+        const eff = item.dueDate || getTodayISO();
+        return eff === activeDate;
+      });
+    }
+    return items;
+  }, [acceptedSharedTasks, communityUserId, tasks, view, activeDate]);
 
   const combinedList = useMemo((): PlannerItem[] => {
     const taskItems: PlannerItem[] = filteredTasks.map((t) => ({ ...t, itemType: 'task' as const }));
@@ -577,20 +570,18 @@ export default function Planner() {
     setIsShareAllSending(true);
     try {
       if (shareAllTab === 'friend' && shareAllFriendId) {
-        const results = await shareAllTasksWithFriend(taskIds, shareAllFriendId, shareAllMessage || undefined);
+        const results = await shareAllTasksWithFriend(taskIds, shareAllFriendId, undefined);
         if (results.length > 0) {
           setShowShareAllModal(false);
-          setShareAllMessage('');
           setShareAllFriendId(null);
           Alert.alert('Shared!', `${results.length} task${results.length > 1 ? 's' : ''} shared with your friend.`);
         } else {
           Alert.alert('Already Shared', 'All tasks are already shared with this friend.');
         }
       } else if (shareAllTab === 'circle' && shareAllCircleId) {
-        const results = await shareAllTasksWithCircle(taskIds, shareAllCircleId, shareAllMessage || undefined);
+        const results = await shareAllTasksWithCircle(taskIds, shareAllCircleId, undefined);
         if (results.length > 0) {
           setShowShareAllModal(false);
-          setShareAllMessage('');
           setShareAllCircleId(null);
           Alert.alert('Shared!', `Tasks shared with the circle.`);
         } else {
@@ -1048,7 +1039,7 @@ export default function Planner() {
           onPress={() => handleItemPress(item)}
         >
           <View style={s.taskContent}>
-            <View style={s.taskChipRow}>
+            <View style={s.taskCardHeader}>
               <View style={s.taskChipGroup}>
                 <View
                   style={[
@@ -1072,17 +1063,17 @@ export default function Planner() {
                     {subject}
                   </Text>
                 </View>
+                {item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask ? (
+                  <View style={{ marginLeft: -4, marginTop: 1 }}>
+                    <Avatar name={(item as PlannerTaskItem).sharedBy} avatarUrl={(item as any).sharedByAvatar} size={20} />
+                  </View>
+                ) : null}
                 {isPinnedTask ? (
                   <View style={s.taskPinBadge}>
                     <Feather name="bookmark" size={11} color={theme.primary} />
                   </View>
                 ) : null}
-                {item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask ? (
-                  <View style={s.sharedBadge}>
-                    <Feather name="users" size={10} color="#6366f1" />
-                    <Text style={s.sharedBadgeText}>{(item as PlannerTaskItem).sharedBy}</Text>
-                  </View>
-                ) : null}
+                {/* Shared-by strip is below; wide card uses horizontal space for the name */}
                 {item.itemType === 'task' && !(item as PlannerTaskItem).isSharedTask && item.id.startsWith('gc-') ? (
                   <View style={s.classroomBadge}>
                     <Feather name="book-open" size={10} color="#0f9d58" />
@@ -1108,50 +1099,64 @@ export default function Planner() {
               </Pressable>
             </View>
 
-            <View style={s.taskMainRow}>
-              <Text style={[s.taskTitle, item.isDone && s.taskTitleDone]} numberOfLines={2}>
-                {title}
-              </Text>
-            </View>
+            {/* Shared avatar has been moved to the header chip group above */}
 
-              {item.itemType === 'study' ? (
-              <View style={s.studyFooter}>
-                <View style={s.studyTimeRow}>
-                  <Feather name="clock" size={12} color={theme.textSecondary} />
-                  <Text style={s.studyTimeText} numberOfLines={1}>
-                    {timeRange}
+            {item.itemType === 'study' ? (
+              <>
+                <View style={s.taskMainRow}>
+                  <Text style={[s.taskTitle, item.isDone && s.taskTitleDone]} numberOfLines={2}>
+                    {title}
                   </Text>
                 </View>
-                <View style={s.studyDetailRow}>
-                  <Text style={s.studyDurationText} numberOfLines={1}>
-                    {item.durationMinutes} min
+                <View style={s.studyFooter}>
+                  <View style={s.studyTimeRow}>
+                    <Feather name="clock" size={12} color={theme.textSecondary} />
+                    <Text style={s.studyTimeText} numberOfLines={1}>
+                      {timeRange}
+                    </Text>
+                  </View>
+                  <View style={s.studyDetailRow}>
+                    <Text style={s.studyDurationText} numberOfLines={1}>
+                      {item.durationMinutes} min
+                    </Text>
+                    <View style={s.taskDetailChip}>
+                      <Text style={s.taskDetailChipText} numberOfLines={1}>
+                        {T('study')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={s.taskTitleRow}>
+                  <Text style={[s.taskTitle, item.isDone && s.taskTitleDone]} numberOfLines={2}>
+                    {title}
                   </Text>
-                  <View style={s.taskDetailChip}>
-                    <Text style={s.taskDetailChipText} numberOfLines={1}>
-                      {T('study')}
+                  <View style={s.taskTitleTime}>
+                    <Feather name="clock" size={12} color={theme.textSecondary} />
+                    <Text style={s.taskTitleTimeText} numberOfLines={1}>
+                      {timeText}
                     </Text>
                   </View>
                 </View>
-              </View>
-            ) : (
-              <View style={s.studyFooter}>
-                <View style={s.studyTimeRow}>
-                  <Feather name="clock" size={12} color={theme.textSecondary} />
-                  <Text style={s.studyTimeText} numberOfLines={1}>
-                    {timeText}
-                  </Text>
-                </View>
-                <View style={s.taskDetailRow}>
-                  <Text style={[s.taskDetailLabel, statusTextStyle]} numberOfLines={1}>
+                <View style={s.taskMetaFooterRow}>
+                  <Text
+                    style={[s.taskMetaPrimary, statusTextStyle]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     {statusLabel}
                   </Text>
-                  <View style={s.taskDetailChip}>
-                    <Text style={s.taskDetailChipText} numberOfLines={1}>
-                      {secondaryLabel}
-                    </Text>
-                  </View>
+                  <Text
+                    style={s.taskMetaSecondaryLine}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {secondaryLabel}
+                  </Text>
                 </View>
-              </View>
+              </>
             )}
           </View>
         </Pressable>
@@ -1500,7 +1505,7 @@ export default function Planner() {
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
         >
           {selectedDayItems.length === 0 ? (
@@ -1920,7 +1925,7 @@ export default function Planner() {
         <ScrollView
           ref={scrollRef}
           style={s.timelineListWrap}
-          contentContainerStyle={s.listContent}
+          contentContainerStyle={s.listContentAll}
           showsVerticalScrollIndicator={false}
         >
           {renderListHeader()}
@@ -1962,7 +1967,7 @@ export default function Planner() {
       <ScrollView 
         ref={scrollRef}
         style={s.timelineListWrap} 
-        contentContainerStyle={s.listContent} 
+        contentContainerStyle={s.listContentTimeline}
         showsVerticalScrollIndicator={false}
       >
         {HOUR_SLOTS.map((slot, slotIdx) => {
@@ -2043,52 +2048,81 @@ export default function Planner() {
                 communityFriends.length === 0 ? (
                   <Text style={s.shareAllEmpty}>Add friends in the Community tab first!</Text>
                 ) : (
-                  communityFriends.map(f => (
-                    <Pressable
-                      key={f.id}
-                      style={[s.shareAllRow, shareAllFriendId === f.id && s.shareAllRowActive]}
-                      onPress={() => { setShareAllFriendId(f.id); setShareAllCircleId(null); }}
-                    >
-                      <View style={s.shareAllAvatar}>
-                        <Text style={s.shareAllAvatarText}>{f.name.charAt(0)}</Text>
+                  communityFriends.map(f => {
+                    const isAutoShareOn = shareStreams.find(st => st.recipient_id === f.id)?.enabled ?? false;
+                    return (
+                      <View key={f.id}>
+                        <Pressable
+                          style={[s.shareAllRow, shareAllFriendId === f.id && s.shareAllRowActive]}
+                          onPress={() => { setShareAllFriendId(f.id); setShareAllCircleId(null); }}
+                        >
+                          <View style={s.shareAllAvatar}>
+                            <Text style={s.shareAllAvatarText}>{f.name.charAt(0)}</Text>
+                          </View>
+                          <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: theme.primary }]}>{f.name}</Text>
+                          {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={theme.primary} />}
+                        </Pressable>
+                        {/* Auto-share toggle — visible when this friend is selected */}
+                        {shareAllFriendId === f.id && (
+                          <View style={s.autoShareInlineRow}>
+                            <Feather name="refresh-cw" size={13} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[s.autoShareInlineLabel, { color: theme.text }]}>Auto-share new tasks</Text>
+                              <Text style={[s.autoShareInlineDesc, { color: theme.textSecondary }]}>Future tasks auto-sent to {f.name.split(' ')[0]}</Text>
+                            </View>
+                            <Switch
+                              value={isAutoShareOn}
+                              onValueChange={(val) => toggleShareStream(f.id, val)}
+                              trackColor={{ false: theme.border, true: '#10b981' }}
+                            />
+                          </View>
+                        )}
                       </View>
-                      <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: theme.primary }]}>{f.name}</Text>
-                      {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={theme.primary} />}
-                    </Pressable>
-                  ))
+                    );
+                  })
                 )
               ) : (
                 communityCircles.length === 0 ? (
                   <Text style={s.shareAllEmpty}>Create or join a circle first!</Text>
                 ) : (
-                  communityCircles.map(c => (
-                    <Pressable
-                      key={c.id}
-                      style={[s.shareAllRow, shareAllCircleId === c.id && s.shareAllRowActive]}
-                      onPress={() => { setShareAllCircleId(c.id); setShareAllFriendId(null); }}
-                    >
-                      <View style={s.shareAllAvatar}>
-                        <Text style={s.shareAllAvatarText}>{c.emoji}</Text>
+                  communityCircles.map(c => {
+                    const isAutoShareOn = shareStreams.find(st => st.circle_id === c.id)?.enabled ?? false;
+                    return (
+                      <View key={c.id}>
+                        <Pressable
+                          style={[s.shareAllRow, shareAllCircleId === c.id && s.shareAllRowActive]}
+                          onPress={() => { setShareAllCircleId(c.id); setShareAllFriendId(null); }}
+                        >
+                          <View style={s.shareAllAvatar}>
+                            <Text style={s.shareAllAvatarText}>{c.emoji || '●'}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: theme.primary }]}>{c.name}</Text>
+                            <Text style={{ fontSize: 11, color: theme.textSecondary }}>{c.member_count || 0} members</Text>
+                          </View>
+                          {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={theme.primary} />}
+                        </Pressable>
+                        {/* Auto-share toggle — visible when this circle is selected */}
+                        {shareAllCircleId === c.id && (
+                          <View style={s.autoShareInlineRow}>
+                            <Feather name="refresh-cw" size={13} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[s.autoShareInlineLabel, { color: theme.text }]}>Auto-share new tasks</Text>
+                              <Text style={[s.autoShareInlineDesc, { color: theme.textSecondary }]}>Future tasks auto-sent to {c.name}</Text>
+                            </View>
+                            <Switch
+                              value={isAutoShareOn}
+                              onValueChange={(val) => toggleCircleShareStream(c.id, val)}
+                              trackColor={{ false: theme.border, true: '#10b981' }}
+                            />
+                          </View>
+                        )}
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: theme.primary }]}>{c.name}</Text>
-                        <Text style={{ fontSize: 11, color: theme.textSecondary }}>{c.member_count || 0} members</Text>
-                      </View>
-                      {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={theme.primary} />}
-                    </Pressable>
-                  ))
+                    );
+                  })
                 )
               )}
             </ScrollView>
-
-            <TextInput
-              style={s.shareAllInput}
-              placeholder="Add a note (optional)"
-              placeholderTextColor={theme.textSecondary}
-              value={shareAllMessage}
-              onChangeText={setShareAllMessage}
-              maxLength={200}
-            />
 
             <Pressable
               style={[
@@ -2376,7 +2410,10 @@ function createPlannerStyles(theme: ThemePalette) {
     justifyContent: 'center',
   },
 
-  listContent: { paddingHorizontal: 20, paddingBottom: 120 },
+  /** “All” list — comfortable page margins */
+  listContentAll: { paddingHorizontal: 20, paddingBottom: 120 },
+  /** Day timeline — tighter horizontal padding so event cards use more screen width */
+  listContentTimeline: { paddingHorizontal: 8, paddingBottom: 120 },
 
   // Timeline (day view)
   timelineListWrap: {
@@ -2397,9 +2434,9 @@ function createPlannerStyles(theme: ThemePalette) {
     marginBottom: 16,
   },
   timeColumn: {
-    width: 80,
+    width: 68,
     alignItems: 'flex-start',
-    paddingLeft: 20,
+    paddingLeft: 10,
   },
   timeLabel: {
     fontSize: 12,
@@ -2408,8 +2445,9 @@ function createPlannerStyles(theme: ThemePalette) {
   },
   timelineContent: {
     flex: 1,
-    paddingRight: 20,
-    paddingLeft: 12,
+    minWidth: 0,
+    paddingRight: 10,
+    paddingLeft: 4,
   },
 
   // Hourly timeline slots
@@ -2601,16 +2639,17 @@ function createPlannerStyles(theme: ThemePalette) {
   taskCardShell: {
     position: 'relative',
     width: '100%',
-    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+    alignItems: 'stretch',
     justifyContent: 'center',
   },
   taskCard: {
     borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    width: '94%',
-    maxWidth: 420,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
     position: 'relative',
     backgroundColor: theme.card,
     borderWidth: 1,
@@ -2624,8 +2663,15 @@ function createPlannerStyles(theme: ThemePalette) {
   taskCardStudy: { backgroundColor: `${theme.primary}12` },
   taskCardDone: { backgroundColor: theme.backgroundSecondary },
   taskCardShared: { borderLeftWidth: 3, borderLeftColor: '#6366f1' },
-  taskContent: { flex: 1 },
-  taskChipRow: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  taskContent: { width: '100%', minWidth: 0 },
+  /** Top row: subject / badges + overflow menu */
+  taskCardHeader: {
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    minWidth: 0,
+  },
   taskChipGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 },
   taskSubjectPill: {
     flexDirection: 'row',
@@ -2650,16 +2696,27 @@ function createPlannerStyles(theme: ThemePalette) {
     justifyContent: 'center',
     backgroundColor: 'rgba(0,51,102,0.06)',
   },
-  sharedBadge: {
+  /** Shared-by strip — compact height; name uses full row width */
+  sharedFromRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(99,102,241,0.08)',
+    gap: 6,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
+    marginBottom: 4,
     borderRadius: 10,
+    backgroundColor: 'rgba(99,102,241,0.07)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(99,102,241,0.2)',
   },
-  sharedBadgeText: { fontSize: 10, fontWeight: '700', color: '#6366f1' },
+  sharedFromText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4f46e5',
+    lineHeight: 15,
+  },
   classroomBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2705,7 +2762,35 @@ function createPlannerStyles(theme: ThemePalette) {
     borderColor: actionRingOutlineDone,
   },
   taskMainRow: { marginBottom: 6 },
-  taskTitle: { fontSize: 15, fontWeight: '700', color: theme.text, lineHeight: 20, flex: 1 },
+  /** Task: title + due time on one row (saves vertical space vs stacked title + clock row) */
+  taskTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    minWidth: 0,
+    marginBottom: 4,
+  },
+  taskTitleTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 0,
+    paddingTop: 1,
+  },
+  taskTitleTimeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.text,
+  },
+  taskTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.text,
+    lineHeight: 24,
+    flex: 1,
+    minWidth: 0,
+  },
   taskTitleDone: { textDecorationLine: 'line-through', opacity: 0.5 },
   taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, flexGrow: 1 },
   taskMetaText: { fontSize: 12, fontWeight: '500', color: theme.text, flexShrink: 1, flexGrow: 1 },
@@ -2759,34 +2844,51 @@ function createPlannerStyles(theme: ThemePalette) {
     color: theme.textSecondary,
   },
 
-  // Task detail row (same structure as study subject row)
-  taskDetailRow: {
+  /** Task-only: due status (left) + type • course (right); no chip chrome — more room for text */
+  taskMetaFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
+    minWidth: 0,
+    marginTop: 2,
   },
-  taskDetailLabel: {
+  taskMetaPrimary: {
     fontSize: 11,
     fontWeight: '700',
+    flexGrow: 1,
     flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    textAlign: 'left',
+  },
+  taskMetaSecondaryLine: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.textSecondary,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    textAlign: 'right',
   },
   taskDetailChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: detailChipOutline,
     backgroundColor: theme.backgroundSecondary,
     flexShrink: 1,
-    maxWidth: '70%',
   },
   taskDetailChipText: {
     fontSize: 12,
     fontWeight: '600',
     color: theme.textSecondary,
+    flexShrink: 1,
+    minWidth: 0,
   },
   studyDetailRow: {
     flexDirection: 'row',
@@ -3173,13 +3275,20 @@ function createPlannerStyles(theme: ThemePalette) {
   },
   shareAllAvatarText: { fontSize: 16, fontWeight: '700', color: theme.primary },
   shareAllRowName: { flex: 1, fontSize: 15, fontWeight: '600', color: theme.text },
-  shareAllInput: {
-    marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.border,
-    fontSize: 14, color: theme.text, fontWeight: '500', backgroundColor: theme.background,
-  },
   shareAllSendBtn: {
     marginTop: 14, backgroundColor: theme.primary, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
   },
   shareAllSendText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+
+  // Auto-share inline toggle (inside Share All modal)
+  autoShareInlineRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginLeft: 48, marginRight: 12, marginBottom: 8, marginTop: -2,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: 'rgba(16,185,129,0.06)',
+    borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)',
+  },
+  autoShareInlineLabel: { fontSize: 13, fontWeight: '700' },
+  autoShareInlineDesc: { fontSize: 11, fontWeight: '500', marginTop: 1 },
 });
 }

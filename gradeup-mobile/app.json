@@ -52,6 +52,21 @@
           "color": "#003366",
           "defaultChannel": "tasks"
         }
+      ],
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.anonymous.gradeupmobile",
+          "widgets": [
+            {
+              "name": "GradeUpToday",
+              "displayName": "Today",
+              "description": "Today’s tasks and timetable",
+              "contentMarginsDisabled": false,
+              "supportedFamilies": ["systemSmall", "systemMedium"]
+            }
+          ]
+        }
       ]
     ],
     "experiments": {

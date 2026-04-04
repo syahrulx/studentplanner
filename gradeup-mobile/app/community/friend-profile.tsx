@@ -8,6 +8,7 @@ import {
   Image,
   Alert,
   Platform,
+  Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -52,11 +53,13 @@ function Avatar({ name, avatarUrl, size = 64 }: { name?: string; avatarUrl?: str
 export default function FriendProfileScreen() {
   const theme = useTheme();
   const { friendId } = useLocalSearchParams<{ friendId: string }>();
-  const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends } = useCommunity();
+  const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);
   const [sentReaction, setSentReaction] = useState<string | null>(null);
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
+
+  const isAutoShareEnabled = shareStreams.find(s => s.recipient_id === friendId)?.enabled ?? false;
 
   useEffect(() => {
     if (friendId) {
@@ -257,6 +260,25 @@ export default function FriendProfileScreen() {
         </View>
       )}
 
+      {/* Auto-share setting */}
+      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={styles.autoShareRow}>
+          <View style={{ flex: 1, paddingRight: 16 }}>
+            <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 4 }]}>
+              Auto-share new tasks
+            </Text>
+            <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+              New tasks you add will be automatically sent to {friend.name} for approval.
+            </Text>
+          </View>
+          <Switch
+            value={isAutoShareEnabled}
+            onValueChange={(val) => toggleShareStream(friend.id, val)}
+            trackColor={{ false: theme.border, true: '#10b981' }}
+          />
+        </View>
+      </View>
+
       {/* Challenge to Quiz */}
       <Pressable
         style={[styles.challengeBtn, { backgroundColor: '#003366' }]}
@@ -370,6 +392,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  autoShareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
   activityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   activityEmoji: { fontSize: 28 },
