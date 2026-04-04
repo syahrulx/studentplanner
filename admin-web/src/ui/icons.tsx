@@ -143,6 +143,31 @@ export function IconMapPin({ className }: Props) {
   );
 }
 
+export function IconCircles({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M8.2 11a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M16.6 21.4a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        opacity="0.9"
+      />
+      <path
+        d="M13 11.5c1.2-.8 2.5-1.2 3.9-1.2 2.3 0 4.4 1.1 5.6 2.9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        opacity="0.8"
+      />
+    </svg>
+  );
+}
+
 export function IconSearch({ className }: Props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -160,6 +185,35 @@ export function IconChevronDown({ className }: Props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
       <path d="M6.8 9.4 12 14.6l5.2-5.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconPencil({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4.2 20.8 9 19.9l11-11a1.6 1.6 0 0 0 0-2.26l-1.64-1.64a1.6 1.6 0 0 0-2.26 0l-11 11-.9 4.8 4.8-.9Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M13.2 6.8 17.2 10.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconSubscription({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4.5 8.2h15v9.6a1.8 1.8 0 0 1-1.8 1.8H6.3a1.8 1.8 0 0 1-1.8-1.8V8.2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M4.5 10.8h15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.85" />
+      <path d="M8.2 14.2h4.2M8.2 16.8h7.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.75" />
     </svg>
   );
 }

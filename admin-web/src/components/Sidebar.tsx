@@ -1,14 +1,27 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '../ui/cn';
 import { MotionSidebarItem } from '../ui/motion';
-import { IconCalendar, IconFileText, IconGrid, IconMapPin, IconSchool, IconSettings, IconUsers } from '../ui/icons';
+import {
+  IconCalendar,
+  IconCircles,
+  IconFileText,
+  IconGrid,
+  IconMapPin,
+  IconSchool,
+  IconSettings,
+  IconSubscription,
+  IconUsers,
+} from '../ui/icons';
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
   { to: '/users', label: 'Users', Icon: IconUsers },
+  { to: '/subscriptions', label: 'Subscriptions', Icon: IconSubscription },
   { to: '/universities', label: 'Universities', Icon: IconSchool },
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
+  { to: '/calendar-updates', label: 'Calendar updates', Icon: IconCalendar },
   { to: '/locations', label: 'Locations', Icon: IconMapPin },
+  { to: '/circles', label: 'Circles', Icon: IconCircles },
   { to: '/logs', label: 'Logs', Icon: IconFileText },
   { to: '/settings', label: 'Settings', Icon: IconSettings },
 ] as const;

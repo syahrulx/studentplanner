@@ -8,6 +8,7 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { TabBarProvider } from '@/contexts/TabBarContext';
 import { GlassTabBar } from '@/components/GlassTabBar';
 import { useTranslations } from '@/src/i18n';
+import { CalendarOfferPrompt } from '@/components/CalendarOfferPrompt';
 
 export default function TabLayout() {
   const { language } = useApp();
@@ -143,6 +144,8 @@ export default function TabLayout() {
           </View>
         </Pressable>
       </Modal>
+
+      <CalendarOfferPrompt />
     </TabBarProvider>
   );
 }

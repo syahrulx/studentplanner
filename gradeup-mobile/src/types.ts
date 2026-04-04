@@ -102,6 +102,9 @@ export interface AcademicCalendar {
   createdAt?: string;
 }
 
+/** Billing tier from `profiles.subscription_plan` (admin-managed). */
+export type SubscriptionPlan = 'free' | 'plus' | 'pro';
+
 export interface UserProfile {
   id?: string;
   name: string;
@@ -136,6 +139,8 @@ export interface UserProfile {
   lastSync?: string;
   /** Timetable entries fetched from university portal */
   timetable?: TimetableEntry[];
+  /** Subscription tier; default free when missing from DB */
+  subscriptionPlan?: SubscriptionPlan;
 }
 
 export interface Note {

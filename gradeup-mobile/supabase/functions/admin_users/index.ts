@@ -7,15 +7,22 @@ import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 
 type Json = Record<string, unknown>;
 
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
   });
 }
 
 serve(async (req) => {
   try {
+    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
     const auth = await authorizeAdminRequest(req);
@@ -60,16 +67,18 @@ serve(async (req) => {
     if (action === 'list') {
       const q = String(payload.query || '').trim();
       const universityId = String(payload.universityId || '').trim();
+      const plan = String(payload.plan || 'all').trim();
       const limit = Math.max(1, Math.min(200, Number(payload.limit || 50)));
       const offset = Math.max(0, Number(payload.offset || 0));
 
       let query = admin
         .from('profiles')
-        .select('id,name,student_id,university_id,created_at,status,updated_at', { count: 'exact' })
+        .select('id,name,student_id,university_id,created_at,status,updated_at,subscription_plan', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
       if (universityId) query = query.eq('university_id', universityId);
+      if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
       if (q) {
         query = query.or(`name.ilike.%${q}%,student_id.ilike.%${q}%`);
       }
@@ -88,6 +97,22 @@ serve(async (req) => {
       const { error: e } = await admin.from('profiles').update({ status }).eq('id', userId);
       if (e) return json(400, { error: e.message });
       await admin.from('admin_logs').insert({ type: 'api_request', status: 'success', meta: { action, userId, status } });
+      return json(200, { ok: true });
+    }
+
+    if (action === 'set_subscription_plan') {
+      const userId = String(payload.userId || '').trim();
+      const subscription_plan = String(payload.subscription_plan || '').trim();
+      if (!userId) return json(400, { error: 'missing_userId' });
+      if (!['free', 'plus', 'pro'].includes(subscription_plan)) return json(400, { error: 'invalid_subscription_plan' });
+
+      const { error: e } = await admin.from('profiles').update({ subscription_plan }).eq('id', userId);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, userId, subscription_plan },
+      });
       return json(200, { ok: true });
     }
 

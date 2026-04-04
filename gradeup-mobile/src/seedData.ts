@@ -8,6 +8,7 @@ export const initialUser: UserProfile = {
   program: '',
   part: 0,
   currentWeek: 1,
+  subscriptionPlan: 'free',
   /** Default semester start: keep “teaching week 1” plausible for late March 2026 (avoids instant week 5 on cold start). */
   startDate: '2026-03-24',
 };

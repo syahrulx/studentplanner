@@ -47,7 +47,16 @@ export function UsersRoute() {
   const rows = useMemo(() => {
     if (!searchQuery.trim()) return items;
     return items.filter((u) =>
-      matchesAdminSearch(searchQuery, u.id, u.name, u.student_id, u.university_id, u.status, u.created_at),
+      matchesAdminSearch(
+        searchQuery,
+        u.id,
+        u.name,
+        u.student_id,
+        u.university_id,
+        u.status,
+        u.subscription_plan,
+        u.created_at,
+      ),
     );
   }, [items, searchQuery]);
 
@@ -109,12 +118,13 @@ export function UsersRoute() {
         </div>
 
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[880px] border-separate border-spacing-y-2">
+          <table className="w-full min-w-[960px] border-separate border-spacing-y-2">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Student ID</th>
                 <th className="px-3 py-2">University</th>
+                <th className="px-3 py-2">Plan</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
@@ -122,11 +132,16 @@ export function UsersRoute() {
             <tbody>
               {rows.map((u) => {
                 const tone = u.status === 'active' ? 'green' : u.status === 'disabled' ? 'amber' : 'rose';
+                const planTone =
+                  u.subscription_plan === 'free' ? 'slate' : u.subscription_plan === 'plus' ? 'green' : 'amber';
                 return (
                   <tr key={u.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40">
                     <td className="px-3 py-3 text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</td>
                     <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.student_id || '-'}</td>
                     <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.university_id || '-'}</td>
+                    <td className="px-3 py-3">
+                      <Chip tone={planTone}>{u.subscription_plan}</Chip>
+                    </td>
                     <td className="px-3 py-3">
                       <Chip tone={tone}>{u.status}</Chip>
                     </td>
@@ -177,7 +192,7 @@ export function UsersRoute() {
               })}
               {rows.length === 0 && !busy ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
                     {searchQuery.trim() && items.length > 0
                       ? 'No loaded users match the top search. Clear it or run Search again.'
                       : 'No users found.'}

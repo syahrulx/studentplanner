@@ -1,5 +1,15 @@
 import { supabase } from './supabase';
-import type { AcademicLevel } from '../types';
+import type { AcademicLevel, SubscriptionPlan } from '../types';
+
+function normalizeSubscriptionPlanUpdate(raw: SubscriptionPlan): SubscriptionPlan {
+  if (raw === 'plus' || raw === 'pro') return raw;
+  return 'free';
+}
+
+function normalizeSubscriptionPlan(raw: string | null | undefined): SubscriptionPlan {
+  if (raw === 'plus' || raw === 'pro') return raw;
+  return 'free';
+}
 
 const TABLE = 'profiles';
 
@@ -31,11 +41,12 @@ export async function getProfile(userId: string): Promise<{
   mystudentEmail?: string;
   lastSync?: string;
   portalTeachingAnchoredSemester?: number;
+  subscriptionPlan?: SubscriptionPlan;
 } | null> {
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan',
     )
     .eq('id', userId)
     .single();
@@ -58,6 +69,7 @@ export async function getProfile(userId: string): Promise<{
     mystudent_email: string | null;
     last_sync: string | null;
     portal_teaching_anchored_semester: number | null;
+    subscription_plan: string | null;
   };
   const level = row.academic_level as AcademicLevel | undefined;
   return {
@@ -84,6 +96,7 @@ export async function getProfile(userId: string): Promise<{
       Number.isFinite(Number(row.portal_teaching_anchored_semester))
         ? Number(row.portal_teaching_anchored_semester)
         : undefined,
+    subscriptionPlan: normalizeSubscriptionPlan(row.subscription_plan),
   };
 }
 
@@ -131,6 +144,9 @@ export async function updateProfile(
       updates.portalTeachingAnchoredSemester != null && updates.portalTeachingAnchoredSemester > 0
         ? updates.portalTeachingAnchoredSemester
         : null;
+  }
+  if (updates.subscriptionPlan !== undefined) {
+    payload.subscription_plan = normalizeSubscriptionPlanUpdate(updates.subscriptionPlan);
   }
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.from(TABLE).update(payload).eq('id', userId);

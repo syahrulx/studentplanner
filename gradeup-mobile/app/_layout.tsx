@@ -125,6 +125,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="subscription-plans" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="classroom-sync" />
         <Stack.Screen name="add-subject" />
