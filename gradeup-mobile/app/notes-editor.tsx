@@ -10,16 +10,14 @@ import { uploadNoteAttachment, getNoteAttachmentUrl, NOTE_ATTACHMENTS_BUCKET } f
 import { supabase } from '@/src/lib/supabase';
 import { useTranslations } from '@/src/i18n';
 
-const NAVY = '#003366';
-const BG = '#f8fafc';
-const CARD = '#ffffff';
-const TEXT_PRIMARY = '#0f172a';
-const TEXT_SECONDARY = '#64748b';
-const DIVIDER = '#f1f5f9';
+import { useTheme } from '@/hooks/useTheme';
+import type { ThemePalette } from '@/constants/Themes';
 
 export default function NotesEditor() {
   const { subjectId, noteId, folderId } = useLocalSearchParams<{ subjectId: string; noteId?: string; folderId?: string }>();
   const { notes, handleSaveNote, deleteNote, courses, flashcardFolders, addFlashcard, language, user } = useApp();
+  const theme = useTheme();
+  const styles = createStyles(theme);
   const T = useTranslations(language);
   const existing = noteId ? notes.find((n) => n.id === noteId) : null;
   const [currentNoteId, setCurrentNoteId] = useState<string | undefined>(existing?.id);
@@ -227,30 +225,11 @@ export default function NotesEditor() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Feather name="chevron-left" size={28} color={NAVY} />
+            <Feather name="chevron-left" size={28} color={theme.text} />
             <Text style={styles.backText}>Study</Text>
           </Pressable>
         </View>
-        <View style={styles.headerRight}>
-          {existing?.id ? (
-            <Pressable style={styles.iconBtn} onPress={onDeleteNote}>
-              <Feather name="trash-2" size={20} color={NAVY} />
-            </Pressable>
-          ) : null}
-          <Pressable
-            style={styles.iconBtn}
-            onPress={handleGenerateFlashcards}
-            disabled={generateLoading}
-          >
-            <Feather name="layers" size={22} color={NAVY} />
-          </Pressable>
-          <Pressable style={styles.iconBtn} onPress={() => setIsEditing((prev) => !prev)}>
-            <Feather name="edit-2" size={22} color={NAVY} />
-          </Pressable>
-          <Pressable style={styles.saveBtn} onPress={onSave}>
-            <Text style={styles.saveBtnText}>{T('save')}</Text>
-          </Pressable>
-        </View>
+        <View style={styles.headerRight}></View>
       </View>
 
       {/* Page title + content area */}
@@ -258,7 +237,7 @@ export default function NotesEditor() {
         <View style={styles.pdfReaderContainer}>
           {pdfPreviewLoading ? (
             <View style={styles.pdfLoadingWrap}>
-              <ActivityIndicator size="small" color={NAVY} />
+              <ActivityIndicator size="small" color={theme.primary} />
               <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
             </View>
           ) : (
@@ -268,7 +247,7 @@ export default function NotesEditor() {
               startInLoadingState
               renderLoading={() => (
                 <View style={styles.pdfLoadingWrap}>
-                  <ActivityIndicator size="small" color={NAVY} />
+                  <ActivityIndicator size="small" color={theme.primary} />
                 </View>
               )}
             />
@@ -289,14 +268,14 @@ export default function NotesEditor() {
                 value={title}
                 onChangeText={setTitle}
                 placeholder={T('noteTitle')}
-                placeholderTextColor={TEXT_SECONDARY}
+                placeholderTextColor={theme.textSecondary}
               />
               <TextInput
                 style={styles.noteBodyInput}
                 value={content}
                 onChangeText={setContent}
                 placeholder={T('startWriting')}
-                placeholderTextColor={TEXT_SECONDARY}
+                placeholderTextColor={theme.textSecondary}
                 multiline
               />
             </>
@@ -312,16 +291,14 @@ export default function NotesEditor() {
           {attachmentFileName && (
             <Pressable style={styles.attachmentView} onPress={handleOpenAttachment}>
               <View style={styles.attachmentIconBox}>
-                <Feather name="file" size={20} color={NAVY} />
+                <Feather name="file" size={20} color={theme.primary} />
               </View>
               <Text style={styles.attachmentText} numberOfLines={1}>
                 {attachmentFileName}
               </Text>
-              <Feather name="external-link" size={16} color={TEXT_SECONDARY} style={{ marginLeft: 'auto' }} />
+              <Feather name="external-link" size={16} color={theme.textSecondary} style={{ marginLeft: 'auto' }} />
             </Pressable>
           )}
-
-          <View style={{ height: 48 }} />
         </ScrollView>
       )}
 
@@ -362,14 +339,12 @@ export default function NotesEditor() {
           </View>
         </Pressable>
       </Modal>
-
-      <View style={{ height: 48 }} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+const createStyles = (theme: ThemePalette) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
 
@@ -380,13 +355,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
     paddingBottom: 12,
-    backgroundColor: BG,
+    backgroundColor: theme.background,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: DIVIDER,
+    borderBottomColor: theme.border,
   },
   headerLeft: { flex: 1 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  backText: { fontSize: 17, color: NAVY, fontWeight: '400', marginTop: -1 },
+  backText: { fontSize: 17, color: theme.text, fontWeight: '400', marginTop: -1 },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -398,14 +373,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: NAVY,
+    backgroundColor: theme.primary,
   },
   saveBtnText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
 
   pageTitle: {
     fontSize: 34,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     letterSpacing: -0.8,
     marginBottom: 20,
     marginTop: 4,
@@ -418,43 +393,43 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingTop: 2,
     borderBottomWidth: 1,
-    borderColor: DIVIDER,
+    borderColor: theme.border,
     paddingBottom: 8,
   },
   tagChipActive: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: CARD,
+    backgroundColor: theme.card,
   },
   tagChipActiveText: {
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
-    color: TEXT_PRIMARY,
+    color: theme.text,
   },
   tagChipMuted: {
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
 
   noteTitle: {
     fontSize: 44,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     marginBottom: 20,
     textAlign: 'center',
     letterSpacing: -0.6,
   },
   pdfReaderContainer: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.background,
   },
   pdfReader: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.background,
   },
   pdfLoadingWrap: {
     minHeight: 120,
@@ -464,28 +439,28 @@ const styles = StyleSheet.create({
   },
   pdfLoadingText: {
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: theme.textSecondary,
   },
   noteTitleInput: {
     fontSize: 24,
     fontWeight: '800',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderColor: DIVIDER,
+    borderColor: theme.border,
     paddingVertical: 4,
   },
   readingSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: DIVIDER,
+    borderColor: theme.border,
     paddingHorizontal: 18,
     paddingVertical: 24,
   },
   noteBodyRead: {
     fontSize: 17,
-    color: '#1e293b',
+    color: theme.text,
     lineHeight: 29,
     minHeight: 120,
     marginTop: 2,
@@ -494,7 +469,7 @@ const styles = StyleSheet.create({
   attachmentView: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: theme.border,
     padding: 12,
     borderRadius: 12,
     marginTop: 24,
@@ -503,7 +478,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: theme.card,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -511,21 +486,21 @@ const styles = StyleSheet.create({
   attachmentText: {
     fontSize: 15,
     fontWeight: '600',
-    color: TEXT_PRIMARY,
+    color: theme.text,
     flex: 1,
   },
   noteBodyInput: {
     fontSize: 15,
     lineHeight: 22,
-    color: TEXT_PRIMARY,
+    color: theme.text,
     minHeight: 220,
     marginTop: 8,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 16,
-    backgroundColor: CARD,
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: DIVIDER,
+    borderColor: theme.border,
     textAlignVertical: 'top',
   },
 
@@ -535,12 +510,12 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.7 },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', padding: 24 },
-  modalBox: { backgroundColor: CARD, borderRadius: 20, padding: 24, maxHeight: '70%', borderWidth: 1, borderColor: DIVIDER },
-  modalTitle: { fontSize: 16, color: TEXT_PRIMARY, marginBottom: 16 },
+  modalBox: { backgroundColor: theme.card, borderRadius: 20, padding: 24, maxHeight: '70%', borderWidth: 1, borderColor: theme.border },
+  modalTitle: { fontSize: 16, color: theme.text, marginBottom: 16 },
   folderList: { maxHeight: 200, marginBottom: 16 },
-  folderRow: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: BG, marginBottom: 8 },
-  folderRowText: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
-  modalClose: { paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: DIVIDER, alignItems: 'center' },
-  modalCloseText: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
-  modalHint: { fontSize: 14, color: TEXT_SECONDARY, marginBottom: 12 },
+  folderRow: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, backgroundColor: theme.background, marginBottom: 8 },
+  folderRowText: { fontSize: 16, fontWeight: '700', color: theme.text },
+  modalClose: { paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: theme.border, alignItems: 'center' },
+  modalCloseText: { fontSize: 15, fontWeight: '700', color: theme.text },
+  modalHint: { fontSize: 14, color: theme.textSecondary, marginBottom: 12 },
 });

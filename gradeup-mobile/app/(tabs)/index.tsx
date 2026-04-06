@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Platform,
   useWindowDimensions,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -238,9 +240,20 @@ function createDashboardStyles(theme: ThemePalette) {
       backgroundColor: textSecondary,
     },
     peakAlertDotPeak: {
-      borderWidth: 2,
-      borderColor: '#dc2626',
-      backgroundColor: '#fecaca',
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      borderWidth: 2.5,
+      borderColor: '#ef4444',
+      backgroundColor: 'transparent',
+    },
+    peakAlertDotCurrentPeak: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: GOLD,
+      borderWidth: 2.5,
+      borderColor: '#ef4444',
     },
     headerGradient: {
       borderBottomLeftRadius: 28,
@@ -268,12 +281,30 @@ function createDashboardStyles(theme: ThemePalette) {
       marginRight: 8,
       paddingVertical: 2,
     },
-    /** Centered spinner only while pull-refresh runs (no copy). */
-    homeRefreshOverlayCenter: {
-      ...StyleSheet.absoluteFillObject,
-      justifyContent: 'center',
+    /** Pull-refresh spinner — pinned to top of screen. */
+    homeRefreshOverlayTop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
       alignItems: 'center',
+      paddingTop: 52,
       zIndex: 20,
+    },
+    refreshRingOuter: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    refreshRingInner: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 2.5,
+      borderTopColor: 'transparent',
+      borderRightColor: 'transparent',
     },
     greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5, flexShrink: 1 },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
@@ -684,6 +715,44 @@ export default function Dashboard() {
     }, []),
   );
   const [refreshingHome, setRefreshingHome] = useState(false);
+  const refreshSpin = useRef(new Animated.Value(0)).current;
+  const refreshPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (refreshingHome) {
+      const spinLoop = Animated.loop(
+        Animated.timing(refreshSpin, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      const pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(refreshPulse, {
+            toValue: 1.18,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(refreshPulse, {
+            toValue: 1,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      spinLoop.start();
+      pulseLoop.start();
+      return () => {
+        spinLoop.stop();
+        pulseLoop.stop();
+        refreshSpin.setValue(0);
+        refreshPulse.setValue(1);
+      };
+    }
+  }, [refreshingHome]);
   const { height: windowHeight } = useWindowDimensions();
   const onRefreshHome = useCallback(async () => {
     setRefreshingHome(true);
@@ -753,10 +822,7 @@ export default function Dashboard() {
   const pulseBadgeText = useMemo(() => {
     if (semesterPhase === 'teaching' && !user.isBreak) {
       if (taskPeakMax === 0 || taskPeakWeek < 1) return T('tasksPulseNoTasks');
-      if (taskPeakWeek === homeTeachingWeek) {
-        return `${T('week')} ${homeTeachingWeek} · ${T('peakAlert')}`;
-      }
-      return `W${taskPeakWeek} ${T('peakAlert')}`;
+      return `W${taskPeakWeek} PEAK`;
     }
     if (semesterPhase === 'break_after' || user.isBreak) return T('betweenSemestersBadge');
     if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
@@ -1038,9 +1104,15 @@ export default function Dashboard() {
               if (semesterPhase === 'teaching' && !user.isBreak) {
                 const isCurrent = weekNum === homeTeachingWeek;
                 const isTaskPeak = taskPeakMax > 0 && taskPeakWeek >= 1 && weekNum === taskPeakWeek;
-                if (isCurrent) dotStyles.push(styles.peakAlertDotCurrent);
-                else if (weekNum < homeTeachingWeek) dotStyles.push(styles.peakAlertDotPast);
-                if (isTaskPeak && !isCurrent) dotStyles.push(styles.peakAlertDotPeak);
+                if (isCurrent && isTaskPeak) {
+                  dotStyles = [styles.peakAlertDotCurrentPeak];
+                } else if (isCurrent) {
+                  dotStyles = [styles.peakAlertDotCurrent];
+                } else if (isTaskPeak) {
+                  dotStyles = [styles.peakAlertDotPeak];
+                } else if (weekNum < homeTeachingWeek) {
+                  dotStyles.push(styles.peakAlertDotPast);
+                }
               } else if (semesterPhase === 'break_after' || user.isBreak) {
                 dotStyles.push(styles.peakAlertDotPast);
               }
@@ -1138,21 +1210,6 @@ export default function Dashboard() {
         </Pressable>
       </View>
 
-      {/* Friends Studying Widget */}
-      {studyingFriends.length > 0 && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.studyingWidget,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => router.push('/study-timer' as any)}
-        >
-          <Text style={{ fontSize: 15, fontWeight: '800', color: theme.primary, flex: 1 }}>
-            📚 {studyingFriends.length} friend{studyingFriends.length > 1 ? 's' : ''} studying now
-          </Text>
-          <Text style={{ fontSize: 13, color: '#3b82f6', fontWeight: '700' }}>Join →</Text>
-        </Pressable>
-      )}
 
       {/* Timeline / Upcoming */}
       <View style={styles.sectionWrapper}>
@@ -1268,8 +1325,30 @@ export default function Dashboard() {
         )}
       />
       {refreshingHome ? (
-        <View style={styles.homeRefreshOverlayCenter} pointerEvents="none">
-          <ActivityIndicator size="large" color={theme.primary} />
+        <View style={styles.homeRefreshOverlayTop} pointerEvents="none">
+          <Animated.View
+            style={[
+              styles.refreshRingOuter,
+              {
+                backgroundColor: hexToRgba(headerPrimary, 0.15),
+                transform: [{ scale: refreshPulse }],
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.refreshRingInner,
+                {
+                  borderBottomColor: headerOnPrimary,
+                  borderLeftColor: headerOnPrimary,
+                  transform: [{ rotate: refreshSpin.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg'],
+                  }) }],
+                },
+              ]}
+            />
+          </Animated.View>
         </View>
       ) : null}
     </View>

@@ -1841,7 +1841,14 @@ export default function Planner() {
               </View>
             )}
           </View>
-          <View style={[s.headerSide, s.headerSideRight]}>
+          <View style={[s.headerSide, s.headerSideRight, { gap: 10 }]}>
+            <Pressable
+              style={s.headerBtn}
+              onPress={() => router.push('/(tabs)/notes' as any)}
+              hitSlop={6}
+            >
+              <Feather name="book-open" size={20} color={theme.text} />
+            </Pressable>
             <Pressable
               style={s.headerBtn}
               onPress={() => setShowShareAllModal(true)}

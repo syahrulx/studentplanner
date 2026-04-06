@@ -123,6 +123,7 @@ type AppState = {
   setFlashcardFolders: React.Dispatch<React.SetStateAction<FlashcardFolder[]>>;
   addFlashcardFolder: (name: string, subjectId?: string) => FlashcardFolder;
   addFlashcard: (folderId: string, front: string, back: string) => Flashcard;
+  updateFlashcard: (cardId: string, front: string, back: string) => void;
   deleteFlashcardFolder: (folderId: string) => void;
   deleteFlashcard: (cardId: string) => void;
   pendingExtraction: string;
@@ -1309,9 +1310,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return folder;
   }, []);
 
+  let flashcardIdCounter = 0;
   const addFlashcard = useCallback((folderId: string, front: string, back: string): Flashcard => {
     const card: Flashcard = {
-      id: 'card-' + Date.now(),
+      id: 'card-' + Date.now() + '-' + (flashcardIdCounter++),
       folderId,
       front: front.trim() || 'Front',
       back: back.trim() || 'Back',
@@ -1329,6 +1331,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.id) studyDb.deleteFlashcardFolder(session.user.id, folderId);
     });
+  }, []);
+
+  const updateFlashcard = useCallback((cardId: string, front: string, back: string) => {
+    setFlashcards((prev) => prev.map((c) => {
+      if (c.id !== cardId) return c;
+      const updated = { ...c, front: front.trim() || c.front, back: back.trim() || c.back };
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) studyDb.upsertFlashcard(session.user.id, updated);
+      });
+      return updated;
+    }));
   }, []);
 
   const deleteFlashcard = useCallback((cardId: string) => {
@@ -1597,6 +1610,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFlashcardFolders,
     addFlashcardFolder,
     addFlashcard,
+    updateFlashcard,
     deleteFlashcardFolder,
     deleteFlashcard,
     pendingExtraction,
