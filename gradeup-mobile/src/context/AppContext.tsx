@@ -10,8 +10,11 @@ import {
   initialFlashcards,
   initialFlashcardFolders,
 } from '../seedData';
-import { getAcademicProgress, getAcademicProgressFromCalendar } from '../lib/academicUtils';
-import { computeCountedWeeksFromPeriods } from '../lib/academicUtils';
+import {
+  getAcademicProgress,
+  getAcademicProgressFromCalendar,
+  mergeTeachingWeeksForStoredCalendar,
+} from '../lib/academicUtils';
 import {
   getTheme,
   setTheme as persistTheme,
@@ -283,11 +286,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
-    const computed =
-      cal.periods && Array.isArray(cal.periods) && cal.periods.length > 0
-        ? computeCountedWeeksFromPeriods(cal.periods as any) ?? null
-        : null;
-    const effective = computed != null ? Math.max(Number(cal.totalWeeks) || 14, computed) : (Number(cal.totalWeeks) || 14);
+    const effective = mergeTeachingWeeksForStoredCalendar(cal);
     if (effective === cal.totalWeeks) return cal;
     return { ...cal, totalWeeks: effective };
   }, []);
@@ -295,11 +294,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Keep teaching week in sync with the active academic calendar (same start as task week mapping). */
   useEffect(() => {
     setUserState((prev) => {
-      const computedTotal =
-        academicCalendar?.periods && academicCalendar.periods.length > 0
-          ? computeCountedWeeksFromPeriods(academicCalendar.periods as any) ?? academicCalendar.totalWeeks
-          : academicCalendar?.totalWeeks;
-      const totalW = computedTotal ?? 14;
+      const totalW = academicCalendar?.totalWeeks ?? 14;
       const nextStart = (academicCalendar?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
       const startFor = (academicCalendar?.startDate ?? prev.startDate ?? '').trim();
       const progress =
@@ -334,11 +329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (state !== 'active') return;
       const ac = academicCalendarRef.current;
       setUserState((prev) => {
-        const computedTotal =
-          ac?.periods && ac.periods.length > 0
-            ? computeCountedWeeksFromPeriods(ac.periods as any) ?? ac.totalWeeks
-            : ac?.totalWeeks;
-        const totalW = computedTotal ?? 14;
+        const totalW = ac?.totalWeeks ?? 14;
         const nextStart = (ac?.startDate ?? prev.startDate ?? '').trim().slice(0, 10);
         const startFor = (ac?.startDate ?? prev.startDate ?? '').trim();
         const progress =
@@ -491,14 +482,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const portalSem = profile?.currentSemester;
           const anchoredDb = profile?.portalTeachingAnchoredSemester;
           const calSlice = calendar ? String(calendar.startDate ?? '').trim().slice(0, 10) : '';
+          const endSlice = calendar ? String(calendar.endDate ?? '').trim().slice(0, 10) : '';
           const calStartOk = /^\d{4}-\d{2}-\d{2}$/.test(calSlice);
-          const shouldAnchor =
+          const calEndOk = /^\d{4}-\d{2}-\d{2}$/.test(endSlice);
+          const twNum = Number(calendar?.totalWeeks);
+          const hasUsableCalendar =
+            calendar != null &&
+            calStartOk &&
+            calEndOk &&
+            Number.isFinite(twNum) &&
+            twNum >= 1;
+          // Only seed the synthetic "today" placeholder when there is no real saved calendar.
+          // If the user already saved HEA (or manual) dates, never clobber them just because
+          // portalTeachingAnchoredSemester was missing.
+          const shouldApplyPortalTeachingAnchor =
             uniId === 'uitm' &&
             typeof portalSem === 'number' &&
             portalSem > 0 &&
+            !hasUsableCalendar &&
             (anchoredDb == null || anchoredDb !== portalSem || !calendar || !calStartOk);
+          const shouldMarkPortalAnchorOnly =
+            uniId === 'uitm' &&
+            typeof portalSem === 'number' &&
+            portalSem > 0 &&
+            hasUsableCalendar &&
+            anchoredDb == null;
 
-          if (shouldAnchor) {
+          if (shouldApplyPortalTeachingAnchor) {
             try {
               const today = getTodayISO();
               const tw = calendar?.totalWeeks ?? 14;
@@ -521,6 +531,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             } catch (e) {
               if (__DEV__) console.warn('[GradeUp] Portal teaching-week anchor on load failed', e);
+            }
+          } else if (shouldMarkPortalAnchorOnly) {
+            try {
+              await profileDb.updateProfile(uid, { portalTeachingAnchoredSemester: portalSem });
+              if (profile) {
+                (profile as { portalTeachingAnchoredSemester?: number }).portalTeachingAnchoredSemester =
+                  portalSem;
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[GradeUp] Portal teaching-week anchor metadata failed', e);
             }
           }
 
@@ -920,7 +940,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAcademicCalendar(saved);
     const progress =
       saved?.periods && Array.isArray(saved.periods) && saved.periods.length > 0
-        ? getAcademicProgressFromCalendar(saved, user?.startDate)
+        ? getAcademicProgressFromCalendar(saved, saved.startDate)
         : getAcademicProgress(saved.startDate, saved.totalWeeks);
     setUserState((prev) => ({
       ...prev,

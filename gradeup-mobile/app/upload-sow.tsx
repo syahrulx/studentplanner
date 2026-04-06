@@ -589,8 +589,8 @@ export default function UploadSOW() {
 
   // ---------- EXTRACTION REVIEW VIEW ----------
   if (extraction) {
-    return (
-      <ScrollView
+  return (
+    <ScrollView
         style={[styles.container, { backgroundColor: theme.background }]}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -1184,7 +1184,7 @@ export default function UploadSOW() {
           {selected ? `Selected: ${selected.name}` : 'Choose SOW PDF'}
         </Text>
         <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ marginLeft: 'auto' }} />
-      </Pressable>
+            </Pressable>
 
       {/* ANALYZE */}
       <Pressable
@@ -1224,7 +1224,7 @@ export default function UploadSOW() {
               <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
                 This helps the AI map SOW dates into the correct semester week and prevents wrong task deadlines.
               </Text>
-            </View>
+          </View>
 
             <View style={styles.modalRow}>
               <View style={styles.modalField}>
@@ -1243,7 +1243,7 @@ export default function UploadSOW() {
                 <Text style={[styles.modalHint, { color: theme.textSecondary }]}>
                   App: week {user.isBreak ? 'break' : user.currentWeek} / {totalSemesterWeeks}
                 </Text>
-              </View>
+      </View>
 
               <View style={styles.modalField}>
                 <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Today (YYYY-MM-DD)</Text>
@@ -1270,7 +1270,7 @@ export default function UploadSOW() {
                 {(['FRI', 'SAT', 'SUN'] as const).map((d) => {
                   const active = confirmEndOfWeek === d;
                   return (
-                    <Pressable
+      <Pressable
                       key={d}
                       onPress={() => setConfirmEndOfWeek(d)}
                       style={({ pressed }) => [
@@ -1283,7 +1283,7 @@ export default function UploadSOW() {
                       <Text style={[styles.eowChipText, { color: active ? theme.textInverse : theme.text }]}>
                         {d}
                       </Text>
-                    </Pressable>
+      </Pressable>
                   );
                 })}
               </View>

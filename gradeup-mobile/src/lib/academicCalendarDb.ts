@@ -62,7 +62,13 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     .upsert(row, { onConflict: 'user_id' })
     .select('*')
     .single();
-  if (error || !data) return rowToCalendar(row as Record<string, unknown>);
+  if (error) {
+    if (__DEV__) console.warn('[GradeUp] upsertCalendar', error.message);
+    throw new Error(error.message || 'Failed to save academic calendar');
+  }
+  if (!data) {
+    throw new Error('Failed to save academic calendar (no row returned)');
+  }
   return rowToCalendar(data as Record<string, unknown>);
 }
 

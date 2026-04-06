@@ -15,6 +15,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { scheduleStudyTimerComplete, cancelStudyTimerNotification } from '@/src/notificationManager';
+import { getCurrentTimetableSubjectLabel } from '@/src/lib/timetableCurrentSlot';
 
 // Duration presets (milliseconds)
 const PRESETS = [
@@ -28,7 +29,7 @@ type Phase = 'focus' | 'break' | 'idle';
 
 export default function StudyTimerScreen() {
   const theme = useTheme();
-  const { courses } = useApp();
+  const { courses, timetable } = useApp();
   const { updateActivity, clearMyActivity } = useCommunity();
 
   const [selectedPresetIdx, setSelectedPresetIdx] = useState(0);
@@ -125,12 +126,14 @@ export default function StudyTimerScreen() {
       scheduleStudyTimerComplete(preset.focus, selectedCourseId || undefined).catch(() => {});
       if (broadcastEnabled) {
         const course = courses.find((c) => c.id === selectedCourseId);
-        await updateActivity('studying', course?.id || 'Studying', course?.id);
+        const slotLabel = getCurrentTimetableSubjectLabel(timetable);
+        const detail = course?.id || slotLabel || 'Studying';
+        await updateActivity('studying', detail, course?.id || slotLabel || undefined);
       }
     } else if (phase === 'break') {
       startTimer(breakSecs, 'break');
     }
-  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, updateActivity, preset.focus]);
+  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, timetable, updateActivity, preset.focus]);
 
   const handlePause = useCallback(() => {
     clearTimer();

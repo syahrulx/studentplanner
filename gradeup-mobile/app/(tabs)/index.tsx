@@ -21,8 +21,8 @@ import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/da
 import { useTranslations } from '@/src/i18n';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
 import {
-  dueDateToTeachingWeekRaw,
   peakWeekFromTaskCounts,
+  resolveDisplayTeachingWeeks,
   taskCountsByOpenDueWeek,
   teachingWeekNumberForDate,
 } from '@/src/lib/academicWeek';
@@ -258,7 +258,16 @@ function createDashboardStyles(theme: ThemePalette) {
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
     },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 1 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 1 },
+    headerLeftProfile: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flex: 1,
+      minWidth: 0,
+      marginRight: 8,
+      paddingVertical: 2,
+    },
     /** Centered spinner only while pull-refresh runs (no copy). */
     homeRefreshOverlayCenter: {
       ...StyleSheet.absoluteFillObject,
@@ -266,7 +275,7 @@ function createDashboardStyles(theme: ThemePalette) {
       alignItems: 'center',
       zIndex: 20,
     },
-    greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+    greeting: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5, flexShrink: 1 },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
     dot: { width: 6, height: 6, borderRadius: 3 },
     subtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
@@ -635,7 +644,6 @@ export default function Dashboard() {
       ],
     );
   }, [pendingClassroomTasks.length]);
-  const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
   const allTasks = useMemo(() => {
     const ownTaskIds = new Set(tasks.map(t => t.id));
     const sharedTasks = (acceptedSharedTasks || [])
@@ -650,20 +658,15 @@ export default function Dashboard() {
     return [...tasks, ...sharedTasks];
   }, [tasks, acceptedSharedTasks, communityUserId]);
 
-  const maxTaskWeek = useMemo(() => {
-    if (!academicCalendar) return baseTotalWeeks;
-    let maxW = baseTotalWeeks;
-    for (const t of allTasks) {
-      const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
-      if (typeof w === 'number' && w > maxW) maxW = w;
-    }
-    return maxW;
-  }, [allTasks, academicCalendar, user.startDate, baseTotalWeeks]);
-  const effectiveCalendar = useMemo(
-    () => (academicCalendar ? { ...academicCalendar, totalWeeks: Math.max(baseTotalWeeks, maxTaskWeek) } : academicCalendar),
-    [academicCalendar, baseTotalWeeks, maxTaskWeek],
+  /** Baseline from calendar (guarded vs HEA over-count) + open tasks, capped a few weeks past baseline. */
+  const totalWeeks = useMemo(
+    () => resolveDisplayTeachingWeeks(academicCalendar, user.startDate, allTasks),
+    [academicCalendar, user.startDate, allTasks],
   );
-  const totalWeeks = effectiveCalendar?.totalWeeks ?? baseTotalWeeks;
+  const pulseCalendar = useMemo(
+    () => (academicCalendar ? { ...academicCalendar, totalWeeks } : null),
+    [academicCalendar, totalWeeks],
+  );
   /** Same teaching-week index as Planner (HEA / UITM periods + fallbacks); not only profile currentWeek */
   const [todayISO, setTodayISO] = useState(() => getTodayISO());
   useFocusEffect(
@@ -697,12 +700,12 @@ export default function Dashboard() {
     () =>
       teachingWeekNumberForDate(
         todayISO,
-        effectiveCalendar,
+        pulseCalendar,
         user.startDate,
         totalWeeks,
         user.currentWeek ?? 1,
       ),
-    [todayISO, effectiveCalendar, user.startDate, totalWeeks, user.currentWeek],
+    [todayISO, pulseCalendar, user.startDate, totalWeeks, user.currentWeek],
   );
   const semesterPhase = user.semesterPhase ?? 'teaching';
   const focusTask = useMemo(
@@ -716,8 +719,8 @@ export default function Dashboard() {
   );
 
   const taskWeekCounts = useMemo(
-    () => taskCountsByOpenDueWeek(allTasks, effectiveCalendar, user.startDate),
-    [allTasks, effectiveCalendar, user.startDate],
+    () => taskCountsByOpenDueWeek(allTasks, pulseCalendar, user.startDate),
+    [allTasks, pulseCalendar, user.startDate],
   );
   const { week: taskPeakWeek, max: taskPeakMax } = useMemo(
     () => peakWeekFromTaskCounts(taskWeekCounts),
@@ -952,9 +955,17 @@ export default function Dashboard() {
           ]}
         />
         <View style={styles.header}>
-          <View>
-            <Text style={[styles.greeting, { color: headerOnPrimary }]}>{T('hello')}, {user.name.split(' ')[0]}</Text>
-          </View>
+          <Pressable
+            onPress={() => router.push('/profile' as any)}
+            style={({ pressed }) => [styles.headerLeftProfile, pressed && { opacity: 0.85 }]}
+            accessibilityRole="button"
+            accessibilityLabel={`${T('profile')}: ${T('hello')}, ${user.name.split(' ')[0]}`}
+          >
+            <ThemeIcon name="user" size={22} color={headerOnPrimary} />
+            <Text style={[styles.greeting, { color: headerOnPrimary }]} numberOfLines={2}>
+              {T('hello')}, {user.name.split(' ')[0]}
+            </Text>
+          </Pressable>
           <View style={styles.headerRight}>
             <Pressable
               onPress={() => router.push('/community/notifications' as any)}
@@ -968,12 +979,6 @@ export default function Dashboard() {
                   </Text>
                 </View>
               )}
-            </Pressable>
-            <Pressable
-              onPress={() => router.push('/profile' as any)}
-              style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
-            >
-              <ThemeIcon name="user" size={22} color={headerOnPrimary} />
             </Pressable>
             <Pressable
               onPress={() => router.push('/settings' as any)}

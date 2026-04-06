@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Alert, ActivityIndicator, Dimensions, TextInput } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
@@ -76,39 +76,6 @@ export default function AcademicCalendarScreen() {
   const periods = academicCalendar?.periods ?? [];
 
   const recommendedGroup = useMemo<'A' | 'B'>(() => (cfgLevel === 'Foundation' ? 'A' : 'B'), [cfgLevel]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (cfgBusy) return;
-      if (!academicCalendar) return;
-      const existing = academicCalendar.periods ?? [];
-      // Re-fetch if periods are empty OR have very few entries (old summary-only data)
-      if (existing.length > 15) return;
-
-      const uniId = user.universityId || 'uitm';
-      if (uniId !== 'uitm') return;
-      const groupForHea: 'A' | 'B' = user.academicLevel === 'Foundation' ? 'A' : 'B';
-      const today = new Date().toISOString().slice(0, 10);
-      try {
-        const official = await fetchUitmAcademicCalendar(groupForHea, { targetDateISO: today, variant: cfgVariant });
-        if (cancelled) return;
-        if (official?.periods && official.periods.length > 0) {
-          await updateAcademicCalendar({
-            semesterLabel: official.semesterLabel,
-            startDate: academicCalendar.startDate,
-            endDate: academicCalendar.endDate,
-            totalWeeks: academicCalendar.totalWeeks ?? official.totalWeeks ?? 14,
-            periods: official.periods,
-            isActive: true,
-          });
-          setSyncStatus(`Auto-synced: ${official.semesterLabel}`);
-        }
-      } catch {}
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [academicCalendar, cfgBusy, cfgVariant, updateAcademicCalendar, user.academicLevel, user.universityId]);
 
   const saveConfiguration = useCallback(async () => {
     if (cfgBusy) return;

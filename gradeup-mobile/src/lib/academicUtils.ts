@@ -10,6 +10,36 @@ export type AcademicProgress = {
 
 type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
 
+/** Default floor when `total_weeks` is missing (typical semester length). */
+export const MIN_DEFAULT_TEACHING_WEEKS = 14;
+/**
+ * If `computeCountedWeeksFromPeriods` exceeds the calendar’s stored `total_weeks` (floored) by more than this,
+ * keep stored — HEA day-counting can otherwise jump to ~25 while the real term is ~14–16.
+ */
+export const MAX_PERIOD_WEEKS_OVER_STORED = 6;
+/** Pulse / planner may extend this many weeks past the calendar baseline for open tasks (finals, SOW due dates). */
+export const MAX_EXTRA_WEEKS_BEYOND_CALENDAR = 2;
+
+/**
+ * Single number to persist as `academic_calendars.total_weeks`: stored value, optionally nudged up by
+ * period math only when the bump is small enough to be plausible.
+ */
+export function mergeTeachingWeeksForStoredCalendar(cal: AcademicCalendar | null | undefined): number {
+  if (!cal) return MIN_DEFAULT_TEACHING_WEEKS;
+  const storedNum = Number(cal.totalWeeks);
+  const baseline = Math.max(
+    MIN_DEFAULT_TEACHING_WEEKS,
+    Number.isFinite(storedNum) && storedNum >= 1 ? Math.floor(storedNum) : MIN_DEFAULT_TEACHING_WEEKS,
+  );
+  if (!cal.periods || !Array.isArray(cal.periods) || cal.periods.length === 0) return baseline;
+  const computed = computeCountedWeeksFromPeriods(cal.periods as AcademicPeriod[]);
+  if (computed == null) return baseline;
+  if (computed <= baseline + MAX_PERIOD_WEEKS_OVER_STORED) {
+    return Math.max(baseline, computed);
+  }
+  return baseline;
+}
+
 function snapToWeekSunday(d: Date): Date {
   const dow = d.getDay(); // 0=Sun
   if (dow === 0) return d;

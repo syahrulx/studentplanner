@@ -149,9 +149,12 @@ create table if not exists public.academic_calendars (
   start_date      date not null,
   end_date        date not null,
   total_weeks     smallint not null default 14,
+  break_start_date date,
+  break_end_date   date,
   periods_json    jsonb,
   is_active       boolean not null default true,
-  created_at      timestamptz not null default now()
+  created_at      timestamptz not null default now(),
+  constraint academic_calendars_user_id_key unique (user_id)
 );
 
 alter table public.academic_calendars enable row level security;

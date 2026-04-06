@@ -77,7 +77,19 @@ export default function TaskDetails() {
   const theme = useTheme();
   const themeId = useThemeId();
   const insets = useSafeAreaInsets();
-  const { filteredFriends, circles, shareTaskWithFriend, shareTaskWithCircle, acceptedSharedTasks, shareStreams, toggleShareStream, toggleCircleShareStream } = useCommunity();
+  const {
+    filteredFriends,
+    circles,
+    shareTaskWithFriend,
+    shareTaskWithCircle,
+    acceptedSharedTasks,
+    shareStreams,
+    toggleShareStream,
+    toggleCircleShareStream,
+    userId: communityUserId,
+    toggleSharedCompletion,
+    removeSharedTaskLink,
+  } = useCommunity();
   const T = useTranslations(language);
 
   // First look in own tasks; fall back to a shared task (recipient view)
@@ -143,6 +155,16 @@ export default function TaskDetails() {
   // For shared tasks viewed by the recipient, use the shared task record id as the task id displayed
   const sharedBy = sharedTaskRecord?.owner_profile?.name;
 
+  /** Recipient’s own completion (does not change the owner’s task). */
+  const isRecipientSharedView = Boolean(
+    sharedTaskRecord &&
+      communityUserId &&
+      sharedTaskRecord.recipient_id === communityUserId,
+  );
+  const displayIsDone = isRecipientSharedView
+    ? Boolean(sharedTaskRecord?.recipient_completed)
+    : Boolean(task?.isDone);
+
   const isAlreadyShared = participants.length > 0;
 
   const subjectPickerCourses = useMemo(() => {
@@ -205,6 +227,24 @@ export default function TaskDetails() {
 
   // ── Actions ─────────────────────────────────────────────────────────────────
   const handleDelete = () => {
+    if (isRecipientSharedView && sharedTaskRecord) {
+      Alert.alert(
+        T('deleteTask'),
+        `Remove "${task.title}" from your planner only? This does not delete it for the person who shared it.`,
+        [
+          { text: T('cancel'), style: 'cancel' },
+          {
+            text: T('delete'),
+            style: 'destructive',
+            onPress: async () => {
+              const ok = await removeSharedTaskLink(sharedTaskRecord.id);
+              if (ok) router.back();
+            },
+          },
+        ],
+      );
+      return;
+    }
     Alert.alert(T('deleteTask'), `"${task.title}" ${T('deleteTaskDesc')}`, [
       { text: T('cancel'), style: 'cancel' },
       { text: T('delete'), style: 'destructive', onPress: () => { deleteTask(task.id); router.back(); } },
@@ -212,6 +252,20 @@ export default function TaskDetails() {
   };
 
   const handleToggle = () => {
+    if (isRecipientSharedView && sharedTaskRecord) {
+      if (displayIsDone) {
+        Alert.alert(T('markAsNotDone'), `"${task.title}" ${T('markAsIncomplete')}`, [
+          { text: T('cancel'), style: 'cancel' },
+          { text: T('undo'), onPress: () => void toggleSharedCompletion(sharedTaskRecord.id, false) },
+        ]);
+      } else {
+        Alert.alert(T('markAsDoneQuestion'), `"${task.title}" ${T('markAsCompleted')}`, [
+          { text: T('cancel'), style: 'cancel' },
+          { text: T('markDone'), onPress: () => void toggleSharedCompletion(sharedTaskRecord.id, true) },
+        ]);
+      }
+      return;
+    }
     if (task.isDone) {
       Alert.alert(T('markAsNotDone'), `"${task.title}" ${T('markAsIncomplete')}`, [
         { text: T('cancel'), style: 'cancel' },
@@ -335,7 +389,7 @@ export default function TaskDetails() {
               <Text style={s.badgePersonalText}>Personal</Text>
             </View>
           )}
-          {task.isDone && (
+          {displayIsDone && (
             <View style={s.badgeDone}>
               <Feather name="check" size={12} color="#16a34a" />
               <Text style={[s.badgeDoneText, { color: theme.success }]}>{T('completed')}</Text>
@@ -568,26 +622,26 @@ export default function TaskDetails() {
 
       {/* ── Sticky Bottom Bar ─────────────────────────────────────────────────── */}
       <View style={[s.bottomBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
-        {!isReadOnlySharedTask && (
+        {!isReadOnlySharedTask || isRecipientSharedView ? (
           <Pressable
             onPress={handleDelete}
             style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.7 }, { backgroundColor: theme.danger + '22', borderColor: theme.danger + '33' }]}
           >
             <Feather name="trash-2" size={20} color={theme.danger} />
           </Pressable>
-        )}
+        ) : null}
         <Pressable
           style={({ pressed }) => [
             s.mainActionBtn,
-            task.isDone && s.mainActionBtnDone,
+            displayIsDone && s.mainActionBtnDone,
             pressed && { opacity: 0.85 },
-            { backgroundColor: task.isDone ? theme.textSecondary : theme.primary },
+            { backgroundColor: displayIsDone ? theme.textSecondary : theme.primary },
           ]}
           onPress={handleToggle}
         >
-          <Feather name={task.isDone ? 'rotate-ccw' : 'check'} size={20} color={theme.textInverse} />
+          <Feather name={displayIsDone ? 'rotate-ccw' : 'check'} size={20} color={theme.textInverse} />
           <Text style={[s.mainActionText, { color: theme.textInverse }]}>
-            {task.isDone ? T('completed') : T('markAsDone')}
+            {displayIsDone ? T('completed') : T('markAsDone')}
           </Text>
         </Pressable>
       </View>
