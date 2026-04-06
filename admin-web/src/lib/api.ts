@@ -554,17 +554,76 @@ export type TimetableEntryRow = {
   start_time: string;
   end_time: string;
   location: string;
-  created_at?: string;
+  display_name?: string | null;
+  slot_color?: string | null;
+  group_name?: string | null;
+  semester_label?: string | null;
 };
+
+export type TimetableUserSummaryRow = {
+  user_id: string;
+  entry_count: number;
+  profile: {
+    id: string;
+    name: string | null;
+    student_id: string | null;
+    university_id: string | null;
+  } | null;
+};
+
+async function aggregateTimetableUserCounts(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const batch = 1000;
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('timetable_entries').select('user_id').range(offset, offset + batch - 1);
+    if (error) throw toError(error);
+    const chunk = (data ?? []) as { user_id: string }[];
+    for (const r of chunk) {
+      counts.set(r.user_id, (counts.get(r.user_id) || 0) + 1);
+    }
+    if (chunk.length < batch) break;
+    offset += batch;
+    if (offset > 120_000) break;
+  }
+  return counts;
+}
+
+export async function listTimetableUsersSummary(): Promise<TimetableUserSummaryRow[]> {
+  if (await hasSessionJwt()) {
+    const counts = await aggregateTimetableUserCounts();
+    const userIds = Array.from(counts.keys());
+    if (!userIds.length) return [];
+    const { data: profs, error } = await supabase
+      .from('profiles')
+      .select('id,name,student_id,university_id')
+      .in('id', userIds);
+    if (error) throw toError(error);
+    const pmap = new Map((profs ?? []).map((p) => [p.id, p]));
+    const users = userIds.map((id) => ({
+      user_id: id,
+      entry_count: counts.get(id) ?? 0,
+      profile: (pmap.get(id) as TimetableUserSummaryRow['profile']) ?? null,
+    }));
+    users.sort((a, b) => b.entry_count - a.entry_count);
+    return users;
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'timetables_users_summary' }, headers);
+  const res = unwrapFunctionData<{ users: TimetableUserSummaryRow[] }>(data, error);
+  return res.users;
+}
+
+const TIMETABLE_ENTRY_SELECT =
+  'id,user_id,day,subject_code,subject_name,lecturer,start_time,end_time,location,display_name,slot_color,group_name,semester_label';
 
 export async function listTimetableEntries(opts: { userId?: string; universityId?: string; limit?: number }) {
   if (await hasSessionJwt()) {
     const lim = Math.max(1, Math.min(500, Number(opts.limit ?? 200)));
     const userId = opts.userId?.trim() || '';
     const universityId = opts.universityId?.trim() || '';
-    let q = supabase
-      .from('timetable_entries')
-      .select('id,user_id,day,subject_code,subject_name,lecturer,start_time,end_time,location');
+    let q = supabase.from('timetable_entries').select(TIMETABLE_ENTRY_SELECT);
     if (userId) q = q.eq('user_id', userId);
     const { data, error } = await q.limit(lim);
     if (error) throw toError(error);
@@ -723,6 +782,116 @@ export async function deleteTimetableEntry(id: string, userId: string) {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_data', { action: 'timetable_delete', id, userId }, headers);
   unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export async function insertTimetableEntry(opts: {
+  userId: string;
+  id?: string;
+  day: string;
+  subject_code: string;
+  subject_name: string;
+  lecturer: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  group_name?: string | null;
+  semester_label?: string | null;
+  display_name?: string | null;
+  slot_color?: string | null;
+}): Promise<TimetableEntryRow> {
+  const id = (opts.id ?? crypto.randomUUID()).trim();
+  const row = {
+    id,
+    user_id: opts.userId,
+    day: opts.day.trim(),
+    subject_code: opts.subject_code.trim(),
+    subject_name: opts.subject_name.trim(),
+    lecturer: (opts.lecturer || '-').trim() || '-',
+    start_time: opts.start_time.trim(),
+    end_time: opts.end_time.trim(),
+    location: (opts.location || '-').trim() || '-',
+    group_name: opts.group_name != null && String(opts.group_name).trim() !== '' ? String(opts.group_name).trim() : null,
+    semester_label:
+      opts.semester_label != null && String(opts.semester_label).trim() !== ''
+        ? String(opts.semester_label).trim()
+        : null,
+    display_name:
+      opts.display_name != null && String(opts.display_name).trim() !== '' ? String(opts.display_name).trim() : null,
+    slot_color: opts.slot_color != null && String(opts.slot_color).trim() !== '' ? String(opts.slot_color).trim() : null,
+  };
+
+  if (await hasSessionJwt()) {
+    const { data, error } = await supabase.from('timetable_entries').insert(row).select(TIMETABLE_ENTRY_SELECT).single();
+    if (error) throw toError(error);
+    return data as TimetableEntryRow;
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    {
+      action: 'timetable_insert',
+      userId: opts.userId,
+      id,
+      day: row.day,
+      subject_code: row.subject_code,
+      subject_name: row.subject_name,
+      lecturer: row.lecturer,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      location: row.location,
+      group_name: row.group_name,
+      semester_label: row.semester_label,
+      display_name: row.display_name,
+      slot_color: row.slot_color,
+    },
+    headers,
+  );
+  const res = unwrapFunctionData<{ row: Record<string, unknown> }>(data, error);
+  return res.row as TimetableEntryRow;
+}
+
+export async function updateTimetableEntry(
+  userId: string,
+  entryId: string,
+  patch: Partial<{
+    day: string;
+    subject_code: string;
+    subject_name: string;
+    lecturer: string;
+    start_time: string;
+    end_time: string;
+    location: string;
+    group_name: string | null;
+    semester_label: string | null;
+    display_name: string | null;
+    slot_color: string | null;
+  }>,
+): Promise<TimetableEntryRow> {
+  if (await hasSessionJwt()) {
+    const row = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined),
+    ) as Record<string, unknown>;
+    if (Object.keys(row).length === 0) throw new Error('No fields to update');
+    const { data, error } = await supabase
+      .from('timetable_entries')
+      .update(row)
+      .eq('id', entryId)
+      .eq('user_id', userId)
+      .select(TIMETABLE_ENTRY_SELECT)
+      .single();
+    if (error) throw toError(error);
+    return data as TimetableEntryRow;
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'timetable_update', userId, id: entryId, patch },
+    headers,
+  );
+  const res = unwrapFunctionData<{ row: Record<string, unknown> }>(data, error);
+  return res.row as TimetableEntryRow;
 }
 
 export type AdminCalendarOfferRow = {

@@ -10,6 +10,16 @@ function todayISO(): string {
 /** Official HEA tables have many rows; below this we treat stored data as summary-only and re-fetch. */
 export const UITM_HEA_PERIOD_COUNT_MIN = 12;
 
+/** True when start/end/totalWeeks are usable (portal anchor or prior save). */
+export function isAcademicCalendarRangeComplete(cal: AcademicCalendar | null | undefined): boolean {
+  if (!cal) return false;
+  const start = String(cal.startDate ?? '').trim().slice(0, 10);
+  const end = String(cal.endDate ?? '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return false;
+  const tw = Number(cal.totalWeeks);
+  return Number.isFinite(tw) && tw >= 1 && tw <= 60;
+}
+
 export const uitmProvider: CalendarProvider = {
   universityId: 'uitm',
 
@@ -17,6 +27,14 @@ export const uitmProvider: CalendarProvider = {
     profile: UserProfile,
     currentCalendar?: AcademicCalendar | null,
   ): Promise<Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> | null> {
+    const rangeOk = isAcademicCalendarRangeComplete(currentCalendar);
+    const hasPeriods = (currentCalendar?.periods?.length ?? 0) > 0;
+
+    // Full calendar already persisted — no HEA on every app open.
+    if (rangeOk && hasPeriods) {
+      return null;
+    }
+
     const group: 'A' | 'B' =
       profile.academicLevel === 'Foundation' ? 'A' : 'B';
 
@@ -40,7 +58,20 @@ export const uitmProvider: CalendarProvider = {
     const needsPeriodBackfill =
       officialPeriodN >= UITM_HEA_PERIOD_COUNT_MIN && currentPeriodN < UITM_HEA_PERIOD_COUNT_MIN;
 
-    // Skip only when dates/weeks match *and* we already have full HEA periods (teaching week needs them).
+    // Range saved (e.g. portal) but phases missing — enrich once per cold start via AppContext autoSync.
+    if (rangeOk && !hasPeriods) {
+      if (!official.periods?.length) return null;
+      return {
+        semesterLabel: official.semesterLabel,
+        startDate: official.startDate,
+        endDate: official.endDate,
+        totalWeeks: official.totalWeeks ?? currentCalendar!.totalWeeks,
+        periods: official.periods,
+        isActive: true,
+      };
+    }
+
+    // Incomplete calendar: skip if bounds already match HEA (avoid duplicate writes)
     if (
       currentCalendar &&
       currentCalendar.startDate === official.startDate &&

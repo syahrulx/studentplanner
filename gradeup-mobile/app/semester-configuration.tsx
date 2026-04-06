@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { fetchUitmAcademicCalendar } from '@/src/lib/uitmAcademicCalendar';
+import { isAcademicCalendarRangeComplete } from '@/src/lib/calendarProviders/uitm';
 import type { AcademicLevel } from '@/src/types';
 
 type StudyModeChoice = 'Full-time' | 'Part-time' | 'Unknown';
@@ -60,12 +61,18 @@ export default function SemesterConfigurationScreen() {
         currentSemester: semester,
       });
 
-      // Auto-sync official UiTM calendar if user is UiTM (or if they already have an UiTM HEA calendar).
+      // Auto-sync official UiTM calendar only when needed — not on every save if nothing relevant changed.
       const shouldSync =
         user.universityId === 'uitm' ||
         String(academicCalendar?.semesterLabel ?? '').toLowerCase().includes('uitm');
 
-      if (shouldSync) {
+      const oldGroup = user.academicLevel === 'Foundation' ? 'A' : 'B';
+      const groupChanged = oldGroup !== recommendedGroup;
+      const calComplete = isAcademicCalendarRangeComplete(academicCalendar);
+      const hasPeriods = (academicCalendar?.periods?.length ?? 0) > 0;
+      const needsHea = !calComplete || !hasPeriods || groupChanged;
+
+      if (shouldSync && needsHea) {
         const today = new Date().toISOString().slice(0, 10);
         const official = await fetchUitmAcademicCalendar(recommendedGroup, { targetDateISO: today });
         if (official?.startDate && official?.endDate) {
@@ -86,7 +93,18 @@ export default function SemesterConfigurationScreen() {
     } finally {
       setBusy(false);
     }
-  }, [academicCalendar?.semesterLabel, academicCalendar?.totalWeeks, busy, level, mode, recommendedGroup, semester, updateAcademicCalendar, updateProfile, user.universityId]);
+  }, [
+    academicCalendar,
+    busy,
+    level,
+    mode,
+    recommendedGroup,
+    semester,
+    updateAcademicCalendar,
+    updateProfile,
+    user.academicLevel,
+    user.universityId,
+  ]);
 
   return (
     <ScrollView

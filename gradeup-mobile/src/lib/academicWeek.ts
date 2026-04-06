@@ -1,5 +1,10 @@
 import type { AcademicCalendar } from '../types';
 import type { RevisionSettings } from '../storage';
+import {
+  MAX_EXTRA_WEEKS_BEYOND_CALENDAR,
+  MIN_DEFAULT_TEACHING_WEEKS,
+  mergeTeachingWeeksForStoredCalendar,
+} from './academicUtils';
 
 type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
 
@@ -114,6 +119,26 @@ export function dueDateToTeachingWeekRaw(
   const diffDays = Math.floor((dueDate.getTime() - startDate.getTime()) / 864e5);
   const rawWeek = Math.floor(diffDays / 7) + 1;
   return Math.max(rawWeek, 1);
+}
+
+/**
+ * Weeks shown on Semester Pulse / planner strip: calendar baseline (already guarded in context),
+ * extended only by **open** tasks’ raw due-week mapping, capped a few weeks past baseline for finals/SOW.
+ */
+export function resolveDisplayTeachingWeeks(
+  calendar: AcademicCalendar | null | undefined,
+  profileStart: string | null | undefined,
+  tasks: Array<{ dueDate: string; isDone?: boolean }>,
+): number {
+  const baseline = mergeTeachingWeeksForStoredCalendar(calendar);
+  let maxFromTasks = baseline;
+  for (const t of tasks) {
+    if (t.isDone) continue;
+    const w = dueDateToTeachingWeekRaw(t.dueDate, calendar, profileStart);
+    if (typeof w === 'number' && w > maxFromTasks) maxFromTasks = w;
+  }
+  const cap = baseline + MAX_EXTRA_WEEKS_BEYOND_CALENDAR;
+  return Math.min(Math.max(MIN_DEFAULT_TEACHING_WEEKS, maxFromTasks), cap);
 }
 
 /**

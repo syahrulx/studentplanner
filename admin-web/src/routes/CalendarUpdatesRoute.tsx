@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   insertUniversityCalendarOffers,
   listUniversities,
@@ -14,6 +15,7 @@ import { Label, TextInput } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
+import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 
 const BUCKET = 'academic-calendar-refs';
 
@@ -41,6 +43,12 @@ export function CalendarUpdatesRoute() {
   const [periodsJson, setPeriodsJson] = useState('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
+
+  const universityNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of universities) m.set(u.id, u.name);
+    return m;
+  }, [universities]);
 
   const refreshUniversities = async () => {
     const all = await listUniversities();
@@ -82,9 +90,16 @@ export function CalendarUpdatesRoute() {
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return history;
     return history.filter((h) =>
-      matchesAdminSearch(searchQuery, h.university_id, h.semester_label, h.admin_note ?? '', h.official_url ?? ''),
+      matchesAdminSearch(
+        searchQuery,
+        h.university_id,
+        universityNameById.get(h.university_id) ?? '',
+        h.semester_label,
+        h.admin_note ?? '',
+        h.official_url ?? '',
+      ),
     );
-  }, [history, searchQuery]);
+  }, [history, searchQuery, universityNameById]);
 
   const publish = async () => {
     setErr('');
@@ -213,22 +228,24 @@ export function CalendarUpdatesRoute() {
             <div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <div className="text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Universities</div>
-                <button
-                  type="button"
-                  className="text-xs font-bold text-brand-600 dark:text-brand-400"
-                  onClick={selectAllEligible}
-                >
-                  Select all
-                </button>
-                <span className="text-slate-300 dark:text-slate-600">·</span>
-                <button type="button" className="text-xs font-bold text-slate-500" onClick={clearSelection}>
-                  Clear
-                </button>
+                {eligible.length > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-brand-600 dark:text-brand-400"
+                      onClick={selectAllEligible}
+                    >
+                      Select all
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
+                    <button type="button" className="text-xs font-bold text-slate-500" onClick={clearSelection}>
+                      Clear
+                    </button>
+                  </>
+                ) : null}
               </div>
               <div className="max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-                {eligible.length === 0 ? (
-                  <div className="text-sm font-semibold text-slate-500">No universities loaded.</div>
-                ) : (
+                {eligible.length > 0 ? (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {eligible.map((u) => (
                       <label key={u.id} className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -243,6 +260,31 @@ export function CalendarUpdatesRoute() {
                         </span>
                       </label>
                     ))}
+                  </div>
+                ) : universities.length === 0 ? (
+                  <div className="space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    <p>There are no rows in the <code className="rounded bg-slate-200/80 px-1 font-mono text-xs dark:bg-slate-800">universities</code> table yet.</p>
+                    <p>
+                      Add institutions under{' '}
+                      <Link to="/universities" className="font-bold text-brand-600 underline dark:text-brand-400">
+                        Universities
+                      </Link>{' '}
+                      first; then they will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    <p>
+                      Calendar offers intentionally exclude <strong>UiTM</strong> (students use the portal academic calendar). No other universities are configured in the database
+                      {universities.some((u) => u.id === 'uitm') ? ' besides UiTM' : ''}.
+                    </p>
+                    <p>
+                      Add another university under{' '}
+                      <Link to="/universities" className="font-bold text-brand-600 underline dark:text-brand-400">
+                        Universities
+                      </Link>{' '}
+                      to publish offers for it.
+                    </p>
                   </div>
                 )}
               </div>
@@ -342,24 +384,28 @@ export function CalendarUpdatesRoute() {
       </MotionPanel>
 
       <MotionSection className="mt-10">
-        <div className="text-lg font-black text-slate-900 dark:text-slate-100">Recent offers</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Newest first.</div>
+        <div className="text-lg font-black text-slate-900 dark:text-slate-100">Existing offers</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Newest first. Each row shows the university, semester span, and a visual timeline (phases from periods JSON when present).
+        </div>
       </MotionSection>
 
       <MotionStagger className="mt-4 space-y-3">
         {filteredHistory.map((h) => (
           <MotionStaggerItem key={h.id}>
             <Card>
-              <CardContent className="py-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div className="text-sm font-black text-slate-900 dark:text-slate-100">{h.semester_label}</div>
-                  <div className="text-xs font-bold text-slate-400">{new Date(h.created_at).toLocaleString()}</div>
+              <CardContent className="space-y-4 py-4">
+                <AcademicCalendarOfferGraphic
+                  offer={h}
+                  universityName={universityNameById.get(h.university_id) ?? h.university_id}
+                />
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Published {new Date(h.created_at).toLocaleString()}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
-                  {h.university_id} · {h.start_date} → {h.end_date} · {h.total_weeks} wk
-                </div>
-                {h.admin_note ? <div className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">{h.admin_note}</div> : null}
-                <div className="mt-2 flex flex-wrap gap-3 text-xs font-bold">
+                {h.admin_note ? <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">{h.admin_note}</div> : null}
+                <div className="flex flex-wrap gap-3 text-xs font-bold">
                   {h.official_url ? (
                     <a href={h.official_url} target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400">
                       Link

@@ -1267,7 +1267,10 @@ export async function updateSharedTaskCompletion(
     .update({ recipient_completed: completed, updated_at: new Date().toISOString() })
     .eq('id', sharedTaskId);
 
-  if (error) console.error('Error updating shared task completion:', error);
+  if (error) {
+    console.error('Error updating shared task completion:', error);
+    throw new Error(error.message || 'Could not update shared task');
+  }
 }
 
 /** Remove this shared_tasks row for the current user only (recipient or owner). Does not delete tasks. */

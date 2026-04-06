@@ -21,7 +21,7 @@ import {
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
-import { dueDateToTeachingWeekRaw, teachingWeekNumberForDate } from '@/src/lib/academicWeek';
+import { resolveDisplayTeachingWeeks, teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { useTheme } from '@/hooks/useTheme';
 import { Avatar } from '@/components/Avatar'; // Trigger reload
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
@@ -155,21 +155,18 @@ export default function Planner() {
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
   const activeMonth = useMemo(() => new Date(activeDate + 'T12:00:00').getMonth(), [activeDate]);
-  const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
-  const maxTaskWeek = useMemo(() => {
-    if (!academicCalendar) return baseTotalWeeks;
-    let maxW = baseTotalWeeks;
-    for (const t of tasks) {
-      const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
-      if (typeof w === 'number' && w > maxW) maxW = w;
-    }
-    return maxW;
-  }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
-  const totalWeeks = Math.max(baseTotalWeeks, maxTaskWeek);
+  const totalWeeks = useMemo(
+    () => resolveDisplayTeachingWeeks(academicCalendar, user.startDate, tasks),
+    [academicCalendar, user.startDate, tasks],
+  );
+  const stripCalendar = useMemo(
+    () => (academicCalendar ? { ...academicCalendar, totalWeeks } : null),
+    [academicCalendar, totalWeeks],
+  );
   const getWeekNumberForDate = useCallback(
     (dateISO: string): number =>
-      teachingWeekNumberForDate(dateISO, academicCalendar, user.startDate, totalWeeks, user.currentWeek ?? 1),
-    [academicCalendar, user.startDate, user.currentWeek, totalWeeks],
+      teachingWeekNumberForDate(dateISO, stripCalendar, user.startDate, totalWeeks, user.currentWeek ?? 1),
+    [stripCalendar, user.startDate, user.currentWeek, totalWeeks],
   );
   const activeWeekNumber = useMemo(() => getWeekNumberForDate(activeDate), [activeDate, getWeekNumberForDate]);
   const activeDateIsBreak = useMemo(() => {

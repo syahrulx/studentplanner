@@ -101,7 +101,9 @@ serve(async (req) => {
       const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
       let q = admin
         .from('timetable_entries')
-        .select('id,user_id,day,subject_code,subject_name,lecturer,start_time,end_time,location');
+        .select(
+          'id,user_id,day,subject_code,subject_name,lecturer,start_time,end_time,location,display_name,slot_color,group_name,semester_label',
+        );
       if (userId) q = q.eq('user_id', userId);
       const { data, error: e } = await q.limit(lim);
       if (e) return json(400, { error: e.message });
@@ -116,6 +118,43 @@ serve(async (req) => {
         }
       }
       return json(200, { items });
+    }
+
+    if (action === 'timetables_users_summary') {
+      const counts = new Map<string, number>();
+      const batch = 4000;
+      let offset = 0;
+      for (;;) {
+        const { data, error: e } = await admin
+          .from('timetable_entries')
+          .select('user_id')
+          .range(offset, offset + batch - 1);
+        if (e) return json(400, { error: e.message });
+        const chunk = data ?? [];
+        for (const r of chunk) {
+          const u = String((r as { user_id: string }).user_id || '');
+          if (!u) continue;
+          counts.set(u, (counts.get(u) || 0) + 1);
+        }
+        if (chunk.length < batch) break;
+        offset += batch;
+        if (offset > 120_000) break;
+      }
+      const userIds = Array.from(counts.keys());
+      if (!userIds.length) return json(200, { users: [] });
+      const { data: profs, error: pe } = await admin
+        .from('profiles')
+        .select('id,name,student_id,university_id')
+        .in('id', userIds);
+      if (pe) return json(400, { error: pe.message });
+      const pmap = new Map((profs ?? []).map((p: { id: string }) => [p.id, p]));
+      const users = userIds.map((id) => ({
+        user_id: id,
+        entry_count: counts.get(id) ?? 0,
+        profile: pmap.get(id) ?? null,
+      }));
+      users.sort((a, b) => b.entry_count - a.entry_count);
+      return json(200, { users });
     }
 
     if (action === 'public_locations_list') {
@@ -230,6 +269,84 @@ serve(async (req) => {
       const { error: e } = await admin.from('timetable_entries').delete().eq('id', id).eq('user_id', user_id);
       if (e) return json(400, { error: e.message });
       return json(200, { ok: true });
+    }
+
+    if (action === 'timetable_insert') {
+      const user_id = String(payload.userId || '').trim();
+      if (!user_id) return json(400, { error: 'missing_userId' });
+      const id = String(payload.id || '').trim() || crypto.randomUUID();
+      const day = String(payload.day || '').trim();
+      const start_time = String(payload.start_time || '').trim();
+      const end_time = String(payload.end_time || '').trim();
+      if (!day || !start_time || !end_time) return json(400, { error: 'missing_day_or_times' });
+      const row = {
+        id,
+        user_id,
+        day,
+        subject_code: String(payload.subject_code ?? '').trim(),
+        subject_name: String(payload.subject_name ?? '').trim(),
+        lecturer: String(payload.lecturer ?? '').trim() || '-',
+        start_time,
+        end_time,
+        location: String(payload.location ?? '').trim() || '-',
+        group_name: payload.group_name != null && String(payload.group_name).trim() !== ''
+          ? String(payload.group_name).trim()
+          : null,
+        semester_label: payload.semester_label != null && String(payload.semester_label).trim() !== ''
+          ? String(payload.semester_label).trim()
+          : null,
+        display_name: payload.display_name != null && String(payload.display_name).trim() !== ''
+          ? String(payload.display_name).trim()
+          : null,
+        slot_color: payload.slot_color != null && String(payload.slot_color).trim() !== ''
+          ? String(payload.slot_color).trim()
+          : null,
+      };
+      const { data, error: e } = await admin.from('timetable_entries').insert(row).select('*').single();
+      if (e) return json(400, { error: e.message });
+      return json(200, { row: data });
+    }
+
+    if (action === 'timetable_update') {
+      const user_id = String(payload.userId || '').trim();
+      const id = String(payload.id || '').trim();
+      if (!id || !user_id) return json(400, { error: 'missing_id_or_userId' });
+      const patch = (payload.patch || {}) as Record<string, unknown>;
+      const row: Record<string, unknown> = {};
+      const str = (k: string) => (patch[k] != null ? String(patch[k]).trim() : undefined);
+      if ('day' in patch) row.day = str('day') ?? '';
+      if ('subject_code' in patch) row.subject_code = str('subject_code') ?? '';
+      if ('subject_name' in patch) row.subject_name = str('subject_name') ?? '';
+      if ('lecturer' in patch) row.lecturer = str('lecturer') || '-';
+      if ('start_time' in patch) row.start_time = str('start_time') ?? '';
+      if ('end_time' in patch) row.end_time = str('end_time') ?? '';
+      if ('location' in patch) row.location = str('location') || '-';
+      if ('group_name' in patch) {
+        const g = str('group_name');
+        row.group_name = g && g.length > 0 ? g : null;
+      }
+      if ('semester_label' in patch) {
+        const s = str('semester_label');
+        row.semester_label = s && s.length > 0 ? s : null;
+      }
+      if ('display_name' in patch) {
+        const d = str('display_name');
+        row.display_name = d && d.length > 0 ? d : null;
+      }
+      if ('slot_color' in patch) {
+        const c = str('slot_color');
+        row.slot_color = c && c.length > 0 ? c : null;
+      }
+      if (Object.keys(row).length === 0) return json(400, { error: 'empty_patch' });
+      const { data, error: e } = await admin
+        .from('timetable_entries')
+        .update(row)
+        .eq('id', id)
+        .eq('user_id', user_id)
+        .select('*')
+        .single();
+      if (e) return json(400, { error: e.message });
+      return json(200, { row: data });
     }
 
     if (action === 'test_fetch') {

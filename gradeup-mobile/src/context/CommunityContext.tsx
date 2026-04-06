@@ -639,10 +639,17 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const toggleSharedCompletion = useCallback(async (sharedTaskId: string, completed: boolean) => {
     if (!userId) return;
-    await communityApi.updateSharedTaskCompletion(sharedTaskId, completed);
-    setAcceptedSharedTasks(prev => prev.map(st =>
-      st.id === sharedTaskId ? { ...st, recipient_completed: completed } : st
-    ));
+    try {
+      await communityApi.updateSharedTaskCompletion(sharedTaskId, completed);
+      setAcceptedSharedTasks((prev) =>
+        prev.map((st) => (st.id === sharedTaskId ? { ...st, recipient_completed: completed } : st)),
+      );
+    } catch (e) {
+      Alert.alert(
+        'Could not update',
+        e instanceof Error ? e.message : 'Please try again.',
+      );
+    }
   }, [userId]);
 
   const removeSharedTaskLink = useCallback(

@@ -23,6 +23,7 @@ import {
 import * as communityApi from '@/src/lib/communityApi';
 import type { FriendWithStatus } from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
+import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
 import { addTrackToLibrary } from '@/src/lib/spotifyAuth';
 
@@ -108,6 +109,11 @@ export default function FriendProfileScreen() {
     ]);
   };
 
+  const studyingSubtitle =
+    friend?.activity?.activity_type === 'studying'
+      ? studyingStatusDetailText(friend.activity.detail, friend.activity.course_name, { isSelf: false, timetable: [] })
+      : null;
+
   if (!friend) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -176,15 +182,19 @@ export default function FriendProfileScreen() {
             <Text style={[styles.activityType, { color: theme.text }]}>
               {getActivityLabel(friend.activity?.activity_type)}
             </Text>
-            {friend.activity?.detail && (
-              <Text style={[styles.activityDetail, { color: theme.textSecondary }]}>
-                {friend.activity.detail}
-              </Text>
-            )}
-            {friend.activity?.course_name && (
-              <Text style={[styles.activityCourse, { color: theme.primary }]}>
-                {friend.activity.course_name}
-              </Text>
+            {friend.activity?.activity_type === 'studying' ? (
+              studyingSubtitle && studyingSubtitle !== 'Studying' ? (
+                <Text style={[styles.activityDetail, { color: theme.textSecondary }]}>{studyingSubtitle}</Text>
+              ) : null
+            ) : (
+              <>
+                {friend.activity?.detail ? (
+                  <Text style={[styles.activityDetail, { color: theme.textSecondary }]}>{friend.activity.detail}</Text>
+                ) : null}
+                {friend.activity?.course_name ? (
+                  <Text style={[styles.activityCourse, { color: theme.primary }]}>{friend.activity.course_name}</Text>
+                ) : null}
+              </>
             )}
           </View>
         </View>

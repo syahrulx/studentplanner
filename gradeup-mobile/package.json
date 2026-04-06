@@ -11,7 +11,7 @@
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts"
   },
   "dependencies": {
-    "@expo/ui": "~0.2.0-beta.9",
+    "@expo/ui": "~55.0.6",
     "@expo/vector-icons": "^15.0.3",
     "@google/genai": "^1.42.0",
     "@gorhom/bottom-sheet": "^5.2.8",

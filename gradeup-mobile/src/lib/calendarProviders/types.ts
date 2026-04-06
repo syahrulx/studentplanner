@@ -10,6 +10,7 @@ export interface CalendarProvider {
   /**
    * Return a calendar if one should be saved/updated, or `null` if no change is needed.
    * Called once per app session after profile + existing calendar are loaded.
+   * Implementations should return `null` without network I/O when a complete calendar is already stored.
    */
   autoSync(
     profile: UserProfile,

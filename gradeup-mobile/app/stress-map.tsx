@@ -7,8 +7,8 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import {
-  dueDateToTeachingWeekRaw,
   peakWeekFromTaskCounts,
+  resolveDisplayTeachingWeeks,
   taskTeachingWeekForWorkload,
   workloadVelocityPointsByWeek,
 } from '@/src/lib/academicWeek';
@@ -23,27 +23,20 @@ export default function StressMap() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const baseTotalWeeks = academicCalendar?.totalWeeks ?? 14;
-  const maxTaskWeek = useMemo(() => {
-    if (!academicCalendar) return baseTotalWeeks;
-    let maxW = baseTotalWeeks;
-    for (const t of tasks) {
-      const w = dueDateToTeachingWeekRaw(t.dueDate, academicCalendar, user.startDate);
-      if (typeof w === 'number' && w > maxW) maxW = w;
-    }
-    return maxW;
-  }, [tasks, academicCalendar, user.startDate, baseTotalWeeks]);
-  const totalWeeks = Math.max(baseTotalWeeks, maxTaskWeek);
-  const effectiveCalendar = useMemo(
-    () => (academicCalendar ? { ...academicCalendar, totalWeeks } : academicCalendar),
+  const totalWeeks = useMemo(
+    () => resolveDisplayTeachingWeeks(academicCalendar, user.startDate, tasks),
+    [academicCalendar, user.startDate, tasks],
+  );
+  const chartCalendar = useMemo(
+    () => (academicCalendar ? { ...academicCalendar, totalWeeks } : null),
     [academicCalendar, totalWeeks],
   );
   const weeks = useMemo(() => Array.from({ length: totalWeeks }, (_, i) => i + 1), [totalWeeks]);
 
   /** Task count per week: calendar due-week, but if SOW suggestedWeek is earlier than that week, use suggestedWeek. */
   const weeklyTotals = useMemo(
-    () => workloadVelocityPointsByWeek(tasks, effectiveCalendar, 'all', user.startDate),
-    [tasks, effectiveCalendar, user.startDate],
+    () => workloadVelocityPointsByWeek(tasks, chartCalendar, 'all', user.startDate),
+    [tasks, chartCalendar, user.startDate],
   );
 
   const { week: highestWeek, max: maxLoadInAnyWeek } = useMemo(

@@ -22,12 +22,15 @@ import { Avatar } from '@/components/Avatar';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
 
 import { useTheme } from '@/hooks/useTheme';
+import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import { ACTIVITY_TYPES } from '@/src/lib/communityApi';
-import type { FriendWithStatus, Circle, SharedGoal, ActivityType } from '@/src/lib/communityApi';
+import type { FriendWithStatus, Circle, SharedGoal, ActivityType, UserActivity } from '@/src/lib/communityApi';
+import type { TimetableEntry } from '@/src/types';
+import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -59,6 +62,17 @@ function getActivityEmoji(type?: string): string {
 function getActivityLabel(type?: string): string {
   const found = ACTIVITY_TYPES.find((a) => a.type === type);
   return found?.label || 'Idle';
+}
+
+function activityStatusDetailLine(
+  activity: UserActivity | undefined,
+  opts: { isSelf: boolean; timetable: TimetableEntry[] },
+): string {
+  if (!activity) return '';
+  if (activity.activity_type === 'studying') {
+    return studyingStatusDetailText(activity.detail, activity.course_name, opts);
+  }
+  return (activity.detail || '').trim() || getActivityLabel(activity.activity_type);
 }
 
 function timeAgo(dateStr?: string): string {
@@ -303,7 +317,9 @@ function MapAudioPlayer({ trackId, songName }: { trackId: string; songName?: str
 
 export default function CommunityMap() {
   const theme = useTheme();
-  const { language, user } = useApp();
+  const { language, user, timetable } = useApp();
+  /** Keeps “current class” under Studying in sync as periods change. */
+  useWallClockTick(30_000);
   const T = useTranslations(language);
   const {
     filteredFriends,
@@ -456,38 +472,40 @@ export default function CommunityMap() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <View style={styles.topBarSide} />
+        <View style={styles.circleSelectorWrap}>
+          <View style={styles.circleSelector}>
+            <Pressable
+              onPress={() => {
+                if (selectedCircle?.id) {
+                  router.push({ pathname: '/community/circle-detail', params: { circleId: selectedCircle.id } } as any);
+                } else {
+                  setShowCircleSelector((v) => !v);
+                }
+              }}
+              style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
+                {selectedCircle?.name || 'All Friends'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowCircleSelector((v) => !v)}
+              style={({ pressed }) => [styles.circleSelectorChevronBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={10}
+            >
+              <Feather name="chevron-down" size={16} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+        </View>
         <Pressable
           onPress={() => router.push('/settings' as any)}
           style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
         >
           <Feather name="settings" size={22} color={theme.text} />
         </Pressable>
-
-        <View style={styles.circleSelector}>
-          <Pressable
-            onPress={() => {
-              if (selectedCircle?.id) {
-                router.push({ pathname: '/community/circle-detail', params: { circleId: selectedCircle.id } } as any);
-              } else {
-                setShowCircleSelector((v) => !v);
-              }
-            }}
-            style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
-          >
-            <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
-              {selectedCircle?.name || 'All Friends'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setShowCircleSelector((v) => !v)}
-            style={({ pressed }) => [styles.circleSelectorChevronBtn, pressed && { opacity: 0.7 }]}
-            hitSlop={10}
-          >
-            <Feather name="chevron-down" size={16} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        <View style={{ width: 40 }} />
       </View>
 
       {/* ─── CIRCLE SELECTOR DROPDOWN ─── */}
@@ -674,7 +692,7 @@ export default function CommunityMap() {
                 {selectedFriend.activity?.activity_type !== 'idle' && selectedFriend.activity?.activity_type !== 'listening_music' && (
                   <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]}>
                     {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
-                    {selectedFriend.activity?.detail || getActivityLabel(selectedFriend.activity?.activity_type)}
+                    {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
                   </Text>
                 )}
                 {selectedFriend.music?.isPlaying && selectedFriend.music.song && (
@@ -864,7 +882,7 @@ export default function CommunityMap() {
               {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
                 <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
                   {getActivityEmoji(myActivity.activity_type)}{' '}
-                  {myActivity.detail || getActivityLabel(myActivity.activity_type)}
+                  {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
                 </Text>
               ) : myActivity?.activity_type === 'idle' ? (
                 <Text style={[styles.personStatus, { color: theme.textSecondary }]}>Tap to set your status</Text>
@@ -937,7 +955,7 @@ export default function CommunityMap() {
                   {friend.activity && friend.activity.activity_type !== 'idle' && friend.activity.activity_type !== 'listening_music' && (
                     <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
                       {getActivityEmoji(friend.activity.activity_type)}{' '}
-                      {friend.activity.detail || getActivityLabel(friend.activity.activity_type)}
+                      {activityStatusDetailLine(friend.activity, { isSelf: false, timetable })}
                     </Text>
                   )}
                   {friend.music?.isPlaying && friend.music.song ? (
@@ -978,6 +996,7 @@ export default function CommunityMap() {
         visible={showStatusPopup}
         onClose={() => setShowStatusPopup(false)}
         myActivity={myActivity}
+        timetable={timetable}
         updateActivity={updateActivity}
         clearMyActivity={clearMyActivity}
         refreshMyActivity={refreshMyActivity}
@@ -1004,6 +1023,7 @@ function StatusPopup({
   visible,
   onClose,
   myActivity,
+  timetable,
   updateActivity,
   clearMyActivity,
   refreshMyActivity,
@@ -1014,6 +1034,7 @@ function StatusPopup({
   visible: boolean;
   onClose: () => void;
   myActivity: any;
+  timetable: TimetableEntry[];
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
   refreshMyActivity: () => Promise<void>;
@@ -1040,7 +1061,12 @@ function StatusPopup({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateActivity(selectedType);
+      if (selectedType === 'studying') {
+        const label = getCurrentTimetableSubjectLabel(timetable) || 'Studying';
+        await updateActivity('studying', label, label);
+      } else {
+        await updateActivity(selectedType);
+      }
       await refreshMyActivity();
       onClose();
     } catch (e) {
@@ -1295,6 +1321,18 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
+  },
+  /** Matches topBarBtn width so circle title stays visually centered. */
+  topBarSide: {
+    width: 40,
+    height: 40,
+  },
+  circleSelectorWrap: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topBarBtn: {
     width: 40,
