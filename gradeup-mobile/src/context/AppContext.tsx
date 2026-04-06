@@ -67,6 +67,7 @@ import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
+import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { buildHomeWidgetProps } from '../lib/homeWidgetProps';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 
@@ -747,6 +748,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             } catch (e) {
               if (__DEV__) console.warn('[GradeUp] Calendar auto-sync failed', e);
+            }
+          }
+
+          // Auto-load admin-published calendar for non-UiTM universities (silent, no prompt)
+          if (uniId && uniId !== 'uitm') {
+            try {
+              const adminOffer = await fetchLatestCalendarForUniversity(uniId);
+              if (adminOffer && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+                const currentCal = academicCalendarRef.current;
+                // Apply if no calendar exists or admin offer is newer
+                if (!currentCal || (adminOffer.createdAt && adminOffer.createdAt > (currentCal.createdAt ?? ''))) {
+                  const saved = await academicCalendarDb.upsertCalendar(uid, offerToCalendarPatch(adminOffer));
+                  const savedEff = withEffectiveTotalWeeks(saved);
+                  setAcademicCalendar(savedEff);
+                  const prog =
+                    savedEff?.periods && Array.isArray(savedEff.periods) && savedEff.periods.length > 0
+                      ? getAcademicProgressFromCalendar(savedEff)
+                      : getAcademicProgress(savedEff?.startDate ?? saved.startDate, savedEff?.totalWeeks ?? saved.totalWeeks);
+                  setUserState((prev) => ({
+                    ...prev,
+                    startDate: savedEff?.startDate ?? saved.startDate,
+                    currentWeek: prog.week,
+                    isBreak: prog.isBreak,
+                    semesterPhase: prog.semesterPhase,
+                  }));
+                }
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[GradeUp] Admin calendar auto-load failed', e);
             }
           }
         }

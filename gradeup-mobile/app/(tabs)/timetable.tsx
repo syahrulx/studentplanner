@@ -7,6 +7,7 @@ import {
   ScrollView,
   Platform,
   Modal,
+  Alert,
   useWindowDimensions,
   Switch,
 } from 'react-native';
@@ -149,7 +150,7 @@ const JS_TO_DAY: DayOfWeek[] = [
 ];
 
 export default function TimetableScreen() {
-  const { language, timetable, user, weekStartsOn } = useApp();
+  const { language, timetable, user, weekStartsOn, saveTimetableOnly } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
   const { width: winW, height: winH } = useWindowDimensions();
@@ -279,6 +280,16 @@ export default function TimetableScreen() {
       await setHasSeenNonUitmTimetableIntro(true);
       setShowNonUitmIntro(false);
     };
+    const isUitm = user.universityId === 'uitm' ||
+      (user.university || '').toLowerCase().includes('uitm') ||
+      (user.university || '').toLowerCase().includes('mara');
+
+    const featureCards = [
+      { icon: 'zap' as const, color: '#6366f1', bg: '#eef2ff', label: 'Auto-import', desc: isUitm ? 'Fetch via Student ID' : 'Scan timetable image' },
+      { icon: 'clock' as const, color: '#0ea5e9', bg: '#e0f2fe', label: 'Track Schedule', desc: 'Never miss a class' },
+      { icon: 'smartphone' as const, color: '#10b981', bg: '#dcfce7', label: 'Home Widget', desc: 'Glance from home screen' },
+    ];
+
     return (
       <View style={[s.container, { backgroundColor: theme.background }]}>
         {renderHeader(true)}
@@ -325,24 +336,76 @@ export default function TimetableScreen() {
             </Pressable>
           </Pressable>
         </Modal>
-        <View style={s.emptyWrap}>
-          <View style={[s.emptyIcon, { backgroundColor: theme.card }]}>
-            <Feather name="calendar" size={40} color={theme.textSecondary} style={{ opacity: 0.5 }} />
-          </View>
-          <Text style={[s.emptyTitle, { color: theme.text }]}>{(T as any)('timetableHeader') || 'Timetable'}</Text>
-          <Text style={[s.emptySub, { color: theme.textSecondary }]}>
-            {linkedButEmpty ? T('timetableLinkedEmptyHint') : T('connectUniversityPrompt')}
-          </Text>
-          <Pressable
-            style={({ pressed }) => [s.connectBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
-            onPress={() => router.push('/university-connect' as any)}
-          >
-            <Feather name="zap" size={18} color={theme.textInverse} style={{ marginRight: 8 }} />
-            <Text style={s.connectBtnText}>
-              {linkedButEmpty ? T('resync') : 'Generate Timetable'}
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.emptyScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Hero ── */}
+          <View style={s.emptyHero}>
+            <View style={[s.emptyHeroBadge, { backgroundColor: `${theme.primary}15` }]}>
+              <View style={[s.emptyHeroIconRing, { borderColor: `${theme.primary}30` }]}>
+                <Feather name="calendar" size={36} color={theme.primary} />
+              </View>
+            </View>
+            <Text style={[s.emptyHeroTitle, { color: theme.text }]}>Your Timetable</Text>
+            <Text style={[s.emptyHeroSub, { color: theme.textSecondary }]}>
+              {isUitm
+                ? 'Connect with your Student ID to auto-import all your classes instantly'
+                : 'Scan your timetable image and let AI extract every class for you'}
             </Text>
+          </View>
+
+          {/* ── Feature Cards ── */}
+          <View style={s.emptyFeatureRow}>
+            {featureCards.map((f) => (
+              <View key={f.label} style={[s.emptyFeatureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={[s.emptyFeatureIconWrap, { backgroundColor: f.bg }]}>
+                  <Feather name={f.icon} size={18} color={f.color} />
+                </View>
+                <Text style={[s.emptyFeatureLabel, { color: theme.text }]}>{f.label}</Text>
+                <Text style={[s.emptyFeatureDesc, { color: theme.textSecondary }]}>{f.desc}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* ── Primary CTA ── */}
+          <Pressable
+            style={({ pressed }) => [s.emptyPrimaryBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.88 }]}
+            onPress={() => {
+              if (isUitm) {
+                router.push('/university-connect' as any);
+              } else {
+                router.push('/timetable-import' as any);
+              }
+            }}
+          >
+            <View style={s.emptyPrimaryBtnInner}>
+              <Feather name={isUitm ? 'zap' : 'upload-cloud'} size={20} color="#fff" />
+              <View style={{ marginLeft: 12 }}>
+                <Text style={s.emptyPrimaryBtnTitle}>
+                  {linkedButEmpty ? 'Re-sync Timetable' : isUitm ? 'Generate via Student ID' : 'Scan Timetable Image'}
+                </Text>
+                <Text style={s.emptyPrimaryBtnSub}>
+                  {isUitm ? 'Uses public UiTM sources · Fast & free' : 'AI-powered extraction · Takes ~10s'}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.7)" style={{ marginLeft: 'auto' }} />
+            </View>
           </Pressable>
-        </View>
+
+          {/* ── Manual entry fallback ── */}
+          <Pressable
+            style={({ pressed }) => [s.emptySecondaryBtn, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.75 }]}
+            onPress={() => router.push('/timetable-edit' as any)}
+          >
+            <Feather name="edit-2" size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+            <Text style={[s.emptySecondaryBtnText, { color: theme.textSecondary }]}>Or add classes manually</Text>
+          </Pressable>
+
+
+        </ScrollView>
       </View>
     );
   }
@@ -506,6 +569,34 @@ export default function TimetableScreen() {
                 thumbColor={slotDetails.group ? theme.primary : theme.textSecondary}
               />
             </View>
+            <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
+            <Pressable
+              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setMenuOpen(false);
+                Alert.alert(
+                  'Reset Timetable',
+                  'This will remove all your classes and return to the initial setup. This cannot be undone.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Reset',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await saveTimetableOnly([]);
+                        } catch {
+                          Alert.alert('Error', 'Failed to reset timetable. Please try again.');
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Feather name="trash-2" size={18} color="#ef4444" />
+              <Text style={[s.menuItemText, { color: '#ef4444' }]}>Reset timetable</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1433,6 +1524,65 @@ const s = StyleSheet.create({
     borderRadius: 14,
   },
   connectBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  // ── New rich empty state styles ──
+  emptyScrollContent: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 8 },
+  emptyHero: { alignItems: 'center', paddingTop: 24, paddingBottom: 28 },
+  emptyHeroBadge: {
+    width: 100, height: 100, borderRadius: 32,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+  },
+  emptyHeroIconRing: {
+    width: 80, height: 80, borderRadius: 24, borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyHeroTitle: { fontSize: 24, fontWeight: '800', marginBottom: 10, letterSpacing: -0.3 },
+  emptyHeroSub: { fontSize: 14, textAlign: 'center', lineHeight: 21, maxWidth: 300 },
+  emptyFeatureRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  emptyFeatureCard: {
+    flex: 1, borderRadius: 16, padding: 14, borderWidth: 1, alignItems: 'center',
+  },
+  emptyFeatureIconWrap: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  emptyFeatureLabel: { fontSize: 12, fontWeight: '700', marginBottom: 3, textAlign: 'center' },
+  emptyFeatureDesc: { fontSize: 11, textAlign: 'center', lineHeight: 15 },
+  emptyPrimaryBtn: { borderRadius: 18, padding: 18, marginBottom: 12 },
+  emptyPrimaryBtnInner: { flexDirection: 'row', alignItems: 'center' },
+  emptyPrimaryBtnTitle: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  emptyPrimaryBtnSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  emptySecondaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderRadius: 14, paddingVertical: 13, marginBottom: 24,
+  },
+  emptySecondaryBtnText: { fontSize: 14, fontWeight: '600' },
+  emptyWidgetCard: { borderRadius: 20, borderWidth: 1.5, padding: 20 },
+  emptyWidgetCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  emptyWidgetIconWrap: {
+    width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+  },
+  emptyWidgetTitle: { fontSize: 16, fontWeight: '800' },
+  emptyWidgetSub: { fontSize: 12, marginTop: 2, lineHeight: 17 },
+  emptyWidgetSteps: { gap: 12, marginBottom: 18 },
+  emptyWidgetStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  emptyWidgetStepNum: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0,
+  },
+  emptyWidgetStepNumText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  emptyWidgetStepText: { fontSize: 13, lineHeight: 20, flex: 1 },
+  emptyWidgetPreview: {
+    borderRadius: 14, borderWidth: 1, padding: 14, gap: 10,
+  },
+  emptyWidgetPreviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  emptyWidgetPreviewDay: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  emptyWidgetPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  emptyWidgetPreviewTime: { fontSize: 12, fontWeight: '700', width: 40 },
+  emptyWidgetPreviewLabel: { fontSize: 13, fontWeight: '600', flex: 1 },
+  emptyWidgetPreviewRoom: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  emptyWidgetPreviewRoomText: { fontSize: 11, fontWeight: '700' },
+  emptyWidgetPreviewFooter: { flexDirection: 'row', alignItems: 'center', gap: 5, borderTopWidth: 1, paddingTop: 10, marginTop: 2 },
+  emptyWidgetPreviewFooterText: { fontSize: 11, color: '#10b981', fontWeight: '600' },
 });
 
 function WeekGridSlotMetaText({

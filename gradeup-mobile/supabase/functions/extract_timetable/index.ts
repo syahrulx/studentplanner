@@ -136,7 +136,7 @@ function textFromResponsesApi(body: unknown): string {
 }
 
 const TIMETABLE_SYSTEM =
-  'You extract weekly university class timetables. Output valid JSON only. Use 24-hour times HH:MM. Days must be English full names: Monday..Sunday. Do not invent classes; only rows visible in the source.';
+  'You are an expert at extracting weekly university class timetables from images and documents. Output valid JSON only. Use 24-hour times HH:MM. Days must be English full names: Monday..Sunday. Do not invent classes; only extract rows clearly visible in the source. Be extremely thorough — missing even one class is unacceptable.';
 
 const TIMETABLE_JSON_SHAPE =
   '{"slots":[{"day":"Monday","start_time":"09:00","end_time":"10:00","subject_code":"ABC123","subject_name":"Course title","lecturer":"Name or -","location":"Room or Online or -","group":""}]}';
@@ -331,6 +331,53 @@ async function openAiTimetableFromTextChat(args: {
   return { ok: true, text };
 }
 
+function buildImageExtractionPrompt(): string {
+  return [
+    'You are looking at a university class timetable image. Your job is to extract EVERY class visible.',
+    '',
+    '## GRID STRUCTURE',
+    'The image is a GRID:',
+    '- LEFT AXIS: day labels (Mon, Tue, Wed, Thu, Fri or similar abbreviations). Each label marks a HORIZONTAL ROW.',
+    '- TOP AXIS: time labels (08:00, 09:00, 10:00, ... up to 18:00 or later). Each label marks a VERTICAL COLUMN.',
+    '- COLORED BLOCKS sit inside the grid. Each block = one class session.',
+    '- A block\'s HORIZONTAL ROW determines its DAY. A block\'s COLUMN SPAN determines its TIME.',
+    '',
+    '## EXTRACTION PROCEDURE — FOLLOW EXACTLY',
+    '',
+    'Process the grid ONE ROW AT A TIME, top to bottom:',
+    '',
+    'ROW 1 (Monday): Look at the ENTIRE row from left (08:00) to right (18:00). For every colored block in this row:',
+    '  - Read subject code (large text like ISP613)',
+    '  - Read time range (small text like "08:00-10:00", or infer from column position)',
+    '  - Read room/location (small text, often with a pin/location icon). If NO room text exists inside the block, set location to "-"',
+    '  - Set day = "Monday"',
+    '',
+    'ROW 2 (Tuesday): Same process. Set day = "Tuesday" for all blocks in this row.',
+    'ROW 3 (Wednesday): Same process. Set day = "Wednesday".',
+    'ROW 4 (Thursday): Same process. Set day = "Thursday".',
+    'ROW 5 (Friday): Same process. Set day = "Friday".',
+    '(Continue for Saturday/Sunday if rows exist.)',
+    '',
+    '## ABSOLUTE RULES — VIOLATIONS ARE UNACCEPTABLE',
+    '',
+    '1. DAY ASSIGNMENT: The day is determined ONLY by which labeled row the block sits in. NEVER guess or infer the day from subject names or other logic.',
+    '2. NO "Online" HALLUCINATION: If a block has no room/location text inside it, set location to "-". Do NOT write "Online" unless the block literally contains the word "Online".',
+    '3. NO FABRICATION: Do not invent classes that are not visible as colored blocks. If you cannot see a block, do not create an entry for it.',
+    '4. NO SKIPPING: Every visible colored block MUST appear in your output. Check BOTH the morning section (08:00-12:00) AND afternoon section (14:00-18:00) of EVERY row. Timetables often have a gap between 12:00-14:00 — do not assume afternoon is empty.',
+    '5. ROOM ISOLATION: Each block has its own room text (or none). Never copy a room from one block to another.',
+    '6. ONE ENTRY PER BLOCK: Each colored block = exactly one JSON entry. Same subject on different days = separate entries.',
+    '',
+    '## OUTPUT FORMAT',
+    'Return JSON only with this shape:',
+    TIMETABLE_JSON_SHAPE,
+    '',
+    '- subject_code: the alphanumeric code (e.g. ISP613, CSP600, TMC501)',
+    '- subject_name: full course name if visible, otherwise repeat the code',
+    '- 24-hour format HH:MM for all times',
+    '- Days must be full English: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday',
+  ].join('\n');
+}
+
 async function openAiTimetableFromImage(args: {
   apiKey: string;
   model: string;
@@ -338,26 +385,98 @@ async function openAiTimetableFromImage(args: {
   base64: string;
 }): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
   const url = `data:${args.mime};base64,${args.base64}`;
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${args.apiKey}`,
+  };
+
+  // ── STEP 1: Ask the AI to describe each block as plain text (chain-of-thought) ──
+  // No JSON pressure = model focuses on reading the image accurately row by row.
+  const step1Prompt = [
+    'Look at this university timetable image carefully.',
+    '',
+    'The image is a GRID:',
+    '- Left axis = day rows (Mon, Tue, Wed, Thu, Fri)',
+    '- Top axis = time columns (08:00, 09:00, 10:00, ... 18:00)',
+    '- Each COLORED BLOCK = one class session',
+    '',
+    'TASK: Scan each row from top to bottom, left to right. For EVERY colored block you see, describe it on its own line in this exact format:',
+    'DAY | START_TIME-END_TIME | SUBJECT_CODE | ROOM_OR_DASH',
+    '',
+    'Rules:',
+    '- DAY: use the row label (Mon=Monday, Tue=Tuesday, Wed=Wednesday, Thu=Thursday, Fri=Friday)',
+    '- TIME: read the time printed inside the block (e.g. 08:00-10:00), or read from grid columns',
+    '- SUBJECT_CODE: the large bold code inside the block (e.g. ISP613, CSP600)',
+    '- ROOM: the small text inside the block (e.g. Bilik BK31, Big Data Lab). If the block has no room text, write just a dash: -',
+    '- NEVER write "Online" unless the word "Online" literally appears in the block',
+    '- NEVER skip a block. NEVER hallucinate a block that does not exist.',
+    '- After scanning 08:00-12:00, continue scanning 14:00-18:00 for the SAME row before moving to the next day.',
+    '',
+    'Output ONLY the pipe-separated lines. No extra explanation.',
+  ].join('\n');
+
+  const step1Res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${args.apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model: args.model,
       messages: [
-        { role: 'system', content: TIMETABLE_SYSTEM },
         {
           role: 'user',
           content: [
-            {
-              type: 'text',
-              text: `${buildUserPromptForText().replace('=== TIMETABLE TEXT ===', '')}\nExtract from this timetable image. Return JSON only: ${TIMETABLE_JSON_SHAPE}`,
-            },
-            { type: 'image_url', image_url: { url } },
+            { type: 'text', text: step1Prompt },
+            { type: 'image_url', image_url: { url, detail: 'high' } },
           ],
         },
+      ],
+      temperature: 0,
+      max_tokens: 4096,
+    }),
+  });
+
+  if (!step1Res.ok) {
+    const detail = (await step1Res.text()).slice(0, 800);
+    return { ok: false, status: step1Res.status, detail };
+  }
+  const step1Json = await step1Res.json();
+  const description = String(step1Json?.choices?.[0]?.message?.content ?? '').trim();
+
+  if (!description) {
+    return { ok: false, status: 500, detail: 'Step 1 returned empty description' };
+  }
+
+  // ── STEP 2: Convert the plain-text description to JSON ──
+  // Model now only has to format — spatial reasoning is already done.
+  const step2Prompt = [
+    'Convert the following timetable description into JSON.',
+    'Each line is: DAY | START_TIME-END_TIME | SUBJECT_CODE | ROOM',
+    '',
+    '=== DESCRIPTION ===',
+    description,
+    '=== END ===',
+    '',
+    'Rules:',
+    '- Parse each line into one JSON slot object.',
+    '- day: full English name (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)',
+    '- start_time and end_time: 24-hour HH:MM format',
+    '- subject_code: the code as written',
+    '- subject_name: repeat the subject_code (no full name available)',
+    '- location: the room as written, or "-" if dash',
+    '- lecturer: "-"',
+    '- group: ""',
+    '',
+    'Return JSON only with this shape:',
+    TIMETABLE_JSON_SHAPE,
+  ].join('\n');
+
+  const step2Res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: args.model,
+      messages: [
+        { role: 'system', content: 'You convert timetable descriptions to JSON. Output valid JSON only.' },
+        { role: 'user', content: step2Prompt },
       ],
       response_format: { type: 'json_object' },
       temperature: 0,
@@ -365,14 +484,15 @@ async function openAiTimetableFromImage(args: {
     }),
   });
 
-  if (!res.ok) {
-    const detail = (await res.text()).slice(0, 800);
-    return { ok: false, status: res.status, detail };
+  if (!step2Res.ok) {
+    const detail = (await step2Res.text()).slice(0, 800);
+    return { ok: false, status: step2Res.status, detail };
   }
-  const aiJson = await res.json();
-  const text = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
+  const step2Json = await step2Res.json();
+  const text = String(step2Json?.choices?.[0]?.message?.content ?? '').trim();
   return { ok: true, text };
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -434,7 +554,7 @@ Deno.serve(async (req) => {
 
     const pdfModel = (Deno.env.get('OPENAI_TIMETABLE_PDF_MODEL') ?? 'gpt-4o').trim();
     const textModel = (Deno.env.get('OPENAI_TIMETABLE_TEXT_MODEL') ?? 'gpt-4o-mini').trim();
-    const imageModel = (Deno.env.get('OPENAI_TIMETABLE_IMAGE_MODEL') ?? 'gpt-4o-mini').trim();
+    const imageModel = (Deno.env.get('OPENAI_TIMETABLE_IMAGE_MODEL') ?? 'gpt-4o').trim();
 
     let modelText = '';
     const isPdf = mimeType === 'application/pdf' || isPdfMagic(bytes);

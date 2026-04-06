@@ -95,6 +95,28 @@ export async function recordCalendarOfferResponse(params: {
   if (error) throw new Error(error.message || 'Failed to save response');
 }
 
+/**
+ * Fetch the latest admin calendar offer for a university (no accept/dismiss gating).
+ * Used for silent auto-load: if admin published a calendar for a uni, students get it automatically.
+ */
+export async function fetchLatestCalendarForUniversity(
+  universityId: string,
+): Promise<UniversityCalendarOffer | null> {
+  const uni = (universityId ?? '').trim();
+  if (!uni || uni === 'uitm') return null;
+
+  const { data, error } = await supabase
+    .from(OFFERS)
+    .select('*')
+    .eq('university_id', uni)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return rowToOffer(data as Record<string, unknown>);
+}
+
 export function offerToCalendarPatch(offer: UniversityCalendarOffer): Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> {
   return {
     semesterLabel: offer.semesterLabel,

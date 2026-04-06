@@ -132,6 +132,13 @@ export default function SignUp() {
         setError(msg);
         return;
       }
+
+      // Supabase Fake User Security: when the email is already taken, it returns success but no email is sent 
+      // and the identities array is empty. We detect this to give the user a clear error!
+      if (data.user?.identities && data.user.identities.length === 0) {
+        setError('An account with this email already exists. Please sign in.');
+        return;
+      }
       if (data.user) {
         try {
           await supabase.from('profiles').upsert(
