@@ -871,7 +871,14 @@ export default function CommunityMap() {
               <View style={[styles.onlineDot, { borderColor: theme.card }]} />
             </View>
             <View style={styles.personInfo}>
-              <Text style={[styles.personName, { color: theme.text }]}>{user.name} <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text></Text>
+              <Text
+                style={[styles.personName, { color: theme.text }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {user.name}{' '}
+                <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
+              </Text>
               {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
                 <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
                   {getActivityEmoji(myActivity.activity_type)}{' '}
@@ -935,7 +942,13 @@ export default function CommunityMap() {
                 </Pressable>
 
                 <View style={styles.personInfo}>
-                  <Text style={[styles.personName, { color: theme.text }]}>{friend.name}</Text>
+                  <Text
+                    style={[styles.personName, { color: theme.text }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {friend.name}
+                  </Text>
                   <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
                     {friend.location?.place_name || (friend.location ? 'Location shared' : 'Location off')}
                   </Text>
@@ -1768,11 +1781,11 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 12,
   },
-  personInfo: { flex: 1 },
+  personInfo: { flex: 1, minWidth: 0 },
   personName: { fontSize: 16, fontWeight: '700' },
   personStatus: { fontSize: 13, marginTop: 2 },
   personActivity: { fontSize: 12, fontWeight: '600', marginTop: 2 },
-  personRight: { alignItems: 'flex-end', gap: 6 },
+  personRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
   personTime: { fontSize: 11, fontWeight: '500' },
   sharedTaskBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,

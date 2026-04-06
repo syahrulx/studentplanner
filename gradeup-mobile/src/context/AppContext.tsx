@@ -65,7 +65,9 @@ import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStream
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
+import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
+import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { buildHomeWidgetProps } from '../lib/homeWidgetProps';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 
@@ -188,6 +190,10 @@ type AppState = {
       >
     >,
   ) => Promise<void>;
+  /** Append one timetable slot and persist (replaces rows for this user). */
+  addTimetableEntry: (entry: TimetableEntry) => Promise<void>;
+  /** Remove a slot by id and persist. */
+  removeTimetableEntry: (entryId: string) => Promise<void>;
   /** Wipes timetable, subjects, tasks, academic calendar, study times, SOW imports (DB + storage). Triple-confirm in UI. */
   clearSemesterData: () => Promise<void>;
   /** Re-fetch profile, tasks, calendar, study settings, courses, timetable from Supabase (same as cold start). */
@@ -322,6 +328,81 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     academicCalendarRef.current = academicCalendar;
   }, [academicCalendar]);
+
+  /**
+   * UiTM: when the profile resolves to UiTM but `academic_calendars` has no full HEA period table,
+   * pull official HEA, upsert to Supabase, and align `user.currentWeek` / `startDate` with that calendar.
+   */
+  useEffect(() => {
+    const uniId = resolveUniversityIdForCalendar({
+      profileUniversityId: user.universityId,
+      connectionUniversityId: undefined,
+      studentId: user.studentId,
+      universityName: user.university,
+    });
+    if (uniId !== 'uitm') return;
+
+    let cancelled = false;
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid || cancelled || remoteUserIdRef.current !== uid) return;
+
+      const cal = academicCalendarRef.current;
+      const periodsN = Array.isArray(cal?.periods) ? cal.periods.length : 0;
+      if (periodsN >= UITM_HEA_PERIOD_COUNT_MIN) return;
+
+      try {
+        const profileForSync: UserProfile = {
+          ...initialUser,
+          ...user,
+          universityId: 'uitm',
+        };
+        const provider = getCalendarProvider('uitm');
+        if (!provider) return;
+        const newCal = await provider.autoSync(profileForSync, cal ?? undefined);
+        if (cancelled || remoteUserIdRef.current !== uid) return;
+        if (!newCal) return;
+
+        const saved = await academicCalendarDb.upsertCalendar(uid, newCal);
+        const savedEff = withEffectiveTotalWeeks(saved);
+        setAcademicCalendar(savedEff);
+        const prog =
+          savedEff?.periods && Array.isArray(savedEff.periods) && savedEff.periods.length > 0
+            ? getAcademicProgressFromCalendar(savedEff)
+            : getAcademicProgress(
+                savedEff?.startDate ?? saved.startDate,
+                savedEff?.totalWeeks ?? saved.totalWeeks,
+              );
+        setUserState((prev) => ({
+          ...prev,
+          startDate: savedEff?.startDate ?? saved.startDate,
+          currentWeek: prog.week,
+          isBreak: prog.isBreak,
+          semesterPhase: prog.semesterPhase,
+        }));
+      } catch (e) {
+        if (__DEV__) console.warn('[GradeUp] UiTM HEA calendar ensure failed', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user.universityId,
+    user.studentId,
+    user.university,
+    user.academicLevel,
+    user.heaTermCode,
+    academicCalendar?.id,
+    academicCalendar?.startDate,
+    academicCalendar?.endDate,
+    academicCalendar?.totalWeeks,
+    academicCalendar?.periods?.length ?? 0,
+  ]);
 
   /** Recompute teaching week when the app returns to foreground (e.g. new calendar day). */
   useEffect(() => {
@@ -508,22 +589,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             hasUsableCalendar &&
             anchoredDb == null;
 
+          /**
+           * Portal “anchor” used to upsert startDate=today + no periods, which forced teaching week 1 and
+           * wiped HEA data. Teaching week must come from HEA / auto-sync only — record portal semester on profile.
+           */
           if (shouldApplyPortalTeachingAnchor) {
             try {
-              const today = getTodayISO();
-              const tw = calendar?.totalWeeks ?? 14;
-              const start = new Date(`${today}T00:00:00`);
-              const end = new Date(start);
-              end.setDate(end.getDate() + tw * 7 - 1);
-              const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-              const saved = await academicCalendarDb.upsertCalendar(uid, {
-                semesterLabel: `Programme semester ${portalSem} (portal)`,
-                startDate: today,
-                endDate: endStr,
-                totalWeeks: tw,
-                isActive: true,
-              });
-              calendar = saved;
               await profileDb.updateProfile(uid, { portalTeachingAnchoredSemester: portalSem });
               if (profile) {
                 (profile as { portalTeachingAnchoredSemester?: number }).portalTeachingAnchoredSemester =
@@ -677,6 +748,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             } catch (e) {
               if (__DEV__) console.warn('[GradeUp] Calendar auto-sync failed', e);
+            }
+          }
+
+          // Auto-load admin-published calendar for non-UiTM universities (silent, no prompt)
+          if (uniId && uniId !== 'uitm') {
+            try {
+              const adminOffer = await fetchLatestCalendarForUniversity(uniId);
+              if (adminOffer && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+                const currentCal = academicCalendarRef.current;
+                // Apply if no calendar exists or admin offer is newer
+                if (!currentCal || (adminOffer.createdAt && adminOffer.createdAt > (currentCal.createdAt ?? ''))) {
+                  const saved = await academicCalendarDb.upsertCalendar(uid, offerToCalendarPatch(adminOffer));
+                  const savedEff = withEffectiveTotalWeeks(saved);
+                  setAcademicCalendar(savedEff);
+                  const prog =
+                    savedEff?.periods && Array.isArray(savedEff.periods) && savedEff.periods.length > 0
+                      ? getAcademicProgressFromCalendar(savedEff)
+                      : getAcademicProgress(savedEff?.startDate ?? saved.startDate, savedEff?.totalWeeks ?? saved.totalWeeks);
+                  setUserState((prev) => ({
+                    ...prev,
+                    startDate: savedEff?.startDate ?? saved.startDate,
+                    currentWeek: prog.week,
+                    isBreak: prog.isBreak,
+                    semesterPhase: prog.semesterPhase,
+                  }));
+                }
+              }
+            } catch (e) {
+              if (__DEV__) console.warn('[GradeUp] Admin calendar auto-load failed', e);
             }
           }
         }
@@ -1346,19 +1446,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           anchoredDb !== newPortalSem;
 
         if (needTeachingWeekAnchor) {
-          const today = getTodayISO();
-          const tw = academicCalendar?.totalWeeks ?? 14;
-          const start = new Date(`${today}T00:00:00`);
-          const end = new Date(start);
-          end.setDate(end.getDate() + tw * 7 - 1);
-          const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-          await updateAcademicCalendar({
-            semesterLabel: `Programme semester ${newPortalSem} (portal)`,
-            startDate: today,
-            endDate: endStr,
-            totalWeeks: tw,
-            isActive: true,
-          });
           await updateProfile({ portalTeachingAnchoredSemester: newPortalSem });
         }
       }
@@ -1371,10 +1458,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       user.studentId,
       user.currentSemester,
       user.portalTeachingAnchoredSemester,
-      academicCalendar?.totalWeeks,
       saveTimetableAndLink,
       updateProfile,
-      updateAcademicCalendar,
     ],
   );
 
@@ -1458,6 +1543,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const addTimetableEntry = useCallback(async (entry: TimetableEntry) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to save timetable.');
+    let merged: TimetableEntry[] = [];
+    setTimetable((prev) => {
+      merged = [...prev, entry];
+      return merged;
+    });
+    await timetableDb.saveTimetable(uid, merged);
+  }, []);
+
+  const removeTimetableEntry = useCallback(async (entryId: string) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to save timetable.');
+    let merged: TimetableEntry[] = [];
+    setTimetable((prev) => {
+      merged = prev.filter((e) => e.id !== entryId);
+      return merged;
+    });
+    await timetableDb.saveTimetable(uid, merged);
+  }, []);
+
   const value: AppState = {
     user,
     setUser,
@@ -1528,6 +1641,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     autoDeletePastTasks,
     setAutoDeletePastTasks,
     updateTimetableEntry,
+    addTimetableEntry,
+    removeTimetableEntry,
     clearSemesterData,
     refreshRemoteData,
   };

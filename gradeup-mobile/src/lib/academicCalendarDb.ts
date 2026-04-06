@@ -45,16 +45,41 @@ export async function getActiveCalendar(userId: string): Promise<AcademicCalenda
   return rowToCalendar(data as Record<string, unknown>);
 }
 
+/**
+ * Persist one active row per user. When `periods` / break fields are **omitted** (`undefined`),
+ * existing DB values are kept so a partial patch (e.g. label-only) cannot wipe HEA `periods_json`.
+ * Pass `periods: []` to clear periods intentionally.
+ */
 export async function upsertCalendar(userId: string, calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>): Promise<AcademicCalendar> {
+  const existing = await getActiveCalendar(userId);
+
+  const periodsJson =
+    calendar.periods !== undefined
+      ? Array.isArray(calendar.periods) && calendar.periods.length > 0
+        ? calendar.periods
+        : null
+      : existing && Array.isArray(existing.periods) && existing.periods.length > 0
+        ? existing.periods
+        : null;
+
+  const breakStart =
+    calendar.breakStartDate !== undefined
+      ? calendar.breakStartDate || null
+      : existing?.breakStartDate ?? null;
+  const breakEnd =
+    calendar.breakEndDate !== undefined
+      ? calendar.breakEndDate || null
+      : existing?.breakEndDate ?? null;
+
   const row = {
     user_id: userId,
     semester_label: calendar.semesterLabel,
     start_date: calendar.startDate,
     end_date: calendar.endDate,
     total_weeks: calendar.totalWeeks,
-    break_start_date: calendar.breakStartDate ?? null,
-    break_end_date: calendar.breakEndDate ?? null,
-    periods_json: calendar.periods ?? null,
+    break_start_date: breakStart,
+    break_end_date: breakEnd,
+    periods_json: periodsJson,
     is_active: calendar.isActive ?? true,
   };
   const { data, error } = await supabase

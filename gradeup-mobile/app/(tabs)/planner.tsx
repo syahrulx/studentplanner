@@ -1060,11 +1060,6 @@ export default function Planner() {
                     {subject}
                   </Text>
                 </View>
-                {item.itemType === 'task' && (item as PlannerTaskItem).isSharedTask ? (
-                  <View style={{ marginLeft: -4, marginTop: 1 }}>
-                    <Avatar name={(item as PlannerTaskItem).sharedBy} avatarUrl={(item as any).sharedByAvatar} size={20} />
-                  </View>
-                ) : null}
                 {isPinnedTask ? (
                   <View style={s.taskPinBadge}>
                     <Feather name="bookmark" size={11} color={theme.primary} />
@@ -1095,8 +1090,6 @@ export default function Planner() {
                 <Feather name="more-vertical" size={16} color={theme.textSecondary} />
               </Pressable>
             </View>
-
-            {/* Shared avatar has been moved to the header chip group above */}
 
             {item.itemType === 'study' ? (
               <>
@@ -1145,13 +1138,22 @@ export default function Planner() {
                   >
                     {statusLabel}
                   </Text>
-                  <Text
-                    style={s.taskMetaSecondaryLine}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {secondaryLabel}
-                  </Text>
+                  <View style={s.taskMetaFooterRight}>
+                    <Text
+                      style={s.taskMetaSecondaryLine}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {secondaryLabel}
+                    </Text>
+                    {(item as PlannerTaskItem).isSharedTask ? (
+                      <Avatar
+                        name={(item as PlannerTaskItem).sharedBy}
+                        avatarUrl={(item as any).sharedByAvatar}
+                        size={22}
+                      />
+                    ) : null}
+                  </View>
                 </View>
               </>
             )}
@@ -2849,6 +2851,16 @@ function createPlannerStyles(theme: ThemePalette) {
     gap: 10,
     minWidth: 0,
     marginTop: 2,
+  },
+  taskMetaFooterRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
   },
   taskMetaPrimary: {
     fontSize: 11,

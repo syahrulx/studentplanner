@@ -7,6 +7,9 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Official HEA tables have many rows; below this we treat stored data as summary-only and re-fetch. */
+export const UITM_HEA_PERIOD_COUNT_MIN = 12;
+
 /** True when start/end/totalWeeks are usable (portal anchor or prior save). */
 export function isAcademicCalendarRangeComplete(cal: AcademicCalendar | null | undefined): boolean {
   if (!cal) return false;
@@ -50,6 +53,11 @@ export const uitmProvider: CalendarProvider = {
 
     if (!official?.startDate || !official?.endDate) return null;
 
+    const officialPeriodN = official.periods?.length ?? 0;
+    const currentPeriodN = currentCalendar?.periods?.length ?? 0;
+    const needsPeriodBackfill =
+      officialPeriodN >= UITM_HEA_PERIOD_COUNT_MIN && currentPeriodN < UITM_HEA_PERIOD_COUNT_MIN;
+
     // Range saved (e.g. portal) but phases missing — enrich once per cold start via AppContext autoSync.
     if (rangeOk && !hasPeriods) {
       if (!official.periods?.length) return null;
@@ -68,7 +76,8 @@ export const uitmProvider: CalendarProvider = {
       currentCalendar &&
       currentCalendar.startDate === official.startDate &&
       currentCalendar.endDate === official.endDate &&
-      currentCalendar.totalWeeks === official.totalWeeks
+      currentCalendar.totalWeeks === official.totalWeeks &&
+      !needsPeriodBackfill
     ) {
       return null;
     }

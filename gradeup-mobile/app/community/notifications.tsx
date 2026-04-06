@@ -44,6 +44,36 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+/** Title-case long ALL-CAPS names so the header row stays readable. */
+function formatDisplayName(name?: string | null) {
+  if (!name?.trim()) return 'Someone';
+  const s = name.trim();
+  if (s !== s.toUpperCase() || s.length < 8) return s;
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
+type ReactionPreview = { lead: string; text: string };
+
+function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): ReactionPreview {
+  if (isBump) return { lead: '💥', text: 'Bumped you!' };
+  if (reaction.reaction_type === '📋') {
+    return { lead: '📋', text: reaction.message || 'Shared a task with you!' };
+  }
+  if (reaction.reaction_type === '🎮') {
+    return { lead: '🎮', text: reaction.message || 'Invited you to a quiz!' };
+  }
+  if (reaction.message) {
+    const lead = reaction.reaction_type?.trim() || '';
+    return { lead, text: reaction.message };
+  }
+  const emoji = reaction.reaction_type?.trim() || '✨';
+  return { lead: emoji, text: 'Sent you' };
+}
+
 export default function NotificationsScreen() {
   const theme = useTheme();
   const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles } = useCommunity();
@@ -125,8 +155,8 @@ export default function NotificationsScreen() {
               >
                 <Avatar name={inv.inviter_profile?.name} avatarUrl={inv.inviter_profile?.avatar_url} size={44} />
                 <View style={styles.notifBody}>
-                  <Text style={[styles.notifName, { color: theme.text }]}>
-                    {inv.inviter_profile?.name || 'Someone'}
+                  <Text style={[styles.notifName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    {formatDisplayName(inv.inviter_profile?.name)}
                   </Text>
                   <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
                     Invited you to join {inv.circle ? `${inv.circle.emoji} ${inv.circle.name}` : 'a circle'}
@@ -193,8 +223,8 @@ export default function NotificationsScreen() {
                   size={44}
                 />
                 <View style={styles.notifBody}>
-                  <Text style={[styles.notifName, { color: theme.text }]}>
-                    {st.owner_profile?.name || 'Someone'}
+                  <Text style={[styles.notifName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    {formatDisplayName(st.owner_profile?.name)}
                   </Text>
                   <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
                     Shared a task: {st.task?.title || 'Task'}
@@ -236,6 +266,7 @@ export default function NotificationsScreen() {
         ) : (
           reactions.map((reaction) => {
             const isBump = reaction.reaction_type === 'bump';
+            const { lead, text } = reactionPreviewLines(reaction, isBump);
             return (
               <Pressable
                 key={reaction.id}
@@ -256,24 +287,28 @@ export default function NotificationsScreen() {
                 />
                 <View style={styles.notifBody}>
                   <View style={styles.notifTopRow}>
-                    <Text style={[styles.notifName, { color: theme.text }]}>
-                      {reaction.sender_profile?.name || 'Someone'}
+                    <Text
+                      style={[styles.notifName, { color: theme.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {formatDisplayName(reaction.sender_profile?.name)}
                     </Text>
                     <Text style={[styles.notifTime, { color: theme.textSecondary }]}>
                       {timeAgo(reaction.created_at)}
                     </Text>
                   </View>
-                  <Text style={[styles.notifMessage, { color: theme.textSecondary }]}>
-                    {isBump
-                      ? '💥 Bumped you!'
-                      : reaction.reaction_type === '📋'
-                      ? `📋 ${reaction.message || 'Shared a task with you!'}`
-                      : reaction.reaction_type === '🎮'
-                      ? `🎮 ${reaction.message || 'Invited you to a quiz!'}`
-                      : reaction.message
-                      ? `${reaction.reaction_type} ${reaction.message}`
-                      : `Sent you ${reaction.reaction_type}`}
-                  </Text>
+                  <View style={styles.notifMessageRow}>
+                    <View style={styles.notifLeadSlot}>
+                      {lead ? <Text style={styles.notifLeadEmoji}>{lead}</Text> : null}
+                    </View>
+                    <Text
+                      style={[styles.notifMessage, { color: theme.textSecondary }]}
+                      numberOfLines={3}
+                    >
+                      {text}
+                    </Text>
+                  </View>
                   {reaction.reaction_type === '🎮' && reaction.message && (
                     <Pressable
                       style={[styles.joinQuizBtn, { backgroundColor: theme.primary }]}
@@ -318,19 +353,38 @@ const styles = StyleSheet.create({
 
   notifCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
+    alignItems: 'flex-start',
+    gap: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 8,
+    marginBottom: 10,
     position: 'relative',
   },
-  notifBody: { flex: 1 },
-  notifTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  notifName: { fontSize: 15, fontWeight: '700' },
-  notifTime: { fontSize: 12, fontWeight: '500' },
-  notifMessage: { fontSize: 14, marginTop: 2 },
+  notifBody: { flex: 1, minWidth: 0 },
+  notifTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  notifName: { fontSize: 15, fontWeight: '700', flex: 1, minWidth: 0 },
+  notifTime: { fontSize: 12, fontWeight: '600', flexShrink: 0, marginTop: 2 },
+  notifMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 6,
+    gap: 4,
+  },
+  notifLeadSlot: {
+    width: 28,
+    minHeight: 22,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 1,
+  },
+  notifLeadEmoji: { fontSize: 17, lineHeight: 22 },
+  notifMessage: { fontSize: 14, lineHeight: 21, flex: 1, minWidth: 0, fontWeight: '500' },
   unreadDot: {
     position: 'absolute',
     top: 14,

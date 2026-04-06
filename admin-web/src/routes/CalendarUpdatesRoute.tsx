@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   insertUniversityCalendarOffers,
   listUniversities,
   listUniversityCalendarOffers,
+  upsertUniversity,
   type AdminCalendarOfferRow,
   type AdminCalendarOfferInsert,
   type UniversityRow,
@@ -19,6 +19,33 @@ import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOffe
 
 const BUCKET = 'academic-calendar-refs';
 
+/**
+ * Must match the UNIVERSITIES list in gradeup-mobile/src/lib/universities.ts.
+ * UiTM is excluded here because it uses the portal calendar (HEA).
+ */
+const APP_UNIVERSITIES: { id: string; name: string }[] = [
+  { id: 'um', name: 'Universiti Malaya' },
+  { id: 'utm', name: 'Universiti Teknologi Malaysia' },
+  { id: 'ukm', name: 'Universiti Kebangsaan Malaysia' },
+  { id: 'upm', name: 'Universiti Putra Malaysia' },
+  { id: 'usm', name: 'Universiti Sains Malaysia' },
+  { id: 'uiam', name: 'Universiti Islam Antarabangsa Malaysia' },
+  { id: 'unimas', name: 'Universiti Malaysia Sarawak' },
+  { id: 'ums', name: 'Universiti Malaysia Sabah' },
+  { id: 'upsi', name: 'Universiti Pendidikan Sultan Idris' },
+  { id: 'uthm', name: 'Universiti Tun Hussein Onn Malaysia' },
+  { id: 'umt', name: 'Universiti Malaysia Terengganu' },
+  { id: 'unimap', name: 'Universiti Malaysia Perlis' },
+  { id: 'ump', name: 'Universiti Malaysia Pahang Al-Sultan Abdullah' },
+  { id: 'unisel', name: 'Universiti Selangor' },
+  { id: 'mmu', name: 'Multimedia University' },
+  { id: 'uniten', name: 'Universiti Tenaga Nasional' },
+  { id: 'utp', name: 'Universiti Teknologi PETRONAS' },
+  { id: 'taylors', name: "Taylor's University" },
+  { id: 'sunway', name: 'Sunway University' },
+  { id: 'utem', name: 'Universiti Teknikal Malaysia Melaka' },
+];
+
 function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {
   return list.filter((u) => u.id !== 'uitm').sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -30,7 +57,7 @@ export function CalendarUpdatesRoute() {
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [universities, setUniversities] = useState<UniversityRow[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string>('');
   const [history, setHistory] = useState<AdminCalendarOfferRow[]>([]);
   const [semesterLabel, setSemesterLabel] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -52,7 +79,30 @@ export function CalendarUpdatesRoute() {
 
   const refreshUniversities = async () => {
     const all = await listUniversities();
-    setUniversities(all);
+    // Auto-seed any universities from the mobile app list that don't exist in the DB yet
+    const existingIds = new Set(all.map((u) => u.id));
+    const missing = APP_UNIVERSITIES.filter((u) => !existingIds.has(u.id));
+    if (missing.length > 0) {
+      for (const u of missing) {
+        try {
+          await upsertUniversity({
+            id: u.id,
+            name: u.name,
+            api_endpoint: null,
+            login_method: 'manual',
+            request_method: 'GET',
+            required_params: [],
+          });
+        } catch {
+          // Ignore individual seed failures
+        }
+      }
+      // Re-fetch after seeding
+      const updated = await listUniversities();
+      setUniversities(updated);
+    } else {
+      setUniversities(all);
+    }
   };
 
   const refreshHistory = async () => {
@@ -72,21 +122,6 @@ export function CalendarUpdatesRoute() {
     })();
   }, []);
 
-  const toggleUni = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectAllEligible = () => {
-    setSelected(new Set(eligible.map((u) => u.id)));
-  };
-
-  const clearSelection = () => setSelected(new Set());
-
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return history;
     return history.filter((h) =>
@@ -104,9 +139,8 @@ export function CalendarUpdatesRoute() {
   const publish = async () => {
     setErr('');
     setOkMsg('');
-    const ids = Array.from(selected);
-    if (!ids.length) {
-      setErr('Select at least one university (UiTM is excluded; it keeps the portal calendar).');
+    if (!selected) {
+      setErr('Select a university first (UiTM is excluded; it keeps the portal calendar).');
       return;
     }
     const label = semesterLabel.trim();
@@ -164,8 +198,8 @@ export function CalendarUpdatesRoute() {
       const url = officialUrl.trim() || null;
       const note = adminNote.trim() || null;
 
-      const rows: AdminCalendarOfferInsert[] = ids.map((university_id) => ({
-        university_id,
+      const rows: AdminCalendarOfferInsert[] = [{
+        university_id: selected,
         semester_label: label,
         start_date: sd,
         end_date: ed,
@@ -176,11 +210,12 @@ export function CalendarUpdatesRoute() {
         official_url: url,
         reference_pdf_url: pdfUrl,
         admin_note: note,
-      }));
+      }];
 
       await insertUniversityCalendarOffers(rows);
-      setOkMsg(`Published ${rows.length} offer(s). Students at those universities will be prompted before their app calendar changes.`);
-      clearSelection();
+      const uniName = universityNameById.get(selected) ?? selected;
+      setOkMsg(`Published calendar for ${uniName}. Students from this university will automatically receive the updated calendar.`);
+      setSelected('');
       if (fileRef.current) fileRef.current.value = '';
       await refreshHistory();
     } catch (e) {
@@ -195,8 +230,8 @@ export function CalendarUpdatesRoute() {
       <MotionSection>
         <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Academic calendar updates</div>
         <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Publish semester dates, an official link, and an optional reference PDF for Malaysian universities (other than UiTM).
-          Students must confirm in the app before their planner calendar is updated.
+          Configure semester dates for each university. Students will automatically receive the calendar for their university.
+          UiTM students use the portal calendar (HEA) and are excluded.
           {searchQuery.trim() ? (
             <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
               History table filtered by the top search bar.
@@ -210,7 +245,7 @@ export function CalendarUpdatesRoute() {
           <CardHeader>
             <CardTitle>Publish new offer</CardTitle>
             <CardDescription>
-              Choose one or more universities. Each selection gets its own offer row (same dates/links). UiTM cannot be selected.
+              Select a university from the dropdown and configure its semester dates. Each university has its own calendar.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -226,68 +261,24 @@ export function CalendarUpdatesRoute() {
             ) : null}
 
             <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Universities</div>
-                {eligible.length > 0 ? (
-                  <>
-                    <button
-                      type="button"
-                      className="text-xs font-bold text-brand-600 dark:text-brand-400"
-                      onClick={selectAllEligible}
-                    >
-                      Select all
-                    </button>
-                    <span className="text-slate-300 dark:text-slate-600">·</span>
-                    <button type="button" className="text-xs font-bold text-slate-500" onClick={clearSelection}>
-                      Clear
-                    </button>
-                  </>
-                ) : null}
-              </div>
-              <div className="max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-                {eligible.length > 0 ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {eligible.map((u) => (
-                      <label key={u.id} className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(u.id)}
-                          onChange={() => toggleUni(u.id)}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                        <span>
-                          {u.name} <span className="text-slate-400">({u.id})</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : universities.length === 0 ? (
-                  <div className="space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    <p>There are no rows in the <code className="rounded bg-slate-200/80 px-1 font-mono text-xs dark:bg-slate-800">universities</code> table yet.</p>
-                    <p>
-                      Add institutions under{' '}
-                      <Link to="/universities" className="font-bold text-brand-600 underline dark:text-brand-400">
-                        Universities
-                      </Link>{' '}
-                      first; then they will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    <p>
-                      Calendar offers intentionally exclude <strong>UiTM</strong> (students use the portal academic calendar). No other universities are configured in the database
-                      {universities.some((u) => u.id === 'uitm') ? ' besides UiTM' : ''}.
-                    </p>
-                    <p>
-                      Add another university under{' '}
-                      <Link to="/universities" className="font-bold text-brand-600 underline dark:text-brand-400">
-                        Universities
-                      </Link>{' '}
-                      to publish offers for it.
-                    </p>
-                  </div>
-                )}
-              </div>
+              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">University</div>
+              <select
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+              >
+                <option value="">— Select a university —</option>
+                {eligible.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.id})
+                  </option>
+                ))}
+              </select>
+              {eligible.length === 0 && universities.length === 0 ? (
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  No universities found. They will be auto-seeded on page reload.
+                </p>
+              ) : null}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

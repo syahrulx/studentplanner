@@ -11,9 +11,30 @@ export function parseTimeToMinutes(raw: string): number | null {
   return h * 60 + min;
 }
 
+/**
+ * Accepts 08:30, 8:30, 8:3, 830, 0930, 8.30 — normalises to minutes for editing UX.
+ */
+export function lenientParseTimeToMinutes(raw: string): number | null {
+  let t = raw.trim().replace(/\./g, ':').replace(/\s+/g, '');
+  if (!t) return null;
+  if (/^\d{3,4}$/.test(t)) {
+    const pad = t.length === 3 ? `0${t}` : t;
+    const h = parseInt(pad.slice(0, 2), 10);
+    const min = parseInt(pad.slice(2, 4), 10);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) return h * 60 + min;
+    return null;
+  }
+  const m = t.match(/^([01]?\d|2[0-3]):([0-5]?\d)$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
 /** Returns HH:mm or null if invalid. */
 export function normalizeTimeDisplay(raw: string): string | null {
-  const mins = parseTimeToMinutes(raw);
+  const mins = lenientParseTimeToMinutes(raw);
   if (mins === null) return null;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

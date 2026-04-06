@@ -356,10 +356,19 @@ function createDashboardStyles(theme: ThemePalette) {
     focusMetaRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       gap: 10,
-      flexWrap: 'wrap',
       marginTop: 14,
     },
+    focusMetaLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+      flex: 1,
+      minWidth: 0,
+    },
+    focusMetaAvatarWrap: { flexShrink: 0, marginLeft: 4 },
     focusMetaPill: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1077,9 +1086,6 @@ export default function Dashboard() {
                       {focusCard.code}
                     </Text>
                   </View>
-                  {focusCard.isSharedTask ? (
-                    <Avatar name={focusCard.sharedBy} avatarUrl={focusCard.sharedByAvatar} size={18} />
-                  ) : null}
                   <View
                     style={[
                       styles.focusStatusPill,
@@ -1103,14 +1109,21 @@ export default function Dashboard() {
                 {focusCard.subtitle}
               </Text>
               <View style={styles.focusMetaRow}>
-                <View style={styles.focusMetaPill}>
-                  <Feather name="calendar" size={13} color={theme.textSecondary} />
-                  <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
+                <View style={styles.focusMetaLeft}>
+                  <View style={styles.focusMetaPill}>
+                    <Feather name="calendar" size={13} color={theme.textSecondary} />
+                    <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
+                  </View>
+                  <View style={styles.focusMetaPill}>
+                    <Feather name="clock" size={13} color={theme.textSecondary} />
+                    <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
+                  </View>
                 </View>
-                <View style={styles.focusMetaPill}>
-                  <Feather name="clock" size={13} color={theme.textSecondary} />
-                  <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
-                </View>
+                {focusCard.isSharedTask ? (
+                  <View style={styles.focusMetaAvatarWrap}>
+                    <Avatar name={focusCard.sharedBy} avatarUrl={focusCard.sharedByAvatar} size={22} />
+                  </View>
+                ) : null}
               </View>
             </>
           ) : (

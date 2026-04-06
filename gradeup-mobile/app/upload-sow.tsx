@@ -28,6 +28,7 @@ import { getTodayISO } from '@/src/utils/date';
 import { buildTaskFromExtraction, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 import { analyzeSowWeekAlignment } from '@/src/lib/sowCalendarAlignment';
 import { Priority, TaskType, type Course } from '@/src/types';
+import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 
 const PAD = 20;
 const SECTION = 24;
@@ -115,7 +116,13 @@ export default function UploadSOW() {
 
   // Confirm week/date before running extract_sow so dates map correctly.
   const totalSemesterWeeks = academicCalendar?.totalWeeks ?? 14;
-  const defaultWeek = clampInt(Number(user.currentWeek ?? 1) || 1, 1, totalSemesterWeeks);
+  const defaultWeek = teachingWeekNumberForDate(
+    getTodayISO(),
+    academicCalendar,
+    user.startDate,
+    totalSemesterWeeks,
+    user.currentWeek ?? 1,
+  );
   const defaultToday = getTodayISO();
   const defaultSemesterStart = (academicCalendar?.startDate || user.startDate || '').slice(0, 10);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -148,7 +155,13 @@ export default function UploadSOW() {
       analyzeSowWeekAlignment(editedTasks, {
         semesterStart: user.startDate,
         totalWeeks: totalSemesterWeeks,
-        currentWeek: Math.max(1, user.currentWeek ?? 1),
+        currentWeek: Math.max(1, teachingWeekNumberForDate(
+          getTodayISO(),
+          academicCalendar,
+          user.startDate,
+          totalSemesterWeeks,
+          user.currentWeek ?? 1,
+        )),
         periods: academicCalendar?.periods,
         isBreak: user.isBreak,
         todayISO: extractContext.todayISO,
@@ -1241,7 +1254,13 @@ export default function UploadSOW() {
                   ]}
                 />
                 <Text style={[styles.modalHint, { color: theme.textSecondary }]}>
-                  App: week {user.isBreak ? 'break' : user.currentWeek} / {totalSemesterWeeks}
+                  App: week {user.isBreak ? 'break' : teachingWeekNumberForDate(
+                    getTodayISO(),
+                    academicCalendar,
+                    user.startDate,
+                    totalSemesterWeeks,
+                    user.currentWeek ?? 1,
+                  )} / {totalSemesterWeeks}
                 </Text>
       </View>
 
