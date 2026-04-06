@@ -27,6 +27,8 @@ import {
 } from '@/src/lib/profileDisplay';
 import { getEnabledSubscriptionFeaturesForTier } from '@/src/lib/subscriptionFeatures';
 import type { SubscriptionPlan } from '@/src/types';
+import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
+import { getTodayISO } from '@/src/utils/date';
 
 export default function Profile() {
   const {
@@ -43,6 +45,13 @@ export default function Profile() {
   const T = useTranslations(language);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const semesterPhase = user.semesterPhase ?? 'teaching';
+  const profileTeachingWeek = teachingWeekNumberForDate(
+    getTodayISO(),
+    academicCalendar,
+    user.startDate,
+    totalWeeks,
+    user.currentWeek ?? 1,
+  );
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const [isUploading, setIsUploading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -171,6 +180,56 @@ export default function Profile() {
     );
   };
 
+  const handleEditCampus = () => {
+    Alert.prompt(
+      T('editCampus'),
+      T('enterCampus'),
+      [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('save'),
+          onPress: async (v: string | undefined) => {
+            setIsUpdating(true);
+            try {
+              await updateProfile({ campus: (v ?? '').trim() });
+            } catch {
+              Alert.alert(T('error'), T('campusUpdateFailed'));
+            } finally {
+              setIsUpdating(false);
+            }
+          },
+        },
+      ],
+      'plain-text',
+      user.campus,
+    );
+  };
+
+  const handleEditFaculty = () => {
+    Alert.prompt(
+      T('editFaculty'),
+      T('enterFaculty'),
+      [
+        { text: T('cancel'), style: 'cancel' },
+        {
+          text: T('save'),
+          onPress: async (v: string | undefined) => {
+            setIsUpdating(true);
+            try {
+              await updateProfile({ faculty: (v ?? '').trim() });
+            } catch {
+              Alert.alert(T('error'), T('facultyUpdateFailed'));
+            } finally {
+              setIsUpdating(false);
+            }
+          },
+        },
+      ],
+      'plain-text',
+      user.faculty,
+    );
+  };
+
   const handleEditAvatar = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -279,19 +338,33 @@ export default function Profile() {
           </View>
         </Pressable>
         <View style={styles.divider} />
-        <View style={styles.cardRow}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={handleEditCampus}
+          disabled={isUpdating}
+        >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('campus')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={3}>
-            {displayProfileText(user.campus)}
-          </Text>
-        </View>
+          <View style={styles.cardValueWrap}>
+            <Text style={[styles.cardValue, { color: theme.textSecondary }]} numberOfLines={3}>
+              {displayProfileText(user.campus)}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
         <View style={styles.divider} />
-        <View style={styles.cardRow}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={handleEditFaculty}
+          disabled={isUpdating}
+        >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('faculty')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={4}>
-            {displayProfileText(user.faculty)}
-          </Text>
-        </View>
+          <View style={styles.cardValueWrap}>
+            <Text style={[styles.cardValue, { color: theme.textSecondary }]} numberOfLines={4}>
+              {displayProfileText(user.faculty)}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
         <View style={styles.divider} />
         <View style={styles.cardRow}>
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('portalSemester')}</Text>
@@ -307,13 +380,6 @@ export default function Profile() {
           </Text>
         </View>
         <View style={styles.divider} />
-        <View style={styles.cardRow}>
-          <Text style={[styles.cardLabel, { color: theme.text }]}>{T('mystudentEmailLabel')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
-            {displayProfileText(user.mystudentEmail)}
-          </Text>
-        </View>
-        <View style={styles.divider} />
         <View style={styles.progressContainer}>
           <View style={styles.progressHeader}>
             <Text style={[styles.cardLabel, { color: theme.text }]}>{T('semesterProgress')}</Text>
@@ -324,7 +390,7 @@ export default function Profile() {
                   ? T('semesterNotStartedShort')
                   : user.isBreak || semesterPhase === 'break_after'
                     ? T('semesterBreak') || 'Semester Break'
-                    : `W${user.currentWeek} of ${totalWeeks}`}
+                    : `W${profileTeachingWeek} of ${totalWeeks}`}
             </Text>
           </View>
           <View style={styles.segmentBar}>
@@ -332,7 +398,7 @@ export default function Profile() {
               const filled =
                 semesterPhase === 'break_after' || user.isBreak
                   ? true
-                  : semesterPhase === 'teaching' && !user.isBreak && i < user.currentWeek;
+                  : semesterPhase === 'teaching' && !user.isBreak && i < profileTeachingWeek;
               return (
                 <View
                   key={i}

@@ -25,6 +25,8 @@ import {
   getTimetableSlotDetailsVisibility,
   setTimetableSlotDetailsVisibility,
   type TimetableSlotDetailsVisibility,
+  getHasSeenNonUitmTimetableIntro,
+  setHasSeenNonUitmTimetableIntro,
 } from '@/src/storage';
 
 const DAY_META: Record<DayOfWeek, { shortKey: string; fullKey: string }> = {
@@ -60,6 +62,19 @@ const GRID_OUTER_H_PAD = 12;
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
+}
+
+/** True if [hour, hour+1) on `day` has no overlapping class. */
+function hourRangeFreeForDay(day: DayOfWeek, hour: number, items: TimetableEntry[]): boolean {
+  const rangeStart = hour * 60;
+  const rangeEnd = (hour + 1) * 60;
+  for (const e of items) {
+    if (e.day !== day) continue;
+    const es = timeToMinutes(e.startTime);
+    const ee = timeToMinutes(e.endTime);
+    if (es < rangeEnd && ee > rangeStart) return false;
+  }
+  return true;
 }
 
 function entryDisplayTitle(e: TimetableEntry): string {
@@ -152,12 +167,27 @@ export default function TimetableScreen() {
     lecturer: true,
     group: true,
   });
-  const [selectedEntry, setSelectedEntry] = useState<TimetableEntry | null>(null);
-  const [entryModalOpen, setEntryModalOpen] = useState(false);
+  /** When true, week grid shows + on free hours and class cards open the editor. */
+  const [gridEditMode, setGridEditMode] = useState(false);
+  const [showNonUitmIntro, setShowNonUitmIntro] = useState(false);
 
   useEffect(() => {
     getTimetableSlotDetailsVisibility().then(setSlotDetails);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (timetable.length > 0 || user.universityId === 'uitm') {
+      setShowNonUitmIntro(false);
+      return;
+    }
+    getHasSeenNonUitmTimetableIntro().then((seen) => {
+      if (!cancelled && !seen) setShowNonUitmIntro(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [timetable.length, user.universityId]);
 
   const patchSlotDetails = useCallback((patch: Partial<TimetableSlotDetailsVisibility>) => {
     setSlotDetails((prev) => {
@@ -245,9 +275,56 @@ export default function TimetableScreen() {
 
   /* ── Empty state ──────────────────────────────────── */
   if (!hasData) {
+    const dismissNonUitmIntro = async () => {
+      await setHasSeenNonUitmTimetableIntro(true);
+      setShowNonUitmIntro(false);
+    };
     return (
       <View style={[s.container, { backgroundColor: theme.background }]}>
-        {renderHeader(false)}
+        {renderHeader(true)}
+        <Modal
+          visible={showNonUitmIntro}
+          transparent
+          animationType="fade"
+          onRequestClose={dismissNonUitmIntro}
+        >
+          <Pressable style={s.introModalBackdrop} onPress={dismissNonUitmIntro}>
+            <Pressable
+              style={[s.introModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text style={[s.introModalTitle, { color: theme.text }]}>{T('nonUitmTimetableIntroTitle')}</Text>
+              <Text style={[s.introModalBody, { color: theme.textSecondary }]}>{T('nonUitmTimetableIntroBody')}</Text>
+              <Text style={[s.introModalPrivacy, { color: theme.textSecondary }]}>
+                {T('nonUitmTimetableIntroPrivacyNote')}
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  s.introModalPrimary,
+                  { backgroundColor: theme.primary },
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={async () => {
+                  await dismissNonUitmIntro();
+                  router.push('/timetable-import' as any);
+                }}
+              >
+                <Feather name="upload-cloud" size={18} color={theme.textInverse} style={{ marginRight: 8 }} />
+                <Text style={[s.introModalPrimaryText, { color: theme.textInverse }]}>
+                  {T('nonUitmTimetableIntroUpload')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [s.introModalSecondary, pressed && { opacity: 0.7 }]}
+                onPress={dismissNonUitmIntro}
+              >
+                <Text style={[s.introModalSecondaryText, { color: theme.primary }]}>
+                  {T('nonUitmTimetableIntroLater')}
+                </Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
         <View style={s.emptyWrap}>
           <View style={[s.emptyIcon, { backgroundColor: theme.card }]}>
             <Feather name="calendar" size={40} color={theme.textSecondary} style={{ opacity: 0.5 }} />
@@ -286,13 +363,40 @@ export default function TimetableScreen() {
           </View>
         </View>
         {showMenu && (
-          <Pressable
-            onPress={() => setMenuOpen(true)}
-            style={({ pressed }) => [s.menuBtn, pressed && { opacity: 0.7 }]}
-            hitSlop={12}
-          >
-            <Feather name="more-vertical" size={22} color={theme.text} />
-          </Pressable>
+          <View style={s.headerActions}>
+            <Pressable
+              onPress={() => {
+                if (!hasData) {
+                  router.push('/timetable-edit' as any);
+                  return;
+                }
+                setGridEditMode((v) => !v);
+              }}
+              style={({ pressed }) => [
+                s.headerIconBtn,
+                hasData && gridEditMode && { backgroundColor: `${theme.primary}22` },
+                pressed && { opacity: 0.7 },
+              ]}
+              hitSlop={10}
+              accessibilityLabel={
+                hasData
+                  ? gridEditMode
+                    ? T('timetableEditModeDone')
+                    : T('timetableEditModeStart')
+                  : T('timetableEditClasses')
+              }
+            >
+              <Feather name="edit-2" size={20} color={theme.primary} />
+            </Pressable>
+            <Pressable
+              onPress={() => setMenuOpen(true)}
+              style={({ pressed }) => [s.headerIconBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={10}
+              accessibilityLabel="Menu"
+            >
+              <Feather name="more-vertical" size={22} color={theme.text} />
+            </Pressable>
+          </View>
         )}
       </View>
     );
@@ -311,7 +415,7 @@ export default function TimetableScreen() {
                 router.push('/timetable-edit' as any);
               }}
             >
-              <Feather name="edit-2" size={18} color={theme.primary} />
+              <Feather name="clipboard" size={18} color={theme.primary} />
               <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableEditClasses')}</Text>
             </Pressable>
             <Pressable
@@ -535,7 +639,9 @@ export default function TimetableScreen() {
         {/* Hidden full-size capture canvas (not constrained by preview frame). */}
         <View style={s.exportHiddenCanvas} pointerEvents="none">
           <ViewShot
-            ref={(r) => (exportShotRef.current = r)}
+            ref={(r) => {
+              exportShotRef.current = r;
+            }}
             options={{ format: exportFormat, quality: exportFormat === 'jpg' ? 0.95 : 1, result: 'tmpfile' }}
             style={{
               width: exportSize.width,
@@ -652,6 +758,34 @@ export default function TimetableScreen() {
                           ]}
                         />
                       ))}
+                      {gridEditMode &&
+                        hours.map((h) => {
+                          if (!hourRangeFreeForDay(key, h, items)) return null;
+                          const startLabel = `${String(h).padStart(2, '0')}:00`;
+                          return (
+                            <Pressable
+                              key={`add-${key}-${h}`}
+                              style={[
+                                s.gridAddCell,
+                                {
+                                  top: (h - START_HOUR) * HOUR_HEIGHT,
+                                  height: HOUR_HEIGHT,
+                                },
+                              ]}
+                              onPress={() =>
+                                router.push({
+                                  pathname: '/timetable-edit',
+                                  params: { addDay: key, addStart: startLabel },
+                                } as any)
+                              }
+                              hitSlop={4}
+                            >
+                              <View style={[s.gridAddChip, { backgroundColor: `${theme.primary}12`, borderColor: theme.border }]}>
+                                <Feather name="plus" size={15} color={theme.primary} />
+                              </View>
+                            </Pressable>
+                          );
+                        })}
                       {items.map((entry) => {
                         const startMin = timeToMinutes(entry.startTime);
                         const endMin = timeToMinutes(entry.endTime);
@@ -668,65 +802,69 @@ export default function TimetableScreen() {
                           T('timetableRoomOnline'),
                         );
                         const stackTight = hasTitle || Boolean(metaParts);
-                        return (
+                        const slotBody = (
+                          <View
+                            style={[
+                              s.gridSlotInner,
+                              stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                s.gridSlotCode,
+                                !slotDetails.courseName && s.gridSlotCodeCompact,
+                                { color },
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {entry.subjectCode}
+                            </Text>
+                            {hasTitle ? (
+                              <Text
+                                style={[s.gridSlotTitle, { color: theme.text }]}
+                                numberOfLines={height > 90 ? 4 : 2}
+                              >
+                                {title}
+                              </Text>
+                            ) : null}
+                            {metaParts ? (
+                              <WeekGridSlotMetaText
+                                parts={metaParts}
+                                theme={theme}
+                                slotHeight={height}
+                              />
+                            ) : null}
+                          </View>
+                        );
+                        const slotStyle = [
+                          s.gridSlot,
+                          {
+                            top,
+                            height,
+                            backgroundColor: color + '32',
+                            borderLeftColor: color,
+                            zIndex: 2,
+                          },
+                        ];
+                        return gridEditMode ? (
                           <Pressable
                             key={entry.id}
-                            style={[
-                              s.gridSlot,
-                              {
-                                top,
-                                height,
-                                backgroundColor: color + '32',
-                                borderLeftColor: color,
-                              },
-                            ]}
-                            onPress={() => {
-                              setSelectedEntry(entry);
-                              setEntryModalOpen(true);
-                            }}
+                            style={slotStyle}
+                            onPress={() =>
+                              router.push({
+                                pathname: '/timetable-edit',
+                                params: { entryId: entry.id },
+                              } as any)
+                            }
                           >
-                            <View
-                              style={[
-                                s.gridSlotInner,
-                                stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
-                              ]}
-                            >
-                              <Text
-                                includeFontPadding={false}
-                                style={[
-                                  s.gridSlotCode,
-                                  !slotDetails.courseName && s.gridSlotCodeCompact,
-                                  { color },
-                                ]}
-                                numberOfLines={2}
-                              >
-                                {entry.subjectCode}
-                              </Text>
-                              {hasTitle ? (
-                                <Text
-                                  includeFontPadding={false}
-                                  style={[s.gridSlotTitle, { color: theme.text }]}
-                                  numberOfLines={height > 90 ? 4 : 2}
-                                >
-                                  {title}
-                                </Text>
-                              ) : null}
-                              {metaParts ? (
-                                <WeekGridSlotMetaText
-                                  parts={metaParts}
-                                  theme={theme}
-                                  slotHeight={height}
-                                />
-                              ) : null}
-                            </View>
+                            {slotBody}
                           </Pressable>
+                        ) : (
+                          <View key={entry.id} style={slotStyle}>
+                            {slotBody}
+                          </View>
                         );
                       })}
-                      {items.length === 0 && (
-                        <View style={[s.gridEmptyCol, { top: gridBodyHeight * 0.35 }]}>
-                          <Text style={[s.gridEmptyText, { color: theme.textSecondary }]}>—</Text>
-                        </View>
-                      )}
                     </View>
                   );
                 })}
@@ -846,7 +984,6 @@ export default function TimetableScreen() {
                           ]}
                         >
                           <Text
-                            includeFontPadding={false}
                             style={[
                               s.gridSlotCode,
                               !slotDetails.courseName && s.gridSlotCodeCompact,
@@ -858,7 +995,6 @@ export default function TimetableScreen() {
                           </Text>
                           {hasTitle ? (
                             <Text
-                              includeFontPadding={false}
                               style={[s.gridSlotTitle, { color: theme.text }]}
                               numberOfLines={height > 90 ? 4 : 2}
                             >
@@ -927,15 +1063,9 @@ export default function TimetableScreen() {
                 {items.map((e) => {
                   const color = entrySlotColor(e);
                   const title = entryDisplayTitle(e);
-                  return (
-                    <Pressable
-                      key={e.id}
-                      style={[s.listCard, { backgroundColor: theme.background, borderLeftColor: color }]}
-                      onPress={() => {
-                        setSelectedEntry(e);
-                        setEntryModalOpen(true);
-                      }}
-                    >
+                  const cardStyle = [s.listCard, { backgroundColor: theme.background, borderLeftColor: color }];
+                  const cardInner = (
+                    <>
                       <View style={s.listTimeCol}>
                         <Text style={[s.listTime, { color: theme.primary }]}>{e.startTime}</Text>
                         <Text style={[s.listTimeDash, { color: theme.textSecondary }]}>-</Text>
@@ -969,7 +1099,25 @@ export default function TimetableScreen() {
                           </View>
                         )}
                       </View>
+                    </>
+                  );
+                  return gridEditMode ? (
+                    <Pressable
+                      key={e.id}
+                      style={cardStyle}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/timetable-edit',
+                          params: { entryId: e.id },
+                        } as any)
+                      }
+                    >
+                      {cardInner}
                     </Pressable>
+                  ) : (
+                    <View key={e.id} style={cardStyle}>
+                      {cardInner}
+                    </View>
                   );
                 })}
               </View>
@@ -985,55 +1133,6 @@ export default function TimetableScreen() {
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
-      {selectedEntry && entryModalOpen && (
-        <Modal
-          transparent
-          animationType="fade"
-          visible={entryModalOpen}
-          onRequestClose={() => setEntryModalOpen(false)}
-        >
-          <View style={s.entryModalRoot}>
-            <Pressable style={s.entryModalBackdrop} onPress={() => setEntryModalOpen(false)} />
-            <View style={[s.entryModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <Text style={[s.entryModalTitle, { color: theme.text }]}>
-                {selectedEntry.subjectCode}{' '}
-                <Text style={{ fontWeight: '400' }}>{entryDisplayTitle(selectedEntry)}</Text>
-              </Text>
-              <Text style={[s.entryModalWhen, { color: theme.textSecondary }]}>
-                {selectedEntry.day} · {selectedEntry.startTime}–{selectedEntry.endTime}
-              </Text>
-              {slotDetails.room && (
-                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
-                  {T('timetableRoom')}: {formatRoomDisplay(selectedEntry.location, T('timetableRoomOnline'))}
-                </Text>
-              )}
-              {selectedEntry.lecturer && selectedEntry.lecturer !== '-' && (
-                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
-                  {T('timetableLecturer')}: {selectedEntry.lecturer}
-                </Text>
-              )}
-              {selectedEntry.group && (
-                <Text style={[s.entryModalLine, { color: theme.textSecondary }]}>
-                  {T('timetableGroup')}: {selectedEntry.group}
-                </Text>
-              )}
-
-              <View style={s.entryModalActions}>
-                <Pressable
-                  style={({ pressed }) => [
-                    s.entryModalBtn,
-                    { backgroundColor: theme.background, borderColor: theme.border },
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  onPress={() => setEntryModalOpen(false)}
-                >
-                  <Text style={[s.entryModalBtnText, { color: theme.text }]}>Close</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
   );
@@ -1051,7 +1150,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  menuBtn: {
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  headerIconBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
@@ -1150,51 +1250,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  entryModalRoot: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  entryModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  entryModalCard: {
-    maxWidth: 340,
-    width: '86%',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  entryModalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  entryModalWhen: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  entryModalLine: {
-    fontSize: 13,
-    marginTop: 4,
-  },
-  entryModalActions: {
-    marginTop: 14,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  entryModalBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  entryModalBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   exportBtnPrimary: { flex: 1.3 },
   exportBtnText: { fontSize: 13, fontWeight: '900' },
   gridRoot: { flex: 1, paddingHorizontal: 6, paddingBottom: 12 },
@@ -1236,6 +1291,23 @@ const s = StyleSheet.create({
     right: 0,
     height: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  gridAddCell: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 0,
+  },
+  gridAddChip: {
+    minWidth: 28,
+    minHeight: 28,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.92,
   },
   gridSlot: {
     position: 'absolute',
@@ -1318,6 +1390,34 @@ const s = StyleSheet.create({
   listMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   listMetaLabel: { fontSize: 12, fontWeight: '600', fontStyle: 'italic' },
   listMetaValue: { fontSize: 12, flex: 1 },
+  introModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  introModalCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 22,
+    maxWidth: 400,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  introModalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 10, letterSpacing: -0.3 },
+  introModalBody: { fontSize: 15, lineHeight: 22, marginBottom: 10 },
+  introModalPrivacy: { fontSize: 12, lineHeight: 17, marginBottom: 18, opacity: 0.9 },
+  introModalPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+  },
+  introModalPrimaryText: { fontSize: 16, fontWeight: '700' },
+  introModalSecondary: { alignItems: 'center', paddingVertical: 10 },
+  introModalSecondaryText: { fontSize: 15, fontWeight: '600' },
   emptyWrap: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40,
   },
@@ -1352,7 +1452,6 @@ function WeekGridSlotMetaText({
     <View style={s.gridSlotMetaColumn}>
       {room ? (
         <Text
-          includeFontPadding={false}
           style={[s.gridSlotMetaRoom, { color: theme.text }]}
           numberOfLines={roomLines}
           ellipsizeMode="tail"
@@ -1362,7 +1461,6 @@ function WeekGridSlotMetaText({
       ) : null}
       {tail ? (
         <Text
-          includeFontPadding={false}
           style={[s.gridSlotMetaLect, { color: theme.textSecondary }]}
           numberOfLines={lectLines}
           ellipsizeMode="tail"

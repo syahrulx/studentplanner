@@ -6,6 +6,9 @@
 [functions.extract_sow]
 verify_jwt = false
 
+[functions.extract_timetable]
+verify_jwt = false
+
 [functions.fetch_timetable]
 verify_jwt = false
 

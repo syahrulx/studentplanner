@@ -127,6 +127,10 @@ function ThemeAwareLayout() {
         <Stack.Screen name="profile" />
         <Stack.Screen name="subscription-plans" />
         <Stack.Screen name="settings" />
+        <Stack.Screen
+          name="timetable-import"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
         <Stack.Screen name="classroom-sync" />
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="community" />

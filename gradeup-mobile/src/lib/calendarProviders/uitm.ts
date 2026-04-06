@@ -7,6 +7,9 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Official HEA tables have many rows; below this we treat stored data as summary-only and re-fetch. */
+export const UITM_HEA_PERIOD_COUNT_MIN = 12;
+
 export const uitmProvider: CalendarProvider = {
   universityId: 'uitm',
 
@@ -32,12 +35,18 @@ export const uitmProvider: CalendarProvider = {
 
     if (!official?.startDate || !official?.endDate) return null;
 
-    // Skip update if the existing calendar already matches
+    const officialPeriodN = official.periods?.length ?? 0;
+    const currentPeriodN = currentCalendar?.periods?.length ?? 0;
+    const needsPeriodBackfill =
+      officialPeriodN >= UITM_HEA_PERIOD_COUNT_MIN && currentPeriodN < UITM_HEA_PERIOD_COUNT_MIN;
+
+    // Skip only when dates/weeks match *and* we already have full HEA periods (teaching week needs them).
     if (
       currentCalendar &&
       currentCalendar.startDate === official.startDate &&
       currentCalendar.endDate === official.endDate &&
-      currentCalendar.totalWeeks === official.totalWeeks
+      currentCalendar.totalWeeks === official.totalWeeks &&
+      !needsPeriodBackfill
     ) {
       return null;
     }

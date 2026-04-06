@@ -217,7 +217,13 @@ export default function AddFriendScreen() {
                 <View key={req.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
                   <Avatar name={req.profile?.name} avatarUrl={req.profile?.avatar_url} size={44} />
                   <View style={styles.personInfo}>
-                    <Text style={[styles.personName, { color: theme.text }]}>{req.profile?.name || 'Unknown'}</Text>
+                    <Text
+                      style={[styles.personName, { color: theme.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {req.profile?.name || 'Unknown'}
+                    </Text>
                     {req.profile?.university && (
                       <Text style={[styles.personSub, { color: theme.textSecondary }]}>{req.profile.university}</Text>
                     )}
@@ -251,7 +257,11 @@ export default function AddFriendScreen() {
                     <Feather name="user" size={20} color={theme.textSecondary} />
                   </View>
                   <View style={styles.personInfo}>
-                    <Text style={[styles.personName, { color: theme.text }]}>
+                    <Text
+                      style={[styles.personName, { color: theme.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {req.addressee_id.slice(0, 8)}...
                     </Text>
                     <Text style={[styles.personSub, { color: theme.textSecondary }]}>Pending</Text>
@@ -288,7 +298,13 @@ export default function AddFriendScreen() {
                 <View key={person.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
                   <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
                   <View style={styles.personInfo}>
-                    <Text style={[styles.personName, { color: theme.text }]}>{person.name}</Text>
+                    <Text
+                      style={[styles.personName, { color: theme.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {person.name}
+                    </Text>
                     <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
                       {[person.university, person.faculty, person.course].filter(Boolean).join(' · ')}
                     </Text>
@@ -381,11 +397,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  personInfo: { flex: 1 },
+  personInfo: { flex: 1, minWidth: 0 },
   personName: { fontSize: 16, fontWeight: '700' },
   personSub: { fontSize: 13, marginTop: 2 },
 
-  requestActions: { flexDirection: 'row', gap: 8 },
+  requestActions: { flexDirection: 'row', gap: 8, flexShrink: 0 },
   acceptBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -400,6 +416,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 14,
+    flexShrink: 0,
   },
   addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
@@ -410,6 +427,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
+    flexShrink: 0,
   },
   sentBadgeText: { fontSize: 13, fontWeight: '600' },
 

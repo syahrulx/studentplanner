@@ -3,6 +3,7 @@ import { THEME_IDS, type ThemeId } from '@/constants/Themes';
 import type { Course } from './types';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
+const KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO = 'hasSeenNonUitmTimetableIntro';
 const KEY_THEME = 'appTheme';
 const KEY_LANGUAGE = 'appLanguage';
 const KEY_LOGHAT = 'appLoghat';
@@ -22,6 +23,25 @@ export async function setHasSeenTutorial(value: boolean): Promise<void> {
       await AsyncStorage.setItem(KEY_HAS_SEEN_TUTORIAL, 'true');
     } else {
       await AsyncStorage.removeItem(KEY_HAS_SEEN_TUTORIAL);
+    }
+  } catch {}
+}
+
+export async function getHasSeenNonUitmTimetableIntro(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO);
+    return value === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function setHasSeenNonUitmTimetableIntro(value: boolean): Promise<void> {
+  try {
+    if (value) {
+      await AsyncStorage.setItem(KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO, 'true');
+    } else {
+      await AsyncStorage.removeItem(KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO);
     }
   } catch {}
 }
