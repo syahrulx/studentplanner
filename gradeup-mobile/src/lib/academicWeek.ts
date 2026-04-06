@@ -355,12 +355,12 @@ export function workloadVelocityPointsByWeek(
   return points;
 }
 
-/** 1-based week index with highest count; week 0 when there is no workload. Ties → latest week. */
+/** 1-based week index with highest count; week 0 when there is no workload. Ties → earliest week. */
 export function peakWeekFromTaskCounts(counts: number[]): { week: number; max: number } {
   let max = 0;
   let idx = -1;
   counts.forEach((c, i) => {
-    if (c > max || (c === max && c > 0 && (idx < 0 || i > idx))) {
+    if (c > max || (c === max && c > 0 && (idx < 0 || i < idx))) {
       max = c;
       idx = i;
     }
