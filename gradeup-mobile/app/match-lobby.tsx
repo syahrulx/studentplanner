@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '@/hooks/useTheme';
+import { supabase } from '@/src/lib/supabase';
 import { useQuiz } from '@/src/context/QuizContext';
 import * as quizApi from '@/src/lib/quizApi';
 
@@ -15,8 +16,8 @@ export default function MatchLobby() {
   const theme = useTheme();
   const { sessionId, inviteCode: paramCode } = useLocalSearchParams<{ sessionId?: string; inviteCode?: string }>();
   const {
-    currentSession, participants, countdown, isReady, allReady,
-    joinQuiz, setReady, leaveQuiz, refreshParticipants,
+    currentSession, participants, myParticipantId, countdown, isReady,
+    joinQuiz, setReady, leaveQuiz, refreshParticipants, broadcastGameStart,
   } = useQuiz();
 
   const [joining, setJoining] = useState(false);
@@ -55,12 +56,22 @@ export default function MatchLobby() {
     init();
   }, [sessionId, paramCode]);
 
-  // Poll participants
+  // Realtime: subscribe to participant changes for instant player-join updates
   useEffect(() => {
     if (!currentSession) return;
-    const interval = setInterval(refreshParticipants, 3000);
-    return () => clearInterval(interval);
-  }, [currentSession, refreshParticipants]);
+    // Initial load
+    refreshParticipants();
+    // Subscribe to realtime changes on quiz_participants
+    const channel = supabase
+      .channel(`lobby-participants:${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'quiz_participants', filter: `session_id=eq.${currentSession.id}` },
+        () => refreshParticipants(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentSession?.id]);
 
   // Countdown reached 0 → navigate to gameplay
   useEffect(() => {
@@ -78,6 +89,9 @@ export default function MatchLobby() {
     setStarting(true);
     try {
       await quizApi.startSession(currentSession.id);
+      // Broadcast to non-host players so they navigate too
+      broadcastGameStart();
+      // Host navigates immediately
       router.replace({ pathname: '/quiz-gameplay', params: { sessionId: currentSession.id } } as any);
     } catch {
       Alert.alert('Error', 'Failed to start the game');
@@ -126,7 +140,9 @@ export default function MatchLobby() {
     );
   }
 
-  const isHost = currentSession.host_id === participants.find((p) => p.user_id === currentSession.host_id)?.user_id;
+  // Correctly determine if current user is the host
+  const myUserId = participants.find((p) => p.id === myParticipantId)?.user_id;
+  const isHost = !!myUserId && currentSession.host_id === myUserId;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -222,9 +238,9 @@ export default function MatchLobby() {
         {!isReady ? (
           <Pressable style={[styles.btn, { backgroundColor: '#10b981' }]} onPress={handleReady}>
             <Feather name="check" size={20} color="#fff" />
-            <Text style={styles.btnText}>Ready</Text>
+            <Text style={styles.btnText}>I'm Ready</Text>
           </Pressable>
-        ) : (
+        ) : isHost ? (
           <Pressable
             style={[styles.btn, { backgroundColor: participants.length >= 2 ? theme.primary : '#94a3b8' }]}
             onPress={handleStart}
@@ -241,6 +257,11 @@ export default function MatchLobby() {
               </>
             )}
           </Pressable>
+        ) : (
+          <View style={[styles.waitingBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles.waitingBtnText, { color: theme.textSecondary }]}>Waiting for host to start...</Text>
+          </View>
         )}
       </View>
     </View>
@@ -287,4 +308,6 @@ const styles = StyleSheet.create({
   actions: { marginTop: 16 },
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: RADIUS },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  waitingBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: RADIUS, borderWidth: 1 },
+  waitingBtnText: { fontSize: 15, fontWeight: '600' },
 });

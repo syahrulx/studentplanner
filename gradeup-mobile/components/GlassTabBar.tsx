@@ -4,8 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
-import { ThemeIcon } from '@/components/ThemeIcon';
-import { useTabBarAddMenu } from '@/contexts/TabBarContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 
 let BlurView: React.ComponentType<any> | null = null;
@@ -15,8 +13,8 @@ try {
   BlurView = null;
 }
 
-const BAR_H = 68;
-const BAR_RADIUS = 34;
+const BAR_H = 64;
+const BAR_RADIUS = 32;
 
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '').trim();
@@ -34,20 +32,16 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
   const themeId = useThemeId();
   const isDark = isDarkTheme(themeId);
   const insets = useSafeAreaInsets();
-  const openAddMenu = useTabBarAddMenu();
   const { communityBadgeCount } = useCommunity();
 
   const hasBlur = BlurView && Platform.OS !== 'web';
-  const barBg = isDark
-    ? hasBlur
-      ? hexToRgba(theme.card, 0.72)
-      : hexToRgba(theme.card, 0.96)
-    : hasBlur
-      ? hexToRgba(theme.card, 0.14)
-      : hexToRgba(theme.card, 0.92);
+  // Use completely transparent background when blur is active, letting the native OS handle the material
+  const barBg = hasBlur ? 'transparent' : isDark ? hexToRgba(theme.card, 0.96) : hexToRgba(theme.card, 0.95);
+      
+  const topEdgeColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.50)';
+  const outlineColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
   const activeColor = theme.primary;
   const inactiveColor = theme.tabIconDefault;
-  const addBtnBg = theme.primary;
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]} pointerEvents="box-none">
@@ -55,56 +49,67 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
         style={[
           styles.barOuter,
           styles.barShadow,
-          { shadowColor: isDark ? theme.primary : `${theme.text}33` },
+          { shadowColor: isDark ? '#000000' : `${theme.primary}33` },
         ]}
       >
-        {hasBlur && (
-          <BlurView
-            intensity={isDark ? 48 : 140}
-            tint={isDark ? 'dark' : 'light'}
-            style={[StyleSheet.absoluteFill, styles.barBlur]}
-          />
-        )}
+        {hasBlur && (() => {
+          const BV = BlurView as React.ComponentType<any>;
+          return (
+            <BV
+              intensity={100}
+              tint="default"
+              style={[StyleSheet.absoluteFill, styles.barBlur]}
+            />
+          );
+        })()}
         <View style={[StyleSheet.absoluteFill, styles.barFill, { backgroundColor: barBg }]} />
-        {/* Bottom inner edge for glass thickness */}
-        <View style={styles.liquidBottomEdge} />
-        <View style={[StyleSheet.absoluteFill, styles.barBorder]} />
-        <View style={[StyleSheet.absoluteFill, styles.barBorderInner]} />
+        <View style={[StyleSheet.absoluteFill, styles.barBorder, { borderColor: outlineColor }]} />
+        <View style={[StyleSheet.absoluteFill, styles.barTopHighlight, { borderTopColor: topEdgeColor, borderLeftColor: topEdgeColor, borderRightColor: topEdgeColor }]} />
 
         {state.routes.map((route, idx) => {
           const { options } = descriptors[route.key];
           
-          // Expo Router's href: null doesn't reliably pass down to custom tab bars.
-          // Explicitly hide the Study (notes) tab.
-          if (route.name === 'notes' || (options as any).href === null) return null;
+          // Hide tabs with href: null (the legacy "two" tab)
+          if (route.name === 'two' || (options as any).href === null) return null;
 
           const focused = state.index === idx;
-          const isAdd = route.name === 'two';
+          const isHome = route.name === 'index';
           const color = focused ? activeColor : inactiveColor;
 
           const onPress = () => {
-            if (isAdd && openAddMenu) { openAddMenu(); return; }
             const ev = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
             if (!focused && !ev.defaultPrevented) navigation.navigate(route.name, route.params);
           };
 
-          if (isAdd) {
+          if (isHome) {
             return (
               <Pressable
                 key={route.key}
-                style={({ pressed }) => [styles.addTab, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.tab, { paddingTop: 0, paddingBottom: 8 }, pressed && styles.pressed]}
                 onPress={onPress}
-                accessibilityLabel="Add"
               >
-                <View
-                  style={[
-                    styles.addBtn,
-                    { backgroundColor: addBtnBg },
-                    Platform.OS === 'ios' && { shadowColor: theme.primary },
-                  ]}
-                >
-                  <ThemeIcon name="add" size={24} color={theme.textInverse} />
+                <View style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  backgroundColor: focused ? activeColor : theme.card,
+                  borderColor: focused ? activeColor : theme.border,
+                  borderWidth: focused ? 0 : 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginTop: -20, // breaks out cleanly
+                  marginBottom: 4,
+                  shadowColor: focused ? activeColor : '#000000',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: focused ? 0.3 : 0.08,
+                  shadowRadius: 10,
+                  elevation: 6,
+                }}>
+                  {options.tabBarIcon?.({ focused, color: focused ? '#ffffff' : inactiveColor, size: 24 })}
                 </View>
+                <Text style={[styles.label, { color }]} numberOfLines={1}>
+                  {(options.tabBarLabel as string) ?? options.title ?? route.name}
+                </Text>
               </Pressable>
             );
           }
@@ -147,54 +152,43 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingTop: 8,
   },
   barOuter: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 420,
     height: BAR_H,
     borderRadius: BAR_RADIUS,
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    /** Equal-width slots (flex:1 on children). Avoid space-around — it skews outer tabs vs center Add. */
     justifyContent: 'flex-start',
   },
   barBlur: {
     borderRadius: BAR_RADIUS,
+    overflow: 'hidden',
   },
   barFill: {
     borderRadius: BAR_RADIUS,
-  },
-  liquidBottomEdge: {
-    position: 'absolute',
-    bottom: 0,
-    left: 16,
-    right: 16,
-    height: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-    borderTopLeftRadius: 1,
-    borderTopRightRadius: 1,
-    pointerEvents: 'none',
+    overflow: 'hidden',
   },
   barBorder: {
     borderRadius: BAR_RADIUS,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.55)',
+    borderWidth: StyleSheet.hairlineWidth,
     pointerEvents: 'none',
   },
-  barBorderInner: {
-    borderRadius: BAR_RADIUS - 1,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    margin: 1,
+  barTopHighlight: {
+    borderRadius: BAR_RADIUS,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 0.5,
+    borderRightWidth: 0.5,
+    borderBottomWidth: 0,
     pointerEvents: 'none',
   },
   barShadow: {
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
-    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 36,
     elevation: 20,
   },
   tab: {
@@ -205,13 +199,12 @@ const styles = StyleSheet.create({
     height: BAR_H,
     paddingTop: 8,
     paddingBottom: 6,
-    gap: 4,
+    gap: 3,
     paddingHorizontal: 2,
   },
-  /** Same box for every tab icon so Feather vs ThemeIcon optical center matches. */
   tabIconWrap: {
-    width: 32,
-    height: 28,
+    width: 28,
+    height: 26,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -238,7 +231,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
     textAlign: 'center',
     alignSelf: 'stretch',
   },
@@ -246,30 +239,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    marginTop: 2,
-  },
-  addTab: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: BAR_H,
-  },
-  addBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -8,
-    ...Platform.select({
-      ios: {
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.22,
-        shadowRadius: 8,
-      },
-      android: { elevation: 6 },
-    }),
+    marginTop: 1,
   },
   pressed: {
     opacity: 0.7,

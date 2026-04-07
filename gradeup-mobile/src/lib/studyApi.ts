@@ -2,7 +2,10 @@
  * Study API – flashcards and quiz generation via OpenAI.
  */
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { getNoteAttachmentUrl } from './noteStorage';
 
 /**
  * Generate flashcards directly from a local PDF file in ONE API call.
@@ -84,25 +87,25 @@ No markdown, no explanation, ONLY the JSON array.`,
           },
         ],
         temperature: 0.6,
-        max_tokens: 4000,
+        max_tokens: 2500,
       }),
     });
     clearTimeout(chatTimeout);
 
     const chatJson = await chatRes.json();
 
-    // Token logging
+    // Token logging (fire-and-forget)
     try {
       if (userId) {
         const usage = chatJson?.usage;
-        await supabase.from('ai_token_usage').insert({
+        supabase.from('ai_token_usage').insert({
           user_id: userId,
           kind: 'flashcards_pdf_direct',
           model: 'gpt-4o-mini',
           prompt_tokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null,
           completion_tokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : null,
           total_tokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : null,
-        });
+        }).then(() => {}, () => {});
       }
     } catch { /* ignore */ }
 
@@ -140,6 +143,49 @@ No markdown, no explanation, ONLY the JSON array.`,
   }
 }
 
+/** True when the note has a storage path and the filename looks like a PDF. */
+export function noteHasPdfAttachment(note: {
+  attachmentPath?: string;
+  attachmentFileName?: string;
+}): boolean {
+  if (!note.attachmentPath?.trim()) return false;
+  const n = (note.attachmentFileName || '').toLowerCase();
+  return n.endsWith('.pdf');
+}
+
+/**
+ * Download a note's PDF from Supabase Storage to a temp file, then run the same
+ * OpenAI upload + flashcard flow as {@link generateFlashcardsFromPdfFile}.
+ */
+export async function generateFlashcardsFromNotePdfStorage(
+  storagePath: string,
+  fileName: string | undefined,
+  userId: string | undefined,
+  maxCards: number = 18,
+): Promise<{ cards: GeneratedFlashcard[]; error?: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cacheDir = (FileSystem as any).cacheDirectory as string | null;
+  if (!cacheDir) {
+    return { cards: [], error: 'No local cache directory for PDF download.' };
+  }
+  const tempPath = `${cacheDir}fc_pdf_${Date.now()}.pdf`;
+  try {
+    const { url, error: urlErr } = await getNoteAttachmentUrl(storagePath);
+    if (urlErr || !url) {
+      return { cards: [], error: urlErr?.message ?? 'Could not access the PDF.' };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const downloadResult = await (FileSystem as any).downloadAsync(url, tempPath) as { status: number };
+    if (downloadResult.status !== 200) {
+      return { cards: [], error: `Could not download PDF (HTTP ${downloadResult.status}).` };
+    }
+    return await generateFlashcardsFromPdfFile(tempPath, fileName, userId, maxCards);
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (FileSystem as any).deleteAsync?.(tempPath, { idempotent: true }).catch(() => {});
+  }
+}
+
 const getOpenAIKey = (): string => {
   return (Constants.expoConfig?.extra?.openaiApiKey as string) || '';
 };
@@ -172,14 +218,15 @@ async function logAiTokenUsage(params: {
     const total_tokens = u?.total_tokens;
 
     // Best-effort: never break AI generation if logging fails.
-    await supabase.from('ai_token_usage').insert({
+    // Fire-and-forget — don't await
+    supabase.from('ai_token_usage').insert({
       user_id,
       kind: params.kind,
       model: params.model,
       prompt_tokens: typeof prompt_tokens === 'number' ? prompt_tokens : null,
       completion_tokens: typeof completion_tokens === 'number' ? completion_tokens : null,
       total_tokens: typeof total_tokens === 'number' ? total_tokens : null,
-    });
+    }).then(() => {}, () => {});
   } catch {
     // ignore
   }
@@ -188,12 +235,22 @@ async function logAiTokenUsage(params: {
 /**
  * Generate flashcards from note content using OpenAI.
  */
-export async function generateFlashcardsFromNote(noteContent: string, userId?: string): Promise<GeneratedFlashcard[]> {
+export async function generateFlashcardsFromNote(
+  noteContent: string,
+  userId?: string,
+  count: number = 10, // Fix 9: configurable count instead of hardcoded "5-10"
+): Promise<GeneratedFlashcard[]> {
   const key = getOpenAIKey();
   if (!key) return [];
+
+  // Fix 2: Abort after 25s — prevents silent hang inside Promise.all during batch generation
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 25000);
+
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -204,13 +261,14 @@ export async function generateFlashcardsFromNote(noteContent: string, userId?: s
           },
           {
             role: 'user',
-            content: `Generate 5-10 flashcards from the following content:\n\n${noteContent}`,
+            content: `Generate exactly ${count} flashcards from the following content:\n\n${noteContent}`,
           },
         ],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 1500,
       }),
     });
+    clearTimeout(abortTimer);
     const data = await response.json();
     await logAiTokenUsage({
       userId,
@@ -221,8 +279,12 @@ export async function generateFlashcardsFromNote(noteContent: string, userId?: s
     const content = data.choices?.[0]?.message?.content ?? '';
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const cards = JSON.parse(cleaned) as GeneratedFlashcard[];
-    return Array.isArray(cards) ? cards : [];
-  } catch {
+    return Array.isArray(cards) ? cards.slice(0, count) : [];
+  } catch (err: any) {
+    clearTimeout(abortTimer);
+    if (err?.name === 'AbortError') {
+      throw new Error('Flashcard generation timed out. Please try again.');
+    }
     return [];
   }
 }
@@ -230,7 +292,7 @@ export async function generateFlashcardsFromNote(noteContent: string, userId?: s
 /* ─── PDF Flashcard Generation (chunked) ──────────────────────────── */
 
 const PDF_FLASHCARD_LIMIT = 15;
-const CHUNK_SIZE = 2000;
+const CHUNK_SIZE = 4000;
 
 const PDF_FLASHCARD_SYSTEM_PROMPT = `You are an expert study assistant.
 
@@ -299,7 +361,7 @@ async function generateCardsFromChunk(chunk: string, userId?: string): Promise<G
           { role: 'user', content: `Generate flashcards from the following notes:\n\n${chunk}` },
         ],
         temperature: 0.6,
-        max_tokens: 3000,
+        max_tokens: 2000,
       }),
     });
     const data = await response.json();
@@ -333,20 +395,13 @@ export async function generateFlashcardsFromPdf(
   const chunks = chunkText(extractedText, CHUNK_SIZE);
   if (chunks.length === 0) return [];
 
-  // Generate from all chunks in parallel (max 5 at a time to be safe)
-  const batchSize = 5;
+  // Generate from all chunks in parallel (all at once — gpt-4o-mini handles concurrency well)
+  const results = await Promise.all(
+    chunks.map((chunk) => generateCardsFromChunk(chunk, userId))
+  );
   let allCards: GeneratedFlashcard[] = [];
-
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const results = await Promise.all(
-      batch.map((chunk) => generateCardsFromChunk(chunk, userId))
-    );
-    for (const cards of results) {
-      allCards = allCards.concat(cards);
-    }
-    // Early exit if we have enough
-    if (allCards.length >= maxCards * 2) break;
+  for (const cards of results) {
+    allCards = allCards.concat(cards);
   }
 
   // Deduplicate and limit
@@ -402,11 +457,22 @@ export async function generateQuizFromNotes(
 ): Promise<GeneratedQuizQuestion[]> {
   const key = getOpenAIKey();
   if (!key) return [];
-  const combined = noteContents.join('\n\n---\n\n');
+
+  // Fix 7: Truncate content before sending to prevent token limit errors.
+  // gpt-4o-mini has a 16k context window; 12k chars ≈ 3k tokens leaves room for
+  // the system prompt and the full response.
+  const MAX_CONTENT_CHARS = 12000;
+  const combined = noteContents.join('\n\n---\n\n').slice(0, MAX_CONTENT_CHARS);
   if (!combined.trim()) return [];
+
+  // Fix 3: Abort after 30 seconds so the UI never hangs indefinitely
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 30000);
+
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -418,6 +484,7 @@ export async function generateQuizFromNotes(
         max_tokens: 4000,
       }),
     });
+    clearTimeout(abortTimer);
     const data = await response.json();
     await logAiTokenUsage({
       userId,
@@ -429,20 +496,39 @@ export async function generateQuizFromNotes(
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const questions = JSON.parse(cleaned) as GeneratedQuizQuestion[];
     return Array.isArray(questions) ? questions.slice(0, questionCount) : [];
+  } catch (err: any) {
+    clearTimeout(abortTimer);
+    if (err?.name === 'AbortError') {
+      throw new Error('Quiz generation timed out. Please try again.');
+    }
+    return [];
+  }
+}
+
+const QUIZ_TEMP_KEY = '@quiz_generated_store';
+
+export async function setGeneratedQuizQuestions(questions: GeneratedQuizQuestion[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(QUIZ_TEMP_KEY, JSON.stringify(questions));
+  } catch (e) {
+    console.warn('Failed to save quiz to AsyncStorage', e);
+  }
+}
+
+export async function getGeneratedQuizQuestions(): Promise<GeneratedQuizQuestion[]> {
+  try {
+    const data = await AsyncStorage.getItem(QUIZ_TEMP_KEY);
+    if (!data) return [];
+    return JSON.parse(data) as GeneratedQuizQuestion[];
   } catch {
     return [];
   }
 }
 
-/** In-memory store for AI-generated quiz questions (used when navigating from AI Quiz Builder to gameplay). */
-let generatedQuizQuestionsStore: GeneratedQuizQuestion[] = [];
-
-export function setGeneratedQuizQuestions(questions: GeneratedQuizQuestion[]): void {
-  generatedQuizQuestionsStore = questions;
-}
-
-export function getGeneratedQuizQuestions(): GeneratedQuizQuestion[] {
-  return generatedQuizQuestionsStore;
+export async function clearGeneratedQuizQuestions(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(QUIZ_TEMP_KEY);
+  } catch {}
 }
 
 export { getOpenAIKey };

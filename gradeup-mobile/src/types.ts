@@ -147,7 +147,6 @@ export interface Note {
   id: string;
   subjectId: string;
   /** Optional chapter/folder id (user-defined). */
-  folderId?: string;
   title: string;
   content: string;
   tag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important' | 'Lab' | 'Discussion';
@@ -157,25 +156,10 @@ export interface Note {
   attachmentFileName?: string;
 }
 
-export interface NoteFolder {
-  id: string;
-  subjectId: string;
-  name: string;
-  createdAt: string; // ISO timestamp
-}
-
-export interface FlashcardFolder {
-  id: string;
-  name: string;
-  createdAt: string; // ISO date
-  /** Optional: group folder under a subject (e.g. course code) for chapter/topic organization. */
-  subjectId?: string;
-}
 
 export interface Flashcard {
   id: string;
-  folderId?: string; // which folder this card belongs to
-  noteId?: string;
+  noteId?: string; // which note this flashcard belongs to
   front: string;
   back: string;
   question?: string;

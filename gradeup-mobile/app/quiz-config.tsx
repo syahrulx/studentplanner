@@ -14,13 +14,13 @@ const RADIUS_SM = 14;
 const QUESTION_OPTS = [5, 10, 15, 20];
 
 export default function QuizConfig() {
-  const { flashcardFolders, flashcards, language } = useApp();
+  const { notes, flashcards, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
-  const [folderId, setFolderId] = useState<string>('');
+  const [noteId, setNoteId] = useState<string>('');
   const [totalQuestions, setTotalQuestions] = useState(5);
 
-  const pool = folderId ? flashcards.filter((c) => c.folderId === folderId) : flashcards;
+  const pool = noteId ? flashcards.filter((c) => c.noteId === noteId) : flashcards;
   const maxAvailable = pool.length;
   const effectiveTotal = Math.min(totalQuestions, Math.max(1, maxAvailable));
 
@@ -28,10 +28,10 @@ export default function QuizConfig() {
     router.push({
       pathname: '/quiz-mode-selection',
       params: {
-        folderId: folderId || '_all',
+        noteId: noteId || '_all',
         total: String(effectiveTotal),
         sourceType: 'flashcards',
-        sourceId: folderId || '_all',
+        sourceId: noteId || '_all',
         quizType: 'mcq',
         difficulty: 'medium',
       },
@@ -59,43 +59,44 @@ export default function QuizConfig() {
         <Pressable
           style={[
             styles.folderCard,
-            { backgroundColor: theme.card, borderColor: !folderId ? theme.primary : theme.border },
-            !folderId && { backgroundColor: theme.primary + '08' },
+            { backgroundColor: theme.card, borderColor: !noteId ? theme.primary : theme.border },
+            !noteId && { backgroundColor: theme.primary + '08' },
           ]}
-          onPress={() => setFolderId('')}
+          onPress={() => setNoteId('')}
         >
           <View style={[styles.folderIcon, { backgroundColor: theme.primary + '15' }]}>
             <ThemeIcon name="layers" size={20} color={theme.primary} />
           </View>
           <View style={styles.folderBody}>
-            <Text style={[styles.folderName, { color: !folderId ? theme.primary : theme.text }]}>{T('allFolders')}</Text>
+            <Text style={[styles.folderName, { color: !noteId ? theme.primary : theme.text }]}>All Notes</Text>
             <Text style={[styles.folderCount, { color: theme.textSecondary }]}>{flashcards.length} {T('cardsUnit')}</Text>
           </View>
-          {!folderId && (
+          {!noteId && (
             <View style={[styles.checkBadge, { backgroundColor: theme.primary }]}>
               <Feather name="check" size={12} color="#fff" />
             </View>
           )}
         </Pressable>
 
-        {flashcardFolders.map((f) => {
-          const count = flashcards.filter((c) => c.folderId === f.id).length;
-          const isSelected = folderId === f.id;
+        {notes.map((n) => {
+          const count = flashcards.filter((c) => c.noteId === n.id).length;
+          if (count === 0) return null;
+          const isSelected = noteId === n.id;
           return (
             <Pressable
-              key={f.id}
+              key={n.id}
               style={[
                 styles.folderCard,
                 { backgroundColor: theme.card, borderColor: isSelected ? theme.primary : theme.border },
                 isSelected && { backgroundColor: theme.primary + '08' },
               ]}
-              onPress={() => setFolderId(f.id)}
+              onPress={() => setNoteId(n.id)}
             >
               <View style={[styles.folderIcon, { backgroundColor: theme.primary + '15' }]}>
                 <ThemeIcon name="bookOpen" size={20} color={theme.primary} />
               </View>
               <View style={styles.folderBody}>
-                <Text style={[styles.folderName, { color: isSelected ? theme.primary : theme.text }]} numberOfLines={1}>{f.name}</Text>
+                <Text style={[styles.folderName, { color: isSelected ? theme.primary : theme.text }]} numberOfLines={1}>{n.title}</Text>
                 <Text style={[styles.folderCount, { color: theme.textSecondary }]}>{count} {T('cardsUnit')}</Text>
               </View>
               {count > 0 && (

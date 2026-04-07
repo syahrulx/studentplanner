@@ -8,7 +8,7 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTranslations } from '@/src/i18n';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useQuiz } from '@/src/context/QuizContext';
-import { getGeneratedQuizQuestions } from '@/src/lib/studyApi';
+import { getGeneratedQuizQuestions, clearGeneratedQuizQuestions } from '@/src/lib/studyApi';
 import * as quizApi from '@/src/lib/quizApi';
 import type { SourceType, MatchType } from '@/src/lib/quizApi';
 
@@ -25,11 +25,11 @@ export default function QuizModeSelection() {
   const { createQuiz, joinQuiz } = useQuiz();
 
   const {
-    folderId, total, fromBuilder, useGenerated,
+    noteId, total, fromBuilder, useGenerated,
     quizType: paramQuizType, difficulty: paramDifficulty,
     sourceType: paramSourceType, sourceId: paramSourceId,
   } = useLocalSearchParams<{
-    folderId?: string; total?: string; fromBuilder?: string; useGenerated?: string;
+    noteId?: string; total?: string; fromBuilder?: string; useGenerated?: string;
     quizType?: string; difficulty?: string; sourceType?: string; sourceId?: string;
   }>();
 
@@ -37,23 +37,31 @@ export default function QuizModeSelection() {
   const sourceType: SourceType = (paramSourceType as SourceType) || 'flashcards';
   const quizType = paramQuizType || 'mcq';
   const difficulty = paramDifficulty || 'medium';
-  const sourceId = paramSourceId || folderId || '_all';
+  const sourceId = paramSourceId || noteId || '_all';
 
   const [multiOpen, setMultiOpen] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null);
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const buildQuestions = useCallback(() => {
+  const buildQuestions = useCallback(async () => {
     if (useGenerated === '1') {
-      return getGeneratedQuizQuestions();
+      return await getGeneratedQuizQuestions();
     }
     // Build from flashcards
-    const pool = folderId && folderId !== '_all'
-      ? flashcards.filter((c) => c.folderId === folderId)
+    const pool = noteId && noteId !== '_all'
+      ? flashcards.filter((c) => c.noteId === noteId)
       : flashcards;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, totalNum);
-    return shuffled.map((card) => {
+    // Fix 6: Partial Fisher-Yates — O(k) where k=totalNum, not O(n log n)
+    // Also avoids the known JS sort-comparator random bias
+    const pool2 = [...pool];
+    const count = Math.min(totalNum, pool2.length);
+    for (let i = 0; i < count; i++) {
+      const j = i + Math.floor(Math.random() * (pool2.length - i));
+      [pool2[i], pool2[j]] = [pool2[j], pool2[i]];
+    }
+    const selected = pool2.slice(0, count);
+    return selected.map((card) => {
       const front = card?.front ?? (card as any)?.question ?? 'No question';
       const back = card?.back ?? (card as any)?.answer ?? 'Answer';
       const wrongs = pool.filter((c) => c.id !== card.id).map((c) => c?.back ?? (c as any)?.answer ?? 'Option');
@@ -68,12 +76,12 @@ export default function QuizModeSelection() {
       }
       return { question: front, options: opts, correctIndex: opts.indexOf(back) };
     });
-  }, [useGenerated, folderId, flashcards, totalNum]);
+  }, [useGenerated, noteId, flashcards, totalNum]);
 
   const handleSolo = async () => {
     setLoading(true);
     try {
-      const questions = buildQuestions();
+      const questions = await buildQuestions();
       const session = await createQuiz({
         mode: 'solo',
         matchType: 'friend',
@@ -84,6 +92,8 @@ export default function QuizModeSelection() {
         questionCount: questions.length || totalNum,
         questions,
       });
+      // Clear cached questions — they've been committed to the session
+      if (useGenerated === '1') await clearGeneratedQuizQuestions();
       router.replace({ pathname: '/quiz-gameplay', params: { sessionId: session.id } } as any);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to create quiz session');
@@ -100,12 +110,14 @@ export default function QuizModeSelection() {
         const existing = await quizApi.findRandomSession(sourceType, quizType);
         if (existing) {
           const session = await joinQuiz(existing.id);
+          // Clear cached questions even when joining (not creating) a session
+          if (useGenerated === '1') await clearGeneratedQuizQuestions();
           router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
           return;
         }
       }
 
-      const questions = buildQuestions();
+      const questions = await buildQuestions();
       const session = await createQuiz({
         mode: 'multiplayer',
         matchType,
@@ -117,6 +129,8 @@ export default function QuizModeSelection() {
         questions,
         circleId: matchType === 'circle' ? (selectedCircle || undefined) : undefined,
       });
+      // Clear cached questions — they've been committed to the session
+      if (useGenerated === '1') await clearGeneratedQuizQuestions();
       router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to create match');

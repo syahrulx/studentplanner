@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet, Animated } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -16,7 +16,7 @@ export default function QuizGameplay() {
   const theme = useTheme();
   const {
     currentSession, participants, myParticipantId, myAnswers,
-    opponentProgress, submitAnswer, finishQuiz,
+    opponentProgress, submitAnswer, finishQuiz, joinQuiz,
   } = useQuiz();
 
   const [session, setSession] = useState(currentSession);
@@ -36,6 +36,8 @@ export default function QuizGameplay() {
   const expiredRef = useRef(false);
   const qIndexRef = useRef(qIndex);
   qIndexRef.current = qIndex;
+  // Track last opponent questionIndex seen to suppress spurious flashes on initial join
+  const lastOpponentQRef = useRef<Map<string, number>>(new Map());
 
   // Load session from DB if not in context
   useEffect(() => {
@@ -44,9 +46,22 @@ export default function QuizGameplay() {
       return;
     }
     if (sessionId) {
-      quizApi.getSession(sessionId).then((s) => { if (s) setSession(s); });
+      joinQuiz(sessionId).then((s: any) => setSession(s)).catch(() => {});
     }
-  }, [sessionId, currentSession]);
+  }, [sessionId, currentSession, joinQuiz]);
+
+  // Sync reconnected state fast-forward — restore qIndex and score from existing answers
+  useEffect(() => {
+    if (myAnswers && myAnswers.length > 0 && qIndex === 0) {
+      setQIndex(myAnswers.length);
+      // Include speed bonus (same formula as submitAnswerAction and finishParticipant)
+      const sum = myAnswers.reduce(
+        (acc, ans) => acc + (ans.correct ? 10 : 0) + (ans.correct && ans.timeMs < 5000 ? 5 : 0),
+        0,
+      );
+      setScore(sum);
+    }
+  }, [myAnswers]);
 
   const questions: GeneratedQuizQuestion[] = useMemo(() => {
     return (session?.questions as GeneratedQuizQuestion[]) || [];
@@ -57,7 +72,7 @@ export default function QuizGameplay() {
   const isMultiplayer = session?.mode === 'multiplayer';
 
   const current = questions[qIndex];
-  const isLast = qIndex >= questions.length - 1;
+  const isLast = questions.length > 0 && qIndex >= questions.length - 1;
   const isLastRef = useRef(isLast);
   isLastRef.current = isLast;
   const isShortAnswer = current?.options?.length === 0;
@@ -68,9 +83,24 @@ export default function QuizGameplay() {
   questionsRef.current = questions;
 
   const navigateToResults = useCallback(async () => {
-    try {
-      await finishQuiz();
-    } catch {}
+    // Attempt to save results — retry once on failure so XP is not silently lost
+    let saved = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await finishQuiz();
+        saved = true;
+        break;
+      } catch (err) {
+        if (attempt === 1) {
+          // Last attempt failed — warn the user their score may not be saved
+          Alert.alert(
+            'Save Failed',
+            'Your score could not be saved. Please check your connection.',
+            [{ text: 'OK' }],
+          );
+        }
+      }
+    }
     router.replace({
       pathname: '/results-page',
       params: {
@@ -81,18 +111,18 @@ export default function QuizGameplay() {
     } as any);
   }, [finishQuiz]);
 
-  const handleTimerExpired = useCallback(() => {
+  const handleTimerExpired = useCallback(async () => {
     const timeMs = timerSeconds * 1000;
     if (myParticipantId) {
-      submitAnswer(qIndexRef.current, -1, false, timeMs);
+      await submitAnswer(qIndexRef.current, -1, false, timeMs);
     }
     setStreak(0);
+    setShortAnswer(''); // always clear short-answer input on expiry
     if (isLastRef.current) {
       navigateToResults();
     } else {
       setQIndex((i) => i + 1);
       setSelectedIdx(null);
-      setShortAnswer('');
     }
   }, [myParticipantId, timerSeconds, submitAnswer, navigateToResults]);
 
@@ -123,11 +153,14 @@ export default function QuizGameplay() {
     }
   }, [timeLeft, handleTimerExpired]);
 
-  // Monitor opponent progress for flashes
+  // Monitor opponent progress for flashes — only fire on a newly advanced question index
   useEffect(() => {
     const entries = Array.from(opponentProgress.values());
     const latest = entries.sort((a, b) => b.questionIndex - a.questionIndex)[0];
-    if (latest && latest.questionIndex >= 0) {
+    if (!latest) return;
+    const prevIndex = lastOpponentQRef.current.get(latest.userId) ?? -1;
+    if (latest.questionIndex > prevIndex) {
+      lastOpponentQRef.current.set(latest.userId, latest.questionIndex);
       setOpponentFlash(latest.correct ? 'correct' : 'wrong');
       setTimeout(() => setOpponentFlash(''), 1500);
     }
@@ -158,6 +191,9 @@ export default function QuizGameplay() {
     }
 
     if (isLast) {
+      // Update ref immediately (don't wait for setState re-render) so
+      // navigateToResults reads the correct final score
+      scoreRef.current = newScore;
       setScore(newScore);
       setTimeout(() => navigateToResults(), 1000);
     } else {
@@ -199,6 +235,8 @@ export default function QuizGameplay() {
     }
 
     if (isLast) {
+      // Update ref immediately so navigateToResults has correct final score
+      scoreRef.current = newScore;
       setScore(newScore);
       setTimeout(() => navigateToResults(), 1000);
     } else {

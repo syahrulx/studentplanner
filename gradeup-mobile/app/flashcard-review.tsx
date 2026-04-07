@@ -145,31 +145,75 @@ function createStyles(theme: ThemePalette) {
       opacity: 0.4,
       paddingHorizontal: 24,
     },
-    empty: { fontSize: 16, color: theme.textSecondary, textAlign: 'center', marginTop: 48 },
-    emptyBackBtn: { marginTop: 24, alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 24, backgroundColor: theme.primary, borderRadius: 12 },
-    emptyBackBtnText: { color: '#fff', fontWeight: '700' },
+    emptyWrap: { flex: 1, paddingHorizontal: 28, paddingTop: 32, justifyContent: 'center' },
+    empty: { fontSize: 16, color: theme.textSecondary, textAlign: 'center', lineHeight: 24 },
+    emptyActions: { marginTop: 28, gap: 12 },
+    emptyPrimaryBtn: {
+      paddingVertical: 14,
+      paddingHorizontal: 22,
+      backgroundColor: theme.primary,
+      borderRadius: 14,
+      alignItems: 'center',
+    },
+    emptyPrimaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+    emptySecondaryBtn: {
+      paddingVertical: 14,
+      paddingHorizontal: 22,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      alignItems: 'center',
+      backgroundColor: theme.card,
+    },
+    emptySecondaryBtnText: { color: theme.text, fontWeight: '700', fontSize: 15 },
   });
 }
 
 export default function FlashcardReview() {
-  const { folderId } = useLocalSearchParams<{ folderId?: string }>();
-  const { flashcards, user, language } = useApp();
+  const { noteId } = useLocalSearchParams<{ noteId?: string }>();
+  const { flashcards, notes, user, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const list = useMemo(() => {
-    if (folderId) return flashcards.filter((c) => c.folderId === folderId);
+  const sourceList = useMemo(() => {
+    if (noteId) return flashcards.filter((c) => c.noteId === noteId);
     return flashcards;
-  }, [flashcards, folderId]);
+  }, [flashcards, noteId]);
+
+  // Fix 10: Shuffle toggle — maintain an internal queue that can be randomized
+  const [shuffled, setShuffled] = useState(false);
+  // Fix 11: queue holds the working list; cards can be re-appended at the end
+  const [queue, setQueue] = useState<typeof sourceList>(() => sourceList);
+
+  // Sync queue when sourceList changes (e.g. card deleted during review)
+  useEffect(() => {
+    setQueue(sourceList);
+    setIndex(0);
+    setMasteredCount(0);
+  }, [sourceList]);
 
   const [index, setIndex] = useState(0);
   const [masteredCount, setMasteredCount] = useState(0);
   const [showBack, setShowBack] = useState(false);
 
+  const toggleShuffle = useCallback(() => {
+    setShuffled((s) => !s);
+    setQueue((prev) => {
+      const copy = [...prev];
+      // Fisher-Yates on remaining cards from current index onwards
+      for (let i = copy.length - 1; i > index; i--) {
+        const j = index + Math.floor(Math.random() * (i - index + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    });
+  }, [index]);
+
   // Scale-based flip: 1 → 0 (shrink) → swap content → 0 → 1 (grow)
   const scale = useSharedValue(1);
 
+  const list = queue; // alias for readability
   const card = list[index];
   const hasNext = index < list.length - 1;
 
@@ -216,9 +260,17 @@ export default function FlashcardReview() {
         }
       });
     } else {
-      router.back();
+      // Done reviewing — go back to Study tab instead of deep back-stack
+      router.replace('/(tabs)/notes' as any);
     }
   }, [hasNext, scale, advanceCard]);
+
+  // Fix 11: "Review Again" appends the card to the END of the queue so it genuinely
+  // comes back later, instead of just advancing like "Mastered" (old behaviour).
+  const handleReviewAgain = useCallback(() => {
+    if (card) setQueue((prev) => [...prev, card]);
+    handleNextCard();
+  }, [card, handleNextCard]);
 
   const handleMastered = useCallback(() => {
     setMasteredCount((c) => c + 1);
@@ -229,13 +281,63 @@ export default function FlashcardReview() {
     transform: [{ scaleX: scale.value }],
   }));
 
+  // Fix 5: Guard against OOB index (can happen if Mastered is tapped on the last
+  // card while the animation hasn't yet settled hasNext to false)
+  if (!card && list.length > 0) {
+    router.replace('/(tabs)/notes' as any);
+    return null;
+  }
+
   if (list.length === 0) {
+    const noteForDeck =
+      noteId && typeof noteId === 'string' ? notes.find((n) => n.id === noteId) : undefined;
+
+    const goOpenNoteGenerate = () => {
+      if (!noteForDeck) return;
+      router.replace({
+        pathname: '/notes-editor' as any,
+        params: { subjectId: noteForDeck.subjectId, noteId: noteForDeck.id, openDeck: '1' },
+      });
+    };
+
+    const goPickNote = () => {
+      router.replace({ pathname: '/flashcard-pick' as any, params: {} });
+    };
+
     return (
       <View style={styles.container}>
-        <Text style={styles.empty}>{T('noFlashcardsInFolder')}</Text>
-        <Pressable style={styles.emptyBackBtn} onPress={() => router.back()}>
-          <Text style={styles.emptyBackBtnText}>{T('back')}</Text>
-        </Pressable>
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.back()} style={styles.backIconWrap}>
+            <Feather name="arrow-left" size={20} color={theme.text} />
+          </Pressable>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>{T('activeRecall')}</Text>
+            <Text style={styles.subtitle}>{T('practice')}</Text>
+          </View>
+        </View>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.empty}>
+            {noteId
+              ? noteForDeck
+                ? T('flashcardReviewEmptyNote')
+                : T('flashcardReviewNoteNotFound')
+              : T('flashcardReviewEmptyAll')}
+          </Text>
+          <View style={styles.emptyActions}>
+            {noteForDeck ? (
+              <Pressable style={styles.emptyPrimaryBtn} onPress={goOpenNoteGenerate}>
+                <Text style={styles.emptyPrimaryBtnText}>{T('flashcardReviewOpenToGenerate')}</Text>
+              </Pressable>
+            ) : !noteId ? (
+              <Pressable style={styles.emptyPrimaryBtn} onPress={goPickNote}>
+                <Text style={styles.emptyPrimaryBtnText}>{T('flashcardReviewChooseDeck')}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable style={styles.emptySecondaryBtn} onPress={() => router.back()}>
+              <Text style={styles.emptySecondaryBtnText}>{T('back')}</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     );
   }
@@ -255,6 +357,14 @@ export default function FlashcardReview() {
           <Text style={styles.title}>{T('activeRecall')}</Text>
           <Text style={styles.subtitle}>W{user.currentWeek} {T('practice')}</Text>
         </View>
+        {/* Fix 10: Shuffle toggle button */}
+        <Pressable
+          onPress={toggleShuffle}
+          style={[styles.backIconWrap, shuffled && { backgroundColor: theme.primary }]}
+          hitSlop={8}
+        >
+          <Feather name="shuffle" size={18} color={shuffled ? '#fff' : theme.textSecondary} />
+        </Pressable>
       </View>
 
       {/* Progress */}
@@ -288,7 +398,7 @@ export default function FlashcardReview() {
               </View>
               <Text style={styles.cardAnswer}>{back}</Text>
               <View style={styles.cardBackActions}>
-                <Pressable style={[styles.backActionBtn, styles.backActionSecondary]} onPress={handleNextCard}>
+                <Pressable style={[styles.backActionBtn, styles.backActionSecondary]} onPress={handleReviewAgain}>
                   <Text style={styles.backActionSecondaryText}>{T('reviewAgain')}</Text>
                 </Pressable>
                 <Pressable style={[styles.backActionBtn, styles.backActionPrimary]} onPress={handleMastered}>

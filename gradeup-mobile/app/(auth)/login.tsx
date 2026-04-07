@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -143,7 +144,11 @@ export default function Login() {
           style={styles.hero}
         >
           <View style={styles.logoWrap}>
-            <Feather name="book-open" size={32} color="#fff" />
+            <Image 
+              source={require('@/assets/images/app_logo.png')} 
+              style={{ width: 44, height: 44, borderRadius: 12 }} 
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.heroTitle}>GradeUp</Text>
           <Text style={styles.heroSubtitle}>Your study companion</Text>

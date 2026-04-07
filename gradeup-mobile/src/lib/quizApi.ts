@@ -129,6 +129,15 @@ export async function createSession(params: CreateSessionParams): Promise<QuizSe
   const userId = await getCurrentUserId();
   const invite_code = params.mode === 'multiplayer' ? generateInviteCode() : null;
 
+  // Trim question content BEFORE inserting to prevent JSONB bloat and ensure
+  // the in-game experience uses the same bounded content from the start.
+  const safeQuestions = (params.questions || []).map((q) => ({
+    ...q,
+    question: (q.question || '').slice(0, 500),
+    options: q.options?.map((o) => o.slice(0, 250)),
+    expectedAnswer: q.expectedAnswer ? q.expectedAnswer.slice(0, 250) : undefined,
+  }));
+
   const { data, error } = await supabase
     .from('quiz_sessions')
     .insert({
@@ -140,7 +149,7 @@ export async function createSession(params: CreateSessionParams): Promise<QuizSe
       quiz_type: params.quizType,
       difficulty: params.difficulty,
       question_count: params.questionCount,
-      questions: params.questions,
+      questions: safeQuestions,
       status: params.mode === 'solo' ? 'in_progress' : 'waiting',
       invite_code,
       circle_id: params.circleId || null,
@@ -200,27 +209,46 @@ export async function getSession(sessionId: string): Promise<QuizSession | null>
 }
 
 export async function getSessionParticipants(sessionId: string): Promise<QuizParticipant[]> {
+  // Fix 5: Single query via view — eliminates the N+1 participants+profiles double-fetch
   const { data, error } = await supabase
-    .from('quiz_participants')
+    .from('quiz_participants_with_profile')
     .select('*')
     .eq('session_id', sessionId)
     .order('joined_at', { ascending: true });
 
-  if (error) return [];
+  if (error) {
+    // View might not exist yet (migration not run) — fall back to double-fetch
+    const { data: fallback, error: fbErr } = await supabase
+      .from('quiz_participants')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('joined_at', { ascending: true });
+    if (fbErr || !fallback) return [];
+    const userIds = (fallback as QuizParticipant[]).map((p) => p.user_id);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_url')
+      .in('id', userIds);
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    return (fallback as QuizParticipant[]).map((p) => ({
+      ...p,
+      profile: profileMap.get(p.user_id) || { name: 'Player' },
+    }));
+  }
 
-  // Fetch profiles
-  const userIds = (data as QuizParticipant[]).map((p) => p.user_id);
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, name, avatar_url')
-    .in('id', userIds);
-
-  const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
-
-  return (data as QuizParticipant[]).map((p) => ({
-    ...p,
-    profile: profileMap.get(p.user_id) || { name: 'Player' },
-  }));
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    session_id: row.session_id,
+    user_id: row.user_id,
+    score: row.score,
+    answers: row.answers,
+    finished: row.finished,
+    joined_at: row.joined_at,
+    profile: {
+      name: row.profile_name || 'Player',
+      avatar_url: row.profile_avatar_url,
+    },
+  })) as QuizParticipant[];
 }
 
 export async function startSession(sessionId: string): Promise<void> {
@@ -245,75 +273,62 @@ export async function finishSession(sessionId: string): Promise<void> {
 // Answers & Scoring
 // ---------------------------------------------------------------------------
 
-export async function submitAnswer(
-  participantId: string,
-  questionIndex: number,
-  selectedIndex: number,
-  correct: boolean,
-  timeMs: number,
-): Promise<void> {
-  const { data: current } = await supabase
-    .from('quiz_participants')
-    .select('answers, score')
-    .eq('id', participantId)
-    .single();
+// Incremental submitAnswer was removed to prevent db congestion.
 
-  const answers: ParticipantAnswer[] = (current?.answers as ParticipantAnswer[] | null) || [];
-  answers.push({ questionIndex, selectedIndex, correct, timeMs });
-
-  const basePoints = correct ? 10 : 0;
-  const speedBonus = correct && timeMs < 5000 ? 5 : 0;
-  const newScore = (current?.score || 0) + basePoints + speedBonus;
-
-  const { error } = await supabase
-    .from('quiz_participants')
-    .update({ answers, score: newScore })
-    .eq('id', participantId);
-
-  if (error) normalizeQuizTableError(error);
+export interface FinishParticipantParams {
+  participantId: string;
+  sessionId: string;
+  answers: ParticipantAnswer[];
+  score: number;
+  isWinner: boolean;
+  isMultiplayer: boolean;
 }
 
-export async function finishParticipant(
-  participantId: string,
-  sessionId: string,
-  isWinner: boolean,
-  isMultiplayer: boolean,
-): Promise<QuizScore> {
+export async function finishParticipant({
+  participantId,
+  sessionId,
+  answers,
+  score,
+  isWinner,
+  isMultiplayer,
+}: FinishParticipantParams): Promise<QuizScore> {
   const userId = await getCurrentUserId();
 
-  // Mark participant as finished
-  const { data: participant } = await supabase
+  // Batch update all answers, score, and set as finished
+  const { data: participant, error: updateError } = await supabase
     .from('quiz_participants')
-    .update({ finished: true })
+    .update({ answers, score, finished: true })
     .eq('id', participantId)
     .select()
     .single();
 
+  if (updateError) normalizeQuizTableError(updateError);
   if (!participant) throw new Error('Participant not found');
 
-  const answers: ParticipantAnswer[] = (participant.answers as ParticipantAnswer[] | null) || [];
   const correctCount = answers.filter((a) => a.correct).length;
   const totalQuestions = answers.length;
 
-  // XP: 10 per correct + 5 speed bonus (already in score) + 20 win bonus
-  let xpEarned = participant.score as number;
+  let xpEarned = score as number;
   if (isMultiplayer && isWinner) xpEarned += 20;
 
-  const { data: score, error } = await supabase
+  const { data: scoreResponse, error } = await supabase
     .from('quiz_scores')
-    .insert({
-      user_id: userId,
-      session_id: sessionId,
-      score: participant.score,
-      correct_count: correctCount,
-      total_questions: totalQuestions,
-      xp_earned: xpEarned,
-    })
+    .upsert(
+      {
+        user_id: userId,
+        session_id: sessionId,
+        score,
+        correct_count: correctCount,
+        total_questions: totalQuestions,
+        xp_earned: xpEarned,
+      },
+      { onConflict: 'user_id,session_id', ignoreDuplicates: false },
+    )
     .select()
     .single();
 
   if (error) normalizeQuizTableError(error);
-  return score as QuizScore;
+  return scoreResponse as QuizScore;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,29 +376,34 @@ export async function getLeaderboard(
   friendIds: string[] = [],
   timeFilter: 'all' | 'week' | 'today' = 'all',
 ): Promise<LeaderboardEntry[]> {
-  let query = supabase
-    .from('quiz_scores')
-    .select('user_id, score, xp_earned, created_at');
-
-  if (scope === 'friends') {
-    const ids = [...friendIds, userId];
-    query = query.in('user_id', ids);
+  // Build time filter bound
+  let since: string | null = null;
+  if (timeFilter === 'week') {
+    const d = new Date(); d.setDate(d.getDate() - 7);
+    since = d.toISOString();
+  } else if (timeFilter === 'today') {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    since = d.toISOString();
   }
 
-  if (timeFilter === 'week') {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    query = query.gte('created_at', weekAgo.toISOString());
-  } else if (timeFilter === 'today') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    query = query.gte('created_at', today.toISOString());
+  // Fetch scores with a server-side filter — aggregate in JS only over the relevant subset
+  let query = supabase
+    .from('quiz_scores')
+    .select('user_id, xp_earned')
+    .order('created_at', { ascending: false })
+    .limit(5000); // reasonable upper bound
+
+  if (scope === 'friends') {
+    query = query.in('user_id', [...friendIds, userId]);
+  }
+  if (since) {
+    query = query.gte('created_at', since);
   }
 
   const { data: scores, error } = await query;
   if (error || !scores) return [];
 
-  // Aggregate by user
+  // Aggregate by user (in JS over the already-filtered, small set)
   const userMap = new Map<string, { total_xp: number; games_played: number }>();
   for (const s of scores) {
     const existing = userMap.get(s.user_id) || { total_xp: 0, games_played: 0 };
@@ -392,10 +412,10 @@ export async function getLeaderboard(
     userMap.set(s.user_id, existing);
   }
 
-  // Fetch profiles
   const userIds = Array.from(userMap.keys());
   if (userIds.length === 0) return [];
 
+  // Fetch profiles in one query
   const { data: profiles } = await supabase
     .from('profiles')
     .select('id, name, avatar_url')
@@ -416,9 +436,7 @@ export async function getLeaderboard(
   });
 
   entries.sort((a, b) => b.total_xp - a.total_xp);
-
-  if (scope === 'global') return entries.slice(0, 50);
-  return entries;
+  return scope === 'global' ? entries.slice(0, 50) : entries;
 }
 
 export async function getMyQuizHistory(userId: string): Promise<QuizScore[]> {

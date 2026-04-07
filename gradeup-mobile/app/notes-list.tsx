@@ -9,6 +9,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { extractPdfTextFromUri } from '@/src/lib/pdfText';
+import { useTranslations } from '@/src/i18n';
 
 function createStyles(theme: ThemePalette) {
   return StyleSheet.create({
@@ -169,75 +170,49 @@ function createStyles(theme: ThemePalette) {
     newFolderBtnGhostText: { fontSize: 15, fontWeight: '700', color: theme.textSecondary },
     newFolderBtnPrimary: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: theme.primary },
     newFolderBtnPrimaryText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
+
+    flashcardEntry: {
+      marginHorizontal: 20,
+      marginBottom: 20,
+      borderRadius: 18,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: `${theme.primary}12`,
+    },
+    flashcardEntryIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: theme.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    flashcardEntryBody: { flex: 1 },
+    flashcardEntryTitle: { fontSize: 15, fontWeight: '700', color: theme.text },
+    flashcardEntrySub: { fontSize: 11, fontWeight: '500', color: theme.textSecondary, marginTop: 3 },
   });
 }
 
 export default function NotesList() {
   const { subjectId } = useLocalSearchParams<{ subjectId: string }>();
-  const { notes, courses, noteFolders, addNoteFolder, handleSaveNote, deleteNote, deleteNoteFolder } = useApp();
+  const { notes, handleSaveNote, deleteNote, language } = useApp();
+  const T = useTranslations(language);
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [showPlusMenu, setShowPlusMenu] = useState(false);
-  const [showNewFolder, setShowNewFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const isImportingRef = useRef(false);
 
-  const foldersForSubject = useMemo(() => noteFolders.filter((f) => f.subjectId === subjectId), [noteFolders, subjectId]);
+  const list = notes.filter((n) => n.subjectId === subjectId);
 
-  const list = notes
-    .filter((n) => n.subjectId === subjectId)
-    .filter((n) => (activeFolderId === 'all' ? true : (n.folderId ?? '') === activeFolderId));
-  const course = courses.find((c) => c.id === subjectId);
-
-  const openNewNote = (folderId?: string) =>
-    router.push({ pathname: '/notes-editor' as any, params: { subjectId, ...(folderId ? { folderId } : {}) } });
-
-  const handleCreateFolder = () => {
-    const name = newFolderName.trim();
-    if (!name) return;
-
-    // Check for duplicate folder name in this subject (case-insensitive)
-    const existingFolders = noteFolders.filter(f => f.subjectId === subjectId);
-    const duplicate = existingFolders.find(f => f.name.toLowerCase() === name.toLowerCase());
-
-    if (duplicate) {
-      Alert.alert(
-        'Folder Already Exists',
-        `A folder named "${duplicate.name}" already exists. What would you like to do?`,
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => {
-            setNewFolderName('');
-            setShowNewFolder(false);
-          }},
-          { text: 'Rename', onPress: () => {
-            // Keep the modal open so the user can rename
-          }},
-          { text: 'Replace', style: 'destructive', onPress: () => {
-            deleteNoteFolder(duplicate.id);
-            const folder = { id: `nf-${Date.now()}`, subjectId, name, createdAt: new Date().toISOString() };
-            addNoteFolder(folder);
-            setNewFolderName('');
-            setShowNewFolder(false);
-            setActiveFolderId(folder.id);
-          }}
-        ]
-      );
-      return;
-    }
-
-    const folder = { id: `nf-${Date.now()}`, subjectId, name, createdAt: new Date().toISOString() };
-    addNoteFolder(folder);
-    setNewFolderName('');
-    setShowNewFolder(false);
-    setActiveFolderId(folder.id);
-  };
-
-  const openFlashcardSection = () => {
-    router.push({ pathname: '/subject-flashcards' as any, params: { subjectId } });
-  };
+  const openNewNote = () =>
+    router.push({ pathname: '/notes-editor' as any, params: { subjectId } });
 
   const handleImportFile = async (type: string | string[] = '*/*') => {
     if (isImportingRef.current) return;
@@ -274,7 +249,6 @@ export default function NotesList() {
       const note = {
         id: noteId,
         subjectId,
-        folderId: activeFolderId === 'all' ? undefined : activeFolderId,
         title: fileName,
         content: isPdf ? 'Extracting text from PDF...' : '',
         tag: 'Lecture' as const,
@@ -375,29 +349,7 @@ export default function NotesList() {
           </Pressable>
         </View>
         <View style={styles.headerRight}>
-          {activeFolderId !== 'all' && (
-            <Pressable 
-              style={styles.iconBtn} 
-              onPress={() => {
-                const activeFolder = foldersForSubject.find(f => f.id === activeFolderId);
-                if (activeFolder) {
-                  Alert.alert(
-                    'Delete folder', 
-                    `Remove folder "${activeFolder.name}"? Notes inside will be kept but unassigned.`, 
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => { deleteNoteFolder(activeFolder.id); setActiveFolderId('all'); } },
-                    ]
-                  );
-                }
-              }}
-            >
-              <Feather name="trash-2" size={20} color={theme.primary} />
-            </Pressable>
-          )}
-          <Pressable style={styles.iconBtn} onPress={openFlashcardSection}>
-            <Feather name="layers" size={22} color={theme.primary} />
-          </Pressable>
+
           <Pressable style={styles.iconBtn} onPress={() => setShowPlusMenu(true)}>
             <Feather name="plus" size={24} color={theme.primary} />
           </Pressable>
@@ -406,38 +358,24 @@ export default function NotesList() {
 
       <Text style={styles.pageTitle}>{subjectId} Notes</Text>
 
-      {/* Folder selector */}
-      <View style={styles.folderRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRowContent}>
-          <Pressable
-            style={[styles.folderChip, activeFolderId === 'all' && styles.folderChipActive]}
-            onPress={() => setActiveFolderId('all')}
-          >
-            <Text style={[styles.folderChipText, activeFolderId === 'all' && styles.folderChipTextActive]}>All</Text>
-          </Pressable>
-          {foldersForSubject.map((f) => (
-            <Pressable
-              key={f.id}
-              style={[styles.folderChip, activeFolderId === f.id && styles.folderChipActive]}
-              onPress={() => setActiveFolderId(f.id)}
-              onLongPress={() =>
-                Alert.alert('Delete folder', `Remove folder "${f.name}"? Notes inside will be kept but unassigned.`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive', onPress: () => { deleteNoteFolder(f.id); setActiveFolderId('all'); } },
-                ])
-              }
-            >
-              <Text style={[styles.folderChipText, activeFolderId === f.id && styles.folderChipTextActive]} numberOfLines={1}>
-                {f.name}
-              </Text>
-            </Pressable>
-          ))}
-          <Pressable style={[styles.folderChip, styles.folderChipAdd]} onPress={() => setShowNewFolder(true)}>
-            <Feather name="folder-plus" size={14} color={theme.primary} />
-            <Text style={[styles.folderChipText, { color: theme.primary, fontWeight: '700' }]}>Folder</Text>
-          </Pressable>
-        </ScrollView>
-      </View>
+      <Pressable
+        style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
+        onPress={() =>
+          router.push({
+            pathname: '/flashcard-pick' as any,
+            params: subjectId ? { subjectId } : {},
+          })
+        }
+      >
+        <View style={styles.flashcardEntryIcon}>
+          <Feather name="layers" size={20} color="#fff" />
+        </View>
+        <View style={styles.flashcardEntryBody}>
+          <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
+          <Text style={styles.flashcardEntrySub}>{T('flashcardsBrowseDecksSub')}</Text>
+        </View>
+        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+      </Pressable>
 
       <FlatList
         data={list}
@@ -494,7 +432,16 @@ export default function NotesList() {
       >
         <Pressable style={styles.menuBackdrop} onPress={() => setShowPlusMenu(false)}>
           <View style={styles.menuPanel} onStartShouldSetResponder={() => true}>
-
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setShowPlusMenu(false);
+                openNewNote();
+              }}
+            >
+              <Feather name="file-text" size={18} color={theme.text} />
+              <Text style={styles.menuItemText}>New note</Text>
+            </Pressable>
             <Pressable
               style={[styles.menuItem, isImporting && styles.menuItemDisabled]}
               disabled={isImporting}
@@ -513,34 +460,7 @@ export default function NotesList() {
         </Pressable>
       </Modal>
 
-      {/* New folder modal */}
-      <Modal visible={showNewFolder} transparent animationType="fade">
-        <Pressable style={styles.menuBackdrop} onPress={() => setShowNewFolder(false)}>
-          <View style={styles.newFolderPanel} onStartShouldSetResponder={() => true}>
-            <Text style={styles.newFolderTitle}>New folder</Text>
-            <TextInput
-              style={styles.newFolderInput}
-              value={newFolderName}
-              onChangeText={setNewFolderName}
-              placeholder="e.g. Chapter 1"
-              placeholderTextColor={theme.textSecondary}
-              autoCorrect={false}
-            />
-            <View style={styles.newFolderActions}>
-              <Pressable style={styles.newFolderBtnGhost} onPress={() => setShowNewFolder(false)}>
-                <Text style={styles.newFolderBtnGhostText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.newFolderBtnPrimary, !newFolderName.trim() && { opacity: 0.5 }]}
-                disabled={!newFolderName.trim()}
-                onPress={handleCreateFolder}
-              >
-                <Text style={styles.newFolderBtnPrimaryText}>Create</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+
     </View>
   );
 }

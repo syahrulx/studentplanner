@@ -1211,6 +1211,7 @@ export default function Dashboard() {
       </View>
 
 
+
       {/* Timeline / Upcoming */}
       <View style={styles.sectionWrapper}>
         <View style={styles.timelineHeader}>

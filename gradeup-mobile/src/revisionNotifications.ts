@@ -22,6 +22,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -62,7 +64,6 @@ export async function scheduleRevisionNotification(settings: RevisionSettings): 
     body,
     sound: true,
     data: { type: 'revision' },
-    channelId: CHANNEL_ID,
   };
   if (settings.repeat === 'once' && settings.singleDate) {
     const [y, m, d] = settings.singleDate.split('-').map(Number);
@@ -125,7 +126,6 @@ export async function scheduleRevisionAtDate(date: Date): Promise<void> {
       body: 'Your postponed revision time is now. Open the app to begin.',
       sound: true,
       data: { type: 'revision' },
-      channelId: CHANNEL_ID,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,

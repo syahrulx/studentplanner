@@ -16,7 +16,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
-import { useTranslations } from '@/src/i18n';
+import { useTranslations, TranslationKey } from '@/src/i18n';
 import { TIMETABLE_SLOT_COLOR_OPTIONS, getSlotColorForSubjectCode } from '@/src/lib/timetableSlotColors';
 import {
   findOverlappingTimetableEntry,
@@ -82,7 +82,7 @@ function newLocalTimetableId(): string {
 }
 
 function conflictMessage(
-  T: (key: string) => string,
+  T: (key: TranslationKey) => string,
   other: TimetableEntry,
 ): string {
   return T('timetableScheduleConflictDetail')
@@ -460,7 +460,7 @@ export default function TimetableEditScreen() {
                         ]}
                       >
                         <Text style={[styles.dayChipText, { color: active ? '#fff' : theme.text }]}>
-                          {(T as (k: string) => string)(DAY_PICKER_KEYS[d])}
+                          {T(DAY_PICKER_KEYS[d] as TranslationKey)}
                         </Text>
                       </Pressable>
                     );

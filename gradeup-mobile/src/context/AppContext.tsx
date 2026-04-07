@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { AppState as RNAppState } from 'react-native';
-import type { UserProfile, Course, Task, Note, Flashcard, FlashcardFolder, NoteFolder, AcademicCalendar, TimetableEntry } from '../types';
+import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {
   initialUser,
@@ -8,8 +8,13 @@ import {
   initialTasks,
   initialNotes,
   initialFlashcards,
-  initialFlashcardFolders,
+
 } from '../seedData';
+
+// Fix 1: Module-level counter for flashcard IDs — never resets between renders.
+// A component-body `let` would reset to 0 on every render, causing duplicate IDs
+// when addFlashcard is called rapidly (e.g. 10 cards from Promise.all).
+let _flashcardIdSeq = Date.now();
 import {
   getAcademicProgress,
   getAcademicProgressFromCalendar,
@@ -113,19 +118,14 @@ type AppState = {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   notes: Note[];
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
-  noteFolders: NoteFolder[];
-  addNoteFolder: (folder: NoteFolder) => void;
   deleteNote: (noteId: string) => void;
-  deleteNoteFolder: (folderId: string) => void;
   flashcards: Flashcard[];
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
-  flashcardFolders: FlashcardFolder[];
-  setFlashcardFolders: React.Dispatch<React.SetStateAction<FlashcardFolder[]>>;
-  addFlashcardFolder: (name: string, subjectId?: string) => FlashcardFolder;
-  addFlashcard: (folderId: string, front: string, back: string) => Flashcard;
+  flashcardFolders?: never; // DEPRECATED - Folders are dead.
+  addFlashcard: (noteId: string, front: string, back: string) => Flashcard;
   updateFlashcard: (cardId: string, front: string, back: string) => void;
-  deleteFlashcardFolder: (folderId: string) => void;
   deleteFlashcard: (cardId: string) => void;
+  deleteFlashcardsForNote: (noteId: string) => Promise<void>;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
   pendingClassroomTasks: import('../lib/googleClassroom').PendingNewTask[];
@@ -249,9 +249,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksVersion, setTasksVersion] = useState(0);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
-  const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
-  const [flashcardFolders, setFlashcardFolders] = useState<FlashcardFolder[]>(initialFlashcardFolders);
+
   const [pendingExtraction, setPendingExtraction] = useState('');
   const [pendingClassroomTasks, setPendingClassroomTasks] = useState<import('../lib/googleClassroom').PendingNewTask[]>([]);
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
@@ -500,8 +499,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       remoteUserIdRef.current = uid;
       return Promise.allSettled([
         studyDb.getNotes(uid),
-        studyDb.getNoteFolders(uid),
-        studyDb.getFlashcardFolders(uid),
         studyDb.getFlashcards(uid),
         taskDb.getTasks(uid),
         studyTimeDb.getAllStudySettings(uid),
@@ -522,8 +519,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const r6 = results[6];
         const r7 = results[7];
         const r8 = results[8];
-        const r9 = results[9];
-        const r10 = results[10];
 
         if (__DEV__) {
           results.forEach((r, i) => {
@@ -534,27 +529,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (r0.status === 'fulfilled') setNotes(r0.value);
-        if (r1.status === 'fulfilled') setNoteFolders(r1.value);
-        if (r2.status === 'fulfilled') setFlashcardFolders(r2.value);
-        if (r3.status === 'fulfilled') setFlashcards(r3.value);
-        if (r4.status === 'fulfilled') {
-          setTasks(r4.value);
-          rescheduleAllTaskNotifications(r4.value).catch(() => {});
+        if (r1.status === 'fulfilled') setFlashcards(r1.value);
+        if (r2.status === 'fulfilled') {
+          setTasks(r2.value);
+          rescheduleAllTaskNotifications(r2.value).catch(() => {});
         }
-        if (r5.status === 'fulfilled') {
-          const studyList = r5.value;
+        if (r3.status === 'fulfilled') {
+          const studyList = r3.value;
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
         }
-        if (r6.status === 'fulfilled') setCourses(r6.value);
-        if (r9.status === 'fulfilled') setTimetable(r9.value ?? []);
+        if (r4.status === 'fulfilled') setCourses(r4.value);
+        if (r7.status === 'fulfilled') setTimetable(r7.value ?? []);
 
-        const profile = r7.status === 'fulfilled' ? r7.value : undefined;
-        const uniConn = r10.status === 'fulfilled' ? r10.value : null;
+        const profile = r5.status === 'fulfilled' ? r5.value : undefined;
+        const uniConn = r8.status === 'fulfilled' ? r8.value : null;
 
         let calendar: AcademicCalendar | null | undefined = undefined;
-        if (r8.status === 'fulfilled') {
-          calendar = r8.value ?? null;
+        if (r6.status === 'fulfilled') {
+          calendar = r6.value ?? null;
           const uniId = resolveUniversityIdForCalendar({
             profileUniversityId: profile?.universityId,
             connectionUniversityId: uniConn?.universityId,
@@ -829,8 +822,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
           setTasks([]);
           setNotes(initialNotes);
-          setNoteFolders([]);
-          setFlashcardFolders(initialFlashcardFolders);
           setFlashcards(initialFlashcards);
           setRevisionSettingsList([]);
           setRevisionState(defaultRevision);
@@ -1267,15 +1258,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const addNoteFolder = useCallback((folder: NoteFolder) => {
-    setNoteFolders((prev) => {
-      if (prev.some((f) => f.id === folder.id)) return prev;
-      return [...prev, folder];
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.upsertNoteFolder(session.user.id, folder);
-    });
-  }, []);
+
 
   const deleteNote = useCallback((noteId: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
@@ -1284,71 +1267,74 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const deleteNoteFolder = useCallback((folderId: string) => {
-    setNoteFolders((prev) => prev.filter((f) => f.id !== folderId));
-    setNotes((prev) => prev.map((n) => (n.folderId === folderId ? { ...n, folderId: undefined } : n)));
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.deleteNoteFolder(session.user.id, folderId);
-    });
-  }, []);
+
 
   const handleGenerateFlashcards = useCallback((newCards: Flashcard[]) => {
-    setFlashcards(newCards);
-  }, []);
-
-  const addFlashcardFolder = useCallback((name: string, subjectId?: string): FlashcardFolder => {
-    const folder: FlashcardFolder = {
-      id: 'folder-' + Date.now(),
-      name: name.trim() || 'New folder',
-      createdAt: new Date().toISOString().slice(0, 10),
-      ...(subjectId != null && subjectId !== '' ? { subjectId } : {}),
-    };
-    setFlashcardFolders((prev) => [folder, ...prev]);
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.upsertFlashcardFolder(session.user.id, folder);
+    // Fix 4: Merge new cards into existing state instead of replacing everything
+    // Replacing the entire array nukes cards from other decks if called with a partial set
+    setFlashcards((prev) => {
+      const existingIds = new Set(prev.map((c) => c.id));
+      const genuinelyNew = newCards.filter((c) => !existingIds.has(c.id));
+      return genuinelyNew.length > 0 ? [...genuinelyNew, ...prev] : prev;
     });
-    return folder;
   }, []);
 
-  let flashcardIdCounter = 0;
-  const addFlashcard = useCallback((folderId: string, front: string, back: string): Flashcard => {
+  // Fix 1: Module-level counter (outside component) prevents reset-to-0 on every render.
+  // When addFlashcard is called rapidly (e.g. 10 cards from Promise.all), the closure
+  // over a component-body variable always reads 0, causing duplicate IDs.
+  const addFlashcard = useCallback((noteId: string, front: string, back: string): Flashcard => {
     const card: Flashcard = {
-      id: 'card-' + Date.now() + '-' + (flashcardIdCounter++),
-      folderId,
+      id: `card-${Date.now()}-${_flashcardIdSeq++}`,
+      noteId,
       front: front.trim() || 'Front',
       back: back.trim() || 'Back',
     };
     setFlashcards((prev) => [card, ...prev]);
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.upsertFlashcard(session.user.id, card);
-    });
+    // Fix 7: Use cached remoteUserIdRef — avoids auth.getSession() round-trip per card
+    const uid = remoteUserIdRef.current;
+    if (uid) {
+      studyDb.upsertFlashcard(uid, card).catch((err) => {
+        if (__DEV__) console.error('[Flashcard] persist failed (add):', err);
+      });
+    }
     return card;
-  }, []);
-
-  const deleteFlashcardFolder = useCallback((folderId: string) => {
-    setFlashcardFolders((prev) => prev.filter((f) => f.id !== folderId));
-    setFlashcards((prev) => prev.filter((c) => c.folderId !== folderId));
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.deleteFlashcardFolder(session.user.id, folderId);
-    });
   }, []);
 
   const updateFlashcard = useCallback((cardId: string, front: string, back: string) => {
     setFlashcards((prev) => prev.map((c) => {
       if (c.id !== cardId) return c;
       const updated = { ...c, front: front.trim() || c.front, back: back.trim() || c.back };
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.id) studyDb.upsertFlashcard(session.user.id, updated);
-      });
+      // Fix 7 + Fix 3: cached uid, error catch
+      const uid = remoteUserIdRef.current;
+      if (uid) {
+        studyDb.upsertFlashcard(uid, updated).catch((err) => {
+          if (__DEV__) console.error('[Flashcard] persist failed (update):', err);
+        });
+      }
       return updated;
     }));
   }, []);
 
   const deleteFlashcard = useCallback((cardId: string) => {
     setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.deleteFlashcard(session.user.id, cardId);
-    });
+    // Fix 7 + Fix 3: cached uid, error catch
+    const uid = remoteUserIdRef.current;
+    if (uid) {
+      studyDb.deleteFlashcard(uid, cardId).catch((err) => {
+        if (__DEV__) console.error('[Flashcard] persist failed (delete):', err);
+      });
+    }
+  }, []);
+
+  /** Deletes ALL cards for a note — used by "Replace" mode in generation. */
+  const deleteFlashcardsForNote = useCallback(async (noteId: string): Promise<void> => {
+    setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId));
+    const uid = remoteUserIdRef.current;
+    if (uid) {
+      await studyDb.deleteFlashcardsForNote(uid, noteId).catch((err) => {
+        if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
+      });
+    }
   }, []);
 
   const saveTimetableAndLink = useCallback(async (entries: TimetableEntry[], universityId: string, studentId: string) => {
@@ -1600,19 +1586,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTasks,
     notes,
     setNotes,
-    noteFolders,
-    addNoteFolder,
     deleteNote,
-    deleteNoteFolder,
     flashcards,
     setFlashcards,
-    flashcardFolders,
-    setFlashcardFolders,
-    addFlashcardFolder,
     addFlashcard,
     updateFlashcard,
-    deleteFlashcardFolder,
     deleteFlashcard,
+    deleteFlashcardsForNote,
     pendingExtraction,
     setPendingExtraction,
     pendingClassroomTasks,

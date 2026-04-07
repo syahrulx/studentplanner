@@ -25,6 +25,7 @@ import { resolveDisplayTeachingWeeks, teachingWeekNumberForDate } from '@/src/li
 import { useTheme } from '@/hooks/useTheme';
 import { Avatar } from '@/components/Avatar'; // Trigger reload
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
+import { useTabBarAddMenu } from '@/contexts/TabBarContext';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
@@ -126,6 +127,7 @@ export default function Planner() {
     shareStreams, toggleShareStream, toggleCircleShareStream,
   } = useCommunity();
   const T = useTranslations(language);
+  const openAddMenu = useTabBarAddMenu();
   const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [monthExpanded, setMonthExpanded] = useState(false);
@@ -1842,12 +1844,18 @@ export default function Planner() {
             )}
           </View>
           <View style={[s.headerSide, s.headerSideRight, { gap: 10 }]}>
+            {/* Prominent + Add button — replaces old book icon location */}
             <Pressable
-              style={s.headerBtn}
-              onPress={() => router.push('/(tabs)/notes' as any)}
-              hitSlop={6}
+              style={({ pressed }) => [
+                s.headerAddBtn,
+                { backgroundColor: theme.primary },
+                pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+              ]}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={4}
+              accessibilityLabel="Add task"
             >
-              <Feather name="book-open" size={20} color={theme.text} />
+              <Feather name="plus" size={24} color="#fff" />
             </Pressable>
             <Pressable
               style={s.headerBtn}
@@ -2198,6 +2206,17 @@ function createPlannerStyles(theme: ThemePalette) {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: theme.card,
+  },
+  headerAddBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   headerViewBtn: {
     flexDirection: 'row',

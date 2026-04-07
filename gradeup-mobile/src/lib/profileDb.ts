@@ -119,6 +119,7 @@ export async function updateProfile(
     mystudentEmail?: string;
     lastSync?: string | null;
     portalTeachingAnchoredSemester?: number | null;
+    subscriptionPlan?: SubscriptionPlan;
   },
 ): Promise<void> {
   const payload: Record<string, unknown> = {};

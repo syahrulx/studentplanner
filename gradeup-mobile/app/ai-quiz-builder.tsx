@@ -16,15 +16,14 @@ import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
 import { extractPdfTextFromUrlDebug } from '@/src/lib/pdfText';
 
 const PAD = 20;
-const SECTION = 24;
 const RADIUS = 20;
 const RADIUS_SM = 14;
 
-const QUIZ_TYPES: { key: QuizType; label: string; icon: string }[] = [
-  { key: 'mixed', label: 'Mixed', icon: 'shuffle' },
-  { key: 'mcq', label: 'MCQ', icon: 'list' },
-  { key: 'true_false', label: 'True / False', icon: 'check-circle' },
-  { key: 'short_answer', label: 'Short Answer', icon: 'edit-3' },
+const QUIZ_TYPES: { key: QuizType; label: string; icon: string; desc: string }[] = [
+  { key: 'mixed', label: 'Mixed', icon: 'shuffle', desc: 'All question types' },
+  { key: 'mcq', label: 'Multiple Choice', icon: 'list', desc: '4 options per question' },
+  { key: 'true_false', label: 'True / False', icon: 'check-circle', desc: 'Binary answers' },
+  { key: 'short_answer', label: 'Short Answer', icon: 'edit-3', desc: 'Type your answer' },
 ];
 
 const DIFFICULTIES: { key: QuizDifficulty; label: string; color: string }[] = [
@@ -39,13 +38,12 @@ const Q_COUNTS = [5, 10, 15, 20];
 function looksLikeRealContent(text: string): boolean {
   const words = text.split(/\s+/).filter(w => w.length >= 2);
   if (words.length < 10) return false;
-  // Real text has a decent ratio of alphabetical words vs noise tokens
   const realWords = words.filter(w => /^[a-zA-Z]{2,}$/.test(w));
   return realWords.length / words.length > 0.3;
 }
 
 export default function AIQuizBuilder() {
-  const { courses, notes } = useApp();
+  const { courses, notes, user } = useApp();
   const theme = useTheme();
 
   const [selectedSubject, setSelectedSubject] = useState<string>(courses[0]?.id ?? '');
@@ -119,7 +117,6 @@ export default function AIQuizBuilder() {
           failedPdfTitles.push(note.title);
           continue;
         }
-        // Wrap extraction in a timeout to prevent indefinite hanging (allow up to 240s for large PDFs via OpenAI API)
         const extractionPromise = extractPdfTextFromUrlDebug(url, user.id);
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Aborted')), 240000)
@@ -145,7 +142,7 @@ export default function AIQuizBuilder() {
       for (const note of selectedNotes) {
         if (!note.attachmentPath) continue;
         const nameHint = (note.attachmentFileName || note.title || note.attachmentPath || '').toLowerCase();
-        if (nameHint.endsWith('.pdf') || note.attachmentPath.toLowerCase().includes('.pdf')) continue; // already tried
+        if (nameHint.endsWith('.pdf') || note.attachmentPath.toLowerCase().includes('.pdf')) continue;
         try {
           attemptedPdfCount++;
           setLoadingText(`Trying attachment: ${note.title.slice(0, 24)}...`);
@@ -188,7 +185,7 @@ export default function AIQuizBuilder() {
         return;
       }
 
-      setGeneratedQuizQuestions(questions);
+      await setGeneratedQuizQuestions(questions);
       if (failedPdfTitles.length > 0) {
         Alert.alert(
           'Some PDFs skipped',
@@ -207,8 +204,8 @@ export default function AIQuizBuilder() {
           sourceId: selectedSubject,
         },
       } as any);
-    } catch {
-      Alert.alert('Error', 'Something went wrong generating the quiz.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Something went wrong generating the quiz.');
     } finally {
       setLoading(false);
       setLoadingText('');
@@ -223,43 +220,38 @@ export default function AIQuizBuilder() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+        >
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>AI Quiz Builder</Text>
-      </View>
-
-      {/* Hero banner */}
-      <View style={[styles.hero, { backgroundColor: theme.primary }]}>
-        <View style={styles.heroIcon}>
-          <ThemeIcon name="sparkles" size={22} color="#fff" />
-        </View>
-        <View style={styles.heroBody}>
-          <Text style={styles.heroTitle}>CUSTOM SYNTHESIS</Text>
-          <Text style={styles.heroDesc}>
-            Select notes and let AI generate a unique quiz tailored to your study material.
-          </Text>
+        <View style={styles.headerText}>
+          <Text style={[styles.title, { color: theme.text }]}>AI Quiz Builder</Text>
+          <Text style={[styles.headerSub, { color: theme.textSecondary }]}>Powered by AI</Text>
         </View>
       </View>
 
       {/* 1. Subject */}
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>SELECT SUBJECT</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+      <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Subject</Text>
+      <View style={[styles.groupBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
           {courses.map((course) => {
             const active = selectedSubject === course.id;
             return (
               <Pressable
                 key={course.id}
                 style={[
-                  styles.chip,
+                  styles.subjectPill,
                   active
-                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
+                    ? { backgroundColor: theme.primary }
+                    : { backgroundColor: theme.background },
                 ]}
                 onPress={() => { setSelectedSubject(course.id); setSelectedTopicIds(new Set()); }}
               >
-                <Text style={[styles.chipText, active ? { color: '#fff' } : { color: theme.text }]}>{course.id}</Text>
+                <Text style={[styles.subjectPillText, { color: active ? '#fff' : theme.textSecondary }]}>
+                  {course.id}
+                </Text>
               </Pressable>
             );
           })}
@@ -267,39 +259,44 @@ export default function AIQuizBuilder() {
       </View>
 
       {/* 2. Topics */}
-      <View style={styles.section}>
-        <View style={styles.labelRow}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>CHOOSE TOPICS</Text>
-          <Pressable onPress={selectAll}>
-            <Text style={[styles.selectAll, { color: theme.primary }]}>
-              {selectedTopicIds.size === topicsForSubject.length && topicsForSubject.length > 0 ? 'Deselect All' : 'Select All'}
-            </Text>
-          </Pressable>
-        </View>
+      <View style={styles.sectionLabelRow}>
+        <Text style={[styles.groupLabel, { color: theme.textSecondary, marginTop: 0 }]}>Notes</Text>
+        <Pressable onPress={selectAll}>
+          <Text style={[styles.selectAll, { color: theme.primary }]}>
+            {selectedTopicIds.size === topicsForSubject.length && topicsForSubject.length > 0 ? 'Deselect All' : 'Select All'}
+          </Text>
+        </Pressable>
+      </View>
+      <View style={[styles.groupBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
         {topicsForSubject.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Feather name="file-text" size={24} color={theme.textSecondary} />
+          <View style={styles.emptyBox}>
+            <Feather name="file-text" size={20} color={theme.textSecondary} />
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No notes in this subject yet.</Text>
           </View>
         ) : (
-          topicsForSubject.map((note) => {
+          topicsForSubject.map((note, i) => {
             const selected = selectedTopicIds.has(note.id);
+            const isLast = i === topicsForSubject.length - 1;
             return (
               <Pressable
                 key={note.id}
                 style={[
-                  styles.topicRow,
-                  { backgroundColor: theme.card, borderColor: selected ? theme.primary : theme.border },
-                  selected && { backgroundColor: theme.primary + '08' },
+                  styles.noteRow,
+                  !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
                 ]}
                 onPress={() => toggleTopic(note.id)}
               >
-                <View style={styles.topicBody}>
-                  <Text style={[styles.topicTag, { color: theme.textSecondary }]}>{note.tag.toUpperCase()}</Text>
-                  <Text style={[styles.topicTitle, { color: theme.text }]} numberOfLines={1}>{note.title}</Text>
+                <View style={styles.noteBody}>
+                  <Text style={[styles.noteTag, { color: theme.textSecondary }]}>{note.tag}</Text>
+                  <Text style={[styles.noteTitle, { color: theme.text }]} numberOfLines={1}>{note.title}</Text>
                 </View>
-                <View style={[styles.checkbox, { borderColor: selected ? theme.primary : theme.border }]}>
-                  {selected && <Feather name="check" size={14} color={theme.primary} />}
+                <View style={[
+                  styles.noteCheck,
+                  selected
+                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                    : { borderColor: theme.border },
+                ]}>
+                  {selected && <Feather name="check" size={12} color="#fff" />}
                 </View>
               </Pressable>
             );
@@ -308,142 +305,172 @@ export default function AIQuizBuilder() {
       </View>
 
       {/* 3. Quiz Type */}
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>QUIZ TYPE</Text>
-        <View style={styles.chipRow}>
-          {QUIZ_TYPES.map((qt) => {
-            const active = quizType === qt.key;
-            return (
-              <Pressable
-                key={qt.key}
-                style={[
-                  styles.typeChip,
-                  active
-                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={() => setQuizType(qt.key)}
-              >
-                <Feather name={qt.icon as any} size={14} color={active ? '#fff' : theme.textSecondary} />
-                <Text style={[styles.typeChipText, active ? { color: '#fff' } : { color: theme.text }]}>{qt.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+      <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Quiz Type</Text>
+      <View style={[styles.groupBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {QUIZ_TYPES.map((qt, i) => {
+          const active = quizType === qt.key;
+          const isLast = i === QUIZ_TYPES.length - 1;
+          return (
+            <Pressable
+              key={qt.key}
+              style={[
+                styles.settingRow,
+                !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+              ]}
+              onPress={() => setQuizType(qt.key)}
+            >
+              <View style={[styles.settingIconWrap, { backgroundColor: active ? `${theme.primary}15` : `${theme.textSecondary}12` }]}>
+                <Feather name={qt.icon as any} size={15} color={active ? theme.primary : theme.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.settingLabel, { color: theme.text }]}>{qt.label}</Text>
+                <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>{qt.desc}</Text>
+              </View>
+              {active && <Feather name="check" size={18} color={theme.primary} />}
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* 4. Difficulty */}
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>DIFFICULTY</Text>
-        <View style={styles.chipRow}>
-          {DIFFICULTIES.map((d) => {
-            const active = difficulty === d.key;
-            return (
-              <Pressable
-                key={d.key}
-                style={[
-                  styles.diffChip,
-                  active
-                    ? { backgroundColor: d.color, borderColor: d.color }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={() => setDifficulty(d.key)}
-              >
-                <Text style={[styles.diffChipText, active ? { color: '#fff' } : { color: theme.text }]}>{d.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+      {/* 4. Difficulty — segmented control */}
+      <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Difficulty</Text>
+      <View style={[styles.segmentedWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {DIFFICULTIES.map((d) => {
+          const active = difficulty === d.key;
+          return (
+            <Pressable
+              key={d.key}
+              style={[styles.segment, active && { backgroundColor: d.color }]}
+              onPress={() => setDifficulty(d.key)}
+            >
+              <Text style={[styles.segmentText, active ? { color: '#fff', fontWeight: '700' } : { color: theme.textSecondary }]}>
+                {d.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {/* 5. Question Count */}
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>QUESTIONS</Text>
-        <View style={styles.chipRow}>
-          {Q_COUNTS.map((n) => {
-            const active = questionCount === n;
-            return (
-              <Pressable
-                key={n}
-                style={[
-                  styles.countChip,
-                  active
-                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={() => setQuestionCount(n)}
-              >
-                <Text style={[styles.countText, active ? { color: '#fff', fontWeight: '800' } : { color: theme.text }]}>{n}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+      <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Questions</Text>
+      <View style={[styles.segmentedWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {Q_COUNTS.map((n) => {
+          const active = questionCount === n;
+          return (
+            <Pressable
+              key={n}
+              style={[styles.segment, active && { backgroundColor: theme.primary }]}
+              onPress={() => setQuestionCount(n)}
+            >
+              <Text style={[styles.segmentText, active ? { color: '#fff', fontWeight: '700' } : { color: theme.textSecondary }]}>
+                {n}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {/* CTA */}
-      <View style={{ gap: 12 }}>
+      <View style={{ gap: 10, marginTop: 24 }}>
         <Pressable
-          style={[styles.cta, hasTopics && !loading ? { backgroundColor: theme.primary } : { backgroundColor: '#94a3b8' }]}
+          style={[styles.cta, { backgroundColor: hasTopics && !loading ? theme.primary : `${theme.textSecondary}40` }]}
           onPress={handleGenerate}
           disabled={!hasTopics || loading}
         >
           {loading ? (
-            <View style={styles.ctaLoading}>
+            <View style={styles.ctaInner}>
               <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.ctaText}>GENERATING...</Text>
+              <Text style={styles.ctaText}>{loadingText || 'Generating...'}</Text>
             </View>
           ) : (
-            <>
-              <ThemeIcon name="sparkles" size={18} color="#fff" />
-              <Text style={styles.ctaText}>{hasTopics ? 'GENERATE QUIZ' : 'SELECT TOPICS TO BEGIN'}</Text>
-            </>
+            <View style={styles.ctaInner}>
+              <ThemeIcon name="sparkles" size={17} color="#fff" />
+              <Text style={styles.ctaText}>{hasTopics ? 'Generate Quiz' : 'Select notes to begin'}</Text>
+            </View>
           )}
         </Pressable>
 
-        {loading && loadingText ? (
-          <Text style={{ textAlign: 'center', fontSize: 13, color: theme.textSecondary, fontStyle: 'italic', paddingHorizontal: 20 }}>
-            {loadingText}
+        {selectedTopicIds.size > 0 && !loading && (
+          <Text style={[styles.ctaSummary, { color: theme.textSecondary }]}>
+            {selectedTopicIds.size} note{selectedTopicIds.size > 1 ? 's' : ''} · {questionCount} questions · {difficulty}
           </Text>
-        ) : null}
+        )}
       </View>
 
-      <View style={{ height: 48 }} />
+      <View style={{ height: 56 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingHorizontal: PAD, paddingTop: 56, paddingBottom: 24 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: SECTION },
-  backBtn: { width: 44, height: 44, borderRadius: RADIUS_SM, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1 },
-  title: { fontSize: 22, fontWeight: '800', flex: 1 },
-  hero: { flexDirection: 'row', borderRadius: RADIUS, padding: 20, marginBottom: SECTION, alignItems: 'flex-start' },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  heroBody: { flex: 1 },
-  heroTitle: { fontSize: 12, fontWeight: '800', color: '#fff', letterSpacing: 1.2, marginBottom: 8 },
-  heroDesc: { fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 20 },
-  section: { marginBottom: SECTION },
-  label: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  selectAll: { fontSize: 12, fontWeight: '700' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  chip: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: RADIUS_SM, borderWidth: 1 },
-  chipText: { fontSize: 14, fontWeight: '800' },
-  emptyCard: { padding: 24, borderRadius: RADIUS_SM, borderWidth: 1, alignItems: 'center', gap: 8 },
-  emptyText: { fontSize: 13 },
-  topicRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: RADIUS_SM, borderWidth: 1, marginBottom: 10 },
-  topicBody: { flex: 1, minWidth: 0 },
-  topicTag: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
-  topicTitle: { fontSize: 15, fontWeight: '800' },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
-  typeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: RADIUS_SM, borderWidth: 1 },
-  typeChipText: { fontSize: 13, fontWeight: '700' },
-  diffChip: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: RADIUS_SM, borderWidth: 1 },
-  diffChipText: { fontSize: 14, fontWeight: '800' },
-  countChip: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: RADIUS_SM, borderWidth: 1 },
-  countText: { fontSize: 18, fontWeight: '700' },
-  cta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: RADIUS },
-  ctaLoading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  ctaText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.8 },
+  content: { paddingHorizontal: PAD, paddingTop: 60, paddingBottom: 24 },
+
+  // Header
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 14, borderWidth: StyleSheet.hairlineWidth,
+  },
+  headerText: { flex: 1 },
+  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
+  headerSub: { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  aiIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+
+  // Group label — matches iOS Settings style
+  groupLabel: {
+    fontSize: 13, fontWeight: '600', letterSpacing: 0.1,
+    marginBottom: 6, marginTop: 22, marginLeft: 2,
+  },
+
+  // iOS-style grouped card
+  groupBox: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+
+  // Subject pill strip
+  subjectRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  subjectPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
+  subjectPillText: { fontSize: 14, fontWeight: '600' },
+
+  // Section label row (Notes + Select All)
+  sectionLabelRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginTop: 22, marginBottom: 6, paddingHorizontal: 2,
+  },
+  selectAll: { fontSize: 13, fontWeight: '600' },
+
+  // Note list rows
+  noteRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13 },
+  noteBody: { flex: 1, minWidth: 0 },
+  noteTag: { fontSize: 10, fontWeight: '600', letterSpacing: 0.5, marginBottom: 2, textTransform: 'uppercase' },
+  noteTitle: { fontSize: 15, fontWeight: '600' },
+  noteCheck: {
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginLeft: 12,
+  },
+
+  // Empty state
+  emptyBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
+  emptyText: { fontSize: 14 },
+
+  // Setting list rows (quiz type)
+  settingRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },
+  settingIconWrap: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  settingLabel: { fontSize: 15, fontWeight: '500' },
+  settingDesc: { fontSize: 12, fontWeight: '400', marginTop: 1 },
+
+  // Segmented control (difficulty, question count)
+  segmentedWrap: {
+    flexDirection: 'row', borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden',
+    padding: 4, gap: 4,
+  },
+  segment: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  segmentText: { fontSize: 14, fontWeight: '600' },
+
+  // Generate button
+  cta: { borderRadius: 14, overflow: 'hidden' },
+  ctaInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 17 },
+  ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  ctaSummary: { textAlign: 'center', fontSize: 13, fontWeight: '500' },
 });

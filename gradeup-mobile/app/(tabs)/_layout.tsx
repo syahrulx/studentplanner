@@ -38,28 +38,28 @@ export default function TabLayout() {
           },
         }}>
         <Tabs.Screen
-          name="index"
-          options={{
-            title: T('home'),
-            tabBarLabel: T('home'),
-            tabBarIcon: ({ color }) => <ThemeIcon name="home" size={26} color={color} />,
-          }}
-        />
-        <Tabs.Screen
           name="planner"
           options={{
             title: T('tasks'),
             tabBarLabel: T('tasks'),
-            tabBarIcon: ({ color }) => <ThemeIcon name="tasks" size={26} color={color} />,
+            tabBarIcon: ({ color }) => <ThemeIcon name="tasks" size={24} color={color} />,
           }}
         />
-        {/* The 'two' tab acts as the Add button in the custom GlassTabBar - keep in middle! */}
         <Tabs.Screen
-          name="two"
+          name="notes"
           options={{
-            title: T('add'),
-            tabBarLabel: T('add'),
-            tabBarIcon: () => null,
+            title: (T as any)('studyTitle') || 'Study',
+            tabBarLabel: (T as any)('studyTitle') || 'Study',
+            tabBarIcon: ({ color }) => <Feather name="book-open" size={24} color={color} />,
+          }}
+        />
+        {/* Home in center */}
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: T('home'),
+            tabBarLabel: T('home'),
+            tabBarIcon: ({ color, focused }) => <ThemeIcon name="home" size={focused ? 30 : 28} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -67,7 +67,7 @@ export default function TabLayout() {
           options={{
             title: (T as any)('timetable') || 'Timetable',
             tabBarLabel: (T as any)('timetable') || 'Timetable',
-            tabBarIcon: ({ color }) => <ThemeIcon name="calendar" size={26} color={color} />,
+            tabBarIcon: ({ color }) => <ThemeIcon name="calendar" size={24} color={color} />,
           }}
         />
         <Tabs.Screen
@@ -75,18 +75,19 @@ export default function TabLayout() {
           options={{
             title: T('community'),
             tabBarLabel: T('community'),
-            tabBarIcon: ({ color }) => <Feather name="map-pin" size={26} color={color} />,
+            tabBarIcon: ({ color }) => <Feather name="map-pin" size={24} color={color} />,
           }}
         />
-        {/* Hide previous Study tab per user request */}
+        {/* Hide the legacy two tab — no longer needed */}
         <Tabs.Screen
-          name="notes"
+          name="two"
           options={{
             href: null,
           }}
         />
       </Tabs>
 
+      {/* Add Menu Modal — triggered by + button in Planner header */}
       <Modal visible={addMenuOpen} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={closeAddMenu}>
           <View style={[styles.addMenuCard, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>

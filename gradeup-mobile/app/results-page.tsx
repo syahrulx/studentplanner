@@ -29,12 +29,18 @@ export default function ResultsPage() {
 
   const scoreNum = parseInt(paramScore ?? '0', 10);
   const totalNum = Math.max(1, parseInt(paramTotal ?? '5', 10));
-  const correctCount = myAnswers.filter((a) => a.correct).length || Math.round(scoreNum / 10);
-  const accuracy = Math.round((correctCount / totalNum) * 100);
+  // Derive correctCount from answers when available; don't guess from score
+  // (score includes speed bonuses so dividing by 10 overcounts)
+  const correctCount = myAnswers.length > 0
+    ? myAnswers.filter((a) => a.correct).length
+    : null;
+  const accuracy = correctCount !== null ? Math.round((correctCount / totalNum) * 100) : null;
   const isMultiplayer = currentSession?.mode === 'multiplayer';
 
-  // XP calculation
-  const baseXP = scoreNum;
+  // Recalculate XP from full myAnswers (includes speed bonus) for display accuracy
+  const baseXP = myAnswers.length > 0
+    ? myAnswers.reduce((sum, a) => sum + (a.correct ? 10 : 0) + (a.correct && a.timeMs < 5000 ? 5 : 0), 0)
+    : scoreNum;
   const totalAnswerTime = myAnswers.reduce((sum, a) => sum + a.timeMs, 0);
   const avgTimeMs = myAnswers.length > 0 ? totalAnswerTime / myAnswers.length : 0;
 
@@ -52,16 +58,28 @@ export default function ResultsPage() {
   }, [sessionId, currentSession]);
 
   const myRank = useMemo(() => {
-    if (!currentSession) return 1;
-    const me = participants.find((p) => p.profile?.name === user.name);
+    if (!isMultiplayer || participants.length === 0) return 1;
+    // Match by user_id for correctness — name matching is fragile
+    const me = participants.find((p) => p.user_id === user.id);
     return me ? participants.indexOf(me) + 1 : 1;
-  }, [participants, currentSession, user]);
+  }, [participants, isMultiplayer, user.id]);
 
   const isWinner = isMultiplayer && myRank === 1;
 
   const handlePlayAgain = () => {
     leaveQuiz();
-    router.replace('/(tabs)/notes' as any);
+    // Route back to the quiz builder so the user can tweak settings and replay
+    if (currentSession?.source_type === 'notes' && currentSession?.source_id) {
+      router.replace({ pathname: '/ai-quiz-builder' } as any);
+    } else {
+      router.replace({ pathname: '/quiz-mode-selection', params: {
+        sourceType: currentSession?.source_type || 'flashcards',
+        sourceId: currentSession?.source_id || '_all',
+        quizType: currentSession?.quiz_type || 'mcq',
+        difficulty: currentSession?.difficulty || 'medium',
+        total: String(totalNum),
+      } } as any);
+    }
   };
 
   const handleShare = async () => {
@@ -86,8 +104,8 @@ export default function ResultsPage() {
         <Text style={styles.heroTitle}>
           {isMultiplayer ? (isWinner ? 'You Won!' : 'Game Over') : T('quizComplete')}
         </Text>
-        <Text style={styles.heroScore}>{correctCount} / {totalNum}</Text>
-        <Text style={styles.heroSub}>{accuracy}% accuracy • {scoreNum} points</Text>
+        <Text style={styles.heroScore}>{correctCount ?? '--'} / {totalNum}</Text>
+        <Text style={styles.heroSub}>{accuracy !== null ? `${accuracy}% accuracy • ` : ''}{scoreNum} points</Text>
 
         {/* XP badge */}
         <View style={styles.xpBadge}>
@@ -100,12 +118,12 @@ export default function ResultsPage() {
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Feather name="check-circle" size={18} color="#10b981" />
-          <Text style={[styles.statValue, { color: theme.text }]}>{correctCount}</Text>
+          <Text style={[styles.statValue, { color: theme.text }]}>{correctCount ?? '--'}</Text>
           <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Correct</Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Feather name="x-circle" size={18} color="#ef4444" />
-          <Text style={[styles.statValue, { color: theme.text }]}>{totalNum - correctCount}</Text>
+          <Text style={[styles.statValue, { color: theme.text }]}>{correctCount !== null ? totalNum - correctCount : '--'}</Text>
           <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Wrong</Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -125,7 +143,7 @@ export default function ResultsPage() {
             participants.map((p, idx) => {
               const pCorrect = (p.answers || []).filter((a: any) => a.correct).length;
               const pTotal = currentSession?.question_count || totalNum;
-              const isMe = p.profile?.name === user.name;
+              const isMe = p.user_id === user.id; // use user_id — name match is fragile
               return (
                 <View
                   key={p.id}
