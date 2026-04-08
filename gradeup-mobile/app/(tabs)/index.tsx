@@ -21,6 +21,7 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
+import { getNotificationPrefs } from '@/src/storage';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
 import {
   peakWeekFromTaskCounts,
@@ -786,9 +787,22 @@ export default function Dashboard() {
     [todayISO, pulseCalendar, user.startDate, totalWeeks, user.currentWeek],
   );
   const semesterPhase = user.semesterPhase ?? 'teaching';
+  const [todaysFocusPref, setTodaysFocusPref] = useState<'all' | 'task' | 'study' | 'exam'>('all');
+  useFocusEffect(
+    useCallback(() => {
+      getNotificationPrefs().then((p) => setTodaysFocusPref(p.todaysFocusPref || 'all'));
+    }, [])
+  );
+
+  const activeTasksForFocus = useMemo(() => {
+    if (todaysFocusPref === 'task') return allTasks.filter(t => ['Assignment', 'Quiz', 'Lab', 'Project'].includes(t.type));
+    if (todaysFocusPref === 'exam') return allTasks.filter(t => ['Test'].includes(t.type));
+    return allTasks;
+  }, [allTasks, todaysFocusPref]);
+
   const focusTask = useMemo(
-    () => selectTodaysFocusTask(allTasks, pinnedTaskIds),
-    [allTasks, pinnedTaskIds]
+    () => selectTodaysFocusTask(activeTasksForFocus, pinnedTaskIds),
+    [activeTasksForFocus, pinnedTaskIds]
   );
 
   const studyingFriends = useMemo(
@@ -895,19 +909,42 @@ export default function Dashboard() {
   }, [completedStudyKeys, revisionSettingsList, todayStr, in30Str]);
 
   const focusCard = useMemo(() => {
-    if (focusTask) {
+    let chosen: 'task' | 'study' | null = null;
+
+    if (todaysFocusPref === 'task' || todaysFocusPref === 'exam') {
+      chosen = focusTask ? 'task' : null;
+    } else if (todaysFocusPref === 'study') {
+      chosen = nextStudyItem ? 'study' : null;
+    } else {
+      // 'all' mode: pick the one that is sooner
+      if (focusTask && nextStudyItem) {
+        if (focusTask.task.dueDate < nextStudyItem.date) {
+          chosen = 'task';
+        } else if (nextStudyItem.date < focusTask.task.dueDate) {
+          chosen = 'study';
+        } else {
+          // Same date, compare time
+          const tTime = focusTask.task.dueTime || '23:59';
+          const sTime = nextStudyItem.time || '23:59';
+          chosen = tTime <= sTime ? 'task' : 'study';
+        }
+      } else if (focusTask) {
+        chosen = 'task';
+      } else if (nextStudyItem) {
+        chosen = 'study';
+      }
+    }
+
+    if (chosen === 'task' && focusTask) {
       const info = getDueTimeLabelRaw(focusTask.task.dueDate, focusTask.task.dueTime);
       const subjectColor = getSubjectColor(focusTask.task.courseId);
       const days = info.days;
       let statusColor: string;
       if (info.key === 'overdue' || days === 0) {
-        // Overdue or due today – very near => red
         statusColor = '#dc2626';
       } else if (days <= 3) {
-        // 1–3 days => medium near => yellow
         statusColor = '#ca8a04';
       } else {
-        // Far away => green
         statusColor = '#15803d';
       }
       return {
@@ -934,7 +971,7 @@ export default function Dashboard() {
       };
     }
 
-    if (nextStudyItem) {
+    if (chosen === 'study' && nextStudyItem) {
       const info = getDueTimeLabelRaw(nextStudyItem.date);
       const subjectColor = getSubjectColor(nextStudyItem.code);
       return {
@@ -951,12 +988,12 @@ export default function Dashboard() {
             ? `${info.days} ${T('daysLeft')}`
             : T(info.key),
         subtitle: nextStudyItem.room,
-        onPress: () => router.push('/(tabs)/planner' as any),
+        onPress: () => router.push({ pathname: '/study-details' as any, params: { studyKey: nextStudyItem.studyKey } }),
       };
     }
 
     return null;
-  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card]);
+  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref]);
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 

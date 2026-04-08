@@ -171,6 +171,7 @@ export default function TimetableScreen() {
   /** When true, week grid shows + on free hours and class cards open the editor. */
   const [gridEditMode, setGridEditMode] = useState(false);
   const [showNonUitmIntro, setShowNonUitmIntro] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<TimetableEntry | null>(null);
 
   useEffect(() => {
     getTimetableSlotDetailsVisibility().then(setSlotDetails);
@@ -757,6 +758,56 @@ export default function TimetableScreen() {
     );
   }
 
+  function renderClassDetailsModal() {
+    if (!selectedClass) return null;
+    const color = entrySlotColor(selectedClass);
+    return (
+      <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
+        <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
+          <Pressable style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={(e) => e.stopPropagation()}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: color, marginRight: 8 }} />
+              <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>{selectedClass.subjectCode}</Text>
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, marginBottom: 16 }}>{entryDisplayTitle(selectedClass)}</Text>
+            
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Feather name="clock" size={16} color={theme.primary} />
+                <Text style={{ color: theme.text, fontSize: 15 }}>{(T as any)(DAY_META[selectedClass.day].fullKey)}, {selectedClass.startTime} - {selectedClass.endTime}</Text>
+              </View>
+              {selectedClass.location && selectedClass.location !== '-' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="map-pin" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.location}</Text>
+                </View>
+              )}
+              {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="user" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.lecturer}</Text>
+                </View>
+              )}
+              {selectedClass.group && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="users" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>Group: {selectedClass.group}</Text>
+                </View>
+              )}
+            </View>
+
+            <Pressable
+              style={{ marginTop: 24, alignSelf: 'flex-end', padding: 8 }}
+              onPress={() => setSelectedClass(null)}
+            >
+              <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 16 }}>Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  }
+
   /* ── Week grid: one column per day (scroll horizontally if needed) ─ */
   function renderWeekGrid() {
     const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
@@ -951,9 +1002,9 @@ export default function TimetableScreen() {
                             {slotBody}
                           </Pressable>
                         ) : (
-                          <View key={entry.id} style={slotStyle}>
+                          <Pressable key={entry.id} style={slotStyle} onPress={() => setSelectedClass(entry)}>
                             {slotBody}
-                          </View>
+                          </Pressable>
                         );
                       })}
                     </View>
@@ -1206,9 +1257,9 @@ export default function TimetableScreen() {
                       {cardInner}
                     </Pressable>
                   ) : (
-                    <View key={e.id} style={cardStyle}>
+                    <Pressable key={e.id} style={cardStyle} onPress={() => setSelectedClass(e)}>
                       {cardInner}
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -1224,6 +1275,7 @@ export default function TimetableScreen() {
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
+      {renderClassDetailsModal()}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
   );
@@ -1269,6 +1321,26 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
+  },
+  detailsModalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    zIndex: 1000,
+  },
+  detailsModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   menuItem: {
     flexDirection: 'row',

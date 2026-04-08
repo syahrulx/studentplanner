@@ -131,6 +131,7 @@ export default function Planner() {
   const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [monthExpanded, setMonthExpanded] = useState(false);
+  const [monthCollapsed, setMonthCollapsed] = useState(false);
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
   const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
   const [isCalendarDragging, setIsCalendarDragging] = useState(false);
@@ -852,6 +853,8 @@ export default function Planner() {
   const handleItemPress = (item: PlannerItem) => {
     if (item.itemType === 'task') {
       router.push({ pathname: '/task-details' as any, params: { id: item.id } });
+    } else if (item.itemType === 'study') {
+      router.push({ pathname: '/study-details' as any, params: { studyKey: item.studyKey } });
     }
   };
 
@@ -1384,7 +1387,13 @@ export default function Planner() {
               weeks.push([null, null, null, null, null, null, null]);
             }
 
-            return weeks.map((week, weekIdx) => (
+            let visibleWeeks = weeks;
+            if (monthCollapsed) {
+              const targetWeek = weeks.find(w => w.some(d => d !== null && toISO(activeYear, activeMonth, d) === activeDate));
+              if (targetWeek) visibleWeeks = [targetWeek];
+            }
+
+            return visibleWeeks.map((week, weekIdx) => (
               <View key={`wk-${weekIdx}`} style={{ flexDirection: 'row' }}>
                 {week.map((day, colIdx) => {
                   if (day === null) {
@@ -1486,6 +1495,19 @@ export default function Planner() {
           })()}
         </View>
 
+        {/* Collapsible toggle chevron */}
+        <Pressable 
+          style={({ pressed }) => [{ 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            paddingVertical: 10, 
+            backgroundColor: theme.card,
+          }, pressed && { backgroundColor: theme.backgroundSecondary }]} 
+          onPress={() => setMonthCollapsed(p => !p)}
+        >
+          <Feather name={monthCollapsed ? 'chevron-down' : 'chevron-up'} size={24} color={theme.textSecondary} />
+        </Pressable>
+
         {/* Selected Day Detail Panel */}
         <View style={s.mDetailHeader}>
           <View style={{ flex: 1 }}>
@@ -1506,7 +1528,7 @@ export default function Planner() {
 
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingLeft: 26, paddingRight: 12, paddingTop: 16, paddingBottom: 120, gap: 12 }}
           showsVerticalScrollIndicator={false}
         >
           {selectedDayItems.length === 0 ? (
@@ -1565,7 +1587,6 @@ export default function Planner() {
                     style={[
                       { width: colWidth, height: 50, alignItems: 'center', justifyContent: 'center' },
                       isToday && { backgroundColor: `${theme.primary}14` },
-                      isWeekend && !isToday && { backgroundColor: theme.backgroundSecondary }
                     ]}
                   >
                     <Text style={{ fontSize: 9, fontWeight: '700', color: isToday ? theme.primary : theme.textSecondary, textTransform: 'uppercase' }}>{day.label}</Text>
@@ -1607,8 +1628,7 @@ export default function Planner() {
                       key={day.dateISO} 
                       style={[
                         { width: colWidth, borderRightWidth: StyleSheet.hairlineWidth, borderColor: theme.border },
-                        isWeekend && { backgroundColor: theme.backgroundSecondary },
-                        isActive && { backgroundColor: `${theme.primary}0A` }
+                        isToday && { backgroundColor: `${theme.primary}0D` }
                       ]}
                     >
                       <View style={{ height: 24 * hourHeight, position: 'relative', overflow: 'hidden' }}>
@@ -3077,9 +3097,9 @@ function createPlannerStyles(theme: ThemePalette) {
     zIndex: 10,
   },
   monthGridCellEmpty: {
-    backgroundColor: '#fcfdfe',
+    backgroundColor: theme.background,
     borderWidth: 0.5,
-    borderColor: '#f1f5f9',
+    borderColor: theme.border,
   },
   monthGridCellHeader: {
     alignItems: 'center',
