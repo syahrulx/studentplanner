@@ -249,7 +249,7 @@ export default function FlashcardPick() {
 
     try {
       // Option A — Replace: delete all existing cards for notes-to-replace first
-      if (replaceMode) {
+      if (isReplaceMode) {
         for (const [noteId] of existingCounts) {
           await deleteFlashcardsForNote(noteId);
         }
@@ -259,7 +259,7 @@ export default function FlashcardPick() {
       // (In replace mode the cards are already deleted so dedup set will be empty — fine)
       const existingFrontsByNote = new Map<string, Set<string>>();
       for (const n of usable) {
-        if (!replaceMode) {
+        if (!isReplaceMode) {
           const fronts = new Set(
             flashcards
               .filter((c) => c.noteId === n.id)
@@ -330,7 +330,7 @@ export default function FlashcardPick() {
         // All cards were duplicates (dedup filtered everything)
         Alert.alert(
           'No New Cards',
-          replaceMode
+          isReplaceMode
             ? T('flashcardPickGenerateNoneHint')
             : 'All generated cards already exist in your deck. Try regenerating with different content, or use \'Replace All\' to refresh the deck.',
         );

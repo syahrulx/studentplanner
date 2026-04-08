@@ -49,8 +49,16 @@ export default function NotesEditor() {
       if (existing.tag === 'Tutorial' || existing.tag === 'Exam' || existing.tag === 'Important' || existing.tag === 'Lecture') {
         setTag(existing.tag);
       }
+      setIsEditing(false);
+    } else {
+      setCurrentNoteId(undefined);
+      setTitle('');
+      setContent('');
+      setAttachmentPath(undefined);
+      setAttachmentFileName(undefined);
+      setIsEditing(true);
     }
-  }, [noteId]);
+  }, [noteId, existing]);
 
 
 
@@ -211,6 +219,26 @@ export default function NotesEditor() {
             <Text style={styles.backText}>Study</Text>
           </Pressable>
         </View>
+        <View style={styles.headerActions}>
+          <Pressable onPress={handleAttachFile} style={styles.iconBtn} disabled={attachLoading}>
+            {attachLoading ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Feather name="paperclip" size={18} color={theme.text} />
+            )}
+          </Pressable>
+          {existing?.id ? (
+            <Pressable onPress={onDeleteNote} style={styles.iconBtn}>
+              <Feather name="trash-2" size={18} color={theme.danger} />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => setIsEditing((v) => !v)} style={styles.iconBtn}>
+            <Feather name={isEditing ? 'eye' : 'edit-2'} size={18} color={theme.text} />
+          </Pressable>
+          <Pressable onPress={onSave} style={styles.saveBtn}>
+            <Text style={styles.saveBtnText}>{T('save')}</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Page title + content area */}
@@ -311,6 +339,7 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
     borderBottomColor: theme.border,
   },
   headerLeft: { flex: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   backText: { fontSize: 17, color: theme.text, fontWeight: '400', marginTop: -1 },
   iconBtn: { padding: 6 },

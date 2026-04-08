@@ -278,8 +278,16 @@ export default function FlashcardReview() {
   }, [handleNextCard]);
 
   const handleBack = useCallback(() => {
-    router.back();
-  }, []);
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    if (noteId) {
+      router.replace({ pathname: '/flashcard-deck-preview' as any, params: { noteId } });
+      return;
+    }
+    router.replace('/flashcard-pick' as any);
+  }, [noteId]);
 
   const cardAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scaleX: scale.value }],
