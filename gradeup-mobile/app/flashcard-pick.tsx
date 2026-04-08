@@ -337,7 +337,7 @@ export default function FlashcardPick() {
       } else {
         const goPreview = () => {
           if (firstNoteWithNewCards) {
-            router.replace({
+            router.push({
               pathname: '/flashcard-deck-preview' as any,
               params: { noteId: firstNoteWithNewCards },
             });

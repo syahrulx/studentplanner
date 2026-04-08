@@ -215,19 +215,8 @@ export default function FlashcardDeckPreview() {
   }, [noteId]);
 
   const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    if (note?.subjectId && note?.id) {
-      router.replace({
-        pathname: '/notes-editor' as any,
-        params: { subjectId: note.subjectId, noteId: note.id },
-      });
-      return;
-    }
-    router.replace('/flashcard-pick' as any);
-  }, [note?.id, note?.subjectId]);
+    router.back();
+  }, []);
 
   if (!noteId) {
     return (

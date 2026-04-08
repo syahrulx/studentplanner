@@ -57,6 +57,25 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   useEffect(() => {
+    const g = globalThis as any;
+    if (g.__gradeupSafeBackPatched) return;
+    g.__gradeupSafeBackPatched = true;
+
+    const originalBack = router.back.bind(router);
+    (router as any).back = () => {
+      if (router.canGoBack()) {
+        originalBack();
+        return;
+      }
+      try {
+        router.replace('/(tabs)/notes' as any);
+      } catch {
+        // no-op fallback to avoid unhandled GO_BACK action crash
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handleNotificationData = (data: Record<string, any> | undefined, delayed?: boolean) => {
       if (!data?.type) return;
       const nav = (fn: () => void) => delayed ? setTimeout(fn, 100) : fn();

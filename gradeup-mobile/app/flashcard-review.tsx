@@ -277,6 +277,10 @@ export default function FlashcardReview() {
     handleNextCard();
   }, [handleNextCard]);
 
+  const handleBack = useCallback(() => {
+    router.back();
+  }, []);
+
   const cardAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scaleX: scale.value }],
   }));
@@ -307,7 +311,7 @@ export default function FlashcardReview() {
     return (
       <View style={styles.container}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} style={styles.backIconWrap}>
+          <Pressable onPress={handleBack} style={styles.backIconWrap}>
             <Feather name="arrow-left" size={20} color={theme.text} />
           </Pressable>
           <View style={styles.headerText}>
@@ -333,7 +337,7 @@ export default function FlashcardReview() {
                 <Text style={styles.emptyPrimaryBtnText}>{T('flashcardReviewChooseDeck')}</Text>
               </Pressable>
             ) : null}
-            <Pressable style={styles.emptySecondaryBtn} onPress={() => router.back()}>
+            <Pressable style={styles.emptySecondaryBtn} onPress={handleBack}>
               <Text style={styles.emptySecondaryBtnText}>{T('back')}</Text>
             </Pressable>
           </View>
@@ -350,7 +354,7 @@ export default function FlashcardReview() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} style={styles.backIconWrap}>
+        <Pressable onPress={handleBack} style={styles.backIconWrap}>
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
         <View style={styles.headerText}>
