@@ -49,6 +49,12 @@ export default function AddFriendScreen() {
   const [loading, setLoading] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
 
+  const refreshOutgoingRequests = useCallback(async () => {
+    if (!userId) return;
+    const data = await communityApi.getOutgoingRequests(userId).catch(() => [] as Friendship[]);
+    setOutgoingRequests(data);
+  }, [userId]);
+
   // Load suggestions on mount
   useEffect(() => {
     if (!userId) return;
@@ -62,12 +68,8 @@ export default function AddFriendScreen() {
 
   // Load outgoing requests
   useEffect(() => {
-    if (!userId) return;
-    communityApi
-      .getOutgoingRequests(userId)
-      .then(setOutgoingRequests)
-      .catch(console.warn);
-  }, [userId]);
+    void refreshOutgoingRequests();
+  }, [refreshOutgoingRequests]);
 
   // Search
   const handleSearch = useCallback(async () => {
@@ -96,11 +98,12 @@ export default function AddFriendScreen() {
       try {
         await communityApi.sendFriendRequest(userId, targetId);
         setSentIds((prev) => new Set(prev).add(targetId));
+        await refreshOutgoingRequests();
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to send request');
       }
     },
-    [userId]
+    [userId, refreshOutgoingRequests]
   );
 
   // Accept request

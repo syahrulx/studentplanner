@@ -53,14 +53,17 @@ function Avatar({ name, avatarUrl, size = 64 }: { name?: string; avatarUrl?: str
 
 export default function FriendProfileScreen() {
   const theme = useTheme();
-  const { friendId } = useLocalSearchParams<{ friendId: string }>();
+  const params = useLocalSearchParams<{ friendId?: string | string[] }>();
+  const friendId = typeof params.friendId === 'string' ? params.friendId : undefined;
   const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);
   const [sentReaction, setSentReaction] = useState<string | null>(null);
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
 
-  const isAutoShareEnabled = shareStreams.find(s => s.recipient_id === friendId)?.enabled ?? false;
+  const isAutoShareEnabled = friendId
+    ? shareStreams.find(s => s.recipient_id === friendId)?.enabled ?? false
+    : false;
 
   useEffect(() => {
     if (friendId) {
@@ -283,7 +286,10 @@ export default function FriendProfileScreen() {
           </View>
           <Switch
             value={isAutoShareEnabled}
-            onValueChange={(val) => toggleShareStream(friend.id, val)}
+            onValueChange={(val) => {
+              if (!friendId) return;
+              void toggleShareStream(friendId, val);
+            }}
             trackColor={{ false: theme.border, true: '#10b981' }}
           />
         </View>

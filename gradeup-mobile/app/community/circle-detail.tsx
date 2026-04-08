@@ -28,7 +28,8 @@ function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: str
 
 export default function CircleDetailScreen() {
   const theme = useTheme();
-  const { circleId } = useLocalSearchParams<{ circleId: string }>();
+  const params = useLocalSearchParams<{ circleId?: string | string[] }>();
+  const circleId = typeof params.circleId === 'string' ? params.circleId : undefined;
   const { circles, userId, setSelectedCircleId, refreshCircles } = useCommunity();
 
   const circle = circles.find((c) => c.id === circleId);
@@ -48,6 +49,7 @@ export default function CircleDetailScreen() {
   }, [circleId]);
 
   const handleViewOnMap = () => {
+    if (!circleId) return;
     setSelectedCircleId(circleId);
     router.back();
   };

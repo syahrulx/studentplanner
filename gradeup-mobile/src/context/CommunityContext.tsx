@@ -349,6 +349,23 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   // Initial load + periodic refresh
   useEffect(() => {
     if (!userId) {
+      setFriends([]);
+      setFriendsWithStatus([]);
+      setCircles([]);
+      setIncomingRequests([]);
+      setUnreadReactionCount(0);
+      setMyActivity(null);
+      setSharedGoals([]);
+      setIncomingSharedTasks([]);
+      setAcceptedSharedTasks([]);
+      setShareStreams([]);
+      setSelectedCircleId(null);
+      setCircleMemberIds([]);
+      setSpotifyConnected(false);
+      setLocationPermissionGranted(false);
+      setMyLatitude(null);
+      setMyLongitude(null);
+      setLocationVisibilityState('friends');
       setLoading(false);
       return;
     }
