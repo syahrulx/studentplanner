@@ -3,7 +3,11 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../state/AuthProvider';
 
 export function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const bypass = (import.meta as any).env?.VITE_BYPASS_ADMIN_AUTH === 'true';
+  // SECURITY: Auth bypass only works in development mode.
+  // In production builds, this flag is ALWAYS false regardless of env variable.
+  const isDev = (import.meta as any).env?.DEV === true;
+  const bypassEnv = (import.meta as any).env?.VITE_BYPASS_ADMIN_AUTH === 'true';
+  const bypass = isDev && bypassEnv;
   const { user, admin, loading } = useAuth();
   const loc = useLocation();
 
