@@ -58,10 +58,12 @@ export async function invokeAiGenerate<T = unknown>(
 
     if (error) {
       // supabase-js wraps non-2xx responses
+      const ctx = (error as any).context;
+      const statusText = ctx ? `[HTTP ${ctx.status || 'unknown'} - ${ctx.statusText || 'unknown'}]` : '';
       const message =
         typeof error === 'object' && 'message' in error
-          ? (error as { message: string }).message
-          : String(error);
+          ? `${(error as { message: string }).message} ${statusText}`
+          : `${String(error)} ${statusText}`;
       return { data: null, error: message };
     }
 
