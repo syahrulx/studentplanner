@@ -386,11 +386,15 @@ export async function getSuggestions(
 export async function searchUsers(userId: string, query: string): Promise<FriendProfile[]> {
   if (!query || query.trim().length < 2) return [];
 
+  // SECURITY: Escape SQL LIKE wildcards to prevent pattern injection
+  // (e.g., searching "%" would match all users without this)
+  const escapedQuery = query.trim().replace(/[%_\\]/g, '\\$&');
+
   const { data, error } = await supabase
     .from('profiles')
     .select('id, name, university, avatar_url, bio, faculty, course, class_group')
     .neq('id', userId)
-    .ilike('name', `%${query.trim()}%`)
+    .ilike('name', `%${escapedQuery}%`)
     .limit(20);
 
   if (error) throw error;

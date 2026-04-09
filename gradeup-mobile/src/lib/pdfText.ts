@@ -1,6 +1,12 @@
+/**
+ * PDF text extraction — now proxied through the ai_pdf_extract Edge Function.
+ *
+ * SECURITY: The OpenAI API key is no longer used client-side.
+ * All PDF → text extraction happens server-side via the Edge Function.
+ */
 import * as FileSystem from 'expo-file-system/legacy';
-import { getOpenAIKey } from './studyApi';
 import { supabase } from './supabase';
+import { uploadNoteAttachment, NOTE_ATTACHMENTS_BUCKET } from './noteStorage';
 
 export type PdfExtractStage =
   | 'local_pdfjs'
@@ -23,101 +29,73 @@ export async function extractPdfTextFromUrl(url: string, _maxPages?: number): Pr
 
 /**
  * Extract text from a local file URI (e.g. from DocumentPicker).
- * Uploads to OpenAI Files API, extracts via Chat Completions, cleans up.
+ * Uploads the file to Supabase Storage temporarily, then calls the
+ * ai_pdf_extract Edge Function to extract text server-side.
  */
 export async function extractPdfTextFromLocalUri(
   fileUri: string,
   fileName?: string,
   userId?: string,
 ): Promise<PdfExtractDebug> {
-  const key = getOpenAIKey();
-  if (!key) return { text: '', stage: 'failed', detail: 'Missing OpenAI API key.' };
+  if (!userId) {
+    // Try to get current user
+    const { data } = await supabase.auth.getUser();
+    userId = data.user?.id;
+  }
+  if (!userId) {
+    return { text: '', stage: 'failed', detail: 'Not authenticated.' };
+  }
 
-  let fileId: string | null = null;
+  const safeName = fileName || `temp_pdf_${Date.now()}.pdf`;
+  const tempNoteId = `_pdf_extract_${Date.now()}`;
 
   try {
-    // Upload local file to OpenAI Files API
-    const uploadFormData = new FormData();
-    uploadFormData.append('purpose', 'assistants');
-    uploadFormData.append('file', {
-      uri: fileUri,
-      name: fileName || 'document.pdf',
-      type: 'application/pdf',
-    } as any);
+    // Step 1: Upload PDF to Supabase Storage (temp path)
+    const { path, error: uploadErr } = await uploadNoteAttachment(
+      userId,
+      tempNoteId,
+      fileUri,
+      safeName,
+      'application/pdf',
+    );
 
-    const uploadCtrl = new AbortController();
-    const uploadTimeout = setTimeout(() => uploadCtrl.abort(), 60000);
-    const uploadRes = await fetch('https://api.openai.com/v1/files', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}` },
-      signal: uploadCtrl.signal,
-      body: uploadFormData,
-    });
-    clearTimeout(uploadTimeout);
-
-    const uploadJson = await uploadRes.json();
-    if (!uploadRes.ok || !uploadJson?.id) {
+    if (uploadErr || !path) {
       return {
         text: '',
         stage: 'openai_upload',
-        detail: uploadJson?.error?.message ?? `Upload failed (${uploadRes.status}).`,
+        detail: uploadErr?.message ?? 'Failed to upload PDF to storage.',
       };
     }
-    fileId = uploadJson.id;
 
-    // Extract text via Chat Completions
-    const chatCtrl = new AbortController();
-    const chatTimeout = setTimeout(() => chatCtrl.abort(), 180000);
-    const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      signal: chatCtrl.signal,
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Extract all readable educational text from this PDF document. Return plain text only. Preserve headings and structure. Ignore file metadata, page numbers, and formatting artifacts.' },
-            { type: 'file', file: { file_id: fileId } },
-          ],
-        }],
-        max_tokens: 16000,
-      }),
+    // Step 2: Call Edge Function to extract text
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      return { text: '', stage: 'failed', detail: 'No active session.' };
+    }
+
+    const { data, error } = await supabase.functions.invoke('ai_pdf_extract', {
+      body: { storage_path: path, bucket: NOTE_ATTACHMENTS_BUCKET },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
-    clearTimeout(chatTimeout);
 
-    const chatJson = await chatRes.json();
-    if (!chatRes.ok) {
-      return {
-        text: '',
-        stage: 'openai_response',
-        detail: chatJson?.error?.message ?? `Chat failed (${chatRes.status}).`,
-      };
+    if (error) {
+      const msg = typeof error === 'object' && 'message' in error
+        ? (error as { message: string }).message
+        : String(error);
+      return { text: '', stage: 'openai_response', detail: msg };
     }
 
-    // Token usage logging
-    try {
-      if (userId) {
-        const usage = chatJson?.usage;
-        await supabase.from('ai_token_usage').insert({
-          user_id: userId,
-          kind: 'pdf_text_extraction',
-          model: 'gpt-4o-mini',
-          prompt_tokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null,
-          completion_tokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : null,
-          total_tokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : null,
-        });
-      }
-    } catch {
-      // ignore
+    if (data?.error?.message) {
+      return { text: '', stage: 'openai_response', detail: data.error.message };
     }
 
-    const outputText = (chatJson?.choices?.[0]?.message?.content ?? '').trim();
+    const outputText = (data?.text ?? '').trim();
     if (!outputText) {
-      return { text: '', stage: 'openai_response', detail: 'OpenAI returned empty output text.' };
+      return { text: '', stage: 'openai_response', detail: 'Edge Function returned empty text.' };
     }
-    return { text: outputText.slice(0, 120000), stage: 'done', detail: 'local uri extraction ok' };
 
+    return { text: outputText.slice(0, 120000), stage: 'done', detail: 'edge function extraction ok' };
   } catch (error) {
     return {
       text: '',
@@ -125,13 +103,11 @@ export async function extractPdfTextFromLocalUri(
       detail: error instanceof Error ? error.message : 'Unknown extraction error.',
     };
   } finally {
-    // Clean up OpenAI file (best-effort)
-    if (fileId) {
-      fetch(`https://api.openai.com/v1/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${getOpenAIKey() ?? ''}` },
-      }).catch(() => {});
-    }
+    // Clean up temp file from storage (best-effort)
+    supabase.storage
+      .from(NOTE_ATTACHMENTS_BUCKET)
+      .remove([`${userId}/${tempNoteId}/${safeName}`])
+      .catch(() => {});
   }
 }
 
@@ -142,23 +118,26 @@ export const extractPdfTextFromUri = async (uri: string, _maxPages?: number): Pr
 };
 
 /**
- * AI-only PDF extraction using OpenAI Files API.
- * Downloads the PDF to a temp local file (Hermes-compatible),
- * uploads it to OpenAI, extracts text via Chat Completions, then cleans up.
+ * AI PDF extraction via Edge Function.
+ * Downloads the PDF to a temp local file, uploads to Supabase Storage,
+ * then calls the ai_pdf_extract Edge Function.
  */
 export async function extractPdfTextFromUrlDebug(
   url: string,
   userId?: string,
   _maxPages?: number,
 ): Promise<PdfExtractDebug> {
-  const key = getOpenAIKey();
-  if (!key) return { text: '', stage: 'failed', detail: 'Missing OpenAI API key.' };
+  if (!userId) {
+    const { data } = await supabase.auth.getUser();
+    userId = data.user?.id;
+  }
+  if (!userId) {
+    return { text: '', stage: 'failed', detail: 'Not authenticated.' };
+  }
 
-  // Use a temp local path — React Native/Hermes requires a file URI for binary uploads
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cacheDir = (FileSystem as any).cacheDirectory as string | null;
   const tempPath = `${cacheDir ?? ''}quiz_pdf_${Date.now()}.pdf`;
-  let fileId: string | null = null;
 
   try {
     // Step 1: Download PDF to temp file
@@ -168,88 +147,8 @@ export async function extractPdfTextFromUrlDebug(
       return { text: '', stage: 'failed', detail: `PDF download failed (HTTP ${downloadResult.status}).` };
     }
 
-    // Step 2: Upload to OpenAI Files API using local file URI (Hermes-safe FormData pattern)
-    const uploadFormData = new FormData();
-    uploadFormData.append('purpose', 'assistants');
-    uploadFormData.append('file', {
-      uri: tempPath,
-      name: 'note.pdf',
-      type: 'application/pdf',
-    } as any);
-
-    const uploadCtrl = new AbortController();
-    const uploadTimeout = setTimeout(() => uploadCtrl.abort(), 60000); // 60s for upload
-    const uploadRes = await fetch('https://api.openai.com/v1/files', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}` },
-      signal: uploadCtrl.signal,
-      body: uploadFormData,
-    });
-    clearTimeout(uploadTimeout);
-
-    const uploadJson = await uploadRes.json();
-    if (!uploadRes.ok || !uploadJson?.id) {
-      return {
-        text: '',
-        stage: 'openai_upload',
-        detail: uploadJson?.error?.message ?? `Upload failed (${uploadRes.status}).`,
-      };
-    }
-    fileId = uploadJson.id;
-
-    // Step 3: Extract text via Chat Completions referencing the file_id
-    const chatCtrl = new AbortController();
-    const chatTimeout = setTimeout(() => chatCtrl.abort(), 180000); // 180s for AI to read PDF
-    const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      signal: chatCtrl.signal,
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Extract all readable educational text from this PDF document. Return plain text only. Ignore file metadata, page numbers, and structural markup.' },
-            { type: 'file', file: { file_id: fileId } },
-          ],
-        }],
-        max_tokens: 8000,
-      }),
-    });
-    clearTimeout(chatTimeout);
-
-    const chatJson = await chatRes.json();
-    if (!chatRes.ok) {
-      return {
-        text: '',
-        stage: 'openai_response',
-        detail: chatJson?.error?.message ?? `Chat failed (${chatRes.status}).`,
-      };
-    }
-
-    // Best-effort token usage logging (never break extraction if logging fails).
-    try {
-      if (userId) {
-        const usage = chatJson?.usage;
-        await supabase.from('ai_token_usage').insert({
-          user_id: userId,
-          kind: 'pdf_text_extraction',
-          model: 'gpt-4o-mini',
-          prompt_tokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null,
-          completion_tokens: typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : null,
-          total_tokens: typeof usage?.total_tokens === 'number' ? usage.total_tokens : null,
-        });
-      }
-    } catch {
-      // ignore
-    }
-
-    const outputText = (chatJson?.choices?.[0]?.message?.content ?? '').trim();
-    if (!outputText) {
-      return { text: '', stage: 'openai_response', detail: 'OpenAI returned empty output text.' };
-    }
-    return { text: outputText.slice(0, 120000), stage: 'done', detail: 'openai extraction ok' };
-
+    // Step 2: Use the local URI extraction path (uploads to storage → calls Edge Function)
+    return await extractPdfTextFromLocalUri(tempPath, 'note.pdf', userId);
   } catch (error) {
     return {
       text: '',
@@ -257,15 +156,15 @@ export async function extractPdfTextFromUrlDebug(
       detail: error instanceof Error ? error.message : 'Unknown extraction error.',
     };
   } finally {
-    // Clean up temp file (best-effort)
+    // Clean up temp file
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (FileSystem as any).deleteAsync?.(tempPath, { idempotent: true }).catch(() => {});
-    // Clean up OpenAI file (best-effort)
-    if (fileId) {
-      fetch(`https://api.openai.com/v1/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${getOpenAIKey() ?? ''}` },
-      }).catch(() => {});
-    }
   }
+}
+
+/**
+ * @deprecated No longer used — kept for backward compatibility.
+ */
+export function getOpenAIKey(): string {
+  return 'edge-function';
 }

@@ -28,13 +28,18 @@ export default ({ config }) => ({
   ],
   extra: {
     ...config?.extra,
+    eas: {
+      projectId: "29240ff0-6a41-4552-bd3e-9b6b6ddf6b38"
+    },
     geminiApiKey: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '',
     supabaseUrl: cleanEnvString(
       process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujxrtuogdialsrzxkcey.supabase.co'
     ),
     /** Must be the JWT anon key from Supabase → Settings → API (starts with eyJ). Not sb_publishable_* — Edge Functions reject those. */
     supabaseAnonKey: cleanEnvString(process.env.EXPO_PUBLIC_SUPABASE_KEY || ''),
-    openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
+    // openaiApiKey removed — AI calls now go through Edge Functions (ai_generate, ai_pdf_extract).
+    // Set OPENAI_API_KEY as a Supabase Edge Function secret instead:
+    //   npx supabase secrets set OPENAI_API_KEY=sk-...
     spotifyClientId: process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID || '',
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
     /** Must match Storage bucket id in the same Supabase project as supabaseUrl */

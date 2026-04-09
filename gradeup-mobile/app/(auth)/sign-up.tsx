@@ -22,7 +22,7 @@ import { supabase } from '@/src/lib/supabase';
 WebBrowser.maybeCompleteAuthSession();
 import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
 
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignUp() {
   const [name, setName] = useState('');

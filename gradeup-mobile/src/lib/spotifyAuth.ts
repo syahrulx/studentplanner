@@ -169,7 +169,7 @@ export async function connectSpotify(): Promise<boolean> {
   }
 
   const redirectUri = AuthSession.makeRedirectUri({ scheme: 'gradeupmobile', path: 'spotify-callback' });
-  console.log('[SpotifyAuth] Using Redirect URI:', redirectUri);
+  if (__DEV__) console.log('[SpotifyAuth] Using Redirect URI:', redirectUri);
 
   const request = new AuthSession.AuthRequest({
     clientId: SPOTIFY_CLIENT_ID,

@@ -47,16 +47,10 @@ export default function Login() {
           msg === 'Invalid login credentials' ||
           (signInError as { code?: string }).code === 'invalid_credentials';
         if (invalidCreds) {
-          const { data: emailExists, error: rpcError } = await supabase.rpc('auth_email_exists', {
-            check_email: trimmedEmail,
-          });
-          if (rpcError) {
-            msg = 'Invalid email or password';
-          } else if (emailExists === true) {
-            msg = 'Wrong password';
-          } else {
-            msg = 'No account yet';
-          }
+          // SECURITY: Show a generic message instead of distinguishing between
+          // "wrong password" and "no account". The auth_email_exists RPC is now
+          // restricted to authenticated users only to prevent email enumeration.
+          msg = 'Invalid email or password';
         } else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
           msg = 'Server unavailable. Please try again later.';
         }

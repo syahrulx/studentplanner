@@ -63,7 +63,10 @@
               "displayName": "Today",
               "description": "Today’s tasks and timetable",
               "contentMarginsDisabled": false,
-              "supportedFamilies": ["systemSmall", "systemMedium"]
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium"
+              ]
             }
           ]
         }
