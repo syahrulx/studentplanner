@@ -129,13 +129,16 @@ export async function generateFlashcardsFromPdf(
   const chunks = chunkText(extractedText, CHUNK_SIZE);
   if (chunks.length === 0) return [];
 
-  // Generate from all chunks in parallel
-  const results = await Promise.all(
-    chunks.map((chunk) => generateCardsFromChunk(chunk))
-  );
+  // Generate from all chunks sequentially to avoid OpenAI Rate Limits (Tokens Per Minute)
   let allCards: GeneratedFlashcard[] = [];
-  for (const cards of results) {
+  for (const chunk of chunks) {
+    const cards = await generateCardsFromChunk(chunk);
     allCards = allCards.concat(cards);
+    
+    // Add a 1.5-second delay between chunk generations to respect Tier 1 rate limits
+    if (chunks.length > 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
   }
 
   // Deduplicate and limit
