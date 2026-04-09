@@ -362,6 +362,18 @@ export default function CommunityMap() {
     }
   }, [locationPermissionGranted, requestLocationPermission]);
 
+  // Keep studying status automatically updated as time passes!
+  useEffect(() => {
+    if (myActivity?.activity_type === 'studying') {
+      const currentLabel = getCurrentTimetableSubjectLabel(timetable) || 'Studying';
+      // If the label we generated for right NOW is different from what's in the DB,
+      // silently push the update to keep it synced for the user & their friends.
+      if (myActivity.detail !== currentLabel) {
+        updateActivity('studying', currentLabel, currentLabel).catch(() => {});
+      }
+    }
+  }); // runs on every render, which is forced every 30s by useWallClockTick
+
   const visibleFriends = filteredFriends;
 
   const refreshMapSongOverlays = useCallback(async () => {

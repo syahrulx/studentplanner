@@ -123,13 +123,13 @@ export default function Leaderboard() {
         <View style={[s.myCard, { backgroundColor: theme.primary }]}>
           <View style={s.myCardLeft}>
             <Text style={s.myRank}>#{myRank}</Text>
-            <View>
-              <Text style={s.myName}>{user.name}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.myName} numberOfLines={1}>{user.name}</Text>
               <Text style={s.mySub}>{myEntry.games_played} games played</Text>
             </View>
           </View>
           <View style={s.myXP}>
-            <Feather name="zap" size={16} color="#f59e0b" />
+            <Feather name="zap" size={16} color="#fff" />
             <Text style={s.myXPText}>{myEntry.total_xp} XP</Text>
           </View>
         </View>
@@ -188,7 +188,7 @@ export default function Leaderboard() {
                   <Text style={[s.rowRank, { color: theme.textSecondary }]}>{rank}</Text>
                   <Avatar name={entry.name} avatarUrl={entry.avatar_url} size={36} />
                   <View style={s.rowBody}>
-                    <Text style={[s.rowName, { color: theme.text }]}>{isMe ? `${entry.name} (You)` : entry.name}</Text>
+                    <Text style={[s.rowName, { color: theme.text }]} numberOfLines={1}>{isMe ? `${entry.name} (You)` : entry.name}</Text>
                     <Text style={[s.rowSub, { color: theme.textSecondary }]}>{entry.games_played} games</Text>
                   </View>
                   <Text style={[s.rowXP, { color: isMe ? theme.primary : theme.text }]}>{entry.total_xp} XP</Text>
@@ -230,7 +230,7 @@ const s = StyleSheet.create({
   filterText: { fontSize: 12, fontWeight: '700' },
 
   myCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 16, padding: 18, marginBottom: 20 },
-  myCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  myCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 10 },
   myRank: { fontSize: 24, fontWeight: '800', color: '#fff' },
   myName: { fontSize: 16, fontWeight: '700', color: '#fff' },
   mySub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },

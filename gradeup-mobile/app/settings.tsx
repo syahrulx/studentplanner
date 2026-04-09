@@ -78,6 +78,7 @@ export default function Settings() {
   const [deleteAccountPhrase, setDeleteAccountPhrase] = useState('');
   const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
 
@@ -708,6 +709,56 @@ export default function Settings() {
                         </Pressable>
                       );
                     })}
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Card 3: Today's Focus Preference */}
+            <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
+              <Pressable
+                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                onPress={() => setFocusPrefExpanded(!focusPrefExpanded)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: '#f43f5e' }]}>
+                  <Feather name="target" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Today's Focus</Text>
+                  <Text style={[styles.notifRowFootnote, { color: theme.primary }]} numberOfLines={1}>
+                    {notifPrefs.todaysFocusPref === 'all' ? 'Everything' : notifPrefs.todaysFocusPref === 'task' ? 'Tasks Only' : notifPrefs.todaysFocusPref === 'study' ? 'Study Time Only' : 'Exams Only'}
+                  </Text>
+                </View>
+                <Feather name={focusPrefExpanded ? "chevron-up" : "chevron-down"} size={20} color={theme.textSecondary} />
+              </Pressable>
+
+              {focusPrefExpanded ? (
+                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Show on Home Screen</Text>
+                  <View style={{ flexDirection: 'column', gap: 16, marginTop: 12 }}>
+                    {[
+                      { id: 'all', label: 'Everything (Default)', desc: 'Tasks, study, and exams based on priority' },
+                      { id: 'task', label: 'Tasks Only', desc: 'Prioritize assignments, quizzes, and labs' },
+                      { id: 'exam', label: 'Exams Only', desc: 'Prioritize tests and exams' },
+                      { id: 'study', label: 'Study Time Only', desc: 'Prioritize revision sessions' }
+                    ].map((opt) => (
+                      <Pressable
+                        key={opt.id}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                        onPress={() => {
+                          updateNotifPref({ todaysFocusPref: opt.id as any });
+                          setFocusPrefExpanded(false);
+                        }}
+                      >
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{opt.label}</Text>
+                          <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>{opt.desc}</Text>
+                        </View>
+                        {notifPrefs.todaysFocusPref === opt.id && (
+                          <Feather name="check" size={20} color={theme.primary} />
+                        )}
+                      </Pressable>
+                    ))}
                   </View>
                 </View>
               ) : null}

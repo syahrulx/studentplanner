@@ -370,6 +370,7 @@ export interface NotificationPrefs {
   weeklySummaryEnabled: boolean;
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
+  todaysFocusPref: 'all' | 'task' | 'study' | 'exam';
 }
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -382,6 +383,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   weeklySummaryEnabled: false,
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
+  todaysFocusPref: 'all',
 };
 
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
@@ -399,6 +401,10 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           typeof parsed.taskOverdueEnabled === 'boolean'
             ? parsed.taskOverdueEnabled
             : DEFAULT_NOTIFICATION_PREFS.taskOverdueEnabled,
+        todaysFocusPref:
+          parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
+            ? parsed.todaysFocusPref
+            : DEFAULT_NOTIFICATION_PREFS.todaysFocusPref,
       };
     }
   } catch {}
