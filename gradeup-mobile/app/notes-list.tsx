@@ -8,6 +8,7 @@ import type { ThemePalette } from '@/constants/Themes';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
+import { ImportProgressBar } from '@/components/ImportProgressBar';
 // NOTE: We no longer extract PDF text on-device during import.
 // Flashcards/AI features extract server-side on first use.
 import { useTranslations } from '@/src/i18n';
@@ -108,6 +109,25 @@ function createStyles(theme: ThemePalette) {
     moveItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
     moveItemText: { fontSize: 15, fontWeight: '600', color: theme.text, flex: 1 },
     moveDivider: { height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginLeft: 16 },
+
+    importOverlayBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 28,
+    },
+    importOverlayCard: {
+      width: '100%',
+      maxWidth: 340,
+      backgroundColor: theme.card,
+      borderRadius: 20,
+      padding: 22,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    importOverlayTitle: { fontSize: 17, fontWeight: '800', color: theme.text, marginBottom: 4 },
+    importOverlaySub: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 16, lineHeight: 18 },
   });
 }
 
@@ -121,6 +141,7 @@ export default function NotesList() {
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const isImportingRef = useRef(false);
+  const [importProgressUi, setImportProgressUi] = useState<{ progress: number; label: string } | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -161,31 +182,79 @@ export default function NotesList() {
     if (isImportingRef.current) return;
     isImportingRef.current = true;
     setIsImporting(true);
+    let uploadTicker: ReturnType<typeof setInterval> | null = null;
     try {
       const result = await DocumentPicker.getDocumentAsync({ type, copyToCacheDirectory: true });
-      if (result.canceled) return;
+      if (result.canceled) {
+        return;
+      }
       const file = result.assets[0];
+
+      setImportProgressUi({ progress: 12, label: T('noteImportReading') });
+
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) { Alert.alert('Sign in required', 'Sign in to import files into notes.'); return; }
+      if (!session?.user?.id) {
+        setImportProgressUi(null);
+        Alert.alert('Sign in required', 'Sign in to import files into notes.');
+        return;
+      }
+
+      setImportProgressUi({ progress: 28, label: T('noteImportUploading') });
+      uploadTicker = setInterval(() => {
+        setImportProgressUi((prev) => {
+          if (!prev) return prev;
+          return { ...prev, progress: Math.min(prev.progress + 4, 86) };
+        });
+      }, 200);
 
       const noteId = `n${Date.now()}`;
       const fileName = file.name ?? `attachment-${Date.now()}`;
-      const isPdf = (file.mimeType || '').toLowerCase().includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
 
-      const { path, error } = await uploadNoteAttachment(session.user.id, noteId, file.uri, fileName, file.mimeType ?? undefined);
-      if (error) { Alert.alert('Upload failed', error.message); return; }
+      const { path, error } = await uploadNoteAttachment(
+        session.user.id,
+        noteId,
+        file.uri,
+        fileName,
+        file.mimeType ?? undefined,
+      );
+      if (uploadTicker) {
+        clearInterval(uploadTicker);
+        uploadTicker = null;
+      }
+
+      if (error) {
+        setImportProgressUi(null);
+        Alert.alert('Upload failed', error.message);
+        return;
+      }
+
+      setImportProgressUi({ progress: 92, label: T('noteImportSaving') });
 
       const note = {
-        id: noteId, subjectId, folderId: selectedFolder ?? undefined,
-        title: fileName, content: '',
-        tag: 'Lecture' as const, updatedAt: new Date().toISOString().slice(0, 10),
-        attachmentPath: path, attachmentFileName: fileName,
+        id: noteId,
+        subjectId,
+        folderId: selectedFolder ?? undefined,
+        title: fileName,
+        content: '',
+        tag: 'Lecture' as const,
+        updatedAt: new Date().toISOString().slice(0, 10),
+        attachmentPath: path,
+        attachmentFileName: fileName,
       };
       handleSaveNote(note);
+
+      setImportProgressUi({ progress: 100, label: T('noteImportDone') });
+      await new Promise((r) => setTimeout(r, 700));
+      setImportProgressUi(null);
       router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
     } catch (e) {
+      setImportProgressUi(null);
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not import file.');
-    } finally { isImportingRef.current = false; setIsImporting(false); }
+    } finally {
+      if (uploadTicker) clearInterval(uploadTicker);
+      isImportingRef.current = false;
+      setIsImporting(false);
+    }
   };
 
   const promptImportFileType = () => {
@@ -381,6 +450,22 @@ export default function NotesList() {
             </View>
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={importProgressUi !== null} transparent animationType="fade">
+        <View style={styles.importOverlayBackdrop}>
+          <View style={styles.importOverlayCard}>
+            <Text style={styles.importOverlayTitle}>{T('noteImportTitle')}</Text>
+            <Text style={styles.importOverlaySub}>{T('noteImportSub')}</Text>
+            {importProgressUi ? (
+              <ImportProgressBar
+                progress={importProgressUi.progress}
+                label={importProgressUi.label}
+                theme={theme}
+              />
+            ) : null}
+          </View>
+        </View>
       </Modal>
 
       {/* Move to folder modal */}

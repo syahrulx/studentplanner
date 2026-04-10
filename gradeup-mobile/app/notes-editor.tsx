@@ -5,20 +5,18 @@ import * as DocumentPicker from 'expo-document-picker';
 import Feather from '@expo/vector-icons/Feather';
 import { WebView } from 'react-native-webview';
 import { useApp } from '@/src/context/AppContext';
-import { uploadNoteAttachment, getNoteAttachmentUrl, NOTE_ATTACHMENTS_BUCKET } from '@/src/lib/noteStorage';
-import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
+import { uploadNoteAttachment, getNoteAttachmentUrl } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { useTranslations } from '@/src/i18n';
+import { ImportProgressBar } from '@/components/ImportProgressBar';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 
 type BannerState =
   | { kind: 'idle' }
-  | { kind: 'uploading'; label: string }
-  | { kind: 'extracting' }
-  | { kind: 'done' }
-  | { kind: 'failed' };
+  | { kind: 'importing'; progress: number; label: string }
+  | { kind: 'done'; message: string };
 
 export default function NotesEditor() {
   const { subjectId, noteId, folderId: paramFolderId } = useLocalSearchParams<{
@@ -72,30 +70,11 @@ export default function NotesEditor() {
     }
   }, [noteId, existing]);
 
-  // Auto-dismiss done/failed after 4s
   useEffect(() => {
-    if (banner.kind !== 'done' && banner.kind !== 'failed') return;
-    const t = setTimeout(() => setBanner({ kind: 'idle' }), 4000);
+    if (banner.kind !== 'done') return;
+    const t = setTimeout(() => setBanner({ kind: 'idle' }), 3500);
     return () => clearTimeout(t);
   }, [banner.kind]);
-
-  function runExtraction(path: string, noteIdForSave?: string) {
-    setBanner({ kind: 'extracting' });
-    extractPdfTextFromStoragePath(path).then((res) => {
-      if (res.text) {
-        setExtractedText(res.text);
-        setBanner({ kind: 'done' });
-        // Persist to DB
-        const nid = noteIdForSave ?? currentNoteId;
-        if (nid) {
-          const noteObj = notes.find((n) => n.id === nid);
-          if (noteObj) handleSaveNote({ ...noteObj, extractedText: res.text });
-        }
-      } else {
-        setBanner({ kind: 'failed' });
-      }
-    }).catch(() => setBanner({ kind: 'failed' }));
-  }
 
   const isPdfAttachment = !!attachmentFileName?.toLowerCase().endsWith('.pdf');
   const showPdfReader = !isEditing && isPdfAttachment && !!pdfPreviewUrl;
@@ -186,7 +165,7 @@ export default function NotesEditor() {
   const handleAttachFile = async () => {
     if (attachLoadingRef.current) return;
     attachLoadingRef.current = true;
-    setBanner({ kind: 'uploading', label: 'Picking file…' });
+    let uploadTicker: ReturnType<typeof setInterval> | null = null;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: false,
@@ -197,6 +176,8 @@ export default function NotesEditor() {
       }
       const file = result.assets[0];
 
+      setBanner({ progress: 12, label: T('noteAttachReading'), kind: 'importing' });
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.id) {
         setBanner({ kind: 'idle' });
@@ -204,7 +185,14 @@ export default function NotesEditor() {
         return;
       }
 
-      setBanner({ kind: 'uploading', label: 'Uploading file…' });
+      setBanner({ progress: 28, label: T('noteAttachUploading'), kind: 'importing' });
+      uploadTicker = setInterval(() => {
+        setBanner((prev) => {
+          if (prev.kind !== 'importing') return prev;
+          return { ...prev, progress: Math.min(prev.progress + 4, 86) };
+        });
+      }, 200);
+
       const noteIdForPath = existing?.id ?? currentNoteId ?? `n${Date.now()}`;
       const name = file.name ?? `attachment-${Date.now()}`;
       const { path, error } = await uploadNoteAttachment(
@@ -212,30 +200,33 @@ export default function NotesEditor() {
         noteIdForPath,
         file.uri,
         name,
-        file.mimeType ?? undefined
+        file.mimeType ?? undefined,
       );
+      if (uploadTicker) {
+        clearInterval(uploadTicker);
+        uploadTicker = null;
+      }
+
       if (error) {
         setBanner({ kind: 'idle' });
         Alert.alert('Upload failed', error.message);
         return;
       }
 
+      setBanner({ progress: 92, label: T('noteImportSaving'), kind: 'importing' });
+
       setAttachmentPath(path);
       setAttachmentFileName(name);
       setExtractedText(undefined);
 
-      // If it's a PDF, don't extract on-device (large PDFs often fail).
-      // Extraction is handled server-side on first AI use (flashcards/quiz).
-      const isPdf = (name || '').toLowerCase().endsWith('.pdf');
-      if (isPdf && path) {
-        setBanner({ kind: 'idle' });
-      } else {
-        setBanner({ kind: 'idle' });
-      }
+      setBanner({ progress: 100, label: T('noteAttachDone'), kind: 'importing' });
+      await new Promise((r) => setTimeout(r, 650));
+      setBanner({ kind: 'done', message: T('noteAttachDone') });
     } catch (e: any) {
       setBanner({ kind: 'idle' });
       Alert.alert('Error', e?.message || 'Could not attach file');
     } finally {
+      if (uploadTicker) clearInterval(uploadTicker);
       attachLoadingRef.current = false;
     }
   };
@@ -254,35 +245,26 @@ export default function NotesEditor() {
     }
   };
 
-  // Banner UI element — rendered inline between header and content so it works over WebView
   const bannerElement = banner.kind === 'idle' ? null : (
-    <View style={[
-      styles.statusBanner,
-      banner.kind === 'uploading' && { backgroundColor: '#3b82f615', borderColor: '#3b82f640' },
-      banner.kind === 'extracting' && { backgroundColor: '#8b5cf615', borderColor: '#8b5cf640' },
-      banner.kind === 'done' && { backgroundColor: '#10b98115', borderColor: '#10b98140' },
-      banner.kind === 'failed' && { backgroundColor: '#f59e0b15', borderColor: '#f59e0b40' },
-    ]}>
-      {(banner.kind === 'uploading' || banner.kind === 'extracting') && (
-        <ActivityIndicator
-          size="small"
-          color={banner.kind === 'uploading' ? '#3b82f6' : '#8b5cf6'}
-        />
+    <View
+      style={[
+        styles.statusBanner,
+        banner.kind === 'importing' && { backgroundColor: `${theme.primary}12`, borderColor: `${theme.primary}35` },
+        banner.kind === 'done' && { backgroundColor: '#10b98115', borderColor: '#10b98140' },
+      ]}
+    >
+      {banner.kind === 'importing' ? (
+        <>
+          <Text style={[styles.statusBannerImportTitle, { color: theme.text }]}>{T('noteAttachTitle')}</Text>
+          <Text style={[styles.statusBannerSub, { color: theme.textSecondary }]}>{T('noteImportSub')}</Text>
+          <ImportProgressBar progress={banner.progress} label={banner.label} theme={theme} />
+        </>
+      ) : (
+        <View style={styles.statusBannerRow}>
+          <Feather name="check-circle" size={16} color="#10b981" />
+          <Text style={[styles.statusBannerText, { color: '#10b981' }]}>{banner.message}</Text>
+        </View>
       )}
-      {banner.kind === 'done' && <Feather name="check-circle" size={16} color="#10b981" />}
-      {banner.kind === 'failed' && <Feather name="alert-circle" size={16} color="#f59e0b" />}
-      <Text style={[
-        styles.statusBannerText,
-        banner.kind === 'uploading' && { color: '#3b82f6' },
-        banner.kind === 'extracting' && { color: '#8b5cf6' },
-        banner.kind === 'done' && { color: '#10b981' },
-        banner.kind === 'failed' && { color: '#f59e0b' },
-      ]}>
-        {banner.kind === 'uploading' && (banner.label || 'Uploading…')}
-        {banner.kind === 'extracting' && 'Preparing PDF for AI features…'}
-        {banner.kind === 'done' && 'PDF ready for AI features'}
-        {banner.kind === 'failed' && 'Could not prepare PDF — AI will extract on demand'}
-      </Text>
     </View>
   );
 
@@ -411,15 +393,28 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
   saveBtnText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
 
   statusBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
     marginHorizontal: 12,
     marginTop: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
+  },
+  statusBannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statusBannerImportTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  statusBannerSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 10,
+    lineHeight: 16,
   },
   statusBannerText: {
     fontSize: 13,

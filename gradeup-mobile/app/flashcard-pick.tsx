@@ -24,6 +24,7 @@ import {
   noteHasPdfAttachment,
 } from '@/src/lib/studyApi';
 import { invokeGenerateFlashcards } from '@/src/lib/invokeGenerateFlashcards';
+import { ImportProgressBar } from '@/components/ImportProgressBar';
 import type { ThemePalette } from '@/constants/Themes';
 import {
   FLASHCARD_GEN_FREE_MAX,
@@ -285,6 +286,25 @@ function createStyles(theme: ThemePalette) {
       color: theme.text,
       backgroundColor: theme.background,
     },
+
+    genOverlayBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 28,
+    },
+    genOverlayCard: {
+      width: '100%',
+      maxWidth: 340,
+      backgroundColor: theme.card,
+      borderRadius: 20,
+      padding: 22,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    genOverlayTitle: { fontSize: 17, fontWeight: '800', color: theme.text, marginBottom: 4 },
+    genOverlaySub: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 16, lineHeight: 18 },
   });
 }
 
@@ -309,6 +329,7 @@ export default function FlashcardPick() {
   const [pickedTier, setPickedTier] = useState<'free' | 'plus' | 'pro'>(() => 'free');
   const [pdfPageMode, setPdfPageMode] = useState<'all' | 'custom'>('all');
   const [pdfPageRange, setPdfPageRange] = useState('');
+  const [generateProgressUi, setGenerateProgressUi] = useState<{ progress: number; label: string } | null>(null);
   const planMaxAllowed = maxFlashcardsForPlan(user?.subscriptionPlan);
   const pickedTierMaxAllowed =
     pickedTier === 'pro'
@@ -471,20 +492,45 @@ export default function FlashcardPick() {
       anyPdfInRun && pdfPageMode === 'custom' ? pdfPageRange.trim() : undefined;
 
     setGenerating(true);
-    setGeneratingLabel('Preparing…');
+    setGenerateProgressUi({ progress: 6, label: T('flashcardGenProgressStarting') });
+    setGeneratingLabel(T('flashcardGenProgressStarting'));
+    let progressTicker: ReturnType<typeof setInterval> | null = null;
+    const clearProgressTicker = () => {
+      if (progressTicker) {
+        clearInterval(progressTicker);
+        progressTicker = null;
+      }
+    };
+    const startNoteProgressTicker = (low: number, highCap: number) => {
+      clearProgressTicker();
+      progressTicker = setInterval(() => {
+        setGenerateProgressUi((prev) => {
+          if (!prev) return prev;
+          const cap = highCap - 6;
+          return { ...prev, progress: Math.min(prev.progress + 3, cap) };
+        });
+      }, 220);
+    };
+
     let totalAdded = 0;
     let firstNoteWithNewCards: string | null = null;
     const failLines: string[] = [];
+    let stoppedOnDailyLimit = false;
 
     try {
-      // Replace mode: delete existing cards first
       if (isReplaceMode) {
+        setGenerateProgressUi({ progress: 10, label: T('flashcardGenProgressReplace') });
+        setGeneratingLabel(T('flashcardGenProgressReplace'));
         for (const [noteId] of existingCounts) {
           await deleteFlashcardsForNote(noteId);
         }
+        setGenerateProgressUi({ progress: 18, label: T('flashcardGenProgressGenerating') });
+        setGeneratingLabel(T('flashcardGenProgressGenerating'));
+      } else {
+        setGenerateProgressUi({ progress: 15, label: T('flashcardGenProgressGenerating') });
+        setGeneratingLabel(T('flashcardGenProgressGenerating'));
       }
 
-      // Build existing fronts set for dedup per note
       const existingFrontsByNote = new Map<string, Set<string>>();
       for (const n of usable) {
         if (!isReplaceMode) {
@@ -499,22 +545,28 @@ export default function FlashcardPick() {
         }
       }
 
-      // Process ALL notes sequentially with progress label
-      // The unified Edge Function handles text vs PDF server-side
-      for (let i = 0; i < usable.length; i++) {
+      const totalNotes = usable.length;
+      for (let i = 0; i < totalNotes; i++) {
         const note = usable[i];
-        const label = usable.length > 1
-          ? `Generating ${i + 1} of ${usable.length}…`
-          : 'Generating flashcards…';
-        setGeneratingLabel(label);
+        const low = 18 + Math.floor((i / totalNotes) * 72);
+        const highCap = 18 + Math.floor(((i + 1) / totalNotes) * 94);
+
+        const phaseBase =
+          note.hasPdf && note.attachmentPath
+            ? T('flashcardGenProgressPdf')
+            : T('flashcardGenProgressText');
+        const phaseLabel =
+          totalNotes > 1 ? `${phaseBase} (${i + 1}/${totalNotes})` : phaseBase;
+
+        setGeneratingLabel(phaseLabel);
+        setGenerateProgressUi({ progress: low, label: phaseLabel });
+        startNoteProgressTicker(low, highCap);
 
         let cards: { front: string; back: string }[] = [];
         let error: string | null = null;
 
         try {
           if (note.hasPdf && note.attachmentPath) {
-            // IMPORTANT: Avoid client-side PDF extraction (often fails on device).
-            // Use the Edge Function path that handles PDF download + extraction server-side.
             const res = await invokeGenerateFlashcards({
               source: 'pdf_storage',
               storage_path: note.attachmentPath,
@@ -532,11 +584,17 @@ export default function FlashcardPick() {
           error = e?.message || 'Generation failed';
         }
 
-        // On OpenAI rate limit (429), wait and retry once instead of giving up
         if (error && /rate.*limit|429|too many requests/i.test(error) && !/daily/i.test(error)) {
-          setGeneratingLabel('Rate limited — retrying in 10s…');
+          clearProgressTicker();
+          setGenerateProgressUi((prev) =>
+            prev
+              ? { ...prev, progress: Math.min(prev.progress + 2, 88), label: T('flashcardGenProgressRetry') }
+              : null,
+          );
+          setGeneratingLabel(T('flashcardGenProgressRetry'));
           await new Promise((r) => setTimeout(r, 10_000));
           error = null;
+          startNoteProgressTicker(low, highCap);
           try {
             if (note.hasPdf && note.attachmentPath) {
               const res = await invokeGenerateFlashcards({
@@ -557,11 +615,17 @@ export default function FlashcardPick() {
           }
         }
 
+        clearProgressTicker();
+        setGenerateProgressUi((prev) =>
+          prev ? { ...prev, progress: Math.min(highCap, 97) } : prev,
+        );
+
         if (error) {
           failLines.push(`${note.title}: ${error}`);
           // Only stop on actual daily AI limit, not transient 429
           if (/daily.*limit/i.test(error)) {
             failLines.push('Stopped: daily limit reached.');
+            stoppedOnDailyLimit = true;
             break;
           }
           continue;
@@ -578,6 +642,15 @@ export default function FlashcardPick() {
           }
         }
       }
+
+      clearProgressTicker();
+      if (!stoppedOnDailyLimit) {
+        setGenerateProgressUi({ progress: 100, label: T('flashcardGenProgressDone') });
+        setGeneratingLabel(T('flashcardGenProgressDone'));
+        await new Promise((r) => setTimeout(r, 650));
+      }
+      setGenerateProgressUi(null);
+      setGeneratingLabel('');
 
       if (totalAdded === 0 && failLines.length > 0) {
         Alert.alert(T('flashcardPickGenerateFailedTitle'), failLines.slice(0, 3).join('\n'));
@@ -613,6 +686,8 @@ export default function FlashcardPick() {
       const msg = e instanceof Error ? e.message : 'Generation failed';
       Alert.alert('Error', msg);
     } finally {
+      clearProgressTicker();
+      setGenerateProgressUi(null);
       setGenerating(false);
       setGeneratingLabel('');
     }
@@ -1043,6 +1118,22 @@ export default function FlashcardPick() {
             >
               <Text style={styles.modalDoneBtnText}>{T('flashcardGenDonePick')}</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={generateProgressUi !== null} transparent animationType="fade">
+        <View style={styles.genOverlayBackdrop}>
+          <View style={styles.genOverlayCard}>
+            <Text style={styles.genOverlayTitle}>{T('flashcardGenProgressTitle')}</Text>
+            <Text style={styles.genOverlaySub}>{T('flashcardGenProgressSub')}</Text>
+            {generateProgressUi ? (
+              <ImportProgressBar
+                progress={generateProgressUi.progress}
+                label={generateProgressUi.label}
+                theme={theme}
+              />
+            ) : null}
           </View>
         </View>
       </Modal>
