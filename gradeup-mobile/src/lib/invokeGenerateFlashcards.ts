@@ -20,7 +20,7 @@ export interface GenerateFlashcardsRequest {
   storage_path?: string;
   /** Storage bucket name (default: note-attachments) */
   bucket?: string;
-  /** Max flashcards to return (1-30, default 15) */
+  /** Max flashcards per request; server clamps by subscription (Free ≤12, Plus/Pro ≤30) */
   count?: number;
   /** Note ID for future cache key */
   note_id?: string;

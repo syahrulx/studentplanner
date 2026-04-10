@@ -213,9 +213,12 @@ export default function NotificationsScreen() {
           <View style={{ marginBottom: 16 }}>
             <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Task Share Requests</Text>
             {incomingSharedTasks.map(st => (
-              <View
+              <Pressable
                 key={st.id}
                 style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
+                onPress={() => {
+                  router.push({ pathname: '/community/shared-task-preview', params: { id: st.id } } as any);
+                }}
               >
                 <Avatar
                   name={st.owner_profile?.name}
@@ -234,21 +237,26 @@ export default function NotificationsScreen() {
                     <Pressable
                       style={[styles.shareAcceptBtn, { backgroundColor: '#10b981' }]}
                       disabled={respondingIds.has(st.id)}
-                      onPress={() => handleShareResponse(st.id, true)}
+                      onPress={() => {
+                        router.push({ pathname: '/community/shared-task-preview', params: { id: st.id } } as any);
+                      }}
                     >
                       <Feather name="check" size={14} color="#fff" />
-                      <Text style={styles.shareActionText}>Accept</Text>
+                      <Text style={styles.shareActionText}>View</Text>
                     </Pressable>
                     <Pressable
                       style={[styles.shareDeclineBtn, { borderColor: theme.border }]}
                       disabled={respondingIds.has(st.id)}
-                      onPress={() => handleShareResponse(st.id, false)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleShareResponse(st.id, false);
+                      }}
                     >
                       <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Decline</Text>
                     </Pressable>
                   </View>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}

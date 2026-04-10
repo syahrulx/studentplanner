@@ -224,10 +224,11 @@ export default function NotesEditor() {
       setAttachmentFileName(name);
       setExtractedText(undefined);
 
-      // If it's a PDF, immediately start extraction
+      // If it's a PDF, don't extract on-device (large PDFs often fail).
+      // Extraction is handled server-side on first AI use (flashcards/quiz).
       const isPdf = (name || '').toLowerCase().endsWith('.pdf');
       if (isPdf && path) {
-        runExtraction(path, noteIdForPath);
+        setBanner({ kind: 'idle' });
       } else {
         setBanner({ kind: 'idle' });
       }
@@ -296,21 +297,6 @@ export default function NotesEditor() {
           </Pressable>
         </View>
         <View style={styles.headerActions}>
-          <Pressable onPress={handleAttachFile} style={styles.iconBtn} disabled={banner.kind === 'uploading'}>
-            {banner.kind === 'uploading' ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <Feather name="paperclip" size={18} color={theme.text} />
-            )}
-          </Pressable>
-          {existing?.id ? (
-            <Pressable onPress={onDeleteNote} style={styles.iconBtn}>
-              <Feather name="trash-2" size={18} color={theme.danger} />
-            </Pressable>
-          ) : null}
-          <Pressable onPress={() => setIsEditing((v) => !v)} style={styles.iconBtn}>
-            <Feather name={isEditing ? 'eye' : 'edit-2'} size={18} color={theme.text} />
-          </Pressable>
           <Pressable onPress={onSave} style={styles.saveBtn}>
             <Text style={styles.saveBtnText}>{T('save')}</Text>
           </Pressable>

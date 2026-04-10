@@ -8,6 +8,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -20,25 +22,58 @@ import {
   getOpenAIKey,
   noteHasPdfAttachment,
 } from '@/src/lib/studyApi';
-import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
+import { invokeGenerateFlashcards } from '@/src/lib/invokeGenerateFlashcards';
 import type { ThemePalette } from '@/constants/Themes';
+import {
+  FLASHCARD_GEN_FREE_MAX,
+  FLASHCARD_GEN_PLUS_MAX,
+  FLASHCARD_GEN_PRO_MAX,
+  FLASHCARD_GEN_ALL_OPTIONS,
+  clampFlashcardCountForPlan,
+  defaultFlashcardCountForPlan,
+  isAtLeastPlus,
+  isPro,
+  maxFlashcardsForPlan,
+} from '@/src/lib/flashcardGenerationLimits';
 
 function createStyles(theme: ThemePalette) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.background },
     header: {
-      flexDirection: 'row',
-      alignItems: 'center',
       paddingHorizontal: 8,
       paddingTop: Platform.OS === 'ios' ? 56 : 40,
-      paddingBottom: 12,
+      paddingBottom: 10,
+    },
+    headerTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
       gap: 8,
     },
     backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 8, paddingRight: 8 },
     backText: { fontSize: 17, color: theme.primary, fontWeight: '400' },
     titleBlock: { flex: 1, paddingRight: 8 },
-    pageTitle: { fontSize: 22, fontWeight: '800', color: theme.text, letterSpacing: -0.5 },
-    pageSub: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 4 },
+    pageTitle: { fontSize: 24, fontWeight: '900', color: theme.text, letterSpacing: -0.6 },
+    headerBottomRow: {
+      paddingLeft: 8,
+      paddingRight: 8,
+      marginTop: 6,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    pageSub: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, lineHeight: 16 },
+    headerLinkPill: {
+      alignSelf: 'flex-start',
+      marginTop: 0,
+      paddingVertical: 7,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: `${theme.primary}14`,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: `${theme.primary}25`,
+    },
+    headerLinkPillText: { fontSize: 12, fontWeight: '800', color: theme.primary },
 
     notesStepBody: { flex: 1 },
     listContent: { paddingHorizontal: 20, paddingBottom: 16 },
@@ -106,12 +141,125 @@ function createStyles(theme: ThemePalette) {
     generateBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 
     colorDot: { width: 10, height: 10, borderRadius: 5 },
+
+    countPickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 2,
+    },
+    countPickLabel: { fontSize: 15, fontWeight: '700', color: theme.text },
+
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'flex-end',
+    },
+    modalBackdropFill: { flex: 1 },
+    modalCard: {
+      backgroundColor: theme.card,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 8,
+      maxHeight: '88%',
+    },
+    modalTitle: { fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.3 },
+    modalHint: { fontSize: 13, fontWeight: '500', color: theme.textSecondary, marginTop: 8, lineHeight: 19 },
+    tipsBox: {
+      marginTop: 14,
+      padding: 14,
+      borderRadius: 16,
+      backgroundColor: theme.background,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    tipsTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    tipsTitleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    tipsTitle: { fontSize: 13, fontWeight: '900', color: theme.text, letterSpacing: -0.2 },
+    tipsPill: {
+      paddingVertical: 5,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: `${theme.primary}18`,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: `${theme.primary}35`,
+    },
+    tipsPillText: { fontSize: 11, fontWeight: '900', color: theme.primary },
+    tipsBody: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginTop: 10, lineHeight: 20 },
+    tipsGrid: { marginTop: 12, gap: 8 },
+    tipsGridRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+    tipsGridLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
+    tipsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary },
+    tipsGridLabel: { fontSize: 13, fontWeight: '800', color: theme.text, flex: 1 },
+    tipsGridValue: { fontSize: 13, fontWeight: '900', color: theme.text },
+    sectionLabel: { fontSize: 13, fontWeight: '800', color: theme.text, marginTop: 14, marginBottom: 10 },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: theme.border,
+      backgroundColor: theme.background,
+    },
+    chipSelected: { borderColor: theme.primary, backgroundColor: `${theme.primary}18` },
+    chipLocked: { opacity: 0.55 },
+    chipText: { fontSize: 15, fontWeight: '700', color: theme.text },
+    chipTextSelected: { color: theme.primary },
+    modalDoneBtn: {
+      marginTop: 20,
+      marginBottom: 12,
+      paddingVertical: 14,
+      borderRadius: 14,
+      backgroundColor: theme.primary,
+      alignItems: 'center',
+    },
+    modalDoneBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+    planTabsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    planTab: {
+      flex: 1,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 14,
+      backgroundColor: theme.background,
+      borderWidth: 2,
+      borderColor: theme.border,
+      minHeight: 56,
+      justifyContent: 'center',
+    },
+    planTabSelected: { borderColor: theme.primary, backgroundColor: `${theme.primary}12` },
+    planTabLocked: { opacity: 0.65 },
+    planTabTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    planTabTitle: { fontSize: 13, fontWeight: '900', color: theme.text },
+    planTabMax: { fontSize: 12, fontWeight: '800', color: theme.textSecondary },
+    planTabLockRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+    planTabLockText: { fontSize: 11, fontWeight: '800', color: theme.textSecondary, flex: 1 },
+    lockPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: theme.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+    },
+    lockPillText: { fontSize: 12, fontWeight: '800', color: theme.textSecondary },
   });
 }
 
 export default function FlashcardPick() {
   const { subjectId: paramSubjectId } = useLocalSearchParams<{ subjectId?: string }>();
   const { courses, notes, flashcards, language, getSubjectColor, addFlashcard, deleteFlashcardsForNote, handleSaveNote, user } = useApp();
+  const plusUnlocked = isAtLeastPlus(user?.subscriptionPlan);
+  const proUnlocked = isPro(user?.subscriptionPlan);
   const T = useTranslations(language);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -123,6 +271,25 @@ export default function FlashcardPick() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [generating, setGenerating] = useState(false);
   const [generatingLabel, setGeneratingLabel] = useState('');
+  const [countModalVisible, setCountModalVisible] = useState(false);
+  const [cardsPerNote, setCardsPerNote] = useState(() => defaultFlashcardCountForPlan(undefined));
+  const [pickedTier, setPickedTier] = useState<'free' | 'plus' | 'pro'>(() => 'free');
+  const planMaxAllowed = maxFlashcardsForPlan(user?.subscriptionPlan);
+  const pickedTierMaxAllowed =
+    pickedTier === 'pro'
+      ? FLASHCARD_GEN_PRO_MAX
+      : pickedTier === 'plus'
+        ? FLASHCARD_GEN_PLUS_MAX
+        : FLASHCARD_GEN_FREE_MAX;
+
+  useEffect(() => {
+    setCardsPerNote((c) => clampFlashcardCountForPlan(c, user?.subscriptionPlan));
+  }, [user?.subscriptionPlan]);
+
+  useEffect(() => {
+    const plan = user?.subscriptionPlan ?? 'free';
+    setPickedTier(plan === 'pro' ? 'pro' : plan === 'plus' ? 'plus' : 'free');
+  }, [user?.subscriptionPlan]);
 
   useEffect(() => {
     if (typeof paramSubjectId === 'string' && paramSubjectId.length > 0) {
@@ -194,6 +361,23 @@ export default function FlashcardPick() {
   const openDeckPreview = (nid: string) => {
     router.push({ pathname: '/flashcard-deck-preview' as any, params: { noteId: nid } });
   };
+
+  const openGeneratePopup = useCallback(() => {
+    if (selectedIds.size === 0 || generating) return;
+    if (!getOpenAIKey()) {
+      Alert.alert(T('flashcardPickApiKeyTitle'), T('flashcardPickApiKeyHint'));
+      return;
+    }
+
+    const selected = subjectNotes.filter((n) => selectedIds.has(n.id));
+    const usable = selected.filter((n) => n.hasText || n.hasPdf || n.hasCachedText);
+    if (usable.length === 0) {
+      Alert.alert(T('flashcardPickNoContentTitle'), T('flashcardPickNoContentHint'));
+      return;
+    }
+
+    setCountModalVisible(true);
+  }, [selectedIds, generating, subjectNotes, T]);
 
   const handleGenerate = useCallback(async (replaceMode: 'prompt' | 'add' | 'replace' = 'prompt') => {
     if (selectedIds.size === 0 || generating) return;
@@ -283,52 +467,19 @@ export default function FlashcardPick() {
 
         try {
           if (note.hasPdf && note.attachmentPath) {
-            // Re-read from latest notes state — background extraction may have cached it
-            const freshNote = notes.find((n) => n.id === note.id);
-            let pdfText = freshNote?.extractedText?.trim() || note.extractedText?.trim() || '';
-
-            // If content is the placeholder, background extraction is still running — wait a bit
-            if (!pdfText && freshNote?.content === 'Extracting text from PDF...') {
-              setGeneratingLabel('Waiting for PDF extraction…');
-              await new Promise((r) => setTimeout(r, 5_000));
-              // Re-check after waiting
-              const rechecked = notes.find((n) => n.id === note.id);
-              pdfText = rechecked?.extractedText?.trim() || '';
-            }
-
-            // No cache? Extract first, then cache for future calls
-            if (!pdfText) {
-              setGeneratingLabel('Extracting PDF text…');
-              try {
-                const extraction = await Promise.race([
-                  extractPdfTextFromStoragePath(note.attachmentPath!),
-                  new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('PDF extraction timed out after 90s')), 90_000),
-                  ),
-                ]);
-                pdfText = extraction.text?.trim() || '';
-                if (!pdfText && extraction.detail) {
-                  error = `PDF extraction failed: ${extraction.detail}`;
-                }
-              } catch (extractErr: any) {
-                error = extractErr?.message || 'PDF extraction failed.';
-              }
-
-              // Cache the extracted text back to the note
-              if (pdfText && handleSaveNote) {
-                handleSaveNote({ ...note, extractedText: pdfText });
-              }
-            }
-
-            if (!pdfText && !error) {
-              error = 'Could not extract text from PDF.';
-            } else if (pdfText) {
-              // Generate flashcards from text only — single lightweight API call
-              setGeneratingLabel(label);
-              cards = await generateFlashcardsFromNote(pdfText, user?.id, 18);
-            }
+            // IMPORTANT: Avoid client-side PDF extraction (often fails on device).
+            // Use the Edge Function path that handles PDF download + extraction server-side.
+            const res = await invokeGenerateFlashcards({
+              source: 'pdf_storage',
+              storage_path: note.attachmentPath,
+              bucket: 'note-attachments',
+              count: cardsPerNote,
+              note_id: note.id,
+            });
+            if (res.error) error = res.error;
+            else cards = res.data?.cards ?? [];
           } else if (note.hasText) {
-            cards = await generateFlashcardsFromNote(note.content.trim(), user?.id);
+            cards = await generateFlashcardsFromNote(note.content.trim(), user?.id, cardsPerNote);
           }
         } catch (e: any) {
           error = e?.message || 'Generation failed';
@@ -340,12 +491,18 @@ export default function FlashcardPick() {
           await new Promise((r) => setTimeout(r, 10_000));
           error = null;
           try {
-            const freshNote = notes.find((n) => n.id === note.id);
-            const pdfText = freshNote?.extractedText?.trim() || note.extractedText?.trim() || '';
-            if (pdfText) {
-              cards = await generateFlashcardsFromNote(pdfText, user?.id, 18);
+            if (note.hasPdf && note.attachmentPath) {
+              const res = await invokeGenerateFlashcards({
+                source: 'pdf_storage',
+                storage_path: note.attachmentPath,
+                bucket: 'note-attachments',
+                count: cardsPerNote,
+                note_id: note.id,
+              });
+              if (res.error) error = res.error;
+              else cards = res.data?.cards ?? [];
             } else if (note.hasText) {
-              cards = await generateFlashcardsFromNote(note.content.trim(), user?.id);
+              cards = await generateFlashcardsFromNote(note.content.trim(), user?.id, cardsPerNote);
             }
           } catch (retryErr: any) {
             error = retryErr?.message || 'Retry failed';
@@ -411,7 +568,21 @@ export default function FlashcardPick() {
       setGenerating(false);
       setGeneratingLabel('');
     }
-  }, [selectedIds, generating, subjectNotes, cardCountByNote, flashcards, addFlashcard, deleteFlashcardsForNote, handleSaveNote, user?.id, T]);
+  }, [
+    selectedIds,
+    generating,
+    subjectNotes,
+    cardCountByNote,
+    flashcards,
+    addFlashcard,
+    deleteFlashcardsForNote,
+    handleSaveNote,
+    user?.id,
+    user?.subscriptionPlan,
+    cardsPerNote,
+    notes,
+    T,
+  ]);
 
 
   const headerTitle =
@@ -425,27 +596,31 @@ export default function FlashcardPick() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={goBack} style={styles.backBtn}>
-          <Feather name="chevron-left" size={28} color={theme.primary} />
-          <Text style={styles.backText}>{T('back')}</Text>
-        </Pressable>
-        <View style={styles.titleBlock}>
-          <Text style={styles.pageTitle}>{headerTitle}</Text>
-          <Text style={styles.pageSub}>{headerSub}</Text>
-          {step === 'notes' && (
+        <View style={styles.headerTopRow}>
+          <Pressable onPress={goBack} style={styles.backBtn}>
+            <Feather name="chevron-left" size={28} color={theme.primary} />
+            <Text style={styles.backText}>{T('back')}</Text>
+          </Pressable>
+          <View style={styles.titleBlock}>
+            <Text style={styles.pageTitle}>{headerTitle}</Text>
+          </View>
+        </View>
+        <View style={styles.headerBottomRow}>
+          <Text style={[styles.pageSub, { flex: 1 }]} numberOfLines={2}>
+            {headerSub}
+          </Text>
+          {step === 'notes' ? (
             <Pressable
               onPress={() => {
                 setPickedSubjectId(null);
                 router.replace({ pathname: '/flashcard-pick' as any, params: {} });
               }}
               hitSlop={8}
-              style={{ alignSelf: 'flex-start', marginTop: 8 }}
+              style={styles.headerLinkPill}
             >
-              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary }}>
-                {T('flashcardPickOtherSubjects')}
-              </Text>
+              <Text style={styles.headerLinkPillText}>{T('flashcardPickOtherSubjects')}</Text>
             </Pressable>
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -568,7 +743,7 @@ export default function FlashcardPick() {
                 style={[styles.generateBtn, !canGenerate && styles.generateBtnDisabled]}
                 disabled={!canGenerate}
                 onPress={() => {
-                  void handleGenerate();
+                  openGeneratePopup();
                 }}
               >
                 {generating ? (
@@ -584,6 +759,182 @@ export default function FlashcardPick() {
           )}
         </View>
       )}
+
+      <Modal
+        visible={countModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCountModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdropFill}
+            accessibilityRole="button"
+            accessibilityLabel={T('close')}
+            onPress={() => setCountModalVisible(false)}
+          />
+          <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+            <Text style={styles.modalTitle}>{T('flashcardGenCountTitle')}</Text>
+            <Text style={styles.modalHint}>{T('flashcardGenPerNoteHint')}</Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
+              {/* Horizontal plan boxes */}
+              <View style={styles.planTabsRow}>
+                <Pressable
+                  style={[styles.planTab, pickedTier === 'free' && styles.planTabSelected]}
+                  onPress={() => setPickedTier('free')}
+                >
+                  <View style={styles.planTabTitleRow}>
+                    <Text style={styles.planTabTitle}>Free</Text>
+                    <Text style={styles.planTabMax}>Max {FLASHCARD_GEN_FREE_MAX}</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.planTab,
+                    pickedTier === 'plus' && styles.planTabSelected,
+                    !plusUnlocked && styles.planTabLocked,
+                  ]}
+                  onPress={() => {
+                    if (!plusUnlocked) {
+                      setCountModalVisible(false);
+                      router.push('/subscription-plans' as any);
+                      return;
+                    }
+                    setPickedTier('plus');
+                  }}
+                >
+                  <View style={styles.planTabTitleRow}>
+                    <Text style={styles.planTabTitle}>Plus</Text>
+                    <Text style={styles.planTabMax}>Max {FLASHCARD_GEN_PLUS_MAX}</Text>
+                  </View>
+                  {!plusUnlocked ? (
+                    <View style={styles.planTabLockRow}>
+                      <Feather name="lock" size={14} color={theme.textSecondary} />
+                      <Text style={styles.planTabLockText}>{T('flashcardGenPlusLockedHint')}</Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.planTab,
+                    pickedTier === 'pro' && styles.planTabSelected,
+                    !proUnlocked && styles.planTabLocked,
+                  ]}
+                  onPress={() => {
+                    if (!proUnlocked) {
+                      setCountModalVisible(false);
+                      router.push('/subscription-plans' as any);
+                      return;
+                    }
+                    setPickedTier('pro');
+                  }}
+                >
+                  <View style={styles.planTabTitleRow}>
+                    <Text style={styles.planTabTitle}>Pro</Text>
+                    <Text style={styles.planTabMax}>Max {FLASHCARD_GEN_PRO_MAX}</Text>
+                  </View>
+                  {!proUnlocked ? (
+                    <View style={styles.planTabLockRow}>
+                      <Feather name="lock" size={14} color={theme.textSecondary} />
+                      <Text style={styles.planTabLockText}>{T('flashcardGenProLockedHint')}</Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              </View>
+
+              {/* Card numbers (based on selected plan) */}
+              <Text style={styles.sectionLabel}>{T('cards')}</Text>
+              <View style={styles.chipRow}>
+                {FLASHCARD_GEN_ALL_OPTIONS.map((n) => {
+                  const selected = cardsPerNote === n;
+                  // Lock by selected tier tab first (Free locks 15+, Plus locks 25+, Pro unlocks all)
+                  // Then also respect the real user plan max (safety fallback).
+                  const locked = n > pickedTierMaxAllowed || n > planMaxAllowed;
+                  return (
+                    <Pressable
+                      key={`cards-${n}`}
+                      style={[
+                        styles.chip,
+                        selected && !locked && styles.chipSelected,
+                        locked && styles.chipLocked,
+                      ]}
+                      disabled={locked}
+                      onPress={() => {
+                        setCardsPerNote(n);
+                      }}
+                    >
+                      <Text style={[styles.chipText, selected && !locked && styles.chipTextSelected]}>{n}</Text>
+                      {locked ? (
+                        <Feather name="lock" size={14} color={theme.textSecondary} style={{ marginLeft: 6 }} />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Tips at bottom */}
+              <View style={styles.tipsBox}>
+                <View style={styles.tipsTitleRow}>
+                  <View style={styles.tipsTitleLeft}>
+                    <Feather name="file-text" size={16} color={theme.primary} />
+                    <Text style={styles.tipsTitle}>{T('flashcardGenTipsTitle')}</Text>
+                  </View>
+                  <View style={styles.tipsPill}>
+                    <Text style={styles.tipsPillText}>Quick guide</Text>
+                  </View>
+                </View>
+                <Text style={styles.tipsBody}>{T('flashcardGenPdfTips')}</Text>
+                <View style={styles.tipsGrid}>
+                  <View style={styles.tipsGridRow}>
+                    <View style={styles.tipsGridLeft}>
+                      <View style={styles.tipsDot} />
+                      <Text style={styles.tipsGridLabel}>{T('flashcardGenPdfTipRow1Left')}</Text>
+                    </View>
+                    <Text style={styles.tipsGridValue}>{T('flashcardGenPdfTipRow1Right')}</Text>
+                  </View>
+                  <View style={styles.tipsGridRow}>
+                    <View style={styles.tipsGridLeft}>
+                      <View style={styles.tipsDot} />
+                      <Text style={styles.tipsGridLabel}>{T('flashcardGenPdfTipRow2Left')}</Text>
+                    </View>
+                    <Text style={styles.tipsGridValue}>{T('flashcardGenPdfTipRow2Right')}</Text>
+                  </View>
+                  <View style={styles.tipsGridRow}>
+                    <View style={styles.tipsGridLeft}>
+                      <View style={styles.tipsDot} />
+                      <Text style={styles.tipsGridLabel}>{T('flashcardGenPdfTipRow3Left')}</Text>
+                    </View>
+                    <Text style={styles.tipsGridValue}>{T('flashcardGenPdfTipRow3Right')}</Text>
+                  </View>
+                  <View style={styles.tipsGridRow}>
+                    <View style={styles.tipsGridLeft}>
+                      <View style={styles.tipsDot} />
+                      <Text style={styles.tipsGridLabel}>{T('flashcardGenPdfTipRow4Left')}</Text>
+                    </View>
+                    <Text style={styles.tipsGridValue}>{T('flashcardGenPdfTipRow4Right')}</Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            <Pressable
+              style={styles.modalDoneBtn}
+              onPress={() => {
+                setCountModalVisible(false);
+                void handleGenerate();
+              }}
+            >
+              <Text style={styles.modalDoneBtnText}>{T('flashcardGenDonePick')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

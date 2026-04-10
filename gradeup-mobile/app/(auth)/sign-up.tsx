@@ -189,7 +189,7 @@ export default function SignUp() {
           <View style={styles.logoWrap}>
             <Feather name="user-plus" size={28} color="#fff" />
           </View>
-          <Text style={styles.heroTitle}>Join GradeUp</Text>
+          <Text style={styles.heroTitle}>Join Rencana.</Text>
           <Text style={styles.heroSubtitle}>Start managing your studies today</Text>
         </LinearGradient>
 

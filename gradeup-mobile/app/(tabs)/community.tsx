@@ -484,7 +484,21 @@ export default function CommunityMap() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <View style={styles.topBarSide} />
+        <View style={styles.topBarSide}>
+          <Pressable
+            onPress={() => router.push('/community/notifications' as any)}
+            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
+          >
+            <Feather name="bell" size={22} color={theme.text} />
+            {communityBadgeCount > 0 ? (
+              <View style={[styles.notifBadge, { backgroundColor: theme.primary }]}>
+                <Text style={styles.notifBadgeText}>{communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
         <View style={styles.circleSelectorWrap}>
           <View style={styles.circleSelector}>
             <Pressable

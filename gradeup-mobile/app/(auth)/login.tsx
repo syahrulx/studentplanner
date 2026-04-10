@@ -140,11 +140,11 @@ export default function Login() {
           <View style={styles.logoWrap}>
             <Image 
               source={require('@/assets/images/app_logo.png')} 
-              style={{ width: 44, height: 44, borderRadius: 12 }} 
+              style={{ width: 74, height: 74, borderRadius: 14 }} 
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.heroTitle}>GradeUp</Text>
+          <Text style={styles.heroTitle}>Rencana.</Text>
           <Text style={styles.heroSubtitle}>Your study companion</Text>
         </LinearGradient>
 
@@ -272,15 +272,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 86,
+    height: 86,
+    borderRadius: 24,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 0,
+    borderColor: 'transparent',
   },
   heroTitle: {
     fontSize: 30,

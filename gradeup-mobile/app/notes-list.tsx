@@ -8,7 +8,8 @@ import type { ThemePalette } from '@/constants/Themes';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
-import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
+// NOTE: We no longer extract PDF text on-device during import.
+// Flashcards/AI features extract server-side on first use.
 import { useTranslations } from '@/src/i18n';
 
 function createStyles(theme: ThemePalette) {
@@ -176,30 +177,12 @@ export default function NotesList() {
 
       const note = {
         id: noteId, subjectId, folderId: selectedFolder ?? undefined,
-        title: fileName, content: isPdf ? 'Extracting text from PDF...' : '',
+        title: fileName, content: '',
         tag: 'Lecture' as const, updatedAt: new Date().toISOString().slice(0, 10),
         attachmentPath: path, attachmentFileName: fileName,
       };
       handleSaveNote(note);
       router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
-
-      if (isPdf && path) {
-        extractPdfTextFromStoragePath(path)
-          .then((result) => {
-            const text = result.text?.trim();
-            if (text) {
-              handleSaveNote({ ...note, content: text, extractedText: text });
-            } else {
-              const reason = result.detail || 'Unknown error';
-              handleSaveNote({ ...note, content: '' });
-              Alert.alert('PDF Extraction Failed', `Could not extract text from "${fileName}".\n\n${reason}`);
-            }
-          })
-          .catch((err) => {
-            handleSaveNote({ ...note, content: '' });
-            Alert.alert('PDF Extraction Error', err?.message || 'Something went wrong extracting text from the PDF.');
-          });
-      }
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not import file.');
     } finally { isImportingRef.current = false; setIsImporting(false); }
