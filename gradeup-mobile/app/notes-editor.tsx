@@ -6,16 +6,25 @@ import Feather from '@expo/vector-icons/Feather';
 import { WebView } from 'react-native-webview';
 import { useApp } from '@/src/context/AppContext';
 import { uploadNoteAttachment, getNoteAttachmentUrl, NOTE_ATTACHMENTS_BUCKET } from '@/src/lib/noteStorage';
+import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { supabase } from '@/src/lib/supabase';
 import { useTranslations } from '@/src/i18n';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 
+type BannerState =
+  | { kind: 'idle' }
+  | { kind: 'uploading'; label: string }
+  | { kind: 'extracting' }
+  | { kind: 'done' }
+  | { kind: 'failed' };
+
 export default function NotesEditor() {
-  const { subjectId, noteId } = useLocalSearchParams<{
+  const { subjectId, noteId, folderId: paramFolderId } = useLocalSearchParams<{
     subjectId: string;
     noteId?: string;
+    folderId?: string;
   }>();
   const { notes, handleSaveNote, deleteNote, courses, language, user } = useApp();
   const theme = useTheme();
@@ -27,8 +36,9 @@ export default function NotesEditor() {
   const [content, setContent] = useState(existing?.content ?? '');
   const [attachmentPath, setAttachmentPath] = useState<string | undefined>(existing?.attachmentPath);
   const [attachmentFileName, setAttachmentFileName] = useState<string | undefined>(existing?.attachmentFileName);
-  const [attachLoading, setAttachLoading] = useState(false);
+  const [extractedText, setExtractedText] = useState<string | undefined>(existing?.extractedText);
   const attachLoadingRef = useRef(false);
+  const [banner, setBanner] = useState<BannerState>({ kind: 'idle' });
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
 
@@ -46,6 +56,7 @@ export default function NotesEditor() {
       setContent(existing.content);
       setAttachmentPath(existing.attachmentPath);
       setAttachmentFileName(existing.attachmentFileName);
+      setExtractedText(existing.extractedText);
       if (existing.tag === 'Tutorial' || existing.tag === 'Exam' || existing.tag === 'Important' || existing.tag === 'Lecture') {
         setTag(existing.tag);
       }
@@ -56,11 +67,35 @@ export default function NotesEditor() {
       setContent('');
       setAttachmentPath(undefined);
       setAttachmentFileName(undefined);
+      setExtractedText(undefined);
       setIsEditing(true);
     }
   }, [noteId, existing]);
 
+  // Auto-dismiss done/failed after 4s
+  useEffect(() => {
+    if (banner.kind !== 'done' && banner.kind !== 'failed') return;
+    const t = setTimeout(() => setBanner({ kind: 'idle' }), 4000);
+    return () => clearTimeout(t);
+  }, [banner.kind]);
 
+  function runExtraction(path: string, noteIdForSave?: string) {
+    setBanner({ kind: 'extracting' });
+    extractPdfTextFromStoragePath(path).then((res) => {
+      if (res.text) {
+        setExtractedText(res.text);
+        setBanner({ kind: 'done' });
+        // Persist to DB
+        const nid = noteIdForSave ?? currentNoteId;
+        if (nid) {
+          const noteObj = notes.find((n) => n.id === nid);
+          if (noteObj) handleSaveNote({ ...noteObj, extractedText: res.text });
+        }
+      } else {
+        setBanner({ kind: 'failed' });
+      }
+    }).catch(() => setBanner({ kind: 'failed' }));
+  }
 
   const isPdfAttachment = !!attachmentFileName?.toLowerCase().endsWith('.pdf');
   const showPdfReader = !isEditing && isPdfAttachment && !!pdfPreviewUrl;
@@ -91,30 +126,26 @@ export default function NotesEditor() {
         setPdfPreviewLoading(false);
       }
     });
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [attachmentPath, isPdfAttachment]);
 
   const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/notes-list' as any);
-    }
+    if (router.canGoBack()) router.back();
+    else router.replace('/notes-list' as any);
   };
 
   const onSave = () => {
     const note = {
       id: currentNoteId ?? existing?.id ?? `n${Date.now()}`,
       subjectId: subjectId!,
-
+      folderId: existing?.folderId ?? (typeof paramFolderId === 'string' ? paramFolderId : undefined),
       title: title.trim() || 'Untitled',
       content: content.trim(),
       tag,
       updatedAt: new Date().toISOString().slice(0, 10),
       attachmentPath,
       attachmentFileName,
+      extractedText,
     };
     handleSaveNote(note);
     goBack();
@@ -139,6 +170,7 @@ export default function NotesEditor() {
       setContent(match.content);
       setAttachmentPath(match.attachmentPath);
       setAttachmentFileName(match.attachmentFileName);
+      setExtractedText(match.extractedText);
       setIsEditing(false);
     } else {
       setCurrentNoteId(undefined);
@@ -146,6 +178,7 @@ export default function NotesEditor() {
       setContent('');
       setAttachmentPath(undefined);
       setAttachmentFileName(undefined);
+      setExtractedText(undefined);
       setIsEditing(true);
     }
   };
@@ -153,24 +186,26 @@ export default function NotesEditor() {
   const handleAttachFile = async () => {
     if (attachLoadingRef.current) return;
     attachLoadingRef.current = true;
-    setAttachLoading(true);
+    setBanner({ kind: 'uploading', label: 'Picking file…' });
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: false,
       });
       if (result.canceled) {
-        setAttachLoading(false);
+        setBanner({ kind: 'idle' });
         return;
       }
       const file = result.assets[0];
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.id) {
+        setBanner({ kind: 'idle' });
         Alert.alert('Sign in required', 'Sign in to attach files to notes.');
         return;
       }
 
-      const noteIdForPath = existing?.id ?? `n${Date.now()}`;
+      setBanner({ kind: 'uploading', label: 'Uploading file…' });
+      const noteIdForPath = existing?.id ?? currentNoteId ?? `n${Date.now()}`;
       const name = file.name ?? `attachment-${Date.now()}`;
       const { path, error } = await uploadNoteAttachment(
         session.user.id,
@@ -180,16 +215,27 @@ export default function NotesEditor() {
         file.mimeType ?? undefined
       );
       if (error) {
+        setBanner({ kind: 'idle' });
         Alert.alert('Upload failed', error.message);
         return;
       }
+
       setAttachmentPath(path);
       setAttachmentFileName(name);
+      setExtractedText(undefined);
+
+      // If it's a PDF, immediately start extraction
+      const isPdf = (name || '').toLowerCase().endsWith('.pdf');
+      if (isPdf && path) {
+        runExtraction(path, noteIdForPath);
+      } else {
+        setBanner({ kind: 'idle' });
+      }
     } catch (e: any) {
+      setBanner({ kind: 'idle' });
       Alert.alert('Error', e?.message || 'Could not attach file');
     } finally {
       attachLoadingRef.current = false;
-      setAttachLoading(false);
     }
   };
 
@@ -207,7 +253,37 @@ export default function NotesEditor() {
     }
   };
 
-
+  // Banner UI element — rendered inline between header and content so it works over WebView
+  const bannerElement = banner.kind === 'idle' ? null : (
+    <View style={[
+      styles.statusBanner,
+      banner.kind === 'uploading' && { backgroundColor: '#3b82f615', borderColor: '#3b82f640' },
+      banner.kind === 'extracting' && { backgroundColor: '#8b5cf615', borderColor: '#8b5cf640' },
+      banner.kind === 'done' && { backgroundColor: '#10b98115', borderColor: '#10b98140' },
+      banner.kind === 'failed' && { backgroundColor: '#f59e0b15', borderColor: '#f59e0b40' },
+    ]}>
+      {(banner.kind === 'uploading' || banner.kind === 'extracting') && (
+        <ActivityIndicator
+          size="small"
+          color={banner.kind === 'uploading' ? '#3b82f6' : '#8b5cf6'}
+        />
+      )}
+      {banner.kind === 'done' && <Feather name="check-circle" size={16} color="#10b981" />}
+      {banner.kind === 'failed' && <Feather name="alert-circle" size={16} color="#f59e0b" />}
+      <Text style={[
+        styles.statusBannerText,
+        banner.kind === 'uploading' && { color: '#3b82f6' },
+        banner.kind === 'extracting' && { color: '#8b5cf6' },
+        banner.kind === 'done' && { color: '#10b981' },
+        banner.kind === 'failed' && { color: '#f59e0b' },
+      ]}>
+        {banner.kind === 'uploading' && (banner.label || 'Uploading…')}
+        {banner.kind === 'extracting' && 'Preparing PDF for AI features…'}
+        {banner.kind === 'done' && 'PDF ready for AI features'}
+        {banner.kind === 'failed' && 'Could not prepare PDF — AI will extract on demand'}
+      </Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -220,8 +296,8 @@ export default function NotesEditor() {
           </Pressable>
         </View>
         <View style={styles.headerActions}>
-          <Pressable onPress={handleAttachFile} style={styles.iconBtn} disabled={attachLoading}>
-            {attachLoading ? (
+          <Pressable onPress={handleAttachFile} style={styles.iconBtn} disabled={banner.kind === 'uploading'}>
+            {banner.kind === 'uploading' ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : (
               <Feather name="paperclip" size={18} color={theme.text} />
@@ -240,6 +316,9 @@ export default function NotesEditor() {
           </Pressable>
         </View>
       </View>
+
+      {/* Status banner — inline between header and content, always visible */}
+      {bannerElement}
 
       {/* Page title + content area */}
       {showPdfReader ? (
@@ -312,12 +391,6 @@ export default function NotesEditor() {
           )}
         </ScrollView>
       )}
-
-
-
-
-
-
     </View>
   );
 }
@@ -351,6 +424,23 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
   },
   saveBtnText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
 
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  statusBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+
   noteTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,7 +456,6 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
     letterSpacing: -0.8,
     flex: 1,
   },
-
 
   tagRow: {
     flexDirection: 'row',
@@ -485,6 +574,4 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
     borderColor: theme.border,
     textAlignVertical: 'top',
   },
-
-
 });

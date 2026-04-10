@@ -12,8 +12,7 @@ import {
   type QuizType,
   type QuizDifficulty,
 } from '@/src/lib/studyApi';
-import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
-import { extractPdfTextFromUrlDebug } from '@/src/lib/pdfText';
+import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 
 const PAD = 20;
 const RADIUS = 20;
@@ -43,7 +42,7 @@ function looksLikeRealContent(text: string): boolean {
 }
 
 export default function AIQuizBuilder() {
-  const { courses, notes, user } = useApp();
+  const { courses, notes, user, handleSaveNote } = useApp();
   const theme = useTheme();
 
   const [selectedSubject, setSelectedSubject] = useState<string>(courses[0]?.id ?? '');
@@ -95,12 +94,20 @@ export default function AIQuizBuilder() {
     setLoadingText('Preparing note content...');
 
     for (const note of selectedNotes) {
+      // 1. Use plain text content if available
       const plainText = (note.content || '').trim();
       if (plainText.length > 0) {
         contentParts.push(plainText);
         continue;
       }
 
+      // 2. Use cached extracted text from DB (instant — no API call)
+      if (note.extractedText?.trim()) {
+        contentParts.push(note.extractedText.trim());
+        continue;
+      }
+
+      // 3. Fall back to live PDF extraction (slow path — only for uncached PDFs)
       if (!note.attachmentPath) continue;
 
       const nameHint = (note.attachmentFileName || note.title || note.attachmentPath || '').toLowerCase();
@@ -111,21 +118,19 @@ export default function AIQuizBuilder() {
 
       try {
         attemptedPdfCount++;
-        setLoadingText(`Reading PDF: ${note.title.slice(0, 24)}...`);
-        const { url, error } = await getNoteAttachmentUrl(note.attachmentPath);
-        if (error || !url) {
-          failedPdfTitles.push(note.title);
-          continue;
-        }
-        const extractionPromise = extractPdfTextFromUrlDebug(url, user.id);
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Aborted')), 240000)
-        );
         setLoadingText(`Extracting text from: ${note.title.slice(0, 20)}...`);
-        const extracted = await Promise.race([extractionPromise, timeoutPromise]);
+        const extracted = await Promise.race([
+          extractPdfTextFromStoragePath(note.attachmentPath),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Aborted')), 120000)
+          ),
+        ]);
         const pdfText = extracted.text;
         if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
           contentParts.push(pdfText);
+          if (handleSaveNote) {
+            handleSaveNote({ ...note, extractedText: pdfText });
+          }
         } else {
           failedPdfTitles.push(note.title);
           const reason = pdfText.trim().length > 0 ? 'extracted text looks like PDF metadata, not content' : (extracted.stage + (extracted.detail ? ` - ${extracted.detail}` : ''));
@@ -146,12 +151,14 @@ export default function AIQuizBuilder() {
         try {
           attemptedPdfCount++;
           setLoadingText(`Trying attachment: ${note.title.slice(0, 24)}...`);
-          const { url, error } = await getNoteAttachmentUrl(note.attachmentPath);
-          if (error || !url) continue;
-          const extracted = await extractPdfTextFromUrlDebug(url, user.id);
+          const extracted = await extractPdfTextFromStoragePath(note.attachmentPath);
           const pdfText = extracted.text;
-          if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) contentParts.push(pdfText.trim());
-          else extractionIssues.push(`${note.title}: ${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`);
+          if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
+            contentParts.push(pdfText.trim());
+            if (handleSaveNote) handleSaveNote({ ...note, extractedText: pdfText.trim() });
+          } else {
+            extractionIssues.push(`${note.title}: ${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`);
+          }
         } catch {
           // not a valid PDF — ignore
         }

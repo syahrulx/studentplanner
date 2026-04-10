@@ -1,8 +1,8 @@
-import Constants from 'expo-constants';
 import type { Course } from '../types';
-import { supabase } from './supabase';
-
-const apiKey = (Constants.expoConfig?.extra as any)?.openaiApiKey as string | undefined;
+import {
+  invokeAiGenerate,
+  type AiGenerateTaskExtractResult,
+} from './invokeAiGenerate';
 
 export type ExtractionErrorCode = 'MODEL_UNAVAILABLE' | 'INVALID_OUTPUT' | 'NO_TASKS' | 'UNKNOWN';
 
@@ -44,28 +44,6 @@ export interface ExtractTasksResult {
 }
 
 const FALLBACK_EFFORT = 2;
-
-async function logAiTokenUsage(params: {
-  userId?: string;
-  kind: string;
-  model: string;
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
-}): Promise<void> {
-  try {
-    if (!params.userId) return;
-    const u = params.usage ?? null;
-    await supabase.from('ai_token_usage').insert({
-      user_id: params.userId,
-      kind: params.kind,
-      model: params.model,
-      prompt_tokens: typeof u?.prompt_tokens === 'number' ? u.prompt_tokens : null,
-      completion_tokens: typeof u?.completion_tokens === 'number' ? u.completion_tokens : null,
-      total_tokens: typeof u?.total_tokens === 'number' ? u.total_tokens : null,
-    });
-  } catch {
-    // best-effort logging only
-  }
-}
 
 function daysBetween(fromISO: string, toISO: string): number {
   const from = new Date(fromISO);
@@ -265,75 +243,26 @@ export async function extractTasksFromMessage(args: ExtractTasksArgs): Promise<E
     };
   }
 
-  // If there is no API key, fall back to a simple single-task heuristic.
-  if (!apiKey) {
-    const title = deriveTitleFromMessage(args.message);
-    const { id } = normalizeCourseId('', args.courses);
-    const { iso } = safeDateISO(undefined, args.todayISO);
-    const { risk, suggestedWeek } = computeRiskAndSuggestedWeek(iso, args);
-    return {
-      tasks: [
-        {
-          title,
-          course_id: id,
-          type: 'Assignment',
-          due_date: iso,
-          due_time: '23:59',
-          priority: 'Medium',
-          effort_hours: FALLBACK_EFFORT,
-          notes: args.message.slice(0, 200),
-           // Computed locally since the model is not used.
-          deadline_risk: risk,
-          suggested_week: suggestedWeek,
-          is_inferred_date: true,
-          is_unknown_course: true,
-        },
-      ],
-      error: { code: 'MODEL_UNAVAILABLE', message: 'OpenAI API key not configured; using heuristic extraction.' },
-    };
-  }
-
   let rawText = '';
+  const prompt = buildPrompt(args);
   try {
-    const prompt = buildPrompt(args);
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are an academic task extraction assistant. You must respond with VALID JSON ONLY matching the provided schema.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
+    const { data, error } = await invokeAiGenerate<AiGenerateTaskExtractResult>({
+      kind: 'task_extract',
+      content: prompt,
+      today_iso: args.todayISO,
+      current_week: args.currentWeek,
+      courses: args.courses.map((c) => ({ id: c.id, name: c.name })),
     });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI error ${response.status}: ${text}`);
+    if (error) {
+      throw new Error(error);
     }
-    const data = await response.json();
-    await logAiTokenUsage({
-      userId: args.userId,
-      kind: 'task_extraction',
-      model: 'gpt-4o-mini',
-      usage: data?.usage,
-    });
-    rawText = (data.choices?.[0]?.message?.content ?? '').trim();
+    rawText = JSON.stringify(data ?? {});
   } catch (e) {
     return {
       tasks: [],
       error: {
         code: 'MODEL_UNAVAILABLE',
-        message: 'Failed to call AI model',
+        message: 'Failed to call AI task extraction model',
         details: e instanceof Error ? e.message : String(e),
       },
     };

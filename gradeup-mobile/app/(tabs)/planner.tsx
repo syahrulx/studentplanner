@@ -1799,11 +1799,7 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <View style={[s.headerSide, s.headerSideLeft]}>
-            <Pressable style={s.headerBtn} onPress={() => router.back()}>
-              <Feather name="chevron-left" size={24} color={theme.text} />
-            </Pressable>
-          </View>
+          <View style={[s.headerSide, s.headerSideLeft]} />
           <View style={s.headerCenter}>
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather

@@ -35,7 +35,7 @@ export default ({ config }) => ({
     supabaseUrl: cleanEnvString(
       process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujxrtuogdialsrzxkcey.supabase.co'
     ),
-    /** Must be the JWT anon key from Supabase → Settings → API (starts with eyJ). Not sb_publishable_* — Edge Functions reject those. */
+    /** Supabase client key (publishable or anon JWT) for mobile client auth and function gateway access. */
     supabaseAnonKey: cleanEnvString(process.env.EXPO_PUBLIC_SUPABASE_KEY || ''),
     // openaiApiKey removed — AI calls now go through Edge Functions (ai_generate, ai_pdf_extract).
     // Set OPENAI_API_KEY as a Supabase Edge Function secret instead:

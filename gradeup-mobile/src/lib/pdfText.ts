@@ -27,6 +27,39 @@ export async function extractPdfTextFromUrl(url: string, _maxPages?: number): Pr
   return debug.text;
 }
 
+async function invokePdfExtractFromStorage(storagePath: string, bucket: string): Promise<PdfExtractDebug> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    return { text: '', stage: 'failed', detail: 'No active session.' };
+  }
+
+  const { data, error } = await supabase.functions.invoke('ai_pdf_extract', {
+    body: { storage_path: storagePath, bucket },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (error) {
+    const ctx = (error as any).context;
+    const statusText = ctx ? `[HTTP ${ctx.status || 'unknown'} - ${ctx.statusText || 'unknown'}]` : '';
+    const msg = typeof error === 'object' && 'message' in error
+      ? `${(error as { message: string }).message} ${statusText}`
+      : `${String(error)} ${statusText}`;
+    return { text: '', stage: 'openai_response', detail: msg };
+  }
+
+  if (data?.error?.message) {
+    return { text: '', stage: 'openai_response', detail: data.error.message };
+  }
+
+  const outputText = (data?.text ?? '').trim();
+  if (!outputText) {
+    return { text: '', stage: 'openai_response', detail: 'Edge Function returned empty text.' };
+  }
+
+  return { text: outputText.slice(0, 120000), stage: 'done', detail: 'edge function extraction ok' };
+}
+
 /**
  * Extract text from a local file URI (e.g. from DocumentPicker).
  * Uploads the file to Supabase Storage temporarily, then calls the
@@ -67,38 +100,8 @@ export async function extractPdfTextFromLocalUri(
       };
     }
 
-    // Step 2: Call Edge Function to extract text
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      return { text: '', stage: 'failed', detail: 'No active session.' };
-    }
-
-    const { data, error } = await supabase.functions.invoke('ai_pdf_extract', {
-      body: { storage_path: path, bucket: NOTE_ATTACHMENTS_BUCKET },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (error) {
-      // Supabase-js attaches context to FunctionsHttpError
-      const ctx = (error as any).context;
-      const statusText = ctx ? `[HTTP ${ctx.status || 'unknown'} - ${ctx.statusText || 'unknown'}]` : '';
-      const msg = typeof error === 'object' && 'message' in error
-        ? `${(error as { message: string }).message} ${statusText}`
-        : `${String(error)} ${statusText}`;
-      return { text: '', stage: 'openai_response', detail: msg };
-    }
-
-    if (data?.error?.message) {
-      return { text: '', stage: 'openai_response', detail: data.error.message };
-    }
-
-    const outputText = (data?.text ?? '').trim();
-    if (!outputText) {
-      return { text: '', stage: 'openai_response', detail: 'Edge Function returned empty text.' };
-    }
-
-    return { text: outputText.slice(0, 120000), stage: 'done', detail: 'edge function extraction ok' };
+    // Step 2: Call Edge Function to extract text from uploaded path
+    return await invokePdfExtractFromStorage(path, NOTE_ATTACHMENTS_BUCKET);
   } catch (error) {
     return {
       text: '',
@@ -112,6 +115,20 @@ export async function extractPdfTextFromLocalUri(
       .remove([`${userId}/${tempNoteId}/${safeName}`])
       .catch(() => {});
   }
+}
+
+/**
+ * Extract text directly from an existing storage path (already uploaded PDF).
+ * This avoids local download and temporary re-upload.
+ */
+export async function extractPdfTextFromStoragePath(
+  storagePath: string,
+  bucket: string = NOTE_ATTACHMENTS_BUCKET,
+): Promise<PdfExtractDebug> {
+  if (!storagePath?.trim()) {
+    return { text: '', stage: 'failed', detail: 'Missing storage path.' };
+  }
+  return invokePdfExtractFromStorage(storagePath, bucket);
 }
 
 /** Convenience alias used by notes-list.tsx */

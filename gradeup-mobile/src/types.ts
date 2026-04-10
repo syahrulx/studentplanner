@@ -146,7 +146,8 @@ export interface UserProfile {
 export interface Note {
   id: string;
   subjectId: string;
-  /** Optional chapter/folder id (user-defined). */
+  /** Optional chapter/folder name (user-defined). */
+  folderId?: string;
   title: string;
   content: string;
   tag: 'Lecture' | 'Tutorial' | 'Exam' | 'Important' | 'Lab' | 'Discussion';
@@ -154,6 +155,8 @@ export interface Note {
   /** Storage path for attached file (Supabase Storage bucket note-attachments). */
   attachmentPath?: string;
   attachmentFileName?: string;
+  /** Cached text extracted from PDF attachment — avoids re-extraction on every AI call. */
+  extractedText?: string;
 }
 
 

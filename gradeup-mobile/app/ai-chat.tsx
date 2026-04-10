@@ -86,12 +86,20 @@ export default function AiChat() {
           });
 
           if (tasks.length === 0) {
+            const detailText =
+              error?.details != null
+                ? `\n\nDetails: ${
+                    typeof error.details === 'string'
+                      ? error.details
+                      : JSON.stringify(error.details)
+                  }`
+                : '';
             setMessages((prev) => [
               ...prev,
               {
                 role: 'ai',
                 text: error
-                  ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}`
+                  ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}${detailText}`
                   : '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date',
               },
             ]);

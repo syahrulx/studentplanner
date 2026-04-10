@@ -12,12 +12,14 @@ function rowToNote(row: Record<string, unknown>): Note {
   return {
     id: String(row.id),
     subjectId: String(row.subject_id),
+    folderId: row.folder_id != null ? String(row.folder_id) : undefined,
     title: String(row.title),
     content: String(row.content ?? ''),
     tag: (row.tag as Note['tag']) || 'Lecture',
     updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
     attachmentPath: row.attachment_path != null ? String(row.attachment_path) : undefined,
     attachmentFileName: row.attachment_file_name != null ? String(row.attachment_file_name) : undefined,
+    extractedText: row.extracted_text != null ? String(row.extracted_text) : undefined,
   };
 }
 
@@ -58,12 +60,14 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
       id: note.id,
       user_id: userId,
       subject_id: note.subjectId,
+      folder_id: note.folderId ?? null,
       title: note.title,
       content: note.content,
       tag: note.tag,
       updated_at: note.updatedAt ? new Date(note.updatedAt).toISOString() : new Date().toISOString(),
       attachment_path: note.attachmentPath ?? null,
       attachment_file_name: note.attachmentFileName ?? null,
+      extracted_text: note.extractedText ?? null,
     },
     { onConflict: 'id,user_id' }
   );

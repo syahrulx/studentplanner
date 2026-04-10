@@ -4,7 +4,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 // Types
 // ---------------------------------------------------------------------------
 
-type GenerateKind = 'flashcards' | 'flashcards_pdf' | 'quiz';
+type GenerateKind = 'quiz' | 'task_extract';
 
 interface RequestBody {
   kind: GenerateKind;
@@ -15,6 +15,10 @@ interface RequestBody {
   /** Quiz-specific fields. */
   quiz_type?: 'mcq' | 'true_false' | 'mixed' | 'short_answer';
   difficulty?: 'easy' | 'medium' | 'hard';
+  /** Task extraction context (optional). */
+  today_iso?: string;
+  current_week?: number;
+  courses?: { id: string; name: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -53,10 +57,12 @@ async function checkRateLimit(
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
 
+  // Only count generation calls (flashcard + quiz), not PDF text extraction
   const { count, error } = await supabaseAdmin
     .from('ai_token_usage')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .neq('kind', 'pdf_text_extraction')
     .gte('created_at', todayStart.toISOString());
 
   const used = error ? 0 : (count ?? 0);
@@ -74,24 +80,6 @@ async function checkRateLimit(
 // Prompt builders
 // ---------------------------------------------------------------------------
 
-function buildFlashcardPrompt(content: string, count: number): { system: string; user: string } {
-  return {
-    system: `You are an expert study assistant. Generate exactly ${count} high-quality flashcards.
-
-Rules:
-- Focus on key concepts, definitions, and exam-relevant content
-- Avoid trivial or filler content
-- Each flashcard should test one important concept
-- Keep questions clear and concise
-- Answers must be accurate and helpful
-
-Return ONLY a JSON array:
-[{"front":"question","back":"answer"}]
-
-No markdown, no explanation, ONLY the JSON array.`,
-    user: `Generate exactly ${count} flashcards from the following content:\n\n${content}`,
-  };
-}
 
 function buildQuizPrompt(
   content: string,
@@ -125,6 +113,40 @@ Rules:
 - Return ONLY a JSON array. No markdown, no explanation.
 - Each object must have: "question" (string), "options" (string[]), "correctIndex" (number)${quizType === 'short_answer' || quizType === 'mixed' ? ', and optionally "expectedAnswer" (string)' : ''}.`,
     user: `Generate quiz questions from the following study material:\n\n${content}`,
+  };
+}
+
+function buildTaskExtractPrompt(content: string): { system: string; user: string } {
+  return {
+    system: `You are an academic task extraction assistant for Malaysian university students.
+
+Return VALID JSON ONLY with this exact shape:
+{
+  "tasks": [
+    {
+      "title": string,
+      "course_id": string,
+      "type": "Assignment" | "Quiz" | "Project" | "Lab" | "Test",
+      "due_date": "YYYY-MM-DD" | null,
+      "due_time": "HH:MM",
+      "needs_date": boolean,
+      "priority": "High" | "Medium" | "Low",
+      "effort_hours": number,
+      "notes"?: string,
+      "deadline_risk"?: string,
+      "suggested_week"?: number,
+      "confidence"?: number
+    }
+  ]
+}
+
+Rules:
+- Extract only real assessment/actionable tasks.
+- If date is unclear/TBA/vague, set due_date to null and needs_date true.
+- Never invent concrete dates.
+- Prefer provided course codes when available in input.
+- No markdown, no prose, JSON only.`,
+    user: content,
   };
 }
 
@@ -208,13 +230,30 @@ Deno.serve(async (req) => {
     }
 
     // ── Auth ──
-    const supabaseUser = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!bearer) {
+      return errorJson('Unauthorized: missing bearer token.', 'UNAUTHORIZED', 401);
+    }
 
-    const { data: authData, error: authError } = await supabaseUser.auth.getUser();
+    // Validate user token using service-role auth API when available.
+    // This is more reliable than relying on anon-key client header forwarding.
+    const authClient = serviceRole
+      ? createClient(supabaseUrl, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
+      : createClient(supabaseUrl, supabaseAnon, {
+          global: { headers: { Authorization: authHeader } },
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+
+    const { data: authData, error: authError } = serviceRole
+      ? await authClient.auth.getUser(bearer)
+      : await authClient.auth.getUser();
+
     if (authError || !authData.user) {
-      return errorJson('Unauthorized. Please sign in again.', 'UNAUTHORIZED', 401);
+      return errorJson(
+        `Unauthorized: ${authError?.message ?? 'token rejected'}`,
+        'UNAUTHORIZED',
+        401,
+      );
     }
 
     const userId = authData.user.id;
@@ -228,8 +267,8 @@ Deno.serve(async (req) => {
     }
 
     const kind = body.kind;
-    if (!kind || !['flashcards', 'flashcards_pdf', 'quiz'].includes(kind)) {
-      return errorJson('Invalid "kind". Must be: flashcards, flashcards_pdf, or quiz.', 'BAD_REQUEST');
+    if (!kind || !['quiz', 'task_extract'].includes(kind)) {
+      return errorJson('Invalid "kind". Must be: quiz or task_extract.', 'BAD_REQUEST');
     }
 
     const content = (body.content ?? '').trim();
@@ -244,7 +283,7 @@ Deno.serve(async (req) => {
     // ── Rate limit ──
     const supabaseAdmin = serviceRole
       ? createClient(supabaseUrl, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
-      : supabaseUser;
+      : authClient;
 
     // Get user's subscription plan
     const { data: profileData } = await supabaseAdmin
@@ -269,8 +308,8 @@ Deno.serve(async (req) => {
 
     const count = Math.min(Math.max(1, body.count ?? 10), 30); // 1-30 items
 
-    if (kind === 'flashcards' || kind === 'flashcards_pdf') {
-      const prompts = buildFlashcardPrompt(truncatedContent, count);
+    if (kind === 'task_extract') {
+      const prompts = buildTaskExtractPrompt(truncatedContent);
       systemPrompt = prompts.system;
       userPrompt = prompts.user;
       maxTokens = 2500;
@@ -302,6 +341,18 @@ Deno.serve(async (req) => {
       return errorJson('AI returned invalid JSON. Please try again.', 'PARSE_ERROR');
     }
 
+    if (kind === 'task_extract') {
+      const tasks = Array.isArray((parsed as any)?.tasks)
+        ? (parsed as any).tasks
+        : Array.isArray(parsed)
+          ? parsed
+          : null;
+      if (!tasks) {
+        return errorJson('AI returned unexpected format. Please try again.', 'PARSE_ERROR');
+      }
+      return json({ tasks });
+    }
+
     if (!Array.isArray(parsed)) {
       return errorJson('AI returned unexpected format. Please try again.', 'PARSE_ERROR');
     }
@@ -320,14 +371,10 @@ Deno.serve(async (req) => {
       .then(() => {}, () => {});
 
     // ── Return result ──
-    if (kind === 'flashcards' || kind === 'flashcards_pdf') {
-      const cards = parsed
-        .filter((c: any) => c?.front?.trim() && c?.back?.trim())
-        .slice(0, count)
-        .map((c: any) => ({ front: String(c.front).trim(), back: String(c.back).trim() }));
-      return json({ cards });
+    if (kind === 'task_extract') {
+      return json({ tasks: parsed });
     } else {
-      const questions = parsed.slice(0, count).map((q: any) => ({
+      const questions = (parsed as any[]).slice(0, count).map((q: any) => ({
         question: String(q.question || '').slice(0, 500),
         options: Array.isArray(q.options) ? q.options.map((o: any) => String(o).slice(0, 250)) : [],
         correctIndex: Number(q.correctIndex ?? 0),

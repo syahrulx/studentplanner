@@ -1,5 +1,4 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 // ---------------------------------------------------------------------------
 // CORS & Response helpers
@@ -22,6 +21,137 @@ function errorJson(message: string, code = 'ERROR') {
 }
 
 // ---------------------------------------------------------------------------
+// Gemini extraction via signed URL (edge function never holds PDF in memory)
+// ---------------------------------------------------------------------------
+
+async function extractViaGemini(
+  signedUrl: string,
+  geminiKey: string,
+): Promise<{ text: string; usage?: any; error?: string }> {
+  // Download PDF bytes from signed URL
+  const pdfRes = await fetch(signedUrl);
+  if (!pdfRes.ok) {
+    return { text: '', error: `Could not access PDF (HTTP ${pdfRes.status}).` };
+  }
+  const pdfBytes = await pdfRes.arrayBuffer();
+  if (pdfBytes.byteLength < 100) {
+    return { text: '', error: 'File is too small to be a valid PDF.' };
+  }
+
+  // Upload to Gemini File API (simple media upload — single POST)
+  const uploadRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Goog-Upload-Protocol': 'raw',
+        'X-Goog-Upload-Header-Content-Type': 'application/pdf',
+        'Content-Type': 'application/pdf',
+        'Content-Length': String(pdfBytes.byteLength),
+      },
+      body: pdfBytes,
+    },
+  );
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    return { text: '', error: `Gemini upload failed (${uploadRes.status}): ${errText.slice(0, 200)}` };
+  }
+
+  const uploadJson = await uploadRes.json();
+  const geminiFileUri = uploadJson?.file?.uri ?? '';
+  const geminiFileName = uploadJson?.file?.name ?? '';
+
+  if (!geminiFileUri) {
+    return { text: '', error: 'Gemini upload returned no file URI.' };
+  }
+
+  // Brief wait for Gemini to process the file
+  await new Promise((r) => setTimeout(r, 1000));
+
+  // Step 2: Ask Gemini to extract text (with retry on 503/429)
+  const maxAttempts = 3;
+  let lastError = '';
+
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120_000);
+
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { file_data: { mime_type: 'application/pdf', file_uri: geminiFileUri } },
+                  { text: 'Extract all readable educational text from this PDF document. Return plain text only. Preserve headings and structure. Ignore file metadata, page numbers, and formatting artifacts.' },
+                ],
+              }],
+              generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+            }),
+          },
+        );
+
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          const errText = await res.text();
+          lastError = `Gemini error (${res.status}): ${errText.slice(0, 400)}`;
+
+          // Retry on 503 (overloaded) or 429 (rate limit)
+          if ((res.status === 503 || res.status === 429) && attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 3000 * attempt));
+            continue;
+          }
+          return { text: '', error: lastError };
+        }
+
+        const aiJson = await res.json();
+        let text = '';
+        const candidates = aiJson?.candidates;
+        if (Array.isArray(candidates)) {
+          for (const candidate of candidates) {
+            const parts = candidate?.content?.parts;
+            if (Array.isArray(parts)) {
+              for (const part of parts) {
+                if (typeof part?.text === 'string') text += part.text;
+              }
+            }
+          }
+        }
+
+        return {
+          text: text.trim().slice(0, 120_000),
+          usage: aiJson?.usageMetadata,
+        };
+      } catch (err: any) {
+        clearTimeout(timeout);
+        lastError = err?.name === 'AbortError' ? 'Gemini timed out.' : (err?.message || 'Gemini request failed.');
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 3000 * attempt));
+          continue;
+        }
+      }
+    }
+
+    return { text: '', error: lastError || 'Gemini extraction failed after retries.' };
+  } finally {
+    // Clean up: delete file from Gemini (best-effort)
+    if (geminiFileName) {
+      fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${geminiFileName}?key=${geminiKey}`,
+        { method: 'DELETE' },
+      ).catch(() => {});
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -34,14 +164,14 @@ Deno.serve(async (req) => {
     // ── Config ──
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+    const geminiKey = (Deno.env.get('GEMINI_API_KEY') ?? '').trim();
     const authHeader = req.headers.get('Authorization') ?? '';
 
     if (!supabaseUrl || !supabaseAnon) {
       return errorJson('Missing Supabase config.', 'CONFIG');
     }
-    if (!openAiKey || openAiKey.length < 20) {
-      return errorJson('OPENAI_API_KEY not configured in Edge Function secrets.', 'CONFIG');
+    if (!geminiKey || geminiKey.length < 10) {
+      return errorJson('GEMINI_API_KEY not configured.', 'CONFIG');
     }
 
     // ── Auth ──
@@ -55,6 +185,14 @@ Deno.serve(async (req) => {
     }
 
     const userId = authData.user.id;
+
+    // ── Admin client ──
+    const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAdmin = serviceRole
+      ? createClient(supabaseUrl, serviceRole, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        })
+      : supabaseUser;
 
     // ── Parse body ──
     let body: { storage_path?: string; bucket?: string };
@@ -71,126 +209,45 @@ Deno.serve(async (req) => {
       return errorJson('storage_path is required.', 'BAD_REQUEST');
     }
 
-    // Security: ensure the path belongs to this user
     if (!storagePath.startsWith(`${userId}/`)) {
       return errorJson('Invalid storage path for this user.', 'FORBIDDEN');
     }
 
-    // ── Download PDF from Storage ──
-    const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const supabaseAdmin = serviceRole
-      ? createClient(supabaseUrl, serviceRole, {
-          auth: { persistSession: false, autoRefreshToken: false },
-        })
-      : supabaseUser;
-
-    const { data: fileData, error: dlError } = await supabaseAdmin.storage
+    // ── Generate signed URL (no download, no memory) ──
+    const { data: signedData, error: signedError } = await supabaseAdmin.storage
       .from(bucket)
-      .download(storagePath);
+      .createSignedUrl(storagePath, 600); // 10 min expiry
 
-    if (dlError || !fileData) {
+    if (signedError || !signedData?.signedUrl) {
       return errorJson(
-        dlError?.message || 'Could not download file from storage.',
+        signedError?.message || 'Could not generate signed URL for PDF.',
         'STORAGE',
       );
     }
 
-    const bytes = new Uint8Array(await fileData.arrayBuffer());
-    if (bytes.length < 100) {
-      return errorJson('File is too small to be a valid PDF.', 'BAD_REQUEST');
+    // ── Extract via Gemini (streams PDF directly, no memory buffering) ──
+    const result = await extractViaGemini(signedData.signedUrl, geminiKey);
+
+    if (result.error || !result.text) {
+      return errorJson(result.error || 'Could not extract text from PDF.', 'EXTRACTION_FAILED');
     }
 
-    // ── Upload to OpenAI Files API ──
-    const b64 = encodeBase64(bytes);
-    const fileName = storagePath.split('/').pop() || 'document.pdf';
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
-
+    // Log usage (best-effort)
     try {
-      const res = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${openAiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          store: false,
-          temperature: 0,
-          instructions: 'You extract educational text from PDF documents. Return plain text only.',
-          input: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_file',
-                  filename: fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`,
-                  file_data: `data:application/pdf;base64,${b64}`,
-                },
-                {
-                  type: 'input_text',
-                  text: 'Extract all readable educational text from this PDF document. Return plain text only. Preserve headings and structure. Ignore file metadata, page numbers, and formatting artifacts.',
-                },
-              ],
-            },
-          ],
-        }),
-      });
+      supabaseAdmin
+        .from('ai_token_usage')
+        .insert({
+          user_id: userId,
+          kind: 'pdf_text_extraction',
+          model: 'gemini-3.1-flash-lite-preview',
+          prompt_tokens: result.usage?.promptTokenCount ?? null,
+          completion_tokens: result.usage?.candidatesTokenCount ?? null,
+          total_tokens: result.usage?.totalTokenCount ?? null,
+        })
+        .then(() => {}, () => {});
+    } catch {}
 
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        const errText = await res.text();
-        return errorJson(`OpenAI error (${res.status}): ${errText.slice(0, 400)}`, 'OPENAI');
-      }
-
-      const aiJson = await res.json();
-      // Extract text from Responses API output
-      const output = aiJson?.output;
-      let text = '';
-      if (Array.isArray(output)) {
-        for (const item of output) {
-          if (item?.type !== 'message' || !Array.isArray(item?.content)) continue;
-          for (const part of item.content) {
-            if (part?.type === 'output_text' && typeof part?.text === 'string') {
-              text += part.text;
-            }
-          }
-        }
-      }
-
-      text = text.trim().slice(0, 120_000);
-
-      // Log token usage (best-effort)
-      try {
-        const usage = aiJson?.usage;
-        supabaseAdmin
-          .from('ai_token_usage')
-          .insert({
-            user_id: userId,
-            kind: 'pdf_text_extraction',
-            model: 'gpt-4o-mini',
-            prompt_tokens: usage?.input_tokens ?? null,
-            completion_tokens: usage?.output_tokens ?? null,
-            total_tokens: (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0) || null,
-          })
-          .then(() => {}, () => {});
-      } catch {}
-
-      if (!text) {
-        return errorJson('Could not extract text from this PDF. It may be image-only or corrupted.', 'EMPTY');
-      }
-
-      return json({ text, stage: 'done' });
-    } catch (err: any) {
-      clearTimeout(timeout);
-      if (err?.name === 'AbortError') {
-        return errorJson('PDF extraction timed out. Try a smaller file.', 'TIMEOUT');
-      }
-      throw err;
-    }
+    return json({ text: result.text, stage: 'done' });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return errorJson(message, 'INTERNAL');

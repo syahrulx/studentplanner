@@ -632,9 +632,11 @@ Deno.serve(async (req) => {
         if (n && (n.subjects.length > 0 || n.tasks.length > 0)) {
           normalized = n;
           extractionMode = 'pdf_native';
+        } else {
+          return errorBody('AI received the PDF but returned invalid JSON or could not find tasks.', 'PARSE');
         }
       } else if (!pdfRes.ok) {
-        console.error('extract_sow: OpenAI Responses (PDF) failed:', pdfRes.status, pdfRes.detail);
+        return errorBody(`OpenAI error ${pdfRes.status}: ${pdfRes.detail}`, 'OPENAI');
       }
     } else if (bytes.length > MAX_PDF_BYTES_NATIVE && isPdfMagic(bytes)) {
       console.warn(
@@ -642,13 +644,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!normalized) {
+    if (!normalized && !canTryPdfNative) {
       if (textForModel.length < 120) {
-        const hint = canTryPdfNative
-          ? ' Native PDF parsing was attempted but produced nothing usable, and almost no text could be extracted locally.'
-          : '';
         return errorBody(
-          `Almost no readable text was found in this PDF.${hint} Scanned (image-only) PDFs, password-protected files, or heavy compression often cause this. Fix: open the SOW in Word/Google Docs and use Save as PDF / Print to PDF so text is embedded.`,
+          `Almost no readable text was found in this PDF. Scanned (image-only) PDFs, password-protected files, or heavy compression often cause this. Fix: open the SOW in Word/Google Docs and use Save as PDF / Print to PDF so text is embedded.`,
           'PDF_TEXT'
         );
       }
@@ -667,6 +666,10 @@ Deno.serve(async (req) => {
       }
       normalized = n;
       extractionMode = 'text_chat';
+    }
+
+    if (!normalized) {
+      return errorBody('Could not extract subjects or tasks from this document.', 'PARSE');
     }
 
     if (normalized.subjects.length === 0 && normalized.tasks.length === 0) {

@@ -17,10 +17,10 @@ import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import {
   generateFlashcardsFromNote,
-  generateFlashcardsFromNotePdfStorage,
   getOpenAIKey,
   noteHasPdfAttachment,
 } from '@/src/lib/studyApi';
+import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import type { ThemePalette } from '@/constants/Themes';
 
 function createStyles(theme: ThemePalette) {
@@ -111,7 +111,7 @@ function createStyles(theme: ThemePalette) {
 
 export default function FlashcardPick() {
   const { subjectId: paramSubjectId } = useLocalSearchParams<{ subjectId?: string }>();
-  const { courses, notes, flashcards, language, getSubjectColor, addFlashcard, deleteFlashcardsForNote, user } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, addFlashcard, deleteFlashcardsForNote, handleSaveNote, user } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -122,6 +122,7 @@ export default function FlashcardPick() {
   const [pickedSubjectId, setPickedSubjectId] = useState<string | null>(initialSubject);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [generating, setGenerating] = useState(false);
+  const [generatingLabel, setGeneratingLabel] = useState('');
 
   useEffect(() => {
     if (typeof paramSubjectId === 'string' && paramSubjectId.length > 0) {
@@ -151,8 +152,9 @@ export default function FlashcardPick() {
       .map((n) => ({
         ...n,
         cardCount: cardCountByNote.get(n.id) ?? 0,
-        hasText: !!(n.content && n.content.trim().length > 0),
+        hasText: !!(n.content && n.content.trim().length > 0 && n.content !== 'Extracting text from PDF...'),
         hasPdf: noteHasPdfAttachment(n),
+        hasCachedText: !!(n.extractedText && n.extractedText.trim().length > 0),
       }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [notes, cardCountByNote, pickedSubjectId]);
@@ -201,13 +203,12 @@ export default function FlashcardPick() {
     }
 
     const selected = subjectNotes.filter((n) => selectedIds.has(n.id));
-    const usable = selected.filter((n) => n.hasText || n.hasPdf);
+    const usable = selected.filter((n) => n.hasText || n.hasPdf || n.hasCachedText);
     if (usable.length === 0) {
       Alert.alert(T('flashcardPickNoContentTitle'), T('flashcardPickNoContentHint'));
       return;
     }
 
-    // --- Option A: Prompt if any selected note already has cards ---
     // Build a map of noteId -> existing card count for selected notes
     const existingCounts = new Map<string, number>();
     for (const n of usable) {
@@ -215,9 +216,7 @@ export default function FlashcardPick() {
       if (count > 0) existingCounts.set(n.id, count);
     }
 
-    // 'prompt' mode (default): show the dialog if any notes have existing cards
-    // 'add' mode: skip prompt, generate + dedup by front text
-    // 'replace' mode: skip prompt, delete existing cards first then generate fresh
+    // 'prompt' mode: show dialog if any notes have existing cards
     if (replaceMode === 'prompt' && existingCounts.size > 0) {
       const totalExisting = [...existingCounts.values()].reduce((a, b) => a + b, 0);
       const noteWord = existingCounts.size === 1 ? 'note' : 'notes';
@@ -228,7 +227,6 @@ export default function FlashcardPick() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Add to Existing',
-            // 'add' skips the prompt entirely on the recursive call
             onPress: () => { void handleGenerate('add'); },
           },
           {
@@ -243,20 +241,20 @@ export default function FlashcardPick() {
     const isReplaceMode = replaceMode === 'replace';
 
     setGenerating(true);
+    setGeneratingLabel('Preparing…');
     let totalAdded = 0;
     let firstNoteWithNewCards: string | null = null;
     const failLines: string[] = [];
 
     try {
-      // Option A — Replace: delete all existing cards for notes-to-replace first
+      // Replace mode: delete existing cards first
       if (isReplaceMode) {
         for (const [noteId] of existingCounts) {
           await deleteFlashcardsForNote(noteId);
         }
       }
 
-      // Option B — Add mode: build existing fronts set for dedup per note
-      // (In replace mode the cards are already deleted so dedup set will be empty — fine)
+      // Build existing fronts set for dedup per note
       const existingFrontsByNote = new Map<string, Set<string>>();
       for (const n of usable) {
         if (!isReplaceMode) {
@@ -267,54 +265,106 @@ export default function FlashcardPick() {
           );
           existingFrontsByNote.set(n.id, fronts);
         } else {
-          existingFrontsByNote.set(n.id, new Set()); // empty after replace
+          existingFrontsByNote.set(n.id, new Set());
         }
       }
 
-      // Separate PDF and text notes for different processing strategies
-      const pdfNotes = usable.filter((n) => n.hasPdf && n.attachmentPath);
-      const textNotes = usable.filter((n) => !n.hasPdf && n.hasText);
+      // Process ALL notes sequentially with progress label
+      // The unified Edge Function handles text vs PDF server-side
+      for (let i = 0; i < usable.length; i++) {
+        const note = usable[i];
+        const label = usable.length > 1
+          ? `Generating ${i + 1} of ${usable.length}…`
+          : 'Generating flashcards…';
+        setGeneratingLabel(label);
 
-      // Process text notes in parallel (fast — single API call each)
-      const textResults = await Promise.all(
-        textNotes.map(async (note) => {
+        let cards: { front: string; back: string }[] = [];
+        let error: string | null = null;
+
+        try {
+          if (note.hasPdf && note.attachmentPath) {
+            // Re-read from latest notes state — background extraction may have cached it
+            const freshNote = notes.find((n) => n.id === note.id);
+            let pdfText = freshNote?.extractedText?.trim() || note.extractedText?.trim() || '';
+
+            // If content is the placeholder, background extraction is still running — wait a bit
+            if (!pdfText && freshNote?.content === 'Extracting text from PDF...') {
+              setGeneratingLabel('Waiting for PDF extraction…');
+              await new Promise((r) => setTimeout(r, 5_000));
+              // Re-check after waiting
+              const rechecked = notes.find((n) => n.id === note.id);
+              pdfText = rechecked?.extractedText?.trim() || '';
+            }
+
+            // No cache? Extract first, then cache for future calls
+            if (!pdfText) {
+              setGeneratingLabel('Extracting PDF text…');
+              try {
+                const extraction = await Promise.race([
+                  extractPdfTextFromStoragePath(note.attachmentPath!),
+                  new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('PDF extraction timed out after 90s')), 90_000),
+                  ),
+                ]);
+                pdfText = extraction.text?.trim() || '';
+                if (!pdfText && extraction.detail) {
+                  error = `PDF extraction failed: ${extraction.detail}`;
+                }
+              } catch (extractErr: any) {
+                error = extractErr?.message || 'PDF extraction failed.';
+              }
+
+              // Cache the extracted text back to the note
+              if (pdfText && handleSaveNote) {
+                handleSaveNote({ ...note, extractedText: pdfText });
+              }
+            }
+
+            if (!pdfText && !error) {
+              error = 'Could not extract text from PDF.';
+            } else if (pdfText) {
+              // Generate flashcards from text only — single lightweight API call
+              setGeneratingLabel(label);
+              cards = await generateFlashcardsFromNote(pdfText, user?.id, 18);
+            }
+          } else if (note.hasText) {
+            cards = await generateFlashcardsFromNote(note.content.trim(), user?.id);
+          }
+        } catch (e: any) {
+          error = e?.message || 'Generation failed';
+        }
+
+        // On OpenAI rate limit (429), wait and retry once instead of giving up
+        if (error && /rate.*limit|429|too many requests/i.test(error) && !/daily/i.test(error)) {
+          setGeneratingLabel('Rate limited — retrying in 10s…');
+          await new Promise((r) => setTimeout(r, 10_000));
+          error = null;
           try {
-            const cards = await generateFlashcardsFromNote(note.content.trim(), user?.id);
-            return { note, cards, error: null };
-          } catch (e: any) {
-            return { note, cards: [] as { front: string; back: string }[], error: e?.message || 'Generation failed' };
-          }
-        })
-      );
-
-      for (const { note, cards, error } of textResults) {
-        if (error) { failLines.push(`${note.title}: ${error}`); continue; }
-        if (cards && cards.length > 0) {
-          const existingFronts = existingFrontsByNote.get(note.id) ?? new Set<string>();
-          // Option B: deduplicate by front text
-          const newCards = cards.filter(
-            (c) => !existingFronts.has(c.front.trim().toLowerCase())
-          );
-          if (newCards.length > 0) {
-            if (!firstNoteWithNewCards) firstNoteWithNewCards = note.id;
-            for (const c of newCards) { addFlashcard(note.id, c.front, c.back); totalAdded += 1; }
+            const freshNote = notes.find((n) => n.id === note.id);
+            const pdfText = freshNote?.extractedText?.trim() || note.extractedText?.trim() || '';
+            if (pdfText) {
+              cards = await generateFlashcardsFromNote(pdfText, user?.id, 18);
+            } else if (note.hasText) {
+              cards = await generateFlashcardsFromNote(note.content.trim(), user?.id);
+            }
+          } catch (retryErr: any) {
+            error = retryErr?.message || 'Retry failed';
           }
         }
-      }
 
-      // Process PDF notes sequentially (each needs upload to OpenAI)
-      for (const note of pdfNotes) {
-        const res = await generateFlashcardsFromNotePdfStorage(
-          note.attachmentPath!,
-          note.attachmentFileName,
-          user?.id,
-          18,
-        );
-        if (res.error) { failLines.push(`${note.title}: ${res.error}`); continue; }
-        if (res.cards && res.cards.length > 0) {
+        if (error) {
+          failLines.push(`${note.title}: ${error}`);
+          // Only stop on actual daily AI limit, not transient 429
+          if (/daily.*limit/i.test(error)) {
+            failLines.push('Stopped: daily limit reached.');
+            break;
+          }
+          continue;
+        }
+
+        if (cards.length > 0) {
           const existingFronts = existingFrontsByNote.get(note.id) ?? new Set<string>();
-          // Option B: deduplicate by front text
-          const newCards = res.cards.filter(
+          const newCards = cards.filter(
             (c) => !existingFronts.has(c.front.trim().toLowerCase())
           );
           if (newCards.length > 0) {
@@ -327,7 +377,6 @@ export default function FlashcardPick() {
       if (totalAdded === 0 && failLines.length > 0) {
         Alert.alert(T('flashcardPickGenerateFailedTitle'), failLines.slice(0, 3).join('\n'));
       } else if (totalAdded === 0) {
-        // All cards were duplicates (dedup filtered everything)
         Alert.alert(
           'No New Cards',
           isReplaceMode
@@ -360,8 +409,10 @@ export default function FlashcardPick() {
       Alert.alert('Error', msg);
     } finally {
       setGenerating(false);
+      setGeneratingLabel('');
     }
-  }, [selectedIds, generating, subjectNotes, cardCountByNote, flashcards, addFlashcard, deleteFlashcardsForNote, user?.id, T]);
+  }, [selectedIds, generating, subjectNotes, cardCountByNote, flashcards, addFlashcard, deleteFlashcardsForNote, handleSaveNote, user?.id, T]);
+
 
   const headerTitle =
     step === 'subject' ? T('flashcardPickChooseSubject') : T('flashcardPickChooseNote');
@@ -474,16 +525,12 @@ export default function FlashcardPick() {
                       <Text style={styles.rowTitle} numberOfLines={2}>
                         {item.title}
                       </Text>
-                      <Text style={!item.hasText && !item.hasPdf ? styles.rowSubWarn : styles.rowSub}>
-                        {!item.hasText && !item.hasPdf
+                      <Text style={!item.hasText && !item.hasPdf && !item.hasCachedText ? styles.rowSubWarn : styles.rowSub}>
+                        {!item.hasText && !item.hasPdf && !item.hasCachedText
                           ? T('flashcardPickNoSource')
-                          : item.hasPdf
-                            ? item.hasText
-                              ? T('flashcardPickPdfPreferred')
-                              : T('flashcardPickPdfFullDoc')
-                            : item.cardCount > 0
-                              ? T('flashcardPickCardCount').replace('{n}', String(item.cardCount))
-                              : T('flashcardPickNoCardsYet')}
+                          : item.cardCount > 0
+                            ? T('flashcardPickCardCount').replace('{n}', String(item.cardCount))
+                            : T('flashcardPickNoCardsYet')}
                       </Text>
                     </Pressable>
                     {item.cardCount > 0 ? (
@@ -529,7 +576,9 @@ export default function FlashcardPick() {
                 ) : (
                   <Feather name="zap" size={20} color="#fff" />
                 )}
-                <Text style={styles.generateBtnText}>{T('flashcardPickGenerate')}</Text>
+                <Text style={styles.generateBtnText} numberOfLines={1}>
+                  {generating && generatingLabel ? generatingLabel : T('flashcardPickGenerate')}
+                </Text>
               </Pressable>
             </View>
           )}

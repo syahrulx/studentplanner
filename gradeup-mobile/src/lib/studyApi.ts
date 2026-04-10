@@ -1,17 +1,22 @@
 /**
- * Study API – flashcards and quiz generation via Edge Function (ai_generate).
+ * Study API – flashcards and quiz generation via Edge Functions.
  *
- * SECURITY: All AI calls now go through a Supabase Edge Function so the OpenAI
- * API key never appears in the client bundle. The Edge Function also enforces
- * per-user daily rate limits.
+ * FLASHCARDS: All generation (text + PDF) goes through the unified
+ * `generate_flashcards` Edge Function. The server handles chunking,
+ * PDF extraction, rate limits, and dedup in a single request.
+ *
+ * QUIZ: Still uses the `ai_generate` Edge Function.
+ *
+ * SECURITY: All AI calls go through Supabase Edge Functions so the OpenAI
+ * API key never appears in the client bundle.
  */
-import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
-import { getNoteAttachmentUrl } from './noteStorage';
+import {
+  invokeGenerateFlashcards,
+  type GenerateFlashcardsResult,
+} from './invokeGenerateFlashcards';
 import {
   invokeAiGenerate,
-  type AiGenerateFlashcardsResult,
   type AiGenerateQuizResult,
 } from './invokeAiGenerate';
 
@@ -33,12 +38,12 @@ export type QuizType = 'mcq' | 'true_false' | 'mixed' | 'short_answer';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
 // ---------------------------------------------------------------------------
-// Flashcard generation (via Edge Function)
+// Flashcard generation — unified single-call via Edge Function
 // ---------------------------------------------------------------------------
 
 /**
- * Generate flashcards from note content.
- * Now proxied through the ai_generate Edge Function.
+ * Generate flashcards from note text content.
+ * Single Edge Function call — server handles chunking + dedup.
  */
 export async function generateFlashcardsFromNote(
   noteContent: string,
@@ -47,145 +52,17 @@ export async function generateFlashcardsFromNote(
 ): Promise<GeneratedFlashcard[]> {
   if (!noteContent.trim()) return [];
 
-  const { data, error } = await invokeAiGenerate<AiGenerateFlashcardsResult>({
-    kind: 'flashcards',
+  const { data, error } = await invokeGenerateFlashcards({
+    source: 'text',
     content: noteContent,
     count,
   });
 
   if (error) {
-    if (error.includes('timed out') || error.includes('RATE_LIMIT')) {
-      throw new Error(error);
-    }
-    return [];
+    throw new Error(error);
   }
 
   return data?.cards ?? [];
-}
-
-// ---------------------------------------------------------------------------
-// PDF Flashcard Generation
-// ---------------------------------------------------------------------------
-
-const PDF_FLASHCARD_LIMIT = 15;
-const CHUNK_SIZE = 4000;
-
-function chunkText(text: string, size: number = CHUNK_SIZE): string[] {
-  const chunks: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    let end = Math.min(i + size, text.length);
-    if (end < text.length) {
-      const lastPeriod = text.lastIndexOf('.', end);
-      const lastNewline = text.lastIndexOf('\n', end);
-      const breakPoint = Math.max(lastPeriod, lastNewline);
-      if (breakPoint > i + size * 0.5) {
-        end = breakPoint + 1;
-      }
-    }
-    chunks.push(text.slice(i, end).trim());
-    i = end;
-  }
-  return chunks.filter((c) => c.length > 20);
-}
-
-function deduplicateCards(cards: GeneratedFlashcard[]): GeneratedFlashcard[] {
-  const seen = new Set<string>();
-  return cards.filter((card) => {
-    const key = (card.front ?? '').toLowerCase().trim();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-async function generateCardsFromChunk(chunk: string): Promise<GeneratedFlashcard[]> {
-  try {
-    const { data, error } = await invokeAiGenerate<AiGenerateFlashcardsResult>({
-      kind: 'flashcards_pdf',
-      content: chunk,
-      count: 10,
-    });
-
-    if (error || !data?.cards) return [];
-    return data.cards;
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Generate flashcards from extracted PDF text.
- * Chunks the text, generates cards per chunk via Edge Function,
- * deduplicates, caps at limit. Retries once on empty result.
- */
-export async function generateFlashcardsFromPdf(
-  extractedText: string,
-  _userId?: string,
-  maxCards: number = PDF_FLASHCARD_LIMIT,
-): Promise<GeneratedFlashcard[]> {
-  if (!extractedText.trim()) return [];
-
-  const chunks = chunkText(extractedText, CHUNK_SIZE);
-  if (chunks.length === 0) return [];
-
-  // Generate from all chunks sequentially to avoid OpenAI Rate Limits (Tokens Per Minute)
-  let allCards: GeneratedFlashcard[] = [];
-  for (const chunk of chunks) {
-    const cards = await generateCardsFromChunk(chunk);
-    allCards = allCards.concat(cards);
-    
-    // Add a 1.5-second delay between chunk generations to respect Tier 1 rate limits
-    if (chunks.length > 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-  }
-
-  // Deduplicate and limit
-  allCards = deduplicateCards(allCards);
-  allCards = allCards.slice(0, maxCards);
-
-  // Retry once if we got nothing
-  if (allCards.length === 0 && chunks.length > 0) {
-    const retryCards = await generateCardsFromChunk(
-      chunks.slice(0, 3).join('\n\n'),
-    );
-    allCards = deduplicateCards(retryCards).slice(0, maxCards);
-  }
-
-  return allCards;
-}
-
-/**
- * Generate flashcards directly from a local PDF file.
- * Uploads to OpenAI Files API → generates flashcards via Edge Function.
- *
- * NOTE: For the direct PDF upload path we still call the Edge Function
- * with the extracted text content. The PDF-native OpenAI upload path
- * is only used in the SOW Extract Edge Function (server-side).
- */
-export async function generateFlashcardsFromPdfFile(
-  fileUri: string,
-  fileName?: string,
-  userId?: string,
-  maxCards: number = 15,
-): Promise<{ cards: GeneratedFlashcard[]; error?: string }> {
-  try {
-    // Use the pdfText extraction to get text, then call Edge Function
-    const { extractPdfTextFromLocalUri } = await import('./pdfText');
-    const result = await extractPdfTextFromLocalUri(fileUri, fileName, userId);
-    if (!result.text.trim()) {
-      return { cards: [], error: result.detail || 'Could not extract text from PDF.' };
-    }
-
-    const cards = await generateFlashcardsFromPdf(result.text, userId, maxCards);
-    return { cards };
-  } catch (error) {
-    return {
-      cards: [],
-      error: error instanceof Error ? error.message : 'Failed to generate flashcards.',
-    };
-  }
 }
 
 /** True when the note has a storage path and the filename looks like a PDF. */
@@ -198,46 +75,13 @@ export function noteHasPdfAttachment(note: {
   return n.endsWith('.pdf');
 }
 
-/**
- * Download a note's PDF from Supabase Storage to a temp file, then run the same
- * Edge Function flashcard flow as {@link generateFlashcardsFromPdfFile}.
- */
-export async function generateFlashcardsFromNotePdfStorage(
-  storagePath: string,
-  fileName: string | undefined,
-  userId: string | undefined,
-  maxCards: number = 18,
-): Promise<{ cards: GeneratedFlashcard[]; error?: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cacheDir = (FileSystem as any).cacheDirectory as string | null;
-  if (!cacheDir) {
-    return { cards: [], error: 'No local cache directory for PDF download.' };
-  }
-  const tempPath = `${cacheDir}fc_pdf_${Date.now()}.pdf`;
-  try {
-    const { url, error: urlErr } = await getNoteAttachmentUrl(storagePath);
-    if (urlErr || !url) {
-      return { cards: [], error: urlErr?.message ?? 'Could not access the PDF.' };
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const downloadResult = await (FileSystem as any).downloadAsync(url, tempPath) as { status: number };
-    if (downloadResult.status !== 200) {
-      return { cards: [], error: `Could not download PDF (HTTP ${downloadResult.status}).` };
-    }
-    return await generateFlashcardsFromPdfFile(tempPath, fileName, userId, maxCards);
-  } finally {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (FileSystem as any).deleteAsync?.(tempPath, { idempotent: true }).catch(() => {});
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Quiz generation (via Edge Function)
+// Quiz generation (via ai_generate Edge Function — unchanged)
 // ---------------------------------------------------------------------------
 
 /**
  * Generate quiz questions from note contents.
- * Now proxied through the ai_generate Edge Function.
+ * Still proxied through the ai_generate Edge Function.
  */
 export async function generateQuizFromNotes(
   noteContents: string[],
@@ -300,12 +144,11 @@ export async function clearGeneratedQuizQuestions(): Promise<void> {
 
 /**
  * @deprecated OpenAI key is no longer needed on the client.
- * AI generation now uses the ai_generate Edge Function.
+ * AI generation now uses Edge Functions.
  * This function returns true to indicate "AI is available" since
  * the key is now stored server-side.
  */
 export function getOpenAIKey(): string {
   // Return a truthy string so existing `if (!getOpenAIKey())` checks pass.
-  // The actual key is only on the Edge Function server.
   return 'edge-function';
 }
