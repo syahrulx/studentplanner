@@ -24,6 +24,11 @@ export interface GenerateFlashcardsRequest {
   count?: number;
   /** Note ID for future cache key */
   note_id?: string;
+  /**
+   * PDF only. Omit or "all" = full document (large PDFs may still be trimmed server-side).
+   * Otherwise 1-based pages: "1-5", "3, 7, 10-12"
+   */
+  pdf_pages?: string;
 }
 
 export interface GenerateFlashcardsResult {

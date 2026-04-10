@@ -18,6 +18,11 @@ interface RequestBody {
   count?: number;
   /** Note ID for cache key (optional) */
   note_id?: string;
+  /**
+   * PDF page selection (pdf_storage only). Omit or "all" = whole document (large files still auto-trim server-side).
+   * Otherwise 1-based list: "1-5", "3,7,10-12"
+   */
+  pdf_pages?: string;
 }
 
 interface GeneratedCard {
@@ -325,11 +330,67 @@ const LARGE_GEMINI_MAX_ATTEMPTS = 1;
 const LARGE_GEMINI_FALLBACK_MODELS = 2;
 const LARGE_GEMINI_FALLBACK_TIMEOUT_MS = 38_000;
 
+const MAX_USER_SELECTED_PAGES = 60;
+
+function parsePdfPagesSpec(
+  spec: string,
+  totalPages: number,
+): { ok: true; zeroBasedIndices: number[] } | { ok: false; error: string } {
+  const s = spec.trim();
+  if (!s) return { ok: false, error: 'Enter a page range, or choose All pages.' };
+
+  const parts = s.split(/[,;]/).map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return { ok: false, error: 'Invalid page range.' };
+
+  const set = new Set<number>();
+  for (const part of parts) {
+    const rangeMatch = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (rangeMatch) {
+      let a = Number(rangeMatch[1]);
+      let b = Number(rangeMatch[2]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        return { ok: false, error: 'Invalid page range.' };
+      }
+      if (a > b) [a, b] = [b, a];
+      if (a < 1) return { ok: false, error: 'Page numbers must be at least 1.' };
+      for (let p = a; p <= b; p++) set.add(p);
+    } else if (/^\d+$/.test(part)) {
+      const p = Number(part);
+      if (!Number.isFinite(p) || p < 1) {
+        return { ok: false, error: 'Page numbers must be at least 1.' };
+      }
+      set.add(p);
+    } else {
+      return {
+        ok: false,
+        error: `Invalid segment "${part}". Use e.g. 1-5 or 3, 7, 10-12.`,
+      };
+    }
+  }
+
+  const sorted = [...set].sort((a, b) => a - b);
+  if (sorted[sorted.length - 1] > totalPages) {
+    return {
+      ok: false,
+      error: `PDF has only ${totalPages} page${totalPages === 1 ? '' : 's'}. Adjust your range.`,
+    };
+  }
+  if (sorted.length > MAX_USER_SELECTED_PAGES) {
+    return {
+      ok: false,
+      error: `Select at most ${MAX_USER_SELECTED_PAGES} pages at once.`,
+    };
+  }
+
+  return { ok: true, zeroBasedIndices: sorted.map((p) => p - 1) };
+}
+
 async function extractPdfText(
   supabaseAdmin: ReturnType<typeof createClient>,
   storagePath: string,
   bucket: string,
   geminiKey: string,
+  pagesSpec?: string,
 ): Promise<{ text: string; error?: string }> {
   // Generate signed URL — edge function never downloads the PDF
   const { data: signedData, error: signedError } = await supabaseAdmin.storage
@@ -376,24 +437,48 @@ async function extractPdfText(
       isLikelyLargePdf = true;
     }
 
-    // For very long/large PDFs, OCR + upload + Gemini can exceed Edge limits. Trim to first N pages.
     let uploadU8: Uint8Array = new Uint8Array(pdfBytes);
-    if (isLikelyLargePdf) {
-      try {
-        const src = await PDFDocument.load(uploadU8);
-        const total = src.getPageCount();
-        const take = Math.min(LARGE_PDF_MAX_PAGES, total);
-        if (total > take) {
-          const out = await PDFDocument.create();
-          const pages = await out.copyPages(src, Array.from({ length: take }, (_, i) => i));
-          for (const p of pages) out.addPage(p);
-          // IMPORTANT: use the exact Uint8Array bytes, not .buffer (can include extra unused bytes)
-          uploadU8 = await out.save();
-        }
-      } catch {
-        uploadU8 = new Uint8Array(pdfBytes);
+    let pagesInUpload = 0;
+    const spec = (pagesSpec ?? '').trim();
+    const useCustomPages = spec.length > 0 && !/^all$/i.test(spec);
+
+    try {
+      const src = await PDFDocument.load(uploadU8);
+      const totalPages = src.getPageCount();
+      if (totalPages < 1) {
+        return { text: '', error: 'PDF has no pages.' };
       }
+
+      if (useCustomPages) {
+        const parsed = parsePdfPagesSpec(spec, totalPages);
+        if (!parsed.ok) return { text: '', error: parsed.error };
+        const out = await PDFDocument.create();
+        const copied = await out.copyPages(src, parsed.zeroBasedIndices);
+        for (const p of copied) out.addPage(p);
+        uploadU8 = await out.save();
+        pagesInUpload = parsed.zeroBasedIndices.length;
+      } else if (isLikelyLargePdf && totalPages > LARGE_PDF_MAX_PAGES) {
+        const out = await PDFDocument.create();
+        const take = Math.min(LARGE_PDF_MAX_PAGES, totalPages);
+        const pages = await out.copyPages(src, Array.from({ length: take }, (_, i) => i));
+        for (const p of pages) out.addPage(p);
+        uploadU8 = await out.save();
+        pagesInUpload = take;
+      } else {
+        pagesInUpload = totalPages;
+      }
+    } catch {
+      if (useCustomPages) {
+        return { text: '', error: 'Could not read PDF for page selection.' };
+      }
+      uploadU8 = new Uint8Array(pdfBytes);
+      pagesInUpload = 0;
     }
+
+    const extractHeavy =
+      uploadU8.byteLength > LARGE_PDF_BODY_BYTES ||
+      pagesInUpload > LARGE_PDF_MAX_PAGES ||
+      (pagesInUpload === 0 && isLikelyLargePdf);
 
     // Upload to Gemini File API (simple raw upload — single POST)
     const uploadRes = await fetch(
@@ -420,7 +505,7 @@ async function extractPdfText(
     geminiFileName = uploadJson?.file?.name ?? '';
     if (!geminiFileUri) return { text: '', error: 'Gemini upload returned no URI.' };
 
-    await new Promise((r) => setTimeout(r, isLikelyLargePdf ? 500 : 1000));
+    await new Promise((r) => setTimeout(r, extractHeavy ? 500 : 1000));
 
     const available = await modelsListPromise;
     let modelsToTryFull = available
@@ -430,10 +515,10 @@ async function extractPdfText(
       modelsToTryFull = available.slice(0, 8);
     }
     const largeModelCount = available ? LARGE_GEMINI_MAX_MODELS : LARGE_GEMINI_FALLBACK_MODELS;
-    const modelsToTry = isLikelyLargePdf
+    const modelsToTry = extractHeavy
       ? modelsToTryFull.slice(0, largeModelCount)
       : modelsToTryFull;
-    const maxAttempts = isLikelyLargePdf ? LARGE_GEMINI_MAX_ATTEMPTS : 3;
+    const maxAttempts = extractHeavy ? LARGE_GEMINI_MAX_ATTEMPTS : 3;
     let lastError = '';
 
     for (const modelName of modelsToTry) {
@@ -446,9 +531,13 @@ async function extractPdfText(
             'Preserve headings and structure. Prioritize definitions, key concepts, formulas, and bullet points. ' +
             'Skip indices, page numbers, repeated headers/footers, and long boilerplate.';
 
+          const pageHint =
+            pagesInUpload > 0
+              ? `${pagesInUpload} page${pagesInUpload === 1 ? '' : 's'}`
+              : 'the attached pages';
           const firstPagesOnly =
-            isLikelyLargePdf
-              ? `IMPORTANT: This is a long PDF; only the first ~${LARGE_PDF_MAX_PAGES} pages are attached. Extract key study text from those pages only. `
+            extractHeavy
+              ? `IMPORTANT: The PDF attachment contains ${pageHint}. Extract key study text from those pages only. `
               : '';
 
           const ocrInstruction =
@@ -460,7 +549,7 @@ async function extractPdfText(
               : (firstPagesOnly + 'This PDF may be scanned/image-based. Perform OCR. ' + boundedExtract);
 
           const controller = new AbortController();
-          const timeoutMs = isLikelyLargePdf
+          const timeoutMs = extractHeavy
             ? (available ? LARGE_GEMINI_TIMEOUT_MS : LARGE_GEMINI_FALLBACK_TIMEOUT_MS)
             : 120_000;
           const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -480,7 +569,7 @@ async function extractPdfText(
                 }],
                 generationConfig: {
                   temperature: 0,
-                  maxOutputTokens: isLikelyLargePdf ? LARGE_GEMINI_MAX_OUTPUT : 8192,
+                  maxOutputTokens: extractHeavy ? LARGE_GEMINI_MAX_OUTPUT : 8192,
                 },
               }),
             },
@@ -660,8 +749,11 @@ Deno.serve(async (req) => {
         return errorJson('Invalid storage path for this user.', 'FORBIDDEN');
       }
 
-      // Check DB cache first — avoid redundant OpenAI call
-      if (body.note_id) {
+      const pdfPagesRaw = String(body.pdf_pages ?? '').trim();
+      const pdfPageFilterActive = pdfPagesRaw.length > 0 && !/^all$/i.test(pdfPagesRaw);
+
+      // Cached extraction is only valid for full-document runs (same pages as stored text).
+      if (body.note_id && !pdfPageFilterActive) {
         const { data: cachedNote } = await supabaseAdmin
           .from('notes')
           .select('extracted_text')
@@ -677,7 +769,13 @@ Deno.serve(async (req) => {
         if (!geminiKey) {
           return errorJson('GEMINI_API_KEY is not set. Required for PDF extraction.', 'CONFIG');
         }
-        const extraction = await extractPdfText(supabaseAdmin, storagePath, bucket, geminiKey);
+        const extraction = await extractPdfText(
+          supabaseAdmin,
+          storagePath,
+          bucket,
+          geminiKey,
+          pdfPageFilterActive ? pdfPagesRaw : undefined,
+        );
         if (extraction.error || !extraction.text.trim()) {
           return errorJson(
             extraction.error || 'Could not extract text from PDF.',
@@ -685,8 +783,7 @@ Deno.serve(async (req) => {
           );
         }
         textContent = extraction.text;
-        // Cache for next flashcard run (skips slow PDF/Gemini path; helps after transient 504s).
-        if (body.note_id) {
+        if (body.note_id && !pdfPageFilterActive) {
           void supabaseAdmin
             .from('notes')
             .update({ extracted_text: extraction.text.trim() })

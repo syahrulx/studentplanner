@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   Pressable,
   FlatList,
   StyleSheet,
@@ -252,6 +253,38 @@ function createStyles(theme: ThemePalette) {
       borderColor: theme.border,
     },
     lockPillText: { fontSize: 12, fontWeight: '800', color: theme.textSecondary },
+
+    pdfPagesHint: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.textSecondary,
+      marginTop: 6,
+      lineHeight: 17,
+    },
+    pdfPageModeRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+    pdfPageModeChip: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 14,
+      backgroundColor: theme.background,
+      borderWidth: 2,
+      borderColor: theme.border,
+      alignItems: 'center',
+    },
+    pdfPageModeChipSelected: { borderColor: theme.primary, backgroundColor: `${theme.primary}12` },
+    pdfPageInput: {
+      marginTop: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      fontWeight: '600',
+      color: theme.text,
+      backgroundColor: theme.background,
+    },
   });
 }
 
@@ -274,6 +307,8 @@ export default function FlashcardPick() {
   const [countModalVisible, setCountModalVisible] = useState(false);
   const [cardsPerNote, setCardsPerNote] = useState(() => defaultFlashcardCountForPlan(undefined));
   const [pickedTier, setPickedTier] = useState<'free' | 'plus' | 'pro'>(() => 'free');
+  const [pdfPageMode, setPdfPageMode] = useState<'all' | 'custom'>('all');
+  const [pdfPageRange, setPdfPageRange] = useState('');
   const planMaxAllowed = maxFlashcardsForPlan(user?.subscriptionPlan);
   const pickedTierMaxAllowed =
     pickedTier === 'pro'
@@ -329,6 +364,11 @@ export default function FlashcardPick() {
   const hasParamSubject =
     typeof paramSubjectId === 'string' && paramSubjectId.length > 0;
 
+  const selectionHasPdf = useMemo(
+    () => subjectNotes.some((n) => selectedIds.has(n.id) && n.hasPdf),
+    [subjectNotes, selectedIds],
+  );
+
   const goBack = () => {
     if (step === 'notes' && hasParamSubject) {
       router.back();
@@ -376,6 +416,8 @@ export default function FlashcardPick() {
       return;
     }
 
+    setPdfPageMode('all');
+    setPdfPageRange('');
     setCountModalVisible(true);
   }, [selectedIds, generating, subjectNotes, T]);
 
@@ -423,6 +465,10 @@ export default function FlashcardPick() {
     }
 
     const isReplaceMode = replaceMode === 'replace';
+
+    const anyPdfInRun = usable.some((n) => n.hasPdf);
+    const pdfPagesForRequest =
+      anyPdfInRun && pdfPageMode === 'custom' ? pdfPageRange.trim() : undefined;
 
     setGenerating(true);
     setGeneratingLabel('Preparing…');
@@ -475,6 +521,7 @@ export default function FlashcardPick() {
               bucket: 'note-attachments',
               count: cardsPerNote,
               note_id: note.id,
+              ...(pdfPagesForRequest ? { pdf_pages: pdfPagesForRequest } : {}),
             });
             if (res.error) error = res.error;
             else cards = res.data?.cards ?? [];
@@ -498,6 +545,7 @@ export default function FlashcardPick() {
                 bucket: 'note-attachments',
                 count: cardsPerNote,
                 note_id: note.id,
+                ...(pdfPagesForRequest ? { pdf_pages: pdfPagesForRequest } : {}),
               });
               if (res.error) error = res.error;
               else cards = res.data?.cards ?? [];
@@ -582,6 +630,8 @@ export default function FlashcardPick() {
     cardsPerNote,
     notes,
     T,
+    pdfPageMode,
+    pdfPageRange,
   ]);
 
 
@@ -878,6 +928,59 @@ export default function FlashcardPick() {
                 })}
               </View>
 
+              {selectionHasPdf ? (
+                <>
+                  <Text style={styles.sectionLabel}>{T('flashcardGenPdfPagesSection')}</Text>
+                  <Text style={styles.pdfPagesHint}>{T('flashcardGenPdfPagesHint')}</Text>
+                  <View style={styles.pdfPageModeRow}>
+                    <Pressable
+                      style={[
+                        styles.pdfPageModeChip,
+                        pdfPageMode === 'all' && styles.pdfPageModeChipSelected,
+                      ]}
+                      onPress={() => setPdfPageMode('all')}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          pdfPageMode === 'all' && styles.chipTextSelected,
+                        ]}
+                      >
+                        {T('flashcardGenPdfPagesAll')}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.pdfPageModeChip,
+                        pdfPageMode === 'custom' && styles.pdfPageModeChipSelected,
+                      ]}
+                      onPress={() => setPdfPageMode('custom')}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          pdfPageMode === 'custom' && styles.chipTextSelected,
+                        ]}
+                      >
+                        {T('flashcardGenPdfPagesCustom')}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {pdfPageMode === 'custom' ? (
+                    <TextInput
+                      style={styles.pdfPageInput}
+                      value={pdfPageRange}
+                      onChangeText={setPdfPageRange}
+                      placeholder={T('flashcardGenPdfPagesPlaceholder')}
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="default"
+                    />
+                  ) : null}
+                </>
+              ) : null}
+
               {/* Tips at bottom */}
               <View style={styles.tipsBox}>
                 <View style={styles.tipsTitleRow}>
@@ -926,6 +1029,14 @@ export default function FlashcardPick() {
             <Pressable
               style={styles.modalDoneBtn}
               onPress={() => {
+                if (
+                  selectionHasPdf &&
+                  pdfPageMode === 'custom' &&
+                  !pdfPageRange.trim()
+                ) {
+                  Alert.alert(T('flashcardPickGenerateFailedTitle'), T('flashcardGenPdfPagesRequired'));
+                  return;
+                }
                 setCountModalVisible(false);
                 void handleGenerate();
               }}
