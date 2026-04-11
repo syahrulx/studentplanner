@@ -100,7 +100,7 @@ export default function Profile() {
       await setCircleLocationVisibility(userId, next);
     } catch (e) {
       setCircleVisibilityIds(prev);
-      Alert.alert('Error', 'Failed to update circle visibility. Please try again.');
+      Alert.alert('Could not update visibility', 'Please try again.');
     }
   };
 
@@ -118,7 +118,7 @@ export default function Profile() {
             try {
               await updateProfile({ name: newName.trim() });
             } catch (e) {
-              Alert.alert('Error', 'Failed to update name');
+              Alert.alert('Could not update name', 'Please try again.');
             } finally {
               setIsUpdating(false);
             }
@@ -234,7 +234,7 @@ export default function Profile() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+        Alert.alert('Permission needed', 'Allow photo access in your device settings to change your profile picture.');
         return;
       }
 
@@ -255,7 +255,7 @@ export default function Profile() {
       }
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+      Alert.alert('Upload failed', 'Could not update your profile picture. Please try again.');
     } finally {
       setIsUploading(false);
     }

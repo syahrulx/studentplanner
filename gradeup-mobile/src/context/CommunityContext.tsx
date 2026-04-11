@@ -539,7 +539,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     try {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
-        Alert.alert('Location Required', 'Please enable location to show your position on the map.');
+        Alert.alert('Location access needed', 'Enable location in your device settings to share your position on the map.');
         return false;
       }
 
@@ -747,10 +747,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         prev.map((st) => (st.id === sharedTaskId ? { ...st, recipient_completed: completed } : st)),
       );
     } catch (e) {
-      Alert.alert(
-        'Could not update',
-        e instanceof Error ? e.message : 'Please try again.',
-      );
+      Alert.alert('Could not update task', 'Please try again.');
     }
   }, [userId]);
 
@@ -758,7 +755,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     async (sharedTaskId: string): Promise<boolean> => {
       const { error } = await communityApi.deleteSharedTaskLinkForCurrentUser(sharedTaskId);
       if (error) {
-        Alert.alert('Could not remove', error);
+        Alert.alert('Could not remove task', 'Please try again.');
         return false;
       }
       setAcceptedSharedTasks((prev) => prev.filter((st) => st.id !== sharedTaskId));

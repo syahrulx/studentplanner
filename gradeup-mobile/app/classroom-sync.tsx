@@ -58,7 +58,7 @@ export default function ClassroomSync() {
         setExpandedCourses(new Set(data.map(c => c.id)));
         setStep('selecting');
       } catch (e: any) {
-        if (!cancelled) setError(e.message || 'Failed to connect.');
+        if (!cancelled) setError('Could not connect to Google Classroom. Please check your connection and try again.');
       }
     })();
     return () => { cancelled = true; };
@@ -171,7 +171,7 @@ export default function ClassroomSync() {
       ]);
     } catch (e: any) {
       setStep('selecting');
-      Alert.alert('Sync Failed', e.message || 'Something went wrong.');
+      Alert.alert('Sync failed', 'Could not import tasks. Please check your connection and try again.');
     }
   };
 

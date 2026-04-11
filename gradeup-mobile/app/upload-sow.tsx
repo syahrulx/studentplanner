@@ -194,7 +194,7 @@ export default function UploadSOW() {
       setSelected({ name: file.name ?? 'document.pdf', uri: file.uri, mimeType: file.mimeType });
       setExtraction(null);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not pick PDF.');
+      Alert.alert('Could not open file', 'Please try selecting the PDF again.');
     } finally {
       busyRef.current = false;
     }
@@ -267,12 +267,12 @@ export default function UploadSOW() {
         const openAiTip = isOpenAi
           ? '\n\nSet the secret on the server:\nnpx supabase secrets set OPENAI_API_KEY=sk-...'
           : '';
-        Alert.alert('AI extraction failed', `${errMessage}${codeSuffix}\nHTTP ${httpStatus}${supabaseTip}${openAiTip}`);
+        Alert.alert('AI extraction failed', `The AI could not process this file.${openAiTip || supabaseTip || '\n\nTry again or use a different PDF.'}`);
         return;
       }
 
       if (httpStatus >= 400) {
-        Alert.alert('AI extraction failed', `HTTP ${httpStatus}\n${JSON.stringify(data).slice(0, 600)}`);
+        Alert.alert('AI extraction failed', 'The server could not process this file. Please try again or use a different PDF.');
         return;
       }
 
@@ -316,7 +316,7 @@ export default function UploadSOW() {
         rawTextPreview: typeof body?.raw_text_preview === 'string' ? body.raw_text_preview : '',
       });
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Extraction failed.');
+      Alert.alert('Extraction failed', 'Something went wrong. Please try again.');
     } finally {
       setIsBusy(false);
     }
@@ -376,8 +376,7 @@ export default function UploadSOW() {
     }
     setIsSaving(true);
     const uid = session.user.id;
-    const dbHint =
-      '\n\nIf this mentions a missing table or RLS, run supabase/migrations/006_user_courses_and_tasks.sql in the Supabase SQL Editor.';
+    const dbHint = '';
 
     try {
       const subjectMap = new Set(courses.map((c) => c.id.toUpperCase()));
@@ -396,7 +395,7 @@ export default function UploadSOW() {
         };
         const { error: courseErr } = await coursesDb.addCourse(uid, course);
         if (courseErr) {
-          Alert.alert('Could not save subjects', `${courseErr.message}${dbHint}`);
+          Alert.alert('Could not save subjects', 'Something went wrong while saving your subjects. Please try again.');
           return;
         }
         addCourse(course, { skipRemote: true });
@@ -433,7 +432,7 @@ export default function UploadSOW() {
         task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
         const { error: taskErr } = await taskDb.upsertTask(uid, task);
         if (taskErr) {
-          Alert.alert('Could not save tasks', `${taskErr.message}${dbHint}`);
+          Alert.alert('Could not save tasks', 'Something went wrong while saving your tasks. Please try again.');
           return;
         }
         addTask(task, { skipRemote: true });
@@ -471,7 +470,7 @@ export default function UploadSOW() {
       setExtraction(null);
       setSelected(null);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Save failed.');
+      Alert.alert('Save failed', 'Could not save your subjects and tasks. Please try again.');
     } finally {
       setIsSaving(false);
     }

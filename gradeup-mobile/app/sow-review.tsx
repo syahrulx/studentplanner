@@ -151,8 +151,7 @@ export default function SowReview() {
         return;
       }
 
-      const dbHint =
-        '\n\nIf this mentions a missing table or RLS, run `supabase/migrations/006_user_courses_and_tasks.sql` in the Supabase SQL Editor.';
+      const dbHint = '';
 
       const subjectMap = new Set(courses.map((c) => c.id.toUpperCase()));
       for (const s of subjects) {
@@ -167,7 +166,7 @@ export default function SowReview() {
         };
         const { error: courseErr } = await coursesDb.addCourse(uid, course);
         if (courseErr) {
-          Alert.alert('Could not save subjects', `${courseErr.message}${dbHint}`);
+          Alert.alert('Could not save subjects', 'Something went wrong. Please try again.');
           return;
         }
         addCourse(course, { skipRemote: true });
@@ -199,7 +198,7 @@ export default function SowReview() {
         task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
         const { error: taskErr } = await taskDb.upsertTask(uid, task);
         if (taskErr) {
-          Alert.alert('Could not save tasks', `${taskErr.message}${dbHint}`);
+          Alert.alert('Could not save tasks', 'Something went wrong. Please try again.');
           return;
         }
         addTask(task, { skipRemote: true });
@@ -219,7 +218,7 @@ export default function SowReview() {
       clearPendingSowExtraction();
       router.replace('/(tabs)/planner' as any);
     } catch (e) {
-      Alert.alert('Save failed', e instanceof Error ? e.message : 'Could not save extracted items.');
+      Alert.alert('Save failed', 'Could not save your subjects and tasks. Please try again.');
     } finally {
       setSaving(false);
     }

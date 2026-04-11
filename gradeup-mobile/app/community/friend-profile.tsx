@@ -82,7 +82,7 @@ export default function FriendProfileScreen() {
         onPress: async () => {
           if (!userId || !friendId) return;
           try { await communityApi.removeFriendByUserId(userId, friendId); await refreshFriends(); router.back(); }
-          catch { Alert.alert('Error', 'Failed to remove friend'); }
+          catch { Alert.alert('Could not remove friend', 'Please try again.'); }
         },
       },
     ]);

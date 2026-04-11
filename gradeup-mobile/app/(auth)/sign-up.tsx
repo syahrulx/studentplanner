@@ -69,7 +69,7 @@ export default function SignUp() {
         },
       });
       if (oauthError) {
-        setError(oauthError.message);
+        setError('Google sign-up failed. Please try again.');
         return;
       }
       if (data?.url) {
@@ -85,7 +85,7 @@ export default function SignUp() {
               refresh_token: refreshToken,
             });
             if (sessionError) {
-              setError(sessionError.message);
+              setError('Sign-up failed. Please try again.');
             } else {
               // Same exact check profile logic as login: redirect to user data form if needed
               const { data: { user } } = await supabase.auth.getUser();
@@ -129,6 +129,8 @@ export default function SignUp() {
         let msg = signUpError.message;
         if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{'))
           msg = 'Server unavailable. Please try again later.';
+        else if (msg.toLowerCase().includes('password'))
+          msg = 'Password must be at least 6 characters and contain letters and numbers.';
         setError(msg);
         return;
       }
@@ -160,8 +162,7 @@ export default function SignUp() {
         }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Something went wrong';
-      setError(msg.includes('504') || msg.startsWith('{') ? 'Server unavailable.' : msg);
+      setError('Something went wrong. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

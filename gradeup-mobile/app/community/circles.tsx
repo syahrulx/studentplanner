@@ -30,7 +30,7 @@ export default function CirclesScreen() {
       setNewName('');
       setSelectedEmoji('👥');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create circle');
+      Alert.alert('Could not create circle', 'Please try again.');
     }
     setCreating(false);
   }, [userId, newName, selectedEmoji, refreshCircles]);
@@ -44,10 +44,10 @@ export default function CirclesScreen() {
         setJoinCode('');
         Alert.alert('Joined!', `You joined ${circle.name}`);
       } else {
-        Alert.alert('Not Found', 'Invalid invite code');
+        Alert.alert('Code not found', 'Double-check the invite code and try again.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Failed to join circle');
+      Alert.alert('Could not join circle', 'Please try again.');
     }
   }, [userId, joinCode, refreshCircles]);
 
@@ -65,7 +65,7 @@ export default function CirclesScreen() {
       await Clipboard.setStringAsync(code);
       Alert.alert('Copied', 'Invite code copied to clipboard');
     } catch {
-      Alert.alert('Error', 'Failed to copy invite code');
+      Alert.alert('Could not copy code', 'Please try again.');
     }
   }, []);
 
@@ -89,7 +89,7 @@ export default function CirclesScreen() {
         Alert.alert('Invite sent', 'They will appear in the circle after they accept.');
         setInviteCircleId(null);
       } catch (e: any) {
-        Alert.alert('Error', e.message || 'Failed to invite friend');
+        Alert.alert('Invite failed', 'Could not send the invite. Please try again.');
       }
     },
     [inviteCircleId, userId]

@@ -61,8 +61,7 @@ export default function Login() {
         router.replace('/(tabs)');
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Something went wrong';
-      setError(msg.includes('504') || msg.startsWith('{') ? 'Server unavailable. Please try again later.' : msg);
+      setError('Something went wrong. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -84,7 +83,7 @@ export default function Login() {
         },
       });
       if (oauthError) {
-        setError(oauthError.message);
+        setError('Google sign-in failed. Please try again.');
         return;
       }
       if (data?.url) {
@@ -102,7 +101,7 @@ export default function Login() {
               refresh_token: refreshToken,
             });
             if (sessionError) {
-              setError(sessionError.message);
+              setError('Sign-in failed. Please try again.');
             } else if (sessionData.session) {
               router.replace('/(tabs)');
             }

@@ -264,7 +264,7 @@ function MapAudioPlayer({ trackId, songName }: { trackId: string; songName?: str
       }
     } catch (e) {
       console.warn('MapAudioPlayer play error:', e);
-      Alert.alert('Error', 'Could not play the audio preview. Please check your connection.');
+      Alert.alert('Playback failed', 'Could not play the audio preview. Check your connection and try again.');
     }
     setIsLoading(false);
   };

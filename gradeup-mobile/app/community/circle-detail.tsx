@@ -60,7 +60,7 @@ export default function CircleDetailScreen() {
       await Clipboard.setStringAsync(circle.invite_code);
       Alert.alert('Copied', 'Invite code copied to clipboard');
     } catch {
-      Alert.alert('Error', 'Failed to copy invite code');
+      Alert.alert('Could not copy code', 'Please try again.');
     }
   };
 
@@ -88,7 +88,7 @@ export default function CircleDetailScreen() {
             await refreshCircles();
             router.back();
           } catch (e) {
-            Alert.alert('Error', 'Failed to leave circle');
+            Alert.alert('Could not leave circle', 'Please try again.');
           }
         },
       },
@@ -207,7 +207,7 @@ export default function CircleDetailScreen() {
                                   setMembers(next);
                                   await refreshCircles();
                                 } catch {
-                                  Alert.alert('Error', 'Failed to remove member');
+                                  Alert.alert('Could not remove member', 'Please try again.');
                                 }
                               },
                             },
@@ -255,7 +255,7 @@ export default function CircleDetailScreen() {
                         await refreshCircles();
                         router.back();
                       } catch {
-                        Alert.alert('Error', 'Failed to delete circle');
+                        Alert.alert('Could not delete circle', 'Please try again.');
                       }
                     },
                   },

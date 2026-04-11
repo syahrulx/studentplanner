@@ -118,13 +118,12 @@ export default function AddFriendScreen() {
         await refreshRequests();
         await refreshFriends();
       } catch (e: any) {
-        const msg = e.message || 'Failed to send request';
+        const msg = e.message || '';
         if (/duplicate key|already exists/i.test(msg)) {
-          // Stale UI — mark as sent and refresh
           setSentIds((prev) => new Set(prev).add(targetId));
           await refreshOutgoingRequests();
         } else {
-          Alert.alert('Error', msg);
+          Alert.alert('Request not sent', 'Something went wrong. Please try again.');
         }
       }
     },
@@ -153,7 +152,7 @@ export default function AddFriendScreen() {
         await refreshFriends();
       } catch (e) {
         console.warn(e);
-        Alert.alert('Error', 'Could not decline the request.');
+        Alert.alert('Could not decline', 'Please try again.');
       }
     },
     [refreshRequests, refreshFriends]
@@ -179,7 +178,7 @@ export default function AddFriendScreen() {
               await refreshOutgoingRequests();
               await refreshRequests();
             } catch (e) {
-              Alert.alert('Error', 'Could not cancel the request.');
+              Alert.alert('Could not cancel', 'Please try again.');
             }
             setCancellingIds((p) => {
               const next = new Set(p);

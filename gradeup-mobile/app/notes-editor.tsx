@@ -209,7 +209,7 @@ export default function NotesEditor() {
 
       if (error) {
         setBanner({ kind: 'idle' });
-        Alert.alert('Upload failed', error.message);
+        Alert.alert('Upload failed', 'Could not upload the file. Please check your connection and try again.');
         return;
       }
 
@@ -224,7 +224,7 @@ export default function NotesEditor() {
       setBanner({ kind: 'done', message: T('noteAttachDone') });
     } catch (e: any) {
       setBanner({ kind: 'idle' });
-      Alert.alert('Error', e?.message || 'Could not attach file');
+      Alert.alert('Attachment failed', 'Could not attach the file. Please try again.');
     } finally {
       if (uploadTicker) clearInterval(uploadTicker);
       attachLoadingRef.current = false;
@@ -236,12 +236,12 @@ export default function NotesEditor() {
     try {
       const { url, error } = await getNoteAttachmentUrl(attachmentPath);
       if (error || !url) {
-        Alert.alert('Error', 'Could not get attachment link');
+        Alert.alert('Could not open file', 'Failed to generate a link for this attachment.');
         return;
       }
       await Linking.openURL(url);
     } catch (e: any) {
-      Alert.alert('Error', 'Could not open file');
+      Alert.alert('Could not open file', 'Try downloading it manually from your files.');
     }
   };
 

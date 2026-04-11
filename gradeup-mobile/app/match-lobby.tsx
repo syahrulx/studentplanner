@@ -36,7 +36,7 @@ export default function MatchLobby() {
         try {
           await joinQuiz(sessionId);
         } catch (e: any) {
-          Alert.alert('Error', e.message || 'Failed to join session');
+          Alert.alert('Could not join session', 'Something went wrong. Please try again.');
           router.back();
         } finally {
           setJoining(false);
@@ -46,7 +46,7 @@ export default function MatchLobby() {
         try {
           await joinQuiz(paramCode, true);
         } catch (e: any) {
-          Alert.alert('Error', e.message || 'Invalid invite code');
+          Alert.alert('Invalid invite code', 'Double-check the code and try again.');
           router.back();
         } finally {
           setJoining(false);
@@ -94,7 +94,7 @@ export default function MatchLobby() {
       // Host navigates immediately
       router.replace({ pathname: '/quiz-gameplay', params: { sessionId: currentSession.id } } as any);
     } catch {
-      Alert.alert('Error', 'Failed to start the game');
+      Alert.alert('Could not start game', 'Please try again.');
     } finally {
       setStarting(false);
     }

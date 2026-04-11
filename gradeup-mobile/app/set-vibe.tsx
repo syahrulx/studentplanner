@@ -71,7 +71,7 @@ export default function SetVibeScreen() {
           ]
         );
       } else {
-        Alert.alert('Error', 'Could not load your Spotify data.');
+        Alert.alert('Could not load Spotify', 'Something went wrong. Please try again.');
       }
     }
     setLoading(false);
@@ -97,9 +97,8 @@ export default function SetVibeScreen() {
       } catch (e: any) {
         console.warn('[SetVibe] search error:', e);
         setSearchResults([]);
-        const msg = e?.message || 'Search failed. Please try again.';
-        setSearchError(msg);
-        Alert.alert('Search Error', msg);
+        setSearchError('Search failed. Please try again.');
+        Alert.alert('Search failed', 'Could not reach Spotify. Please check your connection.');
       }
       setSearching(false);
     }, 400);
@@ -114,7 +113,7 @@ export default function SetVibeScreen() {
       Alert.alert('Vibe Set! 🎵', `${track.name} — ${track.artist}`);
       router.back();
     } catch (e) {
-      Alert.alert('Error', 'Failed to set vibe.');
+      Alert.alert('Could not set vibe', 'Please try again.');
     }
     setSaving(false);
   };
@@ -126,7 +125,7 @@ export default function SetVibeScreen() {
       await refreshMyActivity();
       setCurrentVibe(null);
     } catch (e) {
-      Alert.alert('Error', 'Failed to clear vibe.');
+      Alert.alert('Could not clear vibe', 'Please try again.');
     }
     setSaving(false);
   };

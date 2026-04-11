@@ -82,7 +82,7 @@ export default function ProfileSetup() {
 
       router.replace('/(tabs)');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save profile');
+      setError('Could not save your profile. Please check your connection and try again.');
     } finally {
       setSaving(false);
     }

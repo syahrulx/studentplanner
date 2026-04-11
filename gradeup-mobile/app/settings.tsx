@@ -150,7 +150,7 @@ export default function Settings() {
               await refreshPrefs();
               Alert.alert('Disconnected', 'Google Classroom has been unlinked.');
             } catch {
-              Alert.alert('Error', 'Failed to disconnect.');
+              Alert.alert('Could not disconnect', 'Please try again.');
             }
           },
         },
@@ -319,7 +319,7 @@ export default function Settings() {
               const ok = await connectSpotify();
               if (ok) Alert.alert('Connected! 🎉', 'You can now set your music vibe!');
             } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed to connect Spotify.');
+              Alert.alert('Could not connect Spotify', 'Something went wrong. Please try again.');
             }
           },
           color: '#1DB954',

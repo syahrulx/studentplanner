@@ -96,7 +96,7 @@ export default function QuizModeSelection() {
       if (useGenerated === '1') await clearGeneratedQuizQuestions();
       router.replace({ pathname: '/quiz-gameplay', params: { sessionId: session.id } } as any);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create quiz session');
+      Alert.alert('Could not start quiz', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -133,7 +133,7 @@ export default function QuizModeSelection() {
       if (useGenerated === '1') await clearGeneratedQuizQuestions();
       router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create match');
+      Alert.alert('Could not create match', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

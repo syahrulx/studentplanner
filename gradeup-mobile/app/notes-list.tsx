@@ -224,7 +224,7 @@ export default function NotesList() {
 
       if (error) {
         setImportProgressUi(null);
-        Alert.alert('Upload failed', error.message);
+        Alert.alert('Upload failed', 'Could not upload the file. Please check your connection and try again.');
         return;
       }
 
@@ -249,7 +249,7 @@ export default function NotesList() {
       router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
     } catch (e) {
       setImportProgressUi(null);
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not import file.');
+      Alert.alert('Import failed', 'Could not import the file. Please try again.');
     } finally {
       if (uploadTicker) clearInterval(uploadTicker);
       isImportingRef.current = false;
