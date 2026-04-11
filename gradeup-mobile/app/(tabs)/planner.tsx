@@ -63,6 +63,16 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** Normalize profile names (e.g. ALL CAPS) for readable list labels. */
+function formatPersonDisplayName(raw: string): string {
+  const t = raw.trim();
+  if (!t) return raw;
+  return t
+    .split(/\s+/)
+    .map((w) => (w.length <= 1 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+    .join(' ');
+}
+
 type PlannerTaskItem = {
   itemType: 'task';
   id: string;
@@ -98,6 +108,10 @@ export default function Planner() {
   const weekGridScrollRef = useRef<ScrollView>(null);
   const theme = useTheme();
   const s = useMemo(() => createPlannerStyles(theme), [theme]);
+  const headerOutline = useMemo(
+    () => (themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.58)' : '#d7dee8'),
+    [theme],
+  );
 
   const {
     tasks,
@@ -559,6 +573,17 @@ export default function Planner() {
   }, [view, activeDate, displayList, weekDays]);
 
   const listCount = displayList.length;
+  const pendingShareCount = useMemo(() => tasks.filter((t) => !t.isDone).length, [tasks]);
+  const shareAllRecipientId = shareAllTab === 'friend' ? shareAllFriendId : shareAllCircleId;
+  const shareAllAutoOn = useMemo(() => {
+    if (shareAllTab === 'friend' && shareAllFriendId) {
+      return shareStreams.find((st) => st.recipient_id === shareAllFriendId)?.enabled ?? false;
+    }
+    if (shareAllTab === 'circle' && shareAllCircleId) {
+      return shareStreams.find((st) => st.circle_id === shareAllCircleId)?.enabled ?? false;
+    }
+    return false;
+  }, [shareStreams, shareAllFriendId, shareAllCircleId, shareAllTab]);
 
   const handleShareAll = async () => {
     const undoneTasks = tasks.filter(t => !t.isDone);
@@ -1799,8 +1824,46 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <View style={[s.headerSide, s.headerSideLeft]} />
-          <View style={s.headerCenter}>
+          <View style={[s.headerSideBase, s.headerSideLeft, s.headerSideLayer]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerAddPill,
+                {
+                  borderColor: headerOutline,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={4}
+              accessibilityLabel={T('addTask')}
+              accessibilityRole="button"
+            >
+              <Feather name="plus" size={20} color={theme.primary} />
+              <Text style={[s.headerAddPillText, { color: theme.primary }]} numberOfLines={1}>
+                {T('addTask')}
+              </Text>
+            </Pressable>
+          </View>
+          <View style={[s.headerSideBase, s.headerSideRight, s.headerSideLayer]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerBtn,
+                {
+                  borderColor: headerOutline,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={() => setShowShareAllModal(true)}
+              hitSlop={6}
+            >
+              <Feather name="user-plus" size={20} color={theme.primary} />
+            </Pressable>
+          </View>
+          <View style={s.headerCenter} pointerEvents="box-none">
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
                 name={
@@ -1858,28 +1921,6 @@ export default function Planner() {
                 ))}
               </View>
             )}
-          </View>
-          <View style={[s.headerSide, s.headerSideRight, { gap: 10 }]}>
-            {/* Prominent + Add button — replaces old book icon location */}
-            <Pressable
-              style={({ pressed }) => [
-                s.headerAddBtn,
-                { backgroundColor: theme.primary },
-                pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
-              ]}
-              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-              hitSlop={4}
-              accessibilityLabel="Add task"
-            >
-              <Feather name="plus" size={24} color="#fff" />
-            </Pressable>
-            <Pressable
-              style={s.headerBtn}
-              onPress={() => setShowShareAllModal(true)}
-              hitSlop={6}
-            >
-              <Feather name="user-plus" size={20} color={theme.text} />
-            </Pressable>
           </View>
         </View>
 
@@ -2043,129 +2084,171 @@ export default function Planner() {
       {/* Share All Tasks Modal */}
       <Modal visible={showShareAllModal} transparent animationType="slide">
         <View style={s.shareAllOverlay}>
-          <View style={s.shareAllContent}>
+          <View style={[s.shareAllContent, { backgroundColor: theme.card }]}>
             <View style={s.shareAllHeader}>
-              <Text style={s.shareAllTitle}>Share All Tasks</Text>
+              <Text style={[s.shareAllTitle, { color: theme.text }]}>{T('shareAllModalTitle')}</Text>
               <Pressable onPress={() => setShowShareAllModal(false)} hitSlop={10}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
+                <Feather name="x" size={22} color={theme.textSecondary} />
               </Pressable>
             </View>
 
-            <Text style={s.shareAllSubtitle}>
-              {tasks.filter(t => !t.isDone).length} pending task{tasks.filter(t => !t.isDone).length !== 1 ? 's' : ''} will be shared
+            <Text style={[s.shareAllSubtitle, { color: theme.textSecondary }]}>
+              {pendingShareCount}{' '}
+              {pendingShareCount === 1 ? T('shareAllTaskPendingOne') : T('shareAllTaskPendingMany')}
+              {' · '}
+              {T('shareAllPickRecipient')}
             </Text>
 
-            {/* Tab */}
             <View style={s.shareAllTabs}>
               <Pressable
-                style={[s.shareAllTab, shareAllTab === 'friend' && s.shareAllTabActive]}
+                style={[
+                  s.shareAllTab,
+                  { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                  shareAllTab === 'friend' && { borderColor: theme.primary, backgroundColor: hexToRgba(theme.primary, 0.06) },
+                ]}
                 onPress={() => setShareAllTab('friend')}
               >
                 <Feather name="user" size={15} color={shareAllTab === 'friend' ? theme.primary : theme.textSecondary} />
-                <Text style={[s.shareAllTabText, shareAllTab === 'friend' && s.shareAllTabTextActive]}>Friend</Text>
+                <Text style={[s.shareAllTabText, { color: theme.textSecondary }, shareAllTab === 'friend' && { color: theme.primary }]}>
+                  {T('shareAllFriendTab')}
+                </Text>
               </Pressable>
               <Pressable
-                style={[s.shareAllTab, shareAllTab === 'circle' && s.shareAllTabActive]}
+                style={[
+                  s.shareAllTab,
+                  { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                  shareAllTab === 'circle' && { borderColor: theme.primary, backgroundColor: hexToRgba(theme.primary, 0.06) },
+                ]}
                 onPress={() => setShareAllTab('circle')}
               >
                 <Feather name="users" size={15} color={shareAllTab === 'circle' ? theme.primary : theme.textSecondary} />
-                <Text style={[s.shareAllTabText, shareAllTab === 'circle' && s.shareAllTabTextActive]}>Circle</Text>
+                <Text style={[s.shareAllTabText, { color: theme.textSecondary }, shareAllTab === 'circle' && { color: theme.primary }]}>
+                  {T('shareAllCircleTab')}
+                </Text>
               </Pressable>
             </View>
 
-            <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={s.shareAllList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {shareAllTab === 'friend' ? (
                 communityFriends.length === 0 ? (
-                  <Text style={s.shareAllEmpty}>Add friends in the Community tab first!</Text>
+                  <Text style={[s.shareAllEmpty, { color: theme.textSecondary }]}>{T('shareAllNoFriends')}</Text>
                 ) : (
-                  communityFriends.map(f => {
-                    const isAutoShareOn = shareStreams.find(st => st.recipient_id === f.id)?.enabled ?? false;
-                    return (
-                      <View key={f.id}>
-                        <Pressable
-                          style={[s.shareAllRow, shareAllFriendId === f.id && s.shareAllRowActive]}
-                          onPress={() => { setShareAllFriendId(f.id); setShareAllCircleId(null); }}
-                        >
-                          <View style={s.shareAllAvatar}>
-                            <Text style={s.shareAllAvatarText}>{f.name.charAt(0)}</Text>
-                          </View>
-                          <Text style={[s.shareAllRowName, shareAllFriendId === f.id && { color: theme.primary }]}>{f.name}</Text>
-                          {shareAllFriendId === f.id && <Feather name="check-circle" size={18} color={theme.primary} />}
-                        </Pressable>
-                        {/* Auto-share toggle — visible when this friend is selected */}
-                        {shareAllFriendId === f.id && (
-                          <View style={s.autoShareInlineRow}>
-                            <Feather name="refresh-cw" size={13} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[s.autoShareInlineLabel, { color: theme.text }]}>Auto-share new tasks</Text>
-                              <Text style={[s.autoShareInlineDesc, { color: theme.textSecondary }]}>Future tasks auto-sent to {f.name.split(' ')[0]}</Text>
-                            </View>
-                            <Switch
-                              value={isAutoShareOn}
-                              onValueChange={(val) => toggleShareStream(f.id, val)}
-                              trackColor={{ false: theme.border, true: '#10b981' }}
-                            />
-                          </View>
-                        )}
+                  communityFriends.map((f) => (
+                    <Pressable
+                      key={f.id}
+                      style={({ pressed }) => [
+                        s.shareAllRow,
+                        { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                        shareAllFriendId === f.id && { borderColor: theme.primary, backgroundColor: hexToRgba(theme.primary, 0.06) },
+                        pressed && { opacity: 0.88 },
+                      ]}
+                      onPress={() => {
+                        setShareAllFriendId(f.id);
+                        setShareAllCircleId(null);
+                      }}
+                    >
+                      <View style={[s.shareAllAvatar, { backgroundColor: hexToRgba(theme.primary, 0.12) }]}>
+                        <Text style={[s.shareAllAvatarText, { color: theme.primary }]}>
+                          {formatPersonDisplayName(f.name).charAt(0)}
+                        </Text>
                       </View>
-                    );
-                  })
+                      <Text
+                        style={[
+                          s.shareAllRowName,
+                          { color: theme.text, flex: 1, minWidth: 0 },
+                          shareAllFriendId === f.id && { color: theme.primary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {formatPersonDisplayName(f.name)}
+                      </Text>
+                      <View style={s.shareAllRowTrail}>
+                        <Feather
+                          name={shareAllFriendId === f.id ? 'check-circle' : 'circle'}
+                          size={20}
+                          color={shareAllFriendId === f.id ? theme.primary : theme.textSecondary}
+                        />
+                      </View>
+                    </Pressable>
+                  ))
                 )
+              ) : communityCircles.length === 0 ? (
+                <Text style={[s.shareAllEmpty, { color: theme.textSecondary }]}>{T('shareAllNoCircles')}</Text>
               ) : (
-                communityCircles.length === 0 ? (
-                  <Text style={s.shareAllEmpty}>Create or join a circle first!</Text>
-                ) : (
-                  communityCircles.map(c => {
-                    const isAutoShareOn = shareStreams.find(st => st.circle_id === c.id)?.enabled ?? false;
-                    return (
-                      <View key={c.id}>
-                        <Pressable
-                          style={[s.shareAllRow, shareAllCircleId === c.id && s.shareAllRowActive]}
-                          onPress={() => { setShareAllCircleId(c.id); setShareAllFriendId(null); }}
-                        >
-                          <View style={s.shareAllAvatar}>
-                            <Text style={s.shareAllAvatarText}>{c.emoji || '●'}</Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[s.shareAllRowName, shareAllCircleId === c.id && { color: theme.primary }]}>{c.name}</Text>
-                            <Text style={{ fontSize: 11, color: theme.textSecondary }}>{c.member_count || 0} members</Text>
-                          </View>
-                          {shareAllCircleId === c.id && <Feather name="check-circle" size={18} color={theme.primary} />}
-                        </Pressable>
-                        {/* Auto-share toggle — visible when this circle is selected */}
-                        {shareAllCircleId === c.id && (
-                          <View style={s.autoShareInlineRow}>
-                            <Feather name="refresh-cw" size={13} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[s.autoShareInlineLabel, { color: theme.text }]}>Auto-share new tasks</Text>
-                              <Text style={[s.autoShareInlineDesc, { color: theme.textSecondary }]}>Future tasks auto-sent to {c.name}</Text>
-                            </View>
-                            <Switch
-                              value={isAutoShareOn}
-                              onValueChange={(val) => toggleCircleShareStream(c.id, val)}
-                              trackColor={{ false: theme.border, true: '#10b981' }}
-                            />
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })
-                )
+                communityCircles.map((c) => (
+                  <Pressable
+                    key={c.id}
+                    style={({ pressed }) => [
+                      s.shareAllRow,
+                      { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                      shareAllCircleId === c.id && { borderColor: theme.primary, backgroundColor: hexToRgba(theme.primary, 0.06) },
+                      pressed && { opacity: 0.88 },
+                    ]}
+                    onPress={() => {
+                      setShareAllCircleId(c.id);
+                      setShareAllFriendId(null);
+                    }}
+                  >
+                    <View style={[s.shareAllAvatar, { backgroundColor: hexToRgba(theme.primary, 0.12) }]}>
+                      <Text style={[s.shareAllAvatarText, { color: theme.primary }]}>{c.emoji || '●'}</Text>
+                    </View>
+                    <View style={s.shareAllRowNameCol}>
+                      <Text
+                        style={[s.shareAllRowName, { color: theme.text }, shareAllCircleId === c.id && { color: theme.primary }]}
+                        numberOfLines={1}
+                      >
+                        {c.name}
+                      </Text>
+                      <Text style={[s.shareAllRowMeta, { color: theme.textSecondary }]}>
+                        {c.member_count || 0} members
+                      </Text>
+                    </View>
+                    <View style={s.shareAllRowTrail}>
+                      <Feather
+                        name={shareAllCircleId === c.id ? 'check-circle' : 'circle'}
+                        size={20}
+                        color={shareAllCircleId === c.id ? theme.primary : theme.textSecondary}
+                      />
+                    </View>
+                  </Pressable>
+                ))
               )}
             </ScrollView>
+
+            {shareAllRecipientId ? (
+              <View style={[s.shareAllFooterStrip, { borderTopColor: theme.border, backgroundColor: theme.backgroundSecondary }]}>
+                <Text style={[s.shareAllFooterLabel, { color: theme.text }]}>{T('shareAllAutoLabel')}</Text>
+                <Switch
+                  value={shareAllAutoOn}
+                  onValueChange={(val) => {
+                    if (shareAllTab === 'friend' && shareAllFriendId) void toggleShareStream(shareAllFriendId, val);
+                    else if (shareAllTab === 'circle' && shareAllCircleId) void toggleCircleShareStream(shareAllCircleId, val);
+                  }}
+                  trackColor={{ false: theme.border, true: '#10b981' }}
+                  style={{ transform: [{ scaleX: 0.88 }, { scaleY: 0.88 }] }}
+                />
+              </View>
+            ) : null}
 
             <Pressable
               style={[
                 s.shareAllSendBtn,
-                (isShareAllSending || (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId)) && { opacity: 0.5 },
+                { backgroundColor: theme.primary },
+                (isShareAllSending ||
+                  (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId) ||
+                  pendingShareCount === 0) && { opacity: 0.5 },
               ]}
-              disabled={isShareAllSending || (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId)}
+              disabled={
+                isShareAllSending ||
+                (shareAllTab === 'friend' ? !shareAllFriendId : !shareAllCircleId) ||
+                pendingShareCount === 0
+              }
               onPress={handleShareAll}
             >
               {isShareAllSending ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={s.shareAllSendText}>Share All Tasks</Text>
+                <Text style={s.shareAllSendText}>{T('shareAllSendCta')}</Text>
               )}
             </Pressable>
           </View>
@@ -2187,67 +2270,97 @@ function createPlannerStyles(theme: ThemePalette) {
   pressed: { opacity: 0.7 },
 
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
     zIndex: 10,
   },
   headerTopRow: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    justifyContent: 'space-between',
+    width: '100%',
+    minHeight: 44,
+    marginBottom: 12,
     zIndex: 20,
   },
-  headerSide: {
-    flex: 1,
+  headerSideBase: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 44,
   },
   headerSideLeft: {
+    flexShrink: 1,
+    maxWidth: '46%',
     justifyContent: 'flex-start',
+    paddingRight: 4,
+  },
+  headerSideLayer: {
+    zIndex: 2,
   },
   headerSideRight: {
+    flexShrink: 0,
     justifyContent: 'flex-end',
+    paddingLeft: 4,
   },
   headerCenter: {
-    position: 'relative',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
   headerBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    borderWidth: 1,
-    borderColor: theme.border,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.card,
-  },
-  headerAddBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.05,
     shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  headerAddPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 44,
+    maxWidth: '100%',
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  headerAddPillText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    flexShrink: 1,
   },
   headerViewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
     backgroundColor: theme.card,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(0,51,102,0.08)',
     shadowColor: '#003366',
     shadowOpacity: 0.04,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   headerViewBtnText: {
     fontSize: 14,
@@ -2259,7 +2372,7 @@ function createPlannerStyles(theme: ThemePalette) {
 
   viewDropdown: {
     position: 'absolute',
-    top: 52,
+    top: 48,
     left: 0,
     minWidth: '100%',
     backgroundColor: theme.card,
@@ -3298,48 +3411,77 @@ function createPlannerStyles(theme: ThemePalette) {
   },
 
   // Share All Modal
-  shareAllOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  shareAllOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   shareAllContent: {
-    backgroundColor: theme.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 22, paddingTop: 22, paddingBottom: 36, maxHeight: '80%',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 32,
+    maxHeight: '84%',
   },
-  shareAllHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  shareAllTitle: { fontSize: 20, fontWeight: '800', color: theme.primary },
-  shareAllSubtitle: { fontSize: 13, color: theme.textSecondary, fontWeight: '500', marginBottom: 16 },
-  shareAllTabs: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  shareAllHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  shareAllTitle: { fontSize: 19, fontWeight: '800', letterSpacing: -0.35, flex: 1, paddingRight: 10 },
+  shareAllSubtitle: { fontSize: 13, fontWeight: '500', marginBottom: 12, lineHeight: 18 },
+  shareAllTabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   shareAllTab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: theme.border, backgroundColor: theme.background,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
   },
-  shareAllTabActive: { borderColor: theme.primary, backgroundColor: 'rgba(0,51,102,0.05)' },
-  shareAllTabText: { fontSize: 14, fontWeight: '700', color: theme.textSecondary },
-  shareAllTabTextActive: { color: theme.primary },
-  shareAllEmpty: { fontSize: 13, color: theme.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: 24 },
+  shareAllTabText: { fontSize: 14, fontWeight: '700' },
+  shareAllList: { maxHeight: 300, marginBottom: 2 },
+  shareAllEmpty: { fontSize: 13, fontStyle: 'italic', textAlign: 'center', paddingVertical: 18 },
   shareAllRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginBottom: 6,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  shareAllRowActive: { backgroundColor: 'rgba(0,51,102,0.05)' },
+  shareAllRowTrail: { width: 26, alignItems: 'flex-end', justifyContent: 'center' },
+  shareAllRowNameCol: { flex: 1, minWidth: 0 },
+  shareAllRowMeta: { fontSize: 11, fontWeight: '600', marginTop: 2 },
   shareAllAvatar: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(0,51,102,0.1)', alignItems: 'center', justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  shareAllAvatarText: { fontSize: 16, fontWeight: '700', color: theme.primary },
-  shareAllRowName: { flex: 1, fontSize: 15, fontWeight: '600', color: theme.text },
+  shareAllAvatarText: { fontSize: 15, fontWeight: '700' },
+  shareAllRowName: { fontSize: 15, fontWeight: '600' },
+  shareAllFooterStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginTop: 2,
+    marginBottom: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+  },
+  shareAllFooterLabel: { fontSize: 14, fontWeight: '600', flex: 1, paddingRight: 10 },
   shareAllSendBtn: {
-    marginTop: 14, backgroundColor: theme.primary, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
+    marginTop: 0,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
   },
   shareAllSendText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
-
-  // Auto-share inline toggle (inside Share All modal)
-  autoShareInlineRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginLeft: 48, marginRight: 12, marginBottom: 8, marginTop: -2,
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 12, backgroundColor: 'rgba(16,185,129,0.06)',
-    borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)',
-  },
-  autoShareInlineLabel: { fontSize: 13, fontWeight: '700' },
-  autoShareInlineDesc: { fontSize: 11, fontWeight: '500', marginTop: 1 },
 });
 }

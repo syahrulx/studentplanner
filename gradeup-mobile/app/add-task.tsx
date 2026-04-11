@@ -11,13 +11,17 @@ import {
   KeyboardAvoidingView,
   FlatList,
   ScrollView,
+  Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
-import { TaskType } from '@/src/types';
+import { useCommunity } from '@/src/context/CommunityContext';
+import { supabase } from '@/src/lib/supabase';
+import { upsertTask } from '@/src/lib/taskDb';
+import { TaskType, type Task } from '@/src/types';
 import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
@@ -46,6 +50,18 @@ function formatTimeHM(d: Date): string {
 function addCalendarMonth(year: number, month: number, delta: number): { year: number; month: number } {
   const x = new Date(year, month + delta, 1);
   return { year: x.getFullYear(), month: x.getMonth() };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace('#', '');
+  const expanded =
+    normalized.length === 3 ? normalized.split('').map((char) => char + char).join('') : normalized;
+  if (expanded.length !== 6) return `rgba(0,51,102,${alpha})`;
+  const value = Number.parseInt(expanded, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 const TASK_TYPES = Object.values(TaskType) as TaskType[];
@@ -141,6 +157,17 @@ export default function AddTask() {
   const [dueTime, setDueTime] = useState('23:59');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [shareFriendIds, setShareFriendIds] = useState<string[]>([]);
+  const [shareCircleIds, setShareCircleIds] = useState<string[]>([]);
+
+  const {
+    filteredFriends,
+    circles,
+    shareTaskWithFriend,
+    shareTaskWithCircle,
+    userId: communityUserId,
+    refreshFriends,
+  } = useCommunity();
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date(dueDateISO + 'T12:00:00').getFullYear());
@@ -184,38 +211,103 @@ export default function AddTask() {
     setCourseId(courses[0].id);
   }, [isEditing, courseId, courses]);
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    if (communityUserId) void refreshFriends();
+  }, [communityUserId, refreshFriends]);
+
+  const toggleShareFriend = (id: string) => {
+    setShareFriendIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleShareCircle = (id: string) => {
+    setShareCircleIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSubmit = async () => {
     if (!title.trim() || (isEditing && !existingTask)) return;
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      const wantsShare = shareFriendIds.length > 0 || shareCircleIds.length > 0;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? null;
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
+      const suggestedWeek = getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate);
+      const courseIdResolved = courseId || courses[0]?.id || 'General';
+
       if (existingTask) {
         updateTask(existingTask.id, {
           title: title.trim(),
-          courseId: courseId || courses[0]?.id || 'General',
+          courseId: courseIdResolved,
           type,
           notes,
           dueDate: dueDateISO,
           dueTime,
           needsDate: false,
         });
+        if (wantsShare && uid) {
+          const merged: Task = {
+            ...existingTask,
+            title: title.trim(),
+            courseId: courseIdResolved,
+            type,
+            notes,
+            dueDate: dueDateISO,
+            dueTime,
+            needsDate: false,
+            deadlineRisk,
+            suggestedWeek,
+          };
+          const { error } = await upsertTask(uid, merged);
+          if (error) {
+            Alert.alert('', T('shareSyncFailed'));
+            return;
+          }
+          for (const friendId of shareFriendIds) {
+            await shareTaskWithFriend(existingTask.id, friendId, undefined);
+          }
+          for (const circleId of shareCircleIds) {
+            await shareTaskWithCircle(existingTask.id, circleId, undefined);
+          }
+        }
+        router.back();
+        return;
+      }
+
+      const newId = createTaskId();
+      const newTask: Task = {
+        id: newId,
+        title: title.trim(),
+        courseId: courseIdResolved,
+        type,
+        dueDate: dueDateISO,
+        dueTime,
+        notes,
+        isDone: false,
+        deadlineRisk,
+        suggestedWeek,
+        sourceMessage: undefined,
+      };
+
+      if (wantsShare && uid) {
+        const { error } = await upsertTask(uid, newTask);
+        if (error) {
+          Alert.alert('', T('shareSyncFailed'));
+          return;
+        }
+        addTask(newTask, { skipRemote: true });
+        for (const friendId of shareFriendIds) {
+          await shareTaskWithFriend(newId, friendId, undefined);
+        }
+        for (const circleId of shareCircleIds) {
+          await shareTaskWithCircle(newId, circleId, undefined);
+        }
       } else {
-        addTask({
-          id: createTaskId(),
-          title: title.trim(),
-          courseId: courseId || courses[0]?.id || 'General',
-          type,
-          dueDate: dueDateISO,
-          dueTime,
-          notes,
-          isDone: false,
-          deadlineRisk,
-          suggestedWeek: getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate),
-          sourceMessage: undefined,
-        });
+        addTask(newTask);
       }
       router.back();
-    }, 400);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const calendarModal = (
@@ -415,6 +507,90 @@ export default function AddTask() {
             </View>
           </Row>
         </Group>
+
+        {communityUserId ? (
+          <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 8 }]}>
+              {T('shareWithSection')}
+            </Text>
+            <Text style={[styles.shareHint, { color: theme.textSecondary }]}>{T('shareWithHint')}</Text>
+            {filteredFriends.length === 0 && circles.length === 0 ? (
+              <Text style={[styles.shareEmpty, { color: theme.textSecondary }]}>{T('shareNoConnectionsHint')}</Text>
+            ) : (
+              <>
+                {filteredFriends.length > 0 ? (
+                  <>
+                    <Text style={[styles.shareSubLabel, { color: theme.textSecondary }]}>{T('shareFriendsLabel')}</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.shareChipsScroll}
+                      contentContainerStyle={styles.shareChipsRow}
+                    >
+                      {filteredFriends.map((friend) => {
+                        const on = shareFriendIds.includes(friend.id);
+                        return (
+                          <Pressable
+                            key={friend.id}
+                            onPress={() => toggleShareFriend(friend.id)}
+                            style={[
+                              styles.shareChip,
+                              {
+                                backgroundColor: on ? hexToRgba(theme.primary, 0.14) : theme.card,
+                                borderColor: on ? theme.primary : theme.border,
+                              },
+                            ]}
+                          >
+                            <Text style={[styles.shareChipText, { color: theme.text }]} numberOfLines={1}>
+                              {friend.name}
+                            </Text>
+                            <Feather name={on ? 'check-circle' : 'circle'} size={16} color={on ? theme.primary : theme.textSecondary} />
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                ) : null}
+                {circles.length > 0 ? (
+                  <>
+                    <Text style={[styles.shareSubLabel, { color: theme.textSecondary, marginTop: 10 }]}>
+                      {T('shareCirclesLabel')}
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.shareChipsScroll}
+                      contentContainerStyle={styles.shareChipsRow}
+                    >
+                      {circles.map((circle) => {
+                        const on = shareCircleIds.includes(circle.id);
+                        return (
+                          <Pressable
+                            key={circle.id}
+                            onPress={() => toggleShareCircle(circle.id)}
+                            style={[
+                              styles.shareChip,
+                              {
+                                backgroundColor: on ? hexToRgba(theme.primary, 0.14) : theme.card,
+                                borderColor: on ? theme.primary : theme.border,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.shareCircleEmoji}>{circle.emoji || '●'}</Text>
+                            <Text style={[styles.shareChipText, { color: theme.text }]} numberOfLines={1}>
+                              {circle.name}
+                            </Text>
+                            <Feather name={on ? 'check-circle' : 'circle'} size={16} color={on ? theme.primary : theme.textSecondary} />
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                ) : null}
+              </>
+            )}
+          </>
+        ) : null}
 
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('notesLabel')}</Text>
         <TextInput
@@ -676,6 +852,42 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginTop: 4,
   },
+  shareHint: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    marginBottom: 12,
+    marginLeft: 4,
+    marginTop: -4,
+  },
+  shareEmpty: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  shareSubLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  shareChipsScroll: { marginBottom: 4 },
+  shareChipsRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 8, paddingVertical: 2, paddingRight: 4 },
+  shareChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: 220,
+  },
+  shareChipText: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  shareCircleEmoji: { fontSize: 16, marginRight: -4 },
 
   titleField: {
     fontSize: 17,
