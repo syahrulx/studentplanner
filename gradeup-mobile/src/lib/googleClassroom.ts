@@ -45,6 +45,10 @@ export interface GoogleCourseWork {
 
 export interface CourseWithWork extends GoogleCourse {
   courseWork: GoogleCourseWork[];
+  /** True while assignments are loading in progressive UI */
+  courseLoadPending?: boolean;
+  /** Google coursework request failed (empty list may be error vs no work) */
+  courseLoadError?: boolean;
 }
 
 export interface SyncResult {
@@ -159,10 +163,12 @@ export async function connectGoogleClassroom(): Promise<string> {
 
 // ---------- Paginated Google API helper ----------
 
-async function fetchPaginated<T>(url: string, token: string, key: string): Promise<T[]> {
+async function fetchPaginated<T>(url: string, initialToken: string, key: string): Promise<T[]> {
   const items: T[] = [];
   let pageToken: string | undefined;
-  let retries = 0;
+  let retries429 = 0;
+  let authToken = initialToken;
+  let did401Retry = false;
 
   do {
     const fullUrl = pageToken
@@ -170,26 +176,44 @@ async function fetchPaginated<T>(url: string, token: string, key: string): Promi
       : url;
 
     const res = await fetch(fullUrl, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${authToken}` },
     });
 
     if (res.status === 429) {
-      if (retries++ >= 3) throw new Error('Google API rate limit. Try again later.');
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retries)));
+      if (retries429++ >= 3) {
+        throw new Error('Google Classroom is busy. Please wait a minute and try again.');
+      }
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retries429)));
       continue;
     }
 
     if (res.status === 401) {
+      if (!did401Retry) {
+        did401Retry = true;
+        await clearClassroomToken();
+        const { data, error } = await supabase.auth.refreshSession();
+        const nextTok = data.session?.provider_token;
+        if (!error && nextTok) {
+          await setClassroomToken({
+            accessToken: nextTok,
+            expiresAt: Date.now() + 3_600_000,
+            refreshToken: data.session?.provider_refresh_token ?? undefined,
+          });
+          authToken = nextTok;
+          retries429 = 0;
+          continue;
+        }
+      }
       await clearClassroomToken();
-      throw new Error('Google token expired. Please reconnect.');
+      throw new Error('Google sign-in expired. Reconnect Google Classroom from Settings.');
     }
 
-    if (!res.ok) throw new Error(`Google API error (${res.status})`);
+    if (!res.ok) throw new Error(`Google Classroom could not load data (code ${res.status}).`);
 
     const json = await res.json();
     items.push(...(json[key] || []));
     pageToken = json.nextPageToken;
-    retries = 0;
+    retries429 = 0;
   } while (pageToken);
 
   return items;
@@ -218,12 +242,51 @@ export async function fetchCoursesWithWork(token: string): Promise<CourseWithWor
   for (const c of courses) {
     try {
       const cw = await fetchCourseWork(token, c.id);
-      out.push({ ...c, courseWork: cw });
+      out.push({ ...c, courseWork: cw, courseLoadError: false });
     } catch {
-      out.push({ ...c, courseWork: [] });
+      out.push({ ...c, courseWork: [], courseLoadError: true });
     }
   }
   return out;
+}
+
+const DEFAULT_COURSEWORK_CONCURRENCY = 4;
+
+/**
+ * Load courses first, then fetch coursework in parallel batches while calling onUpdate with the full list each time.
+ */
+export async function loadCoursesWithWorkProgressive(
+  token: string,
+  onUpdate: (courses: CourseWithWork[]) => void,
+  concurrency: number = DEFAULT_COURSEWORK_CONCURRENCY,
+): Promise<CourseWithWork[]> {
+  const courseList = await fetchGoogleCourses(token);
+  const results: CourseWithWork[] = courseList.map((c) => ({
+    ...c,
+    courseWork: [],
+    courseLoadPending: true,
+    courseLoadError: false,
+  }));
+  onUpdate([...results]);
+
+  const conc = Math.max(1, Math.min(concurrency, courseList.length || 1));
+  for (let batchStart = 0; batchStart < courseList.length; batchStart += conc) {
+    const slice = courseList.slice(batchStart, batchStart + conc);
+    await Promise.all(
+      slice.map(async (c, j) => {
+        const i = batchStart + j;
+        try {
+          const cw = await fetchCourseWork(token, c.id);
+          results[i] = { ...c, courseWork: cw, courseLoadPending: false, courseLoadError: false };
+        } catch {
+          results[i] = { ...c, courseWork: [], courseLoadPending: false, courseLoadError: true };
+        }
+      }),
+    );
+    onUpdate([...results]);
+  }
+
+  return results;
 }
 
 // ---------- Task mapping ----------
@@ -241,6 +304,12 @@ function mapWorkType(wt: string): TaskType | null {
     default:
       return TaskType.Assignment;
   }
+}
+
+/** Whether this coursework row can appear in the import picker. */
+export function isSelectableClassroomWork(work: GoogleCourseWork, includeMaterials: boolean): boolean {
+  if (mapWorkType(work.workType) !== null) return true;
+  return Boolean(includeMaterials && work.workType === 'MATERIAL');
 }
 
 function deadlineRisk(dueDateStr: string): Task['deadlineRisk'] {
@@ -263,9 +332,16 @@ export function buildTask(
   courseName: string,
   existingTasks: Task[],
   semesterStart?: string,
+  includeMaterials?: boolean,
 ): Task | null {
-  const type = mapWorkType(work.workType);
-  if (!type) return null;
+  let type = mapWorkType(work.workType);
+  if (!type) {
+    if (includeMaterials && work.workType === 'MATERIAL') {
+      type = TaskType.Assignment;
+    } else {
+      return null;
+    }
+  }
 
   const taskId = `gc-${work.id}`;
   const existing = existingTasks.find(t => t.id === taskId);
@@ -303,7 +379,11 @@ export function buildTask(
     type,
     dueDate: dateStr,
     dueTime: timeStr,
-    notes: work.description || `From Google Classroom: ${courseName}`,
+    notes:
+      work.description ||
+      (work.workType === 'MATERIAL'
+        ? `Reading (Google Classroom): ${courseName}`
+        : `From Google Classroom: ${courseName}`),
     isDone: existing?.isDone ?? false,
     deadlineRisk: deadlineRisk(taskNeedsDate ? new Date().toISOString().slice(0, 10) : dateStr),
     suggestedWeek: suggestedWeek(taskNeedsDate ? new Date().toISOString().slice(0, 10) : dateStr, semesterStart),
@@ -359,6 +439,9 @@ export async function syncSelectedCourses(
   const token = await getValidToken();
   if (!token) throw new Error('Google token expired. Please reconnect Google Classroom.');
 
+  const prefsMeta = await getClassroomPrefs();
+  const includeMaterials = Boolean(prefsMeta?.includeClassroomMaterials);
+
   const taskIdFilter = selectedTaskIds ? new Set(selectedTaskIds) : null;
 
   const existingTasks = await fetchExistingGcTasks(user.id);
@@ -386,7 +469,7 @@ export async function syncSelectedCourses(
       for (const w of work) {
         if (taskIdFilter && !taskIdFilter.has(w.id)) continue;
 
-        const task = buildTask(w, course.name, existingTasks, semesterStart);
+        const task = buildTask(w, course.name, existingTasks, semesterStart, includeMaterials);
         if (!task) continue;
 
         const { error } = await upsertTask(user.id, task);
@@ -418,8 +501,8 @@ export async function autoSync(semesterStart?: string): Promise<SyncResult | nul
   const token = await getValidToken();
   if (!token) return null;
 
-  const taskFilter = prefs.selectedTaskIds?.length ? prefs.selectedTaskIds : undefined;
-  return syncSelectedCourses(prefs.selectedCourseIds, undefined, semesterStart, taskFilter);
+  /** Always sync all coursework for selected courses so new assignments are picked up. */
+  return syncSelectedCourses(prefs.selectedCourseIds, undefined, semesterStart, undefined);
 }
 
 /**
@@ -451,10 +534,11 @@ export async function checkForNewTasks(): Promise<PendingNewTask[]> {
     try {
       const work = await fetchCourseWork(token, courseId);
       const courseName = courseMap.get(courseId) ?? courseId;
+      const includeMaterials = Boolean(prefs.includeClassroomMaterials);
       for (const w of work) {
         if (alreadySelected.has(w.id)) continue;
         if (dismissed.has(w.id)) continue;
-        if (mapWorkType(w.workType) === null) continue;
+        if (!isSelectableClassroomWork(w, includeMaterials)) continue;
         result.push({
           workId: w.id,
           title: w.title || 'Untitled',

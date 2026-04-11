@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  TextInput,
+  Switch,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -14,55 +16,95 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import {
   connectGoogleClassroom,
-  fetchCoursesWithWork,
+  loadCoursesWithWorkProgressive,
+  fetchCourseWork,
   syncSelectedCourses,
+  isSelectableClassroomWork,
   type CourseWithWork,
   type GoogleCourseWork,
 } from '@/src/lib/googleClassroom';
-import { setClassroomPrefs } from '@/src/storage';
+import { getClassroomPrefs, setClassroomPrefs } from '@/src/storage';
 import * as taskDb from '@/src/lib/taskDb';
 import * as coursesDb from '@/src/lib/coursesDb';
 
-type Step = 'connecting' | 'selecting' | 'syncing' | 'done';
+type Step = 'authenticating' | 'loading_work' | 'selecting' | 'syncing' | 'done';
 
 export default function ClassroomSync() {
   const theme = useTheme();
   const { user, setTasks, setCourses: setAppCourses } = useApp();
 
-  const [step, setStep] = useState<Step>('connecting');
+  const [step, setStep] = useState<Step>('authenticating');
   const [courses, setCourses] = useState<CourseWithWork[]>([]);
   const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set());
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [syncProgress, setSyncProgress] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [courseSearch, setCourseSearch] = useState('');
+  const [includeMaterials, setIncludeMaterials] = useState(false);
+  const [loadKey, setLoadKey] = useState(0);
   const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        setStep('authenticating');
         const token = await connectGoogleClassroom();
         if (cancelled) return;
         tokenRef.current = token;
-        const data = await fetchCoursesWithWork(token);
+        setStep('loading_work');
+        const prefs = await getClassroomPrefs();
+        const mat = Boolean(prefs?.includeClassroomMaterials);
+        if (!cancelled) setIncludeMaterials(mat);
+
+        const data = await loadCoursesWithWorkProgressive(token, (partial) => {
+          if (!cancelled) setCourses(partial);
+        });
         if (cancelled) return;
 
         setCourses(data);
-
-        const allCourseIds = new Set(data.map(c => c.id));
+        const allCourseIds = new Set(data.map((c) => c.id));
         setSelectedCourses(allCourseIds);
         const allTaskIds = new Set<string>();
-        data.forEach(c => c.courseWork.forEach(w => allTaskIds.add(w.id)));
+        data.forEach((c) => {
+          c.courseWork.forEach((w) => {
+            if (isSelectableClassroomWork(w, mat)) allTaskIds.add(w.id);
+          });
+        });
         setSelectedTasks(allTaskIds);
-        setExpandedCourses(new Set(data.map(c => c.id)));
+        setExpandedCourses(new Set());
         setStep('selecting');
       } catch (e: any) {
-        if (!cancelled) setError('Could not connect to Google Classroom. Please check your connection and try again.');
+        if (!cancelled) {
+          const m = String(e?.message || '');
+          if (/cancel|dismiss/i.test(m)) {
+            setError('Sign-in was cancelled. Tap Try again when you are ready to connect.');
+          } else {
+            setError('Could not connect to Google Classroom. Check your connection and try again.');
+          }
+        }
       }
     })();
-    return () => { cancelled = true; };
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadKey]);
+
+  useEffect(() => {
+    if (step !== 'selecting' || courses.length === 0) return;
+    setSelectedTasks((prev) => {
+      const next = new Set(prev);
+      courses.forEach((c) => {
+        c.courseWork.forEach((w) => {
+          if (w.workType !== 'MATERIAL') return;
+          if (includeMaterials) next.add(w.id);
+          else next.delete(w.id);
+        });
+      });
+      return next;
+    });
+  }, [includeMaterials, step, courses.length]);
 
   const toggleCourse = useCallback((courseId: string, courseWork: GoogleCourseWork[]) => {
     setSelectedCourses(prev => {
@@ -75,7 +117,8 @@ export default function ClassroomSync() {
       }
       setSelectedTasks(tPrev => {
         const tNext = new Set(tPrev);
-        courseWork.forEach(w => {
+        courseWork.forEach((w) => {
+          if (!isSelectableClassroomWork(w, includeMaterials)) return;
           if (isSelected) tNext.delete(w.id);
           else tNext.add(w.id);
         });
@@ -83,7 +126,7 @@ export default function ClassroomSync() {
       });
       return next;
     });
-  }, []);
+  }, [includeMaterials]);
 
   const toggleTask = useCallback((taskId: string, courseId: string) => {
     setSelectedTasks(prev => {
@@ -92,10 +135,10 @@ export default function ClassroomSync() {
       else next.add(taskId);
 
       // Keep selectedCourses in sync with the updated task set
-      const courseWorkIds = courses
-        .find(c => c.id === courseId)
-        ?.courseWork.map(w => w.id) ?? [];
-      const courseHasTasks = courseWorkIds.some(id => next.has(id));
+      const c = courses.find((x) => x.id === courseId);
+      const courseSelectableIds =
+        c?.courseWork.filter((w) => isSelectableClassroomWork(w, includeMaterials)).map((w) => w.id) ?? [];
+      const courseHasTasks = courseSelectableIds.some((id) => next.has(id));
       setSelectedCourses(prev2 => {
         const next2 = new Set(prev2);
         if (courseHasTasks) next2.add(courseId);
@@ -105,7 +148,7 @@ export default function ClassroomSync() {
 
       return next;
     });
-  }, [courses]);
+  }, [courses, includeMaterials]);
 
   const toggleExpand = useCallback((courseId: string) => {
     setExpandedCourses(prev => {
@@ -116,11 +159,47 @@ export default function ClassroomSync() {
     });
   }, []);
 
+  const retryCourseLoad = useCallback(async (courseId: string) => {
+    const token = tokenRef.current;
+    if (!token) return;
+    setCourses((prev) =>
+      prev.map((c) =>
+        c.id === courseId ? { ...c, courseLoadPending: true, courseLoadError: false } : c,
+      ),
+    );
+    try {
+      const cw = await fetchCourseWork(token, courseId);
+      setCourses((prev) =>
+        prev.map((c) =>
+          c.id === courseId
+            ? { ...c, courseWork: cw, courseLoadPending: false, courseLoadError: false }
+            : c,
+        ),
+      );
+    } catch {
+      setCourses((prev) =>
+        prev.map((c) =>
+          c.id === courseId
+            ? { ...c, courseWork: [], courseLoadPending: false, courseLoadError: true }
+            : c,
+        ),
+      );
+    }
+  }, []);
+
+  const visibleCourses = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courses;
+    return courses.filter((c) => c.name.toLowerCase().includes(q));
+  }, [courses, courseSearch]);
+
   const totalSelected = selectedTasks.size;
 
   // Derive which courses have at least one selected task — source of truth for import
-  const coursesWithSelectedTasks = courses.filter(c =>
-    c.courseWork.some(w => selectedTasks.has(w.id)),
+  const coursesWithSelectedTasks = courses.filter((c) =>
+    c.courseWork.some(
+      (w) => selectedTasks.has(w.id) && isSelectableClassroomWork(w, includeMaterials),
+    ),
   );
   const selectedCourseCount = coursesWithSelectedTasks.length;
 
@@ -140,6 +219,7 @@ export default function ClassroomSync() {
         selectedTaskIds: taskIds,
         autoSync: true,
         lastSyncAt: null,
+        includeClassroomMaterials: includeMaterials,
       });
 
       const result = await syncSelectedCourses(
@@ -162,13 +242,20 @@ export default function ClassroomSync() {
 
       setStep('done');
 
-      const msg = result.failedCount > 0
-        ? `Synced ${result.syncedCount} tasks. ${result.failedCount} failed.`
-        : `Successfully imported ${result.syncedCount} tasks!`;
-
-      Alert.alert('Sync Complete', msg + '\n\nAuto-sync is now enabled.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      const baseMsg =
+        result.failedCount > 0
+          ? `Imported ${result.syncedCount} task${result.syncedCount !== 1 ? 's' : ''}. ${result.failedCount} could not be saved. Auto-sync is on.`
+          : `Imported ${result.syncedCount} task${result.syncedCount !== 1 ? 's' : ''}. Auto-sync is on.`;
+      const errLines = result.errors?.filter(Boolean) ?? [];
+      if (errLines.length > 0) {
+        const detailText = errLines.slice(0, 20).join('\n\n');
+        Alert.alert('Import finished', baseMsg, [
+          { text: 'Details', onPress: () => Alert.alert('What went wrong', detailText) },
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } else {
+        Alert.alert('Import complete', baseMsg, [{ text: 'OK', onPress: () => router.back() }]);
+      }
     } catch (e: any) {
       setStep('selecting');
       Alert.alert('Sync failed', 'Could not import tasks. Please check your connection and try again.');
@@ -204,7 +291,6 @@ export default function ClassroomSync() {
     }
   };
 
-  // Error state
   if (error) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
@@ -213,7 +299,11 @@ export default function ClassroomSync() {
         <Text style={[styles.errorMsg, { color: theme.textSecondary }]}>{error}</Text>
         <Pressable
           style={[styles.retryBtn, { backgroundColor: theme.primary }]}
-          onPress={() => { setError(null); setStep('connecting'); }}
+          onPress={() => {
+            setError(null);
+            setCourses([]);
+            setLoadKey((k) => k + 1);
+          }}
         >
           <Text style={styles.retryText}>Try Again</Text>
         </Pressable>
@@ -224,13 +314,18 @@ export default function ClassroomSync() {
     );
   }
 
-  // Connecting state
-  if (step === 'connecting') {
+  if (step === 'authenticating' || step === 'loading_work') {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.loadText, { color: theme.text }]}>Connecting to Google Classroom...</Text>
-        <Text style={[styles.subText, { color: theme.textSecondary }]}>Please complete sign-in in the browser</Text>
+        <Text style={[styles.loadText, { color: theme.text }]}>
+          {step === 'authenticating' ? 'Signing in to Google…' : 'Loading your classes and assignments…'}
+        </Text>
+        <Text style={[styles.subText, { color: theme.textSecondary }]}>
+          {step === 'authenticating'
+            ? 'Complete sign-in in the browser if prompted.'
+            : 'Courses appear as they load. You can pick tasks in a moment.'}
+        </Text>
       </View>
     );
   }
@@ -261,6 +356,25 @@ export default function ClassroomSync() {
         </View>
       </View>
 
+      <View style={[styles.toolbar, { backgroundColor: theme.background }]}>
+        <View style={[styles.searchWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="search" size={18} color={theme.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search classes"
+            placeholderTextColor={theme.textSecondary}
+            value={courseSearch}
+            onChangeText={setCourseSearch}
+            style={[styles.searchInput, { color: theme.text }]}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+        </View>
+        <View style={[styles.materialToggle, { borderColor: theme.border }]}>
+          <Text style={[styles.materialToggleLabel, { color: theme.text }]}>Include readings & materials</Text>
+          <Switch value={includeMaterials} onValueChange={setIncludeMaterials} />
+        </View>
+      </View>
+
       <ScrollView
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -273,14 +387,24 @@ export default function ClassroomSync() {
               No active courses found in your Google Classroom.
             </Text>
           </View>
+        ) : visibleCourses.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Feather name="search" size={40} color={theme.textSecondary} />
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              No classes match &quot;{courseSearch.trim()}&quot;.
+            </Text>
+          </View>
         ) : (
-          courses.map(course => {
+          visibleCourses.map(course => {
             const isExpanded = expandedCourses.has(course.id);
             const isCourseSelected = selectedCourses.has(course.id);
-            const actionableWork = course.courseWork.filter(
-              w => w.workType !== 'MATERIAL',
+            const actionableWork = course.courseWork.filter((w) =>
+              isSelectableClassroomWork(w, includeMaterials),
             );
             const selectedInCourse = actionableWork.filter(w => selectedTasks.has(w.id)).length;
+            const countLabel = course.courseLoadPending
+              ? 'Loading…'
+              : `${selectedInCourse}/${actionableWork.length} tasks`;
 
             return (
               <View
@@ -306,7 +430,7 @@ export default function ClassroomSync() {
                       {course.name}
                     </Text>
                     <Text style={[styles.courseCount, { color: theme.textSecondary }]}>
-                      {selectedInCourse}/{actionableWork.length} tasks
+                      {countLabel}
                       {course.section ? `  •  ${course.section}` : ''}
                     </Text>
                   </View>
@@ -321,7 +445,21 @@ export default function ClassroomSync() {
                 {/* Coursework list */}
                 {isExpanded && (
                   <View style={styles.workList}>
-                    {actionableWork.length === 0 ? (
+                    {course.courseLoadPending ? (
+                      <Text style={[styles.noWork, { color: theme.textSecondary }]}>Loading assignments…</Text>
+                    ) : course.courseLoadError ? (
+                      <View style={styles.errorCourseWrap}>
+                        <Text style={[styles.noWork, { color: theme.textSecondary }]}>
+                          Could not load assignments for this class.
+                        </Text>
+                        <Pressable
+                          style={[styles.retryCourseBtn, { borderColor: theme.primary }]}
+                          onPress={() => retryCourseLoad(course.id)}
+                        >
+                          <Text style={{ color: theme.primary, fontWeight: '600' }}>Try again</Text>
+                        </Pressable>
+                      </View>
+                    ) : actionableWork.length === 0 ? (
                       <Text style={[styles.noWork, { color: theme.textSecondary }]}>
                         No assignments or quizzes in this course
                       </Text>
@@ -436,6 +574,26 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
   headerSub: { fontSize: 14, marginTop: 2 },
 
+  toolbar: { paddingHorizontal: 16, paddingBottom: 10, gap: 10 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: { flex: 1, fontSize: 16, padding: 0 },
+  materialToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  materialToggleLabel: { flex: 1, fontSize: 13, fontWeight: '600', paddingRight: 12 },
+
   list: { flex: 1 },
   listContent: { paddingHorizontal: 16 },
 
@@ -468,6 +626,8 @@ const styles = StyleSheet.create({
 
   workList: { paddingBottom: 4 },
   noWork: { paddingHorizontal: 50, paddingVertical: 12, fontSize: 13 },
+  errorCourseWrap: { paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center', gap: 10 },
+  retryCourseBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
 
   workRow: {
     flexDirection: 'row',

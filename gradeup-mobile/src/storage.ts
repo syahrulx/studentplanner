@@ -309,6 +309,8 @@ export interface ClassroomPrefs {
   autoSync: boolean;
   lastSyncAt: number | null;
   dismissedNewTaskIds?: string[];
+  /** When true, MATERIAL items import as generic tasks (readings). */
+  includeClassroomMaterials?: boolean;
 }
 
 export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {

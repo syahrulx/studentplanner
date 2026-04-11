@@ -50,12 +50,11 @@ export function useClassroomSync(userStartDate: string | undefined, setTasks: Se
     }
     setIsSyncing(true);
     try {
-      const taskFilter = prefs.selectedTaskIds?.length ? prefs.selectedTaskIds : undefined;
       const result = await syncSelectedCourses(
         prefs.selectedCourseIds,
         undefined,
         userStartDate,
-        taskFilter,
+        undefined,
       );
       const {
         data: { session },
@@ -65,13 +64,22 @@ export function useClassroomSync(userStartDate: string | undefined, setTasks: Se
         setTasks(fresh);
       }
       await refreshPrefs();
-      const msg =
+      const baseMsg =
         result.failedCount > 0
-          ? `Synced ${result.syncedCount} tasks. ${result.failedCount} failed.`
-          : `Successfully synced ${result.syncedCount} tasks!`;
-      Alert.alert('Sync Complete', msg);
-    } catch (e: unknown) {
-      Alert.alert('Sync Failed', e instanceof Error ? e.message : 'Something went wrong.');
+          ? `Synced ${result.syncedCount} task${result.syncedCount !== 1 ? 's' : ''}. ${result.failedCount} could not be saved.`
+          : `Successfully synced ${result.syncedCount} task${result.syncedCount !== 1 ? 's' : ''}.`;
+      const errLines = result.errors?.filter(Boolean) ?? [];
+      if (errLines.length > 0) {
+        const detailText = errLines.slice(0, 20).join('\n\n');
+        Alert.alert(result.failedCount > 0 ? 'Sync finished with issues' : 'Sync complete', baseMsg, [
+          { text: 'Details', onPress: () => Alert.alert('What went wrong', detailText) },
+          { text: 'OK', style: 'cancel' },
+        ]);
+      } else {
+        Alert.alert('Sync complete', baseMsg);
+      }
+    } catch {
+      Alert.alert('Sync failed', 'Could not sync Google Classroom. Check your connection and try again.');
     } finally {
       setIsSyncing(false);
     }
