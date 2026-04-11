@@ -183,6 +183,9 @@ export default function NotesList() {
   const [registeredFolders, setRegisteredFolders] = useState<string[]>([]);
   /** Tracks noteIds currently being extracted server-side. */
   const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
+  /** Always-current ref so async callbacks never read stale `notes` closure. */
+  const notesRef = useRef(notes);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
 
   const allNotes = notes.filter((n) => n.subjectId === subjectId);
 
@@ -231,14 +234,20 @@ export default function NotesList() {
     setMoveNoteId(null);
   };
 
-  const triggerPdfExtraction = async (noteId: string, storagePath: string, noteTitle: string) => {
+  const triggerPdfExtraction = async (
+    noteId: string,
+    storagePath: string,
+    noteTitle: string,
+    /** Pass the just-created note so the callback works even before React state updates */
+    fallbackNote?: Parameters<typeof handleSaveNote>[0],
+  ) => {
     setExtractingIds((prev) => new Set(prev).add(noteId));
     try {
       const result = await Promise.race([
         extractPdfTextFromStoragePath(storagePath),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Extraction timed out')), 120_000)),
       ]);
-      const current = notes.find((n) => n.id === noteId);
+      const current = notesRef.current.find((n) => n.id === noteId) ?? fallbackNote;
       if (!current) return;
       if (result.text.trim().length > 0 && result.stage === 'done') {
         handleSaveNote({ ...current, extractedText: result.text, extractionError: undefined });
@@ -247,11 +256,11 @@ export default function NotesList() {
         handleSaveNote({ ...current, extractionError: reason });
         Alert.alert(
           'PDF Extraction Failed',
-          `Could not extract text from "${noteTitle}". The file may be scanned or image-based.\n\nYou can still use this note — tap to retry extraction later.`,
+          `Could not extract text from "${noteTitle}".\nThe file may be scanned or image-based.\n\nTap "Retry" on the note to try again.`,
         );
       }
     } catch (e: any) {
-      const current = notes.find((n) => n.id === noteId);
+      const current = notesRef.current.find((n) => n.id === noteId) ?? fallbackNote;
       if (!current) return;
       const reason = e?.message || 'Unexpected error during extraction';
       handleSaveNote({ ...current, extractionError: reason });
@@ -269,10 +278,11 @@ export default function NotesList() {
   };
 
   const retryExtraction = (noteId: string) => {
-    const note = allNotes.find((n) => n.id === noteId);
+    const note = notesRef.current.find((n) => n.id === noteId);
     if (!note?.attachmentPath) return;
-    handleSaveNote({ ...note, extractionError: undefined });
-    triggerPdfExtraction(noteId, note.attachmentPath, note.title);
+    const cleared = { ...note, extractionError: undefined };
+    handleSaveNote(cleared);
+    triggerPdfExtraction(noteId, note.attachmentPath, note.title, cleared);
   };
 
   const handleImportFile = async (type: string | string[] = '*/*') => {
@@ -343,7 +353,7 @@ export default function NotesList() {
       const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
       if (isPdf && path) {
         setImportProgressUi({ progress: 95, label: 'Preparing PDF for AI...' });
-        triggerPdfExtraction(noteId, path, fileName);
+        triggerPdfExtraction(noteId, path, fileName, note as any);
       }
 
       setImportProgressUi({ progress: 100, label: T('noteImportDone') });
