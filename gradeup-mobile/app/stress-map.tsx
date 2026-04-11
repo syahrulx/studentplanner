@@ -87,10 +87,9 @@ export default function StressMap() {
       if (w !== cw) continue;
       byCourse[t.courseId] = (byCourse[t.courseId] || 0) + 1;
     }
-    const maxC = Math.max(...Object.values(byCourse), 0);
     return courses.map((c) => {
       const n = byCourse[c.id] ?? 0;
-      const level = maxC > 0 ? Math.min(10, (n / maxC) * 10) : 0;
+      const level = Math.min(10, n * 2);
       return { id: c.id, level, count: n };
     });
   }, [tasks, courses, academicCalendar, user.currentWeek, user.startDate]);
@@ -139,11 +138,6 @@ export default function StressMap() {
                 {isPeakWave ? T('workloadPeakWave') : T('workloadSteady')}
               </Text>
             </View>
-            <Text style={styles.velocityScopeText}>{T('workloadVelocityAllTypes')}</Text>
-          </View>
-          <View style={styles.scaleRange}>
-            <Text style={styles.scaleW14}>W{totalWeeks}</Text>
-            <Text style={styles.scaleLabel}>SCALE RANGE</Text>
           </View>
         </View>
         <View style={styles.barChart}>
@@ -211,7 +205,6 @@ export default function StressMap() {
       <View style={styles.breakdownSection}>
         <View style={styles.breakdownHeader}>
           <Text style={[styles.breakdownTitle, { color: theme.text }]}>SUBJECT LOAD (THIS WEEK)</Text>
-          <Text style={[styles.breakdownAi, { color: theme.textSecondary }]}>TASK SYNC</Text>
         </View>
         {courses.length === 0 ? (
           <Text style={{ color: theme.textSecondary, fontSize: 14 }}>No subjects yet. Add courses or connect your timetable.</Text>
@@ -316,17 +309,6 @@ const styles = StyleSheet.create({
   criticalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   criticalDot: { width: 8, height: 8, borderRadius: 4 },
   criticalText: { fontSize: 12, fontWeight: '800', color: '#ffffff', letterSpacing: 0.5 },
-  velocityScopeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.72)',
-    marginTop: 8,
-    maxWidth: 220,
-    lineHeight: 14,
-  },
-  scaleRange: { alignItems: 'flex-end' },
-  scaleW14: { fontSize: 28, fontWeight: '900', color: '#ffffff', letterSpacing: -0.5 },
-  scaleLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5 },
   barChart: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -409,11 +391,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.2,
-  },
-  breakdownAi: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
   },
   subjectRow: {
     marginBottom: 18,
