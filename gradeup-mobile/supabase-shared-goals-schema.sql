@@ -1,5 +1,5 @@
 -- =============================================================================
--- Shared Goals Schema for Gradeup Mobile
+-- Shared Goals Schema for Rencana Mobile
 -- Run this in Supabase SQL Editor AFTER community schema is set up.
 -- =============================================================================
 

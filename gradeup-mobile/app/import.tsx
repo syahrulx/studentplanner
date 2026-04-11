@@ -42,7 +42,7 @@ export default function Import() {
           <Text style={styles.shareDesc}>Use the native share sheet for speed.</Text>
           <Text style={styles.shareStep}>1. Open WhatsApp</Text>
           <Text style={styles.shareStep}>2. Long press task message</Text>
-          <Text style={styles.shareStep}>3. Tap Share → Select GradeUp</Text>
+          <Text style={styles.shareStep}>3. Tap Share → Select Rencana</Text>
         </View>
       )}
 

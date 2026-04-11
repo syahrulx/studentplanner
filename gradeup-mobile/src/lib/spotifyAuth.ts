@@ -168,7 +168,7 @@ export async function connectSpotify(): Promise<boolean> {
     throw new Error('EXPO_PUBLIC_SPOTIFY_CLIENT_ID is not configured.');
   }
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'gradeupmobile', path: 'spotify-callback' });
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'rencana', path: 'spotify-callback' });
   if (__DEV__) console.log('[SpotifyAuth] Using Redirect URI:', redirectUri);
 
   const request = new AuthSession.AuthRequest({

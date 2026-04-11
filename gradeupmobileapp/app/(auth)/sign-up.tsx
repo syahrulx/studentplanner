@@ -26,7 +26,7 @@ export default function SignUpScreen() {
 
       <View style={styles.content}>
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join GradeUp and ace your studies.</Text>
+        <Text style={styles.subtitle}>Join Rencana and ace your studies.</Text>
 
         <TextInput
           style={styles.input}

@@ -413,7 +413,7 @@ function UniEditor({
       <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-800">
         <div className="text-sm font-black text-slate-900 dark:text-slate-100">Data mapping</div>
         <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Map university response fields to GradeUp timetable fields. Stored per university.
+          Map university response fields to Rencana timetable fields. Stored per university.
         </div>
 
         <label className="mt-3 block">

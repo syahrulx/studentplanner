@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 /**
- * Persist auth session on device so refresh / cold start stays logged into GradeUp.
+ * Persist auth session on device so refresh / cold start stays logged into Rencana.
  * Without storage, RN treats sessions as ephemeral and timetable + university data never reload.
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

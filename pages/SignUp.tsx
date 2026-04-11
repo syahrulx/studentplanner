@@ -21,7 +21,7 @@ const SignUp: React.FC<Props> = ({ onBack, onSignUp }) => {
       <div className="flex-1 flex flex-col justify-center">
         <div className="mb-10">
           <h1 className="text-4xl font-black text-uitm-navy mb-3 tracking-tight">Create Account</h1>
-          <p className="text-gray-400 font-medium">Join GradeUp and ace your studies.</p>
+          <p className="text-gray-400 font-medium">Join Rencana and ace your studies.</p>
         </div>
 
         <div className="space-y-5">

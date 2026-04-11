@@ -1,4 +1,4 @@
-# GradeUp Admin Dashboard (Supabase)
+# Rencana Admin Dashboard (Supabase)
 
 This repo now includes a standalone **admin-only** dashboard at `admin-web/`.
 

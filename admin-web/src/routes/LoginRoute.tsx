@@ -57,7 +57,7 @@ on conflict (user_id) do update
         <div className="mx-auto max-w-lg">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900">
             <div className="text-xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-              GradeUp <span className="text-brand-600 dark:text-brand-400">Admin</span>
+              Rencana <span className="text-brand-600 dark:text-brand-400">Admin</span>
             </div>
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
               {admin?.disabled || reason === 'disabled' ? (
@@ -155,7 +155,7 @@ on conflict (user_id) do update
           transition={{ ...pageTransition, delay: 0.06 }}
         >
           <div className="text-xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-            GradeUp <span className="text-brand-600 dark:text-brand-400">Admin</span>
+            Rencana <span className="text-brand-600 dark:text-brand-400">Admin</span>
           </div>
           <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Sign in to continue</div>
 

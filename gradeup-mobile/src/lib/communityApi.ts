@@ -866,7 +866,7 @@ export async function removeFriendByUserId(userId: string, friendId: string) {
 
 /** Generate an invite deep link for adding friends */
 export function generateInviteLink(userId: string): string {
-  return `gradeupmobile://community/add-friend?id=${userId}`;
+  return `rencana://community/add-friend?id=${userId}`;
 }
 
 /** Get list of user IDs in a circle (for map filtering) */

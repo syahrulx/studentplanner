@@ -88,7 +88,7 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     .select('*')
     .single();
   if (error) {
-    if (__DEV__) console.warn('[GradeUp] upsertCalendar', error.message);
+    if (__DEV__) console.warn('[Rencana] upsertCalendar', error.message);
     throw new Error(error.message || 'Failed to save academic calendar');
   }
   if (!data) {

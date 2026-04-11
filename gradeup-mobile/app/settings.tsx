@@ -765,7 +765,7 @@ export default function Settings() {
             </View>
 
             <Text style={[styles.notifSectionHint, { color: theme.textSecondary }]}>
-              Allow notifications for GradeUp in system Settings if alerts are muted.
+              Allow notifications for Rencana in system Settings if alerts are muted.
             </Text>
           </>
         ) : (

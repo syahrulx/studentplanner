@@ -384,7 +384,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           semesterPhase: prog.semesterPhase,
         }));
       } catch (e) {
-        if (__DEV__) console.warn('[GradeUp] UiTM HEA calendar ensure failed', e);
+        if (__DEV__) console.warn('[Rencana] UiTM HEA calendar ensure failed', e);
       }
     })();
 
@@ -523,7 +523,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (__DEV__) {
           results.forEach((r, i) => {
             if (r.status === 'rejected') {
-              console.warn('[GradeUp] loadRemoteData: request failed', i, r.reason);
+              console.warn('[Rencana] loadRemoteData: request failed', i, r.reason);
             }
           });
         }
@@ -595,7 +595,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   portalSem;
               }
             } catch (e) {
-              if (__DEV__) console.warn('[GradeUp] Portal teaching-week anchor on load failed', e);
+              if (__DEV__) console.warn('[Rencana] Portal teaching-week anchor on load failed', e);
             }
           } else if (shouldMarkPortalAnchorOnly) {
             try {
@@ -605,7 +605,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   portalSem;
               }
             } catch (e) {
-              if (__DEV__) console.warn('[GradeUp] Portal teaching-week anchor metadata failed', e);
+              if (__DEV__) console.warn('[Rencana] Portal teaching-week anchor metadata failed', e);
             }
           }
 
@@ -741,7 +741,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }));
               }
             } catch (e) {
-              if (__DEV__) console.warn('[GradeUp] Calendar auto-sync failed', e);
+              if (__DEV__) console.warn('[Rencana] Calendar auto-sync failed', e);
             }
           }
 
@@ -770,7 +770,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }
               }
             } catch (e) {
-              if (__DEV__) console.warn('[GradeUp] Admin calendar auto-load failed', e);
+              if (__DEV__) console.warn('[Rencana] Admin calendar auto-load failed', e);
             }
           }
         }
@@ -1052,10 +1052,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!uid) return;
         taskDb.upsertTask(uid, task).then(({ error }) => {
           if (error) {
-            console.warn('[GradeUp] Failed to sync task to Supabase:', error.message);
+            console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
           } else {
             syncNewTaskToStreams(task.id, uid).catch(err => {
-              console.warn('[GradeUp] Failed to auto-sync task to streams:', err);
+              console.warn('[Rencana] Failed to auto-sync task to streams:', err);
             });
           }
         });
@@ -1109,7 +1109,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const uid = session?.user?.id;
         if (!uid) return;
         taskDb.upsertTask(uid, updated).then(({ error }) => {
-          if (error) console.warn('[GradeUp] Failed to sync task update:', error.message);
+          if (error) console.warn('[Rencana] Failed to sync task update:', error.message);
         });
       });
       // Return a new array with new object refs so React and list consumers see the update
@@ -1135,7 +1135,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const uid = session?.user?.id;
           if (!uid) return;
           taskDb.upsertTask(uid, updated).then(({ error }) => {
-            if (error) console.warn('[GradeUp] Failed to sync task:', error.message);
+            if (error) console.warn('[Rencana] Failed to sync task:', error.message);
           });
           // Propagate to shared_tasks where I'm the owner
           getAcceptedSharedTasks().then(shared => {
@@ -1212,7 +1212,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (session?.user?.id) {
             coursesDb.addCourse(session.user.id, course).then(({ error }) => {
-              if (error) console.warn('[GradeUp] Failed to sync course to Supabase:', error.message);
+              if (error) console.warn('[Rencana] Failed to sync course to Supabase:', error.message);
             });
           }
         });

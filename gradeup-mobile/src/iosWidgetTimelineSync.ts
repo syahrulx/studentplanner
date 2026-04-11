@@ -39,6 +39,6 @@ export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void
     if (!w) return;
     w.updateTimeline([{ timestamp: Date.now(), props }]);
   } catch (e) {
-    if (__DEV__) console.warn('[GradeUp] iOS widget timeline sync failed', e);
+    if (__DEV__) console.warn('[Rencana] iOS widget timeline sync failed', e);
   }
 }

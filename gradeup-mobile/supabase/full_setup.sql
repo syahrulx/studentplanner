@@ -1,5 +1,5 @@
 -- =============================================================================
--- GradeUp — Full Database Setup (paste into Supabase SQL Editor and run once)
+-- Rencana — Full Database Setup (paste into Supabase SQL Editor and run once)
 -- =============================================================================
 -- Creates / updates everything the mobile app needs:
 --   1. profiles          – extended columns for student detail

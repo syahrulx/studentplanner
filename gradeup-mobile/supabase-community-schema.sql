@@ -1,5 +1,5 @@
 -- =============================================================================
--- Community Feature Schema for Gradeup Mobile
+-- Community Feature Schema for Rencana Mobile
 -- Run this in Supabase SQL Editor AFTER profiles schema is set up.
 -- =============================================================================
 

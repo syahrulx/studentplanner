@@ -563,7 +563,7 @@ export default function Profile() {
             </Text>
           ) : null}
           <Text style={{ fontSize: 12, fontWeight: '400', lineHeight: 18, color: theme.textSecondary, marginTop: 12, opacity: 0.92 }}>
-            Plans are managed by your school or GradeUp admins. Contact support if your plan should change.
+            Plans are managed by your school or Rencana admins. Contact support if your plan should change.
           </Text>
         </View>
       </Pressable>

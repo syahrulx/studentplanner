@@ -472,7 +472,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                 distanceInterval: 100, // 100m
                 showsBackgroundLocationIndicator: true,
                 foregroundService: {
-                  notificationTitle: 'Gradeup',
+                  notificationTitle: 'Rencana',
                   notificationBody: 'Sharing your location with friends',
                 },
               }).catch(console.warn);

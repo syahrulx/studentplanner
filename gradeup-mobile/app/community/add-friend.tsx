@@ -126,7 +126,7 @@ export default function AddFriendScreen() {
     const link = communityApi.generateInviteLink(userId);
     try {
       await Share.share({
-        message: `Add me on Gradeup! ${link}`,
+        message: `Add me on Rencana! ${link}`,
         url: link,
       });
     } catch (e) {

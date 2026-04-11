@@ -23,7 +23,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps, env: WidgetEnvironment) 
   if (!props.signedIn) {
     return (
       <VStack modifiers={[padding({ all: 10 })]} spacing={6}>
-        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(titleColor)]}>GradeUp</Text>
+        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(titleColor)]}>Rencana</Text>
         <Text modifiers={[font({ size: small ? 11 : 13 }), foregroundStyle(secondaryColor(scheme)), lineLimit(3)]}>
           Open the app and sign in to see today’s tasks and classes.
         </Text>

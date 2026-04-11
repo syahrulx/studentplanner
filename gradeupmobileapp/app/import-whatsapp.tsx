@@ -55,7 +55,7 @@ export default function ImportScreen() {
             <Text style={styles.step}>1. Open WhatsApp and select the group</Text>
             <Text style={styles.step}>2. Tap and hold a message to select</Text>
             <Text style={styles.step}>3. Select more messages or tap "Share"</Text>
-            <Text style={styles.step}>4. Choose GradeUp from the share menu</Text>
+            <Text style={styles.step}>4. Choose Rencana from the share menu</Text>
           </View>
         )}
 

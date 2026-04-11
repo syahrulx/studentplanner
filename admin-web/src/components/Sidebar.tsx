@@ -36,7 +36,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
           <div className="min-w-0">
             <div className="truncate text-sm font-black tracking-tight text-slate-900 dark:text-slate-100">
-              GradeUp Admin
+              Rencana Admin
             </div>
             <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">University dashboard</div>
           </div>

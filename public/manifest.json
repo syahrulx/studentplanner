@@ -1,6 +1,6 @@
 {
-  "name": "GradeUp",
-  "short_name": "GradeUp",
+  "name": "Rencana",
+  "short_name": "Rencana",
   "description": "AI-powered student productivity app for UiTM students",
   "start_url": "/",
   "display": "standalone",

@@ -39,9 +39,9 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     const val PREFS_NAME = "gradeup_home_widget_v1"
     const val PREFS_KEY_JSON = "snapshot_json"
 
-    private const val DL_HOME = "gradeupmobile:///(tabs)"
-    private const val DL_PLANNER = "gradeupmobile:///(tabs)/planner"
-    private const val DL_TIMETABLE = "gradeupmobile:///(tabs)/timetable"
+    private const val DL_HOME = "rencana:///(tabs)"
+    private const val DL_PLANNER = "rencana:///(tabs)/planner"
+    private const val DL_TIMETABLE = "rencana:///(tabs)/timetable"
 
     private const val REQ_ROOT = 0x4750_5055
     private const val REQ_HOME = 0x4750_5048
@@ -68,7 +68,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       val json = parseJson(raw)
 
       if (json == null) {
-        rv.setTextViewText(R.id.widget_greeting, "GradeUp")
+        rv.setTextViewText(R.id.widget_greeting, "Rencana")
         rv.setTextViewText(R.id.widget_tasks, "Open the app to load your schedule.")
         rv.setTextViewText(R.id.widget_classes, "")
         attachLaunchClicks(context, rv)
@@ -76,7 +76,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       }
 
       if (!json.optBoolean("signedIn", false)) {
-        rv.setTextViewText(R.id.widget_greeting, "GradeUp")
+        rv.setTextViewText(R.id.widget_greeting, "Rencana")
         rv.setTextViewText(R.id.widget_tasks, "Sign in in the app to see today’s tasks and classes.")
         rv.setTextViewText(R.id.widget_classes, "")
         attachLaunchClicks(context, rv)
@@ -87,13 +87,13 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       val snapDate = json.optString("dateISO").trim().take(10)
       val stale = snapDate.length == 10 && snapDate != today
 
-      val greeting = json.optString("greeting", "GradeUp")
+      val greeting = json.optString("greeting", "Rencana")
       rv.setTextViewText(R.id.widget_greeting, greeting)
 
       if (stale) {
         rv.setTextViewText(
           R.id.widget_tasks,
-          "It’s a new day. Open GradeUp to refresh today’s tasks and classes."
+          "It’s a new day. Open Rencana to refresh today’s tasks and classes."
         )
         rv.setTextViewText(R.id.widget_classes, "")
         attachDeepLinkClicks(context, rv, DeepLinkMode.ALL_HOME)

@@ -54,7 +54,7 @@ export default function CirclesScreen() {
   const handleShare = useCallback(async (circle: communityApi.Circle) => {
     try {
       await Share.share({
-        message: `Join my circle "${circle.name}" on Gradeup! Use invite code: ${circle.invite_code}`,
+        message: `Join my circle "${circle.name}" on Rencana! Use invite code: ${circle.invite_code}`,
       });
     } catch (e) {}
   }, []);

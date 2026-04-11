@@ -43,7 +43,7 @@ const Import = ({ onExtract, onNavigate }: { onExtract: (t: string) => void, onN
             <li className="p-3 bg-white/50 rounded-xl">Open <span className="text-green-600 font-black uppercase">WhatsApp</span></li>
             <li className="p-3 bg-white/50 rounded-xl">Long press task message</li>
             <li className="p-3 bg-white/50 rounded-xl">Tap <span className="text-uitm-navy font-black uppercase">Share</span></li>
-            <li className="p-3 bg-white/50 rounded-xl">Select <span className="text-uitm-gold font-black uppercase tracking-widest">GradeUp</span></li>
+            <li className="p-3 bg-white/50 rounded-xl">Select <span className="text-uitm-gold font-black uppercase tracking-widest">Rencana</span></li>
           </ol>
         </div>
       )}

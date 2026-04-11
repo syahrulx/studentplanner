@@ -27,7 +27,7 @@ function tierPriceLabel(plan: SubscriptionPlan): string {
   return 'Paid · coming soon';
 }
 
-/** Plus is not self-serve for anyone yet; Pro only for GradeUp staff. */
+/** Plus is not self-serve for anyone yet; Pro only for Rencana staff. */
 function isTierLocked(plan: SubscriptionPlan, staff: boolean): boolean {
   if (plan === 'free') return false;
   if (plan === 'plus') return true;
@@ -94,7 +94,7 @@ export default function SubscriptionPlansScreen() {
       if (plan === 'plus') {
         Alert.alert(
           'Plus',
-          'Plus will unlock when paid subscriptions go live. Your school or GradeUp can assign a plan for you.',
+          'Plus will unlock when paid subscriptions go live. Your school or Rencana can assign a plan for you.',
         );
         return;
       }

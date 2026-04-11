@@ -14,7 +14,7 @@ interface TutorialStep {
 
 const TUTORIAL_STEPS: TutorialStep[] = [
   // Welcome Intro
-  { id: 0, title: "Welcome to GradeUp! 🎓", description: "Your AI-powered study companion is ready to help you ace your semester. Let's take a quick tour!", targetId: 'tutorial-welcome', action: "Start Tour", isFixedInfo: true },
+  { id: 0, title: "Welcome to Rencana! 🎓", description: "Your AI-powered study companion is ready to help you ace your semester. Let's take a quick tour!", targetId: 'tutorial-welcome', action: "Start Tour", isFixedInfo: true },
   
   // Dashboard Explanation - SOW tap flow
   { id: 1, title: "SOW Intelligence", description: "Your AI has analyzed your entire semester schedule! Tap this card to reveal your personalized Stress Map and see upcoming critical weeks.", targetId: 'dash-pulse-card', action: "Tap the card" },
@@ -37,7 +37,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   { id: 14, title: "AI Flashcards 📚", description: "Tap 'Cards' button to generate AI flashcards!", targetId: 'flashcard-btn', action: "Tap Cards" },
   
   // Finish
-  { id: 15, title: "You're Ready! 🎉", description: "Explore GradeUp and ace your studies!", targetId: 'tutorial-end', action: "Finish" },
+  { id: 15, title: "You're Ready! 🎉", description: "Explore Rencana and ace your studies!", targetId: 'tutorial-end', action: "Finish" },
 ];
 
 const TOTAL_STEPS = 16; // Now 0-15
@@ -187,7 +187,7 @@ const Tutorial: React.FC<Props> = ({ step, onNext, onSkip, onFinish }) => {
                 <div className="w-12 h-12 bg-uitm-gold rounded-2xl flex items-center justify-center text-xl font-bold text-uitm-navy shadow-lg">
                   0
                 </div>
-                <h2 className="text-xl font-black text-white tracking-tight">Welcome to GradeUp! 🎓</h2>
+                <h2 className="text-xl font-black text-white tracking-tight">Welcome to Rencana! 🎓</h2>
               </div>
               
               <p className="text-sm text-white/80 mb-8 leading-relaxed">

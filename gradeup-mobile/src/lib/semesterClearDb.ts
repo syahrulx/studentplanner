@@ -34,7 +34,7 @@ async function removeSowStorageForUser(userId: string): Promise<void> {
   for (let i = 0; i < paths.length; i += chunk) {
     const slice = paths.slice(i, i + chunk);
     const { error } = await supabase.storage.from(SOW_FILES_BUCKET).remove(slice);
-    if (error && __DEV__) console.warn('[GradeUp] SOW storage remove:', error.message);
+    if (error && __DEV__) console.warn('[Rencana] SOW storage remove:', error.message);
   }
 }
 

@@ -58,7 +58,7 @@ export function buildHomeWidgetProps(input: {
   if (!input.signedIn) {
     return {
       dateISO: todayISO,
-      greeting: 'GradeUp',
+      greeting: 'Rencana',
       signedIn: false,
       tasks: [],
       classes: [],

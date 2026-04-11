@@ -68,7 +68,7 @@ export default function CircleDetailScreen() {
     if (!circle) return;
     try {
       await Share.share({
-        message: `Join my circle "${circle.name}" on Gradeup! Code: ${circle.invite_code}`,
+        message: `Join my circle "${circle.name}" on Rencana! Code: ${circle.invite_code}`,
       });
     } catch (e) {
       console.warn(e);
