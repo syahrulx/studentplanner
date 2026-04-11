@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Share,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -39,6 +39,8 @@ function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: str
 
 export default function AddFriendScreen() {
   const theme = useTheme();
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
+  const tabParam = typeof params.tab === 'string' ? params.tab : undefined;
   const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
   const [tab, setTab] = useState<'suggestions' | 'search' | 'incoming' | 'outgoing'>('suggestions');
@@ -48,11 +50,25 @@ export default function AddFriendScreen() {
   const [outgoingRequests, setOutgoingRequests] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+
+  // Open Incoming / Sent when opened from a notification deep link
+  useEffect(() => {
+    if (tabParam === 'incoming' || tabParam === 'outgoing') {
+      setTab(tabParam);
+    }
+  }, [tabParam]);
 
   const refreshOutgoingRequests = useCallback(async () => {
     if (!userId) return;
     const data = await communityApi.getOutgoingRequests(userId).catch(() => [] as Friendship[]);
     setOutgoingRequests(data);
+    // Pre-populate sentIds so the UI shows "Sent" for already-requested users
+    setSentIds(prev => {
+      const next = new Set(prev);
+      data.forEach(req => next.add(req.addressee_id));
+      return next;
+    });
   }, [userId]);
 
   // Load suggestions on mount
@@ -99,11 +115,20 @@ export default function AddFriendScreen() {
         await communityApi.sendFriendRequest(userId, targetId);
         setSentIds((prev) => new Set(prev).add(targetId));
         await refreshOutgoingRequests();
+        await refreshRequests();
+        await refreshFriends();
       } catch (e: any) {
-        Alert.alert('Error', e.message || 'Failed to send request');
+        const msg = e.message || 'Failed to send request';
+        if (/duplicate key|already exists/i.test(msg)) {
+          // Stale UI — mark as sent and refresh
+          setSentIds((prev) => new Set(prev).add(targetId));
+          await refreshOutgoingRequests();
+        } else {
+          Alert.alert('Error', msg);
+        }
       }
     },
-    [userId, refreshOutgoingRequests]
+    [userId, refreshOutgoingRequests, refreshRequests, refreshFriends]
   );
 
   // Accept request
@@ -118,6 +143,54 @@ export default function AddFriendScreen() {
       }
     },
     [refreshRequests, refreshFriends]
+  );
+
+  const handleDeclineIncoming = useCallback(
+    async (friendshipId: string) => {
+      try {
+        await communityApi.removeFriend(friendshipId);
+        await refreshRequests();
+        await refreshFriends();
+      } catch (e) {
+        console.warn(e);
+        Alert.alert('Error', 'Could not decline the request.');
+      }
+    },
+    [refreshRequests, refreshFriends]
+  );
+
+  const handleCancelOutgoing = useCallback(
+    (req: Friendship) => {
+      const name = req.addressee_profile?.name || 'this person';
+      Alert.alert('Cancel request?', `Withdraw your friend request to ${name}?`, [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Cancel request',
+          style: 'destructive',
+          onPress: async () => {
+            setCancellingIds((p) => new Set(p).add(req.id));
+            try {
+              await communityApi.removeFriend(req.id);
+              setSentIds((prev) => {
+                const next = new Set(prev);
+                next.delete(req.addressee_id);
+                return next;
+              });
+              await refreshOutgoingRequests();
+              await refreshRequests();
+            } catch (e) {
+              Alert.alert('Error', 'Could not cancel the request.');
+            }
+            setCancellingIds((p) => {
+              const next = new Set(p);
+              next.delete(req.id);
+              return next;
+            });
+          },
+        },
+      ]);
+    },
+    [refreshOutgoingRequests, refreshRequests]
   );
 
   // Share invite link
@@ -238,6 +311,12 @@ export default function AddFriendScreen() {
                     >
                       <Text style={styles.acceptBtnText}>Accept</Text>
                     </Pressable>
+                    <Pressable
+                      style={[styles.declineBtn, { borderColor: theme.border }]}
+                      onPress={() => handleDeclineIncoming(req.id)}
+                    >
+                      <Text style={[styles.declineBtnText, { color: theme.textSecondary }]}>Decline</Text>
+                    </Pressable>
                   </View>
                 </View>
               ))
@@ -256,23 +335,39 @@ export default function AddFriendScreen() {
             ) : (
               outgoingRequests.map((req) => (
                 <View key={req.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.textSecondary + '30', alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="user" size={20} color={theme.textSecondary} />
-                  </View>
+                  <Avatar
+                    name={req.addressee_profile?.name}
+                    avatarUrl={req.addressee_profile?.avatar_url}
+                    size={44}
+                  />
                   <View style={styles.personInfo}>
                     <Text
                       style={[styles.personName, { color: theme.text }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {req.addressee_id.slice(0, 8)}...
+                      {req.addressee_profile?.name || 'Unknown'}
                     </Text>
-                    <Text style={[styles.personSub, { color: theme.textSecondary }]}>Pending</Text>
+                    <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {[req.addressee_profile?.university, req.addressee_profile?.course].filter(Boolean).join(' · ') ||
+                        'Waiting for response'}
+                    </Text>
                   </View>
-                  <View style={[styles.sentBadge, { backgroundColor: '#f59e0b20' }]}>
-                    <Feather name="clock" size={14} color="#f59e0b" />
-                    <Text style={[styles.sentBadgeText, { color: '#f59e0b' }]}>Waiting</Text>
-                  </View>
+                  <Pressable
+                    disabled={cancellingIds.has(req.id)}
+                    style={({ pressed }) => [
+                      styles.cancelOutgoingBtn,
+                      { borderColor: theme.border },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                    onPress={() => handleCancelOutgoing(req)}
+                  >
+                    {cancellingIds.has(req.id) ? (
+                      <ActivityIndicator size="small" color={theme.textSecondary} />
+                    ) : (
+                      <Text style={[styles.cancelOutgoingBtnText, { color: theme.danger }]}>Cancel</Text>
+                    )}
+                  </Pressable>
                 </View>
               ))
             )}
@@ -411,6 +506,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   acceptBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  declineBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  declineBtnText: { fontSize: 14, fontWeight: '600' },
+  cancelOutgoingBtn: {
+    minWidth: 76,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelOutgoingBtnText: { fontSize: 14, fontWeight: '700' },
 
   addBtn: {
     flexDirection: 'row',

@@ -405,12 +405,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshShareStreams,
   ]);
 
-  // ─── Listen for incoming bumps → local push notification ───
+  // ─── Listen for incoming reactions → local push notification ───
   useEffect(() => {
     if (!userId) return;
 
     const channel = supabase
-      .channel('bump-notifications')
+      .channel('reaction-notifications')
       .on(
         'postgres_changes' as any,
         {
@@ -421,21 +421,67 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         },
         async (payload: any) => {
           const reaction = payload.new;
-          if (reaction?.reaction_type === 'bump') {
-            // Trigger a local push notification
-            try {
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: '💥 Bump!',
-                  body: 'Someone bumped you!',
-                  data: { type: 'bump', senderId: reaction.sender_id },
-                  sound: 'default',
-                },
-                trigger: null, // Immediately
-              });
-            } catch (e) {
-              console.warn('Failed to show bump notification:', e);
+          if (!reaction) return;
+
+          // Refresh unread count for badge
+          refreshUnreadCount();
+
+          try {
+            // Look up sender name for a personalized notification
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('name')
+              .eq('id', reaction.sender_id)
+              .maybeSingle();
+            const senderName = profile?.name ?? 'Someone';
+
+            let title: string;
+            let body: string;
+
+            switch (reaction.reaction_type) {
+              case 'bump':
+                title = '💥 Bump!';
+                body = `${senderName} bumped you!`;
+                break;
+              case '👋':
+                title = '👋 Friend Request';
+                body = reaction.message || `${senderName} sent you a friend request!`;
+                break;
+              case '🤝':
+                title = '🤝 Friend Accepted';
+                body = reaction.message || `${senderName} accepted your friend request!`;
+                break;
+              case '📋':
+                title = '📋 Task Shared';
+                body = reaction.message || `${senderName} shared a task with you!`;
+                break;
+              case '🎮':
+                title = '🎮 Quiz Invite';
+                body = reaction.message || `${senderName} invited you to a quiz!`;
+                break;
+              default:
+                title = `${reaction.reaction_type || '✨'} New Reaction`;
+                body = reaction.message || `${senderName} sent you a reaction`;
+                break;
             }
+
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title,
+                body,
+                data: {
+                  type: 'community_reaction',
+                  senderId: reaction.sender_id,
+                  reactionType: reaction.reaction_type,
+                  message: reaction.message ?? '',
+                },
+                sound: 'default',
+                ...(Platform.OS === 'android' ? { channelId: 'community' } : {}),
+              },
+              trigger: null,
+            });
+          } catch (e) {
+            console.warn('Failed to show reaction notification:', e);
           }
         }
       )
@@ -444,7 +490,46 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [userId, refreshUnreadCount]);
+
+  // ─── Listen for friendship changes → refresh friend requests immediately ───
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('friendship-changes')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friendships',
+          filter: `addressee_id=eq.${userId}`,
+        },
+        () => {
+          refreshRequests();
+          refreshFriends();
+        }
+      )
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friendships',
+          filter: `requester_id=eq.${userId}`,
+        },
+        () => {
+          refreshRequests();
+          refreshFriends();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, refreshRequests, refreshFriends]);
 
   // ─── Listen for incoming shared tasks → local push notification ───
   // (notification is fired from the unified shared-tasks-changes channel below)
@@ -706,16 +791,23 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
             const row = payload.new;
             if (!row) return;
             try {
-              // Look up owner profile and task title for a meaningful notification
+              // Use maybeSingle() instead of single() to avoid throwing when
+              // RLS prevents the recipient from reading the owner's task row.
               const [profileRes, taskRes] = await Promise.all([
-                supabase.from('profiles').select('name').eq('id', row.owner_id).single(),
-                supabase.from('tasks').select('title').eq('id', row.task_id).single(),
+                supabase.from('profiles').select('name').eq('id', row.owner_id).maybeSingle(),
+                supabase.from('tasks').select('title').eq('id', row.task_id).maybeSingle(),
               ]);
               const ownerName = profileRes.data?.name ?? 'Someone';
-              const taskTitle = taskRes.data?.title ?? 'a task';
+              // Fall back to the message field on the shared_tasks row if task title is unavailable
+              const taskTitle = taskRes.data?.title ?? row.message ?? 'a task';
               const { fireSharedTaskNotification } = require('../notificationManager');
               await fireSharedTaskNotification(ownerName, taskTitle);
             } catch (e) {
+              // Still fire a generic notification even if profile/task lookup fails entirely
+              try {
+                const { fireSharedTaskNotification } = require('../notificationManager');
+                await fireSharedTaskNotification('Someone', 'a task');
+              } catch {}
               console.warn('Failed to show shared task notification:', e);
             }
           }

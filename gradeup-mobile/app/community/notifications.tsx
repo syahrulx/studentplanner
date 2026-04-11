@@ -8,6 +8,7 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -76,13 +77,15 @@ function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): Reactio
 
 export default function NotificationsScreen() {
   const theme = useTheme();
-  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles } = useCommunity();
+  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
   const [circleInvites, setCircleInvites] = useState<CircleInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
   const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
+  const [respondingFriendIds, setRespondingFriendIds] = useState<Set<string>>(new Set());
+  const [clearing, setClearing] = useState(false);
 
   const handleShareResponse = async (sharedTaskId: string, accept: boolean) => {
     setRespondingIds(prev => new Set(prev).add(sharedTaskId));
@@ -90,6 +93,26 @@ export default function NotificationsScreen() {
     setRespondingIds(prev => {
       const next = new Set(prev);
       next.delete(sharedTaskId);
+      return next;
+    });
+  };
+
+  const handleFriendResponse = async (friendshipId: string, accept: boolean) => {
+    setRespondingFriendIds(prev => new Set(prev).add(friendshipId));
+    try {
+      if (accept) {
+        await communityApi.acceptFriendRequest(friendshipId);
+      } else {
+        await communityApi.removeFriend(friendshipId);
+      }
+      await refreshRequests();
+      await refreshFriends();
+    } catch (e) {
+      console.warn('Failed to respond to friend request:', e);
+    }
+    setRespondingFriendIds(prev => {
+      const next = new Set(prev);
+      next.delete(friendshipId);
       return next;
     });
   };
@@ -102,8 +125,9 @@ export default function NotificationsScreen() {
       setReactions(data);
       const invites = await communityApi.getMyCircleInvitations(userId).catch(() => [] as CircleInvitation[]);
       setCircleInvites(invites.filter((i) => i.status === 'pending'));
-      // Mark all as read
+      // Mark all as read and sync local state so read styling applies
       await communityApi.markReactionsRead(userId);
+      setReactions((prev) => prev.map((r) => ({ ...r, read: true })));
       await refreshUnreadCount();
     } catch (e) {
       console.warn(e);
@@ -115,15 +139,23 @@ export default function NotificationsScreen() {
     loadReactions();
   }, [loadReactions]);
 
+  const isFriendRequestReaction = useCallback((r: QuickReaction) => {
+    return r.reaction_type === '👋' && Boolean(r.message?.toLowerCase().includes('friend request'));
+  }, []);
+
   const handleReply = useCallback(
     async (reaction: QuickReaction) => {
       if (!userId) return;
+      if (isFriendRequestReaction(reaction)) {
+        router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any);
+        return;
+      }
       router.push({
         pathname: '/community/friend-profile',
         params: { friendId: reaction.sender_id },
       } as any);
     },
-    [userId]
+    [userId, isFriendRequestReaction]
   );
 
   return (
@@ -137,6 +169,45 @@ export default function NotificationsScreen() {
           <Feather name="chevron-left" size={24} color={theme.text} />
         </Pressable>
         <Text style={[styles.title, { color: theme.text }]}>Notifications</Text>
+        <Pressable
+          disabled={clearing || reactions.length === 0}
+          onPress={() => {
+            Alert.alert(
+              'Clear notifications',
+              'Remove all reaction notifications from your history? Friend requests, circle invites, and task shares stay here until you act on them.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear',
+                  style: 'destructive',
+                  onPress: async () => {
+                    if (!userId) return;
+                    setClearing(true);
+                    try {
+                      await communityApi.clearMyReceivedReactions(userId);
+                      setReactions([]);
+                      await refreshUnreadCount();
+                    } catch (e) {
+                      console.warn(e);
+                      Alert.alert('Could not clear', 'Please try again.');
+                    }
+                    setClearing(false);
+                  },
+                },
+              ],
+            );
+          }}
+          style={({ pressed }) => [
+            styles.clearHeaderBtn,
+            { borderColor: theme.border, opacity: reactions.length === 0 ? 0.35 : pressed ? 0.75 : 1 },
+          ]}
+        >
+          {clearing ? (
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+          ) : (
+            <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>Clear</Text>
+          )}
+        </Pressable>
       </View>
 
       <ScrollView
@@ -144,6 +215,47 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Friend Requests */}
+        {incomingRequests.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Friend Requests</Text>
+            {incomingRequests.map((req) => (
+              <View
+                key={req.id}
+                style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
+              >
+                <Avatar name={req.profile?.name} avatarUrl={req.profile?.avatar_url} size={44} />
+                <View style={styles.notifBody}>
+                  <Text style={[styles.notifName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    {formatDisplayName(req.profile?.name)}
+                  </Text>
+                  <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
+                    Wants to be your friend
+                    {req.profile?.university ? ` · ${req.profile.university}` : ''}
+                  </Text>
+                  <View style={styles.shareActions}>
+                    <Pressable
+                      style={[styles.shareAcceptBtn, { backgroundColor: '#10b981' }]}
+                      disabled={respondingFriendIds.has(req.id)}
+                      onPress={() => handleFriendResponse(req.id, true)}
+                    >
+                      <Feather name="check" size={14} color="#fff" />
+                      <Text style={styles.shareActionText}>Accept</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.shareDeclineBtn, { borderColor: theme.border }]}
+                      disabled={respondingFriendIds.has(req.id)}
+                      onPress={() => handleFriendResponse(req.id, false)}
+                    >
+                      <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Decline</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Circle Invites */}
         {circleInvites.length > 0 && (
           <View style={{ marginBottom: 16 }}>
@@ -263,7 +375,7 @@ export default function NotificationsScreen() {
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={theme.primary} />
-        ) : reactions.length === 0 && incomingSharedTasks.length === 0 && circleInvites.length === 0 ? (
+        ) : reactions.length === 0 && incomingSharedTasks.length === 0 && circleInvites.length === 0 && incomingRequests.length === 0 ? (
           <View style={styles.emptyState}>
             <Feather name="bell-off" size={48} color={theme.textSecondary} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>No notifications yet</Text>
@@ -275,43 +387,51 @@ export default function NotificationsScreen() {
           reactions.map((reaction) => {
             const isBump = reaction.reaction_type === 'bump';
             const { lead, text } = reactionPreviewLines(reaction, isBump);
+            const isRead = reaction.read;
+            const nameColor = isRead ? theme.textSecondary : theme.text;
+            const subColor = isRead ? theme.tabIconDefault : theme.textSecondary;
+            const timeColor = isRead ? theme.tabIconDefault : theme.textSecondary;
             return (
               <Pressable
                 key={reaction.id}
                 style={({ pressed }) => [
                   styles.notifCard,
                   {
-                    backgroundColor: reaction.read ? theme.card : theme.primary + '08',
-                    borderColor: reaction.read ? theme.border : theme.primary + '30',
+                    backgroundColor: isRead ? theme.card : theme.primary + '08',
+                    borderColor: isRead ? theme.border : theme.primary + '30',
                   },
-                  pressed && { opacity: 0.8 },
+                  pressed && { opacity: 0.85 },
                 ]}
                 onPress={() => handleReply(reaction)}
               >
-                <Avatar
-                  name={reaction.sender_profile?.name}
-                  avatarUrl={reaction.sender_profile?.avatar_url}
-                  size={44}
-                />
+                <View style={isRead ? styles.avatarDim : undefined}>
+                  <Avatar
+                    name={reaction.sender_profile?.name}
+                    avatarUrl={reaction.sender_profile?.avatar_url}
+                    size={44}
+                  />
+                </View>
                 <View style={styles.notifBody}>
                   <View style={styles.notifTopRow}>
                     <Text
-                      style={[styles.notifName, { color: theme.text }]}
+                      style={[styles.notifName, { color: nameColor }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
                       {formatDisplayName(reaction.sender_profile?.name)}
                     </Text>
-                    <Text style={[styles.notifTime, { color: theme.textSecondary }]}>
+                    <Text style={[styles.notifTime, { color: timeColor }]}>
                       {timeAgo(reaction.created_at)}
                     </Text>
                   </View>
                   <View style={styles.notifMessageRow}>
                     <View style={styles.notifLeadSlot}>
-                      {lead ? <Text style={styles.notifLeadEmoji}>{lead}</Text> : null}
+                      {lead ? (
+                        <Text style={[styles.notifLeadEmoji, isRead && styles.readMutedEmoji]}>{lead}</Text>
+                      ) : null}
                     </View>
                     <Text
-                      style={[styles.notifMessage, { color: theme.textSecondary }]}
+                      style={[styles.notifMessage, { color: subColor }]}
                       numberOfLines={3}
                     >
                       {text}
@@ -319,7 +439,11 @@ export default function NotificationsScreen() {
                   </View>
                   {reaction.reaction_type === '🎮' && reaction.message && (
                     <Pressable
-                      style={[styles.joinQuizBtn, { backgroundColor: theme.primary }]}
+                      style={[
+                        styles.joinQuizBtn,
+                        { backgroundColor: theme.primary },
+                        isRead && { opacity: 0.55 },
+                      ]}
                       onPress={() => {
                         const sessionId = reaction.message?.match(/session:(\S+)/)?.[1];
                         if (sessionId) {
@@ -348,13 +472,23 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
     paddingBottom: 12,
   },
   backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  title: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  title: { flex: 1, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  clearHeaderBtn: {
+    minWidth: 56,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearHeaderBtnText: { fontSize: 14, fontWeight: '700' },
 
   list: { flex: 1 },
   listContent: { paddingHorizontal: 20, paddingTop: 8 },
@@ -392,6 +526,8 @@ const styles = StyleSheet.create({
     paddingTop: 1,
   },
   notifLeadEmoji: { fontSize: 17, lineHeight: 22 },
+  readMutedEmoji: { opacity: 0.55 },
+  avatarDim: { opacity: 0.65 },
   notifMessage: { fontSize: 14, lineHeight: 21, flex: 1, minWidth: 0, fontWeight: '500' },
   unreadDot: {
     position: 'absolute',

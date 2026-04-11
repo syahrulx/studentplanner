@@ -21,7 +21,6 @@ import {
   getSharedTasksBetweenUsers,
 } from '@/src/lib/communityApi';
 import * as communityApi from '@/src/lib/communityApi';
-import type { FriendWithStatus } from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
 import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
@@ -38,7 +37,7 @@ function getInitials(name?: string): string {
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function Avatar({ name, avatarUrl, size = 64 }: { name?: string; avatarUrl?: string; size?: number }) {
+function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUrl?: string; size?: number }) {
   const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
   const i = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length;
   if (avatarUrl) {
@@ -46,7 +45,7 @@ function Avatar({ name, avatarUrl, size = 64 }: { name?: string; avatarUrl?: str
   }
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors[i], alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.36 }}>{getInitials(name)}</Text>
+      <Text style={{ color: '#fff', fontWeight: '800', fontSize: size * 0.34 }}>{getInitials(name)}</Text>
     </View>
   );
 }
@@ -62,51 +61,28 @@ export default function FriendProfileScreen() {
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
 
   const isAutoShareEnabled = friendId
-    ? shareStreams.find(s => s.recipient_id === friendId)?.enabled ?? false
+    ? shareStreams.find((s) => s.recipient_id === friendId)?.enabled ?? false
     : false;
 
   useEffect(() => {
-    if (friendId) {
-      getSharedTasksBetweenUsers(friendId).then(setSharedTasks).catch(() => {});
-    }
+    if (friendId) getSharedTasksBetweenUsers(friendId).then(setSharedTasks).catch(() => {});
   }, [friendId]);
 
-  const handleReaction = async (type: string) => {
-    if (!friendId) return;
-    await sendReaction(friendId, type);
-    setSentReaction(type);
-    setTimeout(() => setSentReaction(null), 2000);
-  };
-
-  const handleTemplate = async (msg: string) => {
-    if (!friendId) return;
-    await sendReaction(friendId, '💬', msg);
-    setSentReaction('💬');
-    setTimeout(() => setSentReaction(null), 2000);
-  };
-
-  const handleBump = async () => {
-    if (!friendId) return;
-    await sendBump(friendId);
-    setSentReaction('💥');
-    setTimeout(() => setSentReaction(null), 2000);
-  };
+  const flash = (emoji: string) => { setSentReaction(emoji); setTimeout(() => setSentReaction(null), 1800); };
+  const handleReaction = async (type: string) => { if (!friendId) return; await sendReaction(friendId, type); flash(type); };
+  const handleTemplate = async (msg: string) => { if (!friendId) return; await sendReaction(friendId, '💬', msg); flash('💬'); };
+  const handleBump = async () => { if (!friendId) return; await sendBump(friendId); flash('💥'); };
 
   const handleRemove = () => {
-    Alert.alert('Remove Friend', `Are you sure you want to remove ${friend?.name}?`, [
+    Alert.alert('Remove Friend', `Remove ${friend?.name} from your friends?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
         style: 'destructive',
         onPress: async () => {
           if (!userId || !friendId) return;
-          try {
-            await communityApi.removeFriendByUserId(userId, friendId);
-            await refreshFriends();
-            router.back();
-          } catch (e) {
-            Alert.alert('Error', 'Failed to remove friend');
-          }
+          try { await communityApi.removeFriendByUserId(userId, friendId); await refreshFriends(); router.back(); }
+          catch { Alert.alert('Error', 'Failed to remove friend'); }
         },
       },
     ]);
@@ -117,93 +93,52 @@ export default function FriendProfileScreen() {
       ? studyingStatusDetailText(friend.activity.detail, friend.activity.course_name, { isSelf: false, timetable: [] })
       : null;
 
+  /* ── empty state ── */
   if (!friend) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Feather name="chevron-left" size={24} color={theme.text} />
+      <View style={[s.root, { backgroundColor: theme.background }]}>
+        <SafeHeader theme={theme} />
+        <View style={s.emptyWrap}>
+          <Feather name="user-x" size={44} color={theme.textSecondary} />
+          <Text style={[s.emptyTitle, { color: theme.text }]}>Not found</Text>
+          <Text style={[s.emptySub, { color: theme.textSecondary }]}>They may have been removed from your friends.</Text>
+          <Pressable style={[s.emptyBtn, { backgroundColor: theme.primary }]} onPress={() => router.back()}>
+            <Text style={s.emptyBtnText}>Go back</Text>
           </Pressable>
-          <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
-        </View>
-        <View style={styles.emptyState}>
-          <Text style={{ color: theme.textSecondary }}>User not found</Text>
         </View>
       </View>
     );
   }
 
+  const subtitle = [friend.university, friend.course].filter(Boolean).join(' · ');
+
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="chevron-left" size={24} color={theme.text} />
-        </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
-      </View>
+    <ScrollView style={[s.root, { backgroundColor: theme.background }]} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      <SafeHeader theme={theme} />
 
-      {/* Profile Card */}
-      <View style={[styles.profileCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={80} />
-        <Text style={[styles.profileName, { color: theme.text }]}>{friend.name}</Text>
-        {friend.university && (
-          <Text style={[styles.profileDetail, { color: theme.textSecondary }]}>
-            🏫 {friend.university}
-          </Text>
-        )}
-        {friend.faculty && (
-          <Text style={[styles.profileDetail, { color: theme.textSecondary }]}>
-            📋 {friend.faculty}
-          </Text>
-        )}
-        {friend.course && (
-          <Text style={[styles.profileDetail, { color: theme.textSecondary }]}>
-            📚 {friend.course}
-          </Text>
-        )}
-        {friend.bio && (
-          <Text style={[styles.profileBio, { color: theme.text }]}>"{friend.bio}"</Text>
-        )}
-      </View>
+      {/* ── identity + status bubble ── */}
+      <View style={s.identity}>
+        <ProfileAvatar name={friend.name} avatarUrl={friend.avatar_url} size={96} />
 
-      {/* Current Activity */}
-      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Current Activity</Text>
-        <View style={styles.activityRow}>
-          <Text style={styles.activityEmoji}>
-            {getActivityEmoji(friend.activity?.activity_type)}
+        {/* status pill */}
+        <View style={[s.bubble, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={s.bubbleEmoji}>{getActivityEmoji(friend.activity?.activity_type)}</Text>
+          <Text style={[s.bubbleText, { color: theme.text }]} numberOfLines={1}>
+            {getActivityLabel(friend.activity?.activity_type)}
+            {friend.activity?.activity_type === 'studying' && studyingSubtitle && studyingSubtitle !== 'Studying'
+              ? ` · ${studyingSubtitle}`
+              : friend.activity?.detail
+                ? ` · ${friend.activity.detail}`
+                : ''}
           </Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.activityType, { color: theme.text }]}>
-              {getActivityLabel(friend.activity?.activity_type)}
-            </Text>
-            {friend.activity?.activity_type === 'studying' ? (
-              studyingSubtitle && studyingSubtitle !== 'Studying' ? (
-                <Text style={[styles.activityDetail, { color: theme.textSecondary }]}>{studyingSubtitle}</Text>
-              ) : null
-            ) : (
-              <>
-                {friend.activity?.detail ? (
-                  <Text style={[styles.activityDetail, { color: theme.textSecondary }]}>{friend.activity.detail}</Text>
-                ) : null}
-                {friend.activity?.course_name ? (
-                  <Text style={[styles.activityCourse, { color: theme.primary }]}>{friend.activity.course_name}</Text>
-                ) : null}
-              </>
-            )}
-          </View>
         </View>
+
+        <Text style={[s.name, { color: theme.text }]}>{friend.name}</Text>
+        {subtitle ? <Text style={[s.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text> : null}
+        {friend.bio ? <Text style={[s.bio, { color: theme.textSecondary }]}>"{friend.bio}"</Text> : null}
       </View>
 
-      {/* Now Playing — Spotify Music Presence */}
+      {/* ── now playing ── */}
       {friend.music?.isPlaying && (
         <NowPlayingCard
           song={friend.music.song}
@@ -213,283 +148,211 @@ export default function FriendProfileScreen() {
         />
       )}
 
-      {/* Location */}
-      {friend.location && (
-        <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Location</Text>
-          <View style={styles.activityRow}>
-            <Feather name="map-pin" size={22} color={theme.primary} />
-            <Text style={[styles.locationText, { color: theme.text }]}>
-              {friend.location.place_name || 'Location shared'}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Shared Tasks */}
-      {sharedTasks.length > 0 && (
-        <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Feather name="clipboard" size={16} color="#6366f1" />
-            <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
-              Shared Tasks ({sharedTasks.length})
-            </Text>
-          </View>
-          {sharedTasks.map(st => {
-            const isOwner = st.owner_id === userId;
-            const ownerDone = st.task?.isDone ?? false;
-            const recipientDone = st.recipient_completed;
-            return (
-              <Pressable
-                key={st.id}
-                style={[styles.sharedTaskRow, { borderColor: theme.border }]}
-                onPress={() => {
-                  if (st.task) router.push({ pathname: '/task-details' as any, params: { id: st.task_id } });
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sharedTaskTitle, { color: theme.text }]} numberOfLines={1}>
-                    {st.task?.title || 'Task'}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                    {st.task?.courseId} {st.task?.dueDate ? `• Due ${st.task.dueDate}` : ''}
-                  </Text>
-                </View>
-                <View style={styles.completionRings}>
-                  <View style={[styles.completionRing, { borderColor: isOwner ? (ownerDone ? '#10b981' : theme.border) : (recipientDone ? '#10b981' : theme.border) }]}>
-                    {(isOwner ? ownerDone : recipientDone) && (
-                      <Feather name="check" size={10} color="#10b981" />
-                    )}
-                  </View>
-                  <View style={[styles.completionRing, { borderColor: isOwner ? (recipientDone ? '#10b981' : theme.border) : (ownerDone ? '#10b981' : theme.border) }]}>
-                    {(isOwner ? recipientDone : ownerDone) && (
-                      <Feather name="check" size={10} color="#10b981" />
-                    )}
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
-      {/* Auto-share setting */}
-      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={styles.autoShareRow}>
-          <View style={{ flex: 1, paddingRight: 16 }}>
-            <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 4 }]}>
-              Auto-share new tasks
-            </Text>
-            <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
-              New tasks you add will be automatically sent to {friend.name} for approval.
-            </Text>
-          </View>
-          <Switch
-            value={isAutoShareEnabled}
-            onValueChange={(val) => {
-              if (!friendId) return;
-              void toggleShareStream(friendId, val);
-            }}
-            trackColor={{ false: theme.border, true: '#10b981' }}
-          />
-        </View>
-      </View>
-
-      {/* Challenge to Quiz */}
-      <Pressable
-        style={[styles.challengeBtn, { backgroundColor: '#003366' }]}
-        onPress={() => router.push({ pathname: '/quiz-config' as any, params: { challengeFriendId: friendId } })}
-      >
-        <Feather name="zap" size={18} color="#f59e0b" />
-        <Text style={styles.challengeBtnText}>Challenge to Quiz</Text>
-      </Pressable>
-
-      {/* Sent indicator */}
-      {sentReaction && (
-        <View style={[styles.sentBanner, { backgroundColor: '#10b981' }]}>
-          <Text style={styles.sentBannerText}>
-            {sentReaction === '💥' ? 'Bump sent! 💥' : `${sentReaction} Sent!`}
-          </Text>
-        </View>
-      )}
-
-      {/* Quick Reactions */}
-      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick React</Text>
-        <View style={styles.reactionsGrid}>
-          {REACTION_EMOJIS.map((r) => (
-            <Pressable
-              key={r.type}
-              style={({ pressed }) => [
-                styles.reactionItem,
-                { backgroundColor: theme.background },
-                pressed && { opacity: 0.6, transform: [{ scale: 0.92 }] },
-              ]}
-              onPress={() => handleReaction(r.type)}
-            >
-              <Text style={styles.reactionItemEmoji}>{r.type}</Text>
-              <Text style={[styles.reactionItemLabel, { color: theme.textSecondary }]}>{r.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* Bump button */}
+      {/* ── actions row ── */}
+      <View style={s.actionsRow}>
         <Pressable
-          style={({ pressed }) => [
-            styles.bumpButton,
-            { backgroundColor: theme.primary },
-            pressed && { opacity: 0.8 },
-          ]}
+          style={({ pressed }) => [s.actionPill, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
           onPress={handleBump}
         >
-          <Text style={styles.bumpBtnText}>💥 Bump!</Text>
+          <Text style={s.actionPillText}>💥 Bump</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [s.actionPill, s.actionPillOutline, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.85 }]}
+          onPress={() => router.push({ pathname: '/quiz-config' as any, params: { challengeFriendId: friendId } })}
+        >
+          <Feather name="zap" size={15} color="#f59e0b" />
+          <Text style={[s.actionPillOutlineText, { color: theme.text }]}>Quiz</Text>
         </Pressable>
       </View>
 
-      {/* Template Messages */}
-      <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Messages</Text>
-        {REACTION_TEMPLATES.map((msg) => (
+      {/* ── sent flash ── */}
+      {sentReaction && (
+        <View style={[s.flash, { backgroundColor: '#10b981' }]}>
+          <Text style={s.flashText}>{sentReaction === '💥' ? 'Bump sent!' : `${sentReaction} Sent`}</Text>
+        </View>
+      )}
+
+      {/* ── react ── */}
+      <Text style={[s.label, { color: theme.textSecondary }]}>REACT</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.emojiRow}>
+        {REACTION_EMOJIS.map((r) => (
+          <Pressable
+            key={r.type}
+            style={({ pressed }) => [s.emojiBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { transform: [{ scale: 0.92 }] }]}
+            onPress={() => handleReaction(r.type)}
+          >
+            <Text style={s.emojiBtnText}>{r.type}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* ── quick messages ── */}
+      <Text style={[s.label, { color: theme.textSecondary }]}>QUICK MESSAGES</Text>
+      <View style={[s.msgCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {REACTION_TEMPLATES.map((msg, i) => (
           <Pressable
             key={msg}
             style={({ pressed }) => [
-              styles.templateRow,
-              { borderColor: theme.border },
+              s.msgRow,
+              i < REACTION_TEMPLATES.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
               pressed && { backgroundColor: theme.background },
             ]}
             onPress={() => handleTemplate(msg)}
           >
-            <Text style={[styles.templateText, { color: theme.text }]}>{msg}</Text>
-            <Feather name="send" size={14} color={theme.primary} />
+            <Text style={[s.msgText, { color: theme.text }]} numberOfLines={1}>{msg}</Text>
+            <Feather name="arrow-up-right" size={16} color={theme.textSecondary} />
           </Pressable>
         ))}
       </View>
 
-      {/* Remove Friend */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.removeBtn,
-          pressed && { opacity: 0.7 },
-        ]}
-        onPress={handleRemove}
-      >
-        <Feather name="user-minus" size={16} color="#ef4444" />
-        <Text style={styles.removeBtnText}>Remove Friend</Text>
+      {/* ── shared tasks ── */}
+      {sharedTasks.length > 0 && (
+        <>
+          <Text style={[s.label, { color: theme.textSecondary }]}>SHARED TASKS · {sharedTasks.length}</Text>
+          <View style={[s.msgCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {sharedTasks.map((st, idx) => {
+              const isOwner = st.owner_id === userId;
+              const myDone = isOwner ? (st.task?.isDone ?? false) : st.recipient_completed;
+              const theirDone = isOwner ? st.recipient_completed : (st.task?.isDone ?? false);
+              const title = st.task?.title || st.message || 'Shared task';
+              const meta = st.task
+                ? [st.task.courseId, st.task.dueDate].filter(Boolean).join(' · ')
+                : st.owner_profile?.name
+                  ? `From ${st.owner_profile.name.split(' ')[0]}`
+                  : '';
+              return (
+                <Pressable
+                  key={st.id}
+                  style={({ pressed }) => [
+                    s.msgRow,
+                    idx < sharedTasks.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+                    pressed && { backgroundColor: theme.background },
+                  ]}
+                  onPress={() => router.push({ pathname: '/task-details' as any, params: { id: st.task_id } })}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[s.taskTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
+                    {meta ? <Text style={[s.taskMeta, { color: theme.textSecondary }]} numberOfLines={1}>{meta}</Text> : null}
+                  </View>
+                  <View style={s.statusPills}>
+                    <View style={[s.statusPill, { backgroundColor: myDone ? '#10b98120' : theme.background }]}>
+                      <View style={[s.dot, { backgroundColor: myDone ? '#10b981' : theme.border }]} />
+                      <Text style={[s.statusPillLabel, { color: myDone ? '#10b981' : theme.textSecondary }]}>You</Text>
+                    </View>
+                    <View style={[s.statusPill, { backgroundColor: theirDone ? '#10b98120' : theme.background }]}>
+                      <View style={[s.dot, { backgroundColor: theirDone ? '#10b981' : theme.border }]} />
+                      <Text style={[s.statusPillLabel, { color: theirDone ? '#10b981' : theme.textSecondary }]}>{friend.name.split(' ')[0]}</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {/* ── auto-share ── */}
+      <Text style={[s.label, { color: theme.textSecondary }]}>SETTINGS</Text>
+      <View style={[s.settingRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[s.settingTitle, { color: theme.text }]}>Auto-share new tasks</Text>
+          <Text style={[s.settingSub, { color: theme.textSecondary }]}>
+            Send new tasks to {friend.name.split(' ')[0]} automatically
+          </Text>
+        </View>
+        <Switch
+          value={isAutoShareEnabled}
+          onValueChange={(val) => { if (friendId) void toggleShareStream(friendId, val); }}
+          trackColor={{ false: theme.border, true: '#10b981' }}
+        />
+      </View>
+
+      {/* ── remove ── */}
+      <Pressable style={({ pressed }) => [s.removeBtn, pressed && { opacity: 0.65 }]} onPress={handleRemove}>
+        <Text style={s.removeBtnText}>Remove friend</Text>
       </Pressable>
 
-      <View style={{ height: 60 }} />
+      <View style={{ height: 44 }} />
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 56 : 40, paddingBottom: 32 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
-  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  title: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+function SafeHeader({ theme }: { theme: ReturnType<typeof useTheme> }) {
+  return (
+    <View style={[s.header, { paddingTop: Platform.OS === 'ios' ? 56 : 40 }]}>
+      <Pressable
+        onPress={() => router.back()}
+        style={({ pressed }) => [s.backBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.75 }]}
+      >
+        <Feather name="chevron-left" size={22} color={theme.text} />
+      </Pressable>
+    </View>
+  );
+}
 
-  profileCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  profileName: { fontSize: 24, fontWeight: '800', marginTop: 12 },
-  profileDetail: { fontSize: 14, marginTop: 4 },
-  profileBio: { fontSize: 14, fontStyle: 'italic', marginTop: 10, textAlign: 'center', lineHeight: 20 },
+const s = StyleSheet.create({
+  root: { flex: 1 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  section: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 18,
-    marginBottom: 16,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
-  autoShareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
-  activityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  activityEmoji: { fontSize: 28 },
-  activityType: { fontSize: 16, fontWeight: '600' },
-  activityDetail: { fontSize: 13, marginTop: 2 },
-  activityCourse: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  /* identity */
+  identity: { alignItems: 'center', paddingTop: 12, paddingBottom: 24 },
+  name: { fontSize: 28, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 },
+  subtitle: { fontSize: 14, fontWeight: '500', marginTop: 6, textAlign: 'center' },
+  bio: { fontSize: 14, fontStyle: 'italic', marginTop: 12, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },
 
-  locationText: { fontSize: 15 },
+  /* status pill */
+  bubble: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
+  bubbleEmoji: { fontSize: 14 },
+  bubbleText: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
 
-  sentBanner: {
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sentBannerText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  /* actions */
+  actionsRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, borderRadius: 16 },
+  actionPillText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  actionPillOutline: { borderWidth: 1 },
+  actionPillOutlineText: { fontSize: 16, fontWeight: '800' },
 
-  reactionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 14,
-  },
-  reactionItem: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    minWidth: 70,
-  },
-  reactionItemEmoji: { fontSize: 26 },
-  reactionItemLabel: { fontSize: 10, fontWeight: '600', marginTop: 4 },
+  /* flash */
+  flash: { alignItems: 'center', paddingVertical: 10, borderRadius: 14, marginBottom: 14 },
+  flashText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  bumpButton: {
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  bumpBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  /* section labels */
+  label: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 10, marginTop: 10, marginLeft: 4 },
 
-  templateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  templateText: { fontSize: 15, flex: 1 },
+  /* emoji row */
+  emojiRow: { gap: 10, paddingBottom: 4 },
+  emojiBtn: { width: 52, height: 52, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  emojiBtnText: { fontSize: 24 },
 
-  removeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    marginTop: 8,
-  },
-  removeBtnText: { color: '#ef4444', fontSize: 15, fontWeight: '700' },
+  /* message card */
+  msgCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden', marginBottom: 4 },
+  msgRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 18, gap: 12 },
+  msgText: { fontSize: 15, flex: 1, fontWeight: '500' },
 
-  sharedTaskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-  },
-  sharedTaskTitle: { fontSize: 14, fontWeight: '600' },
-  completionRings: { flexDirection: 'row', gap: 6 },
-  completionRing: {
-    width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-  },
-  challengeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-  },
-  challengeBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  /* tasks */
+  taskTitle: { fontSize: 15, fontWeight: '700' },
+  taskMeta: { fontSize: 12, marginTop: 2, fontWeight: '500' },
+  statusPills: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  statusPillLabel: { fontSize: 11, fontWeight: '700' },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+
+  /* setting */
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18, borderRadius: 18, borderWidth: 1, marginBottom: 4 },
+  settingTitle: { fontSize: 15, fontWeight: '700' },
+  settingSub: { fontSize: 13, marginTop: 3, lineHeight: 18, fontWeight: '500' },
+
+  /* remove */
+  removeBtn: { alignItems: 'center', paddingVertical: 20 },
+  removeBtnText: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+
+  /* empty */
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 40, gap: 12 },
+  emptyTitle: { fontSize: 20, fontWeight: '800' },
+  emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  emptyBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, marginTop: 8 },
+  emptyBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

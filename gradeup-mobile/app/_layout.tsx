@@ -70,6 +70,19 @@ function RootLayoutNav() {
           if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any)); break;
         case 'shared_task':
           nav(() => router.push('/(tabs)/community' as any)); break;
+        case 'community_reaction': {
+          const msg = String(data.message || '').toLowerCase();
+          const isFriendRequestTap =
+            data.reactionType === '👋' && msg.includes('friend request');
+          if (isFriendRequestTap) {
+            nav(() =>
+              router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any),
+            );
+          } else {
+            nav(() => router.push('/(tabs)/community' as any));
+          }
+          break;
+        }
         case 'classroom_sync':
           nav(() => router.push('/(tabs)/planner' as any)); break;
         case 'weekly_summary':

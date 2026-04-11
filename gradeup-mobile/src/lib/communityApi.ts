@@ -33,8 +33,10 @@ export interface Friendship {
   addressee_id: string;
   status: FriendshipStatus;
   created_at: string;
-  // Joined profile data
+  /** Requester profile when this row is an incoming pending request */
   profile?: FriendProfile;
+  /** Addressee profile when this row is an outgoing pending request */
+  addressee_profile?: FriendProfile;
 }
 
 export interface FriendProfile {
@@ -232,12 +234,42 @@ export const REACTION_TEMPLATES = [
 
 /** Send a friend request to another user */
 export async function sendFriendRequest(requesterId: string, addresseeId: string) {
+  // Check for any existing friendship row (in either direction) to avoid duplicate key errors
+  const { data: existing } = await supabase
+    .from('friendships')
+    .select('id, status, requester_id')
+    .or(
+      `and(requester_id.eq.${requesterId},addressee_id.eq.${addresseeId}),and(requester_id.eq.${addresseeId},addressee_id.eq.${requesterId})`
+    )
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.status === 'accepted') {
+      throw new Error('You are already friends with this person.');
+    }
+    if (existing.status === 'pending' && existing.requester_id === requesterId) {
+      throw new Error('Friend request already sent.');
+    }
+    if (existing.status === 'pending' && existing.requester_id === addresseeId) {
+      // They already sent us a request — accept it instead
+      await acceptFriendRequest(existing.id);
+      return existing;
+    }
+    if (existing.status === 'blocked') {
+      throw new Error('Unable to send friend request.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('friendships')
     .insert({ requester_id: requesterId, addressee_id: addresseeId, status: 'pending' })
     .select()
     .single();
   if (error) throw error;
+
+  // Notify the addressee so the request appears in their notifications feed
+  await sendReaction(requesterId, addresseeId, '👋', 'Sent you a friend request!').catch(() => {});
+
   return data;
 }
 
@@ -250,6 +282,12 @@ export async function acceptFriendRequest(friendshipId: string) {
     .select()
     .single();
   if (error) throw error;
+
+  // Notify the original requester that their request was accepted
+  if (data?.requester_id && data?.addressee_id) {
+    await sendReaction(data.addressee_id, data.requester_id, '🤝', 'Accepted your friend request!').catch(() => {});
+  }
+
   return data;
 }
 
@@ -328,7 +366,16 @@ export async function getOutgoingRequests(userId: string): Promise<Friendship[]>
     .eq('requester_id', userId)
     .eq('status', 'pending');
   if (error) throw error;
-  return data || [];
+  if (!data || data.length === 0) return [];
+
+  const addresseeIds = data.map((f) => f.addressee_id);
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .in('id', addresseeIds);
+
+  const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+  return data.map((f) => ({ ...f, addressee_profile: profileMap.get(f.addressee_id) }));
 }
 
 /** Suggest friends from same university/course/faculty/class */
@@ -826,6 +873,12 @@ export async function markReactionsRead(userId: string) {
     .update({ read: true })
     .eq('receiver_id', userId)
     .eq('read', false);
+  if (error) throw error;
+}
+
+/** Delete all received reaction rows (notification history) for the current user. */
+export async function clearMyReceivedReactions(userId: string): Promise<void> {
+  const { error } = await supabase.from('quick_reactions').delete().eq('receiver_id', userId);
   if (error) throw error;
 }
 
@@ -1350,11 +1403,25 @@ export async function getSharedTasksBetweenUsers(friendId: string): Promise<Shar
   if (!data || data.length === 0) return [];
 
   const taskIds = [...new Set(data.map(s => s.task_id))];
-  const { data: tasks } = await supabase.from('tasks').select('*').in('id', taskIds);
+  const ownerIds = [...new Set(data.map(s => s.owner_id))];
 
-  const taskMap = buildTaskMapFromRows(tasks || []);
+  const [tasksRes, profilesRes] = await Promise.all([
+    supabase.from('tasks').select('*').in('id', taskIds),
+    supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds),
+  ]);
 
-  return data.map(s => ({ ...s, task: taskMap.get(s.task_id) })) as SharedTask[];
+  if (tasksRes.error) {
+    console.warn('[Community] Could not fetch task details for shared tasks:', tasksRes.error.message);
+  }
+
+  const taskMap = buildTaskMapFromRows(tasksRes.data || []);
+  const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
+
+  return data.map(s => ({
+    ...s,
+    task: taskMap.get(s.task_id),
+    owner_profile: profileMap.get(s.owner_id),
+  })) as SharedTask[];
 }
 
 export async function shareAllTasksWithFriend(
