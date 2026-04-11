@@ -691,6 +691,16 @@ export default function CommunityMap() {
                       {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
                     </Text>
                   )}
+                <Pressable
+                  onPress={() => {
+                    setSelectedFriend(null);
+                    router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                  style={({ pressed }) => [pressed && { opacity: 0.65 }]}
+                >
+                  <Text style={[styles.friendPopupProfileLink, { color: theme.primary }]}>View full profile</Text>
+                </Pressable>
               </View>
               {showMusic ? (
                 albumUri ? (
@@ -793,21 +803,6 @@ export default function CommunityMap() {
             )}
 
             <View style={styles.friendPopupActions}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.friendPopupProfileCta,
-                  { backgroundColor: `${theme.primary}14`, borderColor: `${theme.primary}38` },
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => {
-                  setSelectedFriend(null);
-                  router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
-                }}
-              >
-                <Text style={[styles.friendPopupProfileCtaText, { color: theme.primary }]}>View full profile</Text>
-                <Feather name="chevron-right" size={18} color={theme.primary} />
-              </Pressable>
-
               <Text style={[styles.friendPopupReactionsLabel, { color: theme.textSecondary }]}>Quick reactions</Text>
               <View style={styles.friendPopupReactions}>
                 {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
@@ -1653,18 +1648,13 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.45)',
     textAlign: 'center',
   },
-  friendPopupActions: { marginTop: 4 },
-  friendPopupProfileCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
+  friendPopupActions: { marginTop: 8 },
+  friendPopupProfileLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+    alignSelf: 'flex-start',
   },
-  friendPopupProfileCtaText: { fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   friendPopupReactionsLabel: {
     fontSize: 11,
     fontWeight: '800',
