@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -13,6 +13,7 @@ import {
   type QuizDifficulty,
 } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
+import type { Note } from '@/src/types';
 
 const PAD = 20;
 const RADIUS = 20;
@@ -41,6 +42,20 @@ function looksLikeRealContent(text: string): boolean {
   return realWords.length / words.length > 0.3;
 }
 
+/** Short label for loading UI (filename without extension when sensible). */
+function noteLoadingLabel(note: Note): string {
+  const raw = (note.attachmentFileName || note.title || 'PDF').trim() || 'PDF';
+  return raw.replace(/\.pdf$/i, '').trim() || 'PDF';
+}
+
+/** Truncate long names in the middle so start and end stay visible in a pill button. */
+function truncateMiddle(s: string, maxLen: number): string {
+  const t = s.trim();
+  if (t.length <= maxLen) return t;
+  const edge = Math.max(4, Math.floor((maxLen - 1) / 2));
+  return `${t.slice(0, edge)}…${t.slice(t.length - edge)}`;
+}
+
 export default function AIQuizBuilder() {
   const { courses, notes, user, handleSaveNote } = useApp();
   const theme = useTheme();
@@ -51,7 +66,9 @@ export default function AIQuizBuilder() {
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('medium');
   const [questionCount, setQuestionCount] = useState(10);
   const [loading, setLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState('');
+  /** Primary line stays short; optional detail shows file name with middle truncation. */
+  const [loadingBanner, setLoadingBanner] = useState<{ title: string; detail?: string } | null>(null);
+  const loadingPhaseTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const topicsForSubject = useMemo(
     () => notes.filter((n) => n.subjectId === selectedSubject),
@@ -91,7 +108,7 @@ export default function AIQuizBuilder() {
     let attemptedPdfCount = 0;
 
     setLoading(true);
-    setLoadingText('Preparing note content...');
+    setLoadingBanner({ title: 'Gathering note content…' });
 
     for (const note of selectedNotes) {
       // 1. Use plain text content if available
@@ -118,7 +135,10 @@ export default function AIQuizBuilder() {
 
       try {
         attemptedPdfCount++;
-        setLoadingText(`Extracting text from: ${note.title.slice(0, 20)}...`);
+        setLoadingBanner({
+          title: 'Reading PDF…',
+          detail: truncateMiddle(noteLoadingLabel(note), 44),
+        });
         const extracted = await Promise.race([
           extractPdfTextFromStoragePath(note.attachmentPath),
           new Promise<never>((_, reject) =>
@@ -129,16 +149,19 @@ export default function AIQuizBuilder() {
         if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
           contentParts.push(pdfText);
           if (handleSaveNote) {
-            handleSaveNote({ ...note, extractedText: pdfText });
+            handleSaveNote({ ...note, extractedText: pdfText, extractionError: undefined });
           }
         } else {
           failedPdfTitles.push(note.title);
           const reason = pdfText.trim().length > 0 ? 'extracted text looks like PDF metadata, not content' : (extracted.stage + (extracted.detail ? ` - ${extracted.detail}` : ''));
           extractionIssues.push(`${note.title}: ${reason}`);
+          if (handleSaveNote) handleSaveNote({ ...note, extractionError: reason });
         }
-      } catch {
+      } catch (err: any) {
         failedPdfTitles.push(note.title);
-        extractionIssues.push(`${note.title}: failed - unexpected exception in quiz builder.`);
+        const msg = err?.message || 'unexpected exception in quiz builder';
+        extractionIssues.push(`${note.title}: failed - ${msg}`);
+        if (handleSaveNote) handleSaveNote({ ...note, extractionError: msg });
       }
     }
 
@@ -150,14 +173,19 @@ export default function AIQuizBuilder() {
         if (nameHint.endsWith('.pdf') || note.attachmentPath.toLowerCase().includes('.pdf')) continue;
         try {
           attemptedPdfCount++;
-          setLoadingText(`Trying attachment: ${note.title.slice(0, 24)}...`);
+          setLoadingBanner({
+            title: 'Reading attachment…',
+            detail: truncateMiddle(noteLoadingLabel(note), 44),
+          });
           const extracted = await extractPdfTextFromStoragePath(note.attachmentPath);
           const pdfText = extracted.text;
           if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
             contentParts.push(pdfText.trim());
-            if (handleSaveNote) handleSaveNote({ ...note, extractedText: pdfText.trim() });
+            if (handleSaveNote) handleSaveNote({ ...note, extractedText: pdfText.trim(), extractionError: undefined });
           } else {
-            extractionIssues.push(`${note.title}: ${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`);
+            const reason = `${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`;
+            extractionIssues.push(`${note.title}: ${reason}`);
+            if (handleSaveNote) handleSaveNote({ ...note, extractionError: reason });
           }
         } catch {
           // not a valid PDF — ignore
@@ -168,7 +196,7 @@ export default function AIQuizBuilder() {
     const contents = contentParts.filter(Boolean);
     if (!contents.length) {
       setLoading(false);
-      setLoadingText('');
+      setLoadingBanner(null);
       if (attemptedPdfCount > 0) {
         Alert.alert(
           'No Content',
@@ -179,11 +207,18 @@ export default function AIQuizBuilder() {
       }
       return;
     }
-    setLoadingText('Analyzing your notes...');
+    setLoadingBanner({ title: 'Analyzing your notes…' });
 
     try {
-      setTimeout(() => setLoadingText('Generating questions...'), 2000);
-      setTimeout(() => setLoadingText('Almost ready...'), 5000);
+      loadingPhaseTimeoutsRef.current.forEach(clearTimeout);
+      loadingPhaseTimeoutsRef.current = [
+        setTimeout(() => {
+          setLoadingBanner((prev) => (prev ? { title: 'Writing questions…' } : null));
+        }, 2000),
+        setTimeout(() => {
+          setLoadingBanner((prev) => (prev ? { title: 'Almost ready…' } : null));
+        }, 5000),
+      ];
 
       const questions = await generateQuizFromNotes(contents, questionCount, quizType, difficulty, user.id);
 
@@ -214,8 +249,10 @@ export default function AIQuizBuilder() {
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Something went wrong generating the quiz.');
     } finally {
+      loadingPhaseTimeoutsRef.current.forEach(clearTimeout);
+      loadingPhaseTimeoutsRef.current = [];
       setLoading(false);
-      setLoadingText('');
+      setLoadingBanner(null);
     }
   };
 
@@ -387,7 +424,20 @@ export default function AIQuizBuilder() {
           {loading ? (
             <View style={styles.ctaInner}>
               <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.ctaText}>{loadingText || 'Generating...'}</Text>
+              <View style={styles.ctaTextCol}>
+                <Text style={styles.ctaText} numberOfLines={1}>
+                  {loadingBanner?.title ?? 'Working…'}
+                </Text>
+                {loadingBanner?.detail ? (
+                  <Text
+                    style={styles.ctaDetail}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
+                    {loadingBanner.detail}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           ) : (
             <View style={styles.ctaInner}>
@@ -477,7 +527,23 @@ const styles = StyleSheet.create({
 
   // Generate button
   cta: { borderRadius: 14, overflow: 'hidden' },
-  ctaInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 17 },
-  ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  ctaInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 52,
+  },
+  ctaTextCol: { flex: 1, minWidth: 0, alignItems: 'center' },
+  ctaText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
+  ctaDetail: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+    maxWidth: '100%',
+  },
   ctaSummary: { textAlign: 'center', fontSize: 13, fontWeight: '500' },
 });

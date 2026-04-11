@@ -136,11 +136,20 @@ function createStyles(theme: ThemePalette) {
       justifyContent: 'center',
       gap: 10,
       paddingVertical: 16,
+      paddingHorizontal: 14,
       borderRadius: 14,
       backgroundColor: theme.primary,
     },
     generateBtnDisabled: { opacity: 0.45 },
-    generateBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+    generateBtnInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      flex: 1,
+      minWidth: 0,
+    },
+    generateBtnText: { color: '#fff', fontSize: 15, fontWeight: '800', flexShrink: 1 },
 
     colorDot: { width: 10, height: 10, borderRadius: 5 },
 
@@ -378,6 +387,7 @@ export default function FlashcardPick() {
         hasText: !!(n.content && n.content.trim().length > 0 && n.content !== 'Extracting text from PDF...'),
         hasPdf: noteHasPdfAttachment(n),
         hasCachedText: !!(n.extractedText && n.extractedText.trim().length > 0),
+        hasFailed: !!n.extractionError,
       }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [notes, cardCountByNote, pickedSubjectId]);
@@ -622,7 +632,10 @@ export default function FlashcardPick() {
 
         if (error) {
           failLines.push(`${note.title}: ${error}`);
-          // Only stop on actual daily AI limit, not transient 429
+          if (note.hasPdf && handleSaveNote) {
+            const orig = notes.find((n) => n.id === note.id);
+            if (orig) handleSaveNote({ ...orig, extractionError: error });
+          }
           if (/daily.*limit/i.test(error)) {
             failLines.push('Stopped: daily limit reached.');
             stoppedOnDailyLimit = true;
@@ -632,6 +645,10 @@ export default function FlashcardPick() {
         }
 
         if (cards.length > 0) {
+          if (note.hasPdf && note.hasFailed && handleSaveNote) {
+            const orig = notes.find((n) => n.id === note.id);
+            if (orig) handleSaveNote({ ...orig, extractionError: undefined });
+          }
           const existingFronts = existingFrontsByNote.get(note.id) ?? new Set<string>();
           const newCards = cards.filter(
             (c) => !existingFronts.has(c.front.trim().toLowerCase())
@@ -871,14 +888,20 @@ export default function FlashcardPick() {
                   openGeneratePopup();
                 }}
               >
-                {generating ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Feather name="zap" size={20} color="#fff" />
-                )}
-                <Text style={styles.generateBtnText} numberOfLines={1}>
-                  {generating && generatingLabel ? generatingLabel : T('flashcardPickGenerate')}
-                </Text>
+                <View style={styles.generateBtnInner}>
+                  {generating ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Feather name="zap" size={20} color="#fff" />
+                  )}
+                  <Text
+                    style={styles.generateBtnText}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {generating && generatingLabel ? generatingLabel : T('flashcardPickGenerate')}
+                  </Text>
+                </View>
               </Pressable>
             </View>
           )}

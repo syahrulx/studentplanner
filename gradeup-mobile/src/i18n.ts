@@ -173,7 +173,7 @@ const translations = {
     flashcardsAllSheetsTitle: 'Flashcards',
     flashcardsBrowseDecksSub: 'Generate cards',
     flashcardPickOtherSubjects: 'Other subjects',
-    flashcardPickGenerate: 'Generate flashcards',
+    flashcardPickGenerate: 'Generate Flashcards',
     flashcardPickSelectCount: '{n} selected',
     flashcardPickSelectAll: 'Select all',
     flashcardPickClearSelection: 'Clear',

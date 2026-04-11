@@ -157,6 +157,11 @@ export interface Note {
   attachmentFileName?: string;
   /** Cached text extracted from PDF attachment — avoids re-extraction on every AI call. */
   extractedText?: string;
+  /**
+   * Persisted extraction error message when PDF text extraction fails.
+   * Allows the UI to show failure state and offer retry.
+   */
+  extractionError?: string;
 }
 
 

@@ -125,6 +125,7 @@ export default function NotesEditor() {
       attachmentPath,
       attachmentFileName,
       extractedText,
+      extractionError: existing?.extractionError,
     };
     handleSaveNote(note);
     goBack();

@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, Pressable, FlatList, StyleSheet, Platform, Modal, TextInput, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -9,9 +10,32 @@ import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { ImportProgressBar } from '@/components/ImportProgressBar';
-// NOTE: We no longer extract PDF text on-device during import.
-// Flashcards/AI features extract server-side on first use.
+import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { useTranslations } from '@/src/i18n';
+
+const REGISTERED_NOTE_FOLDERS_KEY = 'notes_subject_registered_folders_v1';
+
+type RegisteredFoldersMap = Record<string, string[]>;
+
+async function loadRegisteredFoldersForSubject(subjectId: string): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(REGISTERED_NOTE_FOLDERS_KEY);
+    const all: RegisteredFoldersMap = raw ? JSON.parse(raw) : {};
+    const list = all[subjectId];
+    return Array.isArray(list) ? list.filter((s) => typeof s === 'string' && s.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistRegisteredFoldersForSubject(subjectId: string, names: string[]): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(REGISTERED_NOTE_FOLDERS_KEY);
+    const all: RegisteredFoldersMap = raw ? JSON.parse(raw) : {};
+    all[subjectId] = [...new Set(names.map((s) => s.trim()).filter(Boolean))].sort();
+    await AsyncStorage.setItem(REGISTERED_NOTE_FOLDERS_KEY, JSON.stringify(all));
+  } catch {}
+}
 
 function createStyles(theme: ThemePalette) {
   return StyleSheet.create({
@@ -59,6 +83,13 @@ function createStyles(theme: ThemePalette) {
     noteRowBody: { flex: 1, paddingRight: 16 },
     noteTitle: { fontSize: 17, fontWeight: '600', color: theme.text, marginBottom: 2 },
     noteSnippet: { fontSize: 13, color: theme.textSecondary, lineHeight: 18 },
+    extractionRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, marginTop: 2 },
+    retryPill: {
+      flexDirection: 'row' as const, alignItems: 'center' as const, gap: 3,
+      paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+      backgroundColor: `${theme.primary}14`,
+    },
+    retryPillText: { fontSize: 11, fontWeight: '600' as const },
 
     noteRowMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     noteDate: { fontSize: 14, color: theme.textSecondary },
@@ -132,7 +163,9 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function NotesList() {
-  const { subjectId } = useLocalSearchParams<{ subjectId: string }>();
+  const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
+  const subjectId =
+    typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
   const { notes, handleSaveNote, deleteNote, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
@@ -146,14 +179,31 @@ export default function NotesList() {
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
+  /** Folder names created before any note exists in them (chips show immediately). */
+  const [registeredFolders, setRegisteredFolders] = useState<string[]>([]);
+  /** Tracks noteIds currently being extracted server-side. */
+  const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
 
   const allNotes = notes.filter((n) => n.subjectId === subjectId);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadRegisteredFoldersForSubject(subjectId).then((list) => {
+      if (!cancelled) setRegisteredFolders(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [subjectId]);
+
   const folders = useMemo(() => {
     const set = new Set<string>();
-    for (const n of allNotes) { if (n.folderId) set.add(n.folderId); }
+    for (const n of allNotes) {
+      if (n.folderId) set.add(n.folderId);
+    }
+    for (const f of registeredFolders) set.add(f);
     return Array.from(set).sort();
-  }, [allNotes]);
+  }, [allNotes, registeredFolders]);
 
   const list = useMemo(() => {
     if (!selectedFolder) return allNotes;
@@ -169,6 +219,9 @@ export default function NotesList() {
     setNewFolderName('');
     setShowNewFolderModal(false);
     setSelectedFolder(name);
+    const next = [...new Set([...registeredFolders, name])].sort();
+    setRegisteredFolders(next);
+    void persistRegisteredFoldersForSubject(subjectId, next);
   };
 
   const handleMoveNote = (noteId: string, targetFolder: string | null) => {
@@ -176,6 +229,50 @@ export default function NotesList() {
     if (!note) return;
     handleSaveNote({ ...note, folderId: targetFolder ?? undefined });
     setMoveNoteId(null);
+  };
+
+  const triggerPdfExtraction = async (noteId: string, storagePath: string, noteTitle: string) => {
+    setExtractingIds((prev) => new Set(prev).add(noteId));
+    try {
+      const result = await Promise.race([
+        extractPdfTextFromStoragePath(storagePath),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Extraction timed out')), 120_000)),
+      ]);
+      const current = notes.find((n) => n.id === noteId);
+      if (!current) return;
+      if (result.text.trim().length > 0 && result.stage === 'done') {
+        handleSaveNote({ ...current, extractedText: result.text, extractionError: undefined });
+      } else {
+        const reason = result.detail || 'Could not read text from this PDF';
+        handleSaveNote({ ...current, extractionError: reason });
+        Alert.alert(
+          'PDF Extraction Failed',
+          `Could not extract text from "${noteTitle}". The file may be scanned or image-based.\n\nYou can still use this note — tap to retry extraction later.`,
+        );
+      }
+    } catch (e: any) {
+      const current = notes.find((n) => n.id === noteId);
+      if (!current) return;
+      const reason = e?.message || 'Unexpected error during extraction';
+      handleSaveNote({ ...current, extractionError: reason });
+      Alert.alert(
+        'PDF Extraction Failed',
+        `Something went wrong while extracting "${noteTitle}".\n\nPlease check your connection and try again.`,
+      );
+    } finally {
+      setExtractingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(noteId);
+        return next;
+      });
+    }
+  };
+
+  const retryExtraction = (noteId: string) => {
+    const note = allNotes.find((n) => n.id === noteId);
+    if (!note?.attachmentPath) return;
+    handleSaveNote({ ...note, extractionError: undefined });
+    triggerPdfExtraction(noteId, note.attachmentPath, note.title);
   };
 
   const handleImportFile = async (type: string | string[] = '*/*') => {
@@ -243,10 +340,15 @@ export default function NotesList() {
       };
       handleSaveNote(note);
 
+      const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+      if (isPdf && path) {
+        setImportProgressUi({ progress: 95, label: 'Preparing PDF for AI...' });
+        triggerPdfExtraction(noteId, path, fileName);
+      }
+
       setImportProgressUi({ progress: 100, label: T('noteImportDone') });
       await new Promise((r) => setTimeout(r, 700));
       setImportProgressUi(null);
-      router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId } });
     } catch (e) {
       setImportProgressUi(null);
       Alert.alert('Import failed', 'Could not import the file. Please try again.');
@@ -302,10 +404,19 @@ export default function NotesList() {
                 style={[styles.folderChip, selectedFolder === f && styles.folderChipActive]}
                 onPress={() => setSelectedFolder(selectedFolder === f ? null : f)}
                 onLongPress={() => Alert.alert(`Folder "${f}"`, undefined, [
-                  { text: 'Delete folder', style: 'destructive', onPress: () => {
-                    for (const n of allNotes.filter((n) => n.folderId === f)) handleSaveNote({ ...n, folderId: undefined });
-                    if (selectedFolder === f) setSelectedFolder(null);
-                  }},
+                  {
+                    text: 'Delete folder',
+                    style: 'destructive',
+                    onPress: () => {
+                      for (const n of allNotes.filter((n) => n.folderId === f)) {
+                        handleSaveNote({ ...n, folderId: undefined });
+                      }
+                      const next = registeredFolders.filter((x) => x !== f);
+                      setRegisteredFolders(next);
+                      void persistRegisteredFoldersForSubject(subjectId, next);
+                      if (selectedFolder === f) setSelectedFolder(null);
+                    },
+                  },
                   { text: 'Cancel', style: 'cancel' },
                 ])}
               >
@@ -367,20 +478,64 @@ export default function NotesList() {
               >
                 <View style={styles.noteRowBody}>
                   <Text style={styles.noteTitle} numberOfLines={1}>{item.title}</Text>
-                  {item.content === 'Extracting text from PDF...' ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <ActivityIndicator size={10} color={theme.primary} />
-                      <Text style={[styles.noteSnippet, { color: theme.primary }]}>Extracting text from PDF…</Text>
-                    </View>
-                  ) : (
-                    <Text style={[styles.noteSnippet, item.extractedText ? { color: '#10b981' } : undefined]} numberOfLines={2}>
-                      {item.extractedText
-                        ? 'PDF ready for AI features'
-                        : item.attachmentPath
-                          ? 'PDF attached — AI will prepare on first use'
-                          : item.content}
-                    </Text>
-                  )}
+                  {(() => {
+                    const isExtracting = extractingIds.has(item.id) || item.content === 'Extracting text from PDF...';
+                    const hasFailed = !!item.extractionError;
+                    const isReady = !!(item.extractedText && item.extractedText.trim().length > 0);
+                    const hasPdf = !!item.attachmentPath;
+
+                    if (isExtracting) {
+                      return (
+                        <View style={styles.extractionRow}>
+                          <ActivityIndicator size={10} color={theme.primary} />
+                          <Text style={[styles.noteSnippet, { color: theme.primary, flex: 1 }]}>Preparing PDF for AI...</Text>
+                        </View>
+                      );
+                    }
+                    if (hasFailed) {
+                      return (
+                        <View style={styles.extractionRow}>
+                          <Feather name="alert-circle" size={12} color="#ef4444" />
+                          <Text style={[styles.noteSnippet, { color: '#ef4444', flex: 1 }]} numberOfLines={1}>Extraction failed</Text>
+                          <Pressable
+                            style={styles.retryPill}
+                            onPress={(e) => { e.stopPropagation(); retryExtraction(item.id); }}
+                            hitSlop={6}
+                          >
+                            <Feather name="refresh-cw" size={10} color={theme.primary} />
+                            <Text style={[styles.retryPillText, { color: theme.primary }]}>Retry</Text>
+                          </Pressable>
+                        </View>
+                      );
+                    }
+                    if (isReady) {
+                      return (
+                        <View style={styles.extractionRow}>
+                          <Feather name="check-circle" size={12} color="#10b981" />
+                          <Text style={[styles.noteSnippet, { color: '#10b981' }]}>PDF ready for AI</Text>
+                        </View>
+                      );
+                    }
+                    if (hasPdf) {
+                      return (
+                        <View style={styles.extractionRow}>
+                          <Feather name="file-text" size={12} color={theme.textSecondary} />
+                          <Text style={[styles.noteSnippet, { flex: 1 }]} numberOfLines={1}>PDF attached</Text>
+                          <Pressable
+                            style={styles.retryPill}
+                            onPress={(e) => { e.stopPropagation(); retryExtraction(item.id); }}
+                            hitSlop={6}
+                          >
+                            <Feather name="zap" size={10} color={theme.primary} />
+                            <Text style={[styles.retryPillText, { color: theme.primary }]}>Prepare</Text>
+                          </Pressable>
+                        </View>
+                      );
+                    }
+                    return (
+                      <Text style={styles.noteSnippet} numberOfLines={2}>{item.content}</Text>
+                    );
+                  })()}
                 </View>
                 <View style={styles.noteRowMeta}>
                   <Text style={styles.noteDate}>{item.updatedAt}</Text>

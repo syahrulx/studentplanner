@@ -20,6 +20,7 @@ function rowToNote(row: Record<string, unknown>): Note {
     attachmentPath: row.attachment_path != null ? String(row.attachment_path) : undefined,
     attachmentFileName: row.attachment_file_name != null ? String(row.attachment_file_name) : undefined,
     extractedText: row.extracted_text != null ? String(row.extracted_text) : undefined,
+    extractionError: row.extraction_error != null ? String(row.extraction_error) : undefined,
   };
 }
 
@@ -68,6 +69,7 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
       attachment_path: note.attachmentPath ?? null,
       attachment_file_name: note.attachmentFileName ?? null,
       extracted_text: note.extractedText ?? null,
+      extraction_error: note.extractionError ?? null,
     },
     { onConflict: 'id,user_id' }
   );
