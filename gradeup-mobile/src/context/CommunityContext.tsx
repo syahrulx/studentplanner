@@ -913,11 +913,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       return ok;
     },
     disconnectSpotify: async () => {
-      await spotifyAuth.disconnectSpotify();
-      setSpotifyConnected(false);
+      try {
+        await spotifyAuth.disconnectSpotify();
+      } finally {
+        setSpotifyConnected(false);
+      }
     },
     refreshMyMusic: async () => {
-      await spotifyAuth.getMyVibe();
+      const vibe = await spotifyAuth.getMyVibe();
+      if (vibe) await refreshMyActivity();
     },
     refreshAll,
     loading,

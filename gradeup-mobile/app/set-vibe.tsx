@@ -15,7 +15,9 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
 import type { SpotifyTrack, SpotifyPlaylist } from '@/src/lib/spotifyAuth';
 
@@ -24,6 +26,8 @@ type ViewMode = 'tabs' | 'playlist-tracks';
 
 export default function SetVibeScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const { refreshMyActivity } = useCommunity();
 
   const [tab, setTab] = useState<Tab>('recent');
@@ -97,8 +101,7 @@ export default function SetVibeScreen() {
       } catch (e: any) {
         console.warn('[SetVibe] search error:', e);
         setSearchResults([]);
-        setSearchError('Search failed. Please try again.');
-        Alert.alert('Search failed', 'Could not reach Spotify. Please check your connection.');
+        setSearchError(e?.message || 'Search failed. Please try again.');
       }
       setSearching(false);
     }, 400);
@@ -382,7 +385,10 @@ export default function SetVibeScreen() {
           renderItem={renderTrack}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No recently played tracks</Text>
+            <View style={styles.emptyWrap}>
+              <Feather name="alert-circle" size={36} color={theme.textSecondary + '50'} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{T('setVibeEmptyRecent')}</Text>
+            </View>
           }
         />
       ) : (
@@ -392,7 +398,10 @@ export default function SetVibeScreen() {
           renderItem={renderPlaylist}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No playlists found</Text>
+            <View style={styles.emptyWrap}>
+              <Feather name="alert-circle" size={36} color={theme.textSecondary + '50'} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{T('setVibeEmptyPlaylists')}</Text>
+            </View>
           }
         />
       )}

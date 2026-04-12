@@ -150,6 +150,7 @@ export default function FriendProfileScreen() {
           artist={friend.music.artist}
           albumArt={friend.music.albumArt}
           onAddToLibrary={friend.music.trackId ? () => addTrackToLibrary(friend.music!.trackId!) : undefined}
+          T={T}
         />
       )}
 

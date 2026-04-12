@@ -234,13 +234,13 @@ function MapAddToLibraryPill({
     if (!trackId?.trim() || adding || added) return;
     setAdding(true);
     try {
-      const ok = await spotifyAuth.addTrackToLibrary(trackId.trim());
-      if (ok) {
+      const result = await spotifyAuth.addTrackToLibrary(trackId.trim());
+      if (result.ok) {
         setAdded(true);
         const title = (songName || T('commSpotifyTrackFallback')).trim() || T('commSpotifyTrackFallback');
         Alert.alert(T('commSpotifyAddedTitle'), T('commSpotifyAddedBody').replace('{title}', title));
       } else {
-        Alert.alert(T('commSpotifyConnectTitle'), T('commSpotifyConnectBody'));
+        Alert.alert(T('commSpotifyConnectTitle'), result.message || T('commSpotifyConnectBody'));
       }
     } catch {
       Alert.alert(T('commGenericErrorTitle'), T('commGenericErrorBody'));
@@ -634,10 +634,6 @@ export default function CommunityMap() {
 
         {/* Map overlay buttons */}
         <View style={styles.mapOverlay}>
-          {myActivity?.is_playing && myActivity?.song_track_id && (
-            <MapAddToLibraryPill trackId={myActivity.song_track_id} songName={myActivity.song_name} />
-          )}
-
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
@@ -1183,12 +1179,20 @@ function StatusPopup({
               { backgroundColor: theme.background, borderColor: theme.border },
               pressed && { opacity: 0.8 },
             ]}
-            onPress={() => {
+            onPress={async () => {
               if (spotifyConnected) {
                 onClose();
                 router.push('/set-vibe' as any);
               } else {
-                connectSpotify().catch(() => {});
+                try {
+                  const ok = await connectSpotify();
+                  if (ok) {
+                    onClose();
+                    router.push('/set-vibe' as any);
+                  }
+                } catch {
+                  Alert.alert('Spotify', 'Could not connect to Spotify. Try again from Settings.');
+                }
               }
             }}
           >

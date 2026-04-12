@@ -371,12 +371,9 @@ export default function NotesList() {
 
   const promptImportFileType = () => {
     if (isImportingRef.current) return;
-    Alert.alert('Import file', 'Choose what to import', [
-      { text: 'PDF', onPress: () => setTimeout(() => handleImportFile('application/pdf').catch(() => {}), 400) },
-      { text: 'Image', onPress: () => setTimeout(() => handleImportFile('image/*').catch(() => {}), 400) },
-      { text: 'Document', onPress: () => setTimeout(() => handleImportFile(['application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain']).catch(() => {}), 400) },
-      { text: 'Any file', onPress: () => setTimeout(() => handleImportFile('*/*').catch(() => {}), 400) },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(T('noteImportAlertTitle'), T('noteImportAlertMessage'), [
+      { text: T('noteImportChoosePdf'), onPress: () => setTimeout(() => handleImportFile('application/pdf').catch(() => {}), 400) },
+      { text: T('cancel'), style: 'cancel' },
     ]);
   };
 

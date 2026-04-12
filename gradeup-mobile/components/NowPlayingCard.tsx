@@ -14,9 +14,11 @@ interface NowPlayingCardProps {
   albumArt?: string;
   trackUrl?: string;
   /** If provided, shows an "Add to Library" heart button */
-  onAddToLibrary?: () => Promise<boolean>;
+  onAddToLibrary?: () => Promise<{ ok: boolean; message?: string }>;
   /** If true, shows as the user's own vibe (no add button) */
   isOwnProfile?: boolean;
+  /** Optional translation function; falls back to English. */
+  T?: (key: string) => string;
 }
 
 function EqBar({ delay }: { delay: number }) {
@@ -54,7 +56,9 @@ function EqBar({ delay }: { delay: number }) {
   );
 }
 
-export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary, isOwnProfile }: NowPlayingCardProps) {
+export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary, isOwnProfile, T: _T }: NowPlayingCardProps) {
+  const fallback = (key: string) => key;
+  const T = _T || fallback;
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
 
@@ -62,15 +66,15 @@ export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary,
     if (!onAddToLibrary || added || adding) return;
     setAdding(true);
     try {
-      const ok = await onAddToLibrary();
-      if (ok) {
+      const result = await onAddToLibrary();
+      if (result.ok) {
         setAdded(true);
-        Alert.alert('Added! 💚', `"${song}" has been saved to your Liked Songs.`);
+        Alert.alert(T('nowPlayingAddedTitle'), T('nowPlayingAddedBody').replace('{song}', song));
       } else {
-        Alert.alert('Error', 'Could not add to your library. Make sure your Spotify is connected.');
+        Alert.alert(T('nowPlayingSaveFailTitle'), result.message || T('nowPlayingSaveFailBody'));
       }
     } catch (e) {
-      Alert.alert('Error', 'Something went wrong.');
+      Alert.alert(T('nowPlayingErrorTitle'), e instanceof Error ? e.message : T('nowPlayingSaveFailBody'));
     }
     setAdding(false);
   };
@@ -81,7 +85,7 @@ export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary,
       <View style={styles.labelRow}>
         <Feather name="music" size={11} color={SPOTIFY_GREEN} />
         <Text style={styles.label}>
-          {isOwnProfile ? 'YOUR CURRENT VIBE' : 'CURRENTLY VIBING TO'}
+          {isOwnProfile ? T('nowPlayingYourVibe') : T('nowPlayingFriendVibe')}
         </Text>
       </View>
 
@@ -129,7 +133,7 @@ export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary,
             color={added ? '#10b981' : SPOTIFY_GREEN}
           />
           <Text style={[styles.addBtnText, added && { color: '#10b981' }]}>
-            {adding ? 'Adding...' : added ? 'Saved to Library' : 'Add to My Library'}
+            {adding ? T('nowPlayingAddBtnAdding') : added ? T('nowPlayingAddBtnSaved') : T('nowPlayingAddBtn')}
           </Text>
         </Pressable>
       )}

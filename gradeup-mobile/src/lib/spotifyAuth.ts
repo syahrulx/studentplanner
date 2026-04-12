@@ -125,7 +125,6 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 
 /** Get a fresh access token for the current user. Uses cache if still valid. */
 async function getMyAccessToken(): Promise<string | null> {
-  // Use cached token if still fresh
   if (cachedAccessToken && Date.now() - cachedTokenTimestamp < TOKEN_LIFETIME_MS) {
     return cachedAccessToken;
   }
@@ -140,11 +139,24 @@ async function getMyAccessToken(): Promise<string | null> {
     .maybeSingle();
 
   if (!tokenRow?.refresh_token) return null;
-  
-  const token = await refreshAccessToken(tokenRow.refresh_token);
-  cachedAccessToken = token;
-  cachedTokenTimestamp = Date.now();
-  return token;
+
+  try {
+    const token = await refreshAccessToken(tokenRow.refresh_token);
+    cachedAccessToken = token;
+    cachedTokenTimestamp = Date.now();
+    return token;
+  } catch (e) {
+    cachedAccessToken = null;
+    cachedTokenTimestamp = 0;
+    console.warn('[SpotifyAuth] token refresh failed, clearing cache:', e);
+    return null;
+  }
+}
+
+/** Invalidate the in-memory access token so the next call fetches a fresh one. */
+export function invalidateAccessTokenCache(): void {
+  cachedAccessToken = null;
+  cachedTokenTimestamp = 0;
 }
 
 function parseTrack(item: any): SpotifyTrack {
@@ -176,6 +188,8 @@ export async function connectSpotify(): Promise<boolean> {
     scopes: SPOTIFY_SCOPES,
     redirectUri,
     usePKCE: true,
+    // Ensures reconnecting can pick up new scopes (e.g. user-library-modify for Liked Songs).
+    extraParams: { show_dialog: 'true' },
   });
 
   const result = await request.promptAsync(discovery);
@@ -206,15 +220,18 @@ export async function connectSpotify(): Promise<boolean> {
 }
 
 export async function disconnectSpotify(): Promise<void> {
+  cachedAccessToken = null;
+  cachedTokenTimestamp = 0;
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   await supabase.from('spotify_tokens').delete().eq('user_id', user.id);
-  // Clear vibe
   await supabase.from('user_activities').update({
     is_playing: false,
     song_name: null,
     song_artist: null,
     song_album_art: null,
+    song_track_id: null,
   }).eq('user_id', user.id);
 }
 
@@ -233,15 +250,21 @@ export async function isSpotifyConnected(): Promise<boolean> {
 // Public API — Browse Music
 // ---------------------------------------------------------------------------
 
-/** Get user's Spotify playlists. */
+/** Get user's Spotify playlists. Retries once on 401. */
 export async function getMyPlaylists(): Promise<SpotifyPlaylist[]> {
-  const accessToken = await getMyAccessToken();
+  let accessToken = await getMyAccessToken();
   if (!accessToken) return [];
 
+  const doFetch = (tok: string) =>
+    fetch('https://api.spotify.com/v1/me/playlists?limit=30', { headers: { Authorization: `Bearer ${tok}` } });
+
   try {
-    const res = await fetch('https://api.spotify.com/v1/me/playlists?limit=30', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    let res = await doFetch(accessToken);
+    if (res.status === 401) {
+      invalidateAccessTokenCache();
+      accessToken = await getMyAccessToken();
+      if (accessToken) res = await doFetch(accessToken);
+    }
     if (!res.ok) return [];
     const json = await res.json();
     return (json.items || []).map((p: any) => ({
@@ -277,15 +300,21 @@ export async function getPlaylistTracks(playlistId: string): Promise<SpotifyTrac
   }
 }
 
-/** Get recently played tracks. */
+/** Get recently played tracks. Retries once on 401. */
 export async function getRecentlyPlayed(): Promise<SpotifyTrack[]> {
-  const accessToken = await getMyAccessToken();
+  let accessToken = await getMyAccessToken();
   if (!accessToken) return [];
 
+  const doFetch = (tok: string) =>
+    fetch('https://api.spotify.com/v1/me/player/recently-played?limit=20', { headers: { Authorization: `Bearer ${tok}` } });
+
   try {
-    const res = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=20', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    let res = await doFetch(accessToken);
+    if (res.status === 401) {
+      invalidateAccessTokenCache();
+      accessToken = await getMyAccessToken();
+      if (accessToken) res = await doFetch(accessToken);
+    }
     if (!res.ok) return [];
     const json = await res.json();
     // Deduplicate by track id
@@ -346,6 +375,7 @@ export async function clearMyVibe(): Promise<void> {
     song_name: null,
     song_artist: null,
     song_album_art: null,
+    song_track_id: null,
   }).eq('user_id', user.id);
 }
 
@@ -392,20 +422,94 @@ export async function getTrackPreviewUrl(trackId: string): Promise<string | null
 // Public API — Friend Actions
 // ---------------------------------------------------------------------------
 
+export type AddTrackToLibraryResult = { ok: true } | { ok: false; message: string };
+
+/** Accept raw Spotify track id, spotify:track:id, or open.spotify.com/track/… URL. */
+export function normalizeSpotifyTrackId(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const uri = /^spotify:track:([a-zA-Z0-9]+)\s*$/i.exec(s);
+  if (uri?.[1]) return uri[1];
+  const url = /open\.spotify\.com\/(?:[\w-]+\/)?track\/([a-zA-Z0-9]+)/i.exec(s);
+  if (url?.[1]) return url[1];
+  if (/^[a-zA-Z0-9]{22}$/.test(s)) return s;
+  return null;
+}
+
 /** Add a track to the current user's Spotify "Liked Songs" library. */
-export async function addTrackToLibrary(trackId: string): Promise<boolean> {
-  const accessToken = await getMyAccessToken();
-  if (!accessToken) return false;
+export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibraryResult> {
+  const id = normalizeSpotifyTrackId(trackId);
+  if (!id) {
+    return {
+      ok: false,
+      message:
+        'This song link is not a valid Spotify track ID. Ask your friend to pick their vibe from Spotify again.',
+    };
+  }
+
+  const putTracks = (token: string) =>
+    fetch(`https://api.spotify.com/v1/me/tracks?ids=${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+  let accessToken = await getMyAccessToken();
+  if (!accessToken) {
+    return { ok: false, message: 'Spotify is not connected. Connect it in Settings, then try again.' };
+  }
 
   try {
-    const res = await fetch(`https://api.spotify.com/v1/me/tracks?ids=${trackId}`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    return res.ok;
+    let res = await putTracks(accessToken);
+    if (res.status === 401) {
+      cachedAccessToken = null;
+      cachedTokenTimestamp = 0;
+      accessToken = await getMyAccessToken();
+      if (accessToken) res = await putTracks(accessToken);
+    }
+
+    if (res.ok) return { ok: true };
+
+    const raw = await res.text().catch(() => '');
+    let detail = raw.trim().slice(0, 220);
+    try {
+      const j = JSON.parse(raw) as { error?: { message?: string }; message?: string };
+      const m = (j?.error?.message || j?.message || '').trim();
+      if (m) detail = m;
+    } catch {
+      /* keep text slice */
+    }
+
+    if (res.status === 403) {
+      return {
+        ok: false,
+        message:
+          'Spotify blocked saving to your library (missing permission). Open Settings → disconnect Spotify, connect again, and accept all permissions — especially library access.',
+      };
+    }
+    if (res.status === 401) {
+      return {
+        ok: false,
+        message: 'Spotify session expired. Reconnect Spotify in Settings, then try again.',
+      };
+    }
+    if (res.status === 429) {
+      return { ok: false, message: 'Spotify rate limit. Try again in a minute.' };
+    }
+    if (res.status === 400) {
+      return {
+        ok: false,
+        message: 'This track could not be saved (invalid or unavailable on Spotify).',
+      };
+    }
+
+    const suffix = detail ? ` ${detail}` : '';
+    return {
+      ok: false,
+      message: `Could not save to your library (${res.status}).${suffix} You can try reconnecting Spotify in Settings.`,
+    };
   } catch (e) {
     console.warn('[SpotifyAuth] addTrackToLibrary error:', e);
-    return false;
+    return { ok: false, message: 'Network error. Check your connection and try again.' };
   }
 }
 

@@ -300,8 +300,12 @@ export default function Settings() {
           icon: 'settings' as ThemeIconKey,
           label: T('settingsSpotifyLabelDisconnect'),
           onPress: async () => {
-            await disconnectSpotify();
-            Alert.alert(T('settingsSpotifyDisconnectedTitle'), T('settingsSpotifyDisconnectedBody'));
+            try {
+              await disconnectSpotify();
+              Alert.alert(T('settingsSpotifyDisconnectedTitle'), T('settingsSpotifyDisconnectedBody'));
+            } catch {
+              Alert.alert('Error', 'Could not disconnect Spotify. Please try again.');
+            }
           },
           color: '#ef4444',
         },

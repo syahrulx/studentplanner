@@ -740,9 +740,22 @@ export async function updateMyActivity(
   if (error) throw error;
 }
 
-/** Clear my activity (set to idle) */
+/** Clear my activity (set to idle) and also clear any music vibe. */
 export async function clearActivity(userId: string) {
-  await updateMyActivity(userId, 'idle');
+  const { error } = await supabase.from('user_activities').upsert({
+    user_id: userId,
+    activity_type: 'idle' as ActivityType,
+    detail: null,
+    course_name: null,
+    is_playing: false,
+    song_name: null,
+    song_artist: null,
+    song_album_art: null,
+    song_track_id: null,
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
 }
 
 /** Get my own activity */
