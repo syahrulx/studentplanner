@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,19 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { supabase } from '@/src/lib/supabase';
+import {
+  getFriendsWithStatus,
+  getMyCircles,
+  shareTaskWithFriend as apiShareTaskWithFriend,
+  shareTaskWithCircle as apiShareTaskWithCircle,
+  type FriendWithStatus,
+  type Circle,
+} from '@/src/lib/communityApi';
 import { upsertTask } from '@/src/lib/taskDb';
 import { TaskType, type Task } from '@/src/types';
 import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
@@ -52,16 +61,13 @@ function addCalendarMonth(year: number, month: number, delta: number): { year: n
   return { year: x.getFullYear(), month: x.getMonth() };
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const normalized = hex.replace('#', '');
-  const expanded =
-    normalized.length === 3 ? normalized.split('').map((char) => char + char).join('') : normalized;
-  if (expanded.length !== 6) return `rgba(0,51,102,${alpha})`;
-  const value = Number.parseInt(expanded, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+function formatPersonDisplayName(raw: string): string {
+  const t = raw.trim();
+  if (!t) return raw;
+  return t
+    .split(/\s+/)
+    .map((w) => (w.length <= 1 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+    .join(' ');
 }
 
 const TASK_TYPES = Object.values(TaskType) as TaskType[];
@@ -159,15 +165,79 @@ export default function AddTask() {
   const [isSaving, setIsSaving] = useState(false);
   const [shareFriendIds, setShareFriendIds] = useState<string[]>([]);
   const [shareCircleIds, setShareCircleIds] = useState<string[]>([]);
+  const [shareExpanded, setShareExpanded] = useState(false);
+  /** CommunityContext userId can lag behind Supabase session — load lists locally when needed. */
+  const [shareAuthResolved, setShareAuthResolved] = useState(false);
+  const [shareSessionUid, setShareSessionUid] = useState<string | null>(null);
+  const [fallbackShareFriends, setFallbackShareFriends] = useState<FriendWithStatus[]>([]);
+  const [fallbackShareCircles, setFallbackShareCircles] = useState<Circle[]>([]);
 
   const {
-    filteredFriends,
+    /** All friends for sharing — not `filteredFriends` (empty when a circle filter is active in Community). */
+    friendsWithStatus: shareRecipientFriends,
     circles,
-    shareTaskWithFriend,
-    shareTaskWithCircle,
+    shareStreams,
     userId: communityUserId,
     refreshFriends,
+    refreshCircles,
   } = useCommunity();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setShareSessionUid(session?.user?.id ?? null);
+      setShareAuthResolved(true);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setShareSessionUid(session?.user?.id ?? null);
+      setShareAuthResolved(true);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const loadShareRecipientsLocal = useCallback(async (uid: string) => {
+    const [fw, circ] = await Promise.all([
+      getFriendsWithStatus(uid).catch(() => [] as FriendWithStatus[]),
+      getMyCircles(uid).catch(() => [] as Circle[]),
+    ]);
+    setFallbackShareFriends(fw);
+    setFallbackShareCircles(circ);
+  }, []);
+
+  useEffect(() => {
+    if (communityUserId) {
+      setFallbackShareFriends([]);
+      setFallbackShareCircles([]);
+      return;
+    }
+    if (!shareAuthResolved || !shareSessionUid) return;
+    void loadShareRecipientsLocal(shareSessionUid);
+  }, [communityUserId, shareAuthResolved, shareSessionUid, loadShareRecipientsLocal]);
+
+  const shareFriendsList = useMemo(
+    () => (communityUserId ? shareRecipientFriends : fallbackShareFriends),
+    [communityUserId, shareRecipientFriends, fallbackShareFriends],
+  );
+  const shareCirclesList = useMemo(
+    () => (communityUserId ? circles : fallbackShareCircles),
+    [communityUserId, circles, fallbackShareCircles],
+  );
+
+  const activeAutoShareNames = useMemo(() => {
+    const enabledStreams = shareStreams.filter((s) => s.enabled);
+    if (enabledStreams.length === 0) return [];
+    const names: string[] = [];
+    for (const st of enabledStreams) {
+      if (st.recipient_id) {
+        const f = shareFriendsList.find((fr) => fr.id === st.recipient_id);
+        if (f) names.push(formatPersonDisplayName(f.name));
+      }
+      if (st.circle_id) {
+        const c = shareCirclesList.find((ci) => ci.id === st.circle_id);
+        if (c) names.push(c.name);
+      }
+    }
+    return names;
+  }, [shareStreams, shareFriendsList, shareCirclesList]);
 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date(dueDateISO + 'T12:00:00').getFullYear());
@@ -211,9 +281,18 @@ export default function AddTask() {
     setCourseId(courses[0].id);
   }, [isEditing, courseId, courses]);
 
-  useEffect(() => {
-    if (communityUserId) void refreshFriends();
-  }, [communityUserId, refreshFriends]);
+  useFocusEffect(
+    useCallback(() => {
+      if (communityUserId) {
+        void Promise.all([refreshFriends(), refreshCircles()]);
+        return;
+      }
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (uid) void loadShareRecipientsLocal(uid);
+      });
+    }, [communityUserId, refreshFriends, refreshCircles, loadShareRecipientsLocal]),
+  );
 
   const toggleShareFriend = (id: string) => {
     setShareFriendIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -233,6 +312,11 @@ export default function AddTask() {
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
       const suggestedWeek = getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate);
       const courseIdResolved = courseId || courses[0]?.id || 'General';
+
+      if (wantsShare && !uid) {
+        Alert.alert('', T('shareSignInHint'));
+        return;
+      }
 
       if (existingTask) {
         updateTask(existingTask.id, {
@@ -262,11 +346,17 @@ export default function AddTask() {
             Alert.alert('', T('shareSyncFailed'));
             return;
           }
-          for (const friendId of shareFriendIds) {
-            await shareTaskWithFriend(existingTask.id, friendId, undefined);
+          let failCount = 0;
+          for (const fid of shareFriendIds) {
+            const ok = await apiShareTaskWithFriend(existingTask.id, fid, undefined);
+            if (!ok) failCount++;
           }
-          for (const circleId of shareCircleIds) {
-            await shareTaskWithCircle(existingTask.id, circleId, undefined);
+          for (const cid of shareCircleIds) {
+            const res = await apiShareTaskWithCircle(existingTask.id, cid, undefined);
+            if (res.length === 0) failCount++;
+          }
+          if (failCount > 0) {
+            Alert.alert('', T('sharePartialFail'));
           }
         }
         router.back();
@@ -295,11 +385,17 @@ export default function AddTask() {
           return;
         }
         addTask(newTask, { skipRemote: true });
-        for (const friendId of shareFriendIds) {
-          await shareTaskWithFriend(newId, friendId, undefined);
+        let failCount = 0;
+        for (const fid of shareFriendIds) {
+          const ok = await apiShareTaskWithFriend(newId, fid, undefined);
+          if (!ok) failCount++;
         }
-        for (const circleId of shareCircleIds) {
-          await shareTaskWithCircle(newId, circleId, undefined);
+        for (const cid of shareCircleIds) {
+          const res = await apiShareTaskWithCircle(newId, cid, undefined);
+          if (res.length === 0) failCount++;
+        }
+        if (failCount > 0) {
+          Alert.alert('', T('sharePartialFail'));
         }
       } else {
         addTask(newTask);
@@ -508,89 +604,138 @@ export default function AddTask() {
           </Row>
         </Group>
 
-        {communityUserId ? (
-          <>
-            <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: 8 }]}>
-              {T('shareWithSection')}
-            </Text>
-            <Text style={[styles.shareHint, { color: theme.textSecondary }]}>{T('shareWithHint')}</Text>
-            {filteredFriends.length === 0 && circles.length === 0 ? (
-              <Text style={[styles.shareEmpty, { color: theme.textSecondary }]}>{T('shareNoConnectionsHint')}</Text>
-            ) : (
-              <>
-                {filteredFriends.length > 0 ? (
-                  <>
-                    <Text style={[styles.shareSubLabel, { color: theme.textSecondary }]}>{T('shareFriendsLabel')}</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.shareChipsScroll}
-                      contentContainerStyle={styles.shareChipsRow}
-                    >
-                      {filteredFriends.map((friend) => {
-                        const on = shareFriendIds.includes(friend.id);
-                        return (
-                          <Pressable
-                            key={friend.id}
-                            onPress={() => toggleShareFriend(friend.id)}
-                            style={[
-                              styles.shareChip,
-                              {
-                                backgroundColor: on ? hexToRgba(theme.primary, 0.14) : theme.card,
-                                borderColor: on ? theme.primary : theme.border,
-                              },
-                            ]}
-                          >
-                            <Text style={[styles.shareChipText, { color: theme.text }]} numberOfLines={1}>
-                              {friend.name}
-                            </Text>
-                            <Feather name={on ? 'check-circle' : 'circle'} size={16} color={on ? theme.primary : theme.textSecondary} />
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  </>
-                ) : null}
-                {circles.length > 0 ? (
-                  <>
-                    <Text style={[styles.shareSubLabel, { color: theme.textSecondary, marginTop: 10 }]}>
-                      {T('shareCirclesLabel')}
-                    </Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.shareChipsScroll}
-                      contentContainerStyle={styles.shareChipsRow}
-                    >
-                      {circles.map((circle) => {
-                        const on = shareCircleIds.includes(circle.id);
-                        return (
-                          <Pressable
-                            key={circle.id}
-                            onPress={() => toggleShareCircle(circle.id)}
-                            style={[
-                              styles.shareChip,
-                              {
-                                backgroundColor: on ? hexToRgba(theme.primary, 0.14) : theme.card,
-                                borderColor: on ? theme.primary : theme.border,
-                              },
-                            ]}
-                          >
-                            <Text style={styles.shareCircleEmoji}>{circle.emoji || '●'}</Text>
-                            <Text style={[styles.shareChipText, { color: theme.text }]} numberOfLines={1}>
-                              {circle.name}
-                            </Text>
-                            <Feather name={on ? 'check-circle' : 'circle'} size={16} color={on ? theme.primary : theme.textSecondary} />
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  </>
-                ) : null}
-              </>
-            )}
-          </>
-        ) : null}
+        <>
+          {activeAutoShareNames.length > 0 && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.autoShareBanner,
+                { backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.25)' },
+                pressed && { opacity: 0.72 },
+              ]}
+              onPress={() => router.push('/auto-share-settings' as any)}
+              accessibilityRole="button"
+              accessibilityLabel={T('autoShareSettingsTitle')}
+            >
+              <Feather name="refresh-cw" size={14} color="#10b981" />
+              <Text style={styles.autoShareBannerText}>
+                {T('shareAutoActivePrefix')}{' '}{activeAutoShareNames.join(', ')}
+              </Text>
+              <Feather name="chevron-right" size={18} color="#10b981" style={{ opacity: 0.85 }} />
+            </Pressable>
+          )}
+
+          <Pressable
+            style={[styles.shareHeaderRow, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => setShareExpanded((v) => !v)}
+          >
+            <View style={styles.shareHeaderLeft}>
+              <Feather name="users" size={18} color={theme.primary} />
+              <Text style={[styles.shareHeaderTitle, { color: theme.text }]}>{T('shareWithSection')}</Text>
+              {(shareFriendIds.length + shareCircleIds.length) > 0 && (
+                <View style={[styles.shareCountBadge, { backgroundColor: theme.primary }]}>
+                  <Text style={styles.shareCountText}>{shareFriendIds.length + shareCircleIds.length}</Text>
+                </View>
+              )}
+            </View>
+            <Feather name={shareExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
+          </Pressable>
+          <Text style={[styles.shareHint, { color: theme.textSecondary }]}>{T('shareWithHint')}</Text>
+
+          {shareExpanded && (
+            <>
+              {!shareAuthResolved ? (
+                <ActivityIndicator style={{ marginVertical: 16 }} color={theme.primary} />
+              ) : !shareSessionUid ? (
+                <Text style={[styles.shareSignInHint, { color: theme.textSecondary }]}>{T('shareSignInHint')}</Text>
+              ) : shareFriendsList.length === 0 && shareCirclesList.length === 0 ? (
+                <View style={styles.shareEmptyBlock}>
+                  <Text style={[styles.shareEmpty, { color: theme.textSecondary }]}>{T('shareNoConnectionsHint')}</Text>
+                  <Pressable
+                    style={[styles.shareCommunityBtn, { backgroundColor: theme.primary }]}
+                    onPress={() => router.push('/(tabs)/community' as any)}
+                  >
+                    <Text style={[styles.shareCommunityBtnText, { color: theme.textInverse }]}>{T('shareOpenCommunity')}</Text>
+                    <Feather name="chevron-right" size={18} color={theme.textInverse} />
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  {shareFriendsList.length > 0 ? (
+                    <>
+                      <Text style={[styles.shareSubLabel, { color: theme.textSecondary }]}>{T('shareFriendsLabel')}</Text>
+                      <Group theme={theme}>
+                        {shareFriendsList.map((friend, index) => {
+                          const on = shareFriendIds.includes(friend.id);
+                          return (
+                            <Row
+                              key={friend.id}
+                              theme={theme}
+                              showDivider={index < shareFriendsList.length - 1}
+                              onPress={() => toggleShareFriend(friend.id)}
+                            >
+                              <View style={styles.rowBetween}>
+                                <Text
+                                  style={[styles.rowTitle, { color: theme.text, flex: 1, paddingRight: 8 }]}
+                                  numberOfLines={1}
+                                >
+                                  {formatPersonDisplayName(friend.name)}
+                                </Text>
+                                <Feather
+                                  name={on ? 'check-circle' : 'circle'}
+                                  size={22}
+                                  color={on ? theme.primary : theme.textSecondary}
+                                />
+                              </View>
+                            </Row>
+                          );
+                        })}
+                      </Group>
+                    </>
+                  ) : null}
+                  {shareCirclesList.length > 0 ? (
+                    <>
+                      <Text style={[styles.shareSubLabel, { color: theme.textSecondary, marginTop: 12 }]}>
+                        {T('shareCirclesLabel')}
+                      </Text>
+                      <Group theme={theme}>
+                        {shareCirclesList.map((circle, index) => {
+                          const on = shareCircleIds.includes(circle.id);
+                          return (
+                            <Row
+                              key={circle.id}
+                              theme={theme}
+                              showDivider={index < shareCirclesList.length - 1}
+                              onPress={() => toggleShareCircle(circle.id)}
+                            >
+                              <View style={[styles.rowBetween, { alignItems: 'center' }]}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10, paddingRight: 8 }}>
+                                  <Text style={{ fontSize: 18 }}>{circle.emoji || '●'}</Text>
+                                  <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                                      {circle.name}
+                                    </Text>
+                                    <Text style={[styles.shareCircleMeta, { color: theme.textSecondary }]}>
+                                      {circle.member_count ?? 0} {T('shareMembersSuffix')}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Feather
+                                  name={on ? 'check-circle' : 'circle'}
+                                  size={22}
+                                  color={on ? theme.primary : theme.textSecondary}
+                                />
+                              </View>
+                            </Row>
+                          );
+                        })}
+                      </Group>
+                    </>
+                  ) : null}
+                </>
+              )}
+            </>
+          )}
+        </>
 
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('notesLabel')}</Text>
         <TextInput
@@ -852,20 +997,95 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginTop: 4,
   },
+  autoShareBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  autoShareBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10b981',
+    lineHeight: 17,
+  },
+  shareHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  shareHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  shareHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  shareCountBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  shareCountText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   shareHint: {
     fontSize: 13,
     fontWeight: '500',
     lineHeight: 18,
     marginBottom: 12,
     marginLeft: 4,
-    marginTop: -4,
+    marginTop: 0,
+  },
+  shareSignInHint: {
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+    marginBottom: 12,
+    marginLeft: 4,
+    marginRight: 4,
   },
   shareEmpty: {
     fontSize: 13,
     fontStyle: 'italic',
-    marginBottom: 12,
-    marginLeft: 4,
+    lineHeight: 18,
+    marginBottom: 14,
+    textAlign: 'center',
   },
+  shareEmptyBlock: {
+    marginBottom: 8,
+    marginHorizontal: 4,
+    paddingVertical: 8,
+  },
+  shareCommunityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  shareCommunityBtnText: { fontSize: 16, fontWeight: '700' },
   shareSubLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -874,20 +1094,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 4,
   },
-  shareChipsScroll: { marginBottom: 4 },
-  shareChipsRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 8, paddingVertical: 2, paddingRight: 4 },
-  shareChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    maxWidth: 220,
-  },
-  shareChipText: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
-  shareCircleEmoji: { fontSize: 16, marginRight: -4 },
+  shareCircleMeta: { fontSize: 12, fontWeight: '500', marginTop: 2 },
 
   titleField: {
     fontSize: 17,

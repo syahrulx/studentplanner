@@ -78,7 +78,7 @@ export default function TaskDetails() {
   const themeId = useThemeId();
   const insets = useSafeAreaInsets();
   const {
-    filteredFriends,
+    friendsWithStatus: allFriends,
     circles,
     shareTaskWithFriend,
     shareTaskWithCircle,
@@ -345,18 +345,21 @@ export default function TaskDetails() {
           <Feather name="chevron-left" size={24} color={theme.text} />
         </Pressable>
         <Text style={[s.headerTitle, { color: theme.text }]}>{T('taskDetails')}</Text>
-        {/* Share-to-friend button — badge shows shared count */}
-        <Pressable
-          onPress={() => setShowShareModal(true)}
-          style={[s.headerBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
-        >
-          <Feather name="user-plus" size={20} color={isAlreadyShared ? theme.primary : theme.text} />
-          {isAlreadyShared ? (
-            <View style={[s.headerShareBadge, { backgroundColor: theme.primary }]}>
-              <Text style={s.headerShareBadgeText}>{participants.length}</Text>
-            </View>
-          ) : null}
-        </Pressable>
+        {!isReadOnlySharedTask ? (
+          <Pressable
+            onPress={() => setShowShareModal(true)}
+            style={[s.headerBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+          >
+            <Feather name="user-plus" size={20} color={isAlreadyShared ? theme.primary : theme.text} />
+            {isAlreadyShared ? (
+              <View style={[s.headerShareBadge, { backgroundColor: theme.primary }]}>
+                <Text style={s.headerShareBadgeText}>{participants.length}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : (
+          <View style={{ width: 44 }} />
+        )}
       </View>
 
       <ScrollView
@@ -810,7 +813,7 @@ export default function TaskDetails() {
             <View style={[s.sheetGrab, { backgroundColor: theme.border, alignSelf: 'center' }]} />
             <View style={s.shareModalHeader}>
               <View>
-                <Text style={[s.shareModalTitle, { color: theme.text }]}>Share with…</Text>
+                <Text style={[s.shareModalTitle, { color: theme.text }]}>{T('shareWithSection')}…</Text>
                 <Text style={[s.shareModalSub, { color: theme.textSecondary }]} numberOfLines={1}>
                   {task.title}
                 </Text>
@@ -823,12 +826,12 @@ export default function TaskDetails() {
 
             <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
               {/* Friends */}
-              {filteredFriends.length > 0 && (
+              {allFriends.length > 0 && (
                 <>
-                  <Text style={[s.shareGroupLabel, { color: theme.textSecondary }]}>FRIENDS</Text>
-                  {filteredFriends.map((friend) => {
+                  <Text style={[s.shareGroupLabel, { color: theme.textSecondary }]}>{T('shareFriendsLabel').toUpperCase()}</Text>
+                  {allFriends.map((friend) => {
                     const alreadySharedWith = participants.some(
-                      (p) => p.recipient_id === friend.id || p.owner_id === friend.id,
+                      (p) => p.recipient_id === friend.id,
                     );
                     const isAutoShareOn = shareStreams.find(st => st.recipient_id === friend.id)?.enabled ?? false;
                     return (
@@ -860,7 +863,7 @@ export default function TaskDetails() {
                           {alreadySharedWith ? (
                             <View style={s.sharedBadge}>
                               <Feather name="check" size={12} color="#059669" />
-                              <Text style={s.sharedBadgeText}>Shared</Text>
+                              <Text style={s.sharedBadgeText}>{T('shareSharedBadge')}</Text>
                             </View>
                           ) : isSharing ? (
                             <ActivityIndicator size="small" color={theme.primary} />
@@ -872,7 +875,7 @@ export default function TaskDetails() {
                         <View style={s.autoShareInline}>
                           <Feather name="refresh-cw" size={12} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
                           <Text style={[s.autoShareInlineText, { color: isAutoShareOn ? '#10b981' : theme.textSecondary }]}>
-                            Auto-share new tasks
+                            {T('shareAutoShareNewTasks')}
                           </Text>
                           <Switch
                             value={isAutoShareOn}
@@ -890,7 +893,7 @@ export default function TaskDetails() {
               {/* Circles */}
               {circles.length > 0 && (
                 <>
-                  <Text style={[s.shareGroupLabel, { color: theme.textSecondary, marginTop: 12 }]}>CIRCLES</Text>
+                  <Text style={[s.shareGroupLabel, { color: theme.textSecondary, marginTop: 12 }]}>{T('shareCirclesLabel').toUpperCase()}</Text>
                   {circles.map((circle) => {
                     const isAutoShareOn = shareStreams.find(st => st.circle_id === circle.id)?.enabled ?? false;
                     return (
@@ -917,7 +920,7 @@ export default function TaskDetails() {
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={[s.sharePersonName, { color: theme.text }]}>{circle.name}</Text>
-                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>{circle.member_count || 0} members</Text>
+                            <Text style={{ fontSize: 12, color: theme.textSecondary }}>{circle.member_count || 0} {T('shareMembersSuffix')}</Text>
                           </View>
                           {isSharing ? (
                             <ActivityIndicator size="small" color={theme.primary} />
@@ -929,7 +932,7 @@ export default function TaskDetails() {
                         <View style={s.autoShareInline}>
                           <Feather name="refresh-cw" size={12} color={isAutoShareOn ? '#10b981' : theme.textSecondary} />
                           <Text style={[s.autoShareInlineText, { color: isAutoShareOn ? '#10b981' : theme.textSecondary }]}>
-                            Auto-share new tasks
+                            {T('shareAutoShareNewTasks')}
                           </Text>
                           <Switch
                             value={isAutoShareOn}
@@ -944,9 +947,9 @@ export default function TaskDetails() {
                 </>
               )}
 
-              {filteredFriends.length === 0 && circles.length === 0 && (
+              {allFriends.length === 0 && circles.length === 0 && (
                 <Text style={[s.emptyShareText, { color: theme.textSecondary }]}>
-                  Add friends or join a circle in the Community tab first.
+                  {T('shareNoConnectionsHint')}
                 </Text>
               )}
             </ScrollView>

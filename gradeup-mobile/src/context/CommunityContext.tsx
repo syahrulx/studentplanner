@@ -3,6 +3,15 @@ import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
 import * as communityApi from '../lib/communityApi';
+import { RateLimiter, Cooldown } from '../utils/rateLimit';
+
+// ── Client-side rate limiters (module-scoped, persist across re-renders) ──
+const shareLimiter = new RateLimiter(10, 60_000);        // max 10 share calls / minute
+const shareAllLimiter = new RateLimiter(3, 60_000);       // max 3 bulk-share calls / minute
+const toggleStreamCooldown = new Cooldown(2_000);          // 2s cooldown per recipient
+const reactionLimiter = new RateLimiter(15, 60_000);       // max 15 reactions / minute
+const bumpCooldown = new Cooldown(5_000);                  // 5s cooldown per receiver
+const refreshLimiter = new RateLimiter(5, 10_000);         // max 5 manual refreshes / 10s
 import type {
   FriendProfile,
   FriendWithStatus,
@@ -301,25 +310,30 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const toggleShareStream = useCallback(async (friendId: string, enabled: boolean) => {
     if (!userId) return;
+    if (!toggleStreamCooldown.attempt(friendId)) return;
     try {
       await communityApi.setTaskShareStreamEnabled(friendId, enabled);
       await refreshShareStreams();
     } catch (e) {
       console.warn('Failed to toggle share stream:', e);
+      Alert.alert('', 'Could not update auto-share. Check your connection.');
     }
   }, [userId, refreshShareStreams]);
 
   const toggleCircleShareStream = useCallback(async (circleId: string, enabled: boolean) => {
     if (!userId) return;
+    if (!toggleStreamCooldown.attempt(circleId)) return;
     try {
       await communityApi.setCircleShareStreamEnabled(circleId, enabled);
       await refreshShareStreams();
     } catch (e) {
       console.warn('Failed to toggle circle share stream:', e);
+      Alert.alert('', 'Could not update auto-share. Check your connection.');
     }
   }, [userId, refreshShareStreams]);
 
   const refreshAll = useCallback(async () => {
+    if (!refreshLimiter.attempt()) return;
     try {
       await Promise.allSettled([
         refreshFriends(),
@@ -667,9 +681,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
-  // ─── Reaction actions ───
+  // ─── Reaction actions (rate-limited) ───
   const handleSendReaction = useCallback(async (receiverId: string, type: string, message?: string) => {
     if (!userId) return;
+    if (!reactionLimiter.attempt()) return;
     try {
       await communityApi.sendReaction(userId, receiverId, type, message);
     } catch (e) {
@@ -679,6 +694,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const handleSendBump = useCallback(async (receiverId: string) => {
     if (!userId) return;
+    if (!bumpCooldown.attempt(receiverId)) return;
     try {
       await communityApi.sendBump(userId, receiverId);
     } catch (e) {
@@ -704,9 +720,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedGoals();
   }, [userId, refreshSharedGoals]);
 
-  // ─── Shared Task actions ───
+  // ─── Shared Task actions (rate-limited) ───
   const shareTaskWithFriend = useCallback(async (taskId: string, friendId: string, message?: string) => {
     if (!userId) return null;
+    if (!shareLimiter.attempt()) {
+      Alert.alert('', 'Sharing too fast. Please wait a moment.');
+      return null;
+    }
     const result = await communityApi.shareTaskWithFriend(taskId, friendId, message);
     if (result) refreshSharedTasks();
     return result;
@@ -714,6 +734,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const shareTaskWithCircle = useCallback(async (taskId: string, circleId: string, message?: string) => {
     if (!userId) return [];
+    if (!shareLimiter.attempt()) {
+      Alert.alert('', 'Sharing too fast. Please wait a moment.');
+      return [];
+    }
     const results = await communityApi.shareTaskWithCircle(taskId, circleId, message);
     if (results.length > 0) refreshSharedTasks();
     return results;
@@ -721,6 +745,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const shareAllTasksWithFriend = useCallback(async (taskIds: string[], friendId: string, message?: string) => {
     if (!userId) return [];
+    if (!shareAllLimiter.attempt()) {
+      Alert.alert('', 'Please wait before sharing again.');
+      return [];
+    }
     const results = await communityApi.shareAllTasksWithFriend(taskIds, friendId, message);
     if (results.length > 0) refreshSharedTasks();
     return results;
@@ -728,6 +756,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const shareAllTasksWithCircle = useCallback(async (taskIds: string[], circleId: string, message?: string) => {
     if (!userId) return [];
+    if (!shareAllLimiter.attempt()) {
+      Alert.alert('', 'Please wait before sharing again.');
+      return [];
+    }
     const results = await communityApi.shareAllTasksWithCircle(taskIds, circleId, message);
     if (results.length > 0) refreshSharedTasks();
     return results;

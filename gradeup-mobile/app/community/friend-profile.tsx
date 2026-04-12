@@ -53,7 +53,7 @@ function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUr
 export default function FriendProfileScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ friendId?: string | string[] }>();
-  const friendId = typeof params.friendId === 'string' ? params.friendId : undefined;
+  const friendId = Array.isArray(params.friendId) ? params.friendId[0] : params.friendId;
   const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);

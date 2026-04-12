@@ -136,7 +136,7 @@ export default function Planner() {
   } = useApp();
   const {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
-    filteredFriends: communityFriends, circles: communityCircles,
+    friendsWithStatus: communityFriends, circles: communityCircles,
     shareAllTasksWithFriend, shareAllTasksWithCircle,
     shareStreams, toggleShareStream, toggleCircleShareStream,
   } = useCommunity();
@@ -586,9 +586,13 @@ export default function Planner() {
   }, [shareStreams, shareAllFriendId, shareAllCircleId, shareAllTab]);
 
   const handleShareAll = async () => {
+    if (!communityUserId) {
+      Alert.alert('', T('shareFailedNotSignedIn'));
+      return;
+    }
     const undoneTasks = tasks.filter(t => !t.isDone);
     if (undoneTasks.length === 0) {
-      Alert.alert('No Tasks', 'You have no pending tasks to share.');
+      Alert.alert('', T('shareNoTasksToShare'));
       return;
     }
     const taskIds = undoneTasks.map(t => t.id);
@@ -599,18 +603,18 @@ export default function Planner() {
         if (results.length > 0) {
           setShowShareAllModal(false);
           setShareAllFriendId(null);
-          Alert.alert('Shared!', `${results.length} task${results.length > 1 ? 's' : ''} shared with your friend.`);
+          Alert.alert('', T('shareSuccessFriend'));
         } else {
-          Alert.alert('Already Shared', 'All tasks are already shared with this friend.');
+          Alert.alert('', T('shareAlreadyShared'));
         }
       } else if (shareAllTab === 'circle' && shareAllCircleId) {
         const results = await shareAllTasksWithCircle(taskIds, shareAllCircleId, undefined);
         if (results.length > 0) {
           setShowShareAllModal(false);
           setShareAllCircleId(null);
-          Alert.alert('Shared!', `Tasks shared with the circle.`);
+          Alert.alert('', T('shareSuccessCircle'));
         } else {
-          Alert.alert('Already Shared', 'All tasks are already shared with this circle.');
+          Alert.alert('', T('shareAlreadyShared'));
         }
       }
     } finally {
@@ -2200,7 +2204,7 @@ export default function Planner() {
                         {c.name}
                       </Text>
                       <Text style={[s.shareAllRowMeta, { color: theme.textSecondary }]}>
-                        {c.member_count || 0} members
+                        {c.member_count || 0} {T('shareMembersSuffix')}
                       </Text>
                     </View>
                     <View style={s.shareAllRowTrail}>
