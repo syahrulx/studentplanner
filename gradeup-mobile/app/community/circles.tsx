@@ -4,13 +4,17 @@ import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 
 const CIRCLE_EMOJIS = ['👥', '📚', '🏫', '🎓', '💼', '🎵', '⚽', '🎮', '🏠', '🌟', '🔬', '🎪'];
 
 export default function CirclesScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const { circles, refreshCircles, userId, friends } = useCommunity();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -30,10 +34,10 @@ export default function CirclesScreen() {
       setNewName('');
       setSelectedEmoji('👥');
     } catch (e: any) {
-      Alert.alert('Could not create circle', 'Please try again.');
+      Alert.alert(T('commCircleCreateFailTitle'), T('commTryAgainShort'));
     }
     setCreating(false);
-  }, [userId, newName, selectedEmoji, refreshCircles]);
+  }, [userId, newName, selectedEmoji, refreshCircles, T]);
 
   const handleJoin = useCallback(async () => {
     if (!userId || !joinCode.trim()) return;
@@ -42,14 +46,14 @@ export default function CirclesScreen() {
       if (circle) {
         await refreshCircles();
         setJoinCode('');
-        Alert.alert('Joined!', `You joined ${circle.name}`);
+        Alert.alert(T('commCircleJoinedTitle'), T('commCircleJoinedBody').replace('{name}', circle.name));
       } else {
-        Alert.alert('Code not found', 'Double-check the invite code and try again.');
+        Alert.alert(T('commCircleCodeNotFoundTitle'), T('commCircleCodeNotFoundBody'));
       }
     } catch (e) {
-      Alert.alert('Could not join circle', 'Please try again.');
+      Alert.alert(T('commCircleJoinFailTitle'), T('commTryAgainShort'));
     }
-  }, [userId, joinCode, refreshCircles]);
+  }, [userId, joinCode, refreshCircles, T]);
 
   const handleShare = useCallback(async (circle: communityApi.Circle) => {
     try {
@@ -63,21 +67,21 @@ export default function CirclesScreen() {
     if (!code) return;
     try {
       await Clipboard.setStringAsync(code);
-      Alert.alert('Copied', 'Invite code copied to clipboard');
+      Alert.alert(T('commCopiedTitle'), T('commCopiedBody'));
     } catch {
-      Alert.alert('Could not copy code', 'Please try again.');
+      Alert.alert(T('commCopyFailTitle'), T('commTryAgainShort'));
     }
-  }, []);
+  }, [T]);
 
   const handleInviteFriend = useCallback(
     (circleId: string) => {
       if (!friends.length) {
-        Alert.alert('No friends yet', 'Add friends first in the Community tab before inviting them to a circle.');
+        Alert.alert(T('commCircleNoFriendsTitle'), T('commCircleNoFriendsBody'));
         return;
       }
       setInviteCircleId(circleId);
     },
-    [friends]
+    [friends, T]
   );
 
   const handleSelectFriendToInvite = useCallback(
@@ -86,22 +90,22 @@ export default function CirclesScreen() {
       if (!userId) return;
       try {
         await communityApi.inviteToCircle(inviteCircleId, userId, friendId);
-        Alert.alert('Invite sent', 'They will appear in the circle after they accept.');
+        Alert.alert(T('commCircleInviteSentTitle'), T('commCircleInviteSentBody'));
         setInviteCircleId(null);
       } catch (e: any) {
-        Alert.alert('Invite failed', 'Could not send the invite. Please try again.');
+        Alert.alert(T('commCircleInviteFailTitle'), T('commCircleInviteFailBody'));
       }
     },
-    [inviteCircleId, userId]
+    [inviteCircleId, userId, T]
   );
 
   const handleLeave = useCallback(
     async (circle: communityApi.Circle) => {
       if (!userId) return;
-      Alert.alert('Leave Circle', `Leave "${circle.name}"?`, [
-        { text: 'Cancel', style: 'cancel' },
+      Alert.alert(T('commCircleLeaveTitle'), T('commCircleLeaveBody').replace('{name}', circle.name), [
+        { text: T('cancel'), style: 'cancel' },
         {
-          text: 'Leave',
+          text: T('commBtnLeave'),
           style: 'destructive',
           onPress: async () => {
             await communityApi.leaveCircle(circle.id, userId);
@@ -110,7 +114,7 @@ export default function CirclesScreen() {
         },
       ]);
     },
-    [userId, refreshCircles]
+    [userId, refreshCircles, T]
   );
 
   return (

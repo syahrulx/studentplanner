@@ -15,7 +15,9 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { FriendProfile, Friendship } from '@/src/lib/communityApi';
 
@@ -39,6 +41,8 @@ function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: str
 
 export default function AddFriendScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const tabParam = typeof params.tab === 'string' ? params.tab : undefined;
   const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
@@ -123,11 +127,11 @@ export default function AddFriendScreen() {
           setSentIds((prev) => new Set(prev).add(targetId));
           await refreshOutgoingRequests();
         } else {
-          Alert.alert('Request not sent', 'Something went wrong. Please try again.');
+          Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
         }
       }
     },
-    [userId, refreshOutgoingRequests, refreshRequests, refreshFriends]
+    [userId, refreshOutgoingRequests, refreshRequests, refreshFriends, T]
   );
 
   // Accept request
@@ -152,19 +156,19 @@ export default function AddFriendScreen() {
         await refreshFriends();
       } catch (e) {
         console.warn(e);
-        Alert.alert('Could not decline', 'Please try again.');
+        Alert.alert(T('commCouldNotDecline'), T('commTryAgainShort'));
       }
     },
-    [refreshRequests, refreshFriends]
+    [refreshRequests, refreshFriends, T]
   );
 
   const handleCancelOutgoing = useCallback(
     (req: Friendship) => {
       const name = req.addressee_profile?.name || 'this person';
-      Alert.alert('Cancel request?', `Withdraw your friend request to ${name}?`, [
-        { text: 'No', style: 'cancel' },
+      Alert.alert(T('commFriendCancelTitle'), T('commFriendCancelBody').replace('{name}', name), [
+        { text: T('commBtnNo'), style: 'cancel' },
         {
-          text: 'Cancel request',
+          text: T('commBtnCancelRequest'),
           style: 'destructive',
           onPress: async () => {
             setCancellingIds((p) => new Set(p).add(req.id));
@@ -178,7 +182,7 @@ export default function AddFriendScreen() {
               await refreshOutgoingRequests();
               await refreshRequests();
             } catch (e) {
-              Alert.alert('Could not cancel', 'Please try again.');
+              Alert.alert(T('commCouldNotCancel'), T('commTryAgainShort'));
             }
             setCancellingIds((p) => {
               const next = new Set(p);
@@ -189,7 +193,7 @@ export default function AddFriendScreen() {
         },
       ]);
     },
-    [refreshOutgoingRequests, refreshRequests]
+    [refreshOutgoingRequests, refreshRequests, T]
   );
 
   // Share invite link

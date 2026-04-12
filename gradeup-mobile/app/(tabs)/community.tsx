@@ -36,15 +36,15 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // react-native-maps requires a custom dev build (not available in Expo Go).
 // We use a placeholder map UI if the library is not found.
+/** Always Google Maps tiles (never Apple Maps on iOS). Requires valid keys in app.json. */
+const GOOGLE_MAPS_PROVIDER = 'google' as const;
 let MapView: any = null;
 let Marker: any = null;
-let PROVIDER_GOOGLE: any = null;
 
 try {
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
-  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
 } catch (e) {
   // Gracefully fall back to placeholder
 }
@@ -225,6 +225,8 @@ function MapAddToLibraryPill({
   pillStyle?: ViewStyle;
 }) {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
 
@@ -235,21 +237,18 @@ function MapAddToLibraryPill({
       const ok = await spotifyAuth.addTrackToLibrary(trackId.trim());
       if (ok) {
         setAdded(true);
-        const title = (songName || 'This track').trim() || 'This track';
-        Alert.alert('Added! 💚', `"${title}" has been saved to your Liked Songs.`);
+        const title = (songName || T('commSpotifyTrackFallback')).trim() || T('commSpotifyTrackFallback');
+        Alert.alert(T('commSpotifyAddedTitle'), T('commSpotifyAddedBody').replace('{title}', title));
       } else {
-        Alert.alert(
-          'Spotify',
-          'Connect Spotify in Settings, then try again to save tracks to your library.',
-        );
+        Alert.alert(T('commSpotifyConnectTitle'), T('commSpotifyConnectBody'));
       }
     } catch {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert(T('commGenericErrorTitle'), T('commGenericErrorBody'));
     }
     setAdding(false);
   };
 
-  const label = added ? 'Saved to Library' : adding ? 'Adding…' : 'Add to My Library';
+  const label = added ? T('commSpotifyPillSavedToLibrary') : adding ? T('commSpotifyPillAdding') : T('commSpotifyPillAddToLibrary');
 
   return (
     <Pressable
@@ -548,8 +547,7 @@ export default function CommunityMap() {
           <MapView
             ref={mapRef}
             style={styles.map}
-
-            provider={PROVIDER_GOOGLE}
+            provider={GOOGLE_MAPS_PROVIDER}
             initialRegion={{
               latitude: myLatitude,
               longitude: myLongitude,

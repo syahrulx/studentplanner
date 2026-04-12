@@ -4,7 +4,9 @@ import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleMember } from '@/src/lib/communityApi';
 
@@ -28,8 +30,10 @@ function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: str
 
 export default function CircleDetailScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const params = useLocalSearchParams<{ circleId?: string | string[] }>();
-  const circleId = typeof params.circleId === 'string' ? params.circleId : undefined;
+  const circleId = Array.isArray(params.circleId) ? params.circleId[0] : params.circleId;
   const { circles, userId, setSelectedCircleId, refreshCircles } = useCommunity();
 
   const circle = circles.find((c) => c.id === circleId);
@@ -58,9 +62,9 @@ export default function CircleDetailScreen() {
     if (!circle?.invite_code) return;
     try {
       await Clipboard.setStringAsync(circle.invite_code);
-      Alert.alert('Copied', 'Invite code copied to clipboard');
+      Alert.alert(T('commCopiedTitle'), T('commCopiedBody'));
     } catch {
-      Alert.alert('Could not copy code', 'Please try again.');
+      Alert.alert(T('commCopyFailTitle'), T('commTryAgainShort'));
     }
   };
 
@@ -77,10 +81,10 @@ export default function CircleDetailScreen() {
 
   const handleLeave = () => {
     if (!userId || !circleId) return;
-    Alert.alert('Leave Circle', `Leave "${circle?.name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(T('commCircleLeaveTitle'), T('commCircleLeaveBody').replace('{name}', circle?.name || ''), [
+      { text: T('cancel'), style: 'cancel' },
       {
-        text: 'Leave',
+        text: T('commBtnLeave'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -88,7 +92,7 @@ export default function CircleDetailScreen() {
             await refreshCircles();
             router.back();
           } catch (e) {
-            Alert.alert('Could not leave circle', 'Please try again.');
+            Alert.alert(T('commCircleLeaveFailTitle'), T('commTryAgainShort'));
           }
         },
       },
@@ -194,24 +198,31 @@ export default function CircleDetailScreen() {
                       <Pressable
                         onPress={(e) => {
                           e.stopPropagation();
-                          Alert.alert('Remove member', `Remove ${m.profile?.name || 'this user'} from the circle?`, [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Remove',
-                              style: 'destructive',
-                              onPress: async () => {
-                                if (!circleId) return;
-                                try {
-                                  await communityApi.removeCircleMember(circleId, m.user_id);
-                                  const next = await communityApi.getCircleMembers(circleId);
-                                  setMembers(next);
-                                  await refreshCircles();
-                                } catch {
-                                  Alert.alert('Could not remove member', 'Please try again.');
-                                }
+                          Alert.alert(
+                            T('commCircleRemoveMemberTitle'),
+                            T('commCircleRemoveMemberBody').replace(
+                              '{name}',
+                              m.profile?.name || T('commCircleMemberDefaultName'),
+                            ),
+                            [
+                              { text: T('cancel'), style: 'cancel' },
+                              {
+                                text: T('commFriendRemoveConfirm'),
+                                style: 'destructive',
+                                onPress: async () => {
+                                  if (!circleId) return;
+                                  try {
+                                    await communityApi.removeCircleMember(circleId, m.user_id);
+                                    const next = await communityApi.getCircleMembers(circleId);
+                                    setMembers(next);
+                                    await refreshCircles();
+                                  } catch {
+                                    Alert.alert(T('commCircleRemoveMemberFailTitle'), T('commTryAgainShort'));
+                                  }
+                                },
                               },
-                            },
-                          ]);
+                            ],
+                          );
                         }}
                         style={({ pressed }) => [
                           styles.kickBtn,
@@ -244,22 +255,26 @@ export default function CircleDetailScreen() {
               ]}
               onPress={() => {
                 if (!circleId) return;
-                Alert.alert('Delete Circle', `Delete "${circle?.name}"? This cannot be undone.`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        await communityApi.deleteCircle(circleId);
-                        await refreshCircles();
-                        router.back();
-                      } catch {
-                        Alert.alert('Could not delete circle', 'Please try again.');
-                      }
+                Alert.alert(
+                  T('commCircleDeleteTitle'),
+                  T('commCircleDeleteBody').replace('{name}', circle?.name || ''),
+                  [
+                    { text: T('cancel'), style: 'cancel' },
+                    {
+                      text: T('delete'),
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await communityApi.deleteCircle(circleId);
+                          await refreshCircles();
+                          router.back();
+                        } catch {
+                          Alert.alert(T('commCircleDeleteFailTitle'), T('commTryAgainShort'));
+                        }
+                      },
                     },
-                  },
-                ]);
+                  ],
+                );
               }}
             >
               <Feather name="trash-2" size={16} color="#ef4444" />

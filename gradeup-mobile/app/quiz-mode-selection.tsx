@@ -21,7 +21,7 @@ export default function QuizModeSelection() {
   const { language, flashcards } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
-  const { filteredFriends, circles } = useCommunity();
+  const { friendsWithStatus, circles } = useCommunity();
   const { createQuiz, joinQuiz } = useQuiz();
 
   const {
@@ -210,9 +210,9 @@ export default function QuizModeSelection() {
                 <Text style={[styles.subTitle, { color: theme.text }]}>Challenge Friend</Text>
                 <Feather name="arrow-right" size={16} color={theme.textSecondary} />
               </Pressable>
-              {filteredFriends.length > 0 && (
+              {friendsWithStatus.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendRow}>
-                  {filteredFriends.slice(0, 8).map((f) => {
+                  {friendsWithStatus.slice(0, 8).map((f) => {
                     const active = selectedFriend === f.id;
                     const initials = (f.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
                     return (

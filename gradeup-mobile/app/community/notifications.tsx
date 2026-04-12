@@ -13,7 +13,9 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
 
@@ -77,6 +79,8 @@ function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): Reactio
 
 export default function NotificationsScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
@@ -172,30 +176,26 @@ export default function NotificationsScreen() {
         <Pressable
           disabled={clearing || reactions.length === 0}
           onPress={() => {
-            Alert.alert(
-              'Clear notifications',
-              'Remove all reaction notifications from your history? Friend requests, circle invites, and task shares stay here until you act on them.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Clear',
-                  style: 'destructive',
-                  onPress: async () => {
-                    if (!userId) return;
-                    setClearing(true);
-                    try {
-                      await communityApi.clearMyReceivedReactions(userId);
-                      setReactions([]);
-                      await refreshUnreadCount();
-                    } catch (e) {
-                      console.warn(e);
-                      Alert.alert('Could not clear', 'Please try again.');
-                    }
-                    setClearing(false);
-                  },
+            Alert.alert(T('commNotifClearTitle'), T('commNotifClearBody'), [
+              { text: T('cancel'), style: 'cancel' },
+              {
+                text: T('commNotifClearAction'),
+                style: 'destructive',
+                onPress: async () => {
+                  if (!userId) return;
+                  setClearing(true);
+                  try {
+                    await communityApi.clearMyReceivedReactions(userId);
+                    setReactions([]);
+                    await refreshUnreadCount();
+                  } catch (e) {
+                    console.warn(e);
+                    Alert.alert(T('commNotifClearFailTitle'), T('commTryAgainShort'));
+                  }
+                  setClearing(false);
                 },
-              ],
-            );
+              },
+            ]);
           }}
           style={({ pressed }) => [
             styles.clearHeaderBtn,
@@ -205,7 +205,7 @@ export default function NotificationsScreen() {
           {clearing ? (
             <ActivityIndicator size="small" color={theme.textSecondary} />
           ) : (
-            <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>Clear</Text>
+            <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>{T('commNotifClearAction')}</Text>
           )}
         </Pressable>
       </View>

@@ -4,7 +4,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import type { SharedTask } from '@/src/types';
 
 function formatDisplayName(name?: string | null) {
@@ -26,8 +28,11 @@ function formatDue(dueDate?: string, dueTime?: string): string {
 }
 
 export default function SharedTaskPreview() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const rawId = useLocalSearchParams<{ id?: string | string[] }>().id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const insets = useSafeAreaInsets();
   const { incomingSharedTasks, respondToShare, refreshSharedTasks } = useCommunity();
 
@@ -57,7 +62,7 @@ export default function SharedTaskPreview() {
       await respondToShare(shared.id, accept);
       router.back();
     } catch (e: any) {
-      Alert.alert('Could not update', e?.message || 'Please try again.');
+      Alert.alert(T('commSharedPreviewUpdateFailTitle'), e?.message || T('commTryAgainShort'));
     } finally {
       setResponding(null);
     }

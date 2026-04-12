@@ -13,7 +13,9 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useTranslations } from '@/src/i18n';
 import {
   ACTIVITY_TYPES,
   REACTION_EMOJIS,
@@ -52,6 +54,8 @@ function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUr
 
 export default function FriendProfileScreen() {
   const theme = useTheme();
+  const { language } = useApp();
+  const T = useTranslations(language);
   const params = useLocalSearchParams<{ friendId?: string | string[] }>();
   const friendId = Array.isArray(params.friendId) ? params.friendId[0] : params.friendId;
   const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
@@ -74,15 +78,16 @@ export default function FriendProfileScreen() {
   const handleBump = async () => { if (!friendId) return; await sendBump(friendId); flash('💥'); };
 
   const handleRemove = () => {
-    Alert.alert('Remove Friend', `Remove ${friend?.name} from your friends?`, [
-      { text: 'Cancel', style: 'cancel' },
+    const name = friend?.name || '?';
+    Alert.alert(T('commFriendRemoveTitle'), T('commFriendRemoveBody').replace('{name}', name), [
+      { text: T('cancel'), style: 'cancel' },
       {
-        text: 'Remove',
+        text: T('commFriendRemoveConfirm'),
         style: 'destructive',
         onPress: async () => {
           if (!userId || !friendId) return;
           try { await communityApi.removeFriendByUserId(userId, friendId); await refreshFriends(); router.back(); }
-          catch { Alert.alert('Could not remove friend', 'Please try again.'); }
+          catch { Alert.alert(T('commFriendRemoveFailTitle'), T('commTryAgainShort')); }
         },
       },
     ]);
@@ -255,7 +260,7 @@ export default function FriendProfileScreen() {
       <Text style={[s.label, { color: theme.textSecondary }]}>SETTINGS</Text>
       <View style={[s.settingRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[s.settingTitle, { color: theme.text }]}>Auto-share new tasks</Text>
+          <Text style={[s.settingTitle, { color: theme.text }]}>{T('shareAutoShareNewTasks')}</Text>
           <Text style={[s.settingSub, { color: theme.textSecondary }]}>
             Send new tasks to {friend.name.split(' ')[0]} automatically
           </Text>

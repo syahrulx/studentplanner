@@ -135,27 +135,23 @@ export default function Settings() {
   );
 
   const handleClassroomDisconnect = () => {
-    Alert.alert(
-      'Disconnect Google Classroom',
-      'Auto-sync will stop. Your imported tasks will remain in the planner.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { disconnectClassroom } = require('@/src/lib/googleClassroom');
-              await disconnectClassroom();
-              await refreshPrefs();
-              Alert.alert('Disconnected', 'Google Classroom has been unlinked.');
-            } catch {
-              Alert.alert('Could not disconnect', 'Please try again.');
-            }
-          },
+    Alert.alert(T('settingsClassroomDisconnectTitle'), T('settingsClassroomDisconnectBody'), [
+      { text: T('cancel'), style: 'cancel' },
+      {
+        text: T('settingsClassroomDisconnectConfirm'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { disconnectClassroom } = require('@/src/lib/googleClassroom');
+            await disconnectClassroom();
+            await refreshPrefs();
+            Alert.alert(T('settingsClassroomDisconnectedTitle'), T('settingsClassroomDisconnectedBody'));
+          } catch {
+            Alert.alert(T('settingsDisconnectFailTitle'), T('commTryAgainShort'));
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleAutoDeletePastTasksToggle = (enable: boolean) => {
@@ -302,10 +298,10 @@ export default function Settings() {
     ? [
         {
           icon: 'settings' as ThemeIconKey,
-          label: 'Disconnect Spotify',
+          label: T('settingsSpotifyLabelDisconnect'),
           onPress: async () => {
             await disconnectSpotify();
-            Alert.alert('Disconnected', 'Your Spotify account has been unlinked.');
+            Alert.alert(T('settingsSpotifyDisconnectedTitle'), T('settingsSpotifyDisconnectedBody'));
           },
           color: '#ef4444',
         },
@@ -313,13 +309,13 @@ export default function Settings() {
     : [
         {
           icon: 'settings' as ThemeIconKey,
-          label: 'Connect Spotify 🎵',
+          label: T('settingsSpotifyLabelConnect'),
           onPress: async () => {
             try {
               const ok = await connectSpotify();
-              if (ok) Alert.alert('Connected! 🎉', 'You can now set your music vibe!');
+              if (ok) Alert.alert(T('settingsSpotifyConnectedTitle'), T('settingsSpotifyConnectedBody'));
             } catch (e) {
-              Alert.alert('Could not connect Spotify', 'Something went wrong. Please try again.');
+              Alert.alert(T('settingsSpotifyConnectFailTitle'), T('settingsSpotifyConnectFailBody'));
             }
           },
           color: '#1DB954',
