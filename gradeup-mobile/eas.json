@@ -9,21 +9,24 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
+        "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
+        "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
+        "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0"
       }
     }
   },

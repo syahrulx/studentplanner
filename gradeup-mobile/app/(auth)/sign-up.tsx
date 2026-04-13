@@ -18,10 +18,17 @@ import Feather from '@expo/vector-icons/Feather';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
+import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
+import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
 
 WebBrowser.maybeCompleteAuthSession();
-import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
+
+const authRedirect = (path: string) =>
+  makeRedirectUri({
+    scheme: (Constants.expoConfig?.scheme as string) || 'rencana',
+    path,
+  });
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -59,7 +66,7 @@ export default function SignUp() {
     setGoogleLoading(true);
     setError(null);
     try {
-      const redirectUrl = makeRedirectUri();
+      const redirectUrl = authRedirect('sign-up');
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -113,7 +120,7 @@ export default function SignUp() {
     setAppleLoading(true);
     setError(null);
     try {
-      const redirectUrl = makeRedirectUri();
+      const redirectUrl = authRedirect('sign-up');
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'apple',
         options: {

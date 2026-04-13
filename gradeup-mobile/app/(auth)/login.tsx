@@ -17,7 +17,15 @@ import Feather from '@expo/vector-icons/Feather';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
+import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
+
+/** Must match app.json `scheme` so TestFlight/production never uses an `exp://` Expo Go URL. */
+const authRedirect = (path: string) =>
+  makeRedirectUri({
+    scheme: (Constants.expoConfig?.scheme as string) || 'rencana',
+    path,
+  });
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -71,7 +79,7 @@ export default function Login() {
     setGoogleLoading(true);
     setError(null);
     try {
-      const redirectUrl = makeRedirectUri();
+      const redirectUrl = authRedirect('login');
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -121,7 +129,7 @@ export default function Login() {
     setAppleLoading(true);
     setError(null);
     try {
-      const redirectUrl = makeRedirectUri();
+      const redirectUrl = authRedirect('login');
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'apple',
         options: {
