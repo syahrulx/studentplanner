@@ -1894,28 +1894,6 @@ export default function Planner() {
               </View>
             )}
           </View>
-          <View style={[s.headerSide, s.headerSideRight, { gap: 10 }]}>
-            {/* Prominent + Add button — replaces old book icon location */}
-            <Pressable
-              style={({ pressed }) => [
-                s.headerAddBtn,
-                { backgroundColor: theme.primary },
-                pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
-              ]}
-              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-              hitSlop={4}
-              accessibilityLabel="Add task"
-            >
-              <Feather name="plus" size={24} color="#fff" />
-            </Pressable>
-            <Pressable
-              style={s.headerBtn}
-              onPress={() => setShowShareAllModal(true)}
-              hitSlop={6}
-            >
-              <Feather name="user-plus" size={20} color={theme.text} />
-            </Pressable>
-          </View>
         </View>
 
         {/* Calendar panel — only shown in "day" view, since grids have their own nav */}
