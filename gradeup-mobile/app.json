@@ -19,10 +19,13 @@
         "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
       },
       "bundleIdentifier": "com.aizztech.rencana",
+      "appleTeamId": "Z9JR65SA89",
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "appleTeamId": "29GLPZC3G3"
+      }
     },
     "android": {
       "adaptiveIcon": {
