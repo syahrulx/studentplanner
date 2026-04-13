@@ -12,12 +12,11 @@ import {
   Modal,
   Alert,
   Linking,
+  type ViewStyle,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import { Audio } from 'expo-av';
-import { WebView } from 'react-native-webview';
 import { Avatar } from '@/components/Avatar';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
 
@@ -212,103 +211,66 @@ function StableMarker({
 }
 
 // =============================================================================
-// MAP AUDIO PLAYER
+// MAP — SAVE TRACK TO SPOTIFY LIBRARY (replaces in-map preview play)
 // =============================================================================
 
-function MapAudioPlayer({ trackId, songName }: { trackId: string; songName?: string }) {
+function MapAddToLibraryPill({
+  trackId,
+  songName,
+  titleMaxWidth = 200,
+  pillStyle,
+}: {
+  trackId: string;
+  songName?: string;
+  titleMaxWidth?: number;
+  pillStyle?: ViewStyle;
+}) {
   const theme = useTheme();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showEmbed, setShowEmbed] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const { language } = useApp();
+  const T = useTranslations(language);
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-      }
-    };
-  }, []);
-
-  const togglePlay = async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-
+  const handlePress = async () => {
+    if (!trackId?.trim() || adding || added) return;
+    setAdding(true);
     try {
-      if (isPlaying && soundRef.current) {
-        await soundRef.current.pauseAsync();
-        setIsPlaying(false);
+      const result = await spotifyAuth.addTrackToLibrary(trackId.trim());
+      if (result.ok) {
+        setAdded(true);
+        const title = (songName || T('commSpotifyTrackFallback')).trim() || T('commSpotifyTrackFallback');
+        Alert.alert(T('commSpotifyAddedTitle'), T('commSpotifyAddedBody').replace('{title}', title));
       } else {
-        if (!soundRef.current) {
-          const previewUrl = await spotifyAuth.getTrackPreviewUrl(trackId);
-          if (!previewUrl) {
-            setShowEmbed(true);
-            setIsLoading(false);
-            return;
-          }
-          const { sound } = await Audio.Sound.createAsync(
-            { uri: previewUrl },
-            { shouldPlay: true }
-          );
-          sound.setOnPlaybackStatusUpdate((status: any) => {
-            if (status.isLoaded && status.didJustFinish) {
-              setIsPlaying(false);
-              sound.setPositionAsync(0);
-            }
-          });
-          soundRef.current = sound;
-          setIsPlaying(true);
-        } else {
-          await soundRef.current.playAsync();
-          setIsPlaying(true);
-        }
+        Alert.alert(T('commSpotifyConnectTitle'), result.message || T('commSpotifyConnectBody'));
       }
-    } catch (e) {
-      console.warn('MapAudioPlayer play error:', e);
-      Alert.alert('Error', 'Could not play the audio preview. Please check your connection.');
+    } catch {
+      Alert.alert(T('commGenericErrorTitle'), T('commGenericErrorBody'));
     }
-    setIsLoading(false);
+    setAdding(false);
   };
 
-  return (
-    <>
-      <Pressable
-        style={({ pressed }) => [
-          styles.mapOverlayBtn,
-          { backgroundColor: theme.primary },
-          pressed && { opacity: 0.8 },
-        ]}
-        onPress={togglePlay}
-      >
-        {isLoading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Feather name={isPlaying ? "pause" : "play"} size={16} color="#fff" />
-        )}
-        <Text style={[styles.mapOverlayBtnText, { color: '#fff', maxWidth: 120 }]} numberOfLines={1}>
-          {isPlaying ? 'Playing...' : (songName || 'Play')}
-        </Text>
-      </Pressable>
+  const label = added ? T('commSpotifyPillSavedToLibrary') : adding ? T('commSpotifyPillAdding') : T('commSpotifyPillAddToLibrary');
 
-      <Modal visible={showEmbed} transparent animationType="slide" onRequestClose={() => setShowEmbed(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: theme.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, height: 400 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: theme.text }}>Spotify Preview</Text>
-              <Pressable onPress={() => setShowEmbed(false)} style={{ padding: 4 }}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </Pressable>
-            </View>
-            <WebView
-              source={{ uri: `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0` }}
-              style={{ flex: 1, backgroundColor: 'transparent', borderRadius: 12 }}
-              scrollEnabled={false}
-              allowsInlineMediaPlayback={true}
-            />
-          </View>
-        </View>
-      </Modal>
-    </>
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.mapOverlayBtn,
+        pillStyle,
+        { backgroundColor: added ? '#10b981' : theme.primary },
+        pressed && !added && !adding && { opacity: 0.88 },
+      ]}
+      onPress={handlePress}
+      disabled={adding || added}
+    >
+      {adding ? (
+        <ActivityIndicator size="small" color="#fff" />
+      ) : (
+        <Feather name={added ? 'check' : 'heart'} size={16} color="#fff" />
+      )}
+      <Text style={[styles.mapOverlayBtnText, { color: '#fff', maxWidth: titleMaxWidth }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -675,10 +637,6 @@ export default function CommunityMap() {
 
         {/* Map overlay buttons */}
         <View style={styles.mapOverlay}>
-          {myActivity?.is_playing && myActivity?.song_track_id && (
-            <MapAudioPlayer trackId={myActivity.song_track_id} songName={myActivity.song_name} />
-          )}
-
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
@@ -711,37 +669,89 @@ export default function CommunityMap() {
           (g: SharedGoal) => (g.friend_id === selectedFriend.id || g.user_id === selectedFriend.id) && g.status !== 'rejected'
         );
 
+        const music = selectedFriend.music;
+        const showMusic = !!(music?.isPlaying && music.song);
+        const albumUri = (music?.albumArt || '').trim();
+
         return (
           <View style={[styles.friendPopup, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.friendPopupHeader}>
-              <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={36} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[styles.friendPopupName, { color: theme.text }]}>{selectedFriend.name}</Text>
-                {selectedFriend.activity?.activity_type !== 'idle' && selectedFriend.activity?.activity_type !== 'listening_music' && (
-                  <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]}>
-                    {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
-                    {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
-                  </Text>
-                )}
-                {selectedFriend.music?.isPlaying && selectedFriend.music.song && (
-                  selectedFriend.music.trackId ? (
-                    <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
-                      <MapAudioPlayer trackId={selectedFriend.music.trackId} songName={selectedFriend.music.song} />
-                    </View>
-                  ) : (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                      <Text style={{ fontSize: 12, marginRight: 4 }}>🎵</Text>
-                      <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
-                        {selectedFriend.music.song}
-                      </Text>
-                    </View>
-                  )
-                )}
+              <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={44} />
+              <View style={styles.friendPopupIdentity}>
+                <Text style={[styles.friendPopupName, { color: theme.text }]} numberOfLines={1}>
+                  {selectedFriend.name}
+                </Text>
+                {selectedFriend.activity?.activity_type !== 'idle' &&
+                  selectedFriend.activity?.activity_type !== 'listening_music' && (
+                    <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]} numberOfLines={2}>
+                      {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
+                      {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
+                    </Text>
+                  )}
+                <Pressable
+                  onPress={() => {
+                    setSelectedFriend(null);
+                    router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                  style={({ pressed }) => [pressed && { opacity: 0.65 }]}
+                >
+                  <Text style={[styles.friendPopupProfileLink, { color: theme.primary }]}>View full profile</Text>
+                </Pressable>
               </View>
-              <Pressable onPress={() => setSelectedFriend(null)}>
+              {showMusic ? (
+                albumUri ? (
+                  <Image source={{ uri: albumUri }} style={styles.friendPopupAlbumArt} />
+                ) : (
+                  <View style={[styles.friendPopupAlbumPlaceholder, { borderColor: `${theme.primary}55` }]}>
+                    <Feather name="music" size={22} color="#1DB954" />
+                  </View>
+                )
+              ) : null}
+              <Pressable onPress={() => setSelectedFriend(null)} hitSlop={10} style={styles.friendPopupClose}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
               </Pressable>
             </View>
+
+            {showMusic && (
+              <View style={styles.friendVibeCard}>
+                <View style={styles.friendVibeLabelRow}>
+                  <Feather name="music" size={12} color="#1DB954" />
+                  <Text style={styles.friendVibeLabel}>CURRENTLY VIBING TO</Text>
+                </View>
+                <View style={styles.friendVibeMainRow}>
+                  <View style={styles.friendVibeTextCol}>
+                    <Text style={styles.friendVibeTitle} numberOfLines={2}>
+                      {music!.song}
+                    </Text>
+                    {!!music!.artist?.trim() && (
+                      <Text style={styles.friendVibeArtist} numberOfLines={2}>
+                        {music!.artist}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.friendVibeBars}>
+                    <View style={[styles.friendVibeBar, { height: 9 }]} />
+                    <View style={[styles.friendVibeBar, { height: 14 }]} />
+                    <View style={[styles.friendVibeBar, { height: 7 }]} />
+                  </View>
+                </View>
+                {music!.trackId ? (
+                  <View style={styles.friendVibePlayerWrap}>
+                    <MapAddToLibraryPill
+                      trackId={music!.trackId}
+                      songName={music!.song}
+                      titleMaxWidth={220}
+                      pillStyle={{ alignSelf: 'stretch', justifyContent: 'center' }}
+                    />
+                  </View>
+                ) : (
+                  <Text style={styles.friendVibeNoPreview} numberOfLines={2}>
+                    Spotify track ID unavailable — open their profile to use Add to Library.
+                  </Text>
+                )}
+              </View>
+            )}
 
             {/* Accountability Pacts Tracker */}
             {friendPacts.length > 0 && (
@@ -789,55 +799,38 @@ export default function CommunityMap() {
               </View>
             )}
 
-            {/* Shared Tasks mini-badge */}
-            {getSharedCountWith(selectedFriend.id) > 0 && (
-              <View style={[styles.pactsContainer, { backgroundColor: 'rgba(99,102,241,0.06)' }]}>
-                <View style={styles.pactsHeader}>
-                  <Feather name="clipboard" size={14} color="#6366f1" />
-                  <Text style={[styles.pactsTitle, { color: '#6366f1' }]}>
-                    {getSharedCountWith(selectedFriend.id)} shared task{getSharedCountWith(selectedFriend.id) > 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View style={styles.friendPopupReactions}>
-              {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
+            <View style={styles.friendPopupActions}>
+              <Text style={[styles.friendPopupReactionsLabel, { color: theme.textSecondary }]}>Quick reactions</Text>
+              <View style={styles.friendPopupReactions}>
+                {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
+                  <Pressable
+                    key={emoji}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Send ${emoji} reaction`}
+                    style={({ pressed }) => [
+                      styles.reactionDisc,
+                      { backgroundColor: theme.background, borderColor: theme.border },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                    onPress={() => handleQuickReact(selectedFriend.id, emoji)}
+                  >
+                    <Text style={styles.reactionEmoji}>{emoji}</Text>
+                  </Pressable>
+                ))}
                 <Pressable
-                  key={emoji}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send bump"
                   style={({ pressed }) => [
-                    styles.reactionBtn,
-                    { backgroundColor: theme.background },
-                    pressed && { opacity: 0.7 },
+                    styles.reactionDisc,
+                    { backgroundColor: theme.background, borderColor: theme.border },
+                    pressed && { opacity: 0.72 },
                   ]}
-                  onPress={() => handleQuickReact(selectedFriend.id, emoji)}
+                  onPress={() => handleBump(selectedFriend.id)}
                 >
-                  <Text style={styles.reactionEmoji}>{emoji}</Text>
+                  <Feather name="zap" size={20} color={theme.primary} />
                 </Pressable>
-              ))}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.reactionBtn,
-                  styles.reactionBumpBtn,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={() => handleBump(selectedFriend.id)}
-              >
-                <Text style={styles.reactionBumpText}>BUMP</Text>
-              </Pressable>
+              </View>
             </View>
-
-            <Pressable
-              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-              onPress={() => {
-                setSelectedFriend(null);
-                router.push({ pathname: '/community/friend-profile', params: { friendId: selectedFriend.id } } as any);
-              }}
-            >
-              <Text style={{ textAlign: 'center', color: theme.primary, marginTop: 12, fontWeight: '600' }}>
-                View Full Profile
-              </Text>
-            </Pressable>
           </View>
         );
       })()}
@@ -1189,12 +1182,20 @@ function StatusPopup({
               { backgroundColor: theme.background, borderColor: theme.border },
               pressed && { opacity: 0.8 },
             ]}
-            onPress={() => {
+            onPress={async () => {
               if (spotifyConnected) {
                 onClose();
                 router.push('/set-vibe' as any);
               } else {
-                connectSpotify().catch(() => {});
+                try {
+                  const ok = await connectSpotify();
+                  if (ok) {
+                    onClose();
+                    router.push('/set-vibe' as any);
+                  }
+                } catch {
+                  Alert.alert('Spotify', 'Could not connect to Spotify. Try again from Settings.');
+                }
               }
             }}
           >
@@ -1587,26 +1588,100 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 15,
   },
-  friendPopupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  friendPopupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 10,
+  },
+  friendPopupIdentity: { flex: 1, minWidth: 0, marginRight: 4 },
   friendPopupName: { fontSize: 16, fontWeight: '700' },
   friendPopupActivity: { fontSize: 13, marginTop: 2 },
-  friendPopupReactions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  reactionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  friendPopupAlbumArt: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#111',
+  },
+  friendPopupAlbumPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: 'rgba(29,185,84,0.12)',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reactionEmoji: { fontSize: 20 },
-  bumpBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  friendPopupClose: { marginLeft: 2 },
+  friendVibeCard: {
     borderRadius: 16,
-    marginLeft: 'auto',
+    padding: 14,
+    marginBottom: 12,
+    backgroundColor: 'rgba(12,14,18,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(29,185,84,0.35)',
   },
-  bumpBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  viewProfileLink: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  friendVibeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  friendVibeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#1DB954',
+  },
+  friendVibeMainRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  friendVibeTextCol: { flex: 1, minWidth: 0 },
+  friendVibeTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  friendVibeArtist: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  friendVibeBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 18, paddingBottom: 2 },
+  friendVibeBar: { width: 4, borderRadius: 2, backgroundColor: '#1DB954' },
+  friendVibePlayerWrap: { marginTop: 12, alignSelf: 'stretch', width: '100%' },
+  friendVibeNoPreview: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.45)',
+    textAlign: 'center',
+  },
+  friendPopupActions: { marginTop: 8 },
+  friendPopupProfileLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  friendPopupReactionsLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  friendPopupReactions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 10,
+  },
+  reactionDisc: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  reactionEmoji: { fontSize: 22 },
 
   // Unified Map Pin
   markerWrapper: {
@@ -1672,18 +1747,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 4,
-  },
-  reactionBumpBtn: {
-    backgroundColor: '#eff6ff', // light blue
-    borderColor: '#bfdbfe',
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    flex: undefined,
-  },
-  reactionBumpText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1d4ed8', // dark blue
   },
   statusCloud: {
     position: 'absolute',

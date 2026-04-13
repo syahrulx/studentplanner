@@ -587,7 +587,7 @@ export default function TimetableScreen() {
                         try {
                           await saveTimetableOnly([]);
                         } catch {
-                          Alert.alert('Error', 'Failed to reset timetable. Please try again.');
+                          Alert.alert('Could not reset timetable', 'Please try again.');
                         }
                       },
                     },
