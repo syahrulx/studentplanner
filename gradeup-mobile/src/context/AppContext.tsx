@@ -67,6 +67,7 @@ import * as academicCalendarDb from '../lib/academicCalendarDb';
 import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStreams } from '../lib/communityApi';
+import { syncExpoPushTokenToProfile, subscribeExpoPushTokenUpdates } from '../lib/pushRegistration';
 import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
@@ -790,7 +791,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     loadRemoteDataRef.current = loadRemoteData;
 
-    requestNotificationPermissions().catch(() => {});
+    requestNotificationPermissions()
+      .then(() => supabase.auth.getSession())
+      .then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (uid) void syncExpoPushTokenToProfile(uid);
+      })
+      .catch(() => {});
+
+    const removePushTokenListener = subscribeExpoPushTokenUpdates(() => remoteUserIdRef.current);
 
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -832,11 +841,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       void loadRemoteData(uid, getAuthFallbackName(session));
+      void syncExpoPushTokenToProfile(uid);
     });
 
     return () => {
       remoteLoadGeneration += 1;
       subscription.unsubscribe();
+      removePushTokenListener();
     };
   }, []);
 

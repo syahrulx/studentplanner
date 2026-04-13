@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '@/src/lib/supabase';
@@ -26,9 +27,8 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-
 
   const handleLogin = async () => {
     setError(null);
@@ -111,13 +111,58 @@ export default function Login() {
         }
       }
     } catch (e) {
-      setError('Google sign-in failed. Please try email login.');
+      setError('Google sign-in failed. Please try again.');
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const isLoading = loading || googleLoading;
+  const handleAppleSignIn = async () => {
+    setAppleLoading(true);
+    setError(null);
+    try {
+      const redirectUrl = makeRedirectUri();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (oauthError) {
+        setError('Apple sign-in failed. Please try again.');
+        return;
+      }
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (result.type === 'success' && result.url) {
+          const url = new URL(result.url);
+          const params = new URLSearchParams(url.hash.replace('#', ''));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          if (accessToken && refreshToken) {
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) {
+              setError('Sign-in failed. Please try again.');
+            } else if (sessionData.session) {
+              router.replace('/(tabs)');
+            }
+          } else {
+            setError('Authentication failed. Please try again.');
+          }
+        }
+      }
+    } catch (e) {
+      setError('Apple sign-in failed. Please try again.');
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
+  const isLoading = loading || googleLoading || appleLoading;
 
   return (
     <KeyboardAvoidingView
@@ -172,10 +217,28 @@ export default function Login() {
             )}
           </Pressable>
 
-          {/* Divider */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.appleBtn,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+              isLoading && { opacity: 0.6 },
+            ]}
+            onPress={handleAppleSignIn}
+            disabled={isLoading}
+          >
+            {appleLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="logo-apple" size={20} color="#fff" />
+                <Text style={styles.appleBtnText}>Continue with Apple</Text>
+              </>
+            )}
+          </Pressable>
+
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or sign in with email</Text>
+            <Text style={styles.dividerText}>Email & password</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -233,18 +296,25 @@ export default function Login() {
           {/* Login Button */}
           <Pressable
             style={({ pressed }) => [
-              styles.loginBtn,
+              styles.loginBtnOuter,
               pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
               isLoading && { opacity: 0.6 },
             ]}
             onPress={handleLogin}
             disabled={isLoading}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
-            )}
+            <LinearGradient
+              colors={['#24334d', '#1a2436']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.loginBtnGradient}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginBtnText}>Sign In</Text>
+              )}
+            </LinearGradient>
           </Pressable>
 
           {/* Sign up link */}
@@ -345,6 +415,22 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
 
+  appleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    borderRadius: 14,
+    paddingVertical: 14,
+    gap: 10,
+    marginTop: 12,
+  },
+  appleBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
+
   // Divider
   dividerRow: {
     flexDirection: 'row',
@@ -398,10 +484,12 @@ const styles = StyleSheet.create({
   },
   errorText: { color: '#dc2626', fontSize: 13, fontWeight: '500', flex: 1 },
 
-  // Login button
-  loginBtn: {
-    backgroundColor: '#0f172a',
+  // Login button — navy gradient (matches brand hero / reference)
+  loginBtnOuter: {
     borderRadius: 14,
+    overflow: 'hidden',
+  },
+  loginBtnGradient: {
     paddingVertical: 16,
     alignItems: 'center',
   },
@@ -418,5 +506,5 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   signUpLabel: { color: '#64748b', fontSize: 14 },
-  signUpLink: { color: '#0f172a', fontSize: 14, fontWeight: '700' },
+  signUpLink: { color: '#24334d', fontSize: 14, fontWeight: '700' },
 });

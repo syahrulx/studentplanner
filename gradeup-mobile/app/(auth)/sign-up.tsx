@@ -15,6 +15,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '@/src/lib/supabase';
@@ -39,6 +40,7 @@ export default function SignUp() {
   const [emailConfirmRequired, setEmailConfirmRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,9 +103,59 @@ export default function SignUp() {
         }
       }
     } catch {
-      setError('Google sign-in failed. Please try email sign-up.');
+      setError('Google sign-in failed. Please try again.');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignUp = async () => {
+    setAppleLoading(true);
+    setError(null);
+    try {
+      const redirectUrl = makeRedirectUri();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (oauthError) {
+        setError('Apple sign-up failed. Please try again.');
+        return;
+      }
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (result.type === 'success' && result.url) {
+          const url = new URL(result.url);
+          const params = new URLSearchParams(url.hash.replace('#', ''));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          if (accessToken && refreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (sessionError) {
+              setError('Sign-up failed. Please try again.');
+            } else {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                const { data: profile } = await supabase.from('profiles').select('university').eq('id', user.id).maybeSingle();
+                if (!profile?.university) router.replace('/(auth)/profile-setup');
+                else router.replace('/(tabs)');
+              } else {
+                router.replace('/(auth)/profile-setup');
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      setError('Apple sign-in failed. Please try again.');
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -168,7 +220,7 @@ export default function SignUp() {
     }
   };
 
-  const isLoading = loading || googleLoading;
+  const isLoading = loading || googleLoading || appleLoading;
 
   return (
     <KeyboardAvoidingView
@@ -218,9 +270,24 @@ export default function SignUp() {
             💡 Tip: Use your university email to easily sync Google Classroom & Teams!
           </Text>
 
+          <Pressable
+            style={({ pressed }) => [styles.appleBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
+            onPress={handleAppleSignUp}
+            disabled={isLoading}
+          >
+            {appleLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="logo-apple" size={20} color="#fff" />
+                <Text style={styles.appleBtnText}>Continue with Apple</Text>
+              </>
+            )}
+          </Pressable>
+
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or create with email</Text>
+            <Text style={styles.dividerText}>Register with email</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -316,18 +383,32 @@ export default function SignUp() {
           {/* Submit */}
           {emailConfirmRequired ? (
             <Pressable
-              style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.9 }]}
+              style={({ pressed }) => [styles.loginBtnOuter, pressed && { opacity: 0.9 }]}
               onPress={() => router.replace('/(auth)/login')}
             >
-              <Text style={styles.loginBtnText}>Go to Login</Text>
+              <LinearGradient
+                colors={['#24334d', '#1a2436']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.loginBtnGradient}
+              >
+                <Text style={styles.loginBtnText}>Go to Login</Text>
+              </LinearGradient>
             </Pressable>
           ) : (
             <Pressable
-              style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
+              style={({ pressed }) => [styles.loginBtnOuter, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
               onPress={handleSignUp}
               disabled={isLoading}
             >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Create Account</Text>}
+              <LinearGradient
+                colors={['#24334d', '#1a2436']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.loginBtnGradient}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Create Account</Text>}
+              </LinearGradient>
             </Pressable>
           )}
 
@@ -442,6 +523,17 @@ const styles = StyleSheet.create({
   },
   googleBtnIcon: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
   googleBtnText: { fontSize: 15, fontWeight: '600', color: '#334155' },
+  appleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    borderRadius: 14,
+    paddingVertical: 13,
+    gap: 10,
+    marginTop: 12,
+  },
+  appleBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   hintText: {
     fontSize: 12,
     color: '#64748b',
@@ -475,11 +567,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   errorText: { color: '#dc2626', fontSize: 13, fontWeight: '500', flex: 1 },
-  loginBtn: { backgroundColor: '#0f172a', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 4 },
+  loginBtnOuter: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
+  loginBtnGradient: { paddingVertical: 16, alignItems: 'center' },
   loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   signUpRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 18 },
   signUpLabel: { color: '#64748b', fontSize: 14 },
-  signUpLink: { color: '#0f172a', fontSize: 14, fontWeight: '700' },
+  signUpLink: { color: '#24334d', fontSize: 14, fontWeight: '700' },
 
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
