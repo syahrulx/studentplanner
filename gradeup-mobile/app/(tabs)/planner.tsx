@@ -1816,26 +1816,27 @@ export default function Planner() {
               <Feather name="user-plus" size={20} color={theme.primary} />
             </Pressable>
           </View>
+          <View style={[s.headerSide, s.headerSideRight]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerBtn,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={6}
+              accessibilityLabel={T('addTask')}
+              accessibilityRole="button"
+            >
+              <Feather name="plus" size={20} color={theme.primary} />
+            </Pressable>
+          </View>
           <View style={s.headerCenter} pointerEvents="box-none">
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Pressable
-                style={({ pressed }) => [
-                  s.headerBtn,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.card,
-                    shadowColor: theme.text,
-                  },
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-                hitSlop={6}
-                accessibilityLabel={T('addTask')}
-                accessibilityRole="button"
-              >
-                <Feather name="plus" size={20} color={theme.primary} />
-              </Pressable>
-              <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
+            <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
                 name={
                   view === 'day'
@@ -1854,7 +1855,6 @@ export default function Planner() {
               </Text>
               <Feather name={viewMenuOpen ? "chevron-up" : "chevron-down"} size={14} color={theme.textSecondary} />
             </Pressable>
-            </View>
 
             {viewMenuOpen && (
               <View style={s.viewDropdown}>
