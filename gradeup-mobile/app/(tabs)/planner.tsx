@@ -1816,25 +1816,6 @@ export default function Planner() {
               <Feather name="user-plus" size={20} color={theme.primary} />
             </Pressable>
           </View>
-          <View style={[s.headerSide, s.headerSideRight]}>
-            <Pressable
-              style={({ pressed }) => [
-                s.headerBtn,
-                {
-                  borderColor: theme.border,
-                  backgroundColor: theme.card,
-                  shadowColor: theme.text,
-                },
-                pressed && { opacity: 0.88 },
-              ]}
-              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-              hitSlop={6}
-              accessibilityLabel={T('addTask')}
-              accessibilityRole="button"
-            >
-              <Feather name="plus" size={20} color={theme.primary} />
-            </Pressable>
-          </View>
           <View style={s.headerCenter} pointerEvents="box-none">
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
@@ -1893,6 +1874,25 @@ export default function Planner() {
                 ))}
               </View>
             )}
+          </View>
+          <View style={[s.headerSide, s.headerSideRight]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerBtn,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={6}
+              accessibilityLabel={T('addTask')}
+              accessibilityRole="button"
+            >
+              <Feather name="plus" size={20} color={theme.primary} />
+            </Pressable>
           </View>
         </View>
 
