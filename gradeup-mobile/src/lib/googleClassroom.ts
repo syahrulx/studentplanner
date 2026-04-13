@@ -22,6 +22,41 @@ const SCOPES = [
 
 WebBrowser.maybeCompleteAuthSession();
 
+/**
+ * Parse Supabase OAuth redirect (hash or query) into key/value pairs.
+ */
+function parseOAuthRedirectParams(url: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const hashIdx = url.indexOf('#');
+  const queryIdx = url.indexOf('?');
+  const raw =
+    hashIdx >= 0
+      ? url.slice(hashIdx + 1)
+      : queryIdx >= 0
+        ? url.slice(queryIdx + 1).split('#')[0]
+        : '';
+  if (!raw) return out;
+  new URLSearchParams(raw).forEach((v, k) => {
+    out[k] = v;
+  });
+  return out;
+}
+
+/** Supabase JWT `sub` claim is the auth user id — used to prevent accidental account switch. */
+function decodeJwtSub(accessToken: string): string | null {
+  try {
+    const part = accessToken.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = (4 - (b64.length % 4)) % 4;
+    const json = atob(b64 + '='.repeat(pad));
+    const payload = JSON.parse(json) as { sub?: string };
+    return payload.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Types ----------
 
 export interface GoogleCourse {
@@ -101,10 +136,19 @@ export async function getValidToken(): Promise<string | null> {
 
 /**
  * Full browser-based OAuth flow. Only called when cached/session tokens are unavailable.
+ *
+ * **Account safety:** The Rencana user id (`session.user.id`) is fixed before opening the browser.
+ * After Google returns, we only call `setSession` if the JWT `sub` matches that id, so linking a
+ * *student* Google account for Classroom does **not** merge you into a different Rencana profile or
+ * switch your login — it only adds a linked identity + Classroom token to the profile you are
+ * already signed into.
  */
 export async function connectGoogleClassroom(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('You must be logged in first.');
+
+  /** Never allow OAuth return to switch this Rencana account. */
+  const expectedUserId = session.user.id;
 
   const existing = await getValidToken();
   if (existing) return existing;
@@ -133,32 +177,57 @@ export async function connectGoogleClassroom(): Promise<string> {
     throw new Error(res.type === 'cancel' ? 'Sign-in was cancelled.' : 'Browser session was dismissed.');
   }
 
-  const fragment = res.url.split('#')[1] || res.url.split('?')[1] || '';
-  const providerToken = fragment.match(/provider_token=([^&]+)/)?.[1];
-  const providerRefresh = fragment.match(/provider_refresh_token=([^&]+)/)?.[1];
+  const params = parseOAuthRedirectParams(res.url);
+  const accessToken = params.access_token;
+  const refreshToken = params.refresh_token || null;
 
-  if (providerToken) {
-    const decoded = decodeURIComponent(providerToken);
-    await setClassroomToken({
-      accessToken: decoded,
-      expiresAt: Date.now() + 3_600_000,
-      refreshToken: providerRefresh ? decodeURIComponent(providerRefresh) : undefined,
+  if (accessToken && refreshToken) {
+    const sub = decodeJwtSub(accessToken);
+    if (!sub) {
+      throw new Error('Could not verify your session. Please try connecting Google Classroom again.');
+    }
+    if (sub !== expectedUserId) {
+      throw new Error(
+        'That Google sign-in belongs to a different Rencana account. Your current login was not changed. Use the Google account you want for Classroom while staying signed in as yourself, or create a separate Rencana account for that email.',
+      );
+    }
+    const { error: sessErr } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
     });
-    return decoded;
+    if (sessErr) {
+      throw new Error(sessErr.message || 'Could not finish linking Google Classroom.');
+    }
   }
 
-  // Fallback: re-read session
+  const providerEnc = params.provider_token;
+  const providerRefreshEnc = params.provider_refresh_token || params.provider_refresh;
+
   const { data: fresh } = await supabase.auth.getSession();
-  if (fresh.session?.provider_token) {
-    await setClassroomToken({
-      accessToken: fresh.session.provider_token,
-      expiresAt: Date.now() + 3_600_000,
-      refreshToken: fresh.session.provider_refresh_token || undefined,
-    });
-    return fresh.session.provider_token;
+  if (!fresh.session || fresh.session.user.id !== expectedUserId) {
+    throw new Error(
+      'Your Rencana account must stay the same after linking Classroom. Please try again from Settings.',
+    );
   }
 
-  throw new Error('Google sign-in succeeded but no Classroom token was returned.');
+  let token = providerEnc ? decodeURIComponent(providerEnc) : null;
+  let refreshOut = providerRefreshEnc ? decodeURIComponent(providerRefreshEnc) : undefined;
+
+  if (!token && fresh.session.provider_token) {
+    token = fresh.session.provider_token;
+    refreshOut = fresh.session.provider_refresh_token ?? refreshOut;
+  }
+
+  if (!token) {
+    throw new Error('Google sign-in succeeded but no Classroom token was returned.');
+  }
+
+  await setClassroomToken({
+    accessToken: token,
+    expiresAt: Date.now() + 3_600_000,
+    refreshToken: refreshOut,
+  });
+  return token;
 }
 
 // ---------- Paginated Google API helper ----------
