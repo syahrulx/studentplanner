@@ -22,22 +22,26 @@ function hostTimelineLayoutPlaceholder(_props: HomeWidgetProps, _env: unknown) {
   return React.createElement(View, { collapsable: false, style: { width: 1, height: 1 } });
 }
 
-let cachedWidget: InstanceType<NativeExpoWidgets['Widget']> | null = null;
+const cachedWidgets = new Map<string, InstanceType<NativeExpoWidgets['Widget']>>();
 
-function getNativeWidgetHandle(): InstanceType<NativeExpoWidgets['Widget']> | null {
+function getNativeWidgetHandle(name: string): InstanceType<NativeExpoWidgets['Widget']> | null {
   const mod = requireOptionalNativeModule<NativeExpoWidgets>('ExpoWidgets');
   if (!mod?.Widget) return null;
-  if (!cachedWidget) {
-    cachedWidget = new mod.Widget('GradeUpToday', hostTimelineLayoutPlaceholder);
-  }
-  return cachedWidget;
+  const existing = cachedWidgets.get(name);
+  if (existing) return existing;
+  const created = new mod.Widget(name, hostTimelineLayoutPlaceholder);
+  cachedWidgets.set(name, created);
+  return created;
 }
 
 export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void {
   try {
-    const w = getNativeWidgetHandle();
-    if (!w) return;
-    w.updateTimeline([{ timestamp: Date.now(), props }]);
+    const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
+    for (const name of names) {
+      const w = getNativeWidgetHandle(name);
+      if (!w) continue;
+      w.updateTimeline([{ timestamp: Date.now(), props }]);
+    }
   } catch (e) {
     if (__DEV__) console.warn('[GradeUp] iOS widget timeline sync failed', e);
   }

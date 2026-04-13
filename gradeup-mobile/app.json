@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "gradeup-mobile",
+    "name": "Rencana",
     "slug": "gradeup-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "gradeupmobile",
+    "scheme": "rencana",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,14 +15,22 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.aizztech.rencana",
+      "appleTeamId": "Z9JR65SA89",
       "config": {
-        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+        "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
       },
-      "bundleIdentifier": "com.anonymous.gradeupmobile",
+      "entitlements": {
+        "com.apple.developer.applesignin": [
+          "Default"
+        ],
+        "com.apple.security.application-groups": [
+          "group.com.aizztech.rencana"
+        ]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "appleTeamId": "29GLPZC3G3"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -33,10 +41,10 @@
       "predictiveBackGestureEnabled": false,
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+          "apiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
         }
       },
-      "package": "com.anonymous.gradeupmobile"
+      "package": "com.aizztech.rencana"
     },
     "web": {
       "bundler": "metro",
@@ -56,7 +64,7 @@
       [
         "expo-widgets",
         {
-          "groupIdentifier": "group.com.anonymous.gradeupmobile",
+          "groupIdentifier": "group.com.aizztech.rencana",
           "widgets": [
             {
               "name": "GradeUpToday",
@@ -66,6 +74,32 @@
               "supportedFamilies": [
                 "systemSmall",
                 "systemMedium"
+              ]
+            },
+            {
+              "name": "GradeUpTasks",
+              "displayName": "Tasks",
+              "description": "Upcoming tasks",
+              "contentMarginsDisabled": false,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
+              ]
+            },
+            {
+              "name": "GradeUpTimetable",
+              "displayName": "Timetable",
+              "description": "Upcoming classes",
+              "contentMarginsDisabled": false,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
               ]
             }
           ]

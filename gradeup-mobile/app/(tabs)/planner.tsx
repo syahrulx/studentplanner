@@ -1799,8 +1799,43 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <View style={[s.headerSide, s.headerSideLeft]} />
-          <View style={s.headerCenter}>
+          <View style={[s.headerSideBase, s.headerSideLeft, s.headerSideLayer]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerBtn,
+                {
+                  borderColor: headerOutline,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={() => setShowShareAllModal(true)}
+              hitSlop={6}
+            >
+              <Feather name="user-plus" size={20} color={theme.primary} />
+            </Pressable>
+          </View>
+          <View style={[s.headerSideBase, s.headerSideRight, s.headerSideLayer]}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerBtn,
+                {
+                  borderColor: headerOutline,
+                  backgroundColor: theme.card,
+                  shadowColor: theme.text,
+                },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={4}
+              accessibilityLabel={T('addTask')}
+              accessibilityRole="button"
+            >
+              <Feather name="plus" size={20} color={theme.primary} />
+            </Pressable>
+          </View>
+          <View style={s.headerCenter} pointerEvents="box-none">
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
               <Feather
                 name={
