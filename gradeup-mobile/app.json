@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "rencana",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -15,9 +14,6 @@
     },
     "ios": {
       "supportsTablet": true,
-      "config": {
-        "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
-      },
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
       "entitlements": {
@@ -32,7 +28,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "config": {
         "googleMaps": {
@@ -72,6 +67,12 @@
               ]
             }
           ]
+        }
+      ],
+      [
+        "react-native-maps",
+        {
+          "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
         }
       ]
     ],
