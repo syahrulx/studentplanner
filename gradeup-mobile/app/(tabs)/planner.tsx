@@ -1799,12 +1799,12 @@ export default function Planner() {
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
-          <View style={[s.headerSideBase, s.headerSideLeft, s.headerSideLayer]}>
+          <View style={[s.headerSide, s.headerSideLeft]}>
             <Pressable
               style={({ pressed }) => [
                 s.headerBtn,
                 {
-                  borderColor: headerOutline,
+                  borderColor: theme.border,
                   backgroundColor: theme.card,
                   shadowColor: theme.text,
                 },
@@ -1816,12 +1816,12 @@ export default function Planner() {
               <Feather name="user-plus" size={20} color={theme.primary} />
             </Pressable>
           </View>
-          <View style={[s.headerSideBase, s.headerSideRight, s.headerSideLayer]}>
+          <View style={[s.headerSide, s.headerSideRight]}>
             <Pressable
               style={({ pressed }) => [
                 s.headerBtn,
                 {
-                  borderColor: headerOutline,
+                  borderColor: theme.border,
                   backgroundColor: theme.card,
                   shadowColor: theme.text,
                 },
