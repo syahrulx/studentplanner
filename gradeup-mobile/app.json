@@ -16,8 +16,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
+      "config": {
+        "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
+      },
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.security.application-groups": [
+          "group.com.aizztech.rencana"
+        ]
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -64,6 +70,32 @@
               "supportedFamilies": [
                 "systemSmall",
                 "systemMedium"
+              ]
+            },
+            {
+              "name": "GradeUpTasks",
+              "displayName": "Tasks",
+              "description": "Upcoming tasks",
+              "contentMarginsDisabled": false,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
+              ]
+            },
+            {
+              "name": "GradeUpTimetable",
+              "displayName": "Timetable",
+              "description": "Upcoming classes",
+              "contentMarginsDisabled": false,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
               ]
             }
           ]

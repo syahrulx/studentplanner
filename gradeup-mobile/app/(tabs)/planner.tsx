@@ -1831,7 +1831,7 @@ export default function Planner() {
           <View style={[s.headerSideBase, s.headerSideLeft, s.headerSideLayer]}>
             <Pressable
               style={({ pressed }) => [
-                s.headerAddPill,
+                s.headerBtn,
                 {
                   borderColor: headerOutline,
                   backgroundColor: theme.card,
@@ -1839,15 +1839,10 @@ export default function Planner() {
                 },
                 pressed && { opacity: 0.88 },
               ]}
-              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-              hitSlop={4}
-              accessibilityLabel={T('addTask')}
-              accessibilityRole="button"
+              onPress={() => setShowShareAllModal(true)}
+              hitSlop={6}
             >
-              <Feather name="plus" size={20} color={theme.primary} />
-              <Text style={[s.headerAddPillText, { color: theme.primary }]} numberOfLines={1}>
-                {T('addTask')}
-              </Text>
+              <Feather name="user-plus" size={20} color={theme.primary} />
             </Pressable>
           </View>
           <View style={[s.headerSideBase, s.headerSideRight, s.headerSideLayer]}>
@@ -1861,10 +1856,12 @@ export default function Planner() {
                 },
                 pressed && { opacity: 0.88 },
               ]}
-              onPress={() => setShowShareAllModal(true)}
-              hitSlop={6}
+              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+              hitSlop={4}
+              accessibilityLabel={T('addTask')}
+              accessibilityRole="button"
             >
-              <Feather name="user-plus" size={20} color={theme.primary} />
+              <Feather name="plus" size={20} color={theme.primary} />
             </Pressable>
           </View>
           <View style={s.headerCenter} pointerEvents="box-none">

@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Alert, ActivityIndicator, Dimensions, TextInput } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -19,6 +19,11 @@ export default function AcademicCalendarScreen() {
   const { academicCalendar, user, language, updateAcademicCalendar, updateProfile } = useApp();
   const T = useTranslations(language);
   const insets = useSafeAreaInsets();
+  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayMonthCursor = useMemo(() => {
+    const t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), 1);
+  }, []);
   const modalMaxH = useMemo(() => {
     const h = Dimensions.get('window').height;
     return Math.max(420, h - (insets.top + 120));
@@ -52,6 +57,14 @@ export default function AcademicCalendarScreen() {
   const [filter, setFilter] = useState<'all' | 'registration' | 'lecture' | 'exam' | 'break'>('all');
   const [selectedDayISO, setSelectedDayISO] = useState<string>('');
   const [gridWidth, setGridWidth] = useState<number>(() => Math.max(280, SCREEN_W - 32));
+
+  useFocusEffect(
+    useCallback(() => {
+      // When user opens this screen from Settings, show and select the current date by default.
+      setMonthCursor(todayMonthCursor);
+      setSelectedDayISO(todayISO);
+    }, [todayISO, todayMonthCursor]),
+  );
 
   const cellW = useMemo(() => {
     const w = Math.max(280, gridWidth);
@@ -359,7 +372,6 @@ export default function AcademicCalendarScreen() {
         <View style={s.grid}>
           {monthGrid.map((d) => {
             const dd = d.date.getDate();
-            const todayISO = new Date().toISOString().slice(0, 10);
             const isToday = d.iso === todayISO;
             const isSelected = d.iso === selectedDayISO;
             const hits = periodsForDay(d.iso);

@@ -895,7 +895,7 @@ export default function TimetableScreen() {
                             s.gridHourLine,
                             {
                               top: (h - START_HOUR) * HOUR_HEIGHT,
-                              borderBottomColor: theme.border,
+                              backgroundColor: theme.border,
                             },
                           ]}
                         />
@@ -1085,7 +1085,7 @@ export default function TimetableScreen() {
                         s.gridHourLine,
                         {
                           top: (h - START_HOUR) * HOUR_HEIGHT,
-                          borderBottomColor: theme.border,
+                          backgroundColor: theme.border,
                         },
                       ]}
                     />
@@ -1452,8 +1452,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    height: StyleSheet.hairlineWidth,
   },
   gridAddCell: {
     position: 'absolute',

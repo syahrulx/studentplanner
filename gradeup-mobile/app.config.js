@@ -29,7 +29,7 @@ export default ({ config }) => ({
   extra: {
     ...config?.extra,
     eas: {
-      projectId: "29240ff0-6a41-4552-bd3e-9b6b6ddf6b38"
+      projectId: '152de0a1-9f0b-4b39-baf1-0b78a3f3e52f',
     },
     geminiApiKey: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '',
     supabaseUrl: cleanEnvString(

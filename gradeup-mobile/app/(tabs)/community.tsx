@@ -37,14 +37,15 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // react-native-maps requires a custom dev build (not available in Expo Go).
 // We use a placeholder map UI if the library is not found.
 /** Always Google Maps tiles (never Apple Maps on iOS). Requires valid keys in app.json. */
-const GOOGLE_MAPS_PROVIDER = 'google' as const;
 let MapView: any = null;
 let Marker: any = null;
+let PROVIDER_GOOGLE: any = null;
 
 try {
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE ?? null;
 } catch (e) {
   // Gracefully fall back to placeholder
 }
@@ -547,7 +548,9 @@ export default function CommunityMap() {
           <MapView
             ref={mapRef}
             style={styles.map}
-            provider={GOOGLE_MAPS_PROVIDER}
+            // On iOS devices, passing the exported PROVIDER_GOOGLE is required for reliable Google tiles.
+            // (A raw string may work on simulator but fail in TestFlight/App Store builds.)
+            provider={PROVIDER_GOOGLE ?? undefined}
             initialRegion={{
               latitude: myLatitude,
               longitude: myLongitude,

@@ -1050,7 +1050,8 @@ export default function Dashboard() {
         <Image
           source={require('../../assets/images/wave-texture.png')}
           style={[StyleSheet.absoluteFillObject, styles.headerWave, { opacity: headerWaveOpacity }]}
-          resizeMode="cover"
+          // iPad/TestFlight can stretch this texture too much; repeat keeps it crisp on large ratios.
+          resizeMode={Platform.OS === 'ios' ? 'repeat' : 'cover'}
         />
         <View
           style={[
