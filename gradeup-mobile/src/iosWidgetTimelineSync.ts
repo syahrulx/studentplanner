@@ -1,5 +1,3 @@
-import React from 'react';
-import { View } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { HomeWidgetProps } from './lib/homeWidgetProps';
 
@@ -8,30 +6,59 @@ import type { HomeWidgetProps } from './lib/homeWidgetProps';
  * calls `requireNativeModule('ExpoWidgets')` and crashes when the native module is missing,
  * e.g. Expo Go or a build without the widget extension linked).
  */
+type TimelineEntry = { timestamp: number; props: HomeWidgetProps };
+
+type WidgetHandle = {
+  updateTimeline: (entries: TimelineEntry[]) => void;
+};
+
 type NativeExpoWidgets = {
   Widget: new (
     name: string,
-    layout: (props: HomeWidgetProps, env: unknown) => React.ReactNode,
+    layout: (props: HomeWidgetProps, env: unknown) => unknown,
   ) => {
-    updateTimeline: (entries: Array<{ timestamp: number; props: HomeWidgetProps }>) => void;
+    updateTimeline: (entries: TimelineEntry[]) => void;
   };
 };
 
 function hostTimelineLayoutPlaceholder(_props: HomeWidgetProps, _env: unknown) {
   'widget';
-  return React.createElement(View, { collapsable: false, style: { width: 1, height: 1 } });
+  return null;
 }
 
-const cachedWidgets = new Map<string, InstanceType<NativeExpoWidgets['Widget']>>();
+const cachedWidgets = new Map<string, WidgetHandle>();
 
-function getNativeWidgetHandle(name: string): InstanceType<NativeExpoWidgets['Widget']> | null {
-  const mod = requireOptionalNativeModule<NativeExpoWidgets>('ExpoWidgets');
-  if (!mod?.Widget) return null;
+function getWidgetModule(name: string): { default?: WidgetHandle } | null {
+  try {
+    if (name === 'GradeUpToday') return require('../widgets/GradeUpTodayWidget') as { default?: WidgetHandle };
+    if (name === 'GradeUpTasks') return require('../widgets/GradeUpTasksWidget') as { default?: WidgetHandle };
+    if (name === 'GradeUpTimetable') return require('../widgets/GradeUpTimetableWidget') as { default?: WidgetHandle };
+  } catch (e) {
+    if (__DEV__) console.warn('[Rencana] iOS widget module import failed', { name, e });
+  }
+  return null;
+}
+
+function getNativeWidgetHandle(name: string): WidgetHandle | null {
   const existing = cachedWidgets.get(name);
   if (existing) return existing;
-  const created = new mod.Widget(name, hostTimelineLayoutPlaceholder);
-  cachedWidgets.set(name, created);
-  return created;
+
+  // Prefer the actual widget instance so timeline updates target the exact same widget identity/layout.
+  const widgetMod = getWidgetModule(name);
+  const widget = widgetMod?.default;
+  if (widget && typeof widget.updateTimeline === 'function') {
+    if (__DEV__) console.log('[Rencana] iOS widget handle resolved via module', { name });
+    cachedWidgets.set(name, widget);
+    return widget;
+  }
+
+  // Fallback path for environments where widget modules cannot be imported.
+  const mod = requireOptionalNativeModule<NativeExpoWidgets>('ExpoWidgets');
+  if (!mod?.Widget) return null;
+  if (__DEV__) console.log('[Rencana] iOS widget handle resolved via native fallback', { name });
+  const nativeWidget = new mod.Widget(name, hostTimelineLayoutPlaceholder);
+  cachedWidgets.set(name, nativeWidget);
+  return nativeWidget;
 }
 
 export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void {

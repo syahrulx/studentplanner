@@ -46,14 +46,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     : '';
 
   if (FORCE_STATIC_WIDGET) {
-    return (
-      <VStack modifiers={[padding({ all: 10 })]} spacing={4}>
-        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(titleColor)]}>Rencana OK</Text>
-        <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryColor(scheme)), lineLimit(2)]}>
-          Static widget test
-        </Text>
-      </VStack>
-    );
+    return <Text>Rencana OK</Text>;
   }
 
   if (!p.signedIn) {

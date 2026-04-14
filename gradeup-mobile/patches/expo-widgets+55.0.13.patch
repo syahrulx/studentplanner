@@ -1,0 +1,111 @@
+diff --git a/node_modules/expo-widgets/ios/ExpoWidgets.podspec b/node_modules/expo-widgets/ios/ExpoWidgets.podspec
+index 1d2b971..fdd72b2 100644
+--- a/node_modules/expo-widgets/ios/ExpoWidgets.podspec
++++ b/node_modules/expo-widgets/ios/ExpoWidgets.podspec
+@@ -42,7 +42,7 @@ Pod::Spec.new do |s|
+     :script => %Q{
+       echo "Preparing ExpoWidgets.bundle..."
+       source="#{__dir__}/../bundle/build/ExpoWidgets.bundle"
+-      dest="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoWidgets.bundle"
++      dest="${TARGET_BUILD_DIR}/ExpoWidgets.bundle/ExpoWidgets.bundle"
+       echo "Copying ${source} to ${dest}"
+       cp "${source}" "${dest}"
+     },
+diff --git a/node_modules/expo-widgets/ios/Widgets/EntryView.swift b/node_modules/expo-widgets/ios/Widgets/EntryView.swift
+index 947fc2e..8c05482 100644
+--- a/node_modules/expo-widgets/ios/Widgets/EntryView.swift
++++ b/node_modules/expo-widgets/ios/Widgets/EntryView.swift
+@@ -10,6 +10,63 @@ public struct WidgetsEntryView: View {
+     self.entry = entry
+   }
+ 
++  static func extractContainerBackground(from node: [String: Any]) -> Color {
++    guard
++      let props = node["props"] as? [String: Any],
++      let modifiers = props["modifiers"] as? [[String: Any]]
++    else {
++      return .black
++    }
++
++    for modifier in modifiers.reversed() {
++      guard let type = modifier["$type"] as? String, type == "background" else {
++        continue
++      }
++      guard let hex = modifier["color"] as? String else {
++        continue
++      }
++      return Self.colorFromHex(hex) ?? .black
++    }
++
++    return .black
++  }
++
++  static func colorFromHex(_ hex: String) -> Color? {
++    let normalized = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
++    guard normalized.count == 6 || normalized.count == 8 else {
++      return nil
++    }
++    var int: UInt64 = 0
++    guard Scanner(string: normalized).scanHexInt64(&int) else {
++      return nil
++    }
++
++    let r: UInt64
++    let g: UInt64
++    let b: UInt64
++    let a: UInt64
++
++    if normalized.count == 8 {
++      r = (int >> 24) & 0xff
++      g = (int >> 16) & 0xff
++      b = (int >> 8) & 0xff
++      a = int & 0xff
++    } else {
++      r = (int >> 16) & 0xff
++      g = (int >> 8) & 0xff
++      b = int & 0xff
++      a = 255
++    }
++
++    return Color(
++      .sRGB,
++      red: Double(r) / 255.0,
++      green: Double(g) / 255.0,
++      blue: Double(b) / 255.0,
++      opacity: Double(a) / 255.0
++    )
++  }
++
+   private var widgetEnvironment: [String: Any] {
+     var env: [String: Any] = getWidgetEnvironment(environment: environment)
+     env["timestamp"] = Int(entry.date.timeIntervalSince1970 * 1000)
+@@ -31,7 +88,7 @@ public struct WidgetsEntryView: View {
+     if let node {
+       if #available(iOS 17.0, *) {
+         WidgetsDynamicView(name: entry.name, kind: .widget, node: node, entryIndex: entry.entryIndex, environmentString: widgetEnvironmentString)
+-          .containerBackground(.clear, for: .widget)
++          .containerBackground(Self.extractContainerBackground(from: node), for: .widget)
+       } else {
+         WidgetsDynamicView(name: entry.name, kind: .widget, node: node, entryIndex: entry.entryIndex, environmentString: widgetEnvironmentString)
+       }
+diff --git a/node_modules/expo-widgets/scripts/xcode-build-bundle.sh b/node_modules/expo-widgets/scripts/xcode-build-bundle.sh
+index 7dd91dc..f324e82 100755
+--- a/node_modules/expo-widgets/scripts/xcode-build-bundle.sh
++++ b/node_modules/expo-widgets/scripts/xcode-build-bundle.sh
+@@ -4,16 +4,6 @@ set -eo pipefail
+ 
+ EXPO_WIDGETS_PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+ 
+-# For classic main project build phases integration, will be no-op to prevent duplicated bundle creation.
+-#
+-# `$PROJECT_DIR` is passed by Xcode as the directory to the xcodeproj file.
+-# in classic main project setup it is something like /path/to/app/ios
+-# in new style pod project setup it is something like /path/to/app/ios/Pods
+-PROJECT_DIR_BASENAME=$(basename $PROJECT_DIR)
+-if [ "x$PROJECT_DIR_BASENAME" != "xPods" ]; then
+-  exit 0
+-fi
+-
+ # If PROJECT_ROOT is not specified, fallback to use Xcode PROJECT_DIR
+ PROJECT_ROOT=${PROJECT_ROOT:-"$PROJECT_DIR/../.."}
+ PROJECT_ROOT=${PROJECT_ROOT:-"$EXPO_WIDGETS_PACKAGE_DIR/../.."}
