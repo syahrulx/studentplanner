@@ -25,6 +25,12 @@ export default ({ config }) => ({
   plugins: [
     ...(config?.plugins ?? []),
     '@react-native-community/datetimepicker',
+    [
+      '@rnmapbox/maps',
+      {
+        RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || '',
+      },
+    ],
   ],
   extra: {
     ...config?.extra,

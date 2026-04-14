@@ -448,9 +448,13 @@ export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibr
   }
 
   const putTracks = (token: string) =>
-    fetch(`https://api.spotify.com/v1/me/tracks?ids=${encodeURIComponent(id)}`, {
+    fetch(`https://api.spotify.com/v1/me/tracks`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ ids: [id] })
     });
 
   let accessToken = await getMyAccessToken();
@@ -483,7 +487,7 @@ export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibr
       return {
         ok: false,
         message:
-          'Spotify blocked saving to your library (missing permission). Open Settings → disconnect Spotify, connect again, and accept all permissions — especially library access.',
+          `Spotify blocked saving (HTTP 403). ${detail ? 'Detail: ' + detail : 'Missing scope.'} If this persists, log out of Spotify completely in your browser, then reconnect here.`,
       };
     }
     if (res.status === 401) {

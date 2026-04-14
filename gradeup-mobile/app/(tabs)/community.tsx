@@ -16,52 +16,16 @@ import {
 } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 
-// Initialize Mapbox with your public access token
+// Initialize Mapbox with your public access token from environment variables
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '');
 
-// Cartoonish, vibrant map style for a student-university vibe
-const CAMPUS_MAP_STYLE = JSON.stringify({
-  version: 8,
-  name: 'Campus Vibes',
-  sources: {
-    'mapbox-streets': {
-      type: 'vector',
-      url: 'mapbox://mapbox.mapbox-streets-v8',
-    },
-  },
-  sprite: 'mapbox://sprites/mapbox/streets-v12',
-  glyphs: 'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
-  layers: [
-    // Sky-blue background
-    { id: 'background', type: 'background', paint: { 'background-color': '#e8f4f8' } },
-    // Water — bubbly blue
-    { id: 'water', type: 'fill', source: 'mapbox-streets', 'source-layer': 'water', paint: { 'fill-color': '#7ed6f5', 'fill-opacity': 0.85 } },
-    // Parks — soft mint green
-    { id: 'park', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['==', 'class', 'park'], paint: { 'fill-color': '#a8e6cf', 'fill-opacity': 0.7 } },
-    // Pitch / sports — warm yellow-green
-    { id: 'pitch', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['==', 'class', 'pitch'], paint: { 'fill-color': '#dcedc1', 'fill-opacity': 0.8 } },
-    // Land / general — warm cream
-    { id: 'land', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['!in', 'class', 'park', 'pitch'], paint: { 'fill-color': '#fef9ef' } },
-    // Buildings — soft lavender blocks
-    { id: 'building', type: 'fill', source: 'mapbox-streets', 'source-layer': 'building', paint: { 'fill-color': '#d8d0e8', 'fill-opacity': 0.75 } },
-    // Building outline — slightly darker
-    { id: 'building-outline', type: 'line', source: 'mapbox-streets', 'source-layer': 'building', paint: { 'line-color': '#c4b8db', 'line-width': 0.5 } },
-    // Minor roads — soft peach
-    { id: 'road-minor', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'street', 'street_limited', 'service', 'track'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff5eb', 'line-width': 3 } },
-    // Secondary roads — warm coral
-    { id: 'road-secondary', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'secondary', 'tertiary'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffd6c0', 'line-width': 4 } },
-    // Primary roads — bubblegum pink
-    { id: 'road-primary', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['==', 'class', 'primary'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffb3c6', 'line-width': 5 } },
-    // Highways — vibrant coral
-    { id: 'road-highway', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'motorway', 'trunk'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ff8fab', 'line-width': 6 } },
-    // Road labels
-    { id: 'road-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'road', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'symbol-placement': 'line', 'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'] }, paint: { 'text-color': '#7b6b8a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 } },
-    // Place labels — fun purple
-    { id: 'place-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'place_label', layout: { 'text-field': ['get', 'name'], 'text-size': ['interpolate', ['linear'], ['zoom'], 10, 12, 16, 18], 'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'] }, paint: { 'text-color': '#6c5b7b', 'text-halo-color': '#ffffff', 'text-halo-width': 2 } },
-    // POI labels
-    { id: 'poi-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'poi_label', filter: ['<=', 'filterrank', 2], layout: { 'text-field': ['get', 'name'], 'text-size': 10, 'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'], 'icon-image': ['get', 'maki'], 'icon-size': 0.8, 'text-offset': [0, 1] }, paint: { 'text-color': '#8e7ca7', 'text-halo-color': '#ffffff', 'text-halo-width': 1 } },
-  ],
-});
+// Mapbox Standard configuration helper
+function getMapState(themeId: string) {
+  // Map our themes to Mapbox Standard's internal themes
+  if (themeId === 'midnight' || themeId === 'dark') return 'night';
+  if (themeId === 'blush') return 'dawn';
+  return 'day';
+}
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
@@ -69,6 +33,7 @@ import { Avatar } from '@/components/Avatar';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
 
 import { useTheme } from '@/hooks/useTheme';
+import type { ThemePalette } from '@/constants/Themes';
 import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useApp } from '@/src/context/AppContext';
@@ -151,6 +116,8 @@ function StableMarker({
   isListening,
   listeningSongName,
   listeningSongArtist,
+  isSelected,
+  isFaded,
 }: {
   id: string;
   coordinate: { latitude: number; longitude: number };
@@ -164,8 +131,13 @@ function StableMarker({
   isListening?: boolean;
   listeningSongName?: string;
   listeningSongArtist?: string;
+  isSelected?: boolean;
+  isFaded?: boolean;
 }) {
   const theme = useTheme();
+
+  // Don't render if coordinates are invalid (0,0 or undefined)
+  if (!coordinate.latitude || !coordinate.longitude) return null;
 
   const emoji = getActivityEmoji(activityType);
   const isListeningActivity = activityType === 'listening_music';
@@ -184,8 +156,20 @@ function StableMarker({
       id={id}
       coordinate={[coordinate.longitude, coordinate.latitude]}
       anchor={anchor}
+      allowOverlap={true}
+      allowOverlapWithPuck={true}
+      style={{ zIndex: isSelected ? 999 : isFaded ? 1 : 10 }}
     >
-      <Pressable onPress={onPress} style={styles.markerWrapper}>
+      <Pressable 
+        onPress={onPress} 
+        style={[
+          styles.markerWrapper, 
+          isFaded && { opacity: 0.2 },
+          isSelected && { transform: [{ scale: 1.12 }] }
+        ]} 
+        hitSlop={10}
+        disabled={isFaded}
+      >
         <View style={styles.markerInner}>
           {/* Song strip */}
           {showSong && (
@@ -219,64 +203,42 @@ function StableMarker({
 }
 
 // =============================================================================
-// MAP — SAVE TRACK TO SPOTIFY LIBRARY (replaces in-map preview play)
+// MAP — OEPN TRACK IN SPOTIFY
 // =============================================================================
 
-function MapAddToLibraryPill({
+function MapOpenSpotifyPill({
   trackId,
-  songName,
   titleMaxWidth = 200,
   pillStyle,
 }: {
   trackId: string;
-  songName?: string;
   titleMaxWidth?: number;
   pillStyle?: ViewStyle;
 }) {
   const theme = useTheme();
-  const { language } = useApp();
-  const T = useTranslations(language);
-  const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState(false);
 
-  const handlePress = async () => {
-    if (!trackId?.trim() || adding || added) return;
-    setAdding(true);
-    try {
-      const result = await spotifyAuth.addTrackToLibrary(trackId.trim());
-      if (result.ok) {
-        setAdded(true);
-        const title = (songName || T('commSpotifyTrackFallback')).trim() || T('commSpotifyTrackFallback');
-        Alert.alert(T('commSpotifyAddedTitle'), T('commSpotifyAddedBody').replace('{title}', title));
-      } else {
-        Alert.alert(T('commSpotifyConnectTitle'), result.message || T('commSpotifyConnectBody'));
-      }
-    } catch {
-      Alert.alert(T('commGenericErrorTitle'), T('commGenericErrorBody'));
-    }
-    setAdding(false);
+  const handlePress = () => {
+    if (!trackId?.trim()) return;
+    const cleanId = trackId.trim();
+    const url = `https://open.spotify.com/track/${cleanId}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'Could not open Spotify.');
+    });
   };
-
-  const label = added ? T('commSpotifyPillSavedToLibrary') : adding ? T('commSpotifyPillAdding') : T('commSpotifyPillAddToLibrary');
 
   return (
     <Pressable
       style={({ pressed }) => [
         styles.mapOverlayBtn,
         pillStyle,
-        { backgroundColor: added ? '#10b981' : theme.primary },
-        pressed && !added && !adding && { opacity: 0.88 },
+        { backgroundColor: '#1DB954' }, // Spotify Green
+        pressed && { opacity: 0.88 },
       ]}
       onPress={handlePress}
-      disabled={adding || added}
     >
-      {adding ? (
-        <ActivityIndicator size="small" color="#fff" />
-      ) : (
-        <Feather name={added ? 'check' : 'heart'} size={16} color="#fff" />
-      )}
+      <Feather name="external-link" size={16} color="#fff" />
       <Text style={[styles.mapOverlayBtnText, { color: '#fff', maxWidth: titleMaxWidth }]} numberOfLines={1}>
-        {label}
+        Open in Spotify
       </Text>
     </Pressable>
   );
@@ -288,6 +250,14 @@ function MapAddToLibraryPill({
 
 export default function CommunityMap() {
   const theme = useTheme();
+  // Using Mapbox Standard style configuration
+  const mapboxConfig = React.useMemo(() => ({
+    theme: getMapState(theme.id),
+    showPointOfInterestLabels: false,
+    showPlaceLabels: false,
+    showRoadLabels: false,
+    showTransitLabels: false,
+  }), [theme.id]);
   const { language, user, timetable } = useApp();
   /** Keeps “current class” under Studying in sync as periods change. */
   useWallClockTick(30_000);
@@ -315,6 +285,8 @@ export default function CommunityMap() {
     clearMyActivity,
     spotifyConnected,
     connectSpotify,
+    locationVisibility,
+    setLocationVisibility,
   } = useCommunity();
 
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
@@ -385,6 +357,15 @@ export default function CommunityMap() {
     }
   }, [myLatitude, myLongitude]);
 
+  const handleToggleGhostMode = useCallback(async () => {
+    const targetVisibility = locationVisibility === 'off' ? 'friends' : 'off';
+    await setLocationVisibility(targetVisibility);
+    Alert.alert(
+      targetVisibility === 'off' ? 'Ghost Mode Activated 👻' : 'Ghost Mode Deactivated',
+      targetVisibility === 'off' ? 'Your location is now hidden from your friends.' : 'Your friends can now see your location.'
+    );
+  }, [locationVisibility, setLocationVisibility]);
+
   // =========================================================================
 
   // RENDER
@@ -435,7 +416,7 @@ export default function CommunityMap() {
           </View>
         </View>
         <Pressable
-          onPress={() => router.push('/settings' as any)}
+          onPress={() => router.push('/community/settings' as any)}
           style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Settings"
@@ -492,37 +473,53 @@ export default function CommunityMap() {
       <View style={styles.mapContainer}>
           <Mapbox.MapView
             style={styles.map}
-            styleJSON={CAMPUS_MAP_STYLE}
+            styleURL={Mapbox.StyleURL.Standard}
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
             scaleBarEnabled={false}
           >
+            {/* Standard Style Configuration — Photorealistic 3D */}
+            <Mapbox.Style config={mapboxConfig as any} />
+
+            {/* 3D Terrain — Higher Fidelity depth */}
+            <Mapbox.RasterDemSource
+              id="mapbox-dem"
+              url="mapbox://mapbox.mapbox-terrain-dem-v1"
+              tileSize={512}
+              maxZoom={14}
+            >
+              <Mapbox.Terrain style={{ exaggeration: 1.5 }} />
+            </Mapbox.RasterDemSource>
+
             <Mapbox.Camera
               ref={cameraRef}
-              zoomLevel={13}
+              zoomLevel={15} // Professional standard zoom
+              pitch={65} // Steep enough to see the city landscape
+              heading={25} // Slight rotation for a cinematic view
               centerCoordinate={[myLongitude || 101.4810, myLatitude || 3.0651]}
               animationMode="flyTo"
-              animationDuration={500}
+              animationDuration={1500}
             />
 
-            <Mapbox.UserLocation visible={true} />
-
-            {/* My own marker */}
-            <StableMarker
-              id="me"
-              coordinate={{ latitude: myLatitude, longitude: myLongitude }}
-              anchor={{ x: 0.5, y: 1 }}
-              onPress={() => setShowStatusPopup(true)}
-              name={user.name}
-              avatarUrl={user.avatar}
-              activityType={myActivity?.activity_type}
-              isMe={true}
-              isFocusing={myActivity?.activity_type === 'studying'}
-              isListening={myActivity?.is_playing || myActivity?.activity_type === 'listening_music'}
-              listeningSongName={myActivity?.song_name}
-              listeningSongArtist={myActivity?.song_artist}
-            />
+            {/* My own marker — only render when we have valid coords */}
+            {!!(myLatitude && myLongitude) && (
+              <StableMarker
+                id="me"
+                coordinate={{ latitude: myLatitude, longitude: myLongitude }}
+                anchor={{ x: 0.5, y: 1 }}
+                onPress={() => setShowStatusPopup(true)}
+                name={user.name}
+                avatarUrl={user.avatar}
+                activityType={myActivity?.activity_type}
+                isMe={true}
+                isFocusing={myActivity?.activity_type === 'studying'}
+                isListening={myActivity?.is_playing || myActivity?.activity_type === 'listening_music'}
+                listeningSongName={myActivity?.song_name}
+                listeningSongArtist={myActivity?.song_artist}
+                isFaded={!!selectedFriend}
+              />
+            )}
 
             {/* Friend markers */}
             {visibleFriends
@@ -544,6 +541,8 @@ export default function CommunityMap() {
                   isListening={friend.music?.isPlaying || friend.activity?.activity_type === 'listening_music'}
                   listeningSongName={friend.music?.song}
                   listeningSongArtist={friend.music?.artist}
+                  isSelected={selectedFriend?.id === friend.id}
+                  isFaded={!!selectedFriend && selectedFriend.id !== friend.id}
                 />
               ))}
 
@@ -572,6 +571,27 @@ export default function CommunityMap() {
             onPress={handleCenterOnMe}
           >
             <Feather name="crosshair" size={20} color={theme.primary} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapOverlayBtn,
+              { 
+                backgroundColor: locationVisibility === 'off' ? theme.primary : theme.card, 
+                width: 44, 
+                paddingHorizontal: 0, 
+                justifyContent: 'center',
+                marginLeft: 8 
+              },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={handleToggleGhostMode}
+          >
+            <Feather 
+              name={locationVisibility === 'off' ? "eye-off" : "eye"} 
+              size={20} 
+              color={locationVisibility === 'off' ? "#FFF" : theme.primary} 
+            />
           </Pressable>
         </View>
 
@@ -653,9 +673,8 @@ export default function CommunityMap() {
                 </View>
                 {music!.trackId ? (
                   <View style={styles.friendVibePlayerWrap}>
-                    <MapAddToLibraryPill
+                    <MapOpenSpotifyPill
                       trackId={music!.trackId}
-                      songName={music!.song}
                       titleMaxWidth={220}
                       pillStyle={{ alignSelf: 'stretch', justifyContent: 'center' }}
                     />
@@ -800,7 +819,16 @@ export default function CommunityMap() {
               { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
               pressed && { backgroundColor: theme.background },
             ]}
-            onPress={() => setShowStatusPopup(true)}
+            onPress={() => {
+              // Just zoom deeply into own location, don't show the popup
+              if (myLatitude && myLongitude && cameraRef.current) {
+                cameraRef.current.setCamera({
+                  centerCoordinate: [myLongitude, myLatitude],
+                  zoomLevel: 19,
+                  animationDuration: 1000,
+                });
+              }
+            }}
           >
             <View style={styles.myAvatarWrap}>
               <Avatar name={user.name} avatarUrl={user.avatar} size={44} />
@@ -858,11 +886,12 @@ export default function CommunityMap() {
                   pressed && { backgroundColor: theme.background },
                 ]}
                 onPress={() => {
+                  // Only zoom deeply into the friend's location, don't show the popup
                   if (friend.location && cameraRef.current) {
                     cameraRef.current.setCamera({
                       centerCoordinate: [friend.location.longitude, friend.location.latitude],
-                      zoomLevel: 16,
-                      animationDuration: 500,
+                      zoomLevel: 19,
+                      animationDuration: 1000,
                     });
                   }
                 }}
@@ -1612,11 +1641,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 3,
+    marginBottom: 5,
+    // Glassmorphism effect
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   songStripIcon: {
     fontSize: 10,
@@ -1629,17 +1664,17 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   avatarRing: {
-    padding: 3,
+    padding: 2,
     backgroundColor: '#fff',
     borderRadius: 24,
+    // Deep layered shadow for 3D depth
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
     zIndex: 2,
-    borderWidth: 2,
-    borderColor: '#fff',
+    borderWidth: 3,
   },
 
 
@@ -1648,41 +1683,42 @@ const styles = StyleSheet.create({
     height: 0,
     backgroundColor: 'transparent',
     borderStyle: 'solid',
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderTopWidth: 10,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 12,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#fff',
-    marginTop: -2,
+    marginTop: -3,
     zIndex: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
   },
   statusCloud: {
     position: 'absolute',
-    top: 18,
-    left: -14,
+    top: 15,
+    left: -18,
     backgroundColor: '#fff',
-    borderRadius: 16,
-    minWidth: 32,
-    minHeight: 32,
+    borderRadius: 18,
+    minWidth: 36,
+    minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 7,
     zIndex: 10,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: '#fff',
   },
   statusCloudMe: {
     borderColor: '#fff', 
+    backgroundColor: '#fff',
   },
   statusCloudText: {
     fontSize: 16,

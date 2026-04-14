@@ -13,8 +13,8 @@ interface NowPlayingCardProps {
   artist: string;
   albumArt?: string;
   trackUrl?: string;
-  /** If provided, shows an "Add to Library" heart button */
-  onAddToLibrary?: () => Promise<{ ok: boolean; message?: string }>;
+  /** If provided, shows an "Open in Spotify" button */
+  trackId?: string;
   /** If true, shows as the user's own vibe (no add button) */
   isOwnProfile?: boolean;
   /** Optional translation function; falls back to English. */
@@ -56,27 +56,18 @@ function EqBar({ delay }: { delay: number }) {
   );
 }
 
-export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary, isOwnProfile, T: _T }: NowPlayingCardProps) {
+import { Linking } from 'react-native';
+
+export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnProfile, T: _T }: NowPlayingCardProps) {
   const fallback = (key: string) => key;
   const T = _T || fallback;
-  const [added, setAdded] = useState(false);
-  const [adding, setAdding] = useState(false);
 
-  const handleAdd = async () => {
-    if (!onAddToLibrary || added || adding) return;
-    setAdding(true);
-    try {
-      const result = await onAddToLibrary();
-      if (result.ok) {
-        setAdded(true);
-        Alert.alert(T('nowPlayingAddedTitle'), T('nowPlayingAddedBody').replace('{song}', song));
-      } else {
-        Alert.alert(T('nowPlayingSaveFailTitle'), result.message || T('nowPlayingSaveFailBody'));
-      }
-    } catch (e) {
-      Alert.alert(T('nowPlayingErrorTitle'), e instanceof Error ? e.message : T('nowPlayingSaveFailBody'));
-    }
-    setAdding(false);
+  const handleOpen = () => {
+    if (!trackId?.trim()) return;
+    const url = `https://open.spotify.com/track/${trackId.trim()}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'Could not open Spotify.');
+    });
   };
 
   return (
@@ -116,24 +107,22 @@ export default function NowPlayingCard({ song, artist, albumArt, onAddToLibrary,
         </View>
       </View>
 
-      {/* Add to Library button (for friends only) */}
-      {onAddToLibrary && !isOwnProfile && (
+      {/* Open in Spotify button (for friends only) */}
+      {trackId && !isOwnProfile && (
         <Pressable
           style={({ pressed }) => [
             styles.addBtn,
-            added && styles.addBtnDone,
             pressed && { opacity: 0.7 },
           ]}
-          onPress={handleAdd}
-          disabled={added || adding}
+          onPress={handleOpen}
         >
           <Feather
-            name={added ? 'check' : 'heart'}
+            name="external-link"
             size={14}
-            color={added ? '#10b981' : SPOTIFY_GREEN}
+            color="#fff" /* Using white for standard Spotify Green button */
           />
-          <Text style={[styles.addBtnText, added && { color: '#10b981' }]}>
-            {adding ? T('nowPlayingAddBtnAdding') : added ? T('nowPlayingAddBtnSaved') : T('nowPlayingAddBtn')}
+          <Text style={[styles.addBtnText, { color: '#fff' }]}>
+            Open in Spotify
           </Text>
         </Pressable>
       )}
@@ -206,13 +195,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: 'rgba(29,185,84,0.12)',
+    backgroundColor: SPOTIFY_GREEN,
     borderWidth: 1,
-    borderColor: 'rgba(29,185,84,0.3)',
-  },
-  addBtnDone: {
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    borderColor: 'rgba(16,185,129,0.3)',
+    borderColor: 'rgba(29,185,84,0.8)',
   },
   addBtnText: {
     fontSize: 13,
