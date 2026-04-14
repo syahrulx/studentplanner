@@ -6,18 +6,18 @@ import type { HomeWidgetProps } from './lib/homeWidgetProps';
  * calls `requireNativeModule('ExpoWidgets')` and crashes when the native module is missing,
  * e.g. Expo Go or a build without the widget extension linked).
  */
-type TimelineEntry = { timestamp: number; props: HomeWidgetProps };
-
-type WidgetHandle = {
-  updateTimeline: (entries: TimelineEntry[]) => void;
-};
+type NativeTimelineEntry = { timestamp: number; props: HomeWidgetProps };
+type JsTimelineEntry = { date: Date; props: HomeWidgetProps };
+type ResolvedWidgetHandle =
+  | { source: 'module'; handle: { updateTimeline: (entries: JsTimelineEntry[]) => void } }
+  | { source: 'native'; handle: { updateTimeline: (entries: NativeTimelineEntry[]) => void } };
 
 type NativeExpoWidgets = {
   Widget: new (
     name: string,
     layout: (props: HomeWidgetProps, env: unknown) => unknown,
   ) => {
-    updateTimeline: (entries: TimelineEntry[]) => void;
+    updateTimeline: (entries: NativeTimelineEntry[]) => void;
   };
 };
 
@@ -26,20 +26,26 @@ function hostTimelineLayoutPlaceholder(_props: HomeWidgetProps, _env: unknown) {
   return null;
 }
 
-const cachedWidgets = new Map<string, WidgetHandle>();
+const cachedWidgets = new Map<string, ResolvedWidgetHandle>();
 
-function getWidgetModule(name: string): { default?: WidgetHandle } | null {
+function getWidgetModule(name: string): { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } } | null {
   try {
-    if (name === 'GradeUpToday') return require('../widgets/GradeUpTodayWidget') as { default?: WidgetHandle };
-    if (name === 'GradeUpTasks') return require('../widgets/GradeUpTasksWidget') as { default?: WidgetHandle };
-    if (name === 'GradeUpTimetable') return require('../widgets/GradeUpTimetableWidget') as { default?: WidgetHandle };
+    if (name === 'GradeUpToday') {
+      return require('../widgets/GradeUpTodayWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
+    }
+    if (name === 'GradeUpTasks') {
+      return require('../widgets/GradeUpTasksWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
+    }
+    if (name === 'GradeUpTimetable') {
+      return require('../widgets/GradeUpTimetableWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
+    }
   } catch (e) {
     if (__DEV__) console.warn('[Rencana] iOS widget module import failed', { name, e });
   }
   return null;
 }
 
-function getNativeWidgetHandle(name: string): WidgetHandle | null {
+function getNativeWidgetHandle(name: string): ResolvedWidgetHandle | null {
   const existing = cachedWidgets.get(name);
   if (existing) return existing;
 
@@ -48,8 +54,9 @@ function getNativeWidgetHandle(name: string): WidgetHandle | null {
   const widget = widgetMod?.default;
   if (widget && typeof widget.updateTimeline === 'function') {
     if (__DEV__) console.log('[Rencana] iOS widget handle resolved via module', { name });
-    cachedWidgets.set(name, widget);
-    return widget;
+    const resolved = { source: 'module', handle: widget } as const;
+    cachedWidgets.set(name, resolved);
+    return resolved;
   }
 
   // Fallback path for environments where widget modules cannot be imported.
@@ -57,20 +64,25 @@ function getNativeWidgetHandle(name: string): WidgetHandle | null {
   if (!mod?.Widget) return null;
   if (__DEV__) console.log('[Rencana] iOS widget handle resolved via native fallback', { name });
   const nativeWidget = new mod.Widget(name, hostTimelineLayoutPlaceholder);
-  cachedWidgets.set(name, nativeWidget);
-  return nativeWidget;
+  const resolved = { source: 'native', handle: nativeWidget } as const;
+  cachedWidgets.set(name, resolved);
+  return resolved;
 }
 
 export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void {
   try {
     const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
     for (const name of names) {
-      const w = getNativeWidgetHandle(name);
-      if (!w) {
+      const resolved = getNativeWidgetHandle(name);
+      if (!resolved) {
         if (__DEV__) console.log('[Rencana] iOS widget handle missing', { name });
         continue;
       }
-      w.updateTimeline([{ timestamp: Date.now(), props }]);
+      if (resolved.source === 'module') {
+        resolved.handle.updateTimeline([{ date: new Date(), props }]);
+      } else {
+        resolved.handle.updateTimeline([{ timestamp: Date.now(), props }]);
+      }
       if (__DEV__) {
         console.log('[Rencana] iOS widget timeline updated', {
           name,
