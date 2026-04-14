@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate } from 'react-native-reanimated';
 import { Swipeable } from 'react-native-gesture-handler';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
@@ -168,6 +169,49 @@ export default function Planner() {
   const activeDateRef = useRef(activeDate);
   const calendarPreviewDateRef = useRef(calendarPreviewDate);
   const skipCalendarRecenteringRef = useRef(false);
+
+  // --- HEADER PILL ANIMATION ---
+  const headerExpansion = useSharedValue(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Small delay after focus, then expand
+      headerExpansion.value = withDelay(
+        300,
+        withTiming(1, { duration: 500 })
+      );
+
+      // Collapse back after 3 seconds of being expanded
+      const collapseId = setTimeout(() => {
+        headerExpansion.value = withTiming(0, { duration: 400 });
+      }, 3500);
+
+      return () => {
+        clearTimeout(collapseId);
+        headerExpansion.value = 0; // Reset on blur
+      };
+    }, [])
+  );
+
+  const leftPillStyle = useAnimatedStyle(() => ({
+    width: interpolate(headerExpansion.value, [0, 1], [44, 110], 'clamp'),
+    borderRadius: 22,
+    overflow: 'hidden',
+  }));
+
+  const rightPillStyle = useAnimatedStyle(() => ({
+    width: interpolate(headerExpansion.value, [0, 1], [44, 110], 'clamp'),
+    borderRadius: 22,
+    overflow: 'hidden',
+  }));
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(headerExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp'),
+    width: interpolate(headerExpansion.value, [0, 1], [0, 60], 'clamp'),
+    marginLeft: interpolate(headerExpansion.value, [0, 1], [0, 6], 'clamp'),
+    transform: [{ translateX: interpolate(headerExpansion.value, [0, 1], [10, 0], 'clamp') }],
+    overflow: 'hidden',
+  }));
 
   const todayISO = getTodayISO();
   const activeYear = useMemo(() => new Date(activeDate + 'T12:00:00').getFullYear(), [activeDate]);
@@ -1829,40 +1873,56 @@ export default function Planner() {
       <View style={s.header}>
         <View style={s.headerTopRow}>
           <View style={[s.headerSideBase, s.headerSideLeft, s.headerSideLayer]}>
-            <Pressable
-              style={({ pressed }) => [
-                s.headerBtn,
-                {
-                  borderColor: headerOutline,
-                  backgroundColor: theme.card,
-                  shadowColor: theme.text,
-                },
-                pressed && { opacity: 0.88 },
-              ]}
-              onPress={() => setShowShareAllModal(true)}
-              hitSlop={6}
-            >
-              <Feather name="user-plus" size={20} color={theme.primary} />
-            </Pressable>
+            <Animated.View style={leftPillStyle}>
+              <Pressable
+                style={({ pressed }) => [
+                  s.headerBtn,
+                  {
+                    borderColor: headerOutline,
+                    backgroundColor: theme.card,
+                    shadowColor: theme.text,
+                    width: '100%',
+                  },
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={() => setShowShareAllModal(true)}
+                hitSlop={6}
+              >
+                <View style={s.headerBtnInner}>
+                  <Feather name="user-plus" size={18} color={theme.primary} />
+                  <Animated.View style={labelStyle}>
+                    <Text style={s.headerBtnLabel} numberOfLines={1}>Share</Text>
+                  </Animated.View>
+                </View>
+              </Pressable>
+            </Animated.View>
           </View>
           <View style={[s.headerSideBase, s.headerSideRight, s.headerSideLayer]}>
-            <Pressable
-              style={({ pressed }) => [
-                s.headerBtn,
-                {
-                  borderColor: headerOutline,
-                  backgroundColor: theme.card,
-                  shadowColor: theme.text,
-                },
-                pressed && { opacity: 0.88 },
-              ]}
-              onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
-              hitSlop={4}
-              accessibilityLabel={T('addTask')}
-              accessibilityRole="button"
-            >
-              <Feather name="plus" size={20} color={theme.primary} />
-            </Pressable>
+            <Animated.View style={rightPillStyle}>
+              <Pressable
+                style={({ pressed }) => [
+                  s.headerBtn,
+                  {
+                    borderColor: headerOutline,
+                    backgroundColor: theme.card,
+                    shadowColor: theme.text,
+                    width: '100%',
+                  },
+                  pressed && { opacity: 0.88 },
+                ]}
+                onPress={openAddMenu ?? (() => router.push('/add-task' as any))}
+                hitSlop={4}
+                accessibilityLabel={T('addTask')}
+                accessibilityRole="button"
+              >
+                <View style={s.headerBtnInner}>
+                  <Feather name="plus" size={20} color={theme.primary} />
+                  <Animated.View style={labelStyle}>
+                    <Text style={s.headerBtnLabel} numberOfLines={1}>Add Task</Text>
+                  </Animated.View>
+                </View>
+              </Pressable>
+            </Animated.View>
           </View>
           <View style={s.headerCenter} pointerEvents="box-none">
             <Pressable style={s.headerViewBtn} onPress={() => setViewMenuOpen((v) => !v)}>
@@ -2326,6 +2386,19 @@ function createPlannerStyles(theme: ThemePalette) {
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
+  },
+  headerBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    minWidth: 44,
+    justifyContent: 'center',
+  },
+  headerBtnLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.primary,
+    flexShrink: 0,
   },
   headerAddPill: {
     flexDirection: 'row',

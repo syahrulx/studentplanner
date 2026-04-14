@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.widget.RemoteViews
 import androidx.work.WorkManager
 import org.json.JSONArray
@@ -30,18 +31,21 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray
   ) {
+    writeDebug(context, "onUpdate", JSONObject().put("appWidgetCount", appWidgetIds.size))
     val json = readSnapshotJson(context)
     val views = buildRemoteViews(context, json)
     appWidgetManager.updateAppWidget(appWidgetIds, views)
   }
 
   companion object {
+    private const val TAG = "GradeUpWidget"
     const val PREFS_NAME = "gradeup_home_widget_v1"
     const val PREFS_KEY_JSON = "snapshot_json"
+    const val PREFS_KEY_DEBUG = "debug_snapshot"
 
-    private const val DL_HOME = "rencana:///(tabs)"
-    private const val DL_PLANNER = "rencana:///(tabs)/planner"
-    private const val DL_TIMETABLE = "rencana:///(tabs)/timetable"
+    private const val DL_HOME = "rencana:///"
+    private const val DL_PLANNER = "rencana:///planner"
+    private const val DL_TIMETABLE = "rencana:///timetable"
 
     private const val REQ_ROOT = 0x4750_5055
     private const val REQ_HOME = 0x4750_5048
@@ -53,6 +57,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       val component = ComponentName(context, GradeUpTodayWidgetProvider::class.java)
       val ids = mgr.getAppWidgetIds(component)
       if (ids.isEmpty()) return
+      writeDebug(context, "refreshAllWidgets", JSONObject().put("appWidgetCount", ids.size))
       val json = readSnapshotJson(context)
       val views = buildRemoteViews(context, json)
       mgr.updateAppWidget(ids, views)
@@ -68,6 +73,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       val json = parseJson(raw)
 
       if (json == null) {
+        writeDebug(context, "buildRemoteViews", JSONObject().put("state", "no_snapshot_json"))
         rv.setTextViewText(R.id.widget_greeting, "Rencana")
         rv.setTextViewText(R.id.widget_tasks, "Open the app to load your schedule.")
         rv.setTextViewText(R.id.widget_classes, "")
@@ -76,6 +82,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       }
 
       if (!json.optBoolean("signedIn", false)) {
+        writeDebug(context, "buildRemoteViews", JSONObject().put("state", "signed_out"))
         rv.setTextViewText(R.id.widget_greeting, "Rencana")
         rv.setTextViewText(R.id.widget_tasks, "Sign in in the app to see today’s tasks and classes.")
         rv.setTextViewText(R.id.widget_classes, "")
@@ -91,6 +98,14 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       rv.setTextViewText(R.id.widget_greeting, greeting)
 
       if (stale) {
+        writeDebug(
+          context,
+          "buildRemoteViews",
+          JSONObject()
+            .put("state", "stale_snapshot")
+            .put("snapDate", snapDate)
+            .put("today", today)
+        )
         rv.setTextViewText(
           R.id.widget_tasks,
           "It’s a new day. Open Rencana to refresh today’s tasks and classes."
@@ -102,6 +117,16 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
 
       val tasksText = formatTasks(json.optJSONArray("tasks"))
       val classesText = formatClasses(json.optJSONArray("classes"))
+      writeDebug(
+        context,
+        "buildRemoteViews",
+        JSONObject()
+          .put("state", "rendered")
+          .put("snapDate", snapDate)
+          .put("today", today)
+          .put("tasksCount", json.optJSONArray("tasks")?.length() ?: 0)
+          .put("classesCount", json.optJSONArray("classes")?.length() ?: 0)
+      )
 
       if (tasksText.isEmpty() && classesText.isEmpty()) {
         rv.setTextViewText(R.id.widget_tasks, "Nothing scheduled for today. Enjoy the break.")
@@ -221,11 +246,36 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         home
       }
       val root = home ?: launchPendingIntent(context, REQ_ROOT)
+      writeDebug(
+        context,
+        "attachDeepLinkClicks",
+        JSONObject()
+          .put("mode", mode.name)
+          .put("homeIntent", home != null)
+          .put("plannerIntent", planner != null)
+          .put("timetableIntent", timetable != null)
+          .put("rootIntent", root != null)
+      )
 
       root?.let { rv.setOnClickPendingIntent(R.id.widget_root, it) }
       home?.let { rv.setOnClickPendingIntent(R.id.widget_greeting, it) }
       (planner ?: home)?.let { rv.setOnClickPendingIntent(R.id.widget_tasks, it) }
       (timetable ?: home)?.let { rv.setOnClickPendingIntent(R.id.widget_classes, it) }
+    }
+
+    private fun writeDebug(context: Context, event: String, payload: JSONObject) {
+      try {
+        val snapshot = JSONObject()
+          .put("event", event)
+          .put("timestamp", System.currentTimeMillis())
+          .put("payload", payload)
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(PREFS_KEY_DEBUG, snapshot.toString()).apply()
+        Log.d(TAG, snapshot.toString())
+      } catch (e: Exception) {
+        Log.e(TAG, "writeDebug failed", e)
+      }
     }
   }
 }

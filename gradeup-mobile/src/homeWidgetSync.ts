@@ -1,6 +1,6 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
-import { updateAndroidHomeWidgetSnapshot } from 'home-widget-bridge';
+import { getAndroidHomeWidgetDebugSnapshot, updateAndroidHomeWidgetSnapshot } from 'home-widget-bridge';
 import type { HomeWidgetProps } from './lib/homeWidgetProps';
 import { updateGradeUpTodayTimelineFromHost } from './iosWidgetTimelineSync';
 
@@ -22,6 +22,10 @@ export function syncHomeScreenWidget(props: HomeWidgetProps): void {
 
   if (Platform.OS === 'android') {
     updateAndroidHomeWidgetSnapshot(json);
+    if (__DEV__) {
+      const debug = getAndroidHomeWidgetDebugSnapshot();
+      if (debug) console.log('[Rencana] Android widget debug:', debug);
+    }
     return;
   }
 
