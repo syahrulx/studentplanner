@@ -14,6 +14,54 @@ import {
   Linking,
   type ViewStyle,
 } from 'react-native';
+import Mapbox from '@rnmapbox/maps';
+
+// Initialize Mapbox with your public access token
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '');
+
+// Cartoonish, vibrant map style for a student-university vibe
+const CAMPUS_MAP_STYLE = JSON.stringify({
+  version: 8,
+  name: 'Campus Vibes',
+  sources: {
+    'mapbox-streets': {
+      type: 'vector',
+      url: 'mapbox://mapbox.mapbox-streets-v8',
+    },
+  },
+  sprite: 'mapbox://sprites/mapbox/streets-v12',
+  glyphs: 'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
+  layers: [
+    // Sky-blue background
+    { id: 'background', type: 'background', paint: { 'background-color': '#e8f4f8' } },
+    // Water — bubbly blue
+    { id: 'water', type: 'fill', source: 'mapbox-streets', 'source-layer': 'water', paint: { 'fill-color': '#7ed6f5', 'fill-opacity': 0.85 } },
+    // Parks — soft mint green
+    { id: 'park', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['==', 'class', 'park'], paint: { 'fill-color': '#a8e6cf', 'fill-opacity': 0.7 } },
+    // Pitch / sports — warm yellow-green
+    { id: 'pitch', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['==', 'class', 'pitch'], paint: { 'fill-color': '#dcedc1', 'fill-opacity': 0.8 } },
+    // Land / general — warm cream
+    { id: 'land', type: 'fill', source: 'mapbox-streets', 'source-layer': 'landuse', filter: ['!in', 'class', 'park', 'pitch'], paint: { 'fill-color': '#fef9ef' } },
+    // Buildings — soft lavender blocks
+    { id: 'building', type: 'fill', source: 'mapbox-streets', 'source-layer': 'building', paint: { 'fill-color': '#d8d0e8', 'fill-opacity': 0.75 } },
+    // Building outline — slightly darker
+    { id: 'building-outline', type: 'line', source: 'mapbox-streets', 'source-layer': 'building', paint: { 'line-color': '#c4b8db', 'line-width': 0.5 } },
+    // Minor roads — soft peach
+    { id: 'road-minor', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'street', 'street_limited', 'service', 'track'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff5eb', 'line-width': 3 } },
+    // Secondary roads — warm coral
+    { id: 'road-secondary', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'secondary', 'tertiary'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffd6c0', 'line-width': 4 } },
+    // Primary roads — bubblegum pink
+    { id: 'road-primary', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['==', 'class', 'primary'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffb3c6', 'line-width': 5 } },
+    // Highways — vibrant coral
+    { id: 'road-highway', type: 'line', source: 'mapbox-streets', 'source-layer': 'road', filter: ['in', 'class', 'motorway', 'trunk'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ff8fab', 'line-width': 6 } },
+    // Road labels
+    { id: 'road-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'road', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'symbol-placement': 'line', 'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'] }, paint: { 'text-color': '#7b6b8a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 } },
+    // Place labels — fun purple
+    { id: 'place-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'place_label', layout: { 'text-field': ['get', 'name'], 'text-size': ['interpolate', ['linear'], ['zoom'], 10, 12, 16, 18], 'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'] }, paint: { 'text-color': '#6c5b7b', 'text-halo-color': '#ffffff', 'text-halo-width': 2 } },
+    // POI labels
+    { id: 'poi-label', type: 'symbol', source: 'mapbox-streets', 'source-layer': 'poi_label', filter: ['<=', 'filterrank', 2], layout: { 'text-field': ['get', 'name'], 'text-size': 10, 'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'], 'icon-image': ['get', 'maki'], 'icon-size': 0.8, 'text-offset': [0, 1] }, paint: { 'text-color': '#8e7ca7', 'text-halo-color': '#ffffff', 'text-halo-width': 1 } },
+  ],
+});
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
@@ -34,21 +82,7 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// react-native-maps requires a custom dev build (not available in Expo Go).
-// We use a placeholder map UI if the library is not found.
-/** Always Google Maps tiles (never Apple Maps on iOS). Requires valid keys in app.json. */
-let MapView: any = null;
-let Marker: any = null;
-let PROVIDER_GOOGLE: any = null;
-
-try {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE ?? null;
-} catch (e) {
-  // Gracefully fall back to placeholder
-}
+// Mapbox components are imported at the top of the file.
 
 // =============================================================================
 // HELPER
@@ -132,26 +166,6 @@ function StableMarker({
   listeningSongArtist?: string;
 }) {
   const theme = useTheme();
-  const [tracksChanges, setTracksChanges] = useState(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevContentRef = useRef('');
-
-  const contentKey = `${activityType}-${isListening}-${listeningSongName || ''}-${listeningSongArtist || ''}`;
-
-  useEffect(() => {
-    if (contentKey !== prevContentRef.current) {
-      prevContentRef.current = contentKey;
-      setTracksChanges(true);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setTracksChanges(false), 2000);
-    }
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [contentKey]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setTracksChanges(false), 2000);
-    return () => clearTimeout(t);
-  }, []);
 
   const emoji = getActivityEmoji(activityType);
   const isListeningActivity = activityType === 'listening_music';
@@ -161,52 +175,46 @@ function StableMarker({
   const showSong = !!(isListening && songLabel);
   const showStatus = !!(isActive);
 
-  // Build the song text: "Song - Artist" or just "Song"
   const songDisplayText = showSong
     ? (artistLabel ? `${songLabel} — ${artistLabel}` : songLabel)
     : '';
 
-  // CRITICAL: Never use conditional rendering, display:'none', or opacity:0
-  // for children inside a Google Maps Marker. The native AIRGoogleMap will crash.
-  // Instead, we ALWAYS render the same View tree structure.
-  // When content is hidden, we collapse the View to zero size with overflow:hidden.
-
   return (
-    <Marker
-      key={id}
-      coordinate={coordinate}
+    <Mapbox.MarkerView
+      id={id}
+      coordinate={[coordinate.longitude, coordinate.latitude]}
       anchor={anchor}
-      onPress={onPress}
-      tracksViewChanges={tracksChanges}
     >
-      <View key={contentKey} style={styles.markerWrapper}>
+      <Pressable onPress={onPress} style={styles.markerWrapper}>
         <View style={styles.markerInner}>
-          {/* Song strip — always mounted. When hidden: zero size with overflow hidden */}
-          <View style={[
-            styles.songStrip,
-            { backgroundColor: theme.card, borderColor: theme.border },
-            !showSong && { height: 0, paddingVertical: 0, paddingHorizontal: 0, marginBottom: 0, borderWidth: 0, overflow: 'hidden' as const },
-          ]}>
-            <Text style={[styles.songStripIcon, { color: theme.primary }]}>♪</Text>
-            <Text style={[styles.songStripText, { color: theme.text }]}>
-              {songDisplayText || ' '}
-            </Text>
-          </View>
-          {/* Status cloud — always mounted. When hidden: zero size */}
-          <View style={[
-            styles.statusCloud, isMe && styles.statusCloudMe,
-            !showStatus && { height: 0, width: 0, paddingVertical: 0, paddingHorizontal: 0, marginBottom: 0, borderWidth: 0, overflow: 'hidden' as const },
-          ]}>
-            <Text style={styles.statusCloudText}>{emoji || ' '}</Text>
-          </View>
-          {/* Avatar — always shown */}
+          {/* Song strip */}
+          {showSong && (
+            <View style={[
+              styles.songStrip,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}>
+              <Text style={[styles.songStripIcon, { color: theme.primary }]}>♪</Text>
+              <Text style={[styles.songStripText, { color: theme.text }]}>
+                {songDisplayText}
+              </Text>
+            </View>
+          )}
+          {/* Status cloud */}
+          {showStatus && (
+            <View style={[
+              styles.statusCloud, isMe && styles.statusCloudMe,
+            ]}>
+              <Text style={styles.statusCloudText}>{emoji}</Text>
+            </View>
+          )}
+          {/* Avatar */}
           <View style={styles.avatarRing}>
             <Avatar name={name} avatarUrl={avatarUrl} size={42} />
           </View>
           <View style={styles.pinTriangle} />
         </View>
-      </View>
-    </Marker>
+      </Pressable>
+    </Mapbox.MarkerView>
   );
 }
 
@@ -312,9 +320,8 @@ export default function CommunityMap() {
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
-  const [mapSongOverlays, setMapSongOverlays] = useState<Array<{ id: string; x: number; y: number; text: string; isMe?: boolean }>>([]);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
-  const mapRef = useRef<any>(null);
+  const cameraRef = useRef<Mapbox.Camera>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
 
@@ -339,72 +346,13 @@ export default function CommunityMap() {
 
   const visibleFriends = filteredFriends;
 
-  const refreshMapSongOverlays = useCallback(async () => {
-    if (!mapRef.current || typeof mapRef.current.pointForCoordinate !== 'function') {
-      setMapSongOverlays([]);
-      return;
-    }
-
-    const items: Array<{ id: string; latitude: number; longitude: number; text: string; isMe?: boolean }> = [];
-
-    if (myLatitude && myLongitude && myActivity?.is_playing && myActivity.song_name) {
-      items.push({
-        id: 'me',
-        latitude: myLatitude,
-        longitude: myLongitude,
-        text: myActivity.song_name,
-        isMe: true,
-      });
-    }
-
-    for (const friend of visibleFriends) {
-      if (friend.location && friend.music?.isPlaying && friend.music.song) {
-        items.push({
-          id: friend.id,
-          latitude: friend.location.latitude,
-          longitude: friend.location.longitude,
-          text: friend.music.song,
-        });
-      }
-    }
-
-    try {
-      const points = await Promise.all(
-        items.map(async (item) => {
-          const point = await mapRef.current.pointForCoordinate({
-            latitude: item.latitude,
-            longitude: item.longitude,
-          });
-          return {
-            id: item.id,
-            text: item.text,
-            isMe: item.isMe,
-            x: point.x - 72,
-            y: point.y - 82,
-          };
-        })
-      );
-      setMapSongOverlays(points);
-    } catch {
-      setMapSongOverlays([]);
-    }
-  }, [myLatitude, myLongitude, myActivity?.is_playing, myActivity?.song_name, visibleFriends]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      refreshMapSongOverlays().catch(() => {});
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [refreshMapSongOverlays]);
+  // Song overlays are now embedded directly inside MarkerView (via the songStrip).
 
   useFocusEffect(
     useCallback(() => {
       refreshMyActivity().catch(() => {});
       refreshFriends().catch(() => {});
-      setTimeout(() => {
-        refreshMapSongOverlays().catch(() => {});
-      }, 250);
-    }, [refreshMyActivity, refreshFriends, refreshMapSongOverlays])
+    }, [refreshMyActivity, refreshFriends])
   );
 
   const getSharedCountWith = useCallback((friendId: string) => {
@@ -428,13 +376,12 @@ export default function CommunityMap() {
   );
 
   const handleCenterOnMe = useCallback(() => {
-    if (myLatitude && myLongitude && mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: myLatitude,
-        longitude: myLongitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 500);
+    if (myLatitude && myLongitude && cameraRef.current) {
+      cameraRef.current.setCamera({
+        centerCoordinate: [myLongitude, myLatitude],
+        zoomLevel: 15,
+        animationDuration: 500,
+      });
     }
   }, [myLatitude, myLongitude]);
 
@@ -543,30 +490,23 @@ export default function CommunityMap() {
 
       {/* ─── MAP SECTION ─── */}
       <View style={styles.mapContainer}>
-        {MapView && myLatitude && myLongitude ? (
-          <>
-          <MapView
-            ref={mapRef}
+          <Mapbox.MapView
             style={styles.map}
-            // On iOS devices, passing the exported PROVIDER_GOOGLE is required for reliable Google tiles.
-            // (A raw string may work on simulator but fail in TestFlight/App Store builds.)
-            provider={PROVIDER_GOOGLE ?? undefined}
-            initialRegion={{
-              latitude: myLatitude,
-              longitude: myLongitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            showsUserLocation
-            onMapReady={() => {
-              setTimeout(() => {
-                refreshMapSongOverlays().catch(() => {});
-              }, 300);
-            }}
-            onRegionChangeComplete={() => {
-              refreshMapSongOverlays().catch(() => {});
-            }}
+            styleJSON={CAMPUS_MAP_STYLE}
+            logoEnabled={false}
+            attributionEnabled={false}
+            compassEnabled={true}
+            scaleBarEnabled={false}
           >
+            <Mapbox.Camera
+              ref={cameraRef}
+              zoomLevel={13}
+              centerCoordinate={[myLongitude || 101.4810, myLatitude || 3.0651]}
+              animationMode="flyTo"
+              animationDuration={500}
+            />
+
+            <Mapbox.UserLocation visible={true} />
 
             {/* My own marker */}
             <StableMarker
@@ -607,33 +547,7 @@ export default function CommunityMap() {
                 />
               ))}
 
-          </MapView>
-          {/* The music bubble is now embedded directly in the MapPin component */}
-          </>
-        ) : (
-          <View style={[styles.mapPlaceholder, { backgroundColor: theme.backgroundSecondary || theme.card }]}>
-            {loading ? (
-              <ActivityIndicator size="large" color={theme.primary} />
-            ) : (
-              <>
-                <Feather name="map-pin" size={48} color={theme.textSecondary} />
-                <Text style={[styles.mapPlaceholderText, { color: theme.textSecondary }]}>
-                  {!locationPermissionGranted
-                    ? 'Enable location to see the map'
-                    : 'Loading map...'}
-                </Text>
-                {!locationPermissionGranted && (
-                  <Pressable
-                    onPress={requestLocationPermission}
-                    style={[styles.enableLocationBtn, { backgroundColor: theme.primary }]}
-                  >
-                    <Text style={styles.enableLocationBtnText}>Enable Location</Text>
-                  </Pressable>
-                )}
-              </>
-            )}
-          </View>
-        )}
+          </Mapbox.MapView>
 
         {/* Map overlay buttons */}
         <View style={styles.mapOverlay}>
@@ -662,6 +576,7 @@ export default function CommunityMap() {
         </View>
 
       </View>
+
 
       {/* ─── SELECTED FRIEND POPUP ─── */}
       {selectedFriend && (() => {
@@ -943,13 +858,12 @@ export default function CommunityMap() {
                   pressed && { backgroundColor: theme.background },
                 ]}
                 onPress={() => {
-                  if (friend.location && mapRef.current) {
-                    mapRef.current.animateToRegion({
-                      latitude: friend.location.latitude,
-                      longitude: friend.location.longitude,
-                      latitudeDelta: 0.005,
-                      longitudeDelta: 0.005,
-                    }, 500);
+                  if (friend.location && cameraRef.current) {
+                    cameraRef.current.setCamera({
+                      centerCoordinate: [friend.location.longitude, friend.location.latitude],
+                      zoomLevel: 16,
+                      animationDuration: 500,
+                    });
                   }
                 }}
               >

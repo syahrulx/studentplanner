@@ -16,9 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
-      "config": {
-        "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
-      },
+      "config": {},
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"],
         "com.apple.security.application-groups": [
@@ -40,11 +38,7 @@
         "backgroundColor": "#ffffff"
       },
       "predictiveBackGestureEnabled": false,
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
-        }
-      },
+      "config": {},
       "package": "com.aizztech.rencana"
     },
     "web": {
@@ -107,12 +101,6 @@
         }
       ],
       [
-        "react-native-maps",
-        {
-          "googleMapsApiKey": "AIzaSyBZmzDt1SISngjbNqI4N60BPWdeOr1fzpY"
-        }
-      ],
-      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow Rencana to use your location to provide personalized study reminders based on your campus presence.",
@@ -124,6 +112,11 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "29240ff0-6a41-4552-bd3e-9b6b6ddf6b38"
+      }
     }
   }
 }
