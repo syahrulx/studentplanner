@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  extractCalendarFromUrl,
   insertUniversityCalendarOffers,
   listUniversities,
   listUniversityCalendarOffers,
@@ -68,6 +69,12 @@ export function CalendarUpdatesRoute() {
   const [officialUrl, setOfficialUrl] = useState('');
   const [adminNote, setAdminNote] = useState('');
   const [periodsJson, setPeriodsJson] = useState('');
+
+  // ── Auto-extract state ──
+  const [extractUrl, setExtractUrl] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractErr, setExtractErr] = useState('');
+  const [extractOk, setExtractOk] = useState('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
 
@@ -279,6 +286,79 @@ export function CalendarUpdatesRoute() {
                   No universities found. They will be auto-seeded on page reload.
                 </p>
               ) : null}
+            </div>
+
+            {/* ─── Auto-Extract from Website ─── */}
+            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-lg">🤖</span>
+                <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                  Auto-Extract from Website
+                </span>
+              </div>
+              <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Paste the official academic calendar URL. The system will scrape the page and use AI to extract semester dates, teaching weeks, and period timelines — just like UiTM's calendar flow.
+              </p>
+              {extractErr ? (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
+                  {extractErr}
+                </div>
+              ) : null}
+              {extractOk ? (
+                <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
+                  {extractOk}
+                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <TextInput
+                  value={extractUrl}
+                  onChange={(e) => setExtractUrl(e.target.value)}
+                  placeholder="https://www.university.edu.my/academic-calendar"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  disabled={extracting || !extractUrl.trim()}
+                  onClick={async () => {
+                    setExtractErr('');
+                    setExtractOk('');
+                    const url = extractUrl.trim();
+                    if (!url) { setExtractErr('Please enter a URL.'); return; }
+                    setExtracting(true);
+                    try {
+                      const res = await extractCalendarFromUrl(url);
+                      const d = res.extracted;
+                      if (d.semester_label) setSemesterLabel(d.semester_label);
+                      if (d.start_date) setStartDate(d.start_date);
+                      if (d.end_date) setEndDate(d.end_date);
+                      if (d.total_weeks) setTotalWeeks(String(d.total_weeks));
+                      if (d.break_start_date) setBreakStart(d.break_start_date);
+                      if (d.break_end_date) setBreakEnd(d.break_end_date);
+                      if (d.periods && Array.isArray(d.periods) && d.periods.length > 0) {
+                        setPeriodsJson(JSON.stringify(d.periods, null, 2));
+                      }
+                      setOfficialUrl(url);
+                      setExtractOk(
+                        `✅ Extracted: ${d.semester_label || 'Calendar data'}. Review the auto-filled fields below, then publish.`
+                      );
+                    } catch (e) {
+                      setExtractErr(e instanceof Error ? e.message : 'Extraction failed. Enter details manually.');
+                    } finally {
+                      setExtracting(false);
+                    }
+                  }}
+                  className="shrink-0 whitespace-nowrap"
+                >
+                  {extracting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Extracting…
+                    </span>
+                  ) : (
+                    '🔍 Extract & Auto-Fill'
+                  )}
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

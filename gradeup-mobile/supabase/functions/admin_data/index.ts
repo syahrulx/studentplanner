@@ -520,6 +520,179 @@ serve(async (req) => {
       return json(200, { ok: true });
     }
 
+    if (action === 'extract_calendar_from_url') {
+      const extractUrl = String(payload.extractUrl || '').trim();
+      if (!extractUrl) return json(400, { error: 'missing_extractUrl' });
+
+      // Validate URL format
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(extractUrl);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          return json(400, { error: 'URL must start with http:// or https://' });
+        }
+      } catch {
+        return json(400, { error: 'invalid_url' });
+      }
+
+      // Fetch the website HTML
+      const fetchController = new AbortController();
+      const fetchTimeout = setTimeout(() => fetchController.abort(), 15_000);
+      let htmlText = '';
+      try {
+        const resp = await fetch(parsedUrl.toString(), {
+          signal: fetchController.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; GradeUpAdmin/1.0)',
+            'Accept': 'text/html,application/xhtml+xml,*/*',
+            'Accept-Language': 'en-US,en;q=0.9,ms;q=0.8',
+          },
+        });
+        if (!resp.ok) {
+          return json(400, { error: `Website returned HTTP ${resp.status}. The URL may be incorrect or the server is blocking requests.` });
+        }
+        htmlText = await resp.text();
+      } catch (fetchErr: unknown) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        if (msg.includes('abort') || msg.includes('Abort')) {
+          return json(400, { error: 'Website took too long to respond (15s timeout). Try a different URL.' });
+        }
+        return json(400, { error: `Could not fetch website: ${msg}` });
+      } finally {
+        clearTimeout(fetchTimeout);
+      }
+
+      if (!htmlText || htmlText.length < 50) {
+        return json(400, { error: 'Website returned very little content. It may require JavaScript to load.' });
+      }
+
+      // Strip HTML to readable text (remove scripts, styles, tags)
+      let cleanText = htmlText
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+        .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+        .replace(/<header[\s\S]*?<\/header>/gi, '')
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#\d+;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Truncate to save tokens (15k chars ≈ 4k tokens)
+      cleanText = cleanText.slice(0, 15000);
+
+      if (cleanText.length < 30) {
+        return json(400, { error: 'Could not extract readable text from the website. The page may be dynamically rendered (JavaScript-only).' });
+      }
+
+      // Call OpenAI to extract calendar data
+      const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+      if (!openAiKey || openAiKey.length < 20) {
+        return json(400, { error: 'OPENAI_API_KEY is not set in Edge Function secrets.' });
+      }
+
+      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+Given the text content from a university's academic calendar webpage, extract the structured semester/session information.
+
+Return VALID JSON ONLY with this exact shape:
+{
+  "semester_label": "string (e.g. 'Semester 1 2025/2026')",
+  "start_date": "YYYY-MM-DD (first day of teaching/lectures)",
+  "end_date": "YYYY-MM-DD (last day of the semester, after final exams)",
+  "total_weeks": number (total teaching weeks, typically 14-16),
+  "break_start_date": "YYYY-MM-DD or null (mid-semester break start)",
+  "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
+  "periods": [
+    {
+      "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation",
+      "label": "string (e.g. 'Lectures Week 1-7')",
+      "startDate": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD"
+    }
+  ],
+  "official_url_title": "string (page title or heading)"
+}
+
+Rules:
+- Extract the CURRENT or UPCOMING semester/session if multiple are listed. Prefer the most recent active one.
+- Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
+- total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
+- The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
+- For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
+- If information is unclear or missing, use null for optional fields.
+- Do NOT invent or guess dates. Only extract what is explicitly stated.
+- Return JSON only. No markdown, no explanation, no code fences.`;
+
+      const userPrompt = `Extract academic calendar information from this university webpage content:\n\n${cleanText}`;
+
+      const aiController = new AbortController();
+      const aiTimeout = setTimeout(() => aiController.abort(), 30_000);
+      let aiContent = '';
+      try {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: aiController.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openAiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          return json(400, { error: `OpenAI error (${aiRes.status}): ${errText.slice(0, 300)}` });
+        }
+
+        const aiJson = await aiRes.json();
+        aiContent = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
+      } catch (aiErr: unknown) {
+        const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+        if (msg.includes('abort') || msg.includes('Abort')) {
+          return json(400, { error: 'AI extraction timed out (30s). Try a simpler page.' });
+        }
+        return json(400, { error: `AI request failed: ${msg}` });
+      } finally {
+        clearTimeout(aiTimeout);
+      }
+
+      // Parse AI response
+      const cleaned = aiContent
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(cleaned) as Record<string, unknown>;
+      } catch {
+        return json(400, { error: 'AI returned invalid JSON. The website content may be too complex. Try a different URL or enter details manually.' });
+      }
+
+      // Log the extraction
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, url: extractUrl, extractedLabel: parsed.semester_label ?? null },
+      });
+
+      return json(200, { extracted: parsed, source_url: extractUrl, text_preview: cleanText.slice(0, 500) });
+    }
+
     return json(400, { error: 'unknown_action' });
   } catch (e) {
     return json(500, { error: e instanceof Error ? e.message : 'unknown_error' });
