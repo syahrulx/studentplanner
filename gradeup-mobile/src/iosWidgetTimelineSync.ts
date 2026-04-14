@@ -39,8 +39,20 @@ export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void
     const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
     for (const name of names) {
       const w = getNativeWidgetHandle(name);
-      if (!w) continue;
+      if (!w) {
+        if (__DEV__) console.log('[Rencana] iOS widget handle missing', { name });
+        continue;
+      }
       w.updateTimeline([{ timestamp: Date.now(), props }]);
+      if (__DEV__) {
+        console.log('[Rencana] iOS widget timeline updated', {
+          name,
+          dateISO: props.dateISO,
+          signedIn: props.signedIn,
+          tasks: props.tasks.length,
+          classes: props.classes.length,
+        });
+      }
     }
   } catch (e) {
     if (__DEV__) console.warn('[Rencana] iOS widget timeline sync failed', e);

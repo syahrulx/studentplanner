@@ -3,6 +3,8 @@ import { font, foregroundStyle, lineLimit, padding } from '@expo/ui/swift-ui/mod
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
+const FORCE_STATIC_WIDGET = true;
+
 function accentColor(accent: HomeWidgetTaskRow['accent'], scheme: 'light' | 'dark' | undefined): string {
   if (accent === 'overdue') return '#dc2626';
   if (accent === 'today') return '#2563eb';
@@ -13,14 +15,48 @@ function secondaryColor(scheme: 'light' | 'dark' | undefined): string {
   return scheme === 'dark' ? '#a3a3a3' : '#525252';
 }
 
-function GradeUpTodayWidgetView(props: HomeWidgetProps, env: WidgetEnvironment) {
+function normalizeProps(input: HomeWidgetProps | null | undefined): HomeWidgetProps {
+  const fallback: HomeWidgetProps = {
+    dateISO: '',
+    greeting: 'Rencana',
+    signedIn: false,
+    tasks: [],
+    classes: [],
+  };
+  if (!input) return fallback;
+  return {
+    dateISO: typeof input.dateISO === 'string' ? input.dateISO : '',
+    greeting: typeof input.greeting === 'string' && input.greeting.trim() ? input.greeting : 'Rencana',
+    signedIn: Boolean(input.signedIn),
+    tasks: Array.isArray(input.tasks) ? input.tasks : [],
+    classes: Array.isArray(input.classes) ? input.classes : [],
+  };
+}
+
+function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
+  const p = normalizeProps(props);
 
   const scheme = env.colorScheme;
   const small = env.widgetFamily === 'systemSmall';
   const titleColor = scheme === 'dark' ? '#fafafa' : '#0a0a0a';
+  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+  const devDebugLabel = isDev
+    ? `DBG ${(p.dateISO || '--').slice(5)} T${p.tasks.length} C${p.classes.length}`
+    : '';
 
-  if (!props.signedIn) {
+  if (FORCE_STATIC_WIDGET) {
+    return (
+      <VStack modifiers={[padding({ all: 10 })]} spacing={4}>
+        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(titleColor)]}>Rencana OK</Text>
+        <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryColor(scheme)), lineLimit(2)]}>
+          Static widget test
+        </Text>
+      </VStack>
+    );
+  }
+
+  if (!p.signedIn) {
     return (
       <VStack modifiers={[padding({ all: 10 })]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(titleColor)]}>Rencana</Text>
@@ -31,14 +67,19 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps, env: WidgetEnvironment) 
     );
   }
 
-  const taskRows = small ? props.tasks.slice(0, 2) : props.tasks.slice(0, 5);
-  const classRows = small ? props.classes.slice(0, 2) : props.classes.slice(0, 5);
+  const taskRows = small ? p.tasks.slice(0, 2) : p.tasks.slice(0, 5);
+  const classRows = small ? p.classes.slice(0, 2) : p.classes.slice(0, 5);
 
   return (
     <VStack modifiers={[padding({ all: small ? 8 : 10 })]} spacing={small ? 4 : 6}>
       <Text modifiers={[font({ weight: 'semibold', size: small ? 14 : 16 }), foregroundStyle(titleColor), lineLimit(1)]}>
-        {props.greeting}
+        {p.greeting}
       </Text>
+      {devDebugLabel ? (
+        <Text modifiers={[font({ size: 10 }), foregroundStyle(secondaryColor(scheme)), lineLimit(1)]}>
+          {devDebugLabel}
+        </Text>
+      ) : null}
 
       {taskRows.length > 0 && (
         <VStack spacing={3}>
