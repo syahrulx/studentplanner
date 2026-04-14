@@ -9,6 +9,7 @@ import { useTranslations } from '@/src/i18n';
 import { getAcademicProgressFromCalendar, getAcademicProgress } from '@/src/lib/academicUtils';
 import type { AcademicLevel } from '@/src/types';
 import { fetchUitmAcademicCalendar, type UitmCalendarVariant } from '@/src/lib/uitmAcademicCalendar';
+import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '@/src/lib/universityCalendarOffersDb';
 
 const SCREEN_W = Dimensions.get('window').width;
 const GRID_GAP = 6;
@@ -120,8 +121,11 @@ export default function AcademicCalendarScreen() {
         const endISO = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
         let periodsFromHea = academicCalendar?.periods;
         try {
-          const official = await fetchUitmAcademicCalendar(groupForHea, { targetDateISO: today, variant: cfgVariant });
-          if (official?.periods && official.periods.length > 0) periodsFromHea = official.periods;
+          // Fallback to UiTM data if manual and logic remains
+          if (uniId === 'uitm') {
+            const official = await fetchUitmAcademicCalendar(groupForHea, { targetDateISO: today, variant: cfgVariant });
+            if (official?.periods && official.periods.length > 0) periodsFromHea = official.periods;
+          }
         } catch {}
         await updateAcademicCalendar({
           semesterLabel: `Manual calendar (${manualISO})`,
@@ -129,17 +133,41 @@ export default function AcademicCalendarScreen() {
         });
         setSyncStatus('Manual calendar saved');
       } else {
-        const official = await fetchUitmAcademicCalendar(groupForHea, { targetDateISO: today, variant: cfgVariant });
-        if (official?.startDate && official?.endDate) {
+        // 1. Try to fetch Admin-published offer first (especially for non-UiTM universities)
+        let adminOffer = null;
+        if (uniId !== 'uitm') {
+          try {
+            adminOffer = await fetchLatestCalendarForUniversity(uniId);
+          } catch (err) {
+            console.warn('[Rencana] Failed to check admin offers:', err);
+          }
+        }
+
+        if (adminOffer) {
+          // Apply the admin offer data
           await updateAcademicCalendar({
-            semesterLabel: official.semesterLabel,
-            startDate: official.startDate, endDate: official.endDate,
-            totalWeeks: official.totalWeeks ?? (academicCalendar?.totalWeeks ?? 14),
-            periods: official.periods, isActive: true,
+            ...offerToCalendarPatch(adminOffer),
+            isActive: true,
           });
-          setSyncStatus(`Auto-synced: ${official.semesterLabel}`);
+          setSyncStatus(`Applied admin calendar: ${adminOffer.semesterLabel}`);
+        } else if (uniId === 'uitm') {
+          // 2. Fallback to UiTM portal sync only for UiTM users
+          const official = await fetchUitmAcademicCalendar(groupForHea, { targetDateISO: today, variant: cfgVariant });
+          if (official?.startDate && official?.endDate) {
+            await updateAcademicCalendar({
+              semesterLabel: official.semesterLabel,
+              startDate: official.startDate, endDate: official.endDate,
+              totalWeeks: official.totalWeeks ?? (academicCalendar?.totalWeeks ?? 14),
+              periods: official.periods, isActive: true,
+            });
+            setSyncStatus(`Auto-synced: ${official.semesterLabel}`);
+          } else {
+            setSyncStatus('HEA fetch returned no data — check internet');
+          }
         } else {
-          setSyncStatus('HEA fetch returned no data — check internet');
+          // Non-UiTM user with no admin offer published yet
+          setSyncStatus('No official calendar available for your university yet.');
+          Alert.alert('Notice', 'No official calendar has been published for your university by the admin yet. Please enter a manual start date or wait for an update.');
         }
       }
       setConfigOpen(false);
@@ -291,8 +319,8 @@ export default function AcademicCalendarScreen() {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={s.title} numberOfLines={1}>Academic calendar</Text>
           <Text style={s.sub} numberOfLines={1}>
-            {group ? `UiTM Group ${group}` : (academicCalendar?.semesterLabel ?? 'Set academic calendar')}
-            {`  •  Week ${progress.week} of ${academicCalendar?.totalWeeks ?? 14}`}
+            {user.universityId === 'uitm' && group ? `UiTM Group ${group}  •  ` : ''}
+            {`Week ${progress.week} of ${academicCalendar?.totalWeeks ?? 14}`}
           </Text>
         </View>
         <Pressable style={s.editBtn} onPress={() => setConfigOpen(true)}>

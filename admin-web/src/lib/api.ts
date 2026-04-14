@@ -967,3 +967,28 @@ export async function insertUniversityCalendarOffers(rows: AdminCalendarOfferIns
   const res = unwrapFunctionData<{ items: AdminCalendarOfferRow[] }>(data, error);
   return res.items;
 }
+
+export type ExtractedCalendarData = {
+  semester_label?: string;
+  start_date?: string;
+  end_date?: string;
+  total_weeks?: number;
+  break_start_date?: string | null;
+  break_end_date?: string | null;
+  periods?: Array<{ type: string; label: string; startDate: string; endDate: string }>;
+  official_url_title?: string;
+};
+
+export async function extractCalendarFromUrl(extractUrl: string): Promise<{
+  extracted: ExtractedCalendarData;
+  source_url: string;
+  text_preview: string;
+}> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'extract_calendar_from_url', extractUrl },
+    headers,
+  );
+  return unwrapFunctionData<{ extracted: ExtractedCalendarData; source_url: string; text_preview: string }>(data, error);
+}

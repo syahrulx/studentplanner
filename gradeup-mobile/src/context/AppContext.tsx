@@ -529,8 +529,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        if (r0.status === 'fulfilled') setNotes(r0.value);
-        if (r1.status === 'fulfilled') setFlashcards(r1.value);
+        let loadedCourses: import('../types').Course[] = [];
+        let validCourseIds: Set<string> | null = null;
+        if (r4.status === 'fulfilled') {
+          loadedCourses = r4.value;
+          validCourseIds = new Set(loadedCourses.map((c) => c.id.toUpperCase()));
+          setCourses(loadedCourses);
+        }
+
+        let loadedNotes: import('../types').Note[] = [];
+        if (r0.status === 'fulfilled') {
+          loadedNotes = r0.value;
+          if (validCourseIds) {
+            const rawNotes = loadedNotes;
+            loadedNotes = rawNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
+            
+            // Clean up ghost notes globally
+            const ghostNotes = rawNotes.filter((n) => !validCourseIds.has(n.subjectId.toUpperCase()));
+            if (ghostNotes.length > 0) {
+              Promise.allSettled(
+                ghostNotes.map((gn) => studyDb.deleteNote(uid, gn.id))
+              ).catch(() => {});
+            }
+          }
+          setNotes(loadedNotes);
+        }
+
+        if (r1.status === 'fulfilled') {
+          const loadedCards = r1.value;
+          const validNoteIds = new Set(loadedNotes.map((n) => n.id));
+          
+          // Drop ghost cards that belong to notes that have been deleted
+          const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
+          setFlashcards(validCards);
+
+          // Clean up orphaned cards globally
+          const ghostCards = loadedCards.filter((c) => !c.noteId || !validNoteIds.has(c.noteId));
+          if (ghostCards.length > 0) {
+            Promise.allSettled(
+              ghostCards.map((gc) => studyDb.deleteFlashcard(uid, gc.id))
+            ).catch(() => {});
+          }
+        }
         if (r2.status === 'fulfilled') {
           setTasks(r2.value);
           rescheduleAllTaskNotifications(r2.value).catch(() => {});
@@ -540,7 +580,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
         }
-        if (r4.status === 'fulfilled') setCourses(r4.value);
+        // (r4 is already processed and set above)
         if (r7.status === 'fulfilled') setTimetable(r7.value ?? []);
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
@@ -746,8 +786,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // Auto-load admin-published calendar for non-UiTM universities (silent, no prompt)
-          if (uniId && uniId !== 'uitm') {
+          // Auto-load admin-published calendar (silent, no prompt)
+          if (uniId) {
             try {
               const adminOffer = await fetchLatestCalendarForUniversity(uniId);
               if (adminOffer && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
@@ -1240,6 +1280,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
     setTasks((prev) => prev.filter((t) => t.courseId.toUpperCase() !== upper));
+    setNotes((prev) => prev.filter((n) => n.subjectId.toUpperCase() !== upper)); // Cascade drop notes locally
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
@@ -1273,8 +1314,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteNote = useCallback((noteId: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId)); // Also remove associated flashcards locally
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.deleteNote(session.user.id, noteId);
+      if (session?.user?.id) {
+        studyDb.deleteNote(session.user.id, noteId);
+        studyDb.deleteFlashcardsForNote(session.user.id, noteId).catch(console.error); // Also remove from Supabase
+      }
     });
   }, []);
 

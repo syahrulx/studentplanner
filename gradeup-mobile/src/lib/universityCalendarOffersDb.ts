@@ -103,7 +103,7 @@ export async function fetchLatestCalendarForUniversity(
   universityId: string,
 ): Promise<UniversityCalendarOffer | null> {
   const uni = (universityId ?? '').trim();
-  if (!uni || uni === 'uitm') return null;
+  if (!uni) return null;
 
   const { data, error } = await supabase
     .from(OFFERS)
