@@ -578,11 +578,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                   notificationTitle: 'Rencana',
                   notificationBody: 'Sharing your location with friends',
                 },
-              }).catch(console.warn);
+              }).catch((err) => {
+                // Ignore gracefully if background location capability is missing or denied
+                if (__DEV__) console.log('Background location optional fallback ->', err.message);
+              });
             }
           }
         } catch (e) {
-          console.warn('Background location not available:', e);
+          if (__DEV__) console.log('Background location permission optional ->', e);
         }
       }
 
