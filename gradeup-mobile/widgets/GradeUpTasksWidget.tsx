@@ -1,19 +1,23 @@
 import { Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import { resolveHomeWidgetTheme, type HomeWidgetProps, type HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
+import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  const th = resolveHomeWidgetTheme(props);
-  const title = th.text;
-  const muted = th.textSecondary;
-  const accent = th.primary;
+  // Read theme colors from flat props (set by buildHomeWidgetProps in JS).
+  // Fallback to system dark/light if theme data is missing.
+  const dark = env.colorScheme === 'dark';
+  const title  = props?.theme?.text       || (dark ? '#ffffff' : '#0f172a');
+  const muted  = props?.theme?.textSecondary || (dark ? '#64748b' : '#94a3b8');
+  const accent = props?.theme?.primary     || (dark ? '#60a5fa' : '#003466');
+  const red    = props?.theme?.danger      || '#ef4444';
+  const warn   = props?.theme?.warning     || '#d97706';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
-    if (a === 'overdue') return th.danger;
-    if (a === 'today') return th.warning;
+    if (a === 'overdue') return red;
+    if (a === 'today') return warn;
     return accent;
   }
 
@@ -23,15 +27,8 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
     return '';
   }
 
-  const fallback: HomeWidgetProps = {
-    dateISO: '',
-    greeting: 'Rencana',
-    signedIn: false,
-    tasks: [],
-    classes: [],
-    theme: th,
-  };
-  const p = props ? { ...props, theme: th } : fallback;
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
+  const p = props || fallback;
 
   const family = env.widgetFamily;
   const small  = family === 'systemSmall';
@@ -99,10 +96,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
         </VStack>
       </HStack>
 
-      {/* ── Thin separator ── */}
-      <Divider modifiers={[opacity(0.12)]} />
-
-      {/* ── Task list — no inner card background ── */}
+      {/* ── Task list ── */}
       {tasks.length === 0 ? (
         <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up! 🎉</Text>
       ) : (

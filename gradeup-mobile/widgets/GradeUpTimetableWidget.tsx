@@ -1,25 +1,20 @@
 import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import { resolveHomeWidgetTheme, type HomeWidgetProps } from '../src/lib/homeWidgetProps';
+import type { HomeWidgetProps } from '../src/lib/homeWidgetProps';
 
 function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  const th = resolveHomeWidgetTheme(props);
-  const title = th.text;
-  const muted = th.textSecondary;
-  const accent = th.primary;
+  // Read theme colors from flat props — no transitive imports.
+  const dark = env.colorScheme === 'dark';
+  const title  = props?.theme?.text          || (dark ? '#ffffff' : '#0f172a');
+  const body   = props?.theme?.text          || (dark ? '#e2e8f0' : '#1e293b');
+  const muted  = props?.theme?.textSecondary || (dark ? '#64748b' : '#94a3b8');
+  const accent = props?.theme?.primary       || (dark ? '#60a5fa' : '#003466');
 
-  const fallback: HomeWidgetProps = {
-    dateISO: '',
-    greeting: 'Rencana',
-    signedIn: false,
-    tasks: [],
-    classes: [],
-    theme: th,
-  };
-  const p = props ? { ...props, theme: th } : fallback;
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
+  const p = props || fallback;
 
   const family = env.widgetFamily;
   const small  = family === 'systemSmall';
@@ -61,11 +56,11 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
     );
   }
 
-  // ─── HOME SCREEN (small / medium / large) — no inner card bg ───
+  // ─── HOME SCREEN (small / medium / large) ───
   return (
     <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <HStack spacing={6}>
         <VStack spacing={2}>
           <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : 18 }), foregroundStyle(title), lineLimit(1)]}>
@@ -84,10 +79,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
         </VStack>
       </HStack>
 
-      {/* ── Thin separator ── */}
-      <Divider modifiers={[opacity(0.12)]} />
-
-      {/* ── Class list — no inner card background ── */}
+      {/* Class list */}
       {cls.length === 0 ? (
         <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today 🎉</Text>
       ) : (
@@ -96,7 +88,6 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
             <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0}>
               {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), opacity(0.08)]} /> : null}
               <HStack spacing={small ? 6 : 10} modifiers={[padding({ vertical: small ? 1 : 3 })]}>
-                {/* Time column */}
                 <VStack spacing={0} modifiers={small ? [] : [frame({ width: 46 })]}>
                   <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
                     {c.startTime}
@@ -107,7 +98,6 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
                     </Text>
                   ) : null}
                 </VStack>
-                {/* Class name + location */}
                 <VStack spacing={1}>
                   <Text modifiers={[font({ size: small ? 11 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                     {c.label}

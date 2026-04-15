@@ -1,20 +1,23 @@
 import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import { resolveHomeWidgetTheme, type HomeWidgetProps, type HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
+import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  const th = resolveHomeWidgetTheme(props);
-  const title = th.text;
-  const body = th.text;
-  const muted = th.textSecondary;
-  const accent = th.primary;
+  // Read theme colors from flat props — no transitive imports.
+  const dark = env.colorScheme === 'dark';
+  const title  = props?.theme?.text          || (dark ? '#ffffff' : '#0f172a');
+  const body   = props?.theme?.text          || (dark ? '#e2e8f0' : '#1e293b');
+  const muted  = props?.theme?.textSecondary || (dark ? '#64748b' : '#94a3b8');
+  const accent = props?.theme?.primary       || (dark ? '#60a5fa' : '#003466');
+  const red    = props?.theme?.danger        || '#ef4444';
+  const warn   = props?.theme?.warning       || '#d97706';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
-    if (a === 'overdue') return th.danger;
-    if (a === 'today') return th.warning;
+    if (a === 'overdue') return red;
+    if (a === 'today') return warn;
     return accent;
   }
 
@@ -24,14 +27,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     return '';
   }
 
-  const fallback: HomeWidgetProps = {
-    dateISO: '',
-    greeting: 'Hi',
-    signedIn: false,
-    tasks: [],
-    classes: [],
-    theme: th,
-  };
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props
     ? {
         dateISO: typeof props.dateISO === 'string' ? props.dateISO : '',
@@ -39,7 +35,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
         signedIn: Boolean(props.signedIn),
         tasks: Array.isArray(props.tasks) ? props.tasks : [],
         classes: Array.isArray(props.classes) ? props.classes : [],
-        theme: th,
       }
     : fallback;
 
@@ -68,15 +63,12 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     );
   }
 
-  // ─────────────────────────────────────────────────────
-  // SMALL: pure typography, single column
-  // ─────────────────────────────────────────────────────
+  // ── SMALL ──
   if (small) {
     const sTasks = p.tasks.slice(0, 2);
     const sCls   = p.classes.slice(0, 2);
     return (
       <VStack modifiers={[padding({ all: 13 })]} spacing={6}>
-        {/* Header */}
         <HStack spacing={4}>
           <VStack spacing={1}>
             <Text modifiers={[font({ weight: 'heavy', size: 13 }), foregroundStyle(title), lineLimit(1)]}>
@@ -92,7 +84,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
           </Text>
         </HStack>
 
-        {/* Tasks */}
         {sTasks.length > 0 ? (
           <VStack spacing={4}>
             {sTasks.map((t) => (
@@ -110,7 +101,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
           <Divider modifiers={[opacity(0.15)]} />
         ) : null}
 
-        {/* Classes */}
         {sCls.length > 0 ? (
           <VStack spacing={5}>
             {sCls.map((c, i) => (
@@ -138,10 +128,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     );
   }
 
-  // ─────────────────────────────────────────────────────
-  // MEDIUM / LARGE: 2-column layout — NO inner card bg
-  // Just a thin 1pt vertical line separates columns
-  // ─────────────────────────────────────────────────────
+  // ── MEDIUM / LARGE ──
   const colMax  = large ? 4 : 2;
   const colTask = p.tasks.slice(0, colMax);
   const colCls  = p.classes.slice(0, colMax);
@@ -149,7 +136,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
   return (
     <VStack modifiers={[padding({ all: 14 })]} spacing={10}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <HStack spacing={6}>
         <VStack spacing={2}>
           <Text modifiers={[font({ weight: 'heavy', size: 18 }), foregroundStyle(title), lineLimit(1)]}>
@@ -168,10 +155,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
         </VStack>
       </HStack>
 
-      {/* ── Separator ── */}
-      <Divider modifiers={[opacity(0.1)]} />
-
-      {/* ── Two-column content — no background, just vertical divider ── */}
+      {/* Two-column content */}
       <HStack spacing={0}>
 
         {/* TASKS column */}
