@@ -153,6 +153,43 @@ async function withPgrstRetry<T>(fn: () => Promise<{ data: T | null; error: any 
   return last;
 }
 
+function isJwtExpiredError(err: any): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const msg = String((err as any).message || '').toLowerCase();
+  const code = String((err as any).code || '');
+  // PostgREST commonly returns PGRST301 for JWT issues; some deployments surface PGRST303 too.
+  if (code === 'PGRST301' || code === 'PGRST303') return true;
+  if (msg.includes('jwt expired')) return true;
+  if (msg.includes('invalid jwt')) return true;
+  if (msg.includes('jwt')) return msg.includes('expired') || msg.includes('invalid');
+  return false;
+}
+
+async function refreshSessionIfPossible(): Promise<boolean> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.refresh_token) return false;
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) return false;
+    return Boolean(data?.session?.access_token);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Some long-lived app sessions can hit PostgREST with an expired access token before
+ * Supabase-js auto-refresh catches up. Retry once after an explicit refresh.
+ */
+async function withAuthRetry<T>(fn: () => Promise<{ data: T | null; error: any }>): Promise<{ data: T | null; error: any }> {
+  const first = await fn();
+  if (!first.error) return first;
+  if (!isJwtExpiredError(first.error)) return first;
+  const ok = await refreshSessionIfPossible();
+  if (!ok) return first;
+  return await fn();
+}
+
 function logCommunityQueryError(label: string, error: any): void {
   if (isPgrstSchemaCacheError(error)) {
     if (__DEV__) console.warn(`[Community] ${label} (transient, will retry on next refresh):`, error?.message || error?.code);
@@ -1243,13 +1280,15 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];
 
-  const { data, error } = await withPgrstRetry(async () =>
-    supabase
-      .from('shared_tasks')
-      .select('*')
-      .eq('recipient_id', user.id)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false }),
+  const { data, error } = await withAuthRetry(() =>
+    withPgrstRetry(async () =>
+      supabase
+        .from('shared_tasks')
+        .select('*')
+        .eq('recipient_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
+    ),
   );
 
   if (error) {
@@ -1263,8 +1302,8 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const taskIds = [...new Set(data.map(s => s.task_id))];
 
   const [profilesRes, tasksRes] = await Promise.all([
-    supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds),
-    supabase.from('tasks').select('*').in('id', taskIds),
+    withAuthRetry(() => supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds)),
+    withAuthRetry(() => supabase.from('tasks').select('*').in('id', taskIds)),
   ]);
 
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
@@ -1281,13 +1320,15 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];
 
-  const { data, error } = await withPgrstRetry(async () =>
-    supabase
-      .from('shared_tasks')
-      .select('*')
-      .eq('status', 'accepted')
-      .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
-      .order('created_at', { ascending: false }),
+  const { data, error } = await withAuthRetry(() =>
+    withPgrstRetry(async () =>
+      supabase
+        .from('shared_tasks')
+        .select('*')
+        .eq('status', 'accepted')
+        .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
+        .order('created_at', { ascending: false }),
+    ),
   );
 
   if (error) {
@@ -1301,8 +1342,8 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   const taskIds = [...new Set(data.map(s => s.task_id))];
 
   const [profilesRes, tasksRes] = await Promise.all([
-    supabase.from('profiles').select('id, name, avatar_url').in('id', allUserIds),
-    supabase.from('tasks').select('*').in('id', taskIds),
+    withAuthRetry(() => supabase.from('profiles').select('id, name, avatar_url').in('id', allUserIds)),
+    withAuthRetry(() => supabase.from('tasks').select('*').in('id', taskIds)),
   ]);
 
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));

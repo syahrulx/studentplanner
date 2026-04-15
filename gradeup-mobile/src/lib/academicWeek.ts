@@ -49,6 +49,13 @@ export function dueDateToTeachingWeekRaw(
   calendar: AcademicCalendar | null | undefined,
   profileStartFallback?: string | null,
 ): number | null {
+  const off = Math.trunc(calendar?.teachingWeekOffset ?? 0);
+  const bump = (w: number) => {
+    if (!off) return w;
+    const a = w + off;
+    return a < 1 ? 1 : a;
+  };
+
   // If detailed HEA-style periods exist, compute week by counting instructional/assessment weeks
   // (lecture + revision + test + exam), skipping breaks.
   if (calendar?.periods && Array.isArray(calendar.periods) && calendar.periods.length > 0) {
@@ -65,7 +72,7 @@ export function dueDateToTeachingWeekRaw(
 
     // Snap start back to week-Sunday for UI alignment.
     const startDate = snapToWeekSunday(new Date(`${start}T00:00:00`));
-    if (dueDate.getTime() < startDate.getTime()) return 1;
+    if (dueDate.getTime() < startDate.getTime()) return bump(1);
 
     // Build a set of "counted days" between start..due inclusive.
     const countedDays = new Set<string>();
@@ -107,7 +114,7 @@ export function dueDateToTeachingWeekRaw(
       }
       cursor.setDate(cursor.getDate() + 7);
     }
-    return Math.max(week, 1);
+    return bump(Math.max(week, 1));
   }
 
   const start = (calendar?.startDate ?? profileStartFallback ?? '').trim().slice(0, 10);
@@ -118,7 +125,7 @@ export function dueDateToTeachingWeekRaw(
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(dueDate.getTime())) return null;
   const diffDays = Math.floor((dueDate.getTime() - startDate.getTime()) / 864e5);
   const rawWeek = Math.floor(diffDays / 7) + 1;
-  return Math.max(rawWeek, 1);
+  return bump(Math.max(rawWeek, 1));
 }
 
 /**

@@ -93,8 +93,8 @@ type AppState = {
   setAcademicCalendar: React.Dispatch<React.SetStateAction<AcademicCalendar | null>>;
   updateProfile: (updates: {
     name?: string;
-    university?: string;
-    universityId?: string;
+    university?: string | null;
+    universityId?: string | null;
     academicLevel?: UserProfile['academicLevel'];
     studentId?: string;
     program?: string;
@@ -110,6 +110,7 @@ type AppState = {
     subscriptionPlan?: import('../types').SubscriptionPlan;
   }) => Promise<void>;
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
+  clearAcademicCalendar: () => Promise<void>;
   courses: Course[];
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
@@ -801,15 +802,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // Auto-load admin-published calendar (silent, no prompt)
-          if (uniId) {
+          // Auto-load admin-published calendar (silent). UiTM uses HEA/provider above — skip admin overwrite.
+          if (uniId && uniId !== 'uitm') {
             try {
               const adminOffer = await fetchLatestCalendarForUniversity(uniId);
               if (adminOffer && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
                 const currentCal = academicCalendarRef.current;
                 // Apply if no calendar exists or admin offer is newer
                 if (!currentCal || (adminOffer.createdAt && adminOffer.createdAt > (currentCal.createdAt ?? ''))) {
-                  const saved = await academicCalendarDb.upsertCalendar(uid, offerToCalendarPatch(adminOffer));
+                  const saved = await academicCalendarDb.upsertCalendar(uid, {
+                    ...offerToCalendarPatch(adminOffer),
+                    teachingWeekOffset: 0,
+                  });
                   const savedEff = withEffectiveTotalWeeks(saved);
                   setAcademicCalendar(savedEff);
                   const prog =
@@ -1040,8 +1044,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = useCallback(
     async (updates: {
       name?: string;
-      university?: string;
-      universityId?: string;
+      university?: string | null;
+      universityId?: string | null;
       academicLevel?: UserProfile['academicLevel'];
       studentId?: string;
       program?: string;
@@ -1059,12 +1063,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (!uid) return;
-      await profileDb.updateProfile(uid, updates);
+      await profileDb.updateProfile(uid, updates as any);
       setUserState((prev) => ({
         ...prev,
         ...(updates.name !== undefined ? { name: updates.name } : {}),
-        ...(updates.university !== undefined ? { university: updates.university } : {}),
-        ...(updates.universityId !== undefined ? { universityId: updates.universityId } : {}),
+        ...(updates.university !== undefined ? { university: updates.university ?? undefined } : {}),
+        ...(updates.universityId !== undefined ? { universityId: updates.universityId ?? undefined } : {}),
         ...(updates.academicLevel !== undefined ? { academicLevel: updates.academicLevel } : {}),
         ...(updates.studentId !== undefined ? { studentId: updates.studentId.trim() } : {}),
         ...(updates.program !== undefined ? { program: updates.program.trim() } : {}),
@@ -1115,6 +1119,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       isBreak: progress.isBreak,
       semesterPhase: progress.semesterPhase,
     }));
+  }, []);
+
+  const clearAcademicCalendar = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await academicCalendarDb.deleteAllCalendarsForUser(uid);
+    setAcademicCalendar(null);
+    setUserState((prev) => {
+      const p = getAcademicProgress((prev.startDate ?? initialUser.startDate) as any, 14);
+      return { ...prev, currentWeek: p.week, isBreak: p.isBreak, semesterPhase: p.semesterPhase };
+    });
   }, []);
 
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
@@ -1656,6 +1672,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAcademicCalendar,
     updateProfile,
     updateAcademicCalendar,
+    clearAcademicCalendar,
     courses,
     setCourses,
     addCourse,

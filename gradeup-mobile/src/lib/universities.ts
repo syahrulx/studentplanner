@@ -167,6 +167,14 @@ export const UNIVERSITIES: UniversityConfig[] = [
     mode: 'webview',
     logoEmoji: '☀️',
   },
+  {
+    id: 'utem',
+    name: 'Universiti Teknikal Malaysia Melaka',
+    shortName: 'UTeM',
+    loginUrl: 'https://utem.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🛠️',
+  },
 ];
 
 export function searchUniversities(query: string): UniversityConfig[] {
@@ -194,11 +202,27 @@ export function inferUniversityIdFromUniversityName(
   const n = (universityName ?? '').trim().toLowerCase();
   if (!n) return undefined;
   const uitm = UNIVERSITIES.find((u) => u.id === 'uitm');
-  if (!uitm) return undefined;
-  if (n === uitm.name.toLowerCase()) return 'uitm';
-  if (n.includes('teknologi mara')) return 'uitm';
-  if (/\buitm\b/.test(n)) return 'uitm';
+  if (uitm) {
+    if (n === uitm.name.toLowerCase()) return 'uitm';
+    if (n.includes('teknologi mara')) return 'uitm';
+    if (/\buitm\b/.test(n)) return 'uitm';
+  }
+  if (/\bum\b/.test(n) || n.includes('universiti malaya') || n.includes('university of malaya')) return 'um';
+  if (n.includes('utm') || n.includes('teknologi malaysia')) return 'utm';
+  if (n.includes('ukm') || n.includes('kebangsaan malaysia')) return 'ukm';
+  if (n.includes('upm') || n.includes('putra malaysia')) return 'upm';
+  if (/\busm\b/.test(n) || n.includes('sains malaysia')) return 'usm';
   return undefined;
+}
+
+/**
+ * Optional hints from student ID (matric). Returns null when unknown — caller should leave profile as-is.
+ */
+export function inferSemesterFromStudentId(
+  _universityId: string | undefined,
+  _studentId: string,
+): { currentSemester?: number; heaTermCode?: string } | null {
+  return null;
 }
 
 /** Resolve portal university id for calendar features (explicit profile/connection, then UiTM heuristics). */

@@ -8,6 +8,24 @@ export type AcademicProgress = {
   semesterPhase: SemesterPhase;
 };
 
+/** Shift calendar-derived teaching week (clamped). Skips `no_calendar` / `before_start`. */
+export function applyTeachingWeekOffsetToProgress(
+  p: AcademicProgress,
+  offset: number,
+  totalWeeks: number,
+): AcademicProgress {
+  const o = Math.trunc(Number(offset) || 0);
+  if (!o) return p;
+  if (p.semesterPhase === 'no_calendar' || p.semesterPhase === 'before_start') return p;
+  const cap = Math.max(1, totalWeeks);
+  let w = p.week + o;
+  if (w < 1) w = 1;
+  if (w > cap) {
+    return { week: cap, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
+  }
+  return { week: w, isBreak: false, label: `Week ${w}`, semesterPhase: 'teaching' };
+}
+
 type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
 
 /** Default floor when `total_weeks` is missing (typical semester length). */
@@ -178,6 +196,7 @@ export function getAcademicProgress(startDateStr: string, totalWeeks: number = 1
 export function getAcademicProgressFromCalendar(
   calendar: AcademicCalendar | null | undefined,
   profileStartFallback?: string,
+  options?: { ignoreTeachingWeekOffset?: boolean },
 ): AcademicProgress {
   const totalWeeks = Math.max(
     1,
@@ -185,19 +204,32 @@ export function getAcademicProgressFromCalendar(
       computeCountedWeeksFromPeriods(calendar?.periods as any) ??
       14,
   );
+  const offset = options?.ignoreTeachingWeekOffset ? 0 : (calendar?.teachingWeekOffset ?? 0);
   const periods = calendar?.periods;
   if (!periods || !Array.isArray(periods) || periods.length === 0) {
-    return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
+    return applyTeachingWeekOffsetToProgress(
+      getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks),
+      offset,
+      totalWeeks,
+    );
   }
   const countedTypes = new Set(['lecture', 'revision', 'test', 'exam']);
   const counted = periods.filter((p) => countedTypes.has(p.type));
   if (counted.length === 0) {
-    return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
+    return applyTeachingWeekOffsetToProgress(
+      getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks),
+      offset,
+      totalWeeks,
+    );
   }
 
   const startISO = counted.map((p) => p.startDate).sort()[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startISO)) {
-    return getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks);
+    return applyTeachingWeekOffsetToProgress(
+      getAcademicProgress(calendar?.startDate ?? profileStartFallback ?? '', totalWeeks),
+      offset,
+      totalWeeks,
+    );
   }
 
   // Snap back to the Sunday that starts the visible Sun–Sat week (planner alignment).
@@ -248,7 +280,15 @@ export function getAcademicProgressFromCalendar(
   }
 
   if (week > totalWeeks) {
-    return { week: totalWeeks, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
+    return applyTeachingWeekOffsetToProgress(
+      { week: totalWeeks, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' },
+      offset,
+      totalWeeks,
+    );
   }
-  return { week, isBreak: false, label: `Week ${week}`, semesterPhase: 'teaching' };
+  return applyTeachingWeekOffsetToProgress(
+    { week, isBreak: false, label: `Week ${week}`, semesterPhase: 'teaching' },
+    offset,
+    totalWeeks,
+  );
 }

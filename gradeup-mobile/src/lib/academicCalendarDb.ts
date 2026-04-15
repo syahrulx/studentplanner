@@ -18,6 +18,9 @@ function rowToCalendar(row: Record<string, unknown>): AcademicCalendar {
           endDate: String((p as any)?.endDate ?? '').slice(0, 10),
         }))
       : undefined;
+  const tw = row.teaching_week_offset;
+  const teachingWeekOffset =
+    tw != null && Number.isFinite(Number(tw)) ? Math.trunc(Number(tw)) : 0;
   return {
     id: String(row.id),
     userId: row.user_id != null ? String(row.user_id) : undefined,
@@ -28,6 +31,7 @@ function rowToCalendar(row: Record<string, unknown>): AcademicCalendar {
     breakStartDate: breakStart || undefined,
     breakEndDate: breakEnd || undefined,
     periods: periods && periods.length > 0 ? (periods as any) : undefined,
+    teachingWeekOffset,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at != null ? String(row.created_at) : undefined,
   };
@@ -71,6 +75,13 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
       ? calendar.breakEndDate || null
       : existing?.breakEndDate ?? null;
 
+  const teachingWeekOffset =
+    calendar.teachingWeekOffset !== undefined
+      ? Math.trunc(Number(calendar.teachingWeekOffset) || 0)
+      : existing != null
+        ? Math.trunc(Number(existing.teachingWeekOffset) || 0)
+        : 0;
+
   const row = {
     user_id: userId,
     semester_label: calendar.semesterLabel,
@@ -80,6 +91,7 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     break_start_date: breakStart,
     break_end_date: breakEnd,
     periods_json: periodsJson,
+    teaching_week_offset: teachingWeekOffset,
     is_active: calendar.isActive ?? true,
   };
   const { data, error } = await supabase

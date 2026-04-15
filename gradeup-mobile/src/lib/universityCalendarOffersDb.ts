@@ -117,6 +117,39 @@ export async function fetchLatestCalendarForUniversity(
   return rowToOffer(data as Record<string, unknown>);
 }
 
+function dedupeOffersByCalendarKey(offers: UniversityCalendarOffer[]): UniversityCalendarOffer[] {
+  const seen = new Set<string>();
+  const out: UniversityCalendarOffer[] = [];
+  for (const o of offers) {
+    const k = `${o.semesterLabel}|${o.startDate}|${o.endDate}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(o);
+  }
+  return out;
+}
+
+/**
+ * All published admin calendars for a university (newest first), deduped by label + term dates.
+ * Used so students only see program/term options that actually exist for their chosen university.
+ */
+export async function fetchAllCalendarOffersForUniversity(
+  universityId: string,
+): Promise<UniversityCalendarOffer[]> {
+  const uni = (universityId ?? '').trim();
+  if (!uni) return [];
+
+  const { data, error } = await supabase
+    .from(OFFERS)
+    .select('*')
+    .eq('university_id', uni)
+    .order('created_at', { ascending: false });
+
+  if (error || !data || !Array.isArray(data)) return [];
+  const rows = data.map((row) => rowToOffer(row as Record<string, unknown>));
+  return dedupeOffersByCalendarKey(rows);
+}
+
 export function offerToCalendarPatch(offer: UniversityCalendarOffer): Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> {
   return {
     semesterLabel: offer.semesterLabel,
