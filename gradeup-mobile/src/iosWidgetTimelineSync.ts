@@ -40,7 +40,7 @@ function getWidgetModule(name: string): { default?: { updateTimeline: (entries: 
       return require('../widgets/GradeUpTimetableWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
     }
   } catch (e) {
-    if (__DEV__) console.warn('[Rencana] iOS widget module import failed', { name, e });
+    void e;
   }
   return null;
 }
@@ -53,7 +53,6 @@ function getNativeWidgetHandle(name: string): ResolvedWidgetHandle | null {
   const widgetMod = getWidgetModule(name);
   const widget = widgetMod?.default;
   if (widget && typeof widget.updateTimeline === 'function') {
-    if (__DEV__) console.log('[Rencana] iOS widget handle resolved via module', { name });
     const resolved = { source: 'module', handle: widget } as const;
     cachedWidgets.set(name, resolved);
     return resolved;
@@ -62,7 +61,6 @@ function getNativeWidgetHandle(name: string): ResolvedWidgetHandle | null {
   // Fallback path for environments where widget modules cannot be imported.
   const mod = requireOptionalNativeModule<NativeExpoWidgets>('ExpoWidgets');
   if (!mod?.Widget) return null;
-  if (__DEV__) console.log('[Rencana] iOS widget handle resolved via native fallback', { name });
   const nativeWidget = new mod.Widget(name, hostTimelineLayoutPlaceholder);
   const resolved = { source: 'native', handle: nativeWidget } as const;
   cachedWidgets.set(name, resolved);
@@ -74,26 +72,14 @@ export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void
     const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
     for (const name of names) {
       const resolved = getNativeWidgetHandle(name);
-      if (!resolved) {
-        if (__DEV__) console.log('[Rencana] iOS widget handle missing', { name });
-        continue;
-      }
+      if (!resolved) continue;
       if (resolved.source === 'module') {
         resolved.handle.updateTimeline([{ date: new Date(), props }]);
       } else {
         resolved.handle.updateTimeline([{ timestamp: Date.now(), props }]);
       }
-      if (__DEV__) {
-        console.log('[Rencana] iOS widget timeline updated', {
-          name,
-          dateISO: props.dateISO,
-          signedIn: props.signedIn,
-          tasks: props.tasks.length,
-          classes: props.classes.length,
-        });
-      }
     }
   } catch (e) {
-    if (__DEV__) console.warn('[Rencana] iOS widget timeline sync failed', e);
+    void e;
   }
 }

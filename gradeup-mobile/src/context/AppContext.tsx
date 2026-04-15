@@ -298,22 +298,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     userName: user.name,
     theme,
   });
-  const logWidgetSyncTrigger = useCallback(
-    (trigger: string, signedIn: boolean, snapshot: { tasks: Task[]; courses: Course[]; timetable: TimetableEntry[]; pinnedTaskIds: string[]; userName: string }) => {
-      if (!__DEV__) return;
-      console.log('[Rencana] Widget sync trigger', {
-        trigger,
-        signedIn,
-        tasks: snapshot.tasks.length,
-        courses: snapshot.courses.length,
-        classes: snapshot.timetable.length,
-        pinnedTaskIds: snapshot.pinnedTaskIds.length,
-        userName: snapshot.userName,
-      });
-    },
-    [],
-  );
-
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
     const effective = mergeTeachingWeeksForStoredCalendar(cal);
@@ -934,13 +918,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
-      logWidgetSyncTrigger('state_change', Boolean(session?.user?.id), {
-        tasks,
-        courses,
-        timetable,
-        pinnedTaskIds,
-        userName: user.name,
-      });
       syncHomeScreenWidget(
         buildHomeWidgetProps({
           tasks,
@@ -956,14 +933,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme, logWidgetSyncTrigger]);
+  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme]);
 
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       const r = homeWidgetInputsRef.current;
       void supabase.auth.getSession().then(({ data: { session } }) => {
-        logWidgetSyncTrigger('app_active', Boolean(session?.user?.id), r);
         syncHomeScreenWidget(
           buildHomeWidgetProps({
             tasks: r.tasks,
@@ -978,7 +954,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     });
     return () => sub.remove();
-  }, [logWidgetSyncTrigger]);
+  }, []);
 
   const refreshRemoteData = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();

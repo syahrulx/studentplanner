@@ -564,6 +564,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       // Request background permission
       if (Platform.OS !== 'web') {
         try {
+          // In iOS dev-client builds, background location capability may be absent and triggers noisy warnings.
+          // Keep foreground location working and only attempt background updates outside iOS dev mode.
+          if (Platform.OS === 'ios' && __DEV__) {
+            setLocationPermissionGranted(true);
+            return true;
+          }
           const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
           if (bgStatus === 'granted' && TaskManager) {
             // Start background location task
@@ -578,14 +584,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                   notificationTitle: 'Rencana',
                   notificationBody: 'Sharing your location with friends',
                 },
-              }).catch((err) => {
-                // Ignore gracefully if background location capability is missing or denied
-                if (__DEV__) console.log('Background location optional fallback ->', err.message);
+              }).catch(() => {
+                // Ignore gracefully if background location capability is missing or denied.
               });
             }
           }
         } catch (e) {
-          if (__DEV__) console.log('Background location permission optional ->', e);
+          void e;
         }
       }
 
