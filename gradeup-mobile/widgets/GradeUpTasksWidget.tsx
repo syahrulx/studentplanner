@@ -1,17 +1,18 @@
 import { Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, opacity } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, opacity, containerBackground, background } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  // Always use app theme colors — ignore system dark mode on widgets.
-  const title  = props?.theme?.text          || '#0f172a';
-  const muted  = props?.theme?.textSecondary || '#94a3b8';
-  const accent = props?.theme?.primary       || '#003466';
-  const red    = props?.theme?.danger        || '#ef4444';
-  const warn   = props?.theme?.warning       || '#d97706';
+  // Always use app theme colors — widget bg painted from theme.
+  const bg     = props?.theme?.background     || '#f8fafc';
+  const title  = props?.theme?.text           || '#0f172a';
+  const muted  = props?.theme?.textSecondary  || '#94a3b8';
+  const accent = props?.theme?.primary        || '#003466';
+  const red    = props?.theme?.danger         || '#ef4444';
+  const warn   = props?.theme?.warning        || '#d97706';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -35,7 +36,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
 
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+      <VStack modifiers={[padding({ all: 14 }), containerBackground(bg)]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Tasks</Text>
         <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view tasks</Text>
       </VStack>
@@ -69,9 +70,9 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
 
   // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
+    <VStack modifiers={[padding({ all: 14 }), containerBackground(bg)]} spacing={small ? 8 : 10}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <HStack spacing={6}>
         <VStack spacing={2}>
           <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), foregroundStyle(title)]}>
@@ -94,7 +95,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
         </VStack>
       </HStack>
 
-      {/* ── Task list ── */}
+      {/* Task list */}
       {tasks.length === 0 ? (
         <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up! 🎉</Text>
       ) : (

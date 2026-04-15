@@ -53,15 +53,20 @@ export type HomeWidgetProps = {
 
 export function homeWidgetThemeFromId(themeId: ThemeId): HomeWidgetTheme {
   const t = THEMES[themeId] ?? THEMES.light;
+  const isDark = themeId === 'dark' || themeId === 'midnight';
+
+  // Widget background is forced to Light mode (white card).
+  // Dark themes have light text colors that are invisible on white.
+  // → Override text to dark values; keep accent/primary from the theme.
   return {
     themeId: t.id,
-    background: t.background,
-    backgroundSecondary: t.backgroundSecondary,
-    card: t.card,
-    border: t.border,
-    primary: t.primary,
-    text: t.text,
-    textSecondary: t.textSecondary,
+    background: isDark ? '#f8fafc' : t.background,
+    backgroundSecondary: isDark ? '#f1f5f9' : t.backgroundSecondary,
+    card: isDark ? '#ffffff' : t.card,
+    border: isDark ? '#e2e8f0' : t.border,
+    primary: t.primary,         // keep gold / blue accent
+    text: isDark ? '#0f172a' : t.text,            // force dark text on white bg
+    textSecondary: isDark ? '#64748b' : t.textSecondary, // force readable grey
     danger: t.danger,
     warning: t.warning,
   };
