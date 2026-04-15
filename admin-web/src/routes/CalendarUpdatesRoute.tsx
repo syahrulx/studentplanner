@@ -55,11 +55,14 @@ function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {
 export function CalendarUpdatesRoute() {
   const { searchQuery, clearSearch } = useAdminSearch();
   const fileRef = useRef<HTMLInputElement>(null);
+  const uniComboRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [universities, setUniversities] = useState<UniversityRow[]>([]);
   const [selected, setSelected] = useState<string>('');
+  const [universitySearch, setUniversitySearch] = useState('');
+  const [universityOpen, setUniversityOpen] = useState(false);
   const [history, setHistory] = useState<AdminCalendarOfferRow[]>([]);
   const [semesterLabel, setSemesterLabel] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -92,6 +95,43 @@ export function CalendarUpdatesRoute() {
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
+
+  const eligibleFiltered = useMemo(() => {
+    const q = universitySearch.trim().toLowerCase();
+    if (!q) return eligible;
+    return eligible.filter((u) => {
+      const id = String(u.id || '').toLowerCase();
+      const name = String(u.name || '').toLowerCase();
+      return id.includes(q) || name.includes(q) || `${name} (${id})`.includes(q);
+    });
+  }, [eligible, universitySearch]);
+
+  const selectedUniversityLabel = useMemo(() => {
+    const id = String(selected || '').trim();
+    if (!id) return '— Select a university —';
+    const u = eligible.find((x) => x.id === id);
+    return u ? `${u.name} (${u.id})` : id;
+  }, [eligible, selected]);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!universityOpen) return;
+      const el = uniComboRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setUniversityOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, [universityOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!universityOpen) return;
+      if (e.key === 'Escape') setUniversityOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [universityOpen]);
 
   const universityNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -319,18 +359,65 @@ export function CalendarUpdatesRoute() {
 
             <div>
               <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">University</div>
-              <select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="">— Select a university —</option>
-                {eligible.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.id})
-                  </option>
-                ))}
-              </select>
+              <div ref={uniComboRef} className="relative">
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={universityOpen}
+                  onClick={() => {
+                    setUniversityOpen((v) => !v);
+                    if (!universityOpen) setUniversitySearch('');
+                  }}
+                  className="flex h-11 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <span className="truncate">{selectedUniversityLabel}</span>
+                  <span className="text-slate-400">▾</span>
+                </button>
+
+                {universityOpen ? (
+                  <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
+                    <div className="p-2">
+                      <TextInput
+                        autoFocus
+                        value={universitySearch}
+                        onChange={(e) => setUniversitySearch(e.target.value)}
+                        placeholder="Search university (type name or id, e.g. UTM)"
+                      />
+                    </div>
+                    <div role="listbox" className="max-h-64 overflow-auto p-1">
+                      {eligibleFiltered.map((u) => {
+                        const active = u.id === selected;
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            role="option"
+                            aria-selected={active}
+                            onClick={() => {
+                              setSelected(u.id);
+                              setUniversityOpen(false);
+                              setUniversitySearch('');
+                            }}
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                              active
+                                ? 'bg-brand-600 text-white'
+                                : 'text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <span className="truncate">
+                              {u.name} ({u.id})
+                            </span>
+                            {active ? <span className="text-xs font-black">Selected</span> : null}
+                          </button>
+                        );
+                      })}
+                      {eligible.length > 0 && eligibleFiltered.length === 0 && universitySearch.trim() ? (
+                        <div className="px-3 py-2 text-sm font-semibold text-slate-500 dark:text-slate-400">No matches.</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               {eligible.length === 0 && universities.length === 0 ? (
                 <p className="mt-2 text-sm font-semibold text-slate-500">
                   No universities found. They will be auto-seeded on page reload.

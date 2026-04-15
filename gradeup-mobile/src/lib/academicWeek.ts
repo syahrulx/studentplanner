@@ -1,4 +1,5 @@
 import type { AcademicCalendar } from '../types';
+import { TaskType } from '../types';
 import type { RevisionSettings } from '../storage';
 import {
   MAX_EXTRA_WEEKS_BEYOND_CALENDAR,
@@ -57,14 +58,14 @@ export function dueDateToTeachingWeekRaw(
   };
 
   // If detailed HEA-style periods exist, compute week by counting instructional/assessment weeks
-  // (lecture + revision + test + exam), skipping breaks.
+  // (lecture + revision + test), skipping breaks. Exam weeks are intentionally excluded from Semester Pulse.
   if (calendar?.periods && Array.isArray(calendar.periods) && calendar.periods.length > 0) {
     const due = (dueDateStr || '').trim().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
     const dueDate = new Date(`${due}T00:00:00`);
     if (Number.isNaN(dueDate.getTime())) return null;
 
-    const countedTypes = new Set(['lecture', 'revision', 'test', 'exam']);
+    const countedTypes = new Set(['lecture']);
     const counted = calendar.periods.filter((p: AcademicPeriod) => countedTypes.has(p.type));
     if (counted.length === 0) return null;
     const start = counted.map((p) => p.startDate).sort()[0];
@@ -135,17 +136,45 @@ export function dueDateToTeachingWeekRaw(
 export function resolveDisplayTeachingWeeks(
   calendar: AcademicCalendar | null | undefined,
   profileStart: string | null | undefined,
-  tasks: Array<{ dueDate: string; isDone?: boolean }>,
+  tasks: Array<{
+    dueDate: string;
+    isDone?: boolean;
+    suggestedWeek?: number;
+    title?: string;
+    notes?: string;
+    sourceMessage?: string;
+    type?: string;
+  }>,
 ): number {
   const baseline = mergeTeachingWeeksForStoredCalendar(calendar);
   let maxFromTasks = baseline;
+  let maxExamHintWeek = 0;
   for (const t of tasks) {
     if (t.isDone) continue;
     const w = dueDateToTeachingWeekRaw(t.dueDate, calendar, profileStart);
-    if (typeof w === 'number' && w > maxFromTasks) maxFromTasks = w;
+    // Semester Pulse should not extend beyond lecture weeks by default (even if tasks fall during exams/breaks).
+    // Only SOW-provided exam week hints may extend it.
+    if (typeof w === 'number') {
+      const capped = Math.min(w, baseline);
+      if (capped > maxFromTasks) maxFromTasks = capped;
+    }
+
+    const sw = Number(t.suggestedWeek || 0);
+    if (sw > baseline) {
+      const title = String(t.title || '').toLowerCase();
+      const notes = String(t.notes || '').toLowerCase();
+      const src = String(t.sourceMessage || '').toLowerCase();
+      const hasExamKeyword = /exam|final|peperiksaan/.test(title) || /exam|final|peperiksaan/.test(notes);
+      const isTestType = String(t.type || '') === TaskType.Test;
+      const isFromSow = src.includes('sow');
+      if ((hasExamKeyword && (isFromSow || isTestType)) || (isTestType && isFromSow)) {
+        if (sw > maxExamHintWeek) maxExamHintWeek = sw;
+      }
+    }
   }
   const cap = baseline + MAX_EXTRA_WEEKS_BEYOND_CALENDAR;
-  return Math.min(Math.max(MIN_DEFAULT_TEACHING_WEEKS, maxFromTasks), cap);
+  const extended = Math.max(maxFromTasks, maxExamHintWeek);
+  return Math.min(Math.max(MIN_DEFAULT_TEACHING_WEEKS, extended), cap);
 }
 
 /**

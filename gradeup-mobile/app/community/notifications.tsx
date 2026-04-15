@@ -12,12 +12,15 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as Notifications from 'expo-notifications';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
+import { recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -77,6 +80,16 @@ function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): Reactio
   return { lead: emoji, text: 'Sent you' };
 }
 
+type AttendanceNotifItem = {
+  id: string; // expo notification identifier
+  timetableEntryId: string;
+  scheduledStartAt: string; // ISO
+  subjectCode: string;
+  subjectName: string;
+  fireAtISO?: string; // when the notification will fire, if known
+  kind: 'scheduled' | 'presented';
+};
+
 export default function NotificationsScreen() {
   const theme = useTheme();
   const { language } = useApp();
@@ -85,11 +98,13 @@ export default function NotificationsScreen() {
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
   const [circleInvites, setCircleInvites] = useState<CircleInvitation[]>([]);
+  const [attendanceNotifs, setAttendanceNotifs] = useState<AttendanceNotifItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
   const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
   const [respondingFriendIds, setRespondingFriendIds] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
+  const [attendanceBusyIds, setAttendanceBusyIds] = useState<Set<string>>(new Set());
 
   const handleShareResponse = async (sharedTaskId: string, accept: boolean) => {
     setRespondingIds(prev => new Set(prev).add(sharedTaskId));
@@ -139,9 +154,89 @@ export default function NotificationsScreen() {
     setLoading(false);
   }, [userId, refreshUnreadCount]);
 
+  const loadAttendanceNotifs = useCallback(async () => {
+    try {
+      const [scheduled, presented] = await Promise.all([
+        Notifications.getAllScheduledNotificationsAsync().catch(() => []),
+        Notifications.getPresentedNotificationsAsync().catch(() => []),
+      ]);
+
+      const pick = (n: Notifications.Notification | Notifications.ScheduledNotification): AttendanceNotifItem | null => {
+        const hasRequest = n && typeof n === 'object' && 'request' in (n as any);
+        const req: any = hasRequest ? (n as any).request : null;
+        const id = String((hasRequest ? req?.identifier : (n as any).identifier) || '');
+
+        const content: any = hasRequest ? req?.content : (n as any).content;
+        const data = (content?.data ?? {}) as Record<string, any>;
+        if (data?.type !== 'attendance_checkin') return null;
+        const timetableEntryId = String(data.timetableEntryId || '').trim();
+        const scheduledStartAt = String(data.scheduledStartAt || '').trim();
+        if (!id || !timetableEntryId || !scheduledStartAt) return null;
+        const subjectCode = String(data.subjectCode || '').trim();
+        const subjectName = String(data.subjectName || '').trim();
+
+        const trigger: any = (hasRequest ? req?.trigger : (n as any).trigger) ?? null;
+        const fireAtISO =
+          trigger && typeof trigger === 'object' && trigger.date
+            ? new Date(trigger.date).toISOString()
+            : undefined;
+
+        return {
+          id,
+          timetableEntryId,
+          scheduledStartAt,
+          subjectCode,
+          subjectName,
+          fireAtISO,
+          kind: hasRequest ? 'presented' : 'scheduled',
+        };
+      };
+
+      const itemsRaw = [
+        ...(scheduled ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
+        ...(presented ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
+      ];
+
+      const normalizeIsoKey = (iso: string): string => {
+        const s = String(iso || '').trim();
+        const t = Date.parse(s);
+        if (!Number.isFinite(t)) return s;
+        return new Date(t).toISOString();
+      };
+
+      // De-dupe by occurrence (timetableEntryId + scheduledStartAt). Prefer presented over scheduled.
+      const byKey = new Map<string, AttendanceNotifItem>();
+      for (const it of itemsRaw) {
+        const k = `${it.timetableEntryId}|${normalizeIsoKey(it.scheduledStartAt)}`;
+        const prev = byKey.get(k);
+        if (!prev) {
+          byKey.set(k, it);
+        } else if (prev.kind === 'scheduled' && it.kind === 'presented') {
+          byKey.set(k, it);
+        }
+      }
+
+      const items = Array.from(byKey.values()).sort((a, b) => {
+        const at = Date.parse(a.fireAtISO || a.scheduledStartAt) || 0;
+        const bt = Date.parse(b.fireAtISO || b.scheduledStartAt) || 0;
+        return at - bt;
+      });
+      setAttendanceNotifs(items);
+    } catch {
+      setAttendanceNotifs([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadReactions();
+    void loadAttendanceNotifs();
   }, [loadReactions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadAttendanceNotifs();
+    }, [loadAttendanceNotifs]),
+  );
 
   const isFriendRequestReaction = useCallback((r: QuickReaction) => {
     return r.reaction_type === '👋' && Boolean(r.message?.toLowerCase().includes('friend request'));
@@ -160,6 +255,41 @@ export default function NotificationsScreen() {
       } as any);
     },
     [userId, isFriendRequestReaction]
+  );
+
+  const handleAttendanceAction = useCallback(
+    async (item: AttendanceNotifItem, status: AttendanceStatus) => {
+      setAttendanceBusyIds((prev) => new Set(prev).add(item.id));
+      try {
+        const occKey = `${item.timetableEntryId}|${item.scheduledStartAt}`;
+        await recordAttendanceEvent({
+          timetableEntryId: item.timetableEntryId,
+          scheduledStartAt: item.scheduledStartAt,
+          status,
+          subjectCode: item.subjectCode,
+          subjectName: item.subjectName,
+          source: 'in_app',
+        });
+
+        // Remove the system notification as well.
+        if (item.kind === 'scheduled') {
+          await Notifications.cancelScheduledNotificationAsync(item.id).catch(() => {});
+        } else {
+          await Notifications.dismissNotificationAsync(item.id).catch(() => {});
+        }
+
+        setAttendanceNotifs((prev) =>
+          prev.filter((x) => `${x.timetableEntryId}|${x.scheduledStartAt}` !== occKey),
+        );
+      } finally {
+        setAttendanceBusyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }
+    },
+    [],
   );
 
   return (
@@ -215,6 +345,81 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Class check-ins (attendance) */}
+        {attendanceNotifs.length > 0 && (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Class check-ins</Text>
+            {attendanceNotifs.map((n) => {
+              const subject = (n.subjectName || n.subjectCode || 'Class').trim();
+              const when = (() => {
+                const d = n.fireAtISO ? new Date(n.fireAtISO) : null;
+                if (!d || Number.isNaN(d.getTime())) return '';
+                return ` · ${d.toLocaleString()}`;
+              })();
+              const busy = attendanceBusyIds.has(n.id);
+              return (
+                <View
+                  key={`${n.timetableEntryId}-${n.scheduledStartAt}`}
+                  style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
+                >
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 14,
+                      backgroundColor: `${theme.primary}20`,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="check-circle" size={20} color={theme.primary} />
+                  </View>
+                  <View style={styles.notifBody}>
+                    <Text style={[styles.notifName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+                      Class check-in
+                    </Text>
+                    <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={3}>
+                      Did you attend class "{subject}" in 5 more minutes?{when}
+                    </Text>
+                    <View style={styles.attendanceActions}>
+                      <Pressable
+                        style={[styles.attendanceBtn, styles.attendanceBtnPrimary, { opacity: busy ? 0.6 : 1 }]}
+                        disabled={busy}
+                        onPress={() => void handleAttendanceAction(n, 'present')}
+                      >
+                        <Feather name="check" size={14} color="#fff" />
+                        <Text style={styles.shareActionText}>Present</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.attendanceBtn,
+                          styles.attendanceBtnOutline,
+                          { borderColor: theme.border, opacity: busy ? 0.6 : 1 },
+                        ]}
+                        disabled={busy}
+                        onPress={() => void handleAttendanceAction(n, 'absent')}
+                      >
+                        <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Absent</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.attendanceBtn,
+                          styles.attendanceBtnOutline,
+                          { borderColor: theme.border, opacity: busy ? 0.6 : 1 },
+                        ]}
+                        disabled={busy}
+                        onPress={() => void handleAttendanceAction(n, 'cancelled')}
+                      >
+                        <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Class cancelled</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Friend Requests */}
         {incomingRequests.length > 0 && (
           <View style={{ marginBottom: 16 }}>
@@ -375,7 +580,7 @@ export default function NotificationsScreen() {
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={theme.primary} />
-        ) : reactions.length === 0 && incomingSharedTasks.length === 0 && circleInvites.length === 0 && incomingRequests.length === 0 ? (
+        ) : reactions.length === 0 && incomingSharedTasks.length === 0 && circleInvites.length === 0 && incomingRequests.length === 0 && attendanceNotifs.length === 0 ? (
           <View style={styles.emptyState}>
             <Feather name="bell-off" size={48} color={theme.textSecondary} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>No notifications yet</Text>
@@ -553,6 +758,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   shareActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  attendanceActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  attendanceBtn: {
+    minWidth: 110,
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  attendanceBtnPrimary: { backgroundColor: '#10b981' },
+  attendanceBtnOutline: { borderWidth: 1 },
   shareAcceptBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,

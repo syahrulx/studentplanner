@@ -57,6 +57,11 @@ import {
   rescheduleAllTaskNotifications,
   fireClassroomSyncNotification,
 } from '../notificationManager';
+import {
+  cancelAllAttendanceNotifications,
+  rescheduleAttendanceNotifications,
+} from '../attendanceNotifications';
+import { ensureAttendanceCategory, flushPendingAttendanceEvents } from '../attendanceRecording';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import * as taskDb from '../lib/taskDb';
@@ -588,7 +593,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
         }
         // (r4 is already processed and set above)
-        if (r7.status === 'fulfilled') setTimetable(r7.value ?? []);
+        if (r7.status === 'fulfilled') {
+          const tt = r7.value ?? [];
+          setTimetable(tt);
+          rescheduleAttendanceNotifications(uid, tt).catch(() => {});
+        }
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
         const uniConn = r8.status === 'fulfilled' ? r8.value : null;
@@ -799,8 +808,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const adminOffer = await fetchLatestCalendarForUniversity(uniId);
               if (adminOffer && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
                 const currentCal = academicCalendarRef.current;
-                // Apply if no calendar exists or admin offer is newer
-                if (!currentCal || (adminOffer.createdAt && adminOffer.createdAt > (currentCal.createdAt ?? ''))) {
+                // Only apply if the user has no saved calendar.
+                // Otherwise, this can overwrite user edits on every reload since academic_calendars.created_at
+                // does not change on upsert, making any newer admin offer appear "newer" forever.
+                if (!currentCal) {
                   const saved = await academicCalendarDb.upsertCalendar(uid, {
                     ...offerToCalendarPatch(adminOffer),
                     teachingWeekOffset: 0,
@@ -844,10 +855,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     loadRemoteDataRef.current = loadRemoteData;
 
     requestNotificationPermissions()
+      .then(() => ensureAttendanceCategory().catch(() => {}))
       .then(() => supabase.auth.getSession())
       .then(({ data: { session } }) => {
         const uid = session?.user?.id;
-        if (uid) void syncExpoPushTokenToProfile(uid);
+        if (uid) {
+          void syncExpoPushTokenToProfile(uid);
+          void flushPendingAttendanceEvents();
+          // Ensure attendance notifications are scheduled only after permission is granted.
+          // This avoids silent failures when timetable loads before the permission prompt resolves.
+          rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
+        }
       })
       .catch(() => {});
 
@@ -894,6 +912,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCourses([]);
           setAcademicCalendar(null);
           setTimetable([]);
+          cancelAllAttendanceNotifications().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }
@@ -1444,6 +1463,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await profileDb.updateProfile(uid, { universityId, lastSync: now });
     setTimetable(entries);
     setUserState((prev) => ({ ...prev, universityId, lastSync: now, studentId: sid || prev.studentId, timetable: entries }));
+    rescheduleAttendanceNotifications(uid, entries).catch(() => {});
   }, []);
 
   const saveTimetableOnly = useCallback(async (entries: TimetableEntry[], options?: { semesterLabel?: string }) => {
@@ -1453,6 +1473,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await timetableDb.saveTimetable(uid, entries, options?.semesterLabel);
     setTimetable(entries);
     setUserState((prev) => ({ ...prev, timetable: entries }));
+    rescheduleAttendanceNotifications(uid, entries).catch(() => {});
   }, []);
 
   const clearSemesterData = useCallback(async () => {
@@ -1645,6 +1666,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return merged;
     });
     await timetableDb.saveTimetable(uid, merged);
+    rescheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 
   const removeTimetableEntry = useCallback(async (entryId: string) => {
@@ -1659,6 +1681,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return merged;
     });
     await timetableDb.saveTimetable(uid, merged);
+    rescheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 
   const markDataReady = useCallback(() => setDataReady(true), []);
