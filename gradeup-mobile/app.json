@@ -106,7 +106,8 @@
           "locationAlwaysAndWhenInUsePermission": "Allow Rencana to use your location to provide personalized study reminders based on your campus presence.",
           "locationAlwaysPermission": "Allow Rencana to use your location in the background to detect when you are on campus.",
           "locationWhenInUsePermission": "Allow Rencana to use your location to show campus status.",
-          "isAndroidBackgroundLocationEnabled": true
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ]
     ],

@@ -1,21 +1,20 @@
 import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
+import { resolveHomeWidgetTheme, type HomeWidgetProps, type HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  const dark    = env.colorScheme === 'dark';
-  const title   = dark ? '#ffffff' : '#0f172a';
-  const body    = dark ? '#e2e8f0' : '#1e293b';
-  const muted   = dark ? '#64748b' : '#94a3b8';
-  const accent  = dark ? '#60a5fa' : '#003466';
-  const divClr  = dark ? '#2d3e52' : '#dde3ed';
+  const th = resolveHomeWidgetTheme(props);
+  const title = th.text;
+  const body = th.text;
+  const muted = th.textSecondary;
+  const accent = th.primary;
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
-    if (a === 'overdue') return '#ef4444';
-    if (a === 'today') return '#3b82f6';
+    if (a === 'overdue') return th.danger;
+    if (a === 'today') return th.warning;
     return accent;
   }
 
@@ -25,14 +24,22 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     return '';
   }
 
-  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [] };
+  const fallback: HomeWidgetProps = {
+    dateISO: '',
+    greeting: 'Hi',
+    signedIn: false,
+    tasks: [],
+    classes: [],
+    theme: th,
+  };
   const p = props
     ? {
-        dateISO:  typeof props.dateISO === 'string'  ? props.dateISO  : '',
+        dateISO: typeof props.dateISO === 'string' ? props.dateISO : '',
         greeting: typeof props.greeting === 'string' && props.greeting.trim() ? props.greeting : 'Hi',
         signedIn: Boolean(props.signedIn),
-        tasks:    Array.isArray(props.tasks)   ? props.tasks   : [],
-        classes:  Array.isArray(props.classes) ? props.classes : [],
+        tasks: Array.isArray(props.tasks) ? props.tasks : [],
+        classes: Array.isArray(props.classes) ? props.classes : [],
+        theme: th,
       }
     : fallback;
 

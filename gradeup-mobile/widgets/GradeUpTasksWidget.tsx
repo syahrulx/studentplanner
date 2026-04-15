@@ -1,20 +1,19 @@
 import { Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
-import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
+import { resolveHomeWidgetTheme, type HomeWidgetProps, type HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  const dark   = env.colorScheme === 'dark';
-  const title  = dark ? '#ffffff' : '#0f172a';
-  const body   = dark ? '#e2e8f0' : '#1e293b';
-  const muted  = dark ? '#64748b' : '#94a3b8';
-  const accent = dark ? '#60a5fa' : '#003466';
+  const th = resolveHomeWidgetTheme(props);
+  const title = th.text;
+  const muted = th.textSecondary;
+  const accent = th.primary;
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
-    if (a === 'overdue') return '#ef4444';
-    if (a === 'today') return '#3b82f6';
+    if (a === 'overdue') return th.danger;
+    if (a === 'today') return th.warning;
     return accent;
   }
 
@@ -24,8 +23,15 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: 
     return '';
   }
 
-  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [] };
-  const p = props || fallback;
+  const fallback: HomeWidgetProps = {
+    dateISO: '',
+    greeting: 'Rencana',
+    signedIn: false,
+    tasks: [],
+    classes: [],
+    theme: th,
+  };
+  const p = props ? { ...props, theme: th } : fallback;
 
   const family = env.widgetFamily;
   const small  = family === 'systemSmall';

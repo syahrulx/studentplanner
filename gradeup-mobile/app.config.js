@@ -18,12 +18,29 @@ function cleanEnvString(v) {
   return s;
 }
 
-export default ({ config }) => ({
-  ...config,
+export default ({ config }) => {
+  const base = config ?? {};
+  const ios = base.ios ?? {};
+  const infoPlist = ios.infoPlist ?? {};
+  const existingModes = infoPlist.UIBackgroundModes;
+  const modes = Array.isArray(existingModes) ? [...existingModes] : [];
+  for (const m of ['location', 'fetch', 'remote-notification']) {
+    if (!modes.includes(m)) modes.push(m);
+  }
+
+  return {
+    ...base,
+    ios: {
+      ...ios,
+      infoPlist: {
+        ...infoPlist,
+        UIBackgroundModes: modes,
+      },
+    },
   /** Required for dev-client deep links / Metro “open in app”; must match native build after prebuild. */
-  scheme: config?.scheme ?? 'rencana',
+  scheme: base?.scheme ?? 'rencana',
   plugins: [
-    ...(config?.plugins ?? []),
+    ...(base?.plugins ?? []),
     '@react-native-community/datetimepicker',
     [
       '@rnmapbox/maps',
@@ -33,7 +50,7 @@ export default ({ config }) => ({
     ],
   ],
   extra: {
-    ...config?.extra,
+    ...base?.extra,
     eas: {
       projectId: '29240ff0-6a41-4552-bd3e-9b6b6ddf6b38',
     },
@@ -53,4 +70,5 @@ export default ({ config }) => ({
     /** UiTM MyStudent Firebase API key (Identity Toolkit Web API). */
     firebaseWebApiKey: process.env.EXPO_PUBLIC_FIREBASE_WEB_API_KEY || '',
   },
-});
+  };
+};

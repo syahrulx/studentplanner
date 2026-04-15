@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Color
 import android.os.Build
 import android.util.Log
 import android.widget.RemoteViews
@@ -81,6 +82,8 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         return rv
       }
 
+      applyWidgetThemeFromJson(rv, json)
+
       if (!json.optBoolean("signedIn", false)) {
         writeDebug(context, "buildRemoteViews", JSONObject().put("state", "signed_out"))
         rv.setTextViewText(R.id.widget_greeting, "Rencana")
@@ -151,6 +154,32 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         JSONObject(raw)
       } catch (_: Exception) {
         null
+      }
+    }
+
+    private fun parseColorOrNull(hex: String?): Int? {
+      val h = hex?.trim() ?: return null
+      if (h.length < 7 || !h.startsWith("#")) return null
+      return try {
+        Color.parseColor(h)
+      } catch (_: IllegalArgumentException) {
+        null
+      }
+    }
+
+    /** Match app theme colors from widget JSON snapshot (see `HomeWidgetTheme` in JS). */
+    private fun applyWidgetThemeFromJson(rv: RemoteViews, json: JSONObject) {
+      val th = json.optJSONObject("theme") ?: return
+      val bg = parseColorOrNull(th.optString("background")) ?: return
+      val textPri = parseColorOrNull(th.optString("text")) ?: return
+      val textSec = parseColorOrNull(th.optString("textSecondary")) ?: textPri
+      try {
+        rv.setInt(R.id.widget_root, "setBackgroundColor", bg)
+        rv.setInt(R.id.widget_greeting, "setTextColor", textPri)
+        rv.setInt(R.id.widget_tasks, "setTextColor", textSec)
+        rv.setInt(R.id.widget_classes, "setTextColor", textSec)
+      } catch (_: Exception) {
+        // RemoteViews reflection can fail on unusual OEM builds; keep layout defaults.
       }
     }
 

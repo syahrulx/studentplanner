@@ -296,6 +296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     timetable,
     pinnedTaskIds,
     userName: user.name,
+    theme,
   });
   const logWidgetSyncTrigger = useCallback(
     (trigger: string, signedIn: boolean, snapshot: { tasks: Task[]; courses: Course[]; timetable: TimetableEntry[]; pinnedTaskIds: string[]; userName: string }) => {
@@ -925,7 +926,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name };
+  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme };
 
   // Solution C: Gate widget sync — only push to widgets once real data is loaded
   useEffect(() => {
@@ -948,13 +949,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           pinnedTaskIds,
           userName: user.name,
           signedIn: Boolean(session?.user?.id),
+          themeId: theme,
         }),
       );
     });
     return () => {
       cancelled = true;
     };
-  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, logWidgetSyncTrigger]);
+  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme, logWidgetSyncTrigger]);
 
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -970,6 +972,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             pinnedTaskIds: r.pinnedTaskIds,
             userName: r.userName,
             signedIn: Boolean(session?.user?.id),
+            themeId: r.theme,
           }),
         );
       });
