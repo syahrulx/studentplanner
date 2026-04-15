@@ -205,51 +205,6 @@ export default function Login() {
           <Text style={styles.cardTitle}>Welcome back 👋</Text>
           <Text style={styles.cardSubtitle}>Sign in to continue your journey</Text>
 
-          {/* Google Button */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.googleBtn,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              isLoading && { opacity: 0.6 },
-            ]}
-            onPress={handleGoogleSignIn}
-            disabled={isLoading}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#333" size="small" />
-            ) : (
-              <>
-                <Text style={styles.googleBtnIcon}>G</Text>
-                <Text style={styles.googleBtnText}>Continue with Google</Text>
-              </>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.appleBtn,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              isLoading && { opacity: 0.6 },
-            ]}
-            onPress={handleAppleSignIn}
-            disabled={isLoading}
-          >
-            {appleLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="logo-apple" size={20} color="#fff" />
-                <Text style={styles.appleBtnText}>Continue with Apple</Text>
-              </>
-            )}
-          </Pressable>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Email & password</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
           {/* Email */}
           <View style={styles.inputWrap}>
             <Feather name="mail" size={18} color="#94a3b8" style={styles.inputIcon} />
@@ -325,6 +280,49 @@ export default function Login() {
             </LinearGradient>
           </Pressable>
 
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Social icon buttons */}
+          <View style={styles.socialRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.socialIconBtn,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] },
+                isLoading && { opacity: 0.6 },
+              ]}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#4285F4" size="small" />
+              ) : (
+                <Text style={styles.googleIconText}>G</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.socialIconBtn,
+                styles.appleIconBtn,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] },
+                isLoading && { opacity: 0.6 },
+              ]}
+              onPress={handleAppleSignIn}
+              disabled={isLoading}
+            >
+              {appleLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons name="logo-apple" size={22} color="#fff" />
+              )}
+            </Pressable>
+          </View>
+
           {/* Sign up link */}
           <View style={styles.signUpRow}>
             <Text style={styles.signUpLabel}>Don't have an account? </Text>
@@ -399,44 +397,31 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  // Google button
-  googleBtn: {
+  // Social icon buttons
+  socialRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
+    gap: 16,
+    marginBottom: 4,
+  },
+  socialIconBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     backgroundColor: '#fff',
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    borderRadius: 14,
-    paddingVertical: 14,
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  googleIcon: { width: 20, height: 20 },
-  googleBtnIcon: {
-    fontSize: 18,
+  googleIconText: {
+    fontSize: 20,
     fontWeight: '700',
     color: '#4285F4',
   },
-  googleBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#334155',
-  },
-
-  appleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  appleIconBtn: {
     backgroundColor: '#000',
-    borderRadius: 14,
-    paddingVertical: 14,
-    gap: 10,
-    marginTop: 12,
-  },
-  appleBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    borderColor: '#000',
   },
 
   // Divider

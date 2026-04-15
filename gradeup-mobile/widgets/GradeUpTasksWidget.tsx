@@ -1,180 +1,132 @@
-import { Text, VStack, HStack, Spacer } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, cornerRadius, background, frame } from '@expo/ui/swift-ui/modifiers';
+import { Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
+import { font, foregroundStyle, lineLimit, padding, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  // ── Brand palette ──
-  const navy = '#003366';
-  const gold = '#f59e0b';
-  const red = '#dc2626';
-  const blue = '#2563eb';
+  const dark   = env.colorScheme === 'dark';
+  const title  = dark ? '#ffffff' : '#0f172a';
+  const body   = dark ? '#e2e8f0' : '#1e293b';
+  const muted  = dark ? '#64748b' : '#94a3b8';
+  const accent = dark ? '#60a5fa' : '#003466';
 
-  function dotColor(accent: HomeWidgetTaskRow['accent']): string {
-    if (accent === 'overdue') return red;
-    if (accent === 'today') return blue;
-    return navy;
+  function dotClr(a: HomeWidgetTaskRow['accent']): string {
+    if (a === 'overdue') return '#ef4444';
+    if (a === 'today') return '#3b82f6';
+    return accent;
   }
 
-  function accentLabel(accent: HomeWidgetTaskRow['accent']): string {
-    if (accent === 'overdue') return 'Overdue';
-    if (accent === 'today') return 'Today';
+  function statusLabel(a: HomeWidgetTaskRow['accent']): string {
+    if (a === 'overdue') return 'Overdue';
+    if (a === 'today') return 'Due today';
     return '';
   }
 
-  function sec(scheme: 'light' | 'dark' | undefined): string {
-    return scheme === 'dark' ? '#94a3b8' : '#64748b';
-  }
-
-  // ── Normalize ──
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [] };
-  const p = props
-    ? {
-        dateISO: typeof props.dateISO === 'string' ? props.dateISO : '',
-        greeting: typeof props.greeting === 'string' && props.greeting.trim() ? props.greeting : 'Rencana',
-        signedIn: Boolean(props.signedIn),
-        tasks: Array.isArray(props.tasks) ? props.tasks : [],
-        classes: Array.isArray(props.classes) ? props.classes : [],
-      }
-    : fallback;
+  const p = props || fallback;
 
-  const scheme = env.colorScheme;
   const family = env.widgetFamily;
-  const small = family === 'systemSmall';
-  const txt = scheme === 'dark' ? '#f1f5f9' : '#0f172a';
+  const small  = family === 'systemSmall';
+  const large  = family === 'systemLarge';
+  const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
-  const isLock =
-    family === 'accessoryInline' ||
-    family === 'accessoryCircular' ||
-    family === 'accessoryRectangular';
-
-  // ── Signed-out ──
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 12 })]} spacing={8}>
-        <Text modifiers={[font({ weight: 'bold', size: 18 }), foregroundStyle(navy)]}>
-          Tasks
-        </Text>
-        <Text modifiers={[font({ size: 13 }), foregroundStyle(sec(scheme)), lineLimit(3)]}>
-          Sign in to see your upcoming tasks.
-        </Text>
-        <Spacer />
-        <Text modifiers={[font({ size: 11, weight: 'medium' }), foregroundStyle(gold)]}>
-          Tap to open →
-        </Text>
+      <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+        <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Tasks</Text>
+        <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view tasks</Text>
       </VStack>
     );
   }
 
-  const tasks = isLock ? p.tasks.slice(0, 1) : small ? p.tasks.slice(0, 3) : p.tasks.slice(0, 5);
+  const maxItems = large ? 6 : small ? 3 : 4;
+  const tasks = isLock ? p.tasks.slice(0, 1) : p.tasks.slice(0, maxItems);
 
-  // ── Lock screen: inline ──
+  // Lock screen variants
   if (family === 'accessoryInline') {
     const t = tasks[0];
-    return (
-      <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(txt), lineLimit(1)]}>
-        {t ? `📋 ${t.title}` : '✅ No tasks due'}
-      </Text>
-    );
+    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{t ? t.title : 'No tasks due'}</Text>;
   }
-
-  // ── Lock screen: circular ──
   if (family === 'accessoryCircular') {
     return (
-      <VStack spacing={2}>
-        <Text modifiers={[font({ size: 20, weight: 'bold' }), foregroundStyle(txt)]}>
-          {String(p.tasks.length)}
-        </Text>
-        <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(sec(scheme))]}>
-          tasks
-        </Text>
+      <VStack spacing={1}>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.tasks.length)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>TASKS</Text>
       </VStack>
     );
   }
-
-  // ── Lock screen: rectangular ──
   if (family === 'accessoryRectangular') {
     return (
-      <VStack spacing={2}>
-        <HStack spacing={4}>
-          <Text modifiers={[font({ size: 12, weight: 'bold' }), foregroundStyle(txt)]}>Tasks</Text>
-          <Text modifiers={[font({ size: 10, weight: 'medium' }), foregroundStyle(sec(scheme))]}>
-            {String(p.tasks.length)} due
-          </Text>
-        </HStack>
-        {tasks[0] ? (
-          <Text modifiers={[font({ size: 12, weight: 'medium' }), foregroundStyle(dotColor(tasks[0].accent)), lineLimit(1)]}>
-            {tasks[0].title}
-          </Text>
-        ) : (
-          <Text modifiers={[font({ size: 11 }), foregroundStyle(sec(scheme))]}>All clear!</Text>
-        )}
+      <VStack spacing={3}>
+        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.tasks.length)} tasks due</Text>
+        {tasks[0] ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{tasks[0].title}</Text> : null}
       </VStack>
     );
   }
 
-  // ── Home screen: small + medium ──
+  // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <VStack spacing={0}>
-      {/* Header */}
-      <HStack modifiers={[padding({ horizontal: 12, vertical: 8 })]}>
-        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(txt)]}>
-          Tasks
-        </Text>
+    <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
+
+      {/* ── Header ── */}
+      <HStack spacing={6}>
+        <VStack spacing={2}>
+          <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), foregroundStyle(title)]}>
+            Tasks
+          </Text>
+          <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
+            {String(p.tasks.length)} pending
+          </Text>
+        </VStack>
         <Spacer />
-        {/* Count badge */}
-        <Text modifiers={[
-          font({ size: 11, weight: 'bold' }),
-          foregroundStyle(navy),
-          padding({ horizontal: 6, vertical: 2 }),
-          background(gold),
-          cornerRadius(8),
-        ]}>
-          {String(p.tasks.length)}
-        </Text>
+        <VStack spacing={2}>
+          <Text modifiers={[font({ size: small ? 22 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
+            {String(p.tasks.length)}
+          </Text>
+          <Link destination="rencana://add-task">
+            <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(accent)]}>
+              + Add
+            </Text>
+          </Link>
+        </VStack>
       </HStack>
 
-      {/* Task list */}
-      <VStack modifiers={[padding({ horizontal: 12, bottom: 10 })]} spacing={small ? 5 : 6}>
-        {tasks.length === 0 ? (
-          <VStack spacing={4}>
-            <Text modifiers={[font({ size: 13 }), foregroundStyle(sec(scheme))]}>
-              All caught up — no tasks due!
-            </Text>
-          </VStack>
-        ) : (
-          tasks.map((t) => (
-            <HStack key={t.id} spacing={8}>
-              {/* Color indicator dot */}
-              <Text modifiers={[font({ size: 10 }), foregroundStyle(dotColor(t.accent)), padding({ top: 2 })]}>●</Text>
+      {/* ── Thin separator ── */}
+      <Divider modifiers={[opacity(0.12)]} />
 
-              <VStack spacing={1}>
-                <HStack spacing={4}>
-                  <Text modifiers={[font({ size: small ? 12 : 13, weight: 'semibold' }), foregroundStyle(txt), lineLimit(1)]}>
+      {/* ── Task list — no inner card background ── */}
+      {tasks.length === 0 ? (
+        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up! 🎉</Text>
+      ) : (
+        <VStack spacing={0}>
+          {tasks.map((t, i) => (
+            <VStack key={t.id} spacing={0}>
+              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 5 }), opacity(0.08)]} /> : null}
+              <HStack spacing={8} modifiers={[padding({ vertical: small ? 2 : 4 })]}>
+                <Text modifiers={[font({ size: 7 }), foregroundStyle(dotClr(t.accent)), padding({ top: 3 })]}>●</Text>
+                <VStack spacing={2}>
+                  <Text modifiers={[font({ size: small ? 12 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                     {t.title}
                   </Text>
-                  {!small && accentLabel(t.accent) ? (
-                    <Text modifiers={[
-                      font({ size: 9, weight: 'bold' }),
-                      foregroundStyle('#ffffff'),
-                      padding({ horizontal: 4, vertical: 1 }),
-                      background(dotColor(t.accent)),
-                      cornerRadius(3),
-                    ]}>
-                      {accentLabel(t.accent)}
+                  {statusLabel(t.accent) ? (
+                    <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(dotClr(t.accent)), lineLimit(1)]}>
+                      {statusLabel(t.accent)}
                     </Text>
-                  ) : null}
-                </HStack>
-                <Text modifiers={[font({ size: small ? 10 : 11 }), foregroundStyle(sec(scheme)), lineLimit(1)]}>
-                  {t.subtitle}
-                </Text>
-              </VStack>
-            </HStack>
-          ))
-        )}
-      </VStack>
+                  ) : (
+                    <Text modifiers={[font({ size: 9 }), foregroundStyle(muted), lineLimit(1)]}>
+                      {t.subtitle}
+                    </Text>
+                  )}
+                </VStack>
+                <Spacer />
+              </HStack>
+            </VStack>
+          ))}
+        </VStack>
+      )}
+
     </VStack>
   );
 }

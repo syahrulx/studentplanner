@@ -87,6 +87,8 @@ function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, 
 }
 
 type AppState = {
+  /** True once remote data has loaded (or we confirmed no session). Prevents seed-data flash. */
+  dataReady: boolean;
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
   academicCalendar: AcademicCalendar | null;
@@ -201,6 +203,8 @@ type AppState = {
   clearSemesterData: () => Promise<void>;
   /** Re-fetch profile, tasks, calendar, study settings, courses, timetable from Supabase (same as cold start). */
   refreshRemoteData: () => Promise<void>;
+  /** @internal Manually mark data as ready (e.g. after sign-up completes profile save). */
+  markDataReady: () => void;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -277,6 +281,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
   const [autoDeletePastTasks, setAutoDeletePastTasksState] = useState(false);
+  /** True once remote data loaded (or no session confirmed). Prevents seed-data flash on UI + widgets. */
+  const [dataReady, setDataReady] = useState(false);
   const tasksRef = useRef<Task[]>([]);
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
@@ -845,6 +851,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
 
+        // ── Mark data as ready — UI can now render real data ──
+        setDataReady(true);
       });
     };
 
@@ -863,7 +871,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id;
-      if (!uid) return;
+      if (!uid) {
+        // No session on cold start — mark ready so UI shows sign-in prompt immediately
+        setDataReady(true);
+        return;
+      }
       void loadRemoteData(uid, getAuthFallbackName(session));
     });
 
@@ -878,6 +890,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           remoteLoadGeneration += 1;
           remoteUserIdRef.current = null;
           calendarAutoSyncedRef.current = false;
+          setDataReady(false);
           setUserState(() => {
             const p = getAcademicProgress(initialUser.startDate, 14);
             return {
@@ -896,6 +909,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCourses([]);
           setAcademicCalendar(null);
           setTimetable([]);
+          // After clearing, mark ready so auth screen renders
+          setDataReady(true);
         }
         return;
       }
@@ -912,7 +927,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name };
 
+  // Solution C: Gate widget sync — only push to widgets once real data is loaded
   useEffect(() => {
+    if (!dataReady) return; // Skip seed-data writes to widget
     let cancelled = false;
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
@@ -937,7 +954,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, logWidgetSyncTrigger]);
+  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, logWidgetSyncTrigger]);
 
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -1665,7 +1682,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await timetableDb.saveTimetable(uid, merged);
   }, []);
 
+  const markDataReady = useCallback(() => setDataReady(true), []);
+
   const value: AppState = {
+    dataReady,
     user,
     setUser,
     academicCalendar,
@@ -1735,6 +1755,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     removeTimetableEntry,
     clearSemesterData,
     refreshRemoteData,
+    markDataReady,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

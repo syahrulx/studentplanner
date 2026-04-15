@@ -1,167 +1,122 @@
-import { Text, VStack, HStack, Spacer } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, cornerRadius, background, frame } from '@expo/ui/swift-ui/modifiers';
+import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
+import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps } from '../src/lib/homeWidgetProps';
 
 function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  // ── Brand palette ──
-  const navy = '#003366';
-  const gold = '#f59e0b';
+  const dark   = env.colorScheme === 'dark';
+  const title  = dark ? '#ffffff' : '#0f172a';
+  const body   = dark ? '#e2e8f0' : '#1e293b';
+  const muted  = dark ? '#64748b' : '#94a3b8';
+  const accent = dark ? '#60a5fa' : '#003466';
 
-  function sec(scheme: 'light' | 'dark' | undefined): string {
-    return scheme === 'dark' ? '#94a3b8' : '#64748b';
-  }
-
-  // ── Normalize ──
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [] };
-  const p = props
-    ? {
-        dateISO: typeof props.dateISO === 'string' ? props.dateISO : '',
-        greeting: typeof props.greeting === 'string' && props.greeting.trim() ? props.greeting : 'Rencana',
-        signedIn: Boolean(props.signedIn),
-        tasks: Array.isArray(props.tasks) ? props.tasks : [],
-        classes: Array.isArray(props.classes) ? props.classes : [],
-      }
-    : fallback;
+  const p = props || fallback;
 
-  const scheme = env.colorScheme;
   const family = env.widgetFamily;
-  const small = family === 'systemSmall';
-  const txt = scheme === 'dark' ? '#f1f5f9' : '#0f172a';
+  const small  = family === 'systemSmall';
+  const large  = family === 'systemLarge';
+  const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
-  const isLock =
-    family === 'accessoryInline' ||
-    family === 'accessoryCircular' ||
-    family === 'accessoryRectangular';
-
-  // ── Signed-out ──
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 12 })]} spacing={8}>
-        <Text modifiers={[font({ weight: 'bold', size: 18 }), foregroundStyle(navy)]}>
-          Timetable
-        </Text>
-        <Text modifiers={[font({ size: 13 }), foregroundStyle(sec(scheme)), lineLimit(3)]}>
-          Sign in to see today's class schedule.
-        </Text>
-        <Spacer />
-        <Text modifiers={[font({ size: 11, weight: 'medium' }), foregroundStyle(gold)]}>
-          Tap to open →
-        </Text>
+      <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+        <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Classes</Text>
+        <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view timetable</Text>
       </VStack>
     );
   }
 
-  const classes = isLock ? p.classes.slice(0, 1) : small ? p.classes.slice(0, 3) : p.classes.slice(0, 5);
+  const maxItems = large ? 6 : small ? 3 : 4;
+  const cls = isLock ? p.classes.slice(0, 1) : p.classes.slice(0, maxItems);
 
-  // ── Lock screen: inline ──
+  // Lock screen
   if (family === 'accessoryInline') {
-    const c = classes[0];
-    return (
-      <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(txt), lineLimit(1)]}>
-        {c ? `📚 ${c.startTime} ${c.label}` : '🎉 No classes today'}
-      </Text>
-    );
+    const c = cls[0];
+    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{c ? `${c.startTime} ${c.label}` : 'No classes today'}</Text>;
   }
-
-  // ── Lock screen: circular ──
   if (family === 'accessoryCircular') {
     return (
-      <VStack spacing={2}>
-        <Text modifiers={[font({ size: 20, weight: 'bold' }), foregroundStyle(txt)]}>
-          {String(p.classes.length)}
-        </Text>
-        <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(sec(scheme))]}>
-          classes
-        </Text>
+      <VStack spacing={1}>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.classes.length)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>CLASS</Text>
       </VStack>
     );
   }
-
-  // ── Lock screen: rectangular ──
   if (family === 'accessoryRectangular') {
-    const c = classes[0];
+    const c = cls[0];
     return (
-      <VStack spacing={2}>
-        <HStack spacing={4}>
-          <Text modifiers={[font({ size: 12, weight: 'bold' }), foregroundStyle(txt)]}>Classes</Text>
-          <Text modifiers={[font({ size: 10, weight: 'medium' }), foregroundStyle(sec(scheme))]}>
-            {String(p.classes.length)} today
-          </Text>
-        </HStack>
-        {c ? (
-          <Text modifiers={[font({ size: 12, weight: 'medium' }), foregroundStyle(txt), lineLimit(1)]}>
-            {c.startTime} {c.label}
-          </Text>
-        ) : (
-          <Text modifiers={[font({ size: 11 }), foregroundStyle(sec(scheme))]}>Free day!</Text>
-        )}
+      <VStack spacing={3}>
+        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.classes.length)} classes</Text>
+        {c ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{c.startTime} {c.label}</Text> : null}
       </VStack>
     );
   }
 
-  // ── Home screen ──
+  // ─── HOME SCREEN (small / medium / large) — no inner card bg ───
   return (
-    <VStack spacing={0}>
-      {/* Header */}
-      <HStack modifiers={[padding({ horizontal: 12, vertical: 8 })]}>
-        <Text modifiers={[font({ weight: 'bold', size: small ? 15 : 17 }), foregroundStyle(txt)]}>
-          {small ? 'Classes' : "Today's Classes"}
-        </Text>
+    <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
+
+      {/* ── Header ── */}
+      <HStack spacing={6}>
+        <VStack spacing={2}>
+          <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : 18 }), foregroundStyle(title), lineLimit(1)]}>
+            {small ? 'Classes' : "Today's Classes"}
+          </Text>
+          <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
+            {small ? 'Today' : "Today's Schedule"}
+          </Text>
+        </VStack>
         <Spacer />
-        <Text modifiers={[
-          font({ size: 11, weight: 'bold' }),
-          foregroundStyle(navy),
-          padding({ horizontal: 6, vertical: 2 }),
-          background(gold),
-          cornerRadius(8),
-        ]}>
-          {String(p.classes.length)}
-        </Text>
+        <VStack spacing={0}>
+          <Text modifiers={[font({ size: small ? 20 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
+            {String(p.classes.length)}
+          </Text>
+          <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>today</Text>
+        </VStack>
       </HStack>
 
-      {/* Class list */}
-      <VStack modifiers={[padding({ horizontal: 12, bottom: 10 })]} spacing={small ? 5 : 7}>
-        {classes.length === 0 ? (
-          <VStack spacing={4}>
-            <Text modifiers={[font({ size: 13 }), foregroundStyle(sec(scheme))]}>
-              No classes today — enjoy the break!
-            </Text>
-          </VStack>
-        ) : (
-          classes.map((c, i) => (
-            <HStack key={`${c.startTime}-${c.label}-${i}`} spacing={8}>
-              {/* Time badge */}
-              <VStack modifiers={[
-                padding({ horizontal: 5, vertical: 3 }),
-                background(scheme === 'dark' ? '#1e3a5f' : navy),
-                cornerRadius(4),
-              ]}>
-                <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle('#ffffff')]}>
-                  {c.startTime}
-                </Text>
-                <Text modifiers={[font({ size: 8, weight: 'medium' }), foregroundStyle(gold)]}>
-                  {c.endTime}
-                </Text>
-              </VStack>
+      {/* ── Thin separator ── */}
+      <Divider modifiers={[opacity(0.12)]} />
 
-              {/* Class info */}
-              <VStack spacing={1}>
-                <Text modifiers={[font({ size: small ? 12 : 13, weight: 'semibold' }), foregroundStyle(txt), lineLimit(1)]}>
-                  {c.label}
-                </Text>
-                {c.location ? (
-                  <Text modifiers={[font({ size: 10 }), foregroundStyle(sec(scheme)), lineLimit(1)]}>
-                    {c.location}
+      {/* ── Class list — no inner card background ── */}
+      {cls.length === 0 ? (
+        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today 🎉</Text>
+      ) : (
+        <VStack spacing={0}>
+          {cls.map((c, i) => (
+            <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0}>
+              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), opacity(0.08)]} /> : null}
+              <HStack spacing={small ? 6 : 10} modifiers={[padding({ vertical: small ? 1 : 3 })]}>
+                {/* Time column */}
+                <VStack spacing={0} modifiers={small ? [] : [frame({ width: 46 })]}>
+                  <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                    {c.startTime}
                   </Text>
-                ) : null}
-              </VStack>
-            </HStack>
-          ))
-        )}
-      </VStack>
+                  {!small ? (
+                    <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(muted), lineLimit(1)]}>
+                      {c.endTime}
+                    </Text>
+                  ) : null}
+                </VStack>
+                {/* Class name + location */}
+                <VStack spacing={1}>
+                  <Text modifiers={[font({ size: small ? 11 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                    {c.label}
+                  </Text>
+                  <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>
+                    {c.location || '—'}
+                  </Text>
+                </VStack>
+                <Spacer />
+              </HStack>
+            </VStack>
+          ))}
+        </VStack>
+      )}
+
     </VStack>
   );
 }

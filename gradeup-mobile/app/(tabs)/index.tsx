@@ -584,6 +584,7 @@ function createDashboardStyles(theme: ThemePalette) {
 
 export default function Dashboard() {
   const {
+    dataReady,
     user,
     tasks,
     courses,
@@ -1003,6 +1004,47 @@ export default function Dashboard() {
     headerOnPrimary.startsWith('#') && headerOnPrimary.length >= 7 ? headerOnPrimary : '#ffffff',
     0.13,
   );
+
+  // ── Solution A: Loading guard ─────────────────────────────────
+  // Don't render dashboard content until real data has loaded.
+  // This prevents the confusing "Hello, Student" flash with empty data.
+  if (!dataReady) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: theme.background,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text
+          style={{
+            color: theme.primary,
+            fontSize: 18,
+            fontWeight: '800',
+            marginTop: 18,
+            letterSpacing: -0.3,
+          }}
+        >
+          Rencana
+        </Text>
+        <Text
+          style={{
+            color: theme.textSecondary,
+            fontSize: 12,
+            fontWeight: '600',
+            marginTop: 6,
+          }}
+        >
+          Loading your data...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

@@ -257,47 +257,6 @@ export default function SignUp() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Create Account</Text>
 
-          {/* Google */}
-          <Pressable
-            style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
-            onPress={handleGoogleSignUp}
-            disabled={isLoading}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color="#333" size="small" />
-            ) : (
-              <>
-                <Text style={styles.googleBtnIcon}>G</Text>
-                <Text style={styles.googleBtnText}>Continue with Google</Text>
-              </>
-            )}
-          </Pressable>
-          
-          <Text style={styles.hintText}>
-            💡 Tip: Use your university email to easily sync Google Classroom & Teams!
-          </Text>
-
-          <Pressable
-            style={({ pressed }) => [styles.appleBtn, pressed && { opacity: 0.9 }, isLoading && { opacity: 0.6 }]}
-            onPress={handleAppleSignUp}
-            disabled={isLoading}
-          >
-            {appleLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="logo-apple" size={20} color="#fff" />
-                <Text style={styles.appleBtnText}>Continue with Apple</Text>
-              </>
-            )}
-          </Pressable>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Register with email</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
           {/* Name */}
           <View style={styles.inputWrap}>
             <Feather name="user" size={18} color="#94a3b8" style={styles.inputIcon} />
@@ -328,6 +287,7 @@ export default function SignUp() {
               editable={!isLoading}
             />
           </View>
+
 
           {/* University */}
           <Pressable
@@ -393,12 +353,7 @@ export default function SignUp() {
               style={({ pressed }) => [styles.loginBtnOuter, pressed && { opacity: 0.9 }]}
               onPress={() => router.replace('/(auth)/login')}
             >
-              <LinearGradient
-                colors={['#24334d', '#1a2436']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.loginBtnGradient}
-              >
+              <LinearGradient colors={['#24334d', '#1a2436']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.loginBtnGradient}>
                 <Text style={styles.loginBtnText}>Go to Login</Text>
               </LinearGradient>
             </Pressable>
@@ -408,16 +363,36 @@ export default function SignUp() {
               onPress={handleSignUp}
               disabled={isLoading}
             >
-              <LinearGradient
-                colors={['#24334d', '#1a2436']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.loginBtnGradient}
-              >
+              <LinearGradient colors={['#24334d', '#1a2436']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.loginBtnGradient}>
                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Create Account</Text>}
               </LinearGradient>
             </Pressable>
           )}
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Social icon buttons */}
+          <View style={styles.socialRow}>
+            <Pressable
+              style={({ pressed }) => [styles.socialIconBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }, isLoading && { opacity: 0.6 }]}
+              onPress={handleGoogleSignUp}
+              disabled={isLoading}
+            >
+              {googleLoading ? <ActivityIndicator color="#4285F4" size="small" /> : <Text style={styles.googleIconText}>G</Text>}
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.socialIconBtn, styles.appleIconBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }, isLoading && { opacity: 0.6 }]}
+              onPress={handleAppleSignUp}
+              disabled={isLoading}
+            >
+              {appleLoading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="logo-apple" size={22} color="#fff" />}
+            </Pressable>
+          </View>
 
           <View style={styles.signUpRow}>
             <Text style={styles.signUpLabel}>Already have an account? </Text>
@@ -426,6 +401,7 @@ export default function SignUp() {
             </Pressable>
           </View>
         </View>
+
       </ScrollView>
 
       {/* ── University Modal ── */}
@@ -517,30 +493,31 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   cardTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', letterSpacing: -0.3, marginBottom: 18 },
-  googleBtn: {
+  socialRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
+    gap: 16,
+    marginBottom: 4,
+  },
+  socialIconBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     backgroundColor: '#fff',
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    borderRadius: 14,
-    paddingVertical: 13,
-    gap: 10,
-  },
-  googleBtnIcon: { fontSize: 18, fontWeight: '700', color: '#4285F4' },
-  googleBtnText: { fontSize: 15, fontWeight: '600', color: '#334155' },
-  appleBtn: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
-    borderRadius: 14,
-    paddingVertical: 13,
-    gap: 10,
-    marginTop: 12,
   },
-  appleBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  googleIconText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#4285F4',
+  },
+  appleIconBtn: {
+    backgroundColor: '#000',
+    borderColor: '#000',
+  },
   hintText: {
     fontSize: 12,
     color: '#64748b',
