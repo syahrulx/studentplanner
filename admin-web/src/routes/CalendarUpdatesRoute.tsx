@@ -63,6 +63,10 @@ export function CalendarUpdatesRoute() {
   const [selected, setSelected] = useState<string>('');
   const [universitySearch, setUniversitySearch] = useState('');
   const [universityOpen, setUniversityOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(true);
+  const [offersOpen, setOffersOpen] = useState(true);
+  const [offersSearch, setOffersSearch] = useState('');
+  const [offersUni, setOffersUni] = useState('');
   const [history, setHistory] = useState<AdminCalendarOfferRow[]>([]);
   const [semesterLabel, setSemesterLabel] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -185,18 +189,42 @@ export function CalendarUpdatesRoute() {
   }, []);
 
   const filteredHistory = useMemo(() => {
-    if (!searchQuery.trim()) return history;
-    return history.filter((h) =>
-      matchesAdminSearch(
-        searchQuery,
-        h.university_id,
-        universityNameById.get(h.university_id) ?? '',
-        h.semester_label,
-        h.admin_note ?? '',
-        h.official_url ?? '',
-      ),
-    );
-  }, [history, searchQuery, universityNameById]);
+    const qTop = searchQuery.trim();
+    const qLocal = offersSearch.trim();
+    const uni = offersUni.trim();
+    return history.filter((h) => {
+      if (uni && h.university_id !== uni) return false;
+      if (qTop) {
+        const ok = matchesAdminSearch(
+          qTop,
+          h.university_id,
+          universityNameById.get(h.university_id) ?? '',
+          h.semester_label,
+          h.admin_note ?? '',
+          h.official_url ?? '',
+        );
+        if (!ok) return false;
+      }
+      if (qLocal) {
+        const ok = matchesAdminSearch(
+          qLocal,
+          h.university_id,
+          universityNameById.get(h.university_id) ?? '',
+          h.semester_label,
+          h.admin_note ?? '',
+          h.official_url ?? '',
+        );
+        if (!ok) return false;
+      }
+      return true;
+    });
+  }, [history, offersSearch, offersUni, searchQuery, universityNameById]);
+
+  const offerUniOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of history) set.add(h.university_id);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [history]);
 
   const publish = async () => {
     setErr('');
@@ -339,13 +367,22 @@ export function CalendarUpdatesRoute() {
 
       <MotionPanel className="mt-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Publish new offer</CardTitle>
+          <CardHeader className="items-center py-5">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="leading-none">Publish new offer</CardTitle>
+              <button
+                type="button"
+                onClick={() => setPublishOpen((v) => !v)}
+                className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black leading-none text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                {publishOpen ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
             <CardDescription>
               Select a university from the dropdown and configure its semester dates. Each university has its own calendar.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
+          {publishOpen ? <CardContent className="space-y-5">
             {err ? (
               <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
                 {err}
@@ -643,79 +680,147 @@ export function CalendarUpdatesRoute() {
             <Button type="button" disabled={busy} onClick={() => void publish()} className="w-full sm:w-auto">
               {busy ? 'Publishing…' : 'Publish offers'}
             </Button>
-          </CardContent>
+          </CardContent> : null}
         </Card>
       </MotionPanel>
 
       <MotionSection className="mt-10">
-        <div className="text-lg font-black text-slate-900 dark:text-slate-100">Existing offers</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Newest first. Each row shows the university, semester span, and a visual timeline (phases from periods JSON when present).
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-lg font-black text-slate-900 dark:text-slate-100">Existing offers</div>
+            <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Newest first. Each row shows the university, semester span, and a visual timeline (phases from periods JSON when present).
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => {
+                setOffersUni('');
+                setOffersSearch('');
+              }}
+              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => setOffersOpen((v) => !v)}
+              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              {offersOpen ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
         </div>
       </MotionSection>
 
-      {/* key remounts the stagger container when rows change so new items are not stuck at opacity:0 (parent used whileInView once:true). */}
-      <MotionStagger key={history.map((h) => h.id).join('|')} className="mt-4 space-y-3">
-        {filteredHistory.map((h) => (
-          <MotionStaggerItem key={h.id}>
-            <Card>
-              <CardContent className="space-y-4 py-4">
-                <AcademicCalendarOfferGraphic
-                  offer={h}
-                  universityName={universityNameById.get(h.university_id) ?? h.university_id}
+      {offersOpen ? (
+        <>
+          <div className="mt-4 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  University
+                </span>
+                <select
+                  value={offersUni}
+                  onChange={(e) => setOffersUni(e.target.value)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <option value="">All</option>
+                  {offerUniOptions.map((u) => (
+                    <option key={u} value={u}>
+                      {universityNameById.get(u) ?? u} ({u})
+                    </option>
+                  ))}
+                </select>
+              </Label>
+              <Label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Search
+                </span>
+                <TextInput
+                  value={offersSearch}
+                  onChange={(e) => setOffersSearch(e.target.value)}
+                  placeholder="Search semester, note, url…"
                 />
-                <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Published {new Date(h.created_at).toLocaleString()}
-                  </div>
-                </div>
-                {h.admin_note ? <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">{h.admin_note}</div> : null}
-                <div className="flex flex-wrap gap-3 text-xs font-bold">
-                  {h.official_url ? (
-                    <a href={h.official_url} target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400">
-                      Link
-                    </a>
-                  ) : null}
-                  {h.reference_pdf_url ? (
-                    <a href={h.reference_pdf_url} target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400">
-                      PDF
-                    </a>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    disabled={Boolean(deletingOfferId)}
-                    onClick={async () => {
-                      const uni = universityNameById.get(h.university_id) ?? h.university_id;
-                      const ok = window.confirm(
-                        `Delete this offer?\n\n${uni}\n${h.semester_label}\n\nThis cannot be undone.`,
-                      );
-                      if (!ok) return;
-                      setErr('');
-                      setOkMsg('');
-                      setDeletingOfferId(h.id);
-                      try {
-                        await deleteUniversityCalendarOffer(h.id);
-                        await refreshHistory();
-                        setOkMsg('Offer deleted.');
-                      } catch (e) {
-                        setErr(e instanceof Error ? e.message : 'Delete failed');
-                      } finally {
-                        setDeletingOfferId('');
-                      }
-                    }}
-                  >
-                    {deletingOfferId === h.id ? 'Deleting…' : 'Delete'}
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          </MotionStaggerItem>
-        ))}
-        {filteredHistory.length === 0 ? (
-          <div className="text-sm font-semibold text-slate-500">No offers yet.</div>
-        ) : null}
-      </MotionStagger>
+              </Label>
+            </div>
+            <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Showing <span className="font-black">{filteredHistory.length}</span> offer(s)
+              {searchQuery.trim() ? ' (also filtered by top search bar)' : ''}.
+            </div>
+          </div>
+
+          {/* key remounts the stagger container when rows change so new items are not stuck at opacity:0 (parent used whileInView once:true). */}
+          <MotionStagger key={history.map((h) => h.id).join('|')} className="mt-4 space-y-3">
+            {filteredHistory.map((h) => (
+              <MotionStaggerItem key={h.id}>
+                <Card>
+                  <CardContent className="space-y-4 py-4">
+                    <AcademicCalendarOfferGraphic
+                      offer={h}
+                      universityName={universityNameById.get(h.university_id) ?? h.university_id}
+                    />
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                      <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                        Published {new Date(h.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    {h.admin_note ? (
+                      <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">{h.admin_note}</div>
+                    ) : null}
+                    <div className="flex flex-wrap gap-3 text-xs font-bold">
+                      {h.official_url ? (
+                        <a href={h.official_url} target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400">
+                          Link
+                        </a>
+                      ) : null}
+                      {h.reference_pdf_url ? (
+                        <a
+                          href={h.reference_pdf_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-brand-600 dark:text-brand-400"
+                        >
+                          PDF
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        disabled={Boolean(deletingOfferId)}
+                        onClick={async () => {
+                          const uni = universityNameById.get(h.university_id) ?? h.university_id;
+                          const ok = window.confirm(
+                            `Delete this offer?\n\n${uni}\n${h.semester_label}\n\nThis cannot be undone.`,
+                          );
+                          if (!ok) return;
+                          setErr('');
+                          setOkMsg('');
+                          setDeletingOfferId(h.id);
+                          try {
+                            await deleteUniversityCalendarOffer(h.id);
+                            await refreshHistory();
+                            setOkMsg('Offer deleted.');
+                          } catch (e) {
+                            setErr(e instanceof Error ? e.message : 'Delete failed');
+                          } finally {
+                            setDeletingOfferId('');
+                          }
+                        }}
+                      >
+                        {deletingOfferId === h.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </MotionStaggerItem>
+            ))}
+            {filteredHistory.length === 0 ? <div className="text-sm font-semibold text-slate-500">No offers yet.</div> : null}
+          </MotionStagger>
+        </>
+      ) : null}
     </div>
   );
 }
