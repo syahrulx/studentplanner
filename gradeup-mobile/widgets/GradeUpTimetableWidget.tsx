@@ -55,22 +55,22 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   }
 
   if (family === 'accessoryRectangular') {
-    const show = p.classes.slice(0, 3);
+    const show = p.classes.slice(0, 4);
     return (
-      <VStack spacing={1}>
+      <VStack spacing={0}>
         <Text modifiers={[font({ size: 11, weight: 'heavy' }), lineLimit(1)]}>
           {String(p.classes.length)} Classes Today
         </Text>
         {show.length === 0 ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.6)]}>Free day!</Text>
+          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>Free day!</Text>
         ) : (
           <VStack spacing={0}>
             {show.map((c, i) => (
               <Text
                 key={`${c.startTime}-${i}`}
-                modifiers={[font({ size: 10 }), opacity(i === 0 ? 1.0 : 0.7), lineLimit(1)]}
+                modifiers={[font({ size: 10 }), lineLimit(1)]}
               >
-                {c.startTime} {c.label}
+                {c.startTime} {c.label}{c.location ? ` · ${c.location}` : ''}
               </Text>
             ))}
           </VStack>
