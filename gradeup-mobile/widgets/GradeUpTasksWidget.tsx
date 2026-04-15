@@ -6,14 +6,14 @@ import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetPr
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Read theme colors from app — fallback to light if missing.
-  const bg     = props?.theme?.background     || '#ffffff';
-  const title  = props?.theme?.text           || '#0f172a';
-  const muted  = props?.theme?.textSecondary  || '#64748b';
-  const accent = props?.theme?.primary        || '#2563eb';
-  const red    = props?.theme?.danger         || '#dc2626';
-  const warn   = props?.theme?.warning        || '#d97706';
-  const line   = props?.theme?.border         || '#e2e8f0';
+  // Force light widget theme regardless of system appearance.
+  const bg = '#ffffff';
+  const title = '#0f172a';
+  const muted = '#64748b';
+  const accent = '#2563eb';
+  const red = '#dc2626';
+  const warn = '#d97706';
+  const line = '#000000';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -47,39 +47,24 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const maxItems = large ? 6 : small ? 3 : 4;
   const tasks = isLock ? p.tasks.slice(0, 1) : p.tasks.slice(0, maxItems);
 
-  // Lock screen — no foregroundStyle so iOS auto-tints for visibility
+  // Lock screen variants
   if (family === 'accessoryInline') {
     const t = tasks[0];
-    if (!t) {
-      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due</Text>;
-    }
-    const prefix = t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '';
-    return (
-      <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-        {prefix ? `${prefix} ` : ''}{t.title}
-      </Text>
-    );
+    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{t ? t.title : 'No tasks due'}</Text>;
   }
   if (family === 'accessoryCircular') {
     return (
       <VStack spacing={1}>
-        <Text modifiers={[font({ size: 24, weight: 'heavy' })]}>{String(p.tasks.length)}</Text>
-        <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TASKS</Text>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.tasks.length)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>TASKS</Text>
       </VStack>
     );
   }
   if (family === 'accessoryRectangular') {
-    const t = tasks[0];
-    const status = t ? statusLabel(t.accent) : '';
     return (
       <VStack spacing={3}>
-        <Text modifiers={[font({ size: 13, weight: 'bold' })]}>{String(p.tasks.length)} tasks due</Text>
-        {t ? (
-          <Text modifiers={[font({ size: 12 }), opacity(0.8), lineLimit(1)]}>
-            {t.title}
-            {status ? ` · ${status}` : ''}
-          </Text>
-        ) : null}
+        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.tasks.length)} tasks due</Text>
+        {tasks[0] ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{tasks[0].title}</Text> : null}
       </VStack>
     );
   }

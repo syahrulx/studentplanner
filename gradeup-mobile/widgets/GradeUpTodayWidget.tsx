@@ -6,15 +6,15 @@ import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetPr
 function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Read theme colors from app — fallback to light if missing.
-  const bg     = props?.theme?.background     || '#ffffff';
-  const title  = props?.theme?.text           || '#0f172a';
-  const body   = props?.theme?.text           || '#1e293b';
-  const muted  = props?.theme?.textSecondary  || '#64748b';
-  const accent = props?.theme?.primary        || '#2563eb';
-  const red    = props?.theme?.danger         || '#dc2626';
-  const warn   = props?.theme?.warning        || '#d97706';
-  const line   = props?.theme?.border         || '#e2e8f0';
+  // Force light widget theme regardless of system appearance.
+  const bg = '#ffffff';
+  const title = '#0f172a';
+  const body = '#1e293b';
+  const muted = '#64748b';
+  const accent = '#2563eb';
+  const red = '#dc2626';
+  const warn = '#d97706';
+  const line = '#000000';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -42,7 +42,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
-  const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
+  const dense = !small && p.classes.length >= 4;
 
   const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -55,87 +55,12 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   const count = p.tasks.length + p.classes.length;
-  const nextTask = p.tasks[0];
-  const nextClass = p.classes[0];
-
-  // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
-  if (isLock && !p.signedIn) {
-    if (family === 'accessoryInline') {
-      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>Sign in to Rencana</Text>;
-    }
-    if (family === 'accessoryCircular') {
-      return (
-        <VStack spacing={1}>
-          <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>0</Text>
-          <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TODAY</Text>
-        </VStack>
-      );
-    }
-    return (
-      <VStack spacing={2}>
-        <Text modifiers={[font({ size: 12, weight: 'bold' })]}>Today</Text>
-        <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>Sign in to load</Text>
-      </VStack>
-    );
-  }
 
   if (!p.signedIn) {
     return (
       <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Rencana</Text>
         <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
-      </VStack>
-    );
-  }
-
-  // ── Lock screen: accessoryInline ──
-  if (family === 'accessoryInline') {
-    if (nextTask) {
-      const prefix = nextTask.accent === 'overdue' ? '⚠' : '📋';
-      return (
-        <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-          {prefix} {nextTask.title}
-        </Text>
-      );
-    }
-    if (nextClass) {
-      return (
-        <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-          📚 {nextClass.startTime} {nextClass.label}
-        </Text>
-      );
-    }
-    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No plans today</Text>;
-  }
-
-  // ── Lock screen: accessoryCircular ──
-  if (family === 'accessoryCircular') {
-    return (
-      <VStack spacing={1}>
-        <Text modifiers={[font({ size: 24, weight: 'heavy' })]}>{String(count)}</Text>
-        <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TODAY</Text>
-      </VStack>
-    );
-  }
-
-  // ── Lock screen: accessoryRectangular — show BOTH task + class ──
-  if (family === 'accessoryRectangular') {
-    return (
-      <VStack spacing={3}>
-        <Text modifiers={[font({ size: 13, weight: 'bold' })]}>{String(count)} items today</Text>
-        {nextTask ? (
-          <Text modifiers={[font({ size: 11 }), opacity(0.8), lineLimit(1)]}>
-            {nextTask.accent === 'overdue' ? '⚠ ' : '• '}{nextTask.title}
-          </Text>
-        ) : null}
-        {nextClass ? (
-          <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>
-            {nextClass.startTime} {nextClass.label}
-          </Text>
-        ) : null}
-        {!nextTask && !nextClass ? (
-          <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>Free day!</Text>
-        ) : null}
       </VStack>
     );
   }
@@ -149,7 +74,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         <HStack spacing={4}>
           <VStack spacing={1}>
             <Text modifiers={[font({ weight: 'heavy', size: 13 }), foregroundStyle(title), lineLimit(1)]}>
-              {p.greeting}
+              Today
             </Text>
             <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(accent), lineLimit(1)]}>
               {dl}
@@ -208,30 +133,24 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   // ── MEDIUM / LARGE ──
-  const colMax  = large ? 4 : 2;
+  const colMax  = large ? 4 : 4;
   const colTask = p.tasks.slice(0, colMax);
   const colCls  = p.classes.slice(0, colMax);
 
   return (
-    <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={10}>
+    <VStack modifiers={[padding({ top: dense ? 14 : 16, leading: 14, trailing: 14, bottom: dense ? 10 : 12 }), background(bg)]} spacing={dense ? 6 : 10}>
 
       {/* Header */}
       <HStack spacing={6}>
         <VStack spacing={2}>
-          <Text modifiers={[font({ weight: 'heavy', size: 18 }), foregroundStyle(title), lineLimit(1)]}>
-            {p.greeting}
+          <Text modifiers={[font({ weight: 'heavy', size: dense ? 14 : 17 }), foregroundStyle(title), lineLimit(1), padding({ top: dense ? 2 : 0 })]}>
+            Today
           </Text>
           <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent), lineLimit(1)]}>
             {dl}
           </Text>
         </VStack>
         <Spacer />
-        <VStack spacing={0}>
-          <Text modifiers={[font({ size: 28, weight: 'heavy' }), foregroundStyle(accent)]}>
-            {String(count)}
-          </Text>
-          <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>items</Text>
-        </VStack>
       </HStack>
 
       <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
@@ -284,7 +203,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
 
         {/* CLASSES column */}
-        <VStack spacing={6} modifiers={[padding({ leading: 12 })]}>
+        <VStack spacing={dense ? 2 : 6} modifiers={[padding({ leading: 12 })]}>
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>CLASSES</Text>
             <Spacer />
@@ -296,18 +215,18 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           {colCls.length === 0 ? (
             <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free! 🎉</Text>
           ) : (
-            <VStack spacing={6}>
+            <VStack spacing={dense ? 2 : 6}>
               {colCls.map((c, i) => (
-                <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={1}>
-                  <HStack spacing={5}>
-                    <Text modifiers={[font({ size: 11, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={dense ? 0 : 1}>
+                  <HStack spacing={dense ? 4 : 5}>
+                    <Text modifiers={[font({ size: dense ? 10 : 11, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
                       {c.startTime}
                     </Text>
-                    <Text modifiers={[font({ size: 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                       {c.label}
                     </Text>
                   </HStack>
-                  <Text modifiers={[font({ size: 8 }), foregroundStyle(muted), lineLimit(1)]}>
+                  <Text modifiers={[font({ size: dense ? 7 : 8 }), foregroundStyle(muted), lineLimit(1)]}>
                     {c.location || '—'}
                   </Text>
                 </VStack>
