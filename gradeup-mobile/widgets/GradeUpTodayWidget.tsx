@@ -6,15 +6,15 @@ import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetPr
 function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Force light widget theme regardless of system appearance.
-  const bg = '#ffffff';
-  const title = '#0f172a';
-  const body = '#1e293b';
-  const muted = '#64748b';
-  const accent = '#2563eb';
-  const red = '#dc2626';
-  const warn = '#d97706';
-  const line = '#000000';
+  // Read theme colors from app — fallback to light if missing.
+  const bg     = props?.theme?.background     || '#ffffff';
+  const title  = props?.theme?.text           || '#0f172a';
+  const body   = props?.theme?.text           || '#1e293b';
+  const muted  = props?.theme?.textSecondary  || '#64748b';
+  const accent = props?.theme?.primary        || '#2563eb';
+  const red    = props?.theme?.danger         || '#dc2626';
+  const warn   = props?.theme?.warning        || '#d97706';
+  const line   = props?.theme?.border         || '#e2e8f0';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
