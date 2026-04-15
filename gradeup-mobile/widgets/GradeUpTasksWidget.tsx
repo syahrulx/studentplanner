@@ -6,14 +6,14 @@ import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetPr
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Force light widget theme regardless of system appearance.
-  const bg = '#ffffff';
-  const title = '#0f172a';
-  const muted = '#64748b';
-  const accent = '#2563eb';
-  const red = '#dc2626';
-  const warn = '#d97706';
-  const line = '#000000';
+  // Read theme colors from app — fallback to light if missing.
+  const bg     = props?.theme?.background     || '#ffffff';
+  const title  = props?.theme?.text           || '#0f172a';
+  const muted  = props?.theme?.textSecondary  || '#64748b';
+  const accent = props?.theme?.primary        || '#2563eb';
+  const red    = props?.theme?.danger         || '#dc2626';
+  const warn   = props?.theme?.warning        || '#d97706';
+  const line   = props?.theme?.border         || '#e2e8f0';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -45,26 +45,52 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   const maxItems = large ? 6 : small ? 3 : 4;
-  const tasks = isLock ? p.tasks.slice(0, 1) : p.tasks.slice(0, maxItems);
+  const tasks = isLock ? p.tasks.slice(0, 3) : p.tasks.slice(0, maxItems);
 
-  // Lock screen variants
+  // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
   if (family === 'accessoryInline') {
     const t = tasks[0];
-    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{t ? t.title : 'No tasks due'}</Text>;
+    if (!t) {
+      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due</Text>;
+    }
+    const prefix = t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '';
+    return (
+      <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
+        {prefix ? `${prefix} ` : ''}{t.title}
+      </Text>
+    );
   }
+
   if (family === 'accessoryCircular') {
     return (
-      <VStack spacing={1}>
-        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.tasks.length)}</Text>
-        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>TASKS</Text>
+      <VStack spacing={0}>
+        <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>{String(p.tasks.length)}</Text>
+        <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.6)]}>TASKS</Text>
       </VStack>
     );
   }
+
   if (family === 'accessoryRectangular') {
+    const show = p.tasks.slice(0, 3);
     return (
-      <VStack spacing={3}>
-        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.tasks.length)} tasks due</Text>
-        {tasks[0] ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{tasks[0].title}</Text> : null}
+      <VStack spacing={1}>
+        <Text modifiers={[font({ size: 11, weight: 'heavy' }), lineLimit(1)]}>
+          {String(p.tasks.length)} Tasks Due
+        </Text>
+        {show.length === 0 ? (
+          <Text modifiers={[font({ size: 10 }), opacity(0.6)]}>All done!</Text>
+        ) : (
+          <VStack spacing={0}>
+            {show.map((t, i) => (
+              <Text
+                key={t.id}
+                modifiers={[font({ size: 10 }), opacity(i === 0 ? 1.0 : 0.7), lineLimit(1)]}
+              >
+                {t.accent === 'overdue' ? '⚠ ' : '• '}{t.title}
+              </Text>
+            ))}
+          </VStack>
+        )}
       </VStack>
     );
   }
