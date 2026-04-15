@@ -151,6 +151,86 @@ serve(async (req) => {
     const payload = (await req.json().catch(() => ({}))) as Json;
     const action = String(payload.action || '');
 
+    if (action === 'attendance_user_summary') {
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      const sinceDays = Math.max(1, Math.min(90, Number(payload.sinceDays || 14)));
+      const sinceIso = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: events, error: e } = await admin
+        .from('class_attendance_events')
+        .select('user_id,status,scheduled_start_at')
+        .order('scheduled_start_at', { ascending: false })
+        .limit(200_000);
+      if (e) return json(400, { error: e.message });
+
+      const totals = new Map<string, { total: number; present: number; absent: number; cancelled: number; last_total: number; last_present: number }>();
+      for (const r of (events ?? []) as Array<{ user_id: string; status: string; scheduled_start_at: string }>) {
+        const uid = String(r.user_id || '');
+        if (!uid) continue;
+        const cur = totals.get(uid) ?? { total: 0, present: 0, absent: 0, cancelled: 0, last_total: 0, last_present: 0 };
+        cur.total += 1;
+        if (r.status === 'present') cur.present += 1;
+        else if (r.status === 'absent') cur.absent += 1;
+        else if (r.status === 'cancelled') cur.cancelled += 1;
+
+        if (String(r.scheduled_start_at || '') >= sinceIso) {
+          cur.last_total += 1;
+          if (r.status === 'present') cur.last_present += 1;
+        }
+        totals.set(uid, cur);
+      }
+
+      const ranked = Array.from(totals.entries())
+        .map(([user_id, t]) => ({ user_id, ...t }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, lim);
+
+      const sliceIds = ranked.map((r) => r.user_id);
+      const { data: profs, error: pe } = sliceIds.length
+        ? await admin.from('profiles').select('id,name,student_id,university_id').in('id', sliceIds)
+        : { data: [], error: null };
+      if (pe) return json(400, { error: pe.message });
+
+      const pmap = new Map((profs ?? []).map((p: { id: string }) => [p.id, p]));
+      const items = ranked.map((r) => {
+        const present_rate = r.total > 0 ? r.present / r.total : 0;
+        const last_present_rate = r.last_total > 0 ? r.last_present / r.last_total : 0;
+        return {
+          user_id: r.user_id,
+          total: r.total,
+          present: r.present,
+          absent: r.absent,
+          cancelled: r.cancelled,
+          present_rate,
+          last_days: sinceDays,
+          last_present_rate,
+          profile: pmap.get(r.user_id) ?? null,
+        };
+      });
+
+      return json(200, { items });
+    }
+
+    if (action === 'attendance_user_events') {
+      const userId = String(payload.userId || '').trim();
+      if (!userId) return json(400, { error: 'missing_userId' });
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      const from = payload.from ? String(payload.from).trim() : '';
+      const to = payload.to ? String(payload.to).trim() : '';
+
+      let q = admin
+        .from('class_attendance_events')
+        .select('id,user_id,timetable_entry_id,scheduled_start_at,status,recorded_at,source,subject_code,subject_name')
+        .eq('user_id', userId)
+        .order('scheduled_start_at', { ascending: false })
+        .limit(lim);
+      if (from) q = q.gte('scheduled_start_at', from);
+      if (to) q = q.lte('scheduled_start_at', to);
+      const { data, error: e } = await q;
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
     if (action === 'universities_list') {
       const { data, error: e } = await admin
         .from('universities')

@@ -14,6 +14,7 @@ import { CommunityProvider } from '@/src/context/CommunityContext';
 import { QuizProvider } from '@/src/context/QuizContext';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
+import { handleAttendanceNotificationResponse } from '@/src/attendanceRecording';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -89,14 +90,35 @@ function RootLayoutNav() {
           nav(() => router.push('/(tabs)/planner' as any)); break;
         case 'study_complete':
           nav(() => router.push('/study-timer' as any)); break;
+        case 'attendance_checkin': {
+          // Banner tap should open the in-app notification manager where the user can answer
+          // and the item will auto-disappear after recording.
+          nav(() => router.push('/community/notifications' as any));
+          break;
+        }
       }
     };
 
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      handleNotificationData(response?.notification.request.content.data as Record<string, any> | undefined, true);
+    Notifications.getLastNotificationResponseAsync().then(async (response) => {
+      if (!response) return;
+      const attendance = await handleAttendanceNotificationResponse(response).catch(() => ({ handled: false as const }));
+      if (attendance.handled && attendance.defaultTapData) {
+        handleNotificationData(attendance.defaultTapData, true);
+        return;
+      }
+      if (!attendance.handled) {
+        handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined, true);
+      }
     });
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined);
+      void (async () => {
+        const attendance = await handleAttendanceNotificationResponse(response).catch(() => ({ handled: false as const }));
+        if (attendance.handled) {
+          if (attendance.defaultTapData) handleNotificationData(attendance.defaultTapData);
+          return;
+        }
+        handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined);
+      })();
     });
     return () => sub.remove();
   }, []);

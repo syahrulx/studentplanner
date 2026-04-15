@@ -52,9 +52,11 @@ export function mergeTeachingWeeksForStoredCalendar(cal: AcademicCalendar | null
   if (!cal.periods || !Array.isArray(cal.periods) || cal.periods.length === 0) return baseline;
   const computed = computeCountedWeeksFromPeriods(cal.periods as AcademicPeriod[]);
   if (computed == null) return baseline;
-  if (computed <= baseline + MAX_PERIOD_WEEKS_OVER_STORED) {
-    return Math.max(baseline, computed);
-  }
+  // Semester Pulse is lecture-week based. If the stored `totalWeeks` accidentally includes exam/break weeks
+  // (common when importing a whole-term calendar), prefer the computed lecture-only week count.
+  if (computed < baseline) return Math.max(MIN_DEFAULT_TEACHING_WEEKS, computed);
+  // If computed is slightly higher (plausible), allow a small bump; otherwise keep stored baseline.
+  if (computed <= baseline + MAX_PERIOD_WEEKS_OVER_STORED) return Math.max(baseline, computed);
   return baseline;
 }
 
@@ -77,7 +79,7 @@ function iso(date: Date): string {
  */
 export function computeCountedWeeksFromPeriods(
   periods: AcademicPeriod[] | null | undefined,
-  countedTypes: Set<string> = new Set(['lecture', 'revision', 'test', 'exam']),
+  countedTypes: Set<string> = new Set(['lecture']),
 ): number | null {
   if (!periods || !Array.isArray(periods) || periods.length === 0) return null;
   const counted = periods.filter((p) => countedTypes.has(p.type));
@@ -213,7 +215,7 @@ export function getAcademicProgressFromCalendar(
       totalWeeks,
     );
   }
-  const countedTypes = new Set(['lecture', 'revision', 'test', 'exam']);
+  const countedTypes = new Set(['lecture']);
   const counted = periods.filter((p) => countedTypes.has(p.type));
   if (counted.length === 0) {
     return applyTeachingWeekOffsetToProgress(

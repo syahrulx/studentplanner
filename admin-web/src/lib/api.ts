@@ -571,6 +571,35 @@ export type TimetableUserSummaryRow = {
   } | null;
 };
 
+export type AttendanceUserSummaryRow = {
+  user_id: string;
+  total: number;
+  present: number;
+  absent: number;
+  cancelled: number;
+  present_rate: number; // 0..1
+  last_days: number;
+  last_present_rate: number; // 0..1
+  profile: {
+    id: string;
+    name: string | null;
+    student_id: string | null;
+    university_id: string | null;
+  } | null;
+};
+
+export type AttendanceEventRow = {
+  id: string;
+  user_id: string;
+  timetable_entry_id: string;
+  scheduled_start_at: string;
+  status: 'present' | 'absent' | 'cancelled';
+  recorded_at: string;
+  source: string;
+  subject_code: string;
+  subject_name: string;
+};
+
 async function aggregateTimetableUserCounts(): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   const batch = 1000;
@@ -653,6 +682,43 @@ export async function listTimetableEntries(opts: { userId?: string; universityId
   );
   const res = unwrapFunctionData<{ items: TimetableEntryRow[] }>(data, error);
   return res.items;
+}
+
+export async function listAttendanceUserSummary(opts?: { limit?: number; sinceDays?: number }): Promise<AttendanceUserSummaryRow[]> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    {
+      action: 'attendance_user_summary',
+      limit: opts?.limit ?? 200,
+      sinceDays: opts?.sinceDays ?? 14,
+    },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: AttendanceUserSummaryRow[] }>(data, error);
+  return res.items ?? [];
+}
+
+export async function listAttendanceUserEvents(opts: {
+  userId: string;
+  limit?: number;
+  from?: string;
+  to?: string;
+}): Promise<AttendanceEventRow[]> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    {
+      action: 'attendance_user_events',
+      userId: opts.userId,
+      limit: opts.limit ?? 200,
+      from: opts.from ?? '',
+      to: opts.to ?? '',
+    },
+    headers,
+  );
+  const res = unwrapFunctionData<{ items: AttendanceEventRow[] }>(data, error);
+  return res.items ?? [];
 }
 
 export type PublicLocationProfile = {

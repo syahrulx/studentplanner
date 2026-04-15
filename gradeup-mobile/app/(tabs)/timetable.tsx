@@ -54,7 +54,8 @@ function orderedDays(weekStartsOn: WeekStartsOn) {
 
 const HOUR_HEIGHT = 56;
 const START_HOUR = 7;
-const END_HOUR = 22;
+// END_HOUR is exclusive. Use 23 so the 22:00 row is visible.
+const END_HOUR = 23;
 const TIME_GUTTER = 46;
 const DAY_COLUMN_MIN_W = 84;
 /** gridRoot paddingHorizontal 6 + 6 */

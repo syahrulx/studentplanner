@@ -11,6 +11,7 @@ import { LocationsRoute } from './routes/LocationsRoute';
 import { CirclesRoute } from './routes/CirclesRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
+import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="subscriptions" element={<SubscriptionsRoute />} />
             <Route path="universities" element={<UniversitiesRoute />} />
             <Route path="timetables" element={<TimetablesRoute />} />
+            <Route path="performance" element={<StudentPerformanceRoute />} />
             <Route path="calendar-updates" element={<CalendarUpdatesRoute />} />
             <Route path="locations" element={<LocationsRoute />} />
             <Route path="circles" element={<CirclesRoute />} />

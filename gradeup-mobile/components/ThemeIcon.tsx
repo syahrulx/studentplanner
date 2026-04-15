@@ -51,7 +51,10 @@ function FallbackIcon({
 export function ThemeIcon({ name, size = 24, color, style, themeId: overrideThemeId }: ThemeIconProps) {
   const theme = useTheme();
   const resolvedThemeId = overrideThemeId ?? theme.id;
-  const def = THEME_ICON_MAP[resolvedThemeId][name];
+  const def =
+    (THEME_ICON_MAP as any)?.[resolvedThemeId]?.[name] ??
+    (THEME_ICON_MAP as any)?.[theme.id]?.[name] ??
+    { family: 'Feather', name: 'help-circle' as const };
   const iconColor = color ?? theme.text;
   const sfName = SF_SYMBOL_NAMES[name];
   const fallback = <FallbackIcon def={def} size={size} iconColor={iconColor} style={style} />;

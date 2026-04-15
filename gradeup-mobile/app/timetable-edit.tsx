@@ -246,6 +246,30 @@ export default function TimetableEditScreen() {
     setEndTime(minutesToHHmm(sm + Math.round(hours * 60)));
   }, [startTime]);
 
+  const activeStartQuick = useMemo(() => {
+    const ns = normalizeTimeDisplay(startTime);
+    return ns ?? startTime.trim();
+  }, [startTime]);
+
+  const activeEndQuick = useMemo(() => {
+    const ne = normalizeTimeDisplay(endTime);
+    return ne ?? endTime.trim();
+  }, [endTime]);
+
+  const activeDurationHours = useMemo(() => {
+    const ns = normalizeTimeDisplay(startTime);
+    const ne = normalizeTimeDisplay(endTime);
+    if (ns == null || ne == null) return null;
+    const sm = parseTimeToMinutes(ns);
+    const em = parseTimeToMinutes(ne);
+    if (sm == null || em == null) return null;
+    const diffMin = em - sm;
+    if (diffMin <= 0) return null;
+    const hours = diffMin / 60;
+    // Snap to half-hour so 1.5h highlights correctly.
+    return Math.round(hours * 2) / 2;
+  }, [startTime, endTime]);
+
   const setStartQuick = useCallback((t: string) => {
     setStartTime(t);
   }, []);
@@ -469,15 +493,24 @@ export default function TimetableEditScreen() {
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 12 }]}>{T('timetableQuickTimes')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
-                  {QUICK_TIMES.map((t) => (
-                    <Pressable
-                      key={`s-${t}`}
-                      onPress={() => setStartQuick(t)}
-                      style={[styles.quickChip, { borderColor: theme.border, backgroundColor: theme.background }]}
-                    >
-                      <Text style={[styles.quickChipText, { color: theme.text }]}>{t}</Text>
-                    </Pressable>
-                  ))}
+                  {QUICK_TIMES.map((t) => {
+                    const active = activeStartQuick === t;
+                    return (
+                      <Pressable
+                        key={`s-${t}`}
+                        onPress={() => setStartQuick(t)}
+                        style={[
+                          styles.quickChip,
+                          {
+                            borderColor: active ? theme.primary : theme.border,
+                            backgroundColor: active ? theme.primary : theme.background,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.quickChipText, { color: active ? '#fff' : theme.text }]}>{t}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 10 }]}>{T('timetableStartTime')}</Text>
@@ -493,28 +526,46 @@ export default function TimetableEditScreen() {
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8 }]}>{T('timetableSetDuration')}</Text>
                 <View style={styles.durationRow}>
-                  {([1, 1.5, 2, 3] as const).map((h) => (
-                    <Pressable
-                      key={h}
-                      onPress={() => applyDurationFromStart(h)}
-                      style={[styles.durationChip, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
-                    >
-                      <Text style={[styles.durationChipText, { color: theme.text }]}>{h}h</Text>
-                    </Pressable>
-                  ))}
+                  {([1, 1.5, 2, 3] as const).map((h) => {
+                    const active = activeDurationHours === h;
+                    return (
+                      <Pressable
+                        key={h}
+                        onPress={() => applyDurationFromStart(h)}
+                        style={[
+                          styles.durationChip,
+                          {
+                            borderColor: active ? theme.primary : theme.border,
+                            backgroundColor: active ? theme.primary : theme.backgroundSecondary,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.durationChipText, { color: active ? '#fff' : theme.text }]}>{h}h</Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 10 }]}>{T('timetableEndTime')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
-                  {QUICK_TIMES.map((t) => (
-                    <Pressable
-                      key={`e-${t}`}
-                      onPress={() => setEndQuick(t)}
-                      style={[styles.quickChip, { borderColor: theme.border, backgroundColor: theme.background }]}
-                    >
-                      <Text style={[styles.quickChipText, { color: theme.text }]}>{t}</Text>
-                    </Pressable>
-                  ))}
+                  {QUICK_TIMES.map((t) => {
+                    const active = activeEndQuick === t;
+                    return (
+                      <Pressable
+                        key={`e-${t}`}
+                        onPress={() => setEndQuick(t)}
+                        style={[
+                          styles.quickChip,
+                          {
+                            borderColor: active ? theme.primary : theme.border,
+                            backgroundColor: active ? theme.primary : theme.background,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.quickChipText, { color: active ? '#fff' : theme.text }]}>{t}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
                 <TextInput
                   value={endTime}
