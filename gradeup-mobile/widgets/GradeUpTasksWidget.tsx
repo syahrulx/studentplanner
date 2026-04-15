@@ -47,24 +47,39 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const maxItems = large ? 6 : small ? 3 : 4;
   const tasks = isLock ? p.tasks.slice(0, 1) : p.tasks.slice(0, maxItems);
 
-  // Lock screen variants
+  // Lock screen — no foregroundStyle so iOS auto-tints for visibility
   if (family === 'accessoryInline') {
     const t = tasks[0];
-    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{t ? t.title : 'No tasks due'}</Text>;
+    if (!t) {
+      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due</Text>;
+    }
+    const prefix = t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '';
+    return (
+      <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
+        {prefix ? `${prefix} ` : ''}{t.title}
+      </Text>
+    );
   }
   if (family === 'accessoryCircular') {
     return (
       <VStack spacing={1}>
-        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.tasks.length)}</Text>
-        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>TASKS</Text>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' })]}>{String(p.tasks.length)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TASKS</Text>
       </VStack>
     );
   }
   if (family === 'accessoryRectangular') {
+    const t = tasks[0];
+    const status = t ? statusLabel(t.accent) : '';
     return (
       <VStack spacing={3}>
-        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.tasks.length)} tasks due</Text>
-        {tasks[0] ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{tasks[0].title}</Text> : null}
+        <Text modifiers={[font({ size: 13, weight: 'bold' })]}>{String(p.tasks.length)} tasks due</Text>
+        {t ? (
+          <Text modifiers={[font({ size: 12 }), opacity(0.8), lineLimit(1)]}>
+            {t.title}
+            {status ? ` · ${status}` : ''}
+          </Text>
+        ) : null}
       </VStack>
     );
   }

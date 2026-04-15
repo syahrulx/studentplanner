@@ -68,7 +68,10 @@
               "contentMarginsDisabled": false,
               "supportedFamilies": [
                 "systemSmall",
-                "systemMedium"
+                "systemMedium",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
               ]
             },
             {

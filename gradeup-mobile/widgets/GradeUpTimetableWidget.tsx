@@ -33,16 +33,20 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   const maxItems = large ? 6 : small ? 3 : 4;
   const cls = isLock ? p.classes.slice(0, 1) : p.classes.slice(0, maxItems);
 
-  // Lock screen
+  // Lock screen — no foregroundStyle so iOS auto-tints for visibility
   if (family === 'accessoryInline') {
     const c = cls[0];
-    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), foregroundStyle(title), lineLimit(1)]}>{c ? `${c.startTime} ${c.label}` : 'No classes today'}</Text>;
+    return (
+      <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
+        {c ? `📚 ${c.startTime} ${c.label}` : 'No classes today'}
+      </Text>
+    );
   }
   if (family === 'accessoryCircular') {
     return (
       <VStack spacing={1}>
-        <Text modifiers={[font({ size: 24, weight: 'heavy' }), foregroundStyle(title)]}>{String(p.classes.length)}</Text>
-        <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>CLASS</Text>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' })]}>{String(p.classes.length)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>CLASS</Text>
       </VStack>
     );
   }
@@ -50,8 +54,12 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
     const c = cls[0];
     return (
       <VStack spacing={3}>
-        <Text modifiers={[font({ size: 13, weight: 'bold' }), foregroundStyle(title)]}>{String(p.classes.length)} classes</Text>
-        {c ? <Text modifiers={[font({ size: 12 }), foregroundStyle(title), lineLimit(1)]}>{c.startTime} {c.label}</Text> : null}
+        <Text modifiers={[font({ size: 13, weight: 'bold' })]}>{String(p.classes.length)} classes</Text>
+        {c ? (
+          <Text modifiers={[font({ size: 12 }), opacity(0.8), lineLimit(1)]}>
+            {c.startTime} {c.label}{c.location ? ` · ${c.location}` : ''}
+          </Text>
+        ) : null}
       </VStack>
     );
   }

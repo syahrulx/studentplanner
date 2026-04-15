@@ -42,6 +42,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
+  const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
   const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -54,12 +55,87 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   const count = p.tasks.length + p.classes.length;
+  const nextTask = p.tasks[0];
+  const nextClass = p.classes[0];
+
+  // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
+  if (isLock && !p.signedIn) {
+    if (family === 'accessoryInline') {
+      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>Sign in to Rencana</Text>;
+    }
+    if (family === 'accessoryCircular') {
+      return (
+        <VStack spacing={1}>
+          <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>0</Text>
+          <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TODAY</Text>
+        </VStack>
+      );
+    }
+    return (
+      <VStack spacing={2}>
+        <Text modifiers={[font({ size: 12, weight: 'bold' })]}>Today</Text>
+        <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>Sign in to load</Text>
+      </VStack>
+    );
+  }
 
   if (!p.signedIn) {
     return (
       <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Rencana</Text>
         <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
+      </VStack>
+    );
+  }
+
+  // ── Lock screen: accessoryInline ──
+  if (family === 'accessoryInline') {
+    if (nextTask) {
+      const prefix = nextTask.accent === 'overdue' ? '⚠' : '📋';
+      return (
+        <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
+          {prefix} {nextTask.title}
+        </Text>
+      );
+    }
+    if (nextClass) {
+      return (
+        <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
+          📚 {nextClass.startTime} {nextClass.label}
+        </Text>
+      );
+    }
+    return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No plans today</Text>;
+  }
+
+  // ── Lock screen: accessoryCircular ──
+  if (family === 'accessoryCircular') {
+    return (
+      <VStack spacing={1}>
+        <Text modifiers={[font({ size: 24, weight: 'heavy' })]}>{String(count)}</Text>
+        <Text modifiers={[font({ size: 8, weight: 'bold' }), opacity(0.6)]}>TODAY</Text>
+      </VStack>
+    );
+  }
+
+  // ── Lock screen: accessoryRectangular — show BOTH task + class ──
+  if (family === 'accessoryRectangular') {
+    return (
+      <VStack spacing={3}>
+        <Text modifiers={[font({ size: 13, weight: 'bold' })]}>{String(count)} items today</Text>
+        {nextTask ? (
+          <Text modifiers={[font({ size: 11 }), opacity(0.8), lineLimit(1)]}>
+            {nextTask.accent === 'overdue' ? '⚠ ' : '• '}{nextTask.title}
+          </Text>
+        ) : null}
+        {nextClass ? (
+          <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>
+            {nextClass.startTime} {nextClass.label}
+          </Text>
+        ) : null}
+        {!nextTask && !nextClass ? (
+          <Text modifiers={[font({ size: 11 }), opacity(0.6), lineLimit(1)]}>Free day!</Text>
+        ) : null}
       </VStack>
     );
   }
