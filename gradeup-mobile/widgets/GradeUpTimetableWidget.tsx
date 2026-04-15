@@ -6,12 +6,11 @@ import type { HomeWidgetProps } from '../src/lib/homeWidgetProps';
 function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  // Read theme colors from flat props — no transitive imports.
-  const dark = env.colorScheme === 'dark';
-  const title  = props?.theme?.text          || (dark ? '#ffffff' : '#0f172a');
-  const body   = props?.theme?.text          || (dark ? '#e2e8f0' : '#1e293b');
-  const muted  = props?.theme?.textSecondary || (dark ? '#64748b' : '#94a3b8');
-  const accent = props?.theme?.primary       || (dark ? '#60a5fa' : '#003466');
+  // Always use app theme colors — ignore system dark mode on widgets.
+  const title  = props?.theme?.text          || '#0f172a';
+  const body   = props?.theme?.text          || '#1e293b';
+  const muted  = props?.theme?.textSecondary || '#94a3b8';
+  const accent = props?.theme?.primary       || '#003466';
 
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props || fallback;

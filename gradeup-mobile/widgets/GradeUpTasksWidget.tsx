@@ -6,14 +6,12 @@ import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetPr
 function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
   'widget';
 
-  // Read theme colors from flat props (set by buildHomeWidgetProps in JS).
-  // Fallback to system dark/light if theme data is missing.
-  const dark = env.colorScheme === 'dark';
-  const title  = props?.theme?.text       || (dark ? '#ffffff' : '#0f172a');
-  const muted  = props?.theme?.textSecondary || (dark ? '#64748b' : '#94a3b8');
-  const accent = props?.theme?.primary     || (dark ? '#60a5fa' : '#003466');
-  const red    = props?.theme?.danger      || '#ef4444';
-  const warn   = props?.theme?.warning     || '#d97706';
+  // Always use app theme colors — ignore system dark mode on widgets.
+  const title  = props?.theme?.text          || '#0f172a';
+  const muted  = props?.theme?.textSecondary || '#94a3b8';
+  const accent = props?.theme?.primary       || '#003466';
+  const red    = props?.theme?.danger        || '#ef4444';
+  const warn   = props?.theme?.warning       || '#d97706';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
