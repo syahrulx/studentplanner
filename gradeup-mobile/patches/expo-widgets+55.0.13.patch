@@ -115,7 +115,7 @@ index 1d2b971..fdd72b2 100644
        cp "${source}" "${dest}"
      },
 diff --git a/node_modules/expo-widgets/ios/Widgets/EntryView.swift b/node_modules/expo-widgets/ios/Widgets/EntryView.swift
-index 947fc2e..401380e 100644
+index 947fc2e..26bbd42 100644
 --- a/node_modules/expo-widgets/ios/Widgets/EntryView.swift
 +++ b/node_modules/expo-widgets/ios/Widgets/EntryView.swift
 @@ -1,6 +1,7 @@
@@ -190,7 +190,7 @@ index 947fc2e..401380e 100644
    private var widgetEnvironment: [String: Any] {
      var env: [String: Any] = getWidgetEnvironment(environment: environment)
      env["timestamp"] = Int(entry.date.timeIntervalSince1970 * 1000)
-@@ -31,12 +89,21 @@ public struct WidgetsEntryView: View {
+@@ -31,7 +89,7 @@ public struct WidgetsEntryView: View {
      if let node {
        if #available(iOS 17.0, *) {
          WidgetsDynamicView(name: entry.name, kind: .widget, node: node, entryIndex: entry.entryIndex, environmentString: widgetEnvironmentString)
@@ -199,21 +199,6 @@ index 947fc2e..401380e 100644
        } else {
          WidgetsDynamicView(name: entry.name, kind: .widget, node: node, entryIndex: entry.entryIndex, environmentString: widgetEnvironmentString)
        }
-     } else {
--      EmptyView()
-+      if #available(iOS 17.0, *) {
-+        Text("Open Rencana to load widget")
-+          .font(.caption)
-+          .foregroundStyle(.secondary)
-+          .containerBackground(.fill.tertiary, for: .widget)
-+      } else {
-+        Text("Open Rencana to load widget")
-+          .font(.caption)
-+          .foregroundStyle(.secondary)
-+      }
-     }
-   }
- }
 diff --git a/node_modules/expo-widgets/ios/Widgets/Utils.swift b/node_modules/expo-widgets/ios/Widgets/Utils.swift
 index 1cd5ca9..7cd81a9 100644
 --- a/node_modules/expo-widgets/ios/Widgets/Utils.swift

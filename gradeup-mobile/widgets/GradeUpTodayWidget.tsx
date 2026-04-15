@@ -1,18 +1,20 @@
 import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, frame, opacity, background } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
-function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
+function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Always use app theme colors — ignore system dark mode on widgets.
-  const title  = props?.theme?.text          || '#0f172a';
-  const body   = props?.theme?.text          || '#1e293b';
-  const muted  = props?.theme?.textSecondary || '#94a3b8';
-  const accent = props?.theme?.primary       || '#003466';
-  const red    = props?.theme?.danger        || '#ef4444';
-  const warn   = props?.theme?.warning       || '#d97706';
+  // Force light widget theme regardless of system appearance.
+  const bg = '#ffffff';
+  const title = '#0f172a';
+  const body = '#1e293b';
+  const muted = '#64748b';
+  const accent = '#2563eb';
+  const red = '#dc2626';
+  const warn = '#d97706';
+  const line = '#000000';
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -26,7 +28,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     return '';
   }
 
-  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props
     ? {
         dateISO: typeof props.dateISO === 'string' ? props.dateISO : '',
@@ -37,7 +39,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
       }
     : fallback;
 
-  const family = env.widgetFamily;
+  const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
 
@@ -55,7 +57,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
 
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+      <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Rencana</Text>
         <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
       </VStack>
@@ -67,7 +69,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
     const sTasks = p.tasks.slice(0, 2);
     const sCls   = p.classes.slice(0, 2);
     return (
-      <VStack modifiers={[padding({ all: 13 })]} spacing={6}>
+      <VStack modifiers={[padding({ all: 13 }), background(bg)]} spacing={6}>
         <HStack spacing={4}>
           <VStack spacing={1}>
             <Text modifiers={[font({ weight: 'heavy', size: 13 }), foregroundStyle(title), lineLimit(1)]}>
@@ -83,6 +85,8 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
           </Text>
         </HStack>
 
+        <Divider modifiers={[foregroundStyle(line), opacity(0.18)]} />
+
         {sTasks.length > 0 ? (
           <VStack spacing={4}>
             {sTasks.map((t) => (
@@ -97,7 +101,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
         ) : null}
 
         {sTasks.length > 0 && sCls.length > 0 ? (
-          <Divider modifiers={[opacity(0.15)]} />
+          <Divider modifiers={[foregroundStyle(line), opacity(0.18)]} />
         ) : null}
 
         {sCls.length > 0 ? (
@@ -133,7 +137,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
   const colCls  = p.classes.slice(0, colMax);
 
   return (
-    <VStack modifiers={[padding({ all: 14 })]} spacing={10}>
+    <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={10}>
 
       {/* Header */}
       <HStack spacing={6}>
@@ -153,6 +157,8 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
           <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>items</Text>
         </VStack>
       </HStack>
+
+      <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
 
       {/* Two-column content */}
       <HStack spacing={0}>
@@ -197,8 +203,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, env: 
         </VStack>
 
         {/* Vertical 1pt line */}
-        <VStack modifiers={[frame({ width: 1 }), opacity(0.12)]}>
-          <Divider />
+        <VStack modifiers={[frame({ width: 1 }), background(line), opacity(0.22)]}>
           <Spacer />
         </VStack>
 

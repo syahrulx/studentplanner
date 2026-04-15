@@ -1,28 +1,29 @@
 import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, frame, opacity } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, frame, opacity, background } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps } from '../src/lib/homeWidgetProps';
 
-function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, env: WidgetEnvironment) {
+function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _env: WidgetEnvironment) {
   'widget';
 
-  // Always use app theme colors — ignore system dark mode on widgets.
-  const title  = props?.theme?.text          || '#0f172a';
-  const body   = props?.theme?.text          || '#1e293b';
-  const muted  = props?.theme?.textSecondary || '#94a3b8';
-  const accent = props?.theme?.primary       || '#003466';
+  // Force light widget theme regardless of system appearance.
+  const bg = '#ffffff';
+  const title = '#0f172a';
+  const muted = '#64748b';
+  const accent = '#2563eb';
+  const line = '#000000';
 
-  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#f8fafc', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props || fallback;
 
-  const family = env.widgetFamily;
+  const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+      <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
         <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Classes</Text>
         <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view timetable</Text>
       </VStack>
@@ -57,7 +58,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
 
   // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
+    <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={small ? 8 : 10}>
 
       {/* Header */}
       <HStack spacing={6}>
@@ -78,6 +79,8 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
         </VStack>
       </HStack>
 
+      <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
+
       {/* Class list */}
       {cls.length === 0 ? (
         <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today 🎉</Text>
@@ -85,7 +88,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, e
         <VStack spacing={0}>
           {cls.map((c, i) => (
             <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0}>
-              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), opacity(0.08)]} /> : null}
+              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), foregroundStyle(line), opacity(0.18)]} /> : null}
               <HStack spacing={small ? 6 : 10} modifiers={[padding({ vertical: small ? 1 : 3 })]}>
                 <VStack spacing={0} modifiers={small ? [] : [frame({ width: 46 })]}>
                   <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
