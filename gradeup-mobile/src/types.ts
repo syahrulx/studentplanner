@@ -98,6 +98,8 @@ export interface AcademicCalendar {
   breakEndDate?: string;
   /** Optional detailed schedule. When present, teaching week excludes non-lecture periods. */
   periods?: AcademicPeriod[];
+  /** Delta applied to calendar-derived teaching week (clamped to 1..totalWeeks). */
+  teachingWeekOffset?: number;
   isActive: boolean;
   createdAt?: string;
 }

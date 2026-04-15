@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   extractCalendarFromUrl,
+  deleteUniversityCalendarOffer,
   insertUniversityCalendarOffers,
   listUniversities,
   listUniversityCalendarOffers,
@@ -52,7 +53,7 @@ function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {
 }
 
 export function CalendarUpdatesRoute() {
-  const { searchQuery } = useAdminSearch();
+  const { searchQuery, clearSearch } = useAdminSearch();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -75,6 +76,20 @@ export function CalendarUpdatesRoute() {
   const [extracting, setExtracting] = useState(false);
   const [extractErr, setExtractErr] = useState('');
   const [extractOk, setExtractOk] = useState('');
+  const [extractCandidates, setExtractCandidates] = useState<
+    Array<{
+      program_level?: string;
+      semester_label?: string;
+      start_date?: string;
+      end_date?: string;
+      total_weeks?: number;
+      break_start_date?: string | null;
+      break_end_date?: string | null;
+      periods?: Array<{ type: string; label: string; startDate: string; endDate: string }>;
+    }>
+  >([]);
+  const [extractCandidateIdx, setExtractCandidateIdx] = useState(0);
+  const [deletingOfferId, setDeletingOfferId] = useState<string>('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
 
@@ -219,16 +234,51 @@ export function CalendarUpdatesRoute() {
         admin_note: note,
       }];
 
-      await insertUniversityCalendarOffers(rows);
+      const inserted = await insertUniversityCalendarOffers(rows);
       const uniName = universityNameById.get(selected) ?? selected;
       setOkMsg(`Published calendar for ${uniName}. Students from this university will automatically receive the updated calendar.`);
       setSelected('');
       if (fileRef.current) fileRef.current.value = '';
+      // Merge returned rows first so the UI updates immediately (list fetch can lag slightly on some setups).
+      if (inserted.length > 0) {
+        setHistory((prev) => {
+          const byId = new Map<string, AdminCalendarOfferRow>();
+          for (const row of inserted) byId.set(row.id, row);
+          for (const row of prev) {
+            if (!byId.has(row.id)) byId.set(row.id, row);
+          }
+          return Array.from(byId.values())
+            .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+            .slice(0, 150);
+        });
+      }
+      clearSearch();
       await refreshHistory();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Publish failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const applyExtractedCandidate = (d: {
+    program_level?: string;
+    semester_label?: string;
+    start_date?: string;
+    end_date?: string;
+    total_weeks?: number;
+    break_start_date?: string | null;
+    break_end_date?: string | null;
+    periods?: Array<{ type: string; label: string; startDate: string; endDate: string }>;
+  }) => {
+    if (d.semester_label) setSemesterLabel(d.semester_label);
+    if (d.start_date) setStartDate(d.start_date);
+    if (d.end_date) setEndDate(d.end_date);
+    if (d.total_weeks) setTotalWeeks(String(d.total_weeks));
+    if (d.break_start_date) setBreakStart(String(d.break_start_date));
+    if (d.break_end_date) setBreakEnd(String(d.break_end_date));
+    if (d.periods && Array.isArray(d.periods) && d.periods.length > 0) {
+      setPeriodsJson(JSON.stringify(d.periods, null, 2));
     }
   };
 
@@ -322,25 +372,53 @@ export function CalendarUpdatesRoute() {
                   onClick={async () => {
                     setExtractErr('');
                     setExtractOk('');
+                    setExtractCandidates([]);
+                    setExtractCandidateIdx(0);
                     const url = extractUrl.trim();
                     if (!url) { setExtractErr('Please enter a URL.'); return; }
                     setExtracting(true);
                     try {
                       const res = await extractCalendarFromUrl(url);
                       const d = res.extracted;
-                      if (d.semester_label) setSemesterLabel(d.semester_label);
-                      if (d.start_date) setStartDate(d.start_date);
-                      if (d.end_date) setEndDate(d.end_date);
-                      if (d.total_weeks) setTotalWeeks(String(d.total_weeks));
-                      if (d.break_start_date) setBreakStart(d.break_start_date);
-                      if (d.break_end_date) setBreakEnd(d.break_end_date);
-                      if (d.periods && Array.isArray(d.periods) && d.periods.length > 0) {
-                        setPeriodsJson(JSON.stringify(d.periods, null, 2));
+                      const candidates = Array.isArray((d as any)?.candidates) ? ((d as any).candidates as any[]) : [];
+                      if (candidates.length > 0) {
+                        setExtractCandidates(candidates as any);
+                        setExtractCandidateIdx(0);
+                        applyExtractedCandidate(candidates[0] as any);
+                        const lvl = String((candidates[0] as any)?.program_level ?? '').trim();
+                        setExtractOk(
+                          `✅ Extracted ${candidates.length} program calendar(s). Auto-filled: ${lvl ? `${lvl} — ` : ''}${String((candidates[0] as any)?.semester_label ?? 'Calendar data')}. Review then publish.`
+                        );
+                      } else {
+                        // Backward-compat: accept legacy single-calendar extraction shape (pre-candidates)
+                        const hasLegacy =
+                          Boolean((d as any)?.semester_label) ||
+                          Boolean((d as any)?.start_date) ||
+                          Boolean((d as any)?.end_date) ||
+                          Boolean((d as any)?.total_weeks) ||
+                          Array.isArray((d as any)?.periods);
+                        if (hasLegacy) {
+                          const one = {
+                            program_level: String((d as any)?.program_level ?? 'General'),
+                            semester_label: (d as any)?.semester_label,
+                            start_date: (d as any)?.start_date,
+                            end_date: (d as any)?.end_date,
+                            total_weeks: (d as any)?.total_weeks,
+                            break_start_date: (d as any)?.break_start_date ?? null,
+                            break_end_date: (d as any)?.break_end_date ?? null,
+                            periods: Array.isArray((d as any)?.periods) ? (d as any)?.periods : [],
+                          };
+                          setExtractCandidates([one]);
+                          setExtractCandidateIdx(0);
+                          applyExtractedCandidate(one as any);
+                          setExtractOk(
+                            `✅ Extracted: ${String(one.semester_label ?? 'Calendar data')}. Review the auto-filled fields below, then publish.`
+                          );
+                        } else {
+                          setExtractErr('AI extraction succeeded but returned no candidates. Enter details manually.');
+                        }
                       }
                       setOfficialUrl(url);
-                      setExtractOk(
-                        `✅ Extracted: ${d.semester_label || 'Calendar data'}. Review the auto-filled fields below, then publish.`
-                      );
                     } catch (e) {
                       setExtractErr(e instanceof Error ? e.message : 'Extraction failed. Enter details manually.');
                     } finally {
@@ -359,6 +437,34 @@ export function CalendarUpdatesRoute() {
                   )}
                 </Button>
               </div>
+              {extractCandidates.length > 1 ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <Label className="block">
+                    <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                      Program level
+                    </span>
+                    <select
+                      value={String(extractCandidateIdx)}
+                      onChange={(e) => {
+                        const idx = Math.max(0, Math.min(extractCandidates.length - 1, Number(e.target.value) || 0));
+                        setExtractCandidateIdx(idx);
+                        applyExtractedCandidate(extractCandidates[idx]);
+                      }}
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      {extractCandidates.map((c, idx) => {
+                        const lvl = String(c.program_level ?? '').trim() || `Candidate ${idx + 1}`;
+                        const label = String(c.semester_label ?? '').trim();
+                        return (
+                          <option key={`${lvl}-${idx}`} value={String(idx)}>
+                            {lvl}{label ? ` — ${label}` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </Label>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -461,7 +567,8 @@ export function CalendarUpdatesRoute() {
         </div>
       </MotionSection>
 
-      <MotionStagger className="mt-4 space-y-3">
+      {/* key remounts the stagger container when rows change so new items are not stuck at opacity:0 (parent used whileInView once:true). */}
+      <MotionStagger key={history.map((h) => h.id).join('|')} className="mt-4 space-y-3">
         {filteredHistory.map((h) => (
           <MotionStaggerItem key={h.id}>
             <Card>
@@ -487,6 +594,32 @@ export function CalendarUpdatesRoute() {
                       PDF
                     </a>
                   ) : null}
+                  <button
+                    type="button"
+                    className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    disabled={Boolean(deletingOfferId)}
+                    onClick={async () => {
+                      const uni = universityNameById.get(h.university_id) ?? h.university_id;
+                      const ok = window.confirm(
+                        `Delete this offer?\n\n${uni}\n${h.semester_label}\n\nThis cannot be undone.`,
+                      );
+                      if (!ok) return;
+                      setErr('');
+                      setOkMsg('');
+                      setDeletingOfferId(h.id);
+                      try {
+                        await deleteUniversityCalendarOffer(h.id);
+                        await refreshHistory();
+                        setOkMsg('Offer deleted.');
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : 'Delete failed');
+                      } finally {
+                        setDeletingOfferId('');
+                      }
+                    }}
+                  >
+                    {deletingOfferId === h.id ? 'Deleting…' : 'Delete'}
+                  </button>
                 </div>
               </CardContent>
             </Card>

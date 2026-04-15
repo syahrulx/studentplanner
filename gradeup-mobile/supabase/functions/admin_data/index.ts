@@ -8,6 +8,8 @@ import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 
 type Json = Record<string, unknown>;
 
+type PdfCandidate = { url: string; context?: string };
+
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -19,6 +21,122 @@ function json(status: number, body: unknown) {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
   });
+}
+
+async function extractPdfTextWithUnpdf(bytes: Uint8Array): Promise<string | null> {
+  try {
+    const { extractText, getDocumentProxy } = await import('npm:unpdf@0.12.1');
+    const pdf = await getDocumentProxy(bytes, { verbosity: 0 });
+    const { text } = await extractText(pdf, { mergePages: true });
+    const s = typeof text === 'string' ? text.trim() : '';
+    return s.length > 0 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractPdfLinksFromHtml(html: string, base: URL): PdfCandidate[] {
+  const out: PdfCandidate[] = [];
+  const hrefRe = /href\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = hrefRe.exec(html))) {
+    const raw = String(m[1] || '').trim();
+    if (!raw) continue;
+    if (!/\.pdf(\?|#|$)/i.test(raw)) continue;
+    try {
+      const u = new URL(raw, base).toString();
+      // capture a bit of surrounding text to help AI infer program level
+      const start = Math.max(0, m.index - 120);
+      const end = Math.min(html.length, m.index + 220);
+      const ctx = html.slice(start, end).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      out.push({ url: u, context: ctx });
+    } catch {
+      // ignore bad URLs
+    }
+  }
+  // de-dupe
+  const seen = new Set<string>();
+  const deduped: PdfCandidate[] = [];
+  for (const it of out) {
+    if (seen.has(it.url)) continue;
+    seen.add(it.url);
+    deduped.push(it);
+  }
+  return deduped.slice(0, 6);
+}
+
+function extractPdfLikeUrlsFromHtml(html: string, base: URL): PdfCandidate[] {
+  const out: PdfCandidate[] = [];
+
+  // 1) Common embed attributes: iframe/src, embed/src, object/data, source/src
+  const attrRe = /\b(?:src|data)\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = attrRe.exec(html))) {
+    const raw = String(m[1] || '').trim();
+    if (!raw) continue;
+    if (!/\.pdf(\?|#|$)/i.test(raw)) continue;
+    try {
+      out.push({ url: new URL(raw, base).toString(), context: 'embed_attr' });
+    } catch {}
+  }
+
+  // 2) Any literal URL containing ".pdf" inside scripts or JSON blobs
+  const litRe = /https?:\/\/[^\s"'<>]+?\.pdf[^\s"'<>]*/gi;
+  const hits = html.match(litRe) ?? [];
+  for (const h of hits) {
+    try {
+      out.push({ url: new URL(h, base).toString(), context: 'literal_url' });
+    } catch {}
+  }
+
+  // 3) Relative URLs containing ".pdf"
+  const relRe = /["'](\/[^"'<>]+?\.pdf[^"'<>]*)["']/gi;
+  while ((m = relRe.exec(html))) {
+    const raw = String(m[1] || '').trim();
+    if (!raw) continue;
+    try {
+      out.push({ url: new URL(raw, base).toString(), context: 'relative_url' });
+    } catch {}
+  }
+
+  // De-dupe + cap
+  const seen = new Set<string>();
+  const deduped: PdfCandidate[] = [];
+  for (const it of out) {
+    if (seen.has(it.url)) continue;
+    seen.add(it.url);
+    deduped.push(it);
+  }
+  return deduped.slice(0, 10);
+}
+
+async function fetchPdfBytes(url: string, timeoutMs = 15_000): Promise<Uint8Array | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; GradeUpAdmin/1.0)',
+        'Accept': 'application/pdf,*/*',
+      },
+    });
+    if (!resp.ok) return null;
+    const buf = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    // basic magic: %PDF-
+    if (bytes.length < 5) return null;
+    if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d)) {
+      return null;
+    }
+    // cap size to 10MB
+    if (bytes.byteLength > 10 * 1024 * 1024) return null;
+    return bytes;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 serve(async (req) => {
@@ -475,6 +593,19 @@ serve(async (req) => {
       return json(200, { items: data ?? [] });
     }
 
+    if (action === 'calendar_offer_delete') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const { error: e } = await admin.from('university_calendar_offers').delete().eq('id', id);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id },
+      });
+      return json(200, { ok: true });
+    }
+
     if (action === 'subscription_plan_features_save') {
       const tier = String(payload.tier || '').trim();
       if (!['free', 'plus', 'pro'].includes(tier)) return json(400, { error: 'invalid_tier' });
@@ -535,23 +666,36 @@ serve(async (req) => {
         return json(400, { error: 'invalid_url' });
       }
 
-      // Fetch the website HTML
+      // Fetch the URL content (HTML or direct PDF)
       const fetchController = new AbortController();
       const fetchTimeout = setTimeout(() => fetchController.abort(), 15_000);
       let htmlText = '';
+      let directPdfBytes: Uint8Array | null = null;
       try {
         const resp = await fetch(parsedUrl.toString(), {
           signal: fetchController.signal,
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; GradeUpAdmin/1.0)',
-            'Accept': 'text/html,application/xhtml+xml,*/*',
+            'Accept': 'application/pdf,text/html,application/xhtml+xml,*/*',
             'Accept-Language': 'en-US,en;q=0.9,ms;q=0.8',
           },
         });
         if (!resp.ok) {
           return json(400, { error: `Website returned HTTP ${resp.status}. The URL may be incorrect or the server is blocking requests.` });
         }
-        htmlText = await resp.text();
+        const ctype = String(resp.headers.get('content-type') || '').toLowerCase();
+        if (ctype.includes('application/pdf')) {
+          const buf = await resp.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          // basic magic: %PDF-
+          if (bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d) {
+            directPdfBytes = bytes;
+          } else {
+            return json(400, { error: 'URL responded with PDF content-type but did not look like a PDF file.' });
+          }
+        } else {
+          htmlText = await resp.text();
+        }
       } catch (fetchErr: unknown) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
         if (msg.includes('abort') || msg.includes('Abort')) {
@@ -562,33 +706,62 @@ serve(async (req) => {
         clearTimeout(fetchTimeout);
       }
 
-      if (!htmlText || htmlText.length < 50) {
+      if (!directPdfBytes && (!htmlText || htmlText.length < 50)) {
         return json(400, { error: 'Website returned very little content. It may require JavaScript to load.' });
       }
 
-      // Strip HTML to readable text (remove scripts, styles, tags)
-      let cleanText = htmlText
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-        .replace(/<footer[\s\S]*?<\/footer>/gi, '')
-        .replace(/<header[\s\S]*?<\/header>/gi, '')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#\d+;/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      let cleanText = '';
+      let pdfTexts: Array<{ url: string; context?: string; text: string }> = [];
+
+      if (directPdfBytes) {
+        const text = (await extractPdfTextWithUnpdf(directPdfBytes)) ?? '';
+        if (text.trim().length < 200) {
+          return json(400, { error: 'Could not extract readable text from the PDF. Try uploading the PDF directly instead.' });
+        }
+        pdfTexts = [{ url: extractUrl, context: 'direct_pdf', text: text.trim().slice(0, 18000) }];
+        cleanText = '[PDF content extracted; using PDF as primary source]';
+      } else {
+        // Strip HTML to readable text (remove scripts, styles, tags)
+        cleanText = htmlText
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+          .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+          .replace(/<header[\s\S]*?<\/header>/gi, '')
+          .replace(/<!--[\s\S]*?-->/g, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .replace(/&quot;/gi, '"')
+          .replace(/&#\d+;/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
 
       // Truncate to save tokens (15k chars ≈ 4k tokens)
       cleanText = cleanText.slice(0, 15000);
 
       if (cleanText.length < 30) {
         return json(400, { error: 'Could not extract readable text from the website. The page may be dynamically rendered (JavaScript-only).' });
+      }
+
+      // If HTML page links PDFs (e.g. UM academic calendar), fetch and extract PDF text to improve accuracy.
+      // Many university pages only list PDF links; the actual calendar detail is inside the PDF.
+      if (!directPdfBytes) {
+        const pdfLinks = [
+          ...extractPdfLikeUrlsFromHtml(htmlText, parsedUrl),
+          ...extractPdfLinksFromHtml(htmlText, parsedUrl),
+        ];
+        for (const p of pdfLinks) {
+          const bytes = await fetchPdfBytes(p.url);
+          if (!bytes) continue;
+          const text = (await extractPdfTextWithUnpdf(bytes)) ?? '';
+          if (text.trim().length < 200) continue;
+          pdfTexts.push({ url: p.url, context: p.context, text: text.trim().slice(0, 18000) });
+          if (pdfTexts.length >= 3) break;
+        }
       }
 
       // Call OpenAI to extract calendar data
@@ -598,29 +771,38 @@ serve(async (req) => {
       }
 
       const systemPrompt = `You are an academic calendar data extractor for Malaysian universities.
-Given the text content from a university's academic calendar webpage, extract the structured semester/session information.
+Given the text content from a university's academic calendar webpage, extract structured semester/session information.
+
+IMPORTANT:
+Some pages list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
+In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
 
 Return VALID JSON ONLY with this exact shape:
 {
-  "semester_label": "string (e.g. 'Semester 1 2025/2026')",
-  "start_date": "YYYY-MM-DD (first day of teaching/lectures)",
-  "end_date": "YYYY-MM-DD (last day of the semester, after final exams)",
-  "total_weeks": number (total teaching weeks, typically 14-16),
-  "break_start_date": "YYYY-MM-DD or null (mid-semester break start)",
-  "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
-  "periods": [
+  "official_url_title": "string (page title or heading)",
+  "candidates": [
     {
-      "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation",
-      "label": "string (e.g. 'Lectures Week 1-7')",
-      "startDate": "YYYY-MM-DD",
-      "endDate": "YYYY-MM-DD"
+      "program_level": "string (e.g. 'Bachelor', 'Master/Doctorate', 'Diploma', 'Foundation', 'Special')",
+      "semester_label": "string (e.g. 'Semester 1 2025/2026')",
+      "start_date": "YYYY-MM-DD (first day of teaching/lectures)",
+      "end_date": "YYYY-MM-DD (last day of the semester, after final exams)",
+      "total_weeks": number (total teaching weeks, typically 14-16),
+      "break_start_date": "YYYY-MM-DD or null (mid-semester break start)",
+      "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
+      "periods": [
+        {
+          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation",
+          "label": "string (e.g. 'Lectures Week 1-7')",
+          "startDate": "YYYY-MM-DD",
+          "endDate": "YYYY-MM-DD"
+        }
+      ]
     }
-  ],
-  "official_url_title": "string (page title or heading)"
+  ]
 }
 
 Rules:
-- Extract the CURRENT or UPCOMING semester/session if multiple are listed. Prefer the most recent active one.
+- If there is only ONE program level/calendar, still return a single-item candidates array.
 - Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
@@ -629,7 +811,16 @@ Rules:
 - Do NOT invent or guess dates. Only extract what is explicitly stated.
 - Return JSON only. No markdown, no explanation, no code fences.`;
 
-      const userPrompt = `Extract academic calendar information from this university webpage content:\n\n${cleanText}`;
+      const pdfBlock =
+        pdfTexts.length > 0
+          ? `\n\nPDF_TEXT_SOURCES (preferred if present):\n${pdfTexts
+              .map((p, i) => {
+                const ctx = (p.context || '').slice(0, 220);
+                return `\n[PDF ${i + 1}] URL: ${p.url}\nContext: ${ctx}\n---\n${p.text}\n---\n`;
+              })
+              .join('\n')}\n`
+          : '';
+      const userPrompt = `Extract academic calendar information from this university webpage.\n\nWEBPAGE_TEXT:\n${cleanText}\n${pdfBlock}`;
 
       const aiController = new AbortController();
       const aiTimeout = setTimeout(() => aiController.abort(), 30_000);
@@ -683,14 +874,43 @@ Rules:
         return json(400, { error: 'AI returned invalid JSON. The website content may be too complex. Try a different URL or enter details manually.' });
       }
 
+      // Backward-compat: if the model returns the legacy single-calendar shape, wrap it into candidates[0]
+      // so the admin UI can always render a consistent selector.
+      const hasCandidates = Array.isArray((parsed as any)?.candidates);
+      const hasLegacy =
+        typeof (parsed as any)?.semester_label === 'string' ||
+        typeof (parsed as any)?.start_date === 'string' ||
+        typeof (parsed as any)?.end_date === 'string' ||
+        typeof (parsed as any)?.total_weeks === 'number' ||
+        Array.isArray((parsed as any)?.periods);
+      if (!hasCandidates && hasLegacy) {
+        (parsed as any).candidates = [
+          {
+            program_level: (parsed as any)?.program_level ?? 'General',
+            semester_label: (parsed as any)?.semester_label,
+            start_date: (parsed as any)?.start_date,
+            end_date: (parsed as any)?.end_date,
+            total_weeks: (parsed as any)?.total_weeks,
+            break_start_date: (parsed as any)?.break_start_date ?? null,
+            break_end_date: (parsed as any)?.break_end_date ?? null,
+            periods: Array.isArray((parsed as any)?.periods) ? (parsed as any)?.periods : [],
+          },
+        ];
+      }
+
       // Log the extraction
+      const extractedLabel =
+        (parsed as any)?.semester_label ??
+        (Array.isArray((parsed as any)?.candidates) ? String((parsed as any)?.candidates?.[0]?.semester_label ?? '') : '') ??
+        null;
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, url: extractUrl, extractedLabel: parsed.semester_label ?? null },
+        meta: { action, url: extractUrl, extractedLabel },
       });
 
-      return json(200, { extracted: parsed, source_url: extractUrl, text_preview: cleanText.slice(0, 500) });
+      const previewSource = pdfTexts.length > 0 ? pdfTexts[0].text : cleanText;
+      return json(200, { extracted: parsed, source_url: extractUrl, text_preview: previewSource.slice(0, 500) });
     }
 
     return json(400, { error: 'unknown_action' });

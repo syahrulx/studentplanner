@@ -968,15 +968,31 @@ export async function insertUniversityCalendarOffers(rows: AdminCalendarOfferIns
   return res.items;
 }
 
+export async function deleteUniversityCalendarOffer(id: string): Promise<void> {
+  const offerId = String(id || '').trim();
+  if (!offerId) throw new Error('Missing offer id');
+  if (await hasSessionJwt()) {
+    const { error } = await supabase.from('university_calendar_offers').delete().eq('id', offerId);
+    if (error) throw toError(error);
+    return;
+  }
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'calendar_offer_delete', id: offerId }, headers);
+  unwrapFunctionData<{ ok: true }>(data, error);
+}
+
 export type ExtractedCalendarData = {
-  semester_label?: string;
-  start_date?: string;
-  end_date?: string;
-  total_weeks?: number;
-  break_start_date?: string | null;
-  break_end_date?: string | null;
-  periods?: Array<{ type: string; label: string; startDate: string; endDate: string }>;
   official_url_title?: string;
+  candidates?: Array<{
+    program_level?: string;
+    semester_label?: string;
+    start_date?: string;
+    end_date?: string;
+    total_weeks?: number;
+    break_start_date?: string | null;
+    break_end_date?: string | null;
+    periods?: Array<{ type: string; label: string; startDate: string; endDate: string }>;
+  }>;
 };
 
 export async function extractCalendarFromUrl(extractUrl: string): Promise<{
