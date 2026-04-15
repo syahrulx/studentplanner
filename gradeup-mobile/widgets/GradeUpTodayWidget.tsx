@@ -114,30 +114,44 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
     return (
       <VStack spacing={0}>
         <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>{String(count)}</Text>
-        <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.6)]}>TODAY</Text>
+        <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.7)]}>TODAY</Text>
       </VStack>
     );
   }
 
-  // ── Lock screen: accessoryRectangular — show task + classes ──
+  // ── Lock screen: accessoryRectangular — show tasks + classes ──
   if (family === 'accessoryRectangular') {
+    const showTasks = p.tasks.slice(0, 2);
+    const showCls = p.classes.slice(0, 2);
     return (
       <VStack spacing={1}>
         <Text modifiers={[font({ size: 11, weight: 'heavy' }), lineLimit(1)]}>
           {String(count)} Items Today
         </Text>
-        {nextTask ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.9), lineLimit(1)]}>
-            {nextTask.accent === 'overdue' ? '⚠ ' : '• '}{nextTask.title}
-          </Text>
-        ) : null}
-        {nextClass ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.7), lineLimit(1)]}>
-            {nextClass.startTime} {nextClass.label}
-          </Text>
-        ) : null}
-        {!nextTask && !nextClass ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.6)]}>Free day!</Text>
+        {showTasks.map((t) => (
+          <HStack key={t.id} spacing={4}>
+            <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
+              {t.accent === 'overdue' ? '⚠' : '•'}
+            </Text>
+            <Text modifiers={[font({ size: 10 }), lineLimit(1)]}>
+              {t.title}
+            </Text>
+            <Spacer />
+          </HStack>
+        ))}
+        {showCls.map((c, i) => (
+          <HStack key={`${c.startTime}-${i}`} spacing={4}>
+            <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
+              {c.startTime}
+            </Text>
+            <Text modifiers={[font({ size: 10 }), lineLimit(1)]}>
+              {c.label}
+            </Text>
+            <Spacer />
+          </HStack>
+        ))}
+        {count === 0 ? (
+          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>Free day! ✓</Text>
         ) : null}
       </VStack>
     );

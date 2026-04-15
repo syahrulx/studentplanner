@@ -50,13 +50,13 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
   if (family === 'accessoryInline') {
     const t = tasks[0];
+    const total = p.tasks.length;
     if (!t) {
-      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due</Text>;
+      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due ✓</Text>;
     }
-    const prefix = t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '';
     return (
       <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-        {prefix ? `${prefix} ` : ''}{t.title}
+        {total} tasks · {t.accent === 'overdue' ? '⚠ ' : ''}{t.title}
       </Text>
     );
   }
@@ -65,29 +65,32 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
     return (
       <VStack spacing={0}>
         <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>{String(p.tasks.length)}</Text>
-        <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.6)]}>TASKS</Text>
+        <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.7)]}>TASKS</Text>
       </VStack>
     );
   }
 
   if (family === 'accessoryRectangular') {
-    const show = p.tasks.slice(0, 3);
+    const show = p.tasks.slice(0, 4);
     return (
       <VStack spacing={1}>
         <Text modifiers={[font({ size: 11, weight: 'heavy' }), lineLimit(1)]}>
           {String(p.tasks.length)} Tasks Due
         </Text>
         {show.length === 0 ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.6)]}>All done!</Text>
+          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>All caught up! ✓</Text>
         ) : (
-          <VStack spacing={0}>
-            {show.map((t, i) => (
-              <Text
-                key={t.id}
-                modifiers={[font({ size: 10 }), opacity(i === 0 ? 1.0 : 0.7), lineLimit(1)]}
-              >
-                {t.accent === 'overdue' ? '⚠ ' : '• '}{t.title}
-              </Text>
+          <VStack spacing={1}>
+            {show.map((t) => (
+              <HStack key={t.id} spacing={4}>
+                <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
+                  {t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '○'}
+                </Text>
+                <Text modifiers={[font({ size: 10 }), lineLimit(1)]}>
+                  {t.title}
+                </Text>
+                <Spacer />
+              </HStack>
             ))}
           </VStack>
         )}

@@ -38,17 +38,27 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
   if (family === 'accessoryInline') {
     const c = p.classes[0];
+    const total = p.classes.length;
     return (
       <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-        {c ? `${c.startTime} ${c.label}` : 'No classes'}
+        {c ? `${total} classes · Next ${c.startTime}` : 'No classes today'}
       </Text>
     );
   }
 
   if (family === 'accessoryCircular') {
+    const next = p.classes[0];
+    if (next) {
+      return (
+        <VStack spacing={0}>
+          <Text modifiers={[font({ size: 16, weight: 'heavy' })]}>{next.startTime}</Text>
+          <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.7)]}>NEXT</Text>
+        </VStack>
+      );
+    }
     return (
       <VStack spacing={0}>
-        <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>{String(p.classes.length)}</Text>
+        <Text modifiers={[font({ size: 22, weight: 'heavy' })]}>0</Text>
         <Text modifiers={[font({ size: 7, weight: 'bold' }), opacity(0.6)]}>CLASS</Text>
       </VStack>
     );
@@ -57,21 +67,24 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   if (family === 'accessoryRectangular') {
     const show = p.classes.slice(0, 4);
     return (
-      <VStack spacing={0}>
+      <VStack spacing={1}>
         <Text modifiers={[font({ size: 11, weight: 'heavy' }), lineLimit(1)]}>
           {String(p.classes.length)} Classes Today
         </Text>
         {show.length === 0 ? (
           <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>Free day!</Text>
         ) : (
-          <VStack spacing={0}>
+          <VStack spacing={1}>
             {show.map((c, i) => (
-              <Text
-                key={`${c.startTime}-${i}`}
-                modifiers={[font({ size: 10 }), lineLimit(1)]}
-              >
-                {c.startTime} {c.label}{c.location ? ` · ${c.location}` : ''}
-              </Text>
+              <HStack key={`${c.startTime}-${i}`} spacing={4}>
+                <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
+                  {c.startTime}
+                </Text>
+                <Text modifiers={[font({ size: 10 }), opacity(0.85), lineLimit(1)]}>
+                  {c.label}{c.location ? ` · ${c.location}` : ''}
+                </Text>
+                <Spacer />
+              </HStack>
             ))}
           </VStack>
         )}
