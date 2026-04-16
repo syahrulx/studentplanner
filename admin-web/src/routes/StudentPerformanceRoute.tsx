@@ -30,6 +30,64 @@ function statusBadge(s: AttendanceEventRow['status']) {
   return 'bg-slate-500/15 text-slate-700 dark:text-slate-300';
 }
 
+function riskMeta(u: AttendanceUserSummaryRow): { label: 'Strong' | 'Watch' | 'At risk'; cls: string; reason: string } {
+  const total = Number(u.total ?? 0);
+  const pr = clamp01(Number(u.present_rate ?? 0));
+  const lr = clamp01(Number(u.last_present_rate ?? 0));
+  const cancelled = Number(u.cancelled ?? 0);
+  const absent = Number(u.absent ?? 0);
+  const lowData = total < 5;
+
+  // Use last_present_rate as a "recent" hint (if available).
+  const recentIsBad = lr > 0 ? lr < 0.7 : pr < 0.7;
+  const overallBad = pr < 0.75;
+  const highCancelled = total >= 6 && cancelled / Math.max(1, total) >= 0.35;
+  const highAbsent = total >= 6 && absent / Math.max(1, total) >= 0.35;
+
+  if (!lowData && (recentIsBad || (overallBad && (highAbsent || highCancelled)))) {
+    const reason = recentIsBad
+      ? 'Low recent present rate'
+      : highAbsent
+        ? 'High absences'
+        : highCancelled
+          ? 'High cancellations'
+          : 'Low present rate';
+    return { label: 'At risk', cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', reason };
+  }
+
+  if (!lowData && (pr < 0.85 || (lr > 0 && lr < 0.85))) {
+    const reason = lr > 0 && lr < pr ? 'Recent dip' : 'Room to improve';
+    return { label: 'Watch', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', reason };
+  }
+
+  if (lowData) {
+    return { label: 'Watch', cls: 'bg-slate-500/15 text-slate-700 dark:text-slate-300', reason: 'Low data volume' };
+  }
+
+  return { label: 'Strong', cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', reason: 'Consistent attendance' };
+}
+
+function Sparkline({ points, strokeClass }: { points: number[]; strokeClass: string }) {
+  const w = 140;
+  const h = 34;
+  const pad = 2;
+  const safe = points.length ? points : [0];
+  const min = Math.min(...safe);
+  const max = Math.max(...safe);
+  const span = max - min || 1;
+  const toXY = (v: number, i: number) => {
+    const x = safe.length === 1 ? w / 2 : pad + (i * (w - pad * 2)) / (safe.length - 1);
+    const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+    return [x, y] as const;
+  };
+  const d = safe.map((v, i) => toXY(v, i).join(',')).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+      <polyline points={d} fill="none" className={strokeClass} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function StudentPerformanceRoute() {
   const { searchQuery } = useAdminSearch();
 
@@ -49,6 +107,10 @@ export function StudentPerformanceRoute() {
   const [eventsFrom, setEventsFrom] = useState('');
   const [eventsTo, setEventsTo] = useState('');
   const [eventsStatus, setEventsStatus] = useState<'all' | AttendanceEventRow['status']>('all');
+  const [sortKey, setSortKey] = useState<
+    'name' | 'student_id' | 'university' | 'total' | 'present_rate' | 'last_present_rate' | 'risk'
+  >('present_rate');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -128,18 +190,119 @@ export function StudentPerformanceRoute() {
         );
       })
       .sort((a, b) => {
-        // default: lowest present rate first, then higher total
+        const ad = sortDir === 'asc' ? 1 : -1;
+        const ap = a.profile;
+        const bp = b.profile;
+        const an = (ap?.name || '').trim();
+        const bn = (bp?.name || '').trim();
+        const asid = (ap?.student_id || '').trim();
+        const bsid = (bp?.student_id || '').trim();
+        const auni = (ap?.university_id || '').trim();
+        const buni = (bp?.university_id || '').trim();
+
+        const cmpStr = (x: string, y: string) => x.localeCompare(y);
+        const cmpNum = (x: number, y: number) => (x === y ? 0 : x < y ? -1 : 1);
+
+        if (sortKey === 'name') return ad * cmpStr(an || '—', bn || '—');
+        if (sortKey === 'student_id') return ad * cmpStr(asid || '—', bsid || '—');
+        if (sortKey === 'university') return ad * cmpStr(auni || '—', buni || '—');
+        if (sortKey === 'total') return ad * cmpNum(Number(a.total ?? 0), Number(b.total ?? 0));
+        if (sortKey === 'present_rate') return ad * cmpNum(clamp01(a.present_rate), clamp01(b.present_rate));
+        if (sortKey === 'last_present_rate') return ad * cmpNum(clamp01(a.last_present_rate), clamp01(b.last_present_rate));
+        if (sortKey === 'risk') {
+          const rank = (x: AttendanceUserSummaryRow) => {
+            const r = riskMeta(x).label;
+            return r === 'At risk' ? 0 : r === 'Watch' ? 1 : 2;
+          };
+          return ad * cmpNum(rank(a), rank(b));
+        }
+
+        // fallback
         const ar = clamp01(a.present_rate);
         const br = clamp01(b.present_rate);
-        if (ar !== br) return ar - br;
-        return (b.total ?? 0) - (a.total ?? 0);
+        if (ar !== br) return ad * (ar - br);
+        return ad * (Number(a.total ?? 0) - Number(b.total ?? 0));
       });
-  }, [items, maxPresentRatePct, minTotal, searchQuery, universityFilter]);
+  }, [items, maxPresentRatePct, minTotal, searchQuery, sortDir, sortKey, universityFilter]);
 
   const filteredEvents = useMemo(() => {
     if (eventsStatus === 'all') return events;
     return events.filter((e) => e.status === eventsStatus);
   }, [events, eventsStatus]);
+
+  const kpis = useMemo(() => {
+    const list = filtered;
+    const students = list.length;
+    const totalEvents = list.reduce((acc, u) => acc + Number(u.total ?? 0), 0);
+    const presentEvents = list.reduce((acc, u) => acc + Number(u.present ?? 0), 0);
+    const absentEvents = list.reduce((acc, u) => acc + Number(u.absent ?? 0), 0);
+    const cancelledEvents = list.reduce((acc, u) => acc + Number(u.cancelled ?? 0), 0);
+    const weightedPresentRate = totalEvents > 0 ? presentEvents / totalEvents : 0;
+    const weightedLastRate =
+      totalEvents > 0
+        ? list.reduce((acc, u) => acc + clamp01(u.last_present_rate) * Number(u.total ?? 0), 0) / totalEvents
+        : 0;
+    const deltaPct = Math.round((weightedLastRate - weightedPresentRate) * 100);
+    const atRisk = list.filter((u) => riskMeta(u).label === 'At risk').length;
+    return {
+      students,
+      totalEvents,
+      presentEvents,
+      absentEvents,
+      cancelledEvents,
+      weightedPresentRate,
+      weightedLastRate,
+      deltaPct,
+      atRisk,
+    };
+  }, [filtered]);
+
+  const selectedUser = useMemo(() => items.find((x) => x.user_id === selectedUserId) ?? null, [items, selectedUserId]);
+  const selectedRisk = useMemo(() => (selectedUser ? riskMeta(selectedUser) : null), [selectedUser]);
+
+  const selectedSeries = useMemo(() => {
+    const map = new Map<string, { present: number; total: number }>();
+    for (const e of events) {
+      const d = new Date(e.scheduled_start_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const it = map.get(key) ?? { present: 0, total: 0 };
+      it.total += 1;
+      if (e.status === 'present') it.present += 1;
+      map.set(key, it);
+    }
+    const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+    const last = keys.slice(Math.max(0, keys.length - 14));
+    const pts = last.map((k) => {
+      const it = map.get(k)!;
+      return it.total > 0 ? it.present / it.total : 0;
+    });
+    return { keys: last, points: pts };
+  }, [events]);
+
+  const selectedBreakdown = useMemo(() => {
+    let present = 0;
+    let absent = 0;
+    let cancelled = 0;
+    for (const e of filteredEvents) {
+      if (e.status === 'present') present += 1;
+      else if (e.status === 'absent') absent += 1;
+      else cancelled += 1;
+    }
+    const total = present + absent + cancelled;
+    return { total, present, absent, cancelled };
+  }, [filteredEvents]);
+
+  const toggleSort = useCallback(
+    (k: typeof sortKey) => {
+      if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      else {
+        setSortKey(k);
+        setSortDir(k === 'name' || k === 'student_id' || k === 'university' ? 'asc' : 'desc');
+      }
+    },
+    [sortKey],
+  );
 
   return (
     <div>
@@ -153,6 +316,39 @@ export function StudentPerformanceRoute() {
       <MotionSection delay={0.04} className="mt-6">
         <MotionPanel>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Students tracked</div>
+                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.students}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Based on current filters</div>
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Total check-ins</div>
+                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.totalEvents}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {kpis.presentEvents} present · {kpis.absentEvents} absent · {kpis.cancelledEvents} cancelled
+                </div>
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Avg present rate</div>
+                  <Sparkline points={[kpis.weightedPresentRate, kpis.weightedLastRate]} strokeClass="stroke-brand-600 dark:stroke-brand-400" />
+                </div>
+                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+                  {pct01(kpis.weightedPresentRate)}
+                </div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Trend: {kpis.deltaPct >= 0 ? '+' : ''}
+                  {kpis.deltaPct}% vs recent rate
+                </div>
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">At-risk students</div>
+                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.atRisk}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Heuristic based on attendance only</div>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-black text-slate-900 dark:text-slate-100">Students</div>
@@ -260,12 +456,50 @@ export function StudentPerformanceRoute() {
               <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
                   <tr>
-                    <th className="px-3 py-2">Name</th>
-                    <th className="px-3 py-2">Student ID</th>
-                    <th className="px-3 py-2">University</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                    <th className="px-3 py-2 text-right">Present rate</th>
-                    <th className="px-3 py-2 text-right">Last {sinceDays}d rate</th>
+                    <th className="px-3 py-2">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('name')}>
+                        Name
+                        {sortKey === 'name' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('student_id')}>
+                        Student ID
+                        {sortKey === 'student_id' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('university')}>
+                        University
+                        {sortKey === 'university' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('total')}>
+                        Total
+                        {sortKey === 'total' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('present_rate')}>
+                        Present rate
+                        {sortKey === 'present_rate' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('last_present_rate')}>
+                        Last {sinceDays}d rate
+                        {sortKey === 'last_present_rate' ? (
+                          <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                        ) : null}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('risk')}>
+                        Risk
+                        {sortKey === 'risk' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -275,6 +509,7 @@ export function StudentPerformanceRoute() {
                     const name = (p?.name || '').trim() || '—';
                     const sid = (p?.student_id || '').trim() || '—';
                     const uni = (p?.university_id || '').trim() || '—';
+                    const risk = riskMeta(u);
                     return (
                       <tr
                         key={u.user_id}
@@ -300,12 +535,17 @@ export function StudentPerformanceRoute() {
                         <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
                           {pct01(u.last_present_rate)}
                         </td>
+                        <td className="px-3 py-2 text-right">
+                          <span title={risk.reason} className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${risk.cls}`}>
+                            {risk.label}
+                          </span>
+                        </td>
                       </tr>
                     );
                   })}
                   {filtered.length === 0 && !busy ? (
                     <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
+                      <td colSpan={7} className="px-3 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
                         No attendance events yet.
                       </td>
                     </tr>
@@ -332,6 +572,18 @@ export function StudentPerformanceRoute() {
                   <button
                     type="button"
                     onClick={() => {
+                      setSelectedUserId(null);
+                      setEvents([]);
+                      setEventsErr('');
+                      setEventsBusy(false);
+                    }}
+                    className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Close details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setEventsFrom('');
                       setEventsTo('');
                       setEventsStatus('all');
@@ -354,6 +606,75 @@ export function StudentPerformanceRoute() {
               {eventsErr ? (
                 <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
                   {eventsErr}
+                </div>
+              ) : null}
+
+              {selectedUser ? (
+                <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30 lg:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Student</div>
+                    <div className="mt-1 text-sm font-black text-slate-900 dark:text-slate-100">{selectedUser.profile?.name || '—'}</div>
+                    <div className="mt-1 text-xs font-mono font-semibold text-slate-400">{selectedUser.user_id}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {selectedUser.profile?.university_id || '—'} · {selectedUser.profile?.student_id || '—'}
+                    </div>
+                    {selectedRisk ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${selectedRisk.cls}`}>
+                          {selectedRisk.label}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{selectedRisk.reason}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        14-day present trend
+                      </div>
+                      <Sparkline points={selectedSeries.points} strokeClass="stroke-emerald-600 dark:stroke-emerald-400" />
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      <span>Latest:</span>
+                      <span className="font-black text-slate-900 dark:text-slate-100">
+                        {selectedSeries.points.length ? `${pct01(selectedSeries.points.at(-1) as number)}` : '—'}
+                      </span>
+                      <span>·</span>
+                      <span>{selectedSeries.points.length} day(s)</span>
+                    </div>
+                    <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Based on loaded events for this user.
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Status breakdown</div>
+                    <div className="mt-3 space-y-2">
+                      {(
+                        [
+                          { k: 'present', v: selectedBreakdown.present, cls: 'bg-emerald-500' },
+                          { k: 'absent', v: selectedBreakdown.absent, cls: 'bg-rose-500' },
+                          { k: 'cancelled', v: selectedBreakdown.cancelled, cls: 'bg-slate-500' },
+                        ] as const
+                      ).map((row) => {
+                        const pct = selectedBreakdown.total > 0 ? Math.round((row.v / selectedBreakdown.total) * 100) : 0;
+                        return (
+                          <div key={row.k}>
+                            <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              <span className="capitalize">{row.k}</span>
+                              <span className="font-black text-slate-900 dark:text-slate-100">
+                                {row.v} · {pct}%
+                              </span>
+                            </div>
+                            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                              <div className={`h-2 ${row.cls}`} style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
