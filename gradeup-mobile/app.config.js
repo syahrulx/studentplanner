@@ -45,7 +45,9 @@ export default ({ config }) => {
     [
       '@rnmapbox/maps',
       {
-        RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || '',
+        // Use the public access token as fallback — no secret (sk.) token configured.
+        // EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN is set in eas.json for all build profiles.
+        RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
       },
     ],
   ],

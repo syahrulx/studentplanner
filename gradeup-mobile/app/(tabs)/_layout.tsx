@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
-import { Tabs, router } from 'expo-router';
+import { Redirect, Tabs, router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -9,15 +9,61 @@ import { TabBarProvider } from '@/contexts/TabBarContext';
 import { GlassTabBar } from '@/components/GlassTabBar';
 import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
+import { supabase } from '@/src/lib/supabase';
 
 export default function TabLayout() {
   const { language } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [gate, setGate] = useState<'loading' | 'signed-out' | 'needs-profile' | 'ready'>('loading');
 
   const openAddMenu = () => setAddMenuOpen(true);
   const closeAddMenu = () => setAddMenuOpen(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    const resolveGate = async (uid?: string | null) => {
+      if (!alive) return;
+      if (!uid) {
+        setGate('signed-out');
+        return;
+      }
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('university')
+          .eq('id', uid)
+          .maybeSingle();
+        if (!alive) return;
+        setGate(profile?.university ? 'ready' : 'needs-profile');
+      } catch {
+        if (!alive) return;
+        setGate('needs-profile');
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      void resolveGate(data.session?.user?.id ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      void resolveGate(session?.user?.id ?? null);
+    });
+
+    return () => {
+      alive = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  if (gate === 'loading') return null;
+  if (gate === 'signed-out') return <Redirect href="/(auth)/login" />;
+  if (gate === 'needs-profile') return <Redirect href="/(auth)/profile-setup" />;
 
   return (
     <TabBarProvider openAddMenu={openAddMenu}>

@@ -34,7 +34,6 @@ export default function ProfileSetup() {
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universityModalVisible, setUniversityModalVisible] = useState(false);
-  const [uniSearch, setUniSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,10 +55,6 @@ export default function ProfileSetup() {
       .finally(() => { if (!cancelled) setUniversitiesLoading(false); });
     return () => { cancelled = true; };
   }, []);
-
-  const filteredUnis = uniSearch.trim()
-    ? universities.filter((u) => u.name.toLowerCase().includes(uniSearch.toLowerCase()))
-    : universities;
 
   const handleSave = async () => {
     setError(null);
@@ -211,22 +206,8 @@ export default function ProfileSetup() {
                 <Feather name="x" size={22} color="#0f172a" />
               </Pressable>
             </View>
-            <View style={styles.modalSearchWrap}>
-              <Feather name="search" size={16} color="#94a3b8" />
-              <TextInput
-                style={styles.modalSearchInput}
-                placeholder="Search universities..."
-                placeholderTextColor="#94a3b8"
-                value={uniSearch}
-                onChangeText={setUniSearch}
-                autoFocus
-              />
-              {uniSearch.length > 0 && (
-                <Pressable onPress={() => setUniSearch('')}><Feather name="x-circle" size={16} color="#94a3b8" /></Pressable>
-              )}
-            </View>
             <FlatList
-              data={filteredUnis}
+              data={universities}
               keyExtractor={(item) => item.name}
               style={styles.modalList}
               keyboardShouldPersistTaps="handled"
@@ -235,7 +216,7 @@ export default function ProfileSetup() {
                 return (
                   <Pressable
                     style={[styles.uniRow, isSel && { backgroundColor: '#f0f9ff', borderColor: '#0f172a' }]}
-                    onPress={() => { setUniversity(item); setUniversityModalVisible(false); setUniSearch(''); }}
+                    onPress={() => { setUniversity(item); setUniversityModalVisible(false); }}
                   >
                     <Text style={[styles.uniRowText, isSel && { color: '#0f172a', fontWeight: '700' }]} numberOfLines={2}>{item.name}</Text>
                     {isSel && <Feather name="check" size={18} color="#0f172a" />}
@@ -244,7 +225,7 @@ export default function ProfileSetup() {
               }}
               ListEmptyComponent={
                 <View style={styles.modalEmpty}>
-                  <Text style={styles.modalEmptyText}>{uniSearch ? 'No results found' : 'Loading...'}</Text>
+                  <Text style={styles.modalEmptyText}>Loading...</Text>
                 </View>
               }
             />
@@ -355,21 +336,7 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%', paddingBottom: 34 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  modalSearchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 8,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  modalSearchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: '#0f172a' },
-  modalList: { maxHeight: 400, paddingHorizontal: 20, paddingTop: 8 },
+  modalList: { maxHeight: 460, paddingHorizontal: 20, paddingTop: 12 },
   uniRow: {
     flexDirection: 'row',
     alignItems: 'center',

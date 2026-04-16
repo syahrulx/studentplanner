@@ -38,6 +38,22 @@ export default function Login() {
   const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  const routeAfterAuth = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+    if (!user) {
+      router.replace('/(auth)/profile-setup');
+      return;
+    }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('university')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (!profile?.university) router.replace('/(auth)/profile-setup');
+    else router.replace('/(tabs)');
+  };
+
   const handleLogin = async () => {
     setError(null);
     const trimmedEmail = email.trim();
@@ -65,9 +81,7 @@ export default function Login() {
         setError(msg);
         return;
       }
-      if (data.session) {
-        router.replace('/(tabs)');
-      }
+      if (data.session) await routeAfterAuth();
     } catch (e) {
       setError('Something went wrong. Please check your connection and try again.');
     } finally {
@@ -110,9 +124,7 @@ export default function Login() {
             });
             if (sessionError) {
               setError('Sign-in failed. Please try again.');
-            } else if (sessionData.session) {
-              router.replace('/(tabs)');
-            }
+            } else if (sessionData.session) await routeAfterAuth();
           } else {
             setError('Authentication failed. Please try again.');
           }
@@ -155,9 +167,7 @@ export default function Login() {
             });
             if (sessionError) {
               setError('Sign-in failed. Please try again.');
-            } else if (sessionData.session) {
-              router.replace('/(tabs)');
-            }
+            } else if (sessionData.session) await routeAfterAuth();
           } else {
             setError('Authentication failed. Please try again.');
           }
