@@ -482,40 +482,18 @@ export default function CommunityMap() {
       <View style={styles.mapContainer}>
           <Mapbox.MapView
             style={styles.map}
-            styleURL="mapbox://styles/mapbox/standard"
+            styleURL={Mapbox.StyleURL.Street}
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
             scaleBarEnabled={false}
           >
-            {/* Standard Style Configuration — use StyleImport (V11 only) */}
-            <Mapbox.StyleImport
-              id="basemap"
-              existing={true}
-              config={{
-                theme: mapboxConfig.theme,
-                showPointOfInterestLabels: mapboxConfig.showPointOfInterestLabels ? 'true' : 'false',
-                showPlaceLabels: mapboxConfig.showPlaceLabels ? 'true' : 'false',
-                showRoadLabels: mapboxConfig.showRoadLabels ? 'true' : 'false',
-                showTransitLabels: mapboxConfig.showTransitLabels ? 'true' : 'false',
-              }}
-            />
-
-            {/* 3D Terrain — Higher Fidelity depth */}
-            <Mapbox.RasterDemSource
-              id="mapbox-dem"
-              url="mapbox://mapbox.mapbox-terrain-dem-v1"
-              tileSize={512}
-              maxZoom={14}
-            >
-              <Mapbox.Terrain style={{ exaggeration: 1.5 }} />
-            </Mapbox.RasterDemSource>
 
             <Mapbox.Camera
               ref={cameraRef}
               zoomLevel={15}
-              pitch={65}
-              heading={25}
+              pitch={45}
+              heading={0}
               centerCoordinate={[myLongitude || 101.4810, myLatitude || 3.0651]}
               animationMode="flyTo"
               animationDuration={1500}
