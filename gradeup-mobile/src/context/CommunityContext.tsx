@@ -29,14 +29,7 @@ const reactionLimiter = new RateLimiter(15, 60_000); // max 15 reactions / minut
 const bumpCooldown = new Cooldown(5_000); // 5s cooldown per receiver
 const refreshLimiter = new RateLimiter(5, 10_000); // max 5 manual refreshes / 10s
 
-let TaskManager: any = null;
-try {
-  TaskManager = require('expo-task-manager');
-} catch (e) {
-  // Optional
-}
 
-const LOCATION_TASK_NAME = 'community-background-location';
 const REFRESH_INTERVAL = 30000; // 30 seconds
 const SHARED_TASKS_REFRESH_INTERVAL = 120000; // 2 minutes (shared tasks have realtime; this is a safety fallback)
 
@@ -118,33 +111,7 @@ interface CommunityState {
 
 const CommunityContext = createContext<CommunityState | null>(null);
 
-// =============================================================================
-// BACKGROUND LOCATION TASK
-// =============================================================================
 
-// Register background task (must be at module level)
-if (TaskManager?.defineTask) {
-  TaskManager.defineTask(LOCATION_TASK_NAME, ({ data, error }: any) => {
-    if (error) {
-      console.warn('Background location error:', error);
-      return;
-    }
-    if (data) {
-      const { locations } = data;
-      const loc = locations?.[0];
-      if (loc) {
-        // Get user ID from stored state and update location
-        supabase.auth.getSession().then(({ data: { session } }) => {
-          if (session?.user?.id) {
-            communityApi
-              .updateMyLocation(session.user.id, loc.coords.latitude, loc.coords.longitude)
-              .catch(console.warn);
-          }
-        });
-      }
-    }
-  });
-}
 
 // =============================================================================
 // PROVIDER
@@ -555,43 +522,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   // ─── Location watching ───
   const requestLocationPermission = useCallback(async (): Promise<boolean> => {
     try {
+      // Only request foreground ("When In Use") permission — no background tracking.
+      // This matches standard app behavior (no persistent Dynamic Island indicator).
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
         Alert.alert(tr('commLocationPermissionTitle'), tr('commLocationPermissionBody'));
         return false;
-      }
-
-      // Request background permission
-      if (Platform.OS !== 'web') {
-        try {
-          // In iOS dev-client builds, background location capability may be absent and triggers noisy warnings.
-          // Keep foreground location working and only attempt background updates outside iOS dev mode.
-          if (Platform.OS === 'ios' && __DEV__) {
-            setLocationPermissionGranted(true);
-            return true;
-          }
-          const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-          if (bgStatus === 'granted' && TaskManager) {
-            // Start background location task
-            const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME).catch(() => false);
-            if (!isRegistered) {
-              await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-                accuracy: Location.Accuracy.Balanced,
-                timeInterval: 60000, // 1 min
-                distanceInterval: 100, // 100m
-                showsBackgroundLocationIndicator: true,
-                foregroundService: {
-                  notificationTitle: 'Rencana',
-                  notificationBody: 'Sharing your location with friends',
-                },
-              }).catch(() => {
-                // Ignore gracefully if background location capability is missing or denied.
-              });
-            }
-          }
-        } catch (e) {
-          void e;
-        }
       }
 
       setLocationPermissionGranted(true);
@@ -672,15 +608,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         if (locationWatchRef.current?.remove) {
           locationWatchRef.current.remove();
           locationWatchRef.current = null;
-          console.log('[LOCATION] Foreground watcher stopped (user set off)');
-        }
-        // Stop background location task
-        if (TaskManager) {
-          const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME).catch(() => false);
-          if (isRegistered) {
-            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
-            console.log('[LOCATION] Background task stopped (user set off)');
-          }
         }
         // Clear local coordinates
         setMyLatitude(null);

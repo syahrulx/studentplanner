@@ -26,7 +26,6 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
-          "location",
           "fetch",
           "remote-notification"
         ]
@@ -103,11 +102,11 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Rencana to use your location to provide personalized study reminders based on your campus presence.",
-          "locationAlwaysPermission": "Allow Rencana to use your location in the background to detect when you are on campus.",
-          "locationWhenInUsePermission": "Allow Rencana to use your location to show campus status.",
-          "isAndroidBackgroundLocationEnabled": true,
-          "isIosBackgroundLocationEnabled": true
+          "locationAlwaysAndWhenInUsePermission": "Allow Rencana to use your location to show your position on the community map.",
+          "locationAlwaysPermission": "Allow Rencana to use your location to share with friends.",
+          "locationWhenInUsePermission": "Allow Rencana to use your location to show your position on the community map.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
         }
       ]
     ],

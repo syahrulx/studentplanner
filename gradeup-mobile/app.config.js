@@ -24,7 +24,7 @@ export default ({ config }) => {
   const infoPlist = ios.infoPlist ?? {};
   const existingModes = infoPlist.UIBackgroundModes;
   const modes = Array.isArray(existingModes) ? [...existingModes] : [];
-  for (const m of ['location', 'fetch', 'remote-notification']) {
+  for (const m of ['fetch', 'remote-notification']) {
     if (!modes.includes(m)) modes.push(m);
   }
 
