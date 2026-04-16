@@ -13,7 +13,7 @@
       "backgroundColor": "#eaecf1"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
       "config": {},
