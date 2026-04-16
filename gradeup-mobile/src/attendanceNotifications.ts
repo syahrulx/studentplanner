@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { TimetableEntry } from './types';
+import { attendanceOccurrenceKey, getAnsweredOccurrenceSet } from './attendanceRecording';
 
 const CHANNEL_ATTENDANCE = 'attendance';
 const ID_PREFIX = 'attendance-';
@@ -81,6 +82,7 @@ export async function rescheduleAttendanceNotifications(
   const horizonDays = Math.max(1, Math.min(31, Number(opts?.horizonDays ?? 14)));
   const now = new Date();
   const today = startOfDay(now);
+  const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
 
   for (const entry of timetable) {
     const day = normalizeWeekday(entry.day);
@@ -95,6 +97,7 @@ export async function rescheduleAttendanceNotifications(
       const scheduledStartAt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), time.hour, time.minute, 0, 0);
       const fireAt = new Date(scheduledStartAt.getTime() - 5 * 60_000);
       if (fireAt.getTime() <= Date.now()) continue;
+      if (answered.has(attendanceOccurrenceKey(entry.id, scheduledStartAt.toISOString()))) continue;
 
       const subject = (entry.displayName || entry.subjectName || entry.subjectCode || 'Class').trim();
       await Notifications.scheduleNotificationAsync({
