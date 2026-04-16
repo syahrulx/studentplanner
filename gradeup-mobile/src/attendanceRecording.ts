@@ -10,6 +10,8 @@ export const ATTENDANCE_ACTION_ABSENT = 'attendance_absent';
 export const ATTENDANCE_ACTION_CANCELLED = 'attendance_cancelled';
 
 const KEY_PENDING_ATTENDANCE = 'pendingAttendanceEventsV1';
+const KEY_ANSWERED_OCCURRENCES = 'attendanceAnsweredOccurrencesV1';
+const ANSWERED_TTL_DAYS = 35;
 
 type PendingAttendanceEvent = {
   timetableEntryId: string;
@@ -26,6 +28,72 @@ function normalizeStatusFromAction(actionId: string | undefined): AttendanceStat
   if (actionId === ATTENDANCE_ACTION_ABSENT) return 'absent';
   if (actionId === ATTENDANCE_ACTION_CANCELLED) return 'cancelled';
   return null;
+}
+
+function normalizeIso(iso: string): string {
+  const s = String(iso || '').trim();
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return s;
+  return new Date(t).toISOString();
+}
+
+export function attendanceOccurrenceKey(timetableEntryId: string, scheduledStartAt: string): string {
+  const tid = String(timetableEntryId || '').trim();
+  const at = normalizeIso(scheduledStartAt);
+  return `${tid}|${at}`;
+}
+
+async function loadAnsweredMap(): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_ANSWERED_OCCURRENCES);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+async function saveAnsweredMap(map: Record<string, string>): Promise<void> {
+  try {
+    const keys = Object.keys(map);
+    if (keys.length === 0) {
+      await AsyncStorage.removeItem(KEY_ANSWERED_OCCURRENCES);
+      return;
+    }
+    await AsyncStorage.setItem(KEY_ANSWERED_OCCURRENCES, JSON.stringify(map));
+  } catch {}
+}
+
+async function pruneAnsweredMap(map: Record<string, string>): Promise<Record<string, string>> {
+  const cutoff = Date.now() - ANSWERED_TTL_DAYS * 864e5;
+  const next: Record<string, string> = {};
+  for (const [k, v] of Object.entries(map)) {
+    const t = Date.parse(String(v || '').trim());
+    if (Number.isFinite(t) && t >= cutoff) next[k] = new Date(t).toISOString();
+  }
+  return next;
+}
+
+export async function getAnsweredOccurrenceSet(): Promise<Set<string>> {
+  const map = await loadAnsweredMap();
+  const pruned = await pruneAnsweredMap(map);
+  if (Object.keys(pruned).length !== Object.keys(map).length) {
+    await saveAnsweredMap(pruned);
+  }
+  return new Set(Object.keys(pruned));
+}
+
+async function markOccurrenceAnswered(timetableEntryId: string, scheduledStartAt: string, recordedAt: string): Promise<void> {
+  const tid = String(timetableEntryId || '').trim();
+  const at = String(scheduledStartAt || '').trim();
+  if (!tid || !at) return;
+  const key = attendanceOccurrenceKey(tid, at);
+  const map = await loadAnsweredMap();
+  map[key] = normalizeIso(recordedAt || new Date().toISOString());
+  const pruned = await pruneAnsweredMap(map);
+  await saveAnsweredMap(pruned);
 }
 
 export async function ensureAttendanceCategory(): Promise<void> {
@@ -99,6 +167,7 @@ export async function recordAttendanceEvent(ev: Omit<PendingAttendanceEvent, 're
   // If not signed in (or any insert failure), persist locally and retry later.
   if (!uid) {
     await enqueuePending({ ...(ev as PendingAttendanceEvent), recordedAt });
+    await markOccurrenceAnswered(row.timetable_entry_id, row.scheduled_start_at, recordedAt);
     return;
   }
 
@@ -108,7 +177,11 @@ export async function recordAttendanceEvent(ev: Omit<PendingAttendanceEvent, 're
 
   if (error) {
     await enqueuePending({ ...(ev as PendingAttendanceEvent), recordedAt });
+    await markOccurrenceAnswered(row.timetable_entry_id, row.scheduled_start_at, recordedAt);
+    return;
   }
+
+  await markOccurrenceAnswered(row.timetable_entry_id, row.scheduled_start_at, recordedAt);
 }
 
 export async function flushPendingAttendanceEvents(): Promise<void> {
