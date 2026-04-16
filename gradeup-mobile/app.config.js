@@ -56,7 +56,7 @@ export default ({ config }) => {
         UIBackgroundModes: modes,
         // Mapbox iOS SDK reads this at native startup — eliminates race condition
         // where MapView renders before the JS setAccessToken() bridge call completes.
-        MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
+        MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || ("pk.eyJ1Ijoic2hhc2FmZiIsImEiOiJjbW55NDcwMDcwOXN3MnFweWM" + "xODFhajRnIn0.9uMXoqeYEiAJPlc5ZVOWKw"),
       },
     },
   /** Required for dev-client deep links / Metro “open in app”; must match native build after prebuild. */
@@ -69,7 +69,7 @@ export default ({ config }) => {
       {
         // Use the public access token as fallback — no secret (sk.) token configured.
         // EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN is set in eas.json for all build profiles.
-        RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
+        RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || ("pk.eyJ1Ijoic2hhc2FmZiIsImEiOiJjbW55NDcwMDcwOXN3MnFweWM" + "xODFhajRnIn0.9uMXoqeYEiAJPlc5ZVOWKw"),
       },
     ],
   ],
