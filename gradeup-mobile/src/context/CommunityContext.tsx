@@ -602,9 +602,17 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [tr]);
 
-  // Start foreground location watching
+  // Start foreground location watching — only when visibility is NOT 'off'
   useEffect(() => {
-    if (!locationPermissionGranted || !userId) return;
+    if (!locationPermissionGranted || !userId || locationVisibility === 'off') {
+      // If visibility just turned off, clean up any active watcher
+      if (locationWatchRef.current?.remove) {
+        locationWatchRef.current.remove();
+        locationWatchRef.current = null;
+        console.log('[LOCATION] Foreground watcher stopped (visibility off)');
+      }
+      return;
+    }
 
     let mounted = true;
 
@@ -635,6 +643,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         );
 
         locationWatchRef.current = watcher;
+        console.log('[LOCATION] Foreground watcher started');
       } catch (e) {
         console.warn('Location watch error:', e);
       }
@@ -646,9 +655,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       if (locationWatchRef.current?.remove) {
         locationWatchRef.current.remove();
+        locationWatchRef.current = null;
       }
     };
-  }, [locationPermissionGranted, userId]);
+  }, [locationPermissionGranted, userId, locationVisibility]);
 
   // ─── Location visibility ───
   const setLocationVisibility = useCallback(async (v: LocationVisibility) => {
@@ -656,6 +666,26 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     try {
       await communityApi.updateLocationVisibility(userId, v);
       setLocationVisibilityState(v);
+
+      if (v === 'off') {
+        // Stop foreground watcher
+        if (locationWatchRef.current?.remove) {
+          locationWatchRef.current.remove();
+          locationWatchRef.current = null;
+          console.log('[LOCATION] Foreground watcher stopped (user set off)');
+        }
+        // Stop background location task
+        if (TaskManager) {
+          const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME).catch(() => false);
+          if (isRegistered) {
+            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+            console.log('[LOCATION] Background task stopped (user set off)');
+          }
+        }
+        // Clear local coordinates
+        setMyLatitude(null);
+        setMyLongitude(null);
+      }
     } catch (e) {
       console.warn('Failed to update location visibility:', e);
     }
