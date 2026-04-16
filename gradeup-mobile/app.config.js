@@ -35,6 +35,9 @@ export default ({ config }) => {
       infoPlist: {
         ...infoPlist,
         UIBackgroundModes: modes,
+        // Mapbox iOS SDK reads this at native startup — eliminates race condition
+        // where MapView renders before the JS setAccessToken() bridge call completes.
+        MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '',
       },
     },
   /** Required for dev-client deep links / Metro “open in app”; must match native build after prebuild. */
