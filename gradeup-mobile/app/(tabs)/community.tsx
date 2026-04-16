@@ -473,14 +473,24 @@ export default function CommunityMap() {
       <View style={styles.mapContainer}>
           <Mapbox.MapView
             style={styles.map}
-            styleURL={Mapbox.StyleURL.Standard}
+            styleURL="mapbox://styles/mapbox/standard"
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
             scaleBarEnabled={false}
           >
-            {/* Standard Style Configuration — Photorealistic 3D */}
-            <Mapbox.Style config={mapboxConfig as any} />
+            {/* Standard Style Configuration — use StyleImport (V11 only) */}
+            <Mapbox.StyleImport
+              id="basemap"
+              existing={true}
+              config={{
+                theme: mapboxConfig.theme,
+                showPointOfInterestLabels: mapboxConfig.showPointOfInterestLabels ? 'true' : 'false',
+                showPlaceLabels: mapboxConfig.showPlaceLabels ? 'true' : 'false',
+                showRoadLabels: mapboxConfig.showRoadLabels ? 'true' : 'false',
+                showTransitLabels: mapboxConfig.showTransitLabels ? 'true' : 'false',
+              }}
+            />
 
             {/* 3D Terrain — Higher Fidelity depth */}
             <Mapbox.RasterDemSource
