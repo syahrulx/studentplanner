@@ -1,8 +1,27 @@
-// Ensure .env is applied when evaluating config (Expo does not always inject into app.config).
+// Load .env manually (dotenv is not installed as a dependency).
+// This ensures EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN is available during EAS builds
+// where Expo CLI does not auto-load .env for native config evaluation.
+const fs = require('fs');
+const path = require('path');
 try {
-  require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+  const envPath = path.resolve(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      const val = trimmed.slice(eqIdx + 1).trim();
+      // Don't override existing env vars (eas.json takes priority)
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  }
 } catch (_) {
-  /* optional dep path */
+  /* ignore read errors */
 }
 
 function cleanEnvString(v) {
