@@ -16,8 +16,17 @@ import {
 } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 
-// Initialize Mapbox with your public access token from environment variables
-Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '');
+// Initialize Mapbox with your public access token from environment variables.
+// In production builds (eas build), the token may not be in process.env
+// (removed from eas.json for GitHub secret scanning). In that case, the native
+// MBXAccessToken in Info.plist (set by app.config.js) is used as the primary source.
+const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+if (_mapboxToken) {
+  console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
+  Mapbox.setAccessToken(_mapboxToken);
+} else {
+  console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
+}
 
 // Mapbox Standard configuration helper
 function getMapState(themeId: string) {
@@ -504,9 +513,9 @@ export default function CommunityMap() {
 
             <Mapbox.Camera
               ref={cameraRef}
-              zoomLevel={15} // Professional standard zoom
-              pitch={65} // Steep enough to see the city landscape
-              heading={25} // Slight rotation for a cinematic view
+              zoomLevel={15}
+              pitch={65}
+              heading={25}
               centerCoordinate={[myLongitude || 101.4810, myLatitude || 3.0651]}
               animationMode="flyTo"
               animationDuration={1500}
