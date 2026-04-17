@@ -570,8 +570,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         const watcher = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.Balanced,
-            timeInterval: 30000,
-            distanceInterval: 50,
+            timeInterval: 120000, // 2 minutes (saves Disk IO)
+            distanceInterval: 100, // 100 meters
           },
           (loc: any) => {
             if (!mounted) return;

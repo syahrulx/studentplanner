@@ -38,20 +38,35 @@ export default function Login() {
   const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  const withTimeout = async <T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
+      ),
+    ]);
+  };
+
   const routeAfterAuth = async () => {
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData.user;
-    if (!user) {
-      router.replace('/(auth)/profile-setup');
-      return;
+    try {
+      const { data: userData } = await withTimeout(supabase.auth.getUser());
+      const user = userData.user;
+      if (!user) {
+        router.replace('/(auth)/profile-setup');
+        return;
+      }
+      const { data: profile } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('university')
+          .eq('id', user.id)
+          .maybeSingle()
+      );
+      if (!profile?.university) router.replace('/(auth)/profile-setup');
+      else router.replace('/(tabs)');
+    } catch (e) {
+      setError('The server is taking too long to respond. Please try again.');
     }
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('university')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (!profile?.university) router.replace('/(auth)/profile-setup');
-    else router.replace('/(tabs)');
   };
 
   const handleLogin = async () => {
@@ -61,19 +76,18 @@ export default function Login() {
     if (!password) { setError('Please enter your password'); return; }
     setLoading(true);
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
+      const { data, error: signInError } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password,
+        })
+      );
       if (signInError) {
         let msg = signInError.message;
         const invalidCreds =
           msg === 'Invalid login credentials' ||
           (signInError as { code?: string }).code === 'invalid_credentials';
         if (invalidCreds) {
-          // SECURITY: Show a generic message instead of distinguishing between
-          // "wrong password" and "no account". The auth_email_exists RPC is now
-          // restricted to authenticated users only to prevent email enumeration.
           msg = 'Invalid email or password';
         } else if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{')) {
           msg = 'Server unavailable. Please try again later.';
@@ -82,8 +96,12 @@ export default function Login() {
         return;
       }
       if (data.session) await routeAfterAuth();
-    } catch (e) {
-      setError('Something went wrong. Please check your connection and try again.');
+    } catch (e: any) {
+      if (e.message === 'TIMEOUT') {
+        setError('Server busy. Please try again in a moment.');
+      } else {
+        setError('Something went wrong. Please check your connection and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -94,16 +112,18 @@ export default function Login() {
     setError(null);
     try {
       const redirectUrl = authRedirect('login');
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-          queryParams: {
-            prompt: 'select_account',
+      const { data, error: oauthError } = await withTimeout(
+        supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl,
+            skipBrowserRedirect: true,
+            queryParams: {
+              prompt: 'select_account',
+            },
           },
-        },
-      });
+        })
+      );
       if (oauthError) {
         setError('Google sign-in failed. Please try again.');
         return;
@@ -118,10 +138,12 @@ export default function Login() {
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
           if (accessToken && refreshToken) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
+            const { data: sessionData, error: sessionError } = await withTimeout(
+              supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              })
+            );
             if (sessionError) {
               setError('Sign-in failed. Please try again.');
             } else if (sessionData.session) await routeAfterAuth();
@@ -130,8 +152,13 @@ export default function Login() {
           }
         }
       }
-    } catch (e) {
-      setError('Google sign-in failed. Please try again.');
+      }
+    } catch (e: any) {
+      if (e.message === 'TIMEOUT') {
+        setError('Sign-in is taking too long. The server might be busy.');
+      } else {
+        setError('Google sign-in failed. Please try again.');
+      }
     } finally {
       setGoogleLoading(false);
     }
@@ -161,10 +188,12 @@ export default function Login() {
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
           if (accessToken && refreshToken) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
+            const { data: sessionData, error: sessionError } = await withTimeout(
+              supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              })
+            );
             if (sessionError) {
               setError('Sign-in failed. Please try again.');
             } else if (sessionData.session) await routeAfterAuth();
@@ -173,8 +202,12 @@ export default function Login() {
           }
         }
       }
-    } catch (e) {
-      setError('Apple sign-in failed. Please try again.');
+    } catch (e: any) {
+      if (e.message === 'TIMEOUT') {
+        setError('Sign-in is taking too long. The server might be busy.');
+      } else {
+        setError('Apple sign-in failed. Please try again.');
+      }
     } finally {
       setAppleLoading(false);
     }
