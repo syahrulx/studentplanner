@@ -527,16 +527,17 @@ export async function getMyCircles(userId: string): Promise<Circle[]> {
 
   if (error) throw error;
 
-  // Get member counts
-  const { data: allMembers } = await supabase
-    .from('circle_members')
-    .select('circle_id')
-    .in('circle_id', circleIds);
-
-  const countMap = new Map<string, number>();
-  (allMembers || []).forEach((m) => {
-    countMap.set(m.circle_id, (countMap.get(m.circle_id) || 0) + 1);
-  });
+  // Get member counts efficiently — head-only queries return zero row data
+  const countResults = await Promise.all(
+    circleIds.map((cid) =>
+      supabase
+        .from('circle_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('circle_id', cid)
+        .then(({ count }) => [cid, count || 0] as const)
+    )
+  );
+  const countMap = new Map<string, number>(countResults);
 
   return (circles || []).map((c) => ({
     ...c,

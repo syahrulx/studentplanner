@@ -556,9 +556,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const rawNotes = loadedNotes;
             loadedNotes = rawNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
             
-            // Clean up ghost notes globally
+            // Clean up ghost notes — but only if they're a small minority.
+            // If most notes look like ghosts, courses probably failed to load fully;
+            // deleting everything would cause cascading data loss.
             const ghostNotes = rawNotes.filter((n) => !validCourseIds.has(n.subjectId.toUpperCase()));
-            if (ghostNotes.length > 0) {
+            if (ghostNotes.length > 0 && rawNotes.length > 0 && ghostNotes.length < rawNotes.length * 0.5) {
               Promise.allSettled(
                 ghostNotes.map((gn) => studyDb.deleteNote(uid, gn.id))
               ).catch(() => {});
@@ -575,9 +577,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
           setFlashcards(validCards);
 
-          // Clean up orphaned cards globally
+          // Clean up orphaned cards — same 50% safety threshold as notes above.
           const ghostCards = loadedCards.filter((c) => !c.noteId || !validNoteIds.has(c.noteId));
-          if (ghostCards.length > 0) {
+          if (ghostCards.length > 0 && loadedCards.length > 0 && ghostCards.length < loadedCards.length * 0.5) {
             Promise.allSettled(
               ghostCards.map((gc) => studyDb.deleteFlashcard(uid, gc.id))
             ).catch(() => {});
@@ -871,6 +873,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const removePushTokenListener = subscribeExpoPushTokenUpdates(() => remoteUserIdRef.current);
 
+    // Track whether getSession() already fired loadRemoteData so we don't
+    // run it twice when onAuthStateChange fires INITIAL_SESSION immediately after.
+    let initialSessionHandled = false;
+
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id;
@@ -879,6 +885,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setDataReady(true);
         return;
       }
+      initialSessionHandled = true;
       void loadRemoteData(uid, getAuthFallbackName(session));
     });
 
@@ -918,6 +925,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+      // Skip the INITIAL_SESSION event if getSession() already handled it above
+      // to avoid firing 18 duplicate queries on every cold start.
+      if (event === 'INITIAL_SESSION' && initialSessionHandled) return;
       void loadRemoteData(uid, getAuthFallbackName(session));
       void syncExpoPushTokenToProfile(uid);
     });

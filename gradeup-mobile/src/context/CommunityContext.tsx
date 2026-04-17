@@ -30,8 +30,8 @@ const bumpCooldown = new Cooldown(5_000); // 5s cooldown per receiver
 const refreshLimiter = new RateLimiter(5, 10_000); // max 5 manual refreshes / 10s
 
 
-const REFRESH_INTERVAL = 30000; // 30 seconds
-const SHARED_TASKS_REFRESH_INTERVAL = 120000; // 2 minutes (shared tasks have realtime; this is a safety fallback)
+const REFRESH_INTERVAL = 120_000; // 2 minutes — realtime subscriptions handle instant updates; this is a safety fallback
+const SHARED_TASKS_REFRESH_INTERVAL = 300_000; // 5 minutes — realtime handles instant updates for shared tasks
 
 // =============================================================================
 // CONTEXT TYPE
@@ -194,10 +194,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const refreshFriends = useCallback(async () => {
     if (!userId) return;
     try {
-      const [friendsList, withStatus] = await Promise.all([
-        communityApi.getFriends(userId).catch(() => [] as FriendProfile[]),
-        communityApi.getFriendsWithStatus(userId).catch(() => [] as FriendWithStatus[]),
-      ]);
+      // getFriendsWithStatus() already calls getFriends() internally, so calling
+      // both in parallel was doubling the friendships + profiles queries.
+      // Derive the plain friends list from the enriched result instead.
+      const withStatus = await communityApi.getFriendsWithStatus(userId).catch(() => [] as FriendWithStatus[]);
+      const friendsList: FriendProfile[] = withStatus.map(
+        ({ location, activity, music, ...profile }) => profile,
+      );
       setFriends(friendsList);
       setFriendsWithStatus(withStatus);
     } catch (e) {
