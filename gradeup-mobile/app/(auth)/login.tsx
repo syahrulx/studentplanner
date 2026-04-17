@@ -152,7 +152,6 @@ export default function Login() {
           }
         }
       }
-      }
     } catch (e: any) {
       if (e.message === 'TIMEOUT') {
         setError('Sign-in is taking too long. The server might be busy.');
@@ -169,13 +168,15 @@ export default function Login() {
     setError(null);
     try {
       const redirectUrl = authRedirect('login');
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-        },
-      });
+      const { data, error: oauthError } = await withTimeout(
+        supabase.auth.signInWithOAuth({
+          provider: 'apple',
+          options: {
+            redirectTo: redirectUrl,
+            skipBrowserRedirect: true,
+          },
+        })
+      );
       if (oauthError) {
         setError('Apple sign-in failed. Please try again.');
         return;
