@@ -37,6 +37,7 @@ const discovery = {
 // In-memory cache for the access token (avoids unnecessary refreshes)
 let cachedAccessToken: string | null = null;
 let cachedTokenTimestamp: number = 0;
+let refreshPromise: Promise<string | null> | null = null;
 const TOKEN_LIFETIME_MS = 50 * 60 * 1000; // 50 minutes (Spotify tokens last 60 min)
 
 // ---------------------------------------------------------------------------
@@ -133,38 +134,49 @@ async function getMyAccessToken(): Promise<string | null> {
     return cachedAccessToken;
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: tokenRow } = await supabase
-    .from('spotify_tokens')
-    .select('refresh_token')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (!tokenRow?.refresh_token) return null;
-
-  try {
-    const { accessToken, newRefreshToken } = await refreshAccessToken(tokenRow.refresh_token);
-    cachedAccessToken = accessToken;
-    cachedTokenTimestamp = Date.now();
-
-    // If Spotify rotated the refresh token, we MUST save the new one,
-    // otherwise the old one will be invalid on the next refresh!
-    if (newRefreshToken && newRefreshToken !== tokenRow.refresh_token) {
-      await supabase.from('spotify_tokens').upsert(
-        { user_id: user.id, refresh_token: newRefreshToken, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' }
-      );
-    }
-
-    return accessToken;
-  } catch (e) {
-    cachedAccessToken = null;
-    cachedTokenTimestamp = 0;
-    console.warn('[SpotifyAuth] token refresh failed, clearing cache:', e);
-    return null;
+  // If a refresh is already in progress, wait for it instead of sending multiple requests
+  if (refreshPromise) {
+    return refreshPromise;
   }
+
+  refreshPromise = (async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data: tokenRow } = await supabase
+      .from('spotify_tokens')
+      .select('refresh_token')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!tokenRow?.refresh_token) return null;
+
+    try {
+      const { accessToken, newRefreshToken } = await refreshAccessToken(tokenRow.refresh_token);
+      cachedAccessToken = accessToken;
+      cachedTokenTimestamp = Date.now();
+
+      // If Spotify rotated the refresh token, we MUST save the new one,
+      // otherwise the old one will be invalid on the next refresh!
+      if (newRefreshToken && newRefreshToken !== tokenRow.refresh_token) {
+        await supabase.from('spotify_tokens').upsert(
+          { user_id: user.id, refresh_token: newRefreshToken, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id' }
+        );
+      }
+
+      return accessToken;
+    } catch (e) {
+      cachedAccessToken = null;
+      cachedTokenTimestamp = 0;
+      console.warn('[SpotifyAuth] token refresh failed, clearing cache:', e);
+      return null;
+    } finally {
+      refreshPromise = null; // Clear promise so future calls can re-evaluate
+    }
+  })();
+
+  return refreshPromise;
 }
 
 /** Invalidate the in-memory access token so the next call fetches a fresh one. */
