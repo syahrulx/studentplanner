@@ -415,7 +415,7 @@ export async function getOutgoingRequests(userId: string): Promise<Friendship[]>
   return data.map((f) => ({ ...f, addressee_profile: profileMap.get(f.addressee_id) }));
 }
 
-/** Suggest friends from same university/course/faculty/class */
+/** Suggest friends nearby based on public location */
 export async function getSuggestions(
   userId: string,
   university?: string,
@@ -423,7 +423,7 @@ export async function getSuggestions(
   faculty?: string,
   classGroup?: string
 ): Promise<FriendProfile[]> {
-  // Get IDs of people I'm already friends with or have pending requests
+  // 1. Get IDs of people I'm already friends with or have pending requests
   const { data: existing } = await supabase
     .from('friendships')
     .select('requester_id, addressee_id')
@@ -435,33 +435,74 @@ export async function getSuggestions(
     excludeIds.add(f.addressee_id);
   });
 
-  let query = supabase
+  // 2. Get my own location
+  const { data: myLoc } = await supabase
+    .from('user_locations')
+    .select('latitude, longitude')
+    .eq('user_id', userId)
+    .single();
+
+  if (!myLoc?.latitude || !myLoc?.longitude) {
+    // If we have no location, we can't find nearby users. Return empty.
+    return [];
+  }
+
+  // 3. Get all public locations
+  const excludeArray = Array.from(excludeIds);
+  let locQuery = supabase
+    .from('user_locations')
+    .select('user_id, latitude, longitude')
+    .eq('visibility', 'public');
+  
+  if (excludeArray.length > 0) {
+    locQuery = locQuery.not('user_id', 'in', `(${excludeArray.join(',')})`);
+  }
+
+  const { data: publicLocs, error: locError } = await locQuery;
+  if (locError) throw locError;
+
+  if (!publicLocs || publicLocs.length === 0) {
+    return [];
+  }
+
+  // 4. Calculate Haversine distance
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+
+  const withDistances = publicLocs.map((loc) => {
+    const dLat = toRad(loc.latitude - myLoc.latitude);
+    const dLon = toRad(loc.longitude - myLoc.longitude);
+    const lat1 = toRad(myLoc.latitude);
+    const lat2 = toRad(loc.latitude);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    return { user_id: loc.user_id, distance };
+  });
+
+  // 5. Sort by distance, take top 20
+  withDistances.sort((a, b) => a.distance - b.distance);
+  const topNearbyIds = withDistances.slice(0, 20).map((d) => d.user_id);
+
+  if (topNearbyIds.length === 0) return [];
+
+  // 6. Fetch profiles for these top nearby users
+  const { data: profiles, error: profError } = await supabase
     .from('profiles')
     .select('id, name, university, avatar_url, bio, faculty, course, class_group')
-    .not('id', 'in', `(${Array.from(excludeIds).join(',')})`)
-    .limit(20);
+    .in('id', topNearbyIds);
 
-  // Prioritize by matching criteria
-  if (university) query = query.eq('university', university);
+  if (profError) throw profError;
 
-  const { data, error } = await query;
-  if (error) throw error;
-
-  // Sort by similarity: same class > same course > same faculty > same university
-  const results = (data || []) as FriendProfile[];
-  results.sort((a, b) => {
-    const scoreA =
-      (a.class_group === classGroup ? 8 : 0) +
-      (a.course === course ? 4 : 0) +
-      (a.faculty === faculty ? 2 : 0) +
-      (a.university === university ? 1 : 0);
-    const scoreB =
-      (b.class_group === classGroup ? 8 : 0) +
-      (b.course === course ? 4 : 0) +
-      (b.faculty === faculty ? 2 : 0) +
-      (b.university === university ? 1 : 0);
-    return scoreB - scoreA;
-  });
+  // Re-sort profiles to match the distance ranking
+  const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+  const results = topNearbyIds
+    .map((id) => profileMap.get(id))
+    .filter(Boolean) as FriendProfile[];
 
   return results;
 }
