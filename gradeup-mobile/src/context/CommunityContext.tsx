@@ -570,7 +570,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         if (mounted) {
           setMyLatitude(current.coords.latitude);
           setMyLongitude(current.coords.longitude);
-          communityApi.updateMyLocation(userId, current.coords.latitude, current.coords.longitude).catch(console.warn);
+          communityApi.updateMyLocation(userId, current.coords.latitude, current.coords.longitude, undefined, locationVisibility).catch(console.warn);
         }
 
         const watcher = await Location.watchPositionAsync(
@@ -583,7 +583,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
             if (!mounted) return;
             setMyLatitude(loc.coords.latitude);
             setMyLongitude(loc.coords.longitude);
-            communityApi.updateMyLocation(userId, loc.coords.latitude, loc.coords.longitude).catch(console.warn);
+            communityApi.updateMyLocation(userId, loc.coords.latitude, loc.coords.longitude, undefined, locationVisibility).catch(console.warn);
           }
         );
 
