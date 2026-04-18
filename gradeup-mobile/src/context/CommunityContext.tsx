@@ -359,6 +359,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
 
     setLoading(true);
+    
+    // Fetch user's saved location visibility mode right away
+    communityApi.getLocationVisibilityFromProfile(userId)
+      .then(v => setLocationVisibilityState(v))
+      .catch(console.warn);
+
     refreshAll().finally(() => setLoading(false));
 
     refreshTimerRef.current = setInterval(() => {

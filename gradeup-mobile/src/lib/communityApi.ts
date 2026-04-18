@@ -1043,6 +1043,18 @@ export async function updateLocationVisibility(userId: string, visibility: Locat
   if (profErr) console.warn('Failed to update profile visibility:', profErr);
 }
 
+/** Get only the user's location visibility from their profile */
+export async function getLocationVisibilityFromProfile(userId: string): Promise<LocationVisibility> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('location_visibility')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) return 'friends';
+  return (data.location_visibility as LocationVisibility) || 'friends';
+}
+
 /** Get list of circle IDs that are allowed to see the user's location when visibility = 'circles'. */
 export async function getCircleLocationVisibility(userId: string): Promise<string[]> {
   const { data, error } = await supabase
