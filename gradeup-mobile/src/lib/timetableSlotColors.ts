@@ -10,3 +10,16 @@ export function getSlotColorForSubjectCode(code: string): string {
 }
 
 export const TIMETABLE_SLOT_COLOR_OPTIONS = [...SLOT_COLORS];
+
+export function getTimetableEntryColor(
+  e: { subjectCode: string; slotColor?: string },
+  subjectColors?: Record<string, string>
+): string {
+  const c = e.slotColor?.trim();
+  if (c) return c;
+  if (subjectColors) {
+    const sc = subjectColors[e.subjectCode];
+    if (sc) return sc;
+  }
+  return getSlotColorForSubjectCode(e.subjectCode);
+}

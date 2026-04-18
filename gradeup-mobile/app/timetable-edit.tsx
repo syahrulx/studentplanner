@@ -17,7 +17,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations, TranslationKey } from '@/src/i18n';
-import { TIMETABLE_SLOT_COLOR_OPTIONS, getSlotColorForSubjectCode } from '@/src/lib/timetableSlotColors';
+import { TIMETABLE_SLOT_COLOR_OPTIONS, getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
 import {
   findOverlappingTimetableEntry,
   normalizeTimeDisplay,
@@ -99,6 +99,7 @@ export default function TimetableEditScreen() {
     updateTimetableEntry,
     addTimetableEntry,
     removeTimetableEntry,
+    subjectColors,
   } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
@@ -428,7 +429,7 @@ export default function TimetableEditScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {sorted.map((e) => {
-            const color = e.slotColor?.trim() || getSlotColorForSubjectCode(e.subjectCode);
+            const color = getTimetableEntryColor(e, subjectColors);
             const title = (e.displayName && e.displayName.trim()) || e.subjectName;
             return (
               <Pressable

@@ -19,7 +19,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { getUniversityById } from '@/src/lib/universities';
-import { getSlotColorForSubjectCode } from '@/src/lib/timetableSlotColors';
+import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
 import {
   type WeekStartsOn,
@@ -84,9 +84,8 @@ function entryDisplayTitle(e: TimetableEntry): string {
   return d || e.subjectName;
 }
 
-function entrySlotColor(e: TimetableEntry): string {
-  const c = e.slotColor?.trim();
-  return c || getSlotColorForSubjectCode(e.subjectCode);
+function entrySlotColor(e: TimetableEntry, subjectColors: Record<string, string>): string {
+  return getTimetableEntryColor(e, subjectColors);
 }
 
 function formatRoomDisplay(location: string | undefined | null, onlineLabel: string): string {
@@ -151,7 +150,7 @@ const JS_TO_DAY: DayOfWeek[] = [
 ];
 
 export default function TimetableScreen() {
-  const { language, timetable, user, weekStartsOn, saveTimetableOnly } = useApp();
+  const { language, timetable, user, weekStartsOn, saveTimetableOnly, subjectColors } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
   const { width: winW, height: winH } = useWindowDimensions();
@@ -761,7 +760,7 @@ export default function TimetableScreen() {
 
   function renderClassDetailsModal() {
     if (!selectedClass) return null;
-    const color = entrySlotColor(selectedClass);
+    const color = entrySlotColor(selectedClass, subjectColors);
     return (
       <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
         <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
@@ -934,7 +933,7 @@ export default function TimetableScreen() {
                         const endMin = timeToMinutes(entry.endTime);
                         const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
                         const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-                        const color = entrySlotColor(entry);
+                        const color = entrySlotColor(entry, subjectColors);
                         const title = entryDisplayTitle(entry);
                         const hasTitle = Boolean(slotDetails.courseName && height > 38);
                         const metaParts = weekGridMetaParts(
@@ -1096,7 +1095,7 @@ export default function TimetableScreen() {
                     const endMin = timeToMinutes(entry.endTime);
                     const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
                     const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-                    const color = entrySlotColor(entry);
+                    const color = entrySlotColor(entry, subjectColors);
                     const title = entryDisplayTitle(entry);
                     const hasTitle = Boolean(slotDetails.courseName && height > 38);
                     const metaParts = weekGridMetaParts(
@@ -1204,7 +1203,7 @@ export default function TimetableScreen() {
               </View>
               <View style={s.listDayBoxBody}>
                 {items.map((e) => {
-                  const color = entrySlotColor(e);
+                  const color = entrySlotColor(e, subjectColors);
                   const title = entryDisplayTitle(e);
                   const cardStyle = [s.listCard, { backgroundColor: theme.background, borderLeftColor: color }];
                   const cardInner = (
