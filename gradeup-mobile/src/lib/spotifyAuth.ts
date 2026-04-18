@@ -426,15 +426,24 @@ export async function getMyVibe(): Promise<VibeInfo | null> {
   };
 }
 
-/** Fetch the 30-second audio preview URL for a given track ID. */
+/** Fetch the 30-second audio preview URL for a given track ID. Retries once on 401. */
 export async function getTrackPreviewUrl(trackId: string): Promise<string | null> {
-  const accessToken = await getMyAccessToken();
+  let accessToken = await getMyAccessToken();
   if (!accessToken) return null;
 
-  try {
-    const res = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+  const doFetch = (tok: string) =>
+    fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+      headers: { Authorization: `Bearer ${tok}` },
     });
+
+  try {
+    let res = await doFetch(accessToken);
+    if (res.status === 401) {
+      invalidateAccessTokenCache();
+      accessToken = await getMyAccessToken();
+      if (accessToken) res = await doFetch(accessToken);
+    }
+    
     if (!res.ok) return null;
     const json = await res.json();
     return json.preview_url || null;
@@ -491,8 +500,7 @@ export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibr
   try {
     let res = await putTracks(accessToken);
     if (res.status === 401) {
-      cachedAccessToken = null;
-      cachedTokenTimestamp = 0;
+      invalidateAccessTokenCache();
       accessToken = await getMyAccessToken();
       if (accessToken) res = await putTracks(accessToken);
     }
@@ -543,31 +551,37 @@ export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibr
   }
 }
 
-/** Search for tracks on Spotify. */
+/** Search for tracks on Spotify. Retries once on 401. */
 export async function searchTracks(query: string): Promise<SpotifyTrack[]> {
   if (!query.trim()) return [];
-  const accessToken = await getMyAccessToken();
+  let accessToken = await getMyAccessToken();
   if (!accessToken) {
     console.warn('[SpotifyAuth] searchTracks: no access token');
     throw new Error('Spotify not connected. Please reconnect Spotify in Settings.');
   }
 
   const q = encodeURIComponent(query.trim());
-  const res = await fetch(
-    `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  const doFetch = (tok: string) =>
+    fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`, {
+      headers: { Authorization: `Bearer ${tok}` }
+    });
+
+  let res = await doFetch(accessToken);
+  if (res.status === 401) {
+    invalidateAccessTokenCache();
+    accessToken = await getMyAccessToken();
+    if (accessToken) res = await doFetch(accessToken);
+  }
+
   if (!res.ok) {
     const errorText = await res.text();
     console.warn('[SpotifyAuth] searchTracks API error:', res.status, errorText);
     if (res.status === 401) {
-      // Invalidate cached token so next call gets a fresh one
-      cachedAccessToken = null;
-      cachedTokenTimestamp = 0;
       throw new Error('Spotify session expired. Please try again or reconnect Spotify.');
     }
     throw new Error(`Spotify search failed (${res.status})`);
   }
+  
   const json = await res.json();
   return (json.tracks?.items || []).map((t: any) => parseTrack(t));
 }
