@@ -18,6 +18,7 @@ import { supabase } from './supabase';
 // Config
 // ---------------------------------------------------------------------------
 const SPOTIFY_CLIENT_ID =
+  process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ||
   (Constants.expoConfig?.extra as any)?.spotifyClientId as string || '';
 
 const SPOTIFY_SCOPES = [
@@ -101,7 +102,7 @@ async function exchangeCode(
   };
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<string> {
+async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; newRefreshToken?: string }> {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
@@ -120,7 +121,10 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
   }
 
   const json = await res.json();
-  return json.access_token as string;
+  return {
+    accessToken: json.access_token as string,
+    newRefreshToken: json.refresh_token as string | undefined, // Spotify sometimes rotates the refresh token
+  };
 }
 
 /** Get a fresh access token for the current user. Uses cache if still valid. */
@@ -141,10 +145,20 @@ async function getMyAccessToken(): Promise<string | null> {
   if (!tokenRow?.refresh_token) return null;
 
   try {
-    const token = await refreshAccessToken(tokenRow.refresh_token);
-    cachedAccessToken = token;
+    const { accessToken, newRefreshToken } = await refreshAccessToken(tokenRow.refresh_token);
+    cachedAccessToken = accessToken;
     cachedTokenTimestamp = Date.now();
-    return token;
+
+    // If Spotify rotated the refresh token, we MUST save the new one,
+    // otherwise the old one will be invalid on the next refresh!
+    if (newRefreshToken && newRefreshToken !== tokenRow.refresh_token) {
+      await supabase.from('spotify_tokens').upsert(
+        { user_id: user.id, refresh_token: newRefreshToken, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' }
+      );
+    }
+
+    return accessToken;
   } catch (e) {
     cachedAccessToken = null;
     cachedTokenTimestamp = 0;
