@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
-import { useCommunity } from '@/src/context/CommunityContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
 import { useTheme } from '@/hooks/useTheme';
@@ -67,7 +66,6 @@ export default function Settings() {
     autoDeletePastTasks,
     setAutoDeletePastTasks,
   } = useApp();
-  const { spotifyConnected, connectSpotify, disconnectSpotify } = useCommunity();
   const theme = useTheme();
   const T = useTranslations(language);
 
@@ -294,37 +292,6 @@ export default function Settings() {
     }, 320);
   };
 
-  const spotifyItems: { icon: ThemeIconKey; label: string; onPress: () => void; color: string }[] = spotifyConnected
-    ? [
-        {
-          icon: 'settings' as ThemeIconKey,
-          label: T('settingsSpotifyLabelDisconnect'),
-          onPress: async () => {
-            try {
-              await disconnectSpotify();
-              Alert.alert(T('settingsSpotifyDisconnectedTitle'), T('settingsSpotifyDisconnectedBody'));
-            } catch {
-              Alert.alert('Error', 'Could not disconnect Spotify. Please try again.');
-            }
-          },
-          color: '#ef4444',
-        },
-      ]
-    : [
-        {
-          icon: 'settings' as ThemeIconKey,
-          label: T('settingsSpotifyLabelConnect'),
-          onPress: async () => {
-            try {
-              const ok = await connectSpotify();
-              if (ok) Alert.alert(T('settingsSpotifyConnectedTitle'), T('settingsSpotifyConnectedBody'));
-            } catch (e) {
-              Alert.alert(T('settingsSpotifyConnectFailTitle'), T('settingsSpotifyConnectFailBody'));
-            }
-          },
-          color: '#1DB954',
-        },
-      ];
 
   const profileClassroomItems: {
     icon: ThemeIconKey;
@@ -852,21 +819,6 @@ export default function Settings() {
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>INTEGRATIONS & TOOLS</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          {spotifyItems.map((item) => (
-            <React.Fragment key={item.label}>
-              <Pressable
-                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-                onPress={item.onPress}
-              >
-                <View style={[styles.iconBox, { backgroundColor: item.color }]}>
-                  <ThemeIcon name={item.icon} size={18} color="#fff" />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
-                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-              </Pressable>
-              <View style={styles.dividerList} />
-            </React.Fragment>
-          ))}
           {toolsMenuItems.map((item, i) => (
             <React.Fragment key={item.label}>
               <Pressable
