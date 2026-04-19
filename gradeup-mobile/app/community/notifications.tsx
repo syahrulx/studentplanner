@@ -22,20 +22,6 @@ import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
 import { attendanceOccurrenceKey, recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
 
-function pickBetterAttendanceItem(a: AttendanceNotifItem, b: AttendanceNotifItem): AttendanceNotifItem {
-  // Prefer presented over scheduled when both exist for the same occurrence.
-  if (a.kind !== b.kind) {
-    if (a.kind === 'presented' && b.kind === 'scheduled') return a;
-    if (a.kind === 'scheduled' && b.kind === 'presented') return b;
-  }
-  // Prefer the one with a known fire time (usually scheduled / richer object).
-  const af = Date.parse(a.fireAtISO || '') || 0;
-  const bf = Date.parse(b.fireAtISO || '') || 0;
-  if (af !== bf) return af >= bf ? a : b;
-  // Stable tie-breaker
-  return a.id <= b.id ? a : b;
-}
-
 function getInitials(name?: string) {
   if (!name) return '?';
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
@@ -103,6 +89,20 @@ type AttendanceNotifItem = {
   fireAtISO?: string; // when the notification will fire, if known
   kind: 'scheduled' | 'presented';
 };
+
+function betterAttendanceNotif(a: AttendanceNotifItem, b: AttendanceNotifItem): AttendanceNotifItem {
+  // Prefer presented over scheduled.
+  if (a.kind !== b.kind) {
+    if (a.kind === 'presented') return a;
+    if (b.kind === 'presented') return b;
+  }
+  // Prefer the earlier fire time (more specific / stable ordering).
+  const at = Date.parse(a.fireAtISO || a.scheduledStartAt) || 0;
+  const bt = Date.parse(b.fireAtISO || b.scheduledStartAt) || 0;
+  if (at !== bt) return at <= bt ? a : b;
+  // Deterministic tie-breaker.
+  return a.id <= b.id ? a : b;
+}
 
 export default function NotificationsScreen() {
   const theme = useTheme();
@@ -184,22 +184,29 @@ export default function NotificationsScreen() {
         const data = (content?.data ?? {}) as Record<string, any>;
         if (data?.type !== 'attendance_checkin') return null;
         const timetableEntryId = String(data.timetableEntryId || '').trim();
-        let scheduledStartAt = String(data.scheduledStartAt || '').trim();
-        if (!id || !timetableEntryId) return null;
-        const subjectCode = String(data.subjectCode || '').trim();
-        const subjectName = String(data.subjectName || '').trim();
-
+        const rawScheduledStartAt = String(data.scheduledStartAt || '').trim();
         const trigger: any = (hasRequest ? req?.trigger : (n as any).trigger) ?? null;
         const fireAtISO =
           trigger && typeof trigger === 'object' && trigger.date
             ? new Date(trigger.date).toISOString()
             : undefined;
 
+        let scheduledStartAt = (() => {
+          const t = Date.parse(rawScheduledStartAt);
+          if (!Number.isFinite(t)) return rawScheduledStartAt;
+          return new Date(t).toISOString();
+        })();
+
         if (!scheduledStartAt) {
           const ft = Date.parse(String(fireAtISO || '').trim());
           if (!Number.isFinite(ft)) return null;
+          // Notification fires 5 minutes before class start.
           scheduledStartAt = new Date(ft + 5 * 60_000).toISOString();
         }
+
+        if (!id || !timetableEntryId || !scheduledStartAt) return null;
+        const subjectCode = String(data.subjectCode || '').trim();
+        const subjectName = String(data.subjectName || '').trim();
 
         return {
           id,
@@ -217,7 +224,7 @@ export default function NotificationsScreen() {
         ...(presented ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
       ];
 
-      // De-dupe by occurrence (timetableEntryId + class start time, minute-stable). Prefer presented over scheduled.
+      // De-dupe by occurrence (timetableEntryId + scheduledStartAt). Prefer presented over scheduled.
       const byKey = new Map<string, AttendanceNotifItem>();
       for (const it of itemsRaw) {
         const k = attendanceOccurrenceKey(it.timetableEntryId, it.scheduledStartAt);
@@ -225,7 +232,7 @@ export default function NotificationsScreen() {
         if (!prev) {
           byKey.set(k, it);
         } else {
-          byKey.set(k, pickBetterAttendanceItem(prev, it));
+          byKey.set(k, betterAttendanceNotif(prev, it));
         }
       }
 
