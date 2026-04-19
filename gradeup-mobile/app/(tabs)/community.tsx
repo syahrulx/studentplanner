@@ -39,7 +39,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { Avatar } from '@/components/Avatar';
-import * as spotifyAuth from '@/src/lib/spotifyAuth';
+
 
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
@@ -212,10 +212,10 @@ function StableMarker({
 }
 
 // =============================================================================
-// MAP — OEPN TRACK IN SPOTIFY
+// MAP — OPEN TRACK IN APPLE MUSIC
 // =============================================================================
 
-function MapOpenSpotifyPill({
+function MapOpenMusicPill({
   trackId,
   titleMaxWidth = 200,
   pillStyle,
@@ -229,9 +229,9 @@ function MapOpenSpotifyPill({
   const handlePress = () => {
     if (!trackId?.trim()) return;
     const cleanId = trackId.trim();
-    const url = `https://open.spotify.com/track/${cleanId}`;
+    const url = `https://music.apple.com/song/${cleanId}`;
     Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'Could not open Spotify.');
+      Alert.alert('Error', 'Could not open Apple Music.');
     });
   };
 
@@ -240,14 +240,14 @@ function MapOpenSpotifyPill({
       style={({ pressed }) => [
         styles.mapOverlayBtn,
         pillStyle,
-        { backgroundColor: '#1DB954' }, // Spotify Green
+        { backgroundColor: '#FA243C' }, // Apple Music Pink
         pressed && { opacity: 0.88 },
       ]}
       onPress={handlePress}
     >
       <Feather name="external-link" size={16} color="#fff" />
       <Text style={[styles.mapOverlayBtnText, { color: '#fff', maxWidth: titleMaxWidth }]} numberOfLines={1}>
-        Open in Spotify
+        Listen on Apple Music
       </Text>
     </Pressable>
   );
@@ -292,8 +292,6 @@ export default function CommunityMap() {
     refreshFriends,
     updateActivity,
     clearMyActivity,
-    spotifyConnected,
-    connectSpotify,
     locationVisibility,
     setLocationVisibility,
   } = useCommunity();
@@ -670,7 +668,7 @@ export default function CommunityMap() {
                 </View>
                 {music!.trackId ? (
                   <View style={styles.friendVibePlayerWrap}>
-                    <MapOpenSpotifyPill
+                    <MapOpenMusicPill
                       trackId={music!.trackId}
                       titleMaxWidth={220}
                       pillStyle={{ alignSelf: 'stretch', justifyContent: 'center' }}
@@ -678,7 +676,7 @@ export default function CommunityMap() {
                   </View>
                 ) : (
                   <Text style={styles.friendVibeNoPreview} numberOfLines={2}>
-                    Spotify track ID unavailable — open their profile to use Add to Library.
+                    Music track ID unavailable — open their profile to use Add to Library.
                   </Text>
                 )}
               </View>
@@ -960,9 +958,6 @@ export default function CommunityMap() {
         timetable={timetable}
         updateActivity={updateActivity}
         clearMyActivity={clearMyActivity}
-        refreshMyActivity={refreshMyActivity}
-        spotifyConnected={spotifyConnected}
-        connectSpotify={connectSpotify}
         theme={theme}
       />
     </View>
@@ -987,9 +982,6 @@ function StatusPopup({
   timetable,
   updateActivity,
   clearMyActivity,
-  refreshMyActivity,
-  spotifyConnected,
-  connectSpotify,
   theme,
 }: {
   visible: boolean;
@@ -998,9 +990,6 @@ function StatusPopup({
   timetable: TimetableEntry[];
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
-  refreshMyActivity: () => Promise<void>;
-  spotifyConnected: boolean;
-  connectSpotify: () => Promise<boolean>;
   theme: any;
 }) {
   const [selectedType, setSelectedType] = useState<ActivityType>(
@@ -1122,29 +1111,17 @@ function StatusPopup({
               { backgroundColor: theme.background, borderColor: theme.border },
               pressed && { opacity: 0.8 },
             ]}
-            onPress={async () => {
-              if (spotifyConnected) {
-                onClose();
-                router.push('/set-vibe' as any);
-              } else {
-                try {
-                  const ok = await connectSpotify();
-                  if (ok) {
-                    onClose();
-                    router.push('/set-vibe' as any);
-                  }
-                } catch {
-                  Alert.alert('Spotify', 'Could not connect to Spotify. Try again from Settings.');
-                }
-              }
+            onPress={() => {
+              onClose();
+              router.push('/set-vibe' as any);
             }}
           >
-            <View style={[popupStyles.vibeBtnIcon, { backgroundColor: spotifyConnected ? theme.primary + '15' : '#1DB954' + '20' }]}>
-              <Feather name="music" size={16} color={spotifyConnected ? theme.primary : '#1DB954'} />
+            <View style={[popupStyles.vibeBtnIcon, { backgroundColor: theme.primary + '15' }]}>
+              <Feather name="music" size={16} color={theme.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[popupStyles.vibeBtnTitle, { color: theme.text }]}>
-                {spotifyConnected ? (isVibing ? 'Change Song' : 'Pick a Song') : 'Connect Spotify'}
+                {isVibing ? 'Change Song' : 'Pick a Song'}
               </Text>
               {isVibing && (
                 <Text style={[popupStyles.vibeBtnSub, { color: theme.primary }]} numberOfLines={1}>

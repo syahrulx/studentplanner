@@ -96,10 +96,6 @@ interface CommunityState {
   myLongitude: number | null;
   locationVisibility: LocationVisibility;
   setLocationVisibility: (v: LocationVisibility) => Promise<void>;
-  // Spotify Music Presence
-  spotifyConnected: boolean;
-  connectSpotify: () => Promise<boolean>;
-  disconnectSpotify: () => Promise<void>;
   refreshMyMusic: () => Promise<void>;
   /** One-shot refresh of friends, circles, shared tasks, activity, etc. */
   refreshAll: () => Promise<void>;
@@ -134,10 +130,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [locationVisibility, setLocationVisibilityState] = useState<LocationVisibility>('friends');
   const [loading, setLoading] = useState(true);
 
-  // Spotify Music Presence
-  const [spotifyConnected, setSpotifyConnected] = useState(false);
-
-  // Accountability Pacts
+  // Accountabilty Pacts
   const [sharedGoals, setSharedGoals] = useState<SharedGoal[]>([]);
 
   // Shared Tasks
@@ -318,7 +311,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshSharedGoals(),
         refreshSharedTasks(),
         refreshShareStreams(),
-        spotifyAuth.isSpotifyConnected().then((connected) => setSpotifyConnected(connected)),
       ]);
     } catch (e) {
       // Silently fail
@@ -349,7 +341,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setShareStreams([]);
       setSelectedCircleId(null);
       setCircleMemberIds([]);
-      setSpotifyConnected(false);
       setLocationPermissionGranted(false);
       setMyLatitude(null);
       setMyLongitude(null);
@@ -880,19 +871,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     myLongitude,
     locationVisibility,
     setLocationVisibility,
-    spotifyConnected,
-    connectSpotify: async () => {
-      const ok = await spotifyAuth.connectSpotify();
-      if (ok) setSpotifyConnected(true);
-      return ok;
-    },
-    disconnectSpotify: async () => {
-      try {
-        await spotifyAuth.disconnectSpotify();
-      } finally {
-        setSpotifyConnected(false);
-      }
-    },
     refreshMyMusic: async () => {
       const vibe = await spotifyAuth.getMyVibe();
       if (vibe) await refreshMyActivity();

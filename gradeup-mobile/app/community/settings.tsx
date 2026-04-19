@@ -23,9 +23,6 @@ const RADIUS = 14;
 export default function CommunitySettings() {
   const { language } = useApp();
   const {
-    spotifyConnected,
-    connectSpotify,
-    disconnectSpotify,
     locationVisibility,
     setLocationVisibility,
     circles,
@@ -68,32 +65,6 @@ export default function CommunitySettings() {
     { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see your location' },
   ];
 
-  const handleSpotifyAction = async () => {
-    if (spotifyConnected) {
-      Alert.alert(T('logOutConfirmTitle'), 'Disconnect from Spotify?', [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await disconnectSpotify();
-              Alert.alert(T('settingsSpotifyDisconnectedTitle'), T('settingsSpotifyDisconnectedBody'));
-            } catch {
-              Alert.alert('Error', 'Could not disconnect Spotify.');
-            }
-          },
-        },
-      ]);
-    } else {
-      try {
-        const ok = await connectSpotify();
-        if (ok) Alert.alert(T('settingsSpotifyConnectedTitle'), T('settingsSpotifyConnectedBody'));
-      } catch (e) {
-        Alert.alert(T('settingsSpotifyConnectFailTitle'), T('settingsSpotifyConnectFailBody'));
-      }
-    }
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -190,28 +161,6 @@ export default function CommunitySettings() {
           ))}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>MUSIC INTEGRATION</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.spotifyRow, pressed && { opacity: 0.8 }]}
-            onPress={handleSpotifyAction}
-          >
-            <View style={[styles.spotifyIconBox, { backgroundColor: spotifyConnected ? '#1DB954' : theme.backgroundSecondary }]}>
-              <Feather name="music" size={20} color={spotifyConnected ? '#fff' : theme.textSecondary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.spotifyLabel, { color: theme.text }]}>Spotify</Text>
-              <Text style={[styles.spotifyStatus, { color: theme.textSecondary }]}>
-                {spotifyConnected ? 'Connected' : 'Share what you’re listening to'}
-              </Text>
-            </View>
-            <View style={[styles.spotifyStatusBadge, { backgroundColor: spotifyConnected ? '#1DB95420' : theme.backgroundSecondary }]}>
-               <Text style={[styles.spotifyStatusText, { color: spotifyConnected ? '#1DB954' : theme.textSecondary }]}>
-                 {spotifyConnected ? 'DISCONNECT' : 'CONNECT'}
-               </Text>
-            </View>
-          </Pressable>
-        </View>
 
         <Text style={styles.footerNote}>
           These settings only affect the Community tab. For global app preferences like themes and notifications, visit the main Settings.
@@ -287,30 +236,7 @@ const styles = StyleSheet.create({
   circleVisibilityBody: { flex: 1 },
   circleVisibilityLabel: { fontSize: 14, fontWeight: '600' },
   circleVisibilityDesc: { fontSize: 12, marginTop: 2 },
-  spotifyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  spotifyIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spotifyLabel: { fontSize: 17, fontWeight: '700' },
-  spotifyStatus: { fontSize: 13, marginTop: 2 },
-  spotifyStatusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  spotifyStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
+
   dividerList: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(150,150,150,0.2)',

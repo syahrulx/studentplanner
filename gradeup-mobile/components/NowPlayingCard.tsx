@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, Animated, Alert } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
-const SPOTIFY_GREEN = '#1DB954';
+const MUSIC_COLOR = '#FA243C';
 const BAR_COUNT = 3;
 const BAR_WIDTH = 3;
 const BAR_MAX = 18;
@@ -13,7 +13,7 @@ interface NowPlayingCardProps {
   artist: string;
   albumArt?: string;
   trackUrl?: string;
-  /** If provided, shows an "Open in Spotify" button */
+  /** If provided, shows a "Listen on Apple Music" button */
   trackId?: string;
   /** If true, shows as the user's own vibe (no add button) */
   isOwnProfile?: boolean;
@@ -48,9 +48,7 @@ function EqBar({ delay }: { delay: number }) {
     <Animated.View
       style={{
         width: BAR_WIDTH,
-        height: anim,
-        backgroundColor: SPOTIFY_GREEN,
-        borderRadius: 1.5,
+        backgroundColor: MUSIC_COLOR,
       }}
     />
   );
@@ -64,17 +62,16 @@ export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnP
 
   const handleOpen = () => {
     if (!trackId?.trim()) return;
-    const url = `https://open.spotify.com/track/${trackId.trim()}`;
+    const url = `https://music.apple.com/song/${trackId.trim()}`;
     Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'Could not open Spotify.');
+      Alert.alert('Error', 'Could not open Apple Music.');
     });
   };
 
   return (
     <View style={styles.card}>
-      {/* Header label */}
       <View style={styles.labelRow}>
-        <Feather name="music" size={11} color={SPOTIFY_GREEN} />
+        <Feather name="music" size={11} color={MUSIC_COLOR} />
         <Text style={styles.label}>
           {isOwnProfile ? T('nowPlayingYourVibe') : T('nowPlayingFriendVibe')}
         </Text>
@@ -107,7 +104,7 @@ export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnP
         </View>
       </View>
 
-      {/* Open in Spotify button (for friends only) */}
+      {/* Open in Apple Music button (for friends only) */}
       {trackId && !isOwnProfile && (
         <Pressable
           style={({ pressed }) => [
@@ -122,7 +119,7 @@ export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnP
             color="#fff" /* Using white for standard Spotify Green button */
           />
           <Text style={[styles.addBtnText, { color: '#fff' }]}>
-            Open in Spotify
+            Listen on Apple Music
           </Text>
         </Pressable>
       )}
@@ -137,7 +134,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(29,185,84,0.25)',
+    borderColor: 'rgba(250,36,60,0.25)',
   },
   labelRow: {
     flexDirection: 'row',
@@ -147,9 +144,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 10,
-    fontWeight: '800',
-    color: SPOTIFY_GREEN,
-    letterSpacing: 1,
+    color: MUSIC_COLOR,
   },
   row: {
     flexDirection: 'row',
@@ -193,15 +188,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     marginTop: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: SPOTIFY_GREEN,
+    backgroundColor: MUSIC_COLOR,
     borderWidth: 1,
-    borderColor: 'rgba(29,185,84,0.8)',
+    borderColor: 'rgba(250,36,60,0.8)',
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   addBtnText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: SPOTIFY_GREEN,
+    color: MUSIC_COLOR,
   },
 });

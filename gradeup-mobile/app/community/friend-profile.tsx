@@ -26,7 +26,7 @@ import * as communityApi from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
 import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
-import { addTrackToLibrary } from '@/src/lib/spotifyAuth';
+
 
 function getActivityEmoji(type?: string): string {
   return ACTIVITY_TYPES.find((a) => a.type === type)?.emoji || '⏸️';
