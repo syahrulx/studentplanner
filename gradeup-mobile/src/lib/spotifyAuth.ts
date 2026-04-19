@@ -551,37 +551,26 @@ export async function addTrackToLibrary(trackId: string): Promise<AddTrackToLibr
   }
 }
 
-/** Search for tracks on Spotify. Retries once on 401. */
+/** Search for tracks using the public iTunes Search API. No authentication required! */
 export async function searchTracks(query: string): Promise<SpotifyTrack[]> {
   if (!query.trim()) return [];
-  let accessToken = await getMyAccessToken();
-  if (!accessToken) {
-    console.warn('[SpotifyAuth] searchTracks: no access token');
-    throw new Error('Spotify not connected. Please reconnect Spotify in Settings.');
-  }
-
   const q = encodeURIComponent(query.trim());
-  const doFetch = (tok: string) =>
-    fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`, {
-      headers: { Authorization: `Bearer ${tok}` }
-    });
-
-  let res = await doFetch(accessToken);
-  if (res.status === 401) {
-    invalidateAccessTokenCache();
-    accessToken = await getMyAccessToken();
-    if (accessToken) res = await doFetch(accessToken);
-  }
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.warn('[SpotifyAuth] searchTracks API error:', res.status, errorText);
-    if (res.status === 401) {
-      throw new Error('Spotify session expired. Please try again or reconnect Spotify.');
-    }
-    throw new Error(`Spotify search failed (${res.status})`);
-  }
+  const url = `https://itunes.apple.com/search?term=${q}&entity=song&limit=20`;
   
-  const json = await res.json();
-  return (json.tracks?.items || []).map((t: any) => parseTrack(t));
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`iTunes API failed: ${res.status}`);
+    const json = await res.json();
+    
+    return (json.results || []).map((item: any) => ({
+      id: String(item.trackId),
+      name: item.trackName,
+      artist: item.artistName,
+      // iTunes provides a 100x100 preview art, but we can replace the suffix for 300x300 high-res
+      albumArt: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : ''
+    }));
+  } catch (err: any) {
+    console.warn('[MusicAuth] searchTracks error:', err);
+    throw new Error('Music search failed. Please try again.');
+  }
 }

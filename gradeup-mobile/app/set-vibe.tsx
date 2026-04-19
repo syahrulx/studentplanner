@@ -17,30 +17,15 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
-import { useTranslations } from '@/src/i18n';
 import * as spotifyAuth from '@/src/lib/spotifyAuth';
-import type { SpotifyTrack, SpotifyPlaylist } from '@/src/lib/spotifyAuth';
-
-type Tab = 'recent' | 'playlists';
-type ViewMode = 'tabs' | 'playlist-tracks';
+import type { SpotifyTrack } from '@/src/lib/spotifyAuth';
 
 export default function SetVibeScreen() {
   const theme = useTheme();
-  const { language } = useApp();
-  const T = useTranslations(language);
   const { refreshMyActivity } = useCommunity();
 
-  const [tab, setTab] = useState<Tab>('recent');
-  const [viewMode, setViewMode] = useState<ViewMode>('tabs');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isSearchActive, setIsSearchActive] = useState(false);
-
-  // Data
-  const [recentTracks, setRecentTracks] = useState<SpotifyTrack[]>([]);
-  const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
-  const [playlistTracks, setPlaylistTracks] = useState<SpotifyTrack[]>([]);
-  const [selectedPlaylistName, setSelectedPlaylistName] = useState('');
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,28 +40,10 @@ export default function SetVibeScreen() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [recent, lists, vibe] = await Promise.all([
-        spotifyAuth.getRecentlyPlayed(),
-        spotifyAuth.getMyPlaylists(),
-        spotifyAuth.getMyVibe(),
-      ]);
-      setRecentTracks(recent);
-      setPlaylists(lists);
+      const vibe = await spotifyAuth.getMyVibe();
       if (vibe) setCurrentVibe({ song: vibe.song, artist: vibe.artist });
     } catch (e: any) {
-      const msg = e?.message || '';
-      if (msg.includes('token') || msg.includes('refresh') || msg.includes('401')) {
-        Alert.alert(
-          'Spotify Session Expired',
-          'Please disconnect and reconnect Spotify in Settings.',
-          [
-            { text: 'Go Back', onPress: () => router.back() },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-      } else {
-        Alert.alert('Could not load Spotify', 'Something went wrong. Please try again.');
-      }
+      console.warn('[SetVibe] loadData error:', e);
     }
     setLoading(false);
   }, []);
@@ -133,33 +100,9 @@ export default function SetVibeScreen() {
     setSaving(false);
   };
 
-  const openPlaylist = async (playlist: SpotifyPlaylist) => {
-    setSelectedPlaylistName(playlist.name);
-    setViewMode('playlist-tracks');
-    setLoading(true);
-    try {
-      const tracks = await spotifyAuth.getPlaylistTracks(playlist.id);
-      setPlaylistTracks(tracks);
-    } catch (e) {
-      console.warn('[SetVibe] openPlaylist error:', e);
-    }
-    setLoading(false);
-  };
-
   const handleBack = () => {
-    if (isSearchActive) {
-      setIsSearchActive(false);
-      setSearchQuery('');
-      setSearchResults([]);
-    } else if (viewMode === 'playlist-tracks') {
-      setViewMode('tabs');
-      setPlaylistTracks([]);
-    } else {
-      router.back();
-    }
+    router.back();
   };
-
-  // ---- Renderers ----
 
   const renderTrack = ({ item }: { item: SpotifyTrack }) => (
     <Pressable
@@ -191,38 +134,6 @@ export default function SetVibeScreen() {
     </Pressable>
   );
 
-  const renderPlaylist = ({ item }: { item: SpotifyPlaylist }) => (
-    <Pressable
-      style={({ pressed }) => [
-        styles.trackRow,
-        { backgroundColor: pressed ? theme.primary + '08' : 'transparent' },
-      ]}
-      onPress={() => openPlaylist(item)}
-    >
-      {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.playlistArt} />
-      ) : (
-        <View style={[styles.playlistArt, styles.trackArtPlaceholder, { backgroundColor: theme.card }]}>
-          <Feather name="list" size={18} color={theme.textSecondary} />
-        </View>
-      )}
-      <View style={styles.trackInfo}>
-        <Text style={[styles.trackName, { color: theme.text }]} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={[styles.trackArtist, { color: theme.textSecondary }]}>
-          {item.trackCount} tracks
-        </Text>
-      </View>
-      <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-    </Pressable>
-  );
-
-  const tabs: { key: Tab; icon: string; label: string }[] = [
-    { key: 'recent', icon: 'clock', label: 'Recent' },
-    { key: 'playlists', icon: 'list', label: 'Playlists' },
-  ];
-
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* ── Header ── */}
@@ -238,55 +149,28 @@ export default function SetVibeScreen() {
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
 
-        {isSearchActive ? (
-          <View style={[styles.headerSearchBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Feather name="search" size={16} color={theme.textSecondary} />
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Search songs, artists..."
-              placeholderTextColor={theme.textSecondary + '80'}
-              value={searchQuery}
-              onChangeText={handleSearch}
-              autoFocus
-              returnKeyType="search"
-              onSubmitEditing={() => Keyboard.dismiss()}
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
-                <Feather name="x-circle" size={16} color={theme.textSecondary} />
-              </Pressable>
-            )}
-          </View>
-        ) : (
-          <>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-                {viewMode === 'playlist-tracks' ? selectedPlaylistName : 'Pick a Song 🎵'}
-              </Text>
-              {viewMode !== 'playlist-tracks' && (
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-                  Choose what you're vibing to
-                </Text>
-              )}
-            </View>
-            {viewMode !== 'playlist-tracks' && (
-              <Pressable 
-                onPress={() => setIsSearchActive(true)}
-                style={({ pressed }) => [
-                  styles.headerSearchBtn,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  pressed && { opacity: 0.7 }
-                ]}
-              >
-                <Feather name="search" size={20} color={theme.text} />
-              </Pressable>
-            )}
-          </>
-        )}
+        <View style={[styles.headerSearchBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="search" size={16} color={theme.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search songs, artists..."
+            placeholderTextColor={theme.textSecondary + '80'}
+            value={searchQuery}
+            onChangeText={handleSearch}
+            autoFocus
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+              <Feather name="x-circle" size={16} color={theme.textSecondary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {/* ── Current Vibe ── */}
-      {currentVibe && viewMode === 'tabs' && !isSearchActive && (
+      {currentVibe && searchQuery.length === 0 && (
         <View style={[styles.vibeBanner, { backgroundColor: theme.primary + '10', borderColor: theme.primary + '30' }]}>
           <View style={[styles.vibeIconWrap, { backgroundColor: theme.primary + '20' }]}>
             <Feather name="music" size={16} color={theme.primary} />
@@ -309,34 +193,6 @@ export default function SetVibeScreen() {
         </View>
       )}
 
-      {/* ── Tabs ── */}
-      {viewMode === 'tabs' && !isSearchActive && (
-        <View style={[styles.tabRow, { borderColor: theme.border }]}>
-          {tabs.map((t) => {
-            const isActive = tab === t.key;
-            return (
-              <Pressable
-                key={t.key}
-                style={[
-                  styles.tab,
-                  isActive && [styles.tabActive, { backgroundColor: theme.primary + '12', borderColor: theme.primary }],
-                ]}
-                onPress={() => setTab(t.key)}
-              >
-                <Feather
-                  name={t.icon as any}
-                  size={15}
-                  color={isActive ? theme.primary : theme.textSecondary}
-                />
-                <Text style={[styles.tabText, { color: isActive ? theme.primary : theme.textSecondary }]}>
-                  {t.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
       {/* ── Content ── */}
       {loading ? (
         <View style={styles.loadingWrap}>
@@ -345,62 +201,24 @@ export default function SetVibeScreen() {
             Loading...
           </Text>
         </View>
-      ) : viewMode === 'playlist-tracks' ? (
-        <FlatList
-          data={playlistTracks}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTrack}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No tracks in this playlist</Text>
-          }
-        />
-      ) : isSearchActive ? (
-        searching ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="small" color={theme.primary} />
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Searching...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={searchResults}
-            keyExtractor={(item) => item.id}
-            renderItem={renderTrack}
-            contentContainerStyle={styles.listContent}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Feather name={searchError ? 'alert-circle' : 'search'} size={40} color={theme.textSecondary + '40'} />
-                <Text style={[styles.emptyText, { color: searchError ? '#ef4444' : theme.textSecondary }]}>
-                  {searchError || (searchQuery ? 'No results found' : 'Search for any song on Spotify')}
-                </Text>
-              </View>
-            }
-          />
-        )
-      ) : tab === 'recent' ? (
-        <FlatList
-          data={recentTracks}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTrack}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <Feather name="alert-circle" size={36} color={theme.textSecondary + '50'} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{T('setVibeEmptyRecent')}</Text>
-            </View>
-          }
-        />
+      ) : searching ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="small" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Searching...</Text>
+        </View>
       ) : (
         <FlatList
-          data={playlists}
+          data={searchResults}
           keyExtractor={(item) => item.id}
-          renderItem={renderPlaylist}
+          renderItem={renderTrack}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <Feather name="alert-circle" size={36} color={theme.textSecondary + '50'} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{T('setVibeEmptyPlaylists')}</Text>
+              <Feather name={searchError ? 'alert-circle' : 'search'} size={40} color={theme.textSecondary + '40'} />
+              <Text style={[styles.emptyText, { color: searchError ? '#ef4444' : theme.textSecondary }]}>
+                {searchError || (searchQuery ? 'No results found' : 'Search for any song')}
+              </Text>
             </View>
           }
         />
@@ -429,14 +247,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
-  headerSearchBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
   headerSearchBar: {
     flex: 1,
     flexDirection: 'row',
@@ -447,8 +257,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 8,
   },
-  title: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
-  subtitle: { fontSize: 13, marginTop: 2 },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 0,
+  },
 
   // Current vibe banner
   vibeBanner: {
@@ -480,33 +293,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Tabs
-  tabRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 12,
-    gap: 8,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  tabActive: {},
-  tabText: { fontSize: 13, fontWeight: '600' },
-
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 0,
-  },
-
   // Lists
   listContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
@@ -531,8 +317,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  playlistArt: { width: 52, height: 52, borderRadius: 10 },
 
   // States
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
