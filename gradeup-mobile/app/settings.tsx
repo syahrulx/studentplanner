@@ -337,8 +337,8 @@ export default function Settings() {
     ? [
         {
           icon: 'settings' as ThemeIconKey,
-          label: isClassroomSyncing ? 'Syncing…' : 'Sync Google Classroom',
-          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses · Last: ${formatClassroomLastSync(classroomPrefs!.lastSyncAt)}`,
+          label: isClassroomSyncing ? 'Syncing…' : 'Sync Classroom Now',
+          subtitle: `${classroomPrefs!.selectedCourseIds.length} courses on auto-sync\nLast: ${formatClassroomLastSync(classroomPrefs!.lastSyncAt)}`,
           onPress: () => void runClassroomSync(),
           color: '#4285f4',
           disabled: isClassroomSyncing,
@@ -346,7 +346,7 @@ export default function Settings() {
         {
           icon: 'settings' as ThemeIconKey,
           label: 'Manage Courses',
-          subtitle: 'Change which courses to sync',
+          subtitle: 'Change which courses to auto-sync',
           onPress: () => router.push('/classroom-sync' as any),
           color: '#fbbc05',
         },
@@ -360,8 +360,8 @@ export default function Settings() {
     : [
         {
           icon: 'settings' as ThemeIconKey,
-          label: 'Connect Google Classroom',
-          subtitle: 'Link account and choose courses to import',
+          label: 'Auto-sync Google Classroom',
+          subtitle: 'Link account to pull assignments automatically',
           onPress: openClassroomSetup,
           color: '#4285f4',
         },
@@ -831,7 +831,7 @@ export default function Settings() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
                       {item.subtitle ? (
-                        <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>{item.subtitle}</Text>
+                        <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2, lineHeight: 18 }}>{item.subtitle}</Text>
                       ) : null}
                     </View>
                     {item.disabled ? (

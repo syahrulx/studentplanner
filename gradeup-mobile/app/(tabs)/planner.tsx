@@ -918,7 +918,7 @@ export default function Planner() {
     if (item.itemType !== 'task') return item.subjectId;
     if (item.courseId?.startsWith('gc-course-')) {
       const found = courses.find(c => c.id === item.courseId);
-      return found ? `gc-${found.name}` : item.courseId;
+      return found ? found.name.split(' ')[0] : item.courseId.replace('gc-course-', '');
     }
     return item.courseId;
   };
@@ -1072,7 +1072,7 @@ export default function Planner() {
               : `${daysUntil} ${T('daysLeft')}`;
     const secondaryLabel = item.itemType === 'study'
       ? (item.topic ? `${item.durationMinutes} min • ${item.topic}` : `${item.durationMinutes} min`)
-      : `${item.type} • ${item.courseId}`;
+      : `${item.type} • ${getCardSubject(item)}`;
     const statusTextStyle = item.isDone
       ? s.taskInlineStatusDone
       : item.itemType === 'study'

@@ -77,11 +77,12 @@ export default function ClassroomSync() {
         setStep('selecting');
       } catch (e: any) {
         if (!cancelled) {
+          console.error("Google Classroom Connection Error:", e);
           const m = String(e?.message || '');
           if (/cancel|dismiss/i.test(m)) {
-            setError('Sign-in was cancelled. Tap Try again when you are ready to connect.');
+            setError(`Sign-in was cancelled. ${m}`);
           } else {
-            setError('Could not connect to Google Classroom. Check your connection and try again.');
+            setError(`Could not connect: ${m}`);
           }
         }
       }

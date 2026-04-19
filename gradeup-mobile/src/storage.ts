@@ -357,6 +357,27 @@ export async function setClassroomPrefs(prefs: ClassroomPrefs | null): Promise<v
   } catch {}
 }
 
+const KEY_HAS_DISMISSED_CLASSROOM_PROMO = 'hasDismissedClassroomPromo';
+
+export async function getHasDismissedClassroomPromo(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(KEY_HAS_DISMISSED_CLASSROOM_PROMO);
+    return value === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function setHasDismissedClassroomPromo(value: boolean): Promise<void> {
+  try {
+    if (value) {
+      await AsyncStorage.setItem(KEY_HAS_DISMISSED_CLASSROOM_PROMO, 'true');
+    } else {
+      await AsyncStorage.removeItem(KEY_HAS_DISMISSED_CLASSROOM_PROMO);
+    }
+  } catch {}
+}
+
 // ---------- Notification preferences ----------
 
 const KEY_NOTIFICATION_PREFS = 'notificationPrefs';

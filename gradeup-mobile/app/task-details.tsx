@@ -193,6 +193,14 @@ export default function TaskDetails() {
     );
   }
 
+  const formatSubjectName = (courseId: string) => {
+    if (courseId?.startsWith('gc-course-')) {
+      const found = courses.find(c => c.id === courseId);
+      return found ? found.name.split(' ')[0] : courseId.replace('gc-course-', '');
+    }
+    return courseId;
+  };
+
   // ── Derived display values ──────────────────────────────────────────────────
   const effectiveDueDate = task.needsDate ? getTodayISO() : task.dueDate;
   const daysLeft = getDaysUntilDue(effectiveDueDate);
@@ -371,7 +379,7 @@ export default function TaskDetails() {
         {/* ── Badges ────────────────────────────────────────────────────────── */}
         <View style={s.badgeRow}>
           <View style={[s.badgeCourse, { backgroundColor: theme.primary }]}>
-            <Text style={s.badgeCourseText}>{localCourseId}</Text>
+            <Text style={s.badgeCourseText}>{formatSubjectName(localCourseId)}</Text>
           </View>
           <View style={[s.badgeType, { backgroundColor: theme.backgroundSecondary }]}>
             <Text style={[s.badgeTypeText, { color: theme.textSecondary }]}>{localType}</Text>
@@ -486,7 +494,7 @@ export default function TaskDetails() {
               <Feather name="book" size={16} color={theme.primary} />
             </View>
             <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Subject</Text>
-            <Text style={[s.groupRowValue, { color: theme.text }]}>{localCourseId}</Text>
+            <Text style={[s.groupRowValue, { color: theme.text }]}>{formatSubjectName(localCourseId)}</Text>
             <View style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}>
               <Feather name="edit-2" size={14} color={theme.primary} />
             </View>
@@ -687,7 +695,7 @@ export default function TaskDetails() {
                       setSubjectModalOpen(false);
                     }}
                   >
-                    <Text style={[s.sheetRowText, { color: theme.text }]}>{item.id}</Text>
+                    <Text style={[s.sheetRowText, { color: theme.text }]}>{formatSubjectName(item.id)}</Text>
                     {localCourseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
                   </Pressable>
                 )}
@@ -711,7 +719,7 @@ export default function TaskDetails() {
                       setSubjectModalOpen(false);
                     }}
                   >
-                    <Text style={{ color: theme.text, fontSize: 17 }}>{item.id}</Text>
+                    <Text style={{ color: theme.text, fontSize: 17 }}>{formatSubjectName(item.id)}</Text>
                     {localCourseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
                   </Pressable>
                 )}

@@ -909,6 +909,14 @@ export default function Dashboard() {
     })[0];
   }, [completedStudyKeys, revisionSettingsList, todayStr, in30Str]);
 
+  const formatSubjectName = useCallback((courseId: string) => {
+    if (courseId?.startsWith('gc-course-')) {
+      const found = courses.find(c => c.id === courseId);
+      return found ? found.name.split(' ')[0] : courseId.replace('gc-course-', '');
+    }
+    return courseId;
+  }, [courses]);
+
   const focusCard = useMemo(() => {
     let chosen: 'task' | 'study' | null = null;
 
@@ -948,10 +956,11 @@ export default function Dashboard() {
       } else {
         statusColor = '#15803d';
       }
+      const formattedCourse = formatSubjectName(focusTask.task.courseId);
       return {
         kind: 'task' as const,
         title: focusTask.task.title,
-        code: focusTask.task.courseId,
+        code: formattedCourse,
         date: focusTask.task.dueDate,
         time: focusTask.task.dueTime,
         accentColor: subjectColor,
@@ -963,8 +972,8 @@ export default function Dashboard() {
             : T(info.key),
         subtitle:
           focusTask.reason === 'pinned'
-            ? `${T('subject')} • ${focusTask.task.courseId}`
-            : `${focusTask.task.type} • ${focusTask.task.courseId}`,
+            ? `${T('subject')} • ${formattedCourse}`
+            : `${focusTask.task.type} • ${formattedCourse}`,
         isSharedTask: (focusTask.task as any).isSharedTask,
         sharedBy: (focusTask.task as any).sharedBy,
         sharedByAvatar: (focusTask.task as any).sharedByAvatar,
@@ -994,7 +1003,7 @@ export default function Dashboard() {
     }
 
     return null;
-  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref]);
+  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName]);
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
@@ -1382,7 +1391,7 @@ export default function Dashboard() {
                           <Avatar name={(item as any).sharedBy} avatarUrl={(item as any).sharedByAvatar} size={18} />
                         ) : null}
                         <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
-                        <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.code}</Text>
+                        <Text style={styles.upcomingMetaText} numberOfLines={1}>{formatSubjectName(item.code)}</Text>
                         <Text style={styles.upcomingMetaDivider}>•</Text>
                         <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.room}</Text>
                       </View>

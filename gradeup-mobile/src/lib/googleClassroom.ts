@@ -158,9 +158,12 @@ export async function connectGoogleClassroom(): Promise<string> {
     session.user.app_metadata?.providers?.includes('google') ||
     session.user.identities?.some((id: any) => id.provider === 'google');
 
-  // Only force consent on first link so we get a refresh token
-  const queryParams: Record<string, string> = { access_type: 'offline' };
-  if (!isLinked) queryParams.prompt = 'consent';
+  // Always force account selection to prevent Safari's WebBrowser from silently 
+  // reusing an old Google/Supabase cookie from a different account.
+  const queryParams: Record<string, string> = { 
+    access_type: 'offline',
+    prompt: 'consent select_account'
+  };
 
   const oauthOpts = { redirectTo: redirectUrl, queryParams, scopes: SCOPES };
 
@@ -178,48 +181,69 @@ export async function connectGoogleClassroom(): Promise<string> {
   }
 
   const params = parseOAuthRedirectParams(res.url);
+
+  if (params.error) {
+    const errDesc = params.error_description ? decodeURIComponent(params.error_description.replace(/\+/g, ' ')) : params.error;
+    throw new Error(`Google Auth Error: ${errDesc}`);
+  }
+
   const accessToken = params.access_token;
   const refreshToken = params.refresh_token || null;
+  const code = params.code;
 
-  if (accessToken && refreshToken) {
+  let token = params.provider_token ? decodeURIComponent(params.provider_token) : null;
+  let refreshOut = params.provider_refresh_token || params.provider_refresh ? decodeURIComponent(params.provider_refresh_token || params.provider_refresh) : undefined;
+
+  if (code) {
+    // PKCE flow - we must exchange the code to get the session & provider token
+    const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
+    if (exchangeErr) {
+      throw new Error(exchangeErr.message || 'Could not verify session from code.');
+    }
+    
+    if (exchangeData?.session?.provider_token) {
+      token = exchangeData.session.provider_token;
+      refreshOut = exchangeData.session.provider_refresh_token ?? refreshOut;
+    }
+
+    // Protect against silent account swaps
+    if (exchangeData?.session?.user?.id !== expectedUserId) {
+      // Revert the local session back to the user who started this action!
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+    }
+  } else if (accessToken && refreshToken) {
+    // Implicit flow
     const sub = decodeJwtSub(accessToken);
     if (!sub) {
       throw new Error('Could not verify your session. Please try connecting Google Classroom again.');
     }
-    if (sub !== expectedUserId) {
-      throw new Error(
-        'That Google sign-in belongs to a different Rencana account. Your current login was not changed. Use the Google account you want for Classroom while staying signed in as yourself, or create a separate Rencana account for that email.',
-      );
-    }
-    const { error: sessErr } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (sessErr) {
-      throw new Error(sessErr.message || 'Could not finish linking Google Classroom.');
+
+    // Only update Supabase session if it belongs to exactly who we expect.
+    // If it belongs to a DIFFERENT user, we just ignore the session update! 
+    // We already extracted `token` from `params.provider_token` above.
+    if (sub === expectedUserId) {
+      const { error: sessErr } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessErr) {
+        throw new Error(sessErr.message || 'Could not finish linking Google Classroom.');
+      }
     }
   }
 
-  const providerEnc = params.provider_token;
-  const providerRefreshEnc = params.provider_refresh_token || params.provider_refresh;
-
+  // Fallback to fresh session check if it wasn't returned natively
   const { data: fresh } = await supabase.auth.getSession();
-  if (!fresh.session || fresh.session.user.id !== expectedUserId) {
-    throw new Error(
-      'Your Rencana account must stay the same after linking Classroom. Please try again from Settings.',
-    );
-  }
-
-  let token = providerEnc ? decodeURIComponent(providerEnc) : null;
-  let refreshOut = providerRefreshEnc ? decodeURIComponent(providerRefreshEnc) : undefined;
-
-  if (!token && fresh.session.provider_token) {
+  if (!token && fresh.session?.provider_token && fresh.session?.user?.id === expectedUserId) {
     token = fresh.session.provider_token;
     refreshOut = fresh.session.provider_refresh_token ?? refreshOut;
   }
 
   if (!token) {
-    throw new Error('Google sign-in succeeded but no Classroom token was returned.');
+    throw new Error('Google sign-in succeeded but no Classroom token was returned. The account might not be fully linked.');
   }
 
   await setClassroomToken({
