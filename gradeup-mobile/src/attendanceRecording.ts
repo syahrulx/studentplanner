@@ -39,8 +39,14 @@ function normalizeIso(iso: string): string {
 
 export function attendanceOccurrenceKey(timetableEntryId: string, scheduledStartAt: string): string {
   const tid = String(timetableEntryId || '').trim();
-  const at = normalizeIso(scheduledStartAt);
-  return `${tid}|${at}`;
+  const iso = String(scheduledStartAt || '').trim();
+  const t = Date.parse(iso);
+  // Floor to minute so tiny ISO differences / millis noise don't create duplicate keys.
+  if (tid && Number.isFinite(t)) {
+    const floored = Math.floor(t / 60_000) * 60_000;
+    return `${tid}|${new Date(floored).toISOString()}`;
+  }
+  return `${tid}|${normalizeIso(iso)}`;
 }
 
 async function loadAnsweredMap(): Promise<Record<string, string>> {

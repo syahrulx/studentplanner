@@ -20,7 +20,21 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
-import { recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
+import { attendanceOccurrenceKey, recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
+
+function pickBetterAttendanceItem(a: AttendanceNotifItem, b: AttendanceNotifItem): AttendanceNotifItem {
+  // Prefer presented over scheduled when both exist for the same occurrence.
+  if (a.kind !== b.kind) {
+    if (a.kind === 'presented' && b.kind === 'scheduled') return a;
+    if (a.kind === 'scheduled' && b.kind === 'presented') return b;
+  }
+  // Prefer the one with a known fire time (usually scheduled / richer object).
+  const af = Date.parse(a.fireAtISO || '') || 0;
+  const bf = Date.parse(b.fireAtISO || '') || 0;
+  if (af !== bf) return af >= bf ? a : b;
+  // Stable tie-breaker
+  return a.id <= b.id ? a : b;
+}
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -170,8 +184,8 @@ export default function NotificationsScreen() {
         const data = (content?.data ?? {}) as Record<string, any>;
         if (data?.type !== 'attendance_checkin') return null;
         const timetableEntryId = String(data.timetableEntryId || '').trim();
-        const scheduledStartAt = String(data.scheduledStartAt || '').trim();
-        if (!id || !timetableEntryId || !scheduledStartAt) return null;
+        let scheduledStartAt = String(data.scheduledStartAt || '').trim();
+        if (!id || !timetableEntryId) return null;
         const subjectCode = String(data.subjectCode || '').trim();
         const subjectName = String(data.subjectName || '').trim();
 
@@ -180,6 +194,12 @@ export default function NotificationsScreen() {
           trigger && typeof trigger === 'object' && trigger.date
             ? new Date(trigger.date).toISOString()
             : undefined;
+
+        if (!scheduledStartAt) {
+          const ft = Date.parse(String(fireAtISO || '').trim());
+          if (!Number.isFinite(ft)) return null;
+          scheduledStartAt = new Date(ft + 5 * 60_000).toISOString();
+        }
 
         return {
           id,
@@ -197,22 +217,15 @@ export default function NotificationsScreen() {
         ...(presented ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
       ];
 
-      const normalizeIsoKey = (iso: string): string => {
-        const s = String(iso || '').trim();
-        const t = Date.parse(s);
-        if (!Number.isFinite(t)) return s;
-        return new Date(t).toISOString();
-      };
-
-      // De-dupe by occurrence (timetableEntryId + scheduledStartAt). Prefer presented over scheduled.
+      // De-dupe by occurrence (timetableEntryId + class start time, minute-stable). Prefer presented over scheduled.
       const byKey = new Map<string, AttendanceNotifItem>();
       for (const it of itemsRaw) {
-        const k = `${it.timetableEntryId}|${normalizeIsoKey(it.scheduledStartAt)}`;
+        const k = attendanceOccurrenceKey(it.timetableEntryId, it.scheduledStartAt);
         const prev = byKey.get(k);
         if (!prev) {
           byKey.set(k, it);
-        } else if (prev.kind === 'scheduled' && it.kind === 'presented') {
-          byKey.set(k, it);
+        } else {
+          byKey.set(k, pickBetterAttendanceItem(prev, it));
         }
       }
 
@@ -261,7 +274,7 @@ export default function NotificationsScreen() {
     async (item: AttendanceNotifItem, status: AttendanceStatus) => {
       setAttendanceBusyIds((prev) => new Set(prev).add(item.id));
       try {
-        const occKey = `${item.timetableEntryId}|${item.scheduledStartAt}`;
+        const occKey = attendanceOccurrenceKey(item.timetableEntryId, item.scheduledStartAt);
         await recordAttendanceEvent({
           timetableEntryId: item.timetableEntryId,
           scheduledStartAt: item.scheduledStartAt,
@@ -271,15 +284,42 @@ export default function NotificationsScreen() {
           source: 'in_app',
         });
 
-        // Remove the system notification as well.
-        if (item.kind === 'scheduled') {
-          await Notifications.cancelScheduledNotificationAsync(item.id).catch(() => {});
-        } else {
-          await Notifications.dismissNotificationAsync(item.id).catch(() => {});
-        }
+        // Remove the system notification(s) as well (there can be duplicates with different identifiers).
+        try {
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync().catch(() => [] as any[]);
+          for (const n of scheduled ?? []) {
+            const hasRequest = n && typeof n === 'object' && 'request' in (n as any);
+            const req: any = hasRequest ? (n as any).request : null;
+            const content: any = hasRequest ? req?.content : (n as any).content;
+            const data = (content?.data ?? {}) as Record<string, any>;
+            if (!data || data.type !== 'attendance_checkin') continue;
+            const tid = String(data.timetableEntryId || '').trim();
+            const iso = String(data.scheduledStartAt || '').trim();
+            if (!tid || !iso) continue;
+            if (attendanceOccurrenceKey(tid, iso) === occKey) {
+              const nid = String((hasRequest ? req?.identifier : (n as any).identifier) || '');
+              if (nid) await Notifications.cancelScheduledNotificationAsync(nid).catch(() => {});
+            }
+          }
+        } catch {}
+
+        try {
+          const presented = await Notifications.getPresentedNotificationsAsync().catch(() => [] as any[]);
+          for (const n of presented ?? []) {
+            const data = (n as any)?.request?.content?.data as Record<string, any> | undefined;
+            if (!data || data.type !== 'attendance_checkin') continue;
+            const tid = String(data.timetableEntryId || '').trim();
+            const iso = String(data.scheduledStartAt || '').trim();
+            if (!tid || !iso) continue;
+            if (attendanceOccurrenceKey(tid, iso) === occKey) {
+              const nid = String((n as any)?.request?.identifier || '');
+              if (nid) await Notifications.dismissNotificationAsync(nid).catch(() => {});
+            }
+          }
+        } catch {}
 
         setAttendanceNotifs((prev) =>
-          prev.filter((x) => `${x.timetableEntryId}|${x.scheduledStartAt}` !== occKey),
+          prev.filter((x) => attendanceOccurrenceKey(x.timetableEntryId, x.scheduledStartAt) !== occKey),
         );
       } finally {
         setAttendanceBusyIds((prev) => {
