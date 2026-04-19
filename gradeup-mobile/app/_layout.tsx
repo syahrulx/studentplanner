@@ -1,3 +1,4 @@
+import '@/src/notificationsForeground';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { ThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AppProvider } from '@/src/context/AppContext';
 import { CommunityProvider } from '@/src/context/CommunityContext';
@@ -93,7 +95,36 @@ function RootLayoutNav() {
         case 'attendance_checkin': {
           // Banner tap should open the in-app notification manager where the user can answer
           // and the item will auto-disappear after recording.
-          nav(() => router.push('/community/notifications' as any));
+          nav(() =>
+            router.push({
+              pathname: '/community/notifications',
+              params: {
+                fromAttendanceTap: '1',
+                timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
+                scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
+                subjectCode: String((data as any)?.subjectCode ?? ''),
+                subjectName: String((data as any)?.subjectName ?? ''),
+                subjectKey: String((data as any)?.subjectKey ?? ''),
+                displaySubject: String((data as any)?.displaySubject ?? ''),
+                fireAtMs: String((data as any)?.fireAtMs ?? ''),
+              },
+            } as any),
+          );
+          // Persist a copy so iOS can restore even if params/lastResponse are unavailable.
+          void AsyncStorage.setItem(
+            'lastAttendanceTapV1',
+            JSON.stringify({
+              type: 'attendance_checkin',
+              timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
+              scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
+              subjectCode: String((data as any)?.subjectCode ?? ''),
+              subjectName: String((data as any)?.subjectName ?? ''),
+              subjectKey: String((data as any)?.subjectKey ?? ''),
+              displaySubject: String((data as any)?.displaySubject ?? ''),
+              fireAtMs: String((data as any)?.fireAtMs ?? ''),
+              savedAt: new Date().toISOString(),
+            }),
+          ).catch(() => {});
           break;
         }
       }

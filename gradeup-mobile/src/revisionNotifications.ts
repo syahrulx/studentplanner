@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { RevisionSettings, RevisionDay } from './storage';
+import './notificationsForeground';
 
 const REVISION_MAIN_ID = 'revision-main';
 const REVISION_POSTPONE_ID = 'revision-postpone';
@@ -16,16 +17,6 @@ const WEEKDAY_NUM: Record<RevisionDay, number> = {
   Saturday: 7,
   'Every day': 1, // unused for DAILY
 };
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 export async function ensureRevisionChannel(): Promise<void> {
   if (Platform.OS === 'android') {
