@@ -116,7 +116,7 @@ export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnP
           <Feather
             name="external-link"
             size={14}
-            color="#fff" /* Using white for standard Spotify Green button */
+            color="#fff"
           />
           <Text style={[styles.addBtnText, { color: '#fff' }]}>
             Listen on Apple Music

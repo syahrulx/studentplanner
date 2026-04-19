@@ -11,7 +11,13 @@ import {
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
-import { getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
+import {
+  getCircleLocationVisibility,
+  setCircleLocationVisibility,
+  getCustomFriendLocationVisibility,
+  setCustomFriendLocationVisibility,
+} from '@/src/lib/communityApi';
+import { Avatar } from '@/components/Avatar';
 import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
@@ -26,6 +32,7 @@ export default function CommunitySettings() {
     locationVisibility,
     setLocationVisibility,
     circles,
+    friendsWithStatus,
     userId,
   } = useCommunity();
   const theme = useTheme();
@@ -36,6 +43,10 @@ export default function CommunitySettings() {
   const [loadingCircleVisibility, setLoadingCircleVisibility] = useState(false);
   const [circleDropdownOpen, setCircleDropdownOpen] = useState(false);
 
+  const [friendVisibilityIds, setFriendVisibilityIds] = useState<string[]>([]);
+  const [loadingFriendVisibility, setLoadingFriendVisibility] = useState(false);
+  const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
+
   useEffect(() => {
     if (!userId || locationVisibility !== 'circles') return;
     setLoadingCircleVisibility(true);
@@ -43,6 +54,15 @@ export default function CommunitySettings() {
       .then(setCircleVisibilityIds)
       .catch(() => setCircleVisibilityIds([]))
       .finally(() => setLoadingCircleVisibility(false));
+  }, [userId, locationVisibility]);
+
+  useEffect(() => {
+    if (!userId || locationVisibility !== 'custom_friends') return;
+    setLoadingFriendVisibility(true);
+    getCustomFriendLocationVisibility(userId)
+      .then(setFriendVisibilityIds)
+      .catch(() => setFriendVisibilityIds([]))
+      .finally(() => setLoadingFriendVisibility(false));
   }, [userId, locationVisibility]);
 
   const toggleCircleVisibility = async (circleId: string) => {
@@ -58,9 +78,23 @@ export default function CommunitySettings() {
     }
   };
 
+  const toggleFriendVisibility = async (friendId: string) => {
+    if (!userId) return;
+    const prev = friendVisibilityIds;
+    const next = prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId];
+    setFriendVisibilityIds(next);
+    try {
+      await setCustomFriendLocationVisibility(userId, next);
+    } catch (e) {
+      setFriendVisibilityIds(prev);
+      Alert.alert('Could not update visibility', 'Please try again.');
+    }
+  };
+
   const privacyOptions: { value: LocationVisibility; label: string; icon: string; desc: string }[] = [
     { value: 'public', label: 'Public', icon: '🌍', desc: 'Everyone can see your location' },
-    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'Only friends can see your location' },
+    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'All friends can see your location' },
+    { value: 'custom_friends', label: 'Selected Friends', icon: '👤', desc: 'Only specific friends can see your location' },
     { value: 'circles', label: 'Circles', icon: '⭕️', desc: 'Only people in your circles can see your location' },
     { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see your location' },
   ];
@@ -89,12 +123,17 @@ export default function CommunitySettings() {
             <React.Fragment key={opt.value}>
               <Pressable
                 style={({ pressed }) => [styles.privacyRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-                onPress={async () => {
-                  await setLocationVisibility(opt.value);
+                onPress={() => {
+                  setLocationVisibility(opt.value).catch(() => {});
                   if (opt.value === 'circles') {
                     setCircleDropdownOpen((open) => !open);
+                    setFriendDropdownOpen(false);
+                  } else if (opt.value === 'custom_friends') {
+                    setFriendDropdownOpen((open) => !open);
+                    setCircleDropdownOpen(false);
                   } else {
                     setCircleDropdownOpen(false);
+                    setFriendDropdownOpen(false);
                   }
                 }}
               >
@@ -103,11 +142,16 @@ export default function CommunitySettings() {
                   <Text style={[styles.privacyLabel, { color: theme.text }]}>{opt.label}</Text>
                   <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>{opt.desc}</Text>
                 </View>
-                {opt.value === 'circles' ? (
+                {opt.value === 'circles' || opt.value === 'custom_friends' ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {locationVisibility === 'circles' && <Feather name="check" size={18} color={theme.primary} />}
+                    {locationVisibility === opt.value && <Feather name="check" size={18} color={theme.primary} />}
                     <Feather
-                      name={circleDropdownOpen && locationVisibility === 'circles' ? 'chevron-up' : 'chevron-down'}
+                      name={
+                        (opt.value === 'circles' && circleDropdownOpen && locationVisibility === 'circles') ||
+                        (opt.value === 'custom_friends' && friendDropdownOpen && locationVisibility === 'custom_friends')
+                          ? 'chevron-up'
+                          : 'chevron-down'
+                      }
                       size={18}
                       color={theme.textSecondary}
                     />
@@ -142,14 +186,56 @@ export default function CommunitySettings() {
                           >
                             <Text style={styles.circleVisibilityEmoji}>{c.emoji}</Text>
                             <View style={styles.circleVisibilityBody}>
-                              <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{c.name}</Text>
+                               <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{c.name}</Text>
+                               <Text style={[styles.circleVisibilityDesc, { color: theme.textSecondary }]}>
+                                 {selected ? 'Visible' : 'Hidden'}
+                               </Text>
+                            </View>
+                            {selected && <Feather name="check" size={18} color={theme.primary} />}
+                          </Pressable>
+                          {index < circles.length - 1 && <View style={styles.dividerList} />}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+              {opt.value === 'custom_friends' && friendDropdownOpen && locationVisibility === 'custom_friends' && (
+                <View style={{ paddingHorizontal: 4, paddingBottom: 6 }}>
+                  {loadingFriendVisibility ? (
+                    <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                      <Text style={[styles.cardValue, { color: theme.textSecondary }]}>Loading friends…</Text>
+                    </View>
+                  ) : friendsWithStatus.length === 0 ? (
+                    <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+                      <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+                        No friends found. Add friends in the Community tab.
+                      </Text>
+                    </View>
+                  ) : (
+                    friendsWithStatus.map((friend, index) => {
+                      const selected = friendVisibilityIds.includes(friend.id);
+                      return (
+                        <React.Fragment key={friend.id}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.circleVisibilityRow,
+                              pressed && { backgroundColor: theme.backgroundSecondary },
+                            ]}
+                            onPress={() => toggleFriendVisibility(friend.id)}
+                          >
+                            <View style={{ marginRight: 10 }}>
+                              <Avatar name={friend.name} url={friend.avatar_url} size={28} />
+                            </View>
+                            <View style={styles.circleVisibilityBody}>
+                              <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{friend.name}</Text>
                               <Text style={[styles.circleVisibilityDesc, { color: theme.textSecondary }]}>
                                 {selected ? 'Visible' : 'Hidden'}
                               </Text>
                             </View>
                             {selected && <Feather name="check" size={18} color={theme.primary} />}
                           </Pressable>
-                          {index < circles.length - 1 && <View style={styles.dividerList} />}
+                          {index < friendsWithStatus.length - 1 && <View style={styles.dividerList} />}
                         </React.Fragment>
                       );
                     })

@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 // =============================================================================
 
 export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
-export type LocationVisibility = 'public' | 'friends' | 'circles' | 'off';
+export type LocationVisibility = 'public' | 'friends' | 'custom_friends' | 'circles' | 'off';
 export type ActivityType =
   | 'studying'
   | 'in_class'
@@ -1053,6 +1053,31 @@ export async function getLocationVisibilityFromProfile(userId: string): Promise<
 
   if (error || !data) return 'friends';
   return (data.location_visibility as LocationVisibility) || 'friends';
+}
+
+/** Get list of friend IDs that are allowed to see the user's location when visibility = 'custom_friends'. */
+export async function getCustomFriendLocationVisibility(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('friend_location_visibility')
+    .select('friend_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data ?? []).map((r: { friend_id: string }) => r.friend_id);
+}
+
+/** Replace the user's friend location allowlist with a new set of friend IDs. */
+export async function setCustomFriendLocationVisibility(userId: string, friendIds: string[]): Promise<void> {
+  const { error: delErr } = await supabase
+    .from('friend_location_visibility')
+    .delete()
+    .eq('user_id', userId);
+  if (delErr) throw delErr;
+
+  if (!friendIds.length) return;
+
+  const rows = friendIds.map((fId) => ({ user_id: userId, friend_id: fId }));
+  const { error } = await supabase.from('friend_location_visibility').insert(rows);
+  if (error) throw error;
 }
 
 /** Get list of circle IDs that are allowed to see the user's location when visibility = 'circles'. */
