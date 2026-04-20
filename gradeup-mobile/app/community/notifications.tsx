@@ -573,8 +573,21 @@ export default function NotificationsScreen() {
         if (fm === null) return false;
         return fm <= now;
       });
+      // Only merge the tap-injected card when its occurrence hasn't been answered yet.
+      // Otherwise the user would see the card re-appear on refresh right after tapping Present/Absent.
+      const tapKey = tapAttendance
+        ? attendanceOccurrenceKey(tapAttendance.timetableEntryId, tapAttendance.scheduledStartAt)
+        : null;
+      const tapIsAnswered = tapKey ? answered.has(tapKey) : false;
+      if (tapAttendance && tapIsAnswered) {
+        setTapAttendance(null);
+        void AsyncStorage.removeItem('lastAttendanceTapV1').catch(() => {});
+      }
       setAttendanceNotifs(() => {
-        const merged = tapAttendance ? collapseDuplicateAttendanceCopies([...visible, tapAttendance]) : visible;
+        const merged =
+          tapAttendance && !tapIsAnswered
+            ? collapseDuplicateAttendanceCopies([...visible, tapAttendance])
+            : visible;
         return merged;
       });
     } catch {
@@ -588,31 +601,52 @@ export default function NotificationsScreen() {
   }, [loadReactions]);
 
   // If user arrived by tapping the OS popup, show that card immediately even if iOS hasn't populated
-  // the presented notifications list yet.
+  // the presented notifications list yet. Skip injection when the occurrence was already answered
+  // or when the class time is not within a reasonable window around "now" (stale taps from previous
+  // sessions must not surface a card before T−5).
   useEffect(() => {
     const get1 = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
     if (!get1(params?.fromAttendanceTap)) return;
     const timetableEntryId = String(get1(params.timetableEntryId) || '').trim();
     const scheduledStartAt = String(get1(params.scheduledStartAt) || '').trim();
     if (!timetableEntryId || !scheduledStartAt) return;
-    const fireAtMsNum = Number(String(get1(params.fireAtMs) || '').trim());
-    const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
-    const injected: AttendanceNotifItem = {
-      id: `tap-${timetableEntryId}-${scheduledStartAt}`,
-      timetableEntryId,
-      scheduledStartAt,
-      subjectCode: String(get1(params.subjectCode) || '').trim(),
-      subjectName: String(get1(params.subjectName) || '').trim(),
-      subjectKey: String(get1(params.subjectKey) || '').trim() || undefined,
-      displaySubject: String(get1(params.displaySubject) || '').trim() || undefined,
-      bodyText: undefined,
-      fireAtMs,
-      fireAtISO: fireAtMs != null ? new Date(fireAtMs).toISOString() : undefined,
-      kind: 'presented',
-    };
 
-    setTapAttendance(injected);
-    setAttendanceNotifs((prev) => collapseDuplicateAttendanceCopies([...prev, injected]));
+    const startMs = Date.parse(scheduledStartAt);
+    const nowMs = Date.now();
+    const isFresh =
+      Number.isFinite(startMs) &&
+      startMs - 30 * 60_000 <= nowMs &&
+      nowMs <= startMs + 90 * 60_000;
+    if (!isFresh) return;
+
+    let cancelled = false;
+    void (async () => {
+      const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
+      if (cancelled) return;
+      if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) return;
+
+      const fireAtMsNum = Number(String(get1(params.fireAtMs) || '').trim());
+      const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
+      const injected: AttendanceNotifItem = {
+        id: `tap-${timetableEntryId}-${scheduledStartAt}`,
+        timetableEntryId,
+        scheduledStartAt,
+        subjectCode: String(get1(params.subjectCode) || '').trim(),
+        subjectName: String(get1(params.subjectName) || '').trim(),
+        subjectKey: String(get1(params.subjectKey) || '').trim() || undefined,
+        displaySubject: String(get1(params.displaySubject) || '').trim() || undefined,
+        bodyText: undefined,
+        fireAtMs,
+        fireAtISO: fireAtMs != null ? new Date(fireAtMs).toISOString() : undefined,
+        kind: 'presented',
+      };
+
+      setTapAttendance(injected);
+      setAttendanceNotifs((prev) => collapseDuplicateAttendanceCopies([...prev, injected]));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     params?.fromAttendanceTap,
     params?.timetableEntryId,
@@ -626,6 +660,8 @@ export default function NotificationsScreen() {
 
   // Fallback: on iOS, router params may not arrive consistently right after tapping a banner.
   // Pull the last notification response directly and inject the attendance card.
+  // `getLastNotificationResponseAsync()` returns the last tap *ever* until explicitly cleared,
+  // so guard against both already-answered occurrences and stale classes from previous sessions.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -637,6 +673,19 @@ export default function NotificationsScreen() {
         const timetableEntryId = String(data.timetableEntryId || '').trim();
         const scheduledStartAt = String(data.scheduledStartAt || '').trim();
         if (!timetableEntryId || !scheduledStartAt) return;
+
+        const startMs = Date.parse(scheduledStartAt);
+        const nowMs = Date.now();
+        const isFresh =
+          Number.isFinite(startMs) &&
+          startMs - 30 * 60_000 <= nowMs &&
+          nowMs <= startMs + 90 * 60_000;
+        if (!isFresh) return;
+
+        const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
+        if (cancelled) return;
+        if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) return;
+
         const fireAtMsNum = Number(String(data.fireAtMs || '').trim());
         const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
         const injected: AttendanceNotifItem = {
@@ -674,7 +723,22 @@ export default function NotificationsScreen() {
         const timetableEntryId = String(data.timetableEntryId || '').trim();
         const scheduledStartAt = String(data.scheduledStartAt || '').trim();
         if (!timetableEntryId || !scheduledStartAt) return;
-        if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) return;
+        if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) {
+          // Answered already — drop the stored copy so we never re-inject it.
+          void AsyncStorage.removeItem('lastAttendanceTapV1').catch(() => {});
+          return;
+        }
+        const startMs = Date.parse(scheduledStartAt);
+        const nowMs = Date.now();
+        const isFresh =
+          Number.isFinite(startMs) &&
+          startMs - 30 * 60_000 <= nowMs &&
+          nowMs <= startMs + 90 * 60_000;
+        if (!isFresh) {
+          // Stored tap is from a previous session / different class — don't inject it now.
+          void AsyncStorage.removeItem('lastAttendanceTapV1').catch(() => {});
+          return;
+        }
         const fireAtMsNum = Number(String(data.fireAtMs || '').trim());
         const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
         const injected: AttendanceNotifItem = {
