@@ -1612,26 +1612,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (normalized.group !== undefined) {
         normalized.group = normalized.group.trim();
       }
-      setTimetable((prev) =>
-        prev.map((e) => {
+      let mergedAfterUpdate: TimetableEntry[] = [];
+      setTimetable((prev) => {
+        const next = prev.map((e) => {
           if (e.id !== entryId) return e;
-          const next = { ...e, ...normalized };
+          const merged = { ...e, ...normalized };
           if (normalized.displayName !== undefined) {
-            if (normalized.displayName === '') delete next.displayName;
-            else next.displayName = normalized.displayName;
+            if (normalized.displayName === '') delete merged.displayName;
+            else merged.displayName = normalized.displayName;
           }
           if (normalized.slotColor !== undefined) {
-            if (normalized.slotColor === '') delete next.slotColor;
-            else next.slotColor = normalized.slotColor;
+            if (normalized.slotColor === '') delete merged.slotColor;
+            else merged.slotColor = normalized.slotColor;
           }
           if (normalized.group !== undefined) {
-            if (!normalized.group) delete next.group;
-            else next.group = normalized.group;
+            if (!normalized.group) delete merged.group;
+            else merged.group = normalized.group;
           }
-          return next;
-        }),
-      );
+          return merged;
+        });
+        mergedAfterUpdate = next;
+        return next;
+      });
       await timetableDb.updateTimetableEntry(uid, entryId, normalized);
+      // Re-schedule attendance banners so changes to day/startTime take effect.
+      rescheduleAttendanceNotifications(uid, mergedAfterUpdate).catch(() => {});
     },
     [],
   );

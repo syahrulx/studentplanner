@@ -9,6 +9,10 @@ import {
   Alert,
   Platform,
   Switch,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -91,6 +95,76 @@ export default function FriendProfileScreen() {
         },
       },
     ]);
+  };
+
+  // ── Report / Block (Apple UGC safety: Guideline 1.2) ──────────────────────
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState<string | null>(null);
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportBusy, setReportBusy] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  const REPORT_REASONS = [
+    'Harassment or bullying',
+    'Hate speech',
+    'Sexual or inappropriate content',
+    'Spam or scam',
+    'Impersonation',
+    'Self-harm or violence',
+    'Other',
+  ];
+
+  const submitReport = async () => {
+    if (!userId || !friendId || !reportReason) return;
+    setReportBusy(true);
+    try {
+      await communityApi.reportUser({
+        reporterId: userId,
+        reportedUserId: friendId,
+        reason: reportReason,
+        details: reportDetails.trim() || undefined,
+        context: 'friend_profile',
+      });
+      setReportOpen(false);
+      setReportReason(null);
+      setReportDetails('');
+      Alert.alert(
+        'Report submitted',
+        'Thanks — our team will review this within 24 hours. If you also want to stop all contact with this user, tap Block.'
+      );
+    } catch (e) {
+      Alert.alert('Could not submit report', 'Please check your connection and try again.');
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
+  const handleBlock = () => {
+    const name = friend?.name || 'this user';
+    Alert.alert(
+      `Block ${name}?`,
+      `They won’t be able to react to your activity, share tasks with you, or add you as a friend. You can unblock them later in Settings → Community.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            if (!userId || !friendId) return;
+            setBlockBusy(true);
+            try {
+              await communityApi.blockUserByUserId(userId, friendId);
+              await refreshFriends();
+              router.back();
+            } catch {
+              Alert.alert('Could not block user', 'Please try again.');
+            } finally {
+              setBlockBusy(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const studyingSubtitle =
@@ -273,12 +347,137 @@ export default function FriendProfileScreen() {
         />
       </View>
 
+      {/* ── safety (Apple UGC: report & block) ── */}
+      <Text style={[s.label, { color: theme.textSecondary }]}>SAFETY</Text>
+      <View style={[s.msgCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Pressable
+          style={({ pressed }) => [
+            s.msgRow,
+            { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+            pressed && { backgroundColor: theme.background },
+          ]}
+          onPress={() => setReportOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Report ${friend.name}`}
+        >
+          <Feather name="flag" size={18} color="#f59e0b" />
+          <Text style={[s.msgText, { color: theme.text, marginLeft: 10 }]}>Report {friend.name.split(' ')[0]}</Text>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [s.msgRow, pressed && { backgroundColor: theme.background }, blockBusy && { opacity: 0.6 }]}
+          onPress={handleBlock}
+          disabled={blockBusy}
+          accessibilityRole="button"
+          accessibilityLabel={`Block ${friend.name}`}
+        >
+          <Feather name="slash" size={18} color="#ef4444" />
+          <Text style={[s.msgText, { color: '#ef4444', marginLeft: 10, fontWeight: '700' }]}>
+            Block {friend.name.split(' ')[0]}
+          </Text>
+          {blockBusy ? <ActivityIndicator size="small" color="#ef4444" /> : <Feather name="chevron-right" size={16} color="#ef4444" />}
+        </Pressable>
+      </View>
+
       {/* ── remove ── */}
       <Pressable style={({ pressed }) => [s.removeBtn, pressed && { opacity: 0.65 }]} onPress={handleRemove}>
         <Text style={s.removeBtnText}>Remove friend</Text>
       </Pressable>
 
       <View style={{ height: 44 }} />
+
+      {/* ── Report modal (Apple UGC safety) ── */}
+      <Modal
+        visible={reportOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => !reportBusy && setReportOpen(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.reportBackdrop}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => !reportBusy && setReportOpen(false)}
+          />
+          <View style={[s.reportSheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[s.reportTitle, { color: theme.text }]}>Report {friend.name}</Text>
+            <Text style={[s.reportSub, { color: theme.textSecondary }]}>
+              Your report is confidential. Our team reviews reports within 24 hours.
+            </Text>
+
+            <Text style={[s.reportLabel, { color: theme.textSecondary }]}>REASON</Text>
+            <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+              {REPORT_REASONS.map((r) => {
+                const active = reportReason === r;
+                return (
+                  <Pressable
+                    key={r}
+                    onPress={() => setReportReason(r)}
+                    style={({ pressed }) => [
+                      s.reasonRow,
+                      {
+                        borderColor: active ? theme.primary : theme.border,
+                        backgroundColor: active ? theme.primary + '18' : theme.background,
+                      },
+                      pressed && { opacity: 0.85 },
+                    ]}
+                  >
+                    <Feather
+                      name={active ? 'check-circle' : 'circle'}
+                      size={18}
+                      color={active ? theme.primary : theme.textSecondary}
+                    />
+                    <Text style={[s.reasonText, { color: theme.text }]}>{r}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={[s.reportLabel, { color: theme.textSecondary, marginTop: 10 }]}>
+              DETAILS (OPTIONAL)
+            </Text>
+            <TextInput
+              value={reportDetails}
+              onChangeText={setReportDetails}
+              placeholder="Add anything that helps our team review this report…"
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              maxLength={2000}
+              editable={!reportBusy}
+              style={[
+                s.reportInput,
+                { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
+              ]}
+            />
+
+            <View style={s.reportActions}>
+              <Pressable
+                style={[s.reportBtnSecondary, { borderColor: theme.border }]}
+                onPress={() => !reportBusy && setReportOpen(false)}
+                disabled={reportBusy}
+              >
+                <Text style={{ color: theme.text, fontWeight: '600' }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  s.reportBtnPrimary,
+                  { backgroundColor: reportReason ? '#ef4444' : theme.border },
+                ]}
+                onPress={submitReport}
+                disabled={reportBusy || !reportReason}
+              >
+                {reportBusy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Submit report</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -361,4 +560,56 @@ const s = StyleSheet.create({
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
   emptyBtn: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, marginTop: 8 },
   emptyBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+
+  /* report modal */
+  reportBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  reportSheet: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  reportTitle: { fontSize: 18, fontWeight: '800' },
+  reportSub: { fontSize: 13, marginTop: 4, lineHeight: 19 },
+  reportLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginTop: 14, marginBottom: 8 },
+  reasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  reasonText: { fontSize: 14, fontWeight: '600' },
+  reportInput: {
+    minHeight: 70,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    textAlignVertical: 'top',
+  },
+  reportActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  reportBtnSecondary: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportBtnPrimary: {
+    flex: 1.4,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
