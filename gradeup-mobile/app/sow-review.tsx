@@ -6,9 +6,10 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { clearPendingSowExtraction, getPendingSowExtraction } from '@/src/lib/sowExtractionStore';
-import { Priority, TaskType, type Course } from '@/src/types';
+import { TaskType, type Course } from '@/src/types';
 import { buildTaskFromExtraction, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 import { analyzeSowWeekAlignment } from '@/src/lib/sowCalendarAlignment';
+import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
 import { supabase } from '@/src/lib/supabase';
 import * as coursesDb from '@/src/lib/coursesDb';
@@ -16,13 +17,8 @@ import * as taskDb from '@/src/lib/taskDb';
 
 const DEFAULT_WORKLOAD = [2, 3, 4, 6, 5, 7, 8, 4, 6, 8, 10, 9, 10, 4];
 const TASK_TYPE_OPTIONS = Object.values(TaskType);
-const PRIORITY_OPTIONS = Object.values(Priority);
-
-function priorityChipColor(p: string): string {
-  if (p === 'High') return '#ef4444';
-  if (p === 'Medium') return '#f59e0b';
-  return '#22c55e';
-}
+/** Matches upload-sow default when user has not set end-of-week in extract modal. */
+const SOW_END_OF_WEEK: 'FRI' | 'SAT' | 'SUN' = 'SUN';
 
 type EditableSubject = { subject_id: string; name: string; credit_hours: number };
 type EditableTask = {
@@ -31,12 +27,21 @@ type EditableTask = {
   type: string;
   due_date: string;
   due_time: string;
-  priority: string;
-  effort_hours: number;
   notes: string;
   suggested_week?: number;
   deadline_risk?: string;
 };
+
+function clampInt(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function resolveCourseDisplayCode(course: Course): string {
+  if (!course.id?.startsWith('gc-course-')) return course.id;
+  const firstWord = (course.name || '').trim().split(/\s+/)[0];
+  return firstWord || course.id.replace('gc-course-', '');
+}
 
 function normalizeDate(value: string): string {
   const v = value.trim();
@@ -61,6 +66,56 @@ function formatISODate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function buildInstructionalWeekStarts(
+  periods: Array<{ type?: string; startDate?: string; endDate?: string }> | undefined,
+  totalSemesterWeeks: number,
+): string[] {
+  if (!Array.isArray(periods) || periods.length === 0) return [];
+  const countedTypes = new Set(['lecture', 'exam', 'test', 'revision']);
+  const counted = periods.filter((p) => countedTypes.has(String(p?.type ?? '')));
+  if (counted.length === 0) return [];
+
+  const countedDays = new Set<string>();
+  for (const p of counted) {
+    const start = String(p?.startDate ?? '').slice(0, 10);
+    const end = String(p?.endDate ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+    const cur = new Date(`${start}T00:00:00`);
+    const endDate = new Date(`${end}T00:00:00`);
+    if (Number.isNaN(cur.getTime()) || Number.isNaN(endDate.getTime())) continue;
+    while (cur.getTime() <= endDate.getTime()) {
+      countedDays.add(formatISODate(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+  if (countedDays.size === 0) return [];
+
+  const sortedDays = [...countedDays].sort();
+  const firstCounted = sortedDays[0];
+  const first = new Date(`${firstCounted}T00:00:00`);
+  const firstDow = first.getDay();
+  if (firstDow !== 0) first.setDate(first.getDate() - firstDow);
+
+  const weekStarts: string[] = [];
+  const cursor = new Date(first);
+  const capWeeks = Math.max(totalSemesterWeeks, 20);
+  for (let guard = 0; guard < 120 && weekStarts.length < capWeeks; guard++) {
+    const weekStart = formatISODate(cursor);
+    let hasCountedDay = false;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(cursor);
+      d.setDate(d.getDate() + i);
+      if (countedDays.has(formatISODate(d))) {
+        hasCountedDay = true;
+        break;
+      }
+    }
+    if (hasCountedDay) weekStarts.push(weekStart);
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return weekStarts;
 }
 
 function formatTimeHM(d: Date): string {
@@ -88,13 +143,13 @@ export default function SowReview() {
       type: t.type || 'Assignment',
       due_date: normalizeDate(t.due_date || ''),
       due_time: (t.due_time || '23:59').slice(0, 5),
-      priority: t.priority || 'Medium',
-      effort_hours: Number(t.effort_hours ?? 2) || 2,
       notes: t.notes || '',
       suggested_week: t.suggested_week,
       deadline_risk: t.deadline_risk,
     }))
   );
+
+  const defaultSemesterStart = (academicCalendar?.startDate || user.startDate || '').slice(0, 10);
 
   const knownCourseIds = useMemo(() => new Set(courses.map((c) => c.id.toUpperCase())), [courses]);
   const editedSubjectIdSet = useMemo(
@@ -103,17 +158,71 @@ export default function SowReview() {
   );
 
   const totalSemesterWeeks = academicCalendar?.totalWeeks ?? 14;
+
+  const dueDateFromSuggestedWeek = (weekNum: number): string => {
+    const week = clampInt(weekNum, 1, Math.max(totalSemesterWeeks, 20));
+    const weekStarts = buildInstructionalWeekStarts(academicCalendar?.periods, totalSemesterWeeks);
+    const start = weekStarts[week - 1] || defaultSemesterStart;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return '';
+    const offset = SOW_END_OF_WEEK === 'FRI' ? 4 : SOW_END_OF_WEEK === 'SAT' ? 5 : 6;
+    const d = new Date(`${start}T00:00:00`);
+    d.setDate(d.getDate() + offset);
+    return formatISODate(d);
+  };
+
+  const onSuggestedWeekChange = (taskIndex: number, text: string) => {
+    const digits = text.replace(/\D/g, '');
+    if (!digits) {
+      setTasks((prev) =>
+        prev.map((row, j) => (j === taskIndex ? { ...row, suggested_week: undefined } : row))
+      );
+      return;
+    }
+    const week = clampInt(parseInt(digits, 10) || 1, 1, Math.max(totalSemesterWeeks, 20));
+    const dueFromWeek = dueDateFromSuggestedWeek(week);
+    setTasks((prev) =>
+      prev.map((row, j) =>
+        j === taskIndex
+          ? {
+              ...row,
+              suggested_week: week,
+              due_date: dueFromWeek || row.due_date,
+            }
+          : row
+      )
+    );
+  };
+
   const sowWeekAlignment = useMemo(
     () =>
       analyzeSowWeekAlignment(tasks, {
         semesterStart: user.startDate,
         totalWeeks: totalSemesterWeeks,
-        currentWeek: Math.max(1, user.currentWeek ?? 1),
+        currentWeek: Math.max(
+          1,
+          teachingWeekNumberForDate(
+            getTodayISO(),
+            academicCalendar,
+            user.startDate,
+            totalSemesterWeeks,
+            user.currentWeek ?? 1,
+          ),
+        ),
+        periods: academicCalendar?.periods,
         isBreak: user.isBreak,
         todayISO: getTodayISO(),
         semesterPhase: user.semesterPhase,
       }),
-    [tasks, user.startDate, user.currentWeek, user.isBreak, user.semesterPhase, totalSemesterWeeks]
+    [
+      tasks,
+      user.startDate,
+      user.currentWeek,
+      user.isBreak,
+      user.semesterPhase,
+      totalSemesterWeeks,
+      academicCalendar?.periods,
+      academicCalendar?.startDate,
+    ]
   );
 
   const confirmRemoveSubjectFromImport = (index: number, row: EditableSubject) => {
@@ -183,8 +292,8 @@ export default function SowReview() {
           type: t.type || 'Assignment',
           due_date: dueDate,
           due_time: (t.due_time || '23:59').slice(0, 5),
-          priority: t.priority || 'Medium',
-          effort_hours: Math.max(1, Math.min(20, Number(t.effort_hours) || 2)),
+          priority: 'Medium',
+          effort_hours: 2,
           notes: t.notes ?? '',
           deadline_risk: t.deadline_risk,
           suggested_week: t.suggested_week || getSuggestedWeekForDueDate(dueDate, user, academicCalendar?.startDate),
@@ -248,17 +357,32 @@ export default function SowReview() {
 
   const onPickerChange = (_event: unknown, selected?: Date) => {
     if (!picker) return;
-    if (!selected) {
+    const event = _event as { type?: string };
+    const dismissed = event?.type === 'dismissed';
+    if (dismissed) {
       setPicker(null);
+      return;
+    }
+    if (!selected) {
+      if (Platform.OS !== 'ios') setPicker(null);
       return;
     }
     const idx = picker.taskIndex;
     if (picker.mode === 'date') {
       const iso = formatISODate(selected);
-      setTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_date: iso } : row)));
+      const nextWeek = getSuggestedWeekForDueDate(iso, user, academicCalendar?.startDate);
+      setTasks((prev) =>
+        prev.map((row, j) =>
+          j === idx ? { ...row, due_date: iso, suggested_week: Math.max(1, nextWeek) } : row
+        )
+      );
     } else {
       const tm = formatTimeHM(selected);
       setTasks((prev) => prev.map((row, j) => (j === idx ? { ...row, due_time: tm } : row)));
+    }
+    if (Platform.OS === 'ios') {
+      setPicker((prev) => (prev ? { ...prev, value: selected } : prev));
+      return;
     }
     setPicker(null);
   };
@@ -323,6 +447,17 @@ export default function SowReview() {
               <Feather name="trash-2" size={18} color="#ef4444" />
             </Pressable>
           </View>
+          {s.subject_id.trim().toLowerCase().startsWith('gc-course-') ? (
+            <Text style={[styles.gcHint, { color: theme.textSecondary }]}>
+              Short label:{' '}
+              {resolveCourseDisplayCode({
+                id: s.subject_id,
+                name: s.name,
+                creditHours: Math.max(1, Math.min(30, Number(s.credit_hours) || 3)),
+                workload: DEFAULT_WORKLOAD,
+              })}
+            </Text>
+          ) : null}
           <TextInput
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
             value={s.subject_id}
@@ -369,6 +504,9 @@ export default function SowReview() {
         const cid = t.course_id.trim().toUpperCase();
         const unknownCourse =
           cid.length > 0 && !knownCourseIds.has(cid) && !editedSubjectIdSet.has(cid);
+        const plannerGcCourse = courses.find(
+          (c) => c.id.toUpperCase() === cid && c.id.startsWith('gc-course-')
+        );
         return (
         <View key={`task-${idx}`} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <TextInput
@@ -391,6 +529,11 @@ export default function SowReview() {
                 Code not in subjects above or your planner — task still saves with this code.
               </Text>
           ) : null}
+          {plannerGcCourse ? (
+            <Text style={[styles.gcHint, { color: theme.textSecondary }]} numberOfLines={1}>
+              Shown as: {resolveCourseDisplayCode(plannerGcCourse)}
+            </Text>
+          ) : null}
           <Text style={[styles.chipLabel, { color: theme.textSecondary }]}>Type</Text>
           <View style={styles.chipRow}>
             {TASK_TYPE_OPTIONS.map((opt) => {
@@ -403,28 +546,6 @@ export default function SowReview() {
                     styles.chip,
                     { borderColor: theme.border },
                     active && { backgroundColor: theme.primary, borderColor: theme.primary },
-                  ]}
-                >
-                  <Text style={[styles.chipText, { color: active ? '#fff' : theme.text }]}>{opt}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={[styles.chipLabel, { color: theme.textSecondary }]}>Priority</Text>
-          <View style={styles.chipRow}>
-            {PRIORITY_OPTIONS.map((opt) => {
-              const active = t.priority === opt;
-              return (
-                <Pressable
-                  key={opt}
-                  onPress={() => setTasks((prev) => prev.map((it, i) => (i === idx ? { ...it, priority: opt } : it)))}
-                  style={[
-                    styles.chip,
-                    { borderColor: theme.border },
-                    active && {
-                      backgroundColor: priorityChipColor(opt) + 'cc',
-                      borderColor: priorityChipColor(opt),
-                    },
                   ]}
                 >
                   <Text style={[styles.chipText, { color: active ? '#fff' : theme.text }]}>{opt}</Text>
@@ -458,28 +579,20 @@ export default function SowReview() {
               <Text style={[styles.pickerFieldText, { color: theme.text }]}>{t.due_time}</Text>
             </Pressable>
           </View>
+          {t.suggested_week ? (
+            <Text style={[styles.weekLine, { color: theme.textSecondary }]}>Week {t.suggested_week}</Text>
+          ) : null}
           <View style={styles.row}>
-            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Effort (h)</Text>
+            <Text style={[styles.inlineLabel, { color: theme.textSecondary }]}>Week</Text>
             <TextInput
               style={[styles.input, styles.creditInput, { color: theme.text, borderColor: theme.border }]}
-              value={String(t.effort_hours)}
-              onChangeText={(v) => {
-                const n = parseInt(v.replace(/\D/g, ''), 10);
-                setTasks((prev) =>
-                  prev.map((it, i) =>
-                    i === idx
-                      ? {
-                          ...it,
-                          effort_hours: Number.isFinite(n) && n > 0 ? Math.min(20, n) : it.effort_hours,
-                        }
-                      : it
-                  )
-                );
-              }}
+              value={t.suggested_week ? String(t.suggested_week) : ''}
+              onChangeText={(v) => onSuggestedWeekChange(idx, v)}
               keyboardType="number-pad"
-              placeholder="2"
+              placeholder="8"
               placeholderTextColor={theme.textSecondary}
             />
+            <Text style={[styles.weekEditHint, { color: theme.textSecondary }]}>Week updates due date</Text>
           </View>
           <TextInput
             style={[styles.input, styles.notes, { color: theme.text, borderColor: theme.border }]}
@@ -507,39 +620,35 @@ export default function SowReview() {
       </Pressable>
 
       {picker ? (
-        Platform.OS === 'ios' ? (
-          <Modal transparent animationType="fade" visible onRequestClose={() => setPicker(null)}>
-            <Pressable style={styles.pickerBackdrop} onPress={() => setPicker(null)}>
-              <View
-                style={[styles.pickerPanel, { backgroundColor: theme.card, borderColor: theme.border }]}
-                onStartShouldSetResponder={() => true}
+        <Modal transparent animationType="fade" visible onRequestClose={() => setPicker(null)}>
+          <Pressable style={styles.pickerBackdrop} onPress={() => setPicker(null)}>
+            <View
+              style={[styles.pickerPanel, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onStartShouldSetResponder={() => true}
+            >
+              <Text style={[styles.pickerTitle, { color: theme.text }]}>
+                {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
+              </Text>
+              <DateTimePicker
+                value={picker.value}
+                mode={picker.mode}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_e, d) => onPickerChange(_e, d ?? undefined)}
+                is24Hour
+              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.pickerDone,
+                  { backgroundColor: theme.primary },
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={() => setPicker(null)}
               >
-                <Text style={[styles.pickerTitle, { color: theme.text }]}>
-                  {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
-                </Text>
-                <DateTimePicker
-                  value={picker.value}
-                  mode={picker.mode}
-                  display="spinner"
-                  onChange={(_e, d) => onPickerChange(_e, d ?? undefined)}
-                  is24Hour
-                />
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.pickerDone,
-                    { backgroundColor: theme.primary },
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  onPress={() => setPicker(null)}
-                >
-                  <Text style={[styles.pickerDoneText, { color: theme.textInverse }]}>Done</Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </Modal>
-        ) : (
-          <DateTimePicker value={picker.value} mode={picker.mode} onChange={onPickerChange as any} is24Hour />
-        )
+                <Text style={[styles.pickerDoneText, { color: theme.textInverse }]}>Done</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
       ) : null}
       <View style={{ height: 60 }} />
     </ScrollView>
@@ -584,6 +693,9 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 11, fontWeight: '800' },
   notes: { minHeight: 56, textAlignVertical: 'top' },
   warn: { fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  gcHint: { fontSize: 12, fontWeight: '600', marginBottom: 8 },
+  weekLine: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  weekEditHint: { fontSize: 11, fontWeight: '600', flex: 1, minWidth: 120 },
   pickerField: {
     flexDirection: 'row',
     alignItems: 'center',
