@@ -212,7 +212,7 @@ export default function AddFriendScreen() {
 
   const displayList = tab === 'search' ? searchResults : suggestions;
   const tabs = [
-    { key: 'suggestions' as const, label: 'Suggested' },
+    { key: 'suggestions' as const, label: 'Nearby' },
     { key: 'search' as const, label: 'Search' },
     { key: 'incoming' as const, label: `Incoming (${incomingRequests.length})` },
     { key: 'outgoing' as const, label: `Sent (${outgoingRequests.length})` },
@@ -388,7 +388,7 @@ export default function AddFriendScreen() {
                     ? searchQuery.length < 2
                       ? 'Type at least 2 characters to search'
                       : 'No users found'
-                    : 'No suggestions available'}
+                    : 'No nearby users found'}
                 </Text>
               </View>
             )}
