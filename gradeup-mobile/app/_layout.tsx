@@ -1,12 +1,15 @@
+import '@/src/notificationsForeground';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { ThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AppProvider } from '@/src/context/AppContext';
 import { CommunityProvider } from '@/src/context/CommunityContext';
@@ -24,6 +27,9 @@ export const unstable_settings = {
   initialRouteName: '(auth)',
 };
 
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
+
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -36,11 +42,17 @@ export default function RootLayout() {
     if (error) throw error;
   }, [error]);
 
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
 
 
   if (!loaded) {
     return null;
   }
+
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -53,40 +65,73 @@ function RootLayoutNav() {
   useEffect(() => {
     const handleNotificationData = (data: Record<string, any> | undefined, delayed?: boolean) => {
       if (!data?.type) return;
-      const nav = (fn: () => void) => delayed ? setTimeout(fn, 100) : fn();
+      const nav = (fn: () => void) => (delayed ? setTimeout(fn, 100) : fn());
       switch (data.type) {
         case 'revision':
-          nav(() => router.push('/revision-due')); break;
+          nav(() => router.push('/revision-due'));
+          break;
         case 'quiz_invite':
-          if (data.sessionId) nav(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any)); break;
+          if (data.sessionId) nav(() => router.push({ pathname: '/match-lobby', params: { sessionId: data.sessionId } } as any));
+          break;
         case 'task_reminder':
         case 'task_overdue':
-          if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any)); break;
+          if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any));
+          break;
         case 'shared_task':
-          nav(() => router.push('/(tabs)/community' as any)); break;
+          nav(() => router.push('/(tabs)/community' as any));
+          break;
         case 'community_reaction': {
           const msg = String(data.message || '').toLowerCase();
-          const isFriendRequestTap =
-            data.reactionType === '👋' && msg.includes('friend request');
+          const isFriendRequestTap = data.reactionType === '👋' && msg.includes('friend request');
           if (isFriendRequestTap) {
-            nav(() =>
-              router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any),
-            );
+            nav(() => router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any));
           } else {
             nav(() => router.push('/(tabs)/community' as any));
           }
           break;
         }
         case 'classroom_sync':
-          nav(() => router.push('/(tabs)/planner' as any)); break;
+          nav(() => router.push('/(tabs)/planner' as any));
+          break;
         case 'weekly_summary':
-          nav(() => router.push('/(tabs)/planner' as any)); break;
+          nav(() => router.push('/(tabs)/planner' as any));
+          break;
         case 'study_complete':
-          nav(() => router.push('/study-timer' as any)); break;
+          nav(() => router.push('/study-timer' as any));
+          break;
         case 'attendance_checkin': {
           // Banner tap should open the in-app notification manager where the user can answer
           // and the item will auto-disappear after recording.
-          nav(() => router.push('/community/notifications' as any));
+          nav(() =>
+            router.push({
+              pathname: '/community/notifications',
+              params: {
+                fromAttendanceTap: '1',
+                timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
+                scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
+                subjectCode: String((data as any)?.subjectCode ?? ''),
+                subjectName: String((data as any)?.subjectName ?? ''),
+                subjectKey: String((data as any)?.subjectKey ?? ''),
+                displaySubject: String((data as any)?.displaySubject ?? ''),
+                fireAtMs: String((data as any)?.fireAtMs ?? ''),
+              },
+            } as any),
+          );
+          // Persist a copy so iOS can restore even if params/lastResponse are unavailable.
+          void AsyncStorage.setItem(
+            'lastAttendanceTapV1',
+            JSON.stringify({
+              type: 'attendance_checkin',
+              timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
+              scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
+              subjectCode: String((data as any)?.subjectCode ?? ''),
+              subjectName: String((data as any)?.subjectName ?? ''),
+              subjectKey: String((data as any)?.subjectKey ?? ''),
+              displaySubject: String((data as any)?.displaySubject ?? ''),
+              fireAtMs: String((data as any)?.fireAtMs ?? ''),
+              savedAt: new Date().toISOString(),
+            }),
+          ).catch(() => {});
           break;
         }
       }

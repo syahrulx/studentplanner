@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { AppState as RNAppState } from 'react-native';
+import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import {

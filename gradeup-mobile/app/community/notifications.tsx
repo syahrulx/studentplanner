@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,7 +20,8 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
-import { recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
+import { attendanceOccurrenceKey, getAnsweredOccurrenceSet, recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -86,19 +87,317 @@ type AttendanceNotifItem = {
   scheduledStartAt: string; // ISO
   subjectCode: string;
   subjectName: string;
+  subjectKey?: string;
+  displaySubject?: string;
+  bodyText?: string;
+  fireAtMs?: number; // exact ms from scheduler payload (preferred for de-dupe)
   fireAtISO?: string; // when the notification will fire, if known
   kind: 'scheduled' | 'presented';
 };
+
+function parseMs(iso: string): number | null {
+  const s = String(iso || '').trim();
+  const t = Date.parse(s);
+  if (Number.isFinite(t)) return t;
+  // Legacy payloads sometimes stored local wall-time strings that Date.parse cannot reliably read.
+  // Accept ISO-ish / slash variants and interpret them as local time.
+  const m =
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/.exec(s) ||
+    /^(\d{4})\/(\d{2})\/(\d{2})[T\s](\d{2}):(\d{2})/.exec(s);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+  const dt = new Date(year, month - 1, day, hour, minute, 0, 0).getTime();
+  return Number.isFinite(dt) ? dt : null;
+}
+
+function triggerFireMs(trigger: any): number | null {
+  if (trigger == null) return null;
+  // Expo can surface DATE triggers with different shapes across versions/platforms.
+  if (trigger instanceof Date) {
+    const t = trigger.getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  if (typeof trigger === 'number' && Number.isFinite(trigger)) return trigger;
+  if (typeof trigger === 'string') {
+    const n = Number(trigger);
+    if (Number.isFinite(n)) return n;
+    const t = Date.parse(trigger);
+    return Number.isFinite(t) ? t : null;
+  }
+  if (typeof trigger === 'object') {
+    const cand = (trigger as any).date ?? (trigger as any).value ?? (trigger as any).timestamp;
+    if (cand instanceof Date) {
+      const t = cand.getTime();
+      return Number.isFinite(t) ? t : null;
+    }
+    if (typeof cand === 'number' && Number.isFinite(cand)) return cand;
+    if (typeof cand === 'string') {
+      const n = Number(cand);
+      if (Number.isFinite(n)) return n;
+      const t = Date.parse(cand);
+      return Number.isFinite(t) ? t : null;
+    }
+  }
+  return null;
+}
+
+function parseSubjectFromAttendanceBody(body: string): string {
+  const s = String(body || '').trim();
+  const m = /^Did you attend class\s+(.+?)\s+in\s+5\s+more\s+minutes/i.exec(s);
+  if (!m?.[1]) return '';
+  return m[1]
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function canonicalAttendanceSubject(
+  it: Pick<AttendanceNotifItem, 'subjectCode' | 'subjectName' | 'bodyText' | 'displaySubject' | 'subjectKey'>,
+): string {
+  const fromBody = parseSubjectFromAttendanceBody(it.bodyText || '');
+  if (fromBody) return fromBody;
+  const disp = String(it.displaySubject || '').trim();
+  if (disp) {
+    const fromSynthetic = parseSubjectFromAttendanceBody(
+      `Did you attend class "${disp}" in 5 more minutes?`,
+    );
+    if (fromSynthetic) return fromSynthetic;
+  }
+  const display = disp.toLowerCase();
+  if (display) return display;
+  const stored = String(it.subjectKey || '').trim().toLowerCase();
+  if (stored) return stored;
+  const name = String(it.subjectName || '').trim().toLowerCase();
+  const code = String(it.subjectCode || '').trim().toLowerCase();
+  return (name || code || 'class').trim();
+}
+
+/** Same 5-minute wall-clock slot as `attendanceNotifications` canon (duplicate rows share this). */
+function classStartCanonSlotMs(iso: string): number | null {
+  const t = parseMs(iso);
+  if (t === null) return null;
+  const w = 5 * 60_000;
+  return Math.round(t / w) * w;
+}
+
+/**
+ * Timezone-insensitive wall-time key extracted from the stored string when possible.
+ * This collapses legacy duplicates where one payload saved `scheduledStartAt` as UTC and another as local.
+ */
+function classLooseWallMinuteKey(iso: string): string | null {
+  const s = String(iso || '').trim();
+  // Common ISO-ish forms: 2026-04-19T12:25:00.000Z / 2026-04-19T12:25:00+08:00
+  const m =
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/.exec(s) ||
+    /^(\d{4})\/(\d{2})\/(\d{2})[T\s](\d{2}):(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${Number(m[2])}-${Number(m[3])}_${Number(m[4])}_${Number(m[5])}`;
+  return null;
+}
+
+/** Local calendar date + hour + minute — stable across duplicate rows / ISO quirks for the same class time. */
+function classLocalWallMinuteKey(iso: string): string | null {
+  const loose = classLooseWallMinuteKey(iso);
+  if (loose !== null) return loose;
+  const t = parseMs(iso);
+  if (t === null) return null;
+  const d = new Date(t);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}_${d.getHours()}_${d.getMinutes()}`;
+}
+
+function normalizedAttendanceBodyText(it: Pick<AttendanceNotifItem, 'bodyText' | 'displaySubject'>): string {
+  const raw = String(it.bodyText || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\\"/g, '"')
+    .replace(/\s+/g, ' ');
+  if (raw) return raw;
+  const disp = String(it.displaySubject || '').trim();
+  if (disp) {
+    return `did you attend class "${disp.toLowerCase()}" in 5 more minutes?`.replace(/\s+/g, ' ');
+  }
+  return '';
+}
+
+function classStartMinuteKey(iso: string): string {
+  const t = parseMs(iso);
+  if (t === null) return String(iso || '').trim();
+  const floored = Math.floor(t / 60_000) * 60_000;
+  return new Date(floored).toISOString();
+}
+
+function attendanceUiDedupeKeyFromFields(
+  scheduledStartAt: string,
+  subjectCode: string,
+  subjectName: string,
+  bodyText?: string,
+  subjectKey?: string,
+  displaySubject?: string,
+): string {
+  const t = parseMs(scheduledStartAt);
+  const isoNorm = t !== null ? new Date(t).toISOString() : String(scheduledStartAt || '').trim();
+  return `${canonicalAttendanceSubject({ subjectCode, subjectName, bodyText, subjectKey, displaySubject })}|${classStartMinuteKey(isoNorm)}`;
+}
+
+/** Fire time from trigger, or class start − 5 min (same as schedule math) when trigger missing. */
+function effectiveFireMs(it: AttendanceNotifItem): number | null {
+  if (typeof it.fireAtMs === 'number' && Number.isFinite(it.fireAtMs)) return it.fireAtMs;
+  const fromTrigger = parseMs(it.fireAtISO || '');
+  if (fromTrigger !== null) return fromTrigger;
+  const start = parseMs(it.scheduledStartAt);
+  if (start !== null) return start - 5 * 60_000;
+  return null;
+}
+
+/** 5-minute bucket so duplicate schedules / tray copies with slightly different timestamps still merge. */
+function effectiveFireDedupeBucketMs(it: AttendanceNotifItem): number | null {
+  const fm = effectiveFireMs(it);
+  if (fm === null) return null;
+  const w = 5 * 60_000;
+  return Math.round(fm / w) * w;
+}
+
+/**
+ * One UI row per reminder: same canonical label + same local class start (date + hour + minute).
+ * Duplicate timetable rows / tray copies for the same session share this even if ISO strings differ slightly.
+ */
+function attendanceUiDedupeKey(it: AttendanceNotifItem): string {
+  const subj = canonicalAttendanceSubject(it);
+  const wall = classLocalWallMinuteKey(it.scheduledStartAt);
+  if (wall !== null) return `${subj}|wall:${wall}`;
+  const nb = normalizedAttendanceBodyText(it);
+  const fm = effectiveFireMs(it);
+  if (nb && fm !== null) {
+    const w = 15 * 60_000;
+    return `b:${nb}|f:${Math.round(fm / w) * w}`;
+  }
+  const slot = classStartCanonSlotMs(it.scheduledStartAt);
+  if (slot !== null) return `${subj}|slot:${slot}`;
+  const fireB = effectiveFireDedupeBucketMs(it);
+  if (fireB !== null) return `${subj}|fire:${fireB}`;
+  return attendanceUiDedupeKeyFromFields(
+    it.scheduledStartAt,
+    it.subjectCode,
+    it.subjectName,
+    it.bodyText,
+    it.subjectKey,
+    it.displaySubject,
+  );
+}
+
+/** Same key as `attendanceUiDedupeKey` for a row built from Expo payload + optional trigger fire ISO. */
+function attendanceUiDedupeKeyLoose(parts: {
+  scheduledStartAt: string;
+  subjectCode: string;
+  subjectName: string;
+  bodyText?: string;
+  subjectKey?: string;
+  displaySubject?: string;
+  fireAtISO?: string;
+}): string {
+  const t = parseMs(parts.scheduledStartAt);
+  const scheduledStartAt = t !== null ? new Date(t).toISOString() : String(parts.scheduledStartAt || '').trim();
+  return attendanceUiDedupeKey({
+    id: '',
+    timetableEntryId: '',
+    scheduledStartAt,
+    subjectCode: parts.subjectCode,
+    subjectName: parts.subjectName,
+    bodyText: parts.bodyText,
+    subjectKey: parts.subjectKey,
+    displaySubject: parts.displaySubject,
+    fireAtISO: parts.fireAtISO,
+    kind: 'scheduled',
+  });
+}
+
+function betterAttendanceNotif(a: AttendanceNotifItem, b: AttendanceNotifItem): AttendanceNotifItem {
+  const now = Date.now();
+  const fireMs = (x: AttendanceNotifItem) => effectiveFireMs(x) ?? 0;
+  const aFutureSched = a.kind === 'scheduled' && fireMs(a) > now;
+  const bFutureSched = b.kind === 'scheduled' && fireMs(b) > now;
+  // Keep a future *scheduled* row so the OS still fires at T−5; presented is only a tray copy.
+  if (aFutureSched !== bFutureSched) return aFutureSched ? a : b;
+  if (a.kind !== b.kind) {
+    if (a.kind === 'scheduled') return a;
+    if (b.kind === 'scheduled') return b;
+  }
+  const at = fireMs(a) || Date.parse(a.scheduledStartAt) || 0;
+  const bt = fireMs(b) || Date.parse(b.scheduledStartAt) || 0;
+  if (at !== bt) return at <= bt ? a : b;
+  return a.id <= b.id ? a : b;
+}
+
+/**
+ * Never cancel a future scheduled notification unless the winner is also a future scheduled one.
+ * Otherwise we can drop the only OS alarm while "cleaning" tray duplicates (no banner at T−5).
+ */
+function cancelDuplicateAttendanceCopy(winner: AttendanceNotifItem, x: AttendanceNotifItem) {
+  if (!x.id || x.id === winner.id) return;
+  const now = Date.now();
+  const wf = effectiveFireMs(winner);
+  const xf = effectiveFireMs(x);
+  const winnerFutureSched = winner.kind === 'scheduled' && wf !== null && wf > now;
+  if (x.kind === 'presented') {
+    void Notifications.dismissNotificationAsync(x.id).catch(() => {});
+    return;
+  }
+  if (xf === null || xf <= now) {
+    void Notifications.cancelScheduledNotificationAsync(x.id).catch(() => {});
+    return;
+  }
+  if (winnerFutureSched && winner.kind === 'scheduled') {
+    void Notifications.cancelScheduledNotificationAsync(x.id).catch(() => {});
+  }
+}
+
+/** Same class reminder: canonical subject + notification fire minute (UTC ms floor). Catches ISO/wall splits from pass 1. */
+function attendanceSessionMergeKey(it: AttendanceNotifItem): string {
+  const fm = effectiveFireMs(it);
+  if (fm !== null && Number.isFinite(fm)) {
+    const m = Math.floor(fm / 60_000) * 60_000;
+    return `${canonicalAttendanceSubject(it)}|t:${m}`;
+  }
+  const wall = classLocalWallMinuteKey(it.scheduledStartAt);
+  if (wall !== null) return `${canonicalAttendanceSubject(it)}|wall:${wall}`;
+  return attendanceUiDedupeKey(it);
+}
+
+function collapseDuplicateAttendanceCopies(items: AttendanceNotifItem[]): AttendanceNotifItem[] {
+  const sub = new Map<string, AttendanceNotifItem[]>();
+  for (const it of items) {
+    const k = attendanceSessionMergeKey(it);
+    const arr = sub.get(k) ?? [];
+    arr.push(it);
+    sub.set(k, arr);
+  }
+  const out: AttendanceNotifItem[] = [];
+  for (const arr of sub.values()) {
+    const winner = arr.reduce((a, b) => betterAttendanceNotif(a, b));
+    out.push(winner);
+    for (const x of arr) {
+      cancelDuplicateAttendanceCopy(winner, x);
+    }
+  }
+  return out.sort((a, b) => (effectiveFireMs(a) ?? 0) - (effectiveFireMs(b) ?? 0));
+}
 
 export default function NotificationsScreen() {
   const theme = useTheme();
   const { language } = useApp();
   const T = useTranslations(language);
   const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
+  const params = useLocalSearchParams<Record<string, string | string[]>>();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
   const [circleInvites, setCircleInvites] = useState<CircleInvitation[]>([]);
   const [attendanceNotifs, setAttendanceNotifs] = useState<AttendanceNotifItem[]>([]);
+  const [tapAttendance, setTapAttendance] = useState<AttendanceNotifItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
   const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
@@ -156,12 +455,16 @@ export default function NotificationsScreen() {
 
   const loadAttendanceNotifs = useCallback(async () => {
     try {
+      const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
       const [scheduled, presented] = await Promise.all([
         Notifications.getAllScheduledNotificationsAsync().catch(() => []),
         Notifications.getPresentedNotificationsAsync().catch(() => []),
       ]);
 
-      const pick = (n: Notifications.Notification | Notifications.ScheduledNotification): AttendanceNotifItem | null => {
+      const pick = (
+        n: Notifications.Notification | Notifications.ScheduledNotification,
+        sourceKind: 'scheduled' | 'presented',
+      ): AttendanceNotifItem | null => {
         const hasRequest = n && typeof n === 'object' && 'request' in (n as any);
         const req: any = hasRequest ? (n as any).request : null;
         const id = String((hasRequest ? req?.identifier : (n as any).identifier) || '');
@@ -170,16 +473,37 @@ export default function NotificationsScreen() {
         const data = (content?.data ?? {}) as Record<string, any>;
         if (data?.type !== 'attendance_checkin') return null;
         const timetableEntryId = String(data.timetableEntryId || '').trim();
-        const scheduledStartAt = String(data.scheduledStartAt || '').trim();
+        const rawScheduledStartAt = String(data.scheduledStartAt || '').trim();
+        const trigger: any = (hasRequest ? req?.trigger : (n as any).trigger) ?? null;
+        const triggerMs = triggerFireMs(trigger);
+        const fireAtISO = triggerMs !== null ? new Date(triggerMs).toISOString() : undefined;
+
+        let scheduledStartAt = (() => {
+          const t = Date.parse(rawScheduledStartAt);
+          if (!Number.isFinite(t)) return rawScheduledStartAt;
+          return new Date(t).toISOString();
+        })();
+
+        if (!scheduledStartAt) {
+          const ft = Date.parse(String(fireAtISO || '').trim());
+          if (!Number.isFinite(ft)) return null;
+          // Notification fires 5 minutes before class start.
+          scheduledStartAt = new Date(ft + 5 * 60_000).toISOString();
+        }
+
         if (!id || !timetableEntryId || !scheduledStartAt) return null;
         const subjectCode = String(data.subjectCode || '').trim();
         const subjectName = String(data.subjectName || '').trim();
-
-        const trigger: any = (hasRequest ? req?.trigger : (n as any).trigger) ?? null;
-        const fireAtISO =
-          trigger && typeof trigger === 'object' && trigger.date
-            ? new Date(trigger.date).toISOString()
-            : undefined;
+        const subjectKey = String(data.subjectKey || '').trim();
+        const displaySubject = String(data.displaySubject || '').trim();
+        const fireAtMsRaw = (data as any)?.fireAtMs;
+        const fireAtMs =
+          typeof fireAtMsRaw === 'number' && Number.isFinite(fireAtMsRaw)
+            ? fireAtMsRaw
+            : typeof fireAtMsRaw === 'string' && fireAtMsRaw.trim() && Number.isFinite(Number(fireAtMsRaw))
+              ? Number(fireAtMsRaw)
+              : triggerMs ?? undefined;
+        const bodyText = String(content?.body || '').trim();
 
         return {
           id,
@@ -187,50 +511,193 @@ export default function NotificationsScreen() {
           scheduledStartAt,
           subjectCode,
           subjectName,
+          subjectKey: subjectKey || undefined,
+          displaySubject: displaySubject || undefined,
+          bodyText: bodyText || undefined,
+          fireAtMs,
           fireAtISO,
-          kind: hasRequest ? 'presented' : 'scheduled',
+          kind: sourceKind,
         };
       };
 
       const itemsRaw = [
-        ...(scheduled ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
-        ...(presented ?? []).map(pick).filter(Boolean) as AttendanceNotifItem[],
+        ...(scheduled ?? []).map((n) => pick(n, 'scheduled')).filter(Boolean) as AttendanceNotifItem[],
+        ...(presented ?? []).map((n) => pick(n, 'presented')).filter(Boolean) as AttendanceNotifItem[],
       ];
 
-      const normalizeIsoKey = (iso: string): string => {
-        const s = String(iso || '').trim();
-        const t = Date.parse(s);
-        if (!Number.isFinite(t)) return s;
-        return new Date(t).toISOString();
-      };
-
-      // De-dupe by occurrence (timetableEntryId + scheduledStartAt). Prefer presented over scheduled.
-      const byKey = new Map<string, AttendanceNotifItem>();
+      // De-dupe by class slot + subject (duplicate timetable rows keep different entry IDs).
+      const groups = new Map<string, AttendanceNotifItem[]>();
       for (const it of itemsRaw) {
-        const k = `${it.timetableEntryId}|${normalizeIsoKey(it.scheduledStartAt)}`;
-        const prev = byKey.get(k);
-        if (!prev) {
-          byKey.set(k, it);
-        } else if (prev.kind === 'scheduled' && it.kind === 'presented') {
-          byKey.set(k, it);
+        const k = attendanceUiDedupeKey(it);
+        const arr = groups.get(k) ?? [];
+        arr.push(it);
+        groups.set(k, arr);
+      }
+
+      const items: AttendanceNotifItem[] = [];
+      for (const arr of groups.values()) {
+        const winner = arr.reduce((a, b) => betterAttendanceNotif(a, b));
+        items.push(winner);
+        for (const x of arr) {
+          cancelDuplicateAttendanceCopy(winner, x);
         }
       }
 
-      const items = Array.from(byKey.values()).sort((a, b) => {
-        const at = Date.parse(a.fireAtISO || a.scheduledStartAt) || 0;
-        const bt = Date.parse(b.fireAtISO || b.scheduledStartAt) || 0;
+      const byUiKey = new Map<string, AttendanceNotifItem>();
+      for (const it of items) {
+        const k = attendanceUiDedupeKey(it);
+        const prev = byUiKey.get(k);
+        if (!prev) {
+          byUiKey.set(k, it);
+          continue;
+        }
+        const w = betterAttendanceNotif(prev, it);
+        const loser = w.id === prev.id ? it : prev;
+        cancelDuplicateAttendanceCopy(w, loser);
+        byUiKey.set(k, w);
+      }
+      const mergedOnce = Array.from(byUiKey.values()).sort((a, b) => {
+        const at = effectiveFireMs(a) ?? (Date.parse(a.scheduledStartAt) || 0);
+        const bt = effectiveFireMs(b) ?? (Date.parse(b.scheduledStartAt) || 0);
         return at - bt;
       });
-      setAttendanceNotifs(items);
+      const finalItems = collapseDuplicateAttendanceCopies(mergedOnce);
+      // Only show items once the OS has actually fired (presented) or the fire time has passed.
+      // This avoids showing a "preview" card before the popup/banner appears.
+      const now = Date.now();
+      const visible = finalItems.filter((it) => {
+        const occ = attendanceOccurrenceKey(it.timetableEntryId, it.scheduledStartAt);
+        if (answered.has(occ)) return false;
+        if (it.kind === 'presented') return true;
+        const fm = effectiveFireMs(it);
+        if (fm === null) return false;
+        return fm <= now;
+      });
+      setAttendanceNotifs(() => {
+        const merged = tapAttendance ? collapseDuplicateAttendanceCopies([...visible, tapAttendance]) : visible;
+        return merged;
+      });
     } catch {
       setAttendanceNotifs([]);
     }
-  }, []);
+  }, [tapAttendance]);
 
   useEffect(() => {
     loadReactions();
     void loadAttendanceNotifs();
   }, [loadReactions]);
+
+  // If user arrived by tapping the OS popup, show that card immediately even if iOS hasn't populated
+  // the presented notifications list yet.
+  useEffect(() => {
+    const get1 = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+    if (!get1(params?.fromAttendanceTap)) return;
+    const timetableEntryId = String(get1(params.timetableEntryId) || '').trim();
+    const scheduledStartAt = String(get1(params.scheduledStartAt) || '').trim();
+    if (!timetableEntryId || !scheduledStartAt) return;
+    const fireAtMsNum = Number(String(get1(params.fireAtMs) || '').trim());
+    const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
+    const injected: AttendanceNotifItem = {
+      id: `tap-${timetableEntryId}-${scheduledStartAt}`,
+      timetableEntryId,
+      scheduledStartAt,
+      subjectCode: String(get1(params.subjectCode) || '').trim(),
+      subjectName: String(get1(params.subjectName) || '').trim(),
+      subjectKey: String(get1(params.subjectKey) || '').trim() || undefined,
+      displaySubject: String(get1(params.displaySubject) || '').trim() || undefined,
+      bodyText: undefined,
+      fireAtMs,
+      fireAtISO: fireAtMs != null ? new Date(fireAtMs).toISOString() : undefined,
+      kind: 'presented',
+    };
+
+    setTapAttendance(injected);
+    setAttendanceNotifs((prev) => collapseDuplicateAttendanceCopies([...prev, injected]));
+  }, [
+    params?.fromAttendanceTap,
+    params?.timetableEntryId,
+    params?.scheduledStartAt,
+    params?.subjectCode,
+    params?.subjectName,
+    params?.subjectKey,
+    params?.displaySubject,
+    params?.fireAtMs,
+  ]);
+
+  // Fallback: on iOS, router params may not arrive consistently right after tapping a banner.
+  // Pull the last notification response directly and inject the attendance card.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await Notifications.getLastNotificationResponseAsync();
+        if (cancelled || !resp) return;
+        const data = resp.notification?.request?.content?.data as Record<string, any> | undefined;
+        if (!data || data.type !== 'attendance_checkin') return;
+        const timetableEntryId = String(data.timetableEntryId || '').trim();
+        const scheduledStartAt = String(data.scheduledStartAt || '').trim();
+        if (!timetableEntryId || !scheduledStartAt) return;
+        const fireAtMsNum = Number(String(data.fireAtMs || '').trim());
+        const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
+        const injected: AttendanceNotifItem = {
+          id: `tap-last-${timetableEntryId}-${scheduledStartAt}`,
+          timetableEntryId,
+          scheduledStartAt,
+          subjectCode: String(data.subjectCode || '').trim(),
+          subjectName: String(data.subjectName || '').trim(),
+          subjectKey: String(data.subjectKey || '').trim() || undefined,
+          displaySubject: String(data.displaySubject || '').trim() || undefined,
+          bodyText: undefined,
+          fireAtMs,
+          fireAtISO: fireAtMs != null ? new Date(fireAtMs).toISOString() : undefined,
+          kind: 'presented',
+        };
+        setTapAttendance(injected);
+        setAttendanceNotifs((prev) => collapseDuplicateAttendanceCopies([...prev, injected]));
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Strong fallback: restore the tapped attendance payload from storage (written at tap-time in root layout).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
+        const raw = await AsyncStorage.getItem('lastAttendanceTapV1');
+        if (cancelled || !raw) return;
+        const data = JSON.parse(raw) as Record<string, any>;
+        if (!data || data.type !== 'attendance_checkin') return;
+        const timetableEntryId = String(data.timetableEntryId || '').trim();
+        const scheduledStartAt = String(data.scheduledStartAt || '').trim();
+        if (!timetableEntryId || !scheduledStartAt) return;
+        if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) return;
+        const fireAtMsNum = Number(String(data.fireAtMs || '').trim());
+        const fireAtMs = Number.isFinite(fireAtMsNum) ? fireAtMsNum : undefined;
+        const injected: AttendanceNotifItem = {
+          id: `tap-store-${timetableEntryId}-${scheduledStartAt}`,
+          timetableEntryId,
+          scheduledStartAt,
+          subjectCode: String(data.subjectCode || '').trim(),
+          subjectName: String(data.subjectName || '').trim(),
+          subjectKey: String(data.subjectKey || '').trim() || undefined,
+          displaySubject: String(data.displaySubject || '').trim() || undefined,
+          bodyText: undefined,
+          fireAtMs,
+          fireAtISO: fireAtMs != null ? new Date(fireAtMs).toISOString() : undefined,
+          kind: 'presented',
+        };
+        setTapAttendance(injected);
+        setAttendanceNotifs((prev) => collapseDuplicateAttendanceCopies([...prev, injected]));
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -261,7 +728,9 @@ export default function NotificationsScreen() {
     async (item: AttendanceNotifItem, status: AttendanceStatus) => {
       setAttendanceBusyIds((prev) => new Set(prev).add(item.id));
       try {
-        const occKey = `${item.timetableEntryId}|${item.scheduledStartAt}`;
+        const occKey = attendanceOccurrenceKey(item.timetableEntryId, item.scheduledStartAt);
+        const uiKey = attendanceUiDedupeKey(item);
+        const sessionKey = attendanceSessionMergeKey(item);
         await recordAttendanceEvent({
           timetableEntryId: item.timetableEntryId,
           scheduledStartAt: item.scheduledStartAt,
@@ -271,16 +740,92 @@ export default function NotificationsScreen() {
           source: 'in_app',
         });
 
-        // Remove the system notification as well.
-        if (item.kind === 'scheduled') {
-          await Notifications.cancelScheduledNotificationAsync(item.id).catch(() => {});
-        } else {
-          await Notifications.dismissNotificationAsync(item.id).catch(() => {});
-        }
+        // Remove the system notification(s) as well (there can be duplicates with different identifiers).
+        try {
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync().catch(() => [] as any[]);
+          for (const n of scheduled ?? []) {
+            const hasRequest = n && typeof n === 'object' && 'request' in (n as any);
+            const req: any = hasRequest ? (n as any).request : null;
+            const content: any = hasRequest ? req?.content : (n as any).content;
+            const data = (content?.data ?? {}) as Record<string, any>;
+            if (!data || data.type !== 'attendance_checkin') continue;
+            const tid = String(data.timetableEntryId || '').trim();
+            const iso = String(data.scheduledStartAt || '').trim();
+            const body = String((hasRequest ? req?.content : (n as any).content)?.body || '').trim();
+            if (!tid || !iso) continue;
+            const trigger: any = (hasRequest ? req?.trigger : (n as any).trigger) ?? null;
+            let fireAtISO =
+              trigger && typeof trigger === 'object' && trigger.date != null
+                ? new Date(trigger.date as string | number | Date).toISOString()
+                : undefined;
+            if (!fireAtISO) {
+              const st = parseMs(iso);
+              if (st !== null) fireAtISO = new Date(st - 5 * 60_000).toISOString();
+            }
+            const k = attendanceUiDedupeKeyLoose({
+              scheduledStartAt: iso,
+              subjectCode: String(data.subjectCode || '').trim(),
+              subjectName: String(data.subjectName || '').trim(),
+              bodyText: body || undefined,
+              subjectKey: String(data.subjectKey || '').trim() || undefined,
+              displaySubject: String(data.displaySubject || '').trim() || undefined,
+              fireAtISO,
+            });
+            if (k === uiKey || attendanceOccurrenceKey(tid, iso) === occKey) {
+              const nid = String((hasRequest ? req?.identifier : (n as any).identifier) || '');
+              if (nid) await Notifications.cancelScheduledNotificationAsync(nid).catch(() => {});
+            }
+          }
+        } catch {}
 
+        try {
+          const presented = await Notifications.getPresentedNotificationsAsync().catch(() => [] as any[]);
+          for (const n of presented ?? []) {
+            const req = (n as any)?.request;
+            const data = req?.content?.data as Record<string, any> | undefined;
+            if (!data || data.type !== 'attendance_checkin') continue;
+            const tid = String(data.timetableEntryId || '').trim();
+            const iso = String(data.scheduledStartAt || '').trim();
+            const body = String(req?.content?.body || '').trim();
+            if (!tid || !iso) continue;
+            const trigger: any = req?.trigger ?? null;
+            let fireAtISO =
+              trigger && typeof trigger === 'object' && trigger.date != null
+                ? new Date(trigger.date as string | number | Date).toISOString()
+                : undefined;
+            if (!fireAtISO) {
+              const st = parseMs(iso);
+              if (st !== null) fireAtISO = new Date(st - 5 * 60_000).toISOString();
+            }
+            const k = attendanceUiDedupeKeyLoose({
+              scheduledStartAt: iso,
+              subjectCode: String(data.subjectCode || '').trim(),
+              subjectName: String(data.subjectName || '').trim(),
+              bodyText: body || undefined,
+              subjectKey: String(data.subjectKey || '').trim() || undefined,
+              displaySubject: String(data.displaySubject || '').trim() || undefined,
+              fireAtISO,
+            });
+            if (k === uiKey || attendanceOccurrenceKey(tid, iso) === occKey) {
+              const nid = String((n as any)?.request?.identifier || '');
+              if (nid) await Notifications.dismissNotificationAsync(nid).catch(() => {});
+            }
+          }
+        } catch {}
+
+        // Remove all visible duplicates for the same class session.
         setAttendanceNotifs((prev) =>
-          prev.filter((x) => `${x.timetableEntryId}|${x.scheduledStartAt}` !== occKey),
+          prev.filter((x) => {
+            if (attendanceSessionMergeKey(x) === sessionKey) return false;
+            if (attendanceUiDedupeKey(x) === uiKey) return false;
+            const ok = attendanceOccurrenceKey(x.timetableEntryId, x.scheduledStartAt);
+            return ok !== occKey;
+          }),
         );
+
+        // Prevent the same tapped card from reappearing on refresh.
+        setTapAttendance(null);
+        void AsyncStorage.removeItem('lastAttendanceTapV1').catch(() => {});
       } finally {
         setAttendanceBusyIds((prev) => {
           const next = new Set(prev);
@@ -350,7 +895,12 @@ export default function NotificationsScreen() {
           <View style={{ marginBottom: 16 }}>
             <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Class check-ins</Text>
             {attendanceNotifs.map((n) => {
-              const subject = (n.subjectName || n.subjectCode || 'Class').trim();
+              const raw = canonicalAttendanceSubject(n);
+              const subject =
+                (n.displaySubject || '').trim() ||
+                (raw && raw !== 'class' ? raw.charAt(0).toUpperCase() + raw.slice(1) : '') ||
+                (n.subjectName || n.subjectCode || 'Class').trim() ||
+                'Class';
               const when = (() => {
                 const d = n.fireAtISO ? new Date(n.fireAtISO) : null;
                 if (!d || Number.isNaN(d.getTime())) return '';
@@ -359,7 +909,7 @@ export default function NotificationsScreen() {
               const busy = attendanceBusyIds.has(n.id);
               return (
                 <View
-                  key={`${n.timetableEntryId}-${n.scheduledStartAt}`}
+                  key={attendanceUiDedupeKey(n)}
                   style={[styles.shareRequestCard, { backgroundColor: theme.primary + '08', borderColor: theme.primary + '25' }]}
                 >
                   <View
