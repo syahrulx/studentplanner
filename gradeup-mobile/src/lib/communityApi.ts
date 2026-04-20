@@ -334,7 +334,7 @@ export async function removeFriend(friendshipId: string) {
   if (error) throw error;
 }
 
-/** Block a user */
+/** Block a user by friendship id (legacy — requires an existing friendship row). */
 export async function blockUser(friendshipId: string) {
   const { data, error } = await supabase
     .from('friendships')
@@ -344,6 +344,93 @@ export async function blockUser(friendshipId: string) {
     .single();
   if (error) throw error;
   return data;
+}
+
+/**
+ * Block another user by their user id. Works whether or not a friendship exists.
+ * - If a friendship row exists between the two users, marks it `blocked`.
+ * - If no friendship exists, inserts one with status `blocked` so the block is persisted
+ *   on the server and respected by any query that filters out blocked users.
+ * Required by Apple App Store Guideline 1.2 (UGC: mechanism for blocking abusive users).
+ */
+export async function blockUserByUserId(userId: string, blockedUserId: string) {
+  if (!userId || !blockedUserId || userId === blockedUserId) {
+    throw new Error('Invalid block target');
+  }
+  const { data: existing } = await supabase
+    .from('friendships')
+    .select('id')
+    .or(
+      `and(requester_id.eq.${userId},addressee_id.eq.${blockedUserId}),and(requester_id.eq.${blockedUserId},addressee_id.eq.${userId})`
+    )
+    .maybeSingle();
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'blocked' })
+      .eq('id', existing.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error: insertErr } = await supabase
+    .from('friendships')
+    .insert({ requester_id: userId, addressee_id: blockedUserId, status: 'blocked' });
+  if (insertErr) throw insertErr;
+}
+
+/** Unblock a user. Removes the friendship row (treated as "no relationship"). */
+export async function unblockUserByUserId(userId: string, blockedUserId: string) {
+  const { data } = await supabase
+    .from('friendships')
+    .select('id, status')
+    .or(
+      `and(requester_id.eq.${userId},addressee_id.eq.${blockedUserId}),and(requester_id.eq.${blockedUserId},addressee_id.eq.${userId})`
+    )
+    .maybeSingle();
+
+  if (!data?.id) return;
+  if (data.status !== 'blocked') return;
+  const { error } = await supabase.from('friendships').delete().eq('id', data.id);
+  if (error) throw error;
+}
+
+/**
+ * File a report against another user.
+ * Required by Apple App Store Guideline 1.2 (UGC: mechanism for reporting objectionable
+ * content or abusive users). Writes to `public.user_reports`.
+ */
+export async function reportUser(params: {
+  reporterId: string;
+  reportedUserId: string;
+  reason: string;
+  details?: string;
+  context?: 'friend_profile' | 'reaction' | 'shared_task' | 'circle' | 'other';
+  contextRef?: string;
+}) {
+  const {
+    reporterId,
+    reportedUserId,
+    reason,
+    details,
+    context = 'friend_profile',
+    contextRef,
+  } = params;
+  if (!reporterId || !reportedUserId || reporterId === reportedUserId) {
+    throw new Error('Invalid report target');
+  }
+  if (!reason || !reason.trim()) throw new Error('A reason is required');
+
+  const { error } = await supabase.from('user_reports').insert({
+    reporter_id: reporterId,
+    reported_user_id: reportedUserId,
+    reason: reason.trim().slice(0, 80),
+    details: details ? details.trim().slice(0, 2000) : null,
+    context,
+    context_ref: contextRef ?? null,
+  });
+  if (error) throw error;
 }
 
 /** Get all accepted friends with profile info */

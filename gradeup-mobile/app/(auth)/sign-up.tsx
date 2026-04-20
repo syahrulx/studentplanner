@@ -21,6 +21,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
 import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
+import { openPrivacyPolicy, openTermsOfUse } from '@/src/constants/legal';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -395,6 +396,19 @@ export default function SignUp() {
               <Text style={styles.signUpLink}>Sign in</Text>
             </Pressable>
           </View>
+
+          {/* Legal footer (required by Apple review: Privacy & Terms) */}
+          <View style={styles.legalRow}>
+            <Text style={styles.legalPreface}>By creating an account you agree to our </Text>
+            <Pressable onPress={openTermsOfUse} hitSlop={6}>
+              <Text style={styles.legalLink}>Terms</Text>
+            </Pressable>
+            <Text style={styles.legalPreface}> and </Text>
+            <Pressable onPress={() => void openPrivacyPolicy()} hitSlop={6}>
+              <Text style={styles.legalLink}>Privacy Policy</Text>
+            </Pressable>
+            <Text style={styles.legalPreface}>.</Text>
+          </View>
         </View>
 
       </ScrollView>
@@ -538,6 +552,17 @@ const styles = StyleSheet.create({
   signUpRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 18 },
   signUpLabel: { color: '#64748b', fontSize: 14 },
   signUpLink: { color: '#24334d', fontSize: 14, fontWeight: '700' },
+
+  legalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingHorizontal: 4,
+  },
+  legalPreface: { color: '#94a3b8', fontSize: 12 },
+  legalLink: { color: '#24334d', fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
 
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

@@ -16,7 +16,11 @@ import { CommunityProvider } from '@/src/context/CommunityContext';
 import { QuizProvider } from '@/src/context/QuizContext';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
-import { handleAttendanceNotificationResponse } from '@/src/attendanceRecording';
+import {
+  attendanceOccurrenceKey,
+  getAnsweredOccurrenceSet,
+  handleAttendanceNotificationResponse,
+} from '@/src/attendanceRecording';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -101,37 +105,59 @@ function RootLayoutNav() {
           break;
         case 'attendance_checkin': {
           // Banner tap should open the in-app notification manager where the user can answer
-          // and the item will auto-disappear after recording.
-          nav(() =>
-            router.push({
-              pathname: '/community/notifications',
-              params: {
-                fromAttendanceTap: '1',
-                timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
-                scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
-                subjectCode: String((data as any)?.subjectCode ?? ''),
-                subjectName: String((data as any)?.subjectName ?? ''),
-                subjectKey: String((data as any)?.subjectKey ?? ''),
-                displaySubject: String((data as any)?.displaySubject ?? ''),
-                fireAtMs: String((data as any)?.fireAtMs ?? ''),
-              },
-            } as any),
-          );
-          // Persist a copy so iOS can restore even if params/lastResponse are unavailable.
-          void AsyncStorage.setItem(
-            'lastAttendanceTapV1',
-            JSON.stringify({
-              type: 'attendance_checkin',
-              timetableEntryId: String((data as any)?.timetableEntryId ?? ''),
-              scheduledStartAt: String((data as any)?.scheduledStartAt ?? ''),
-              subjectCode: String((data as any)?.subjectCode ?? ''),
-              subjectName: String((data as any)?.subjectName ?? ''),
-              subjectKey: String((data as any)?.subjectKey ?? ''),
-              displaySubject: String((data as any)?.displaySubject ?? ''),
-              fireAtMs: String((data as any)?.fireAtMs ?? ''),
-              savedAt: new Date().toISOString(),
-            }),
-          ).catch(() => {});
+          // and the item will auto-disappear after recording. We guard here because
+          // `getLastNotificationResponseAsync()` keeps returning the last tap across app
+          // launches — without these checks the Notification Manager would open on every
+          // cold start and inject a stale "Class check-in" card earlier than T−5.
+          const timetableEntryId = String((data as any)?.timetableEntryId ?? '').trim();
+          const scheduledStartAt = String((data as any)?.scheduledStartAt ?? '').trim();
+          const startMs = Date.parse(scheduledStartAt);
+          const nowMs = Date.now();
+          // Only treat the tap as live if the class hasn't passed more than ~90 min ago
+          // and isn't more than ~30 min in the future (T−5 fires 5 min before, so allow a small lead).
+          const isFresh =
+            Number.isFinite(startMs) &&
+            startMs - 30 * 60_000 <= nowMs &&
+            nowMs <= startMs + 90 * 60_000;
+          void (async () => {
+            try {
+              if (!timetableEntryId || !scheduledStartAt || !isFresh) return;
+              const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
+              if (answered.has(attendanceOccurrenceKey(timetableEntryId, scheduledStartAt))) return;
+              nav(() =>
+                router.push({
+                  pathname: '/community/notifications',
+                  params: {
+                    fromAttendanceTap: '1',
+                    timetableEntryId,
+                    scheduledStartAt,
+                    subjectCode: String((data as any)?.subjectCode ?? ''),
+                    subjectName: String((data as any)?.subjectName ?? ''),
+                    subjectKey: String((data as any)?.subjectKey ?? ''),
+                    displaySubject: String((data as any)?.displaySubject ?? ''),
+                    fireAtMs: String((data as any)?.fireAtMs ?? ''),
+                  },
+                } as any),
+              );
+              await AsyncStorage.setItem(
+                'lastAttendanceTapV1',
+                JSON.stringify({
+                  type: 'attendance_checkin',
+                  timetableEntryId,
+                  scheduledStartAt,
+                  subjectCode: String((data as any)?.subjectCode ?? ''),
+                  subjectName: String((data as any)?.subjectName ?? ''),
+                  subjectKey: String((data as any)?.subjectKey ?? ''),
+                  displaySubject: String((data as any)?.displaySubject ?? ''),
+                  fireAtMs: String((data as any)?.fireAtMs ?? ''),
+                  savedAt: new Date().toISOString(),
+                }),
+              ).catch(() => {});
+            } finally {
+              // Prevent the same tap from being re-handled on the next cold start.
+              void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+            }
+          })();
           break;
         }
       }
@@ -208,6 +234,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="auto-share-settings" />
         <Stack.Screen name="community" />
+        <Stack.Screen name="legal" />
         <Stack.Screen name="study-timer" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 

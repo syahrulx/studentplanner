@@ -129,6 +129,9 @@ export default function TimetableEditScreen() {
   const [lecturer, setLecturer] = useState('');
   const [location, setLocation] = useState('');
   const [slotColor, setSlotColor] = useState<string | undefined>(undefined);
+  // Remembers the user's last picked length-from-start chip so the chip stays highlighted
+  // even when we can't derive it from the current start/end (e.g. empty start time).
+  const [pickedDurationHours, setPickedDurationHours] = useState<number | null>(null);
 
   const modalOpen = editing != null || isCreating;
 
@@ -154,6 +157,7 @@ export default function TimetableEditScreen() {
     setLecturer('');
     setLocation('');
     setSlotColor(undefined);
+    setPickedDurationHours(null);
   }, [weekStartsOn]);
 
   const closeModal = useCallback(() => {
@@ -183,6 +187,7 @@ export default function TimetableEditScreen() {
       setLecturer(e.lecturer === '-' ? '' : e.lecturer);
       setLocation(e.location === '-' ? '' : e.location);
       setSlotColor(e.slotColor);
+      setPickedDurationHours(null);
     },
     [],
   );
@@ -200,6 +205,7 @@ export default function TimetableEditScreen() {
     setLecturer(e.lecturer === '-' ? '' : e.lecturer);
     setLocation(e.location === '-' ? '' : e.location);
     setSlotColor(e.slotColor);
+    setPickedDurationHours(null);
   }, []);
 
   /** Open edit sheet from timetable grid/list (deep link). */
@@ -236,16 +242,31 @@ export default function TimetableEditScreen() {
       setLecturer('');
       setLocation('');
       setSlotColor(undefined);
+      setPickedDurationHours(null);
     }
   }, [routePrefillKey, timetable, entryIdParam, addDayParam, addStartParam, openEdit]);
 
   const applyDurationFromStart = useCallback((hours: number) => {
+    // Always record the user's intent so the chip highlights immediately, even if the
+    // start time isn't valid yet (end time will update as soon as a valid start is entered).
+    setPickedDurationHours(hours);
     const ns = normalizeTimeDisplay(startTime);
     if (ns === null) return;
     const sm = parseTimeToMinutes(ns);
     if (sm === null) return;
     setEndTime(minutesToHHmm(sm + Math.round(hours * 60)));
   }, [startTime]);
+
+  // When the user has picked a length and later enters/changes the start time, update end time.
+  useEffect(() => {
+    if (pickedDurationHours == null) return;
+    const ns = normalizeTimeDisplay(startTime);
+    if (ns === null) return;
+    const sm = parseTimeToMinutes(ns);
+    if (sm === null) return;
+    const next = minutesToHHmm(sm + Math.round(pickedDurationHours * 60));
+    setEndTime((prev) => (prev === next ? prev : next));
+  }, [startTime, pickedDurationHours]);
 
   const activeStartQuick = useMemo(() => {
     const ns = normalizeTimeDisplay(startTime);
@@ -528,7 +549,11 @@ export default function TimetableEditScreen() {
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8 }]}>{T('timetableSetDuration')}</Text>
                 <View style={styles.durationRow}>
                   {([1, 1.5, 2, 3] as const).map((h) => {
-                    const active = activeDurationHours === h;
+                    // Highlight when the derived start→end duration matches, or when the user
+                    // just tapped this chip and we couldn't derive yet (empty/invalid times).
+                    const active =
+                      activeDurationHours === h ||
+                      (activeDurationHours == null && pickedDurationHours === h);
                     return (
                       <Pressable
                         key={h}

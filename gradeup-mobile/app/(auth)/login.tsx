@@ -19,6 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
+import { openPrivacyPolicy, openTermsOfUse } from '@/src/constants/legal';
 
 /** Must match app.json `scheme` so TestFlight/production never uses an `exp://` Expo Go URL. */
 const authRedirect = (path: string) =>
@@ -374,6 +375,19 @@ export default function Login() {
               <Text style={styles.signUpLink}>Sign up</Text>
             </Pressable>
           </View>
+
+          {/* Legal footer (required by Apple review: Privacy & Terms) */}
+          <View style={styles.legalRow}>
+            <Text style={styles.legalPreface}>By continuing you agree to our </Text>
+            <Pressable onPress={openTermsOfUse} hitSlop={6}>
+              <Text style={styles.legalLink}>Terms</Text>
+            </Pressable>
+            <Text style={styles.legalPreface}> and </Text>
+            <Pressable onPress={() => void openPrivacyPolicy()} hitSlop={6}>
+              <Text style={styles.legalLink}>Privacy Policy</Text>
+            </Pressable>
+            <Text style={styles.legalPreface}>.</Text>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -544,4 +558,16 @@ const styles = StyleSheet.create({
   },
   signUpLabel: { color: '#64748b', fontSize: 14 },
   signUpLink: { color: '#24334d', fontSize: 14, fontWeight: '700' },
+
+  // Legal footer
+  legalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingHorizontal: 4,
+  },
+  legalPreface: { color: '#94a3b8', fontSize: 12 },
+  legalLink: { color: '#24334d', fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
 });

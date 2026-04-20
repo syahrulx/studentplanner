@@ -32,6 +32,11 @@ import {
   scheduleWeeklySummary,
   cancelWeeklySummary,
 } from '@/src/notificationManager';
+import {
+  openPrivacyPolicy,
+  openTermsOfUse,
+  openCommunityGuidelines,
+} from '@/src/constants/legal';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -848,6 +853,63 @@ export default function Settings() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{T('logOut')}</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('logOutDesc')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LEGAL</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => void openPrivacyPolicy()}
+            accessibilityRole="link"
+            accessibilityLabel="Open Privacy Policy"
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#0ea5e9' }]}>
+              <Feather name="shield" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Privacy Policy</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                How Rencana collects, uses, and protects your data
+              </Text>
+            </View>
+            <Feather name="external-link" size={18} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={openTermsOfUse}
+            accessibilityRole="button"
+            accessibilityLabel="Open Terms of Use"
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#64748b' }]}>
+              <Feather name="file-text" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Terms of Use (EULA)</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                The agreement you accept to use Rencana
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={openCommunityGuidelines}
+            accessibilityRole="button"
+            accessibilityLabel="Open Community Guidelines"
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
+              <Feather name="users" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Community Guidelines</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Rules for reactions, shared tasks, and study circles
+              </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
