@@ -1197,10 +1197,10 @@ export default function UploadSOW() {
         <View style={styles.howBody}>
           <Text style={[styles.howTitle, { color: theme.primary }]}>How it works</Text>
           <Text style={[styles.howDesc, { color: theme.text }]}>
-            1. Choose a SOW PDF file{'\n'}
-            2. AI extracts subjects and tasks with due dates{'\n'}
-            3. Review and edit any details{'\n'}
-            4. Confirm to save to your planner
+            1. Pick a Scheme of Work PDF from your Files app (e.g. iCloud Drive or Downloads){'\n'}
+            2. Rencana uploads the PDF to your private account and AI extracts subjects, assignments, and due dates{'\n'}
+            3. Review and edit any details before saving{'\n'}
+            4. Confirm to save the tasks to your planner
           </Text>
         </View>
       </View>
@@ -1256,7 +1256,7 @@ export default function UploadSOW() {
       >
         <Feather name="file" size={18} color={theme.primary} />
         <Text style={[styles.pickBtnText, { color: theme.text }]}>
-          {selected ? `Selected: ${selected.name}` : 'Choose SOW PDF'}
+          {selected ? `Selected: ${selected.name}` : 'Choose SOW PDF from Files'}
         </Text>
         <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ marginLeft: 'auto' }} />
             </Pressable>
