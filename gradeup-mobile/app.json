@@ -28,7 +28,10 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification"
-        ]
+        ],
+        "NSPhotoLibraryUsageDescription": "Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI to read your class schedule and (2) select a profile picture for your community profile. For example, you can pick a screenshot of your university portal timetable and Rencana will automatically fill in your classes, times, and rooms.",
+        "NSPhotoLibraryAddUsageDescription": "Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.",
+        "NSLocationWhenInUseUsageDescription": "Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background."
       }
     },
     "android": {
@@ -102,11 +105,25 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Rencana to use your location to show your position on the community map.",
-          "locationAlwaysPermission": "Allow Rencana to use your location to share with friends.",
-          "locationWhenInUsePermission": "Allow Rencana to use your location to show your position on the community map.",
+          "locationWhenInUsePermission": "Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background.",
           "isAndroidBackgroundLocationEnabled": false,
           "isIosBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI to read your class schedule and (2) select a profile picture for your community profile. For example, you can pick a screenshot of your university portal timetable and Rencana will automatically fill in your classes, times, and rooms.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Rencana needs access to your photo library so you can save an exported copy of your generated timetable image.",
+          "savePhotosPermission": "Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.",
+          "isAccessMediaLocationEnabled": false
         }
       ]
     ],
