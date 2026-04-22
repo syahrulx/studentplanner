@@ -25,6 +25,12 @@ verify_jwt = false
 [functions.admin_data]
 verify_jwt = false
 
+[functions.admin_community_push]
+verify_jwt = false
+
+[functions.community-push]
+verify_jwt = false
+
 # AI functions validate JWT inside function via auth.getUser(token).
 # Keep edge gateway verification off to avoid false "Invalid JWT" rejections.
 [functions.ai_generate]

@@ -12,6 +12,7 @@ import { CirclesRoute } from './routes/CirclesRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
+import { BroadcastRoute } from './routes/BroadcastRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="calendar-updates" element={<CalendarUpdatesRoute />} />
             <Route path="locations" element={<LocationsRoute />} />
             <Route path="circles" element={<CirclesRoute />} />
+            <Route path="broadcast" element={<BroadcastRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>

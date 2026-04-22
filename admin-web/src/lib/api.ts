@@ -1061,6 +1061,51 @@ export type ExtractedCalendarData = {
   }>;
 };
 
+export type BroadcastAudience = 'all' | 'user_ids' | 'university';
+export type BroadcastCategory = 'reaction' | 'shared_task' | 'circle' | 'friend';
+
+export type BroadcastPreviewArgs = {
+  audience: BroadcastAudience;
+  userIds?: string[];
+  universityId?: string;
+};
+
+export async function previewBroadcast(opts: BroadcastPreviewArgs): Promise<{ count: number }> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_community_push',
+    { action: 'preview', ...opts },
+    headers,
+  );
+  return unwrapFunctionData<{ count: number }>(data, error);
+}
+
+export type SendBroadcastArgs = BroadcastPreviewArgs & {
+  title: string;
+  body: string;
+  category?: BroadcastCategory;
+  route?: string;
+  params?: Record<string, string>;
+  collapseKey?: string;
+};
+
+export type SendBroadcastResult = {
+  sent?: number;
+  batches?: number;
+  results?: unknown;
+  reason?: string;
+};
+
+export async function sendBroadcast(opts: SendBroadcastArgs): Promise<SendBroadcastResult> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_community_push',
+    { action: 'send', ...opts },
+    headers,
+  );
+  return unwrapFunctionData<SendBroadcastResult>(data, error);
+}
+
 export async function extractCalendarFromUrl(extractUrl: string): Promise<{
   extracted: ExtractedCalendarData;
   source_url: string;

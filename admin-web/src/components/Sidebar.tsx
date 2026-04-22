@@ -24,6 +24,7 @@ const nav = [
   { to: '/calendar-updates', label: 'Calendar updates', Icon: IconCalendar },
   { to: '/locations', label: 'Locations', Icon: IconMapPin },
   { to: '/circles', label: 'Circles', Icon: IconCircles },
+  { to: '/broadcast', label: 'Broadcast', Icon: IconBell },
   { to: '/logs', label: 'Logs', Icon: IconFileText },
   { to: '/settings', label: 'Settings', Icon: IconSettings },
 ] as const;
