@@ -1,11 +1,12 @@
-import { useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert } from 'react-native';
+import { useMemo, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
+import type { Course } from '@/src/types';
 
 const ACCENT_PALETTE = [
   '#3b82f6', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#ef4444', '#6366f1',
@@ -84,6 +85,194 @@ function createStyles(theme: ThemePalette) {
       marginBottom: 10,
       paddingLeft: 4,
       textTransform: 'uppercase',
+    },
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 10,
+      paddingLeft: 4,
+      paddingRight: 4,
+    },
+    sectionHeaderLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: theme.textSecondary,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    sectionMenuBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionDoneText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: theme.primary,
+    },
+    modeBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      backgroundColor: `${theme.primary}15`,
+      borderRadius: 12,
+      marginBottom: 10,
+    },
+    modeBannerText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: theme.primary,
+      flex: 1,
+    },
+
+    // Action sheet modal
+    sheetBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      backgroundColor: theme.card,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingTop: 8,
+      paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    },
+    sheetHandle: {
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.border,
+      alignSelf: 'center',
+      marginBottom: 8,
+    },
+    sheetTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: theme.textSecondary,
+      textAlign: 'center',
+      paddingVertical: 10,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    sheetItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+    },
+    sheetItemIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sheetItemLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: theme.text,
+      flex: 1,
+    },
+    sheetItemDanger: {
+      color: '#ef4444',
+    },
+    sheetDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: theme.border,
+      marginLeft: 70,
+    },
+    sheetCancel: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      paddingVertical: 14,
+      borderRadius: 14,
+      backgroundColor: theme.background,
+      alignItems: 'center',
+    },
+    sheetCancelText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.text,
+    },
+
+    // Rename modal
+    renameBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    renameCard: {
+      backgroundColor: theme.card,
+      borderRadius: 18,
+      padding: 20,
+    },
+    renameTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: theme.text,
+      marginBottom: 4,
+    },
+    renameSub: {
+      fontSize: 13,
+      color: theme.textSecondary,
+      marginBottom: 14,
+    },
+    renameInput: {
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: theme.text,
+      backgroundColor: theme.background,
+      marginBottom: 16,
+    },
+    renameButtonRow: {
+      flexDirection: 'row',
+      gap: 10,
+      justifyContent: 'flex-end',
+    },
+    renameBtn: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 10,
+    },
+    renameBtnCancel: {
+      backgroundColor: theme.background,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    renameBtnSave: {
+      backgroundColor: theme.primary,
+    },
+    renameBtnCancelText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: theme.text,
+    },
+    renameBtnSaveText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#ffffff',
+    },
+
+    // Row action icon (edit/delete mode)
+    rowActionIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 4,
     },
 
     // Flashcard deck cards
@@ -230,10 +419,53 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function StudyHub() {
-  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const s = useMemo(() => createStyles(theme), [theme]);
+
+  const [subjectsMenuOpen, setSubjectsMenuOpen] = useState(false);
+  const [subjectsMode, setSubjectsMode] = useState<'idle' | 'rename' | 'delete'>('idle');
+  const [renameTarget, setRenameTarget] = useState<Course | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const tx = (key: string, fallback: string) => ((T as any)(key) as string) || fallback;
+
+  const handleSubjectRowPress = (course: Course) => {
+    if (subjectsMode === 'rename') {
+      setRenameTarget(course);
+      setRenameValue(course.name);
+      return;
+    }
+    if (subjectsMode === 'delete') {
+      Alert.alert(
+        tx('deleteSubject', 'Delete subject'),
+        `Delete "${course.id} — ${course.name}"? This will also remove its notes, tasks, and flashcards.`,
+        [
+          { text: tx('cancel', 'Cancel'), style: 'cancel' },
+          {
+            text: tx('deleteSubject', 'Delete'),
+            style: 'destructive',
+            onPress: () => {
+              deleteCourse(course.id);
+              if (courses.length <= 1) setSubjectsMode('idle');
+            },
+          },
+        ],
+      );
+      return;
+    }
+    router.push({ pathname: '/notes-list' as any, params: { subjectId: course.id } });
+  };
+
+  const handleRenameSave = () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) return;
+    renameCourse(renameTarget.id, trimmed);
+    setRenameTarget(null);
+    setRenameValue('');
+  };
 
   const handleDeleteDeck = (noteId: string, title: string) => {
     Alert.alert('Delete Deck', `Are you sure you want to delete all flashcards in "${title}"? This cannot be undone.`, [
@@ -407,7 +639,39 @@ export default function StudyHub() {
         )}
 
         {/* ─── Notes by Subject ─── */}
-        <Text style={s.sectionLabel}>{(T as any)('yourSubjects') || 'YOUR SUBJECTS'}</Text>
+        <View style={s.sectionHeaderRow}>
+          <Text style={s.sectionHeaderLabel}>{tx('yourSubjects', 'YOUR SUBJECTS')}</Text>
+          {subjectsMode === 'idle' ? (
+            <Pressable
+              onPress={() => setSubjectsMenuOpen(true)}
+              hitSlop={10}
+              style={({ pressed }) => [s.sectionMenuBtn, pressed && { opacity: 0.6 }]}
+              accessibilityLabel={tx('manageSubjects', 'Manage subjects')}
+            >
+              <Feather name="more-vertical" size={18} color={theme.textSecondary} />
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setSubjectsMode('idle')} hitSlop={10}>
+              <Text style={s.sectionDoneText}>{tx('done', 'Done')}</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {subjectsMode !== 'idle' && (
+          <View style={s.modeBanner}>
+            <Feather
+              name={subjectsMode === 'rename' ? 'edit-2' : 'trash-2'}
+              size={14}
+              color={theme.primary}
+            />
+            <Text style={s.modeBannerText}>
+              {subjectsMode === 'rename'
+                ? tx('tapToRename', 'Tap a subject to rename')
+                : tx('tapToDelete', 'Tap a subject to delete')}
+            </Text>
+          </View>
+        )}
+
         <View style={s.groupCard}>
           {courses.map((course, idx) => {
             const count = notes.filter((n) => n.subjectId === course.id).length;
@@ -417,36 +681,172 @@ export default function StudyHub() {
               <Pressable
                 key={course.id}
                 style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
-                onPress={() => router.push({ pathname: '/notes-list' as any, params: { subjectId: course.id } })}
+                onPress={() => handleSubjectRowPress(course)}
               >
                 <View style={[s.colorDot, { backgroundColor: color }]} />
                 <View style={s.rowBody}>
                   <Text style={s.rowTitle}>{course.id}</Text>
                   <Text style={s.rowSub} numberOfLines={1}>{course.name}</Text>
                 </View>
-                <Text style={s.rowCount}>{count}</Text>
-                <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+                {subjectsMode === 'idle' ? (
+                  <>
+                    <Text style={s.rowCount}>{count}</Text>
+                    <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+                  </>
+                ) : (
+                  <View
+                    style={[
+                      s.rowActionIcon,
+                      {
+                        backgroundColor:
+                          subjectsMode === 'delete' ? '#ef444422' : `${theme.primary}22`,
+                      },
+                    ]}
+                  >
+                    <Feather
+                      name={subjectsMode === 'rename' ? 'edit-2' : 'trash-2'}
+                      size={14}
+                      color={subjectsMode === 'delete' ? '#ef4444' : theme.primary}
+                    />
+                  </View>
+                )}
                 <View style={s.divider} />
               </Pressable>
             );
           })}
 
-          {/* Add Subject row */}
-          <Pressable
-            style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
-            onPress={() => router.push('/add-subject' as any)}
-          >
-            <View style={[s.colorDot, { backgroundColor: theme.primary, borderRadius: 5 }]}>
-              <Feather name="plus" size={10} color="#ffffff" />
-            </View>
-            <View style={s.rowBody}>
-              <Text style={[s.rowTitle, { color: theme.primary }]}>{(T as any)('addSubject') || 'Add Subject'}</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color={theme.textSecondary} />
-          </Pressable>
+          {/* Add Subject row - hidden during rename/delete mode */}
+          {subjectsMode === 'idle' && (
+            <Pressable
+              style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
+              onPress={() => router.push('/add-subject' as any)}
+            >
+              <View style={[s.colorDot, { backgroundColor: theme.primary, borderRadius: 5 }]}>
+                <Feather name="plus" size={10} color="#ffffff" />
+              </View>
+              <View style={s.rowBody}>
+                <Text style={[s.rowTitle, { color: theme.primary }]}>{tx('addSubject', 'Add Subject')}</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+            </Pressable>
+          )}
         </View>
 
       </ScrollView>
+
+      {/* Subjects action sheet */}
+      <Modal
+        visible={subjectsMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSubjectsMenuOpen(false)}
+      >
+        <Pressable style={s.sheetBackdrop} onPress={() => setSubjectsMenuOpen(false)}>
+          <Pressable style={s.sheet} onPress={() => {}}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>{tx('manageSubjects', 'Manage subjects')}</Text>
+
+            <Pressable
+              style={({ pressed }) => [s.sheetItem, pressed && { opacity: 0.6 }]}
+              onPress={() => {
+                setSubjectsMenuOpen(false);
+                router.push('/add-subject' as any);
+              }}
+            >
+              <View style={[s.sheetItemIcon, { backgroundColor: `${theme.primary}22` }]}>
+                <Feather name="plus" size={18} color={theme.primary} />
+              </View>
+              <Text style={s.sheetItemLabel}>{tx('addSubject', 'Add subject')}</Text>
+              <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+            </Pressable>
+            <View style={s.sheetDivider} />
+
+            <Pressable
+              style={({ pressed }) => [s.sheetItem, pressed && { opacity: 0.6 }]}
+              onPress={() => {
+                setSubjectsMenuOpen(false);
+                if (courses.length === 0) return;
+                setSubjectsMode('rename');
+              }}
+            >
+              <View style={[s.sheetItemIcon, { backgroundColor: `${theme.primary}22` }]}>
+                <Feather name="edit-2" size={16} color={theme.primary} />
+              </View>
+              <Text style={s.sheetItemLabel}>{tx('renameSubject', 'Rename subject')}</Text>
+              <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+            </Pressable>
+            <View style={s.sheetDivider} />
+
+            <Pressable
+              style={({ pressed }) => [s.sheetItem, pressed && { opacity: 0.6 }]}
+              onPress={() => {
+                setSubjectsMenuOpen(false);
+                if (courses.length === 0) return;
+                setSubjectsMode('delete');
+              }}
+            >
+              <View style={[s.sheetItemIcon, { backgroundColor: '#ef444422' }]}>
+                <Feather name="trash-2" size={16} color="#ef4444" />
+              </View>
+              <Text style={[s.sheetItemLabel, s.sheetItemDanger]}>
+                {tx('deleteSubject', 'Delete subject')}
+              </Text>
+              <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [s.sheetCancel, pressed && { opacity: 0.7 }]}
+              onPress={() => setSubjectsMenuOpen(false)}
+            >
+              <Text style={s.sheetCancelText}>{tx('cancel', 'Cancel')}</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Rename input modal */}
+      <Modal
+        visible={!!renameTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameTarget(null)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={s.renameBackdrop} onPress={() => setRenameTarget(null)}>
+            <Pressable style={s.renameCard} onPress={() => {}}>
+              <Text style={s.renameTitle}>{tx('renameSubjectTitle', 'Rename subject')}</Text>
+              <Text style={s.renameSub}>{renameTarget?.id}</Text>
+              <TextInput
+                style={s.renameInput}
+                value={renameValue}
+                onChangeText={setRenameValue}
+                placeholder={tx('newSubjectName', 'New subject name')}
+                placeholderTextColor={theme.textSecondary}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleRenameSave}
+              />
+              <View style={s.renameButtonRow}>
+                <Pressable
+                  style={({ pressed }) => [s.renameBtn, s.renameBtnCancel, pressed && { opacity: 0.7 }]}
+                  onPress={() => setRenameTarget(null)}
+                >
+                  <Text style={s.renameBtnCancelText}>{tx('cancel', 'Cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [s.renameBtn, s.renameBtnSave, pressed && { opacity: 0.85 }]}
+                  onPress={handleRenameSave}
+                >
+                  <Text style={s.renameBtnSaveText}>{tx('save', 'Save')}</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }

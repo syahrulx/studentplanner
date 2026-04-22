@@ -82,8 +82,56 @@ function RootLayoutNav() {
           if (data.taskId) nav(() => router.push({ pathname: '/task-details', params: { id: data.taskId } } as any));
           break;
         case 'shared_task':
-          nav(() => router.push('/(tabs)/community' as any));
+        case 'shared_task_response':
+        case 'shared_task_completed':
+          nav(() => router.push('/community/notifications' as any));
           break;
+        case 'reaction':
+          nav(() => router.push('/community/notifications' as any));
+          break;
+        case 'friend_request':
+          nav(() => router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any));
+          break;
+        case 'friend_accepted':
+          if (data.friendId) {
+            nav(() => router.push({ pathname: '/community/friend-profile', params: { id: data.friendId } } as any));
+          } else {
+            nav(() => router.push('/community/notifications' as any));
+          }
+          break;
+        case 'circle_invitation':
+          nav(() => router.push('/community/notifications' as any));
+          break;
+        case 'circle_invitation_response':
+          if (data.circleId) {
+            nav(() => router.push({ pathname: '/community/circle-detail', params: { id: data.circleId } } as any));
+          } else {
+            nav(() => router.push('/community/circles' as any));
+          }
+          break;
+        case 'broadcast': {
+          // Admin broadcast. Honour a caller-supplied `data.route` (absolute pathname)
+          // and/or `data.params` (flat object of string params) — falls back to the
+          // community notifications screen. We only allow absolute paths within the
+          // app to avoid opening arbitrary URLs from a push payload.
+          const rawRoute = typeof data.route === 'string' ? data.route.trim() : '';
+          const safeRoute = rawRoute.startsWith('/') ? rawRoute : '/community/notifications';
+          const rawParams = (data.params && typeof data.params === 'object') ? data.params : null;
+          const params: Record<string, string> = {};
+          if (rawParams) {
+            for (const [k, v] of Object.entries(rawParams)) {
+              if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                params[k] = String(v);
+              }
+            }
+          }
+          nav(() =>
+            Object.keys(params).length > 0
+              ? router.push({ pathname: safeRoute, params } as any)
+              : router.push(safeRoute as any),
+          );
+          break;
+        }
         case 'community_reaction': {
           const msg = String(data.message || '').toLowerCase();
           const isFriendRequestTap = data.reactionType === '👋' && msg.includes('friend request');

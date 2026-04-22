@@ -44,6 +44,9 @@ function syntheticCourse(id: string): Course {
   return { id, name: id, creditHours: 0, workload: [] };
 }
 
+/** Sentinel id used to represent "no subject" (task not tied to a course). */
+const NO_SUBJECT_ID = '';
+
 function dueDateTimeToDate(iso: string, time: string): Date {
   const [y, mo, d] = iso.slice(0, 10).split('-').map((x) => parseInt(x, 10));
   const [hStr, mStr] = (time || '00:00').split(':');
@@ -158,6 +161,8 @@ export default function AddTask() {
   const [showDateModal, setShowDateModal] = useState(false);
   const [title, setTitle] = useState('');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
+  /** True once the user explicitly picks a subject (or "No subject") — prevents the auto-pick effect from reverting "No subject" back to a real course. */
+  const [subjectTouched, setSubjectTouched] = useState(false);
   const [type, setType] = useState<TaskType>(TaskType.Assignment);
   const [dueDateISO, setDueDateISO] = useState<string>(getTodayISO());
   const [dueTime, setDueTime] = useState('23:59');
@@ -257,14 +262,16 @@ export default function AddTask() {
   const subjectPickerCourses = useMemo(() => {
     const list: Course[] = courses.map((c) => ({ ...c }));
     const hasId = (id: string) => list.some((c) => c.id === id);
-    if (courseId && !hasId(courseId)) {
+    if (courseId && courseId !== NO_SUBJECT_ID && !hasId(courseId)) {
       list.unshift(syntheticCourse(courseId));
-    }
-    if (list.length === 0) {
-      list.push(syntheticCourse('General'));
     }
     return list;
   }, [courses, courseId]);
+
+  const noSubjectLabel = (T as any)('noSubject') || 'No subject';
+  const noSubjectHint = (T as any)('noSubjectHint') || 'Not related to any subject';
+  const isNoSubject = courseId === NO_SUBJECT_ID;
+  const subjectDisplayLabel = isNoSubject ? noSubjectLabel : courseId;
 
   useEffect(() => {
     if (!existingTask) return;
@@ -277,9 +284,9 @@ export default function AddTask() {
   }, [existingTask]);
 
   useEffect(() => {
-    if (isEditing || courseId || !courses[0]?.id) return;
+    if (isEditing || subjectTouched || courseId || !courses[0]?.id) return;
     setCourseId(courses[0].id);
-  }, [isEditing, courseId, courses]);
+  }, [isEditing, subjectTouched, courseId, courses]);
 
   useFocusEffect(
     useCallback(() => {
@@ -311,7 +318,8 @@ export default function AddTask() {
       const uid = sessionData?.session?.user?.id ?? null;
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
       const suggestedWeek = getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate);
-      const courseIdResolved = courseId || courses[0]?.id || 'General';
+      /** Preserve explicit "No subject" choice; only fall back to a real course when courseId is truly unset. */
+      const courseIdResolved = isNoSubject ? NO_SUBJECT_ID : (courseId || courses[0]?.id || NO_SUBJECT_ID);
 
       if (wantsShare && !uid) {
         Alert.alert('', T('shareSignInHint'));
@@ -523,24 +531,33 @@ export default function AddTask() {
         />
 
         <Group theme={theme}>
-          <Row theme={theme} showDivider onPress={() => setSubjectModalOpen(true)}>
+          <Row theme={theme} showDivider={!isNoSubject} onPress={() => setSubjectModalOpen(true)}>
             <View style={styles.rowBetween}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>{T('subjectLabel')}</Text>
               <View style={styles.rowTrail}>
-                <Text style={[styles.rowValue, { color: theme.textSecondary }]}>{courseId}</Text>
+                <Text
+                  style={[
+                    styles.rowValue,
+                    { color: isNoSubject ? theme.textSecondary : theme.text, fontStyle: isNoSubject ? 'italic' : 'normal' },
+                  ]}
+                >
+                  {subjectDisplayLabel}
+                </Text>
                 <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
               </View>
             </View>
           </Row>
-          <Row theme={theme} onPress={() => setShowColorPicker(true)}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>{T('subjectColour')}</Text>
-              <View style={styles.rowTrail}>
-                <View style={[styles.swatch, { backgroundColor: getSubjectColor(courseId) }]} />
-                <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
+          {!isNoSubject && (
+            <Row theme={theme} onPress={() => setShowColorPicker(true)}>
+              <View style={styles.rowBetween}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>{T('subjectColour')}</Text>
+                <View style={styles.rowTrail}>
+                  <View style={[styles.swatch, { backgroundColor: getSubjectColor(courseId) }]} />
+                  <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
+                </View>
               </View>
-            </View>
-          </Row>
+            </Row>
+          )}
         </Group>
 
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('type')}</Text>
@@ -796,6 +813,32 @@ export default function AddTask() {
                 keyExtractor={(c, index) => `${c.id}__${index}`}
                 style={styles.sheetFlatList}
                 keyboardShouldPersistTaps="handled"
+                ListHeaderComponent={
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sheetRow,
+                      {
+                        borderBottomColor: theme.border,
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                      },
+                      pressed && { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                    onPress={() => {
+                      setSubjectTouched(true);
+                      setCourseId(NO_SUBJECT_ID);
+                      setSubjectModalOpen(false);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                      <Feather name="slash" size={16} color={theme.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.sheetRowText, { color: theme.text }]}>{noSubjectLabel}</Text>
+                        <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>{noSubjectHint}</Text>
+                      </View>
+                    </View>
+                    {isNoSubject ? <Feather name="check" size={20} color={theme.primary} /> : null}
+                  </Pressable>
+                }
                 renderItem={({ item, index }) => (
                   <Pressable
                     style={({ pressed }) => [
@@ -807,6 +850,7 @@ export default function AddTask() {
                       pressed && { backgroundColor: theme.backgroundSecondary },
                     ]}
                     onPress={() => {
+                      setSubjectTouched(true);
                       setCourseId(item.id);
                       setSubjectModalOpen(false);
                     }}
@@ -826,10 +870,30 @@ export default function AddTask() {
                 data={subjectPickerCourses}
                 keyExtractor={(c, index) => `${c.id}__${index}`}
                 style={{ maxHeight: 320 }}
+                ListHeaderComponent={
+                  <Pressable
+                    style={[styles.sheetRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+                    onPress={() => {
+                      setSubjectTouched(true);
+                      setCourseId(NO_SUBJECT_ID);
+                      setSubjectModalOpen(false);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                      <Feather name="slash" size={16} color={theme.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: theme.text, fontSize: 17 }}>{noSubjectLabel}</Text>
+                        <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>{noSubjectHint}</Text>
+                      </View>
+                    </View>
+                    {isNoSubject ? <Feather name="check" size={20} color={theme.primary} /> : null}
+                  </Pressable>
+                }
                 renderItem={({ item }) => (
                   <Pressable
                     style={styles.sheetRow}
                     onPress={() => {
+                      setSubjectTouched(true);
                       setCourseId(item.id);
                       setSubjectModalOpen(false);
                     }}

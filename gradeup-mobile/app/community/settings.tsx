@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Switch,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -17,6 +18,12 @@ import {
   getCustomFriendLocationVisibility,
   setCustomFriendLocationVisibility,
 } from '@/src/lib/communityApi';
+import {
+  getCommunityPushPrefs,
+  updateCommunityPushPrefs,
+  DEFAULT_COMMUNITY_PUSH_PREFS,
+  type CommunityPushPrefs,
+} from '@/src/lib/communityPushPrefs';
 import { Avatar } from '@/components/Avatar';
 import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
@@ -46,6 +53,37 @@ export default function CommunitySettings() {
   const [friendVisibilityIds, setFriendVisibilityIds] = useState<string[]>([]);
   const [loadingFriendVisibility, setLoadingFriendVisibility] = useState(false);
   const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
+
+  const [pushPrefs, setPushPrefs] = useState<CommunityPushPrefs>(DEFAULT_COMMUNITY_PUSH_PREFS);
+  const [loadingPushPrefs, setLoadingPushPrefs] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    setLoadingPushPrefs(true);
+    getCommunityPushPrefs(userId)
+      .then((prefs) => {
+        if (!cancelled) setPushPrefs(prefs);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPushPrefs(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const togglePushPref = async (key: keyof CommunityPushPrefs, next: boolean) => {
+    if (!userId) return;
+    const prev = pushPrefs;
+    const nextPrefs = { ...prev, [key]: next };
+    setPushPrefs(nextPrefs);
+    const ok = await updateCommunityPushPrefs(userId, { [key]: next });
+    if (!ok) {
+      setPushPrefs(prev);
+      Alert.alert('Could not update notification preferences', 'Please try again.');
+    }
+  };
 
   useEffect(() => {
     if (!userId || locationVisibility !== 'circles') return;
@@ -248,6 +286,79 @@ export default function CommunitySettings() {
         </View>
 
 
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>PUSH NOTIFICATIONS</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <View style={styles.pushRow}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Community notifications</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                Master switch for all community alerts (reactions, friends, circles, shared tasks).
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.communityPushEnabled}
+              onValueChange={(v) => togglePushPref('communityPushEnabled', v)}
+              disabled={loadingPushPrefs}
+            />
+          </View>
+          <View style={styles.dividerList} />
+          <View style={[styles.pushRow, !pushPrefs.communityPushEnabled && { opacity: 0.4 }]}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Reactions & bumps</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                When someone sends you a reaction or a nudge.
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.pushReactionsEnabled}
+              onValueChange={(v) => togglePushPref('pushReactionsEnabled', v)}
+              disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+            />
+          </View>
+          <View style={styles.dividerList} />
+          <View style={[styles.pushRow, !pushPrefs.communityPushEnabled && { opacity: 0.4 }]}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Friend requests</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                New friend requests and when someone accepts yours.
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.pushFriendRequestsEnabled}
+              onValueChange={(v) => togglePushPref('pushFriendRequestsEnabled', v)}
+              disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+            />
+          </View>
+          <View style={styles.dividerList} />
+          <View style={[styles.pushRow, !pushPrefs.communityPushEnabled && { opacity: 0.4 }]}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Circles</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                Circle invitations and responses.
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.pushCircleEnabled}
+              onValueChange={(v) => togglePushPref('pushCircleEnabled', v)}
+              disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+            />
+          </View>
+          <View style={styles.dividerList} />
+          <View style={[styles.pushRow, !pushPrefs.communityPushEnabled && { opacity: 0.4 }]}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Shared tasks</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                When tasks are shared with you or someone updates one.
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.pushSharedTaskEnabled}
+              onValueChange={(v) => togglePushPref('pushSharedTaskEnabled', v)}
+              disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+            />
+          </View>
+        </View>
+
         <Text style={styles.footerNote}>
           These settings only affect the Community tab. For global app preferences like themes and notifications, visit the main Settings.
         </Text>
@@ -328,6 +439,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(150,150,150,0.2)',
     marginLeft: 16,
   },
+  pushRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  pushBody: { flex: 1 },
+  pushLabel: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
+  pushDesc: { fontSize: 13, fontWeight: '400', lineHeight: 18 },
   footerNote: {
     marginHorizontal: PAD,
     marginTop: 32,

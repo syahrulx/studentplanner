@@ -122,6 +122,7 @@ type AppState = {
   courses: Course[];
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
+  renameCourse: (subjectId: string, newName: string) => void;
   deleteCourse: (subjectId: string) => void;
   tasks: Task[];
   tasksVersion: number;
@@ -1337,6 +1338,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const renameCourse = useCallback((subjectId: string, newName: string) => {
+    const upper = subjectId.toUpperCase();
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    let updated: Course | undefined;
+    setCourses((prev) => {
+      const next = prev.map((c) => {
+        if (c.id.toUpperCase() === upper) {
+          const renamed = { ...c, name: trimmed };
+          updated = renamed;
+          return renamed;
+        }
+        return c;
+      });
+      persistCourses(next);
+      return next;
+    });
+    if (!updated) return;
+    const courseToSync = updated;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return;
+      try {
+        await coursesDb.updateCourse(uid, courseToSync);
+      } catch (err) {
+        console.warn('[Rencana] Failed to sync renamed course to Supabase:', err);
+      }
+    })();
+  }, []);
+
   const deleteCourse = useCallback((subjectId: string) => {
     const upper = subjectId.toUpperCase();
     setCourses((prev) => {
@@ -1714,6 +1746,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     courses,
     setCourses,
     addCourse,
+    renameCourse,
     deleteCourse,
     tasks,
     tasksVersion,

@@ -21,6 +21,15 @@ import * as spotifyAuth from '../lib/spotifyAuth';
 import { useApp } from './AppContext';
 import { t, type TranslationKey } from '../i18n';
 
+// When SERVER_COMMUNITY_PUSH_ENABLED is true, remote pushes from Postgres triggers
+// (see supabase/migrations/053_community_push_triggers.sql) handle reaction/friend/
+// circle/shared-task banners — even when the app is not running. The local
+// `Notifications.scheduleNotificationAsync` calls in this file would otherwise
+// fire a *duplicate* banner whenever the app happens to be foregrounded and
+// receives the realtime event, so we skip them here.
+// Flip to false if you ever need to disable the server push path (e.g. during an outage).
+const SERVER_COMMUNITY_PUSH_ENABLED = true;
+
 // ── Client-side rate limiters (module-scoped, persist across re-renders) ──
 const shareLimiter = new RateLimiter(10, 60_000); // max 10 share calls / minute
 const shareAllLimiter = new RateLimiter(3, 60_000); // max 3 bulk-share calls / minute
@@ -411,6 +420,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           // Refresh unread count for badge
           refreshUnreadCount();
 
+          // Server-side trigger already fires a remote push for this reaction — skip the local
+          // one to avoid duplicate banners when the app is foregrounded.
+          if (SERVER_COMMUNITY_PUSH_ENABLED) return;
+
           try {
             // Look up sender name for a personalized notification
             const { data: profile } = await supabase
@@ -788,6 +801,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           if (payload.eventType === 'INSERT') {
             const row = payload.new;
             if (!row) return;
+            // Server trigger handles the remote push; avoid a duplicate local banner.
+            if (SERVER_COMMUNITY_PUSH_ENABLED) return;
             try {
               // Use maybeSingle() instead of single() to avoid throwing when
               // RLS prevents the recipient from reading the owner's task row.
