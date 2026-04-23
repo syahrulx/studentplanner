@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -404,6 +404,51 @@ export default function NotificationsScreen() {
   const [respondingFriendIds, setRespondingFriendIds] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Set<string>>(new Set());
+
+  // Selection mode: user picks individual reactions to clear, or "Select all".
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allReactionIds = useMemo(() => reactions.map((r) => r.id), [reactions]);
+  const allSelected = selectionMode && reactions.length > 0 && selectedIds.size === reactions.length;
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === allReactionIds.length) return new Set();
+      return new Set(allReactionIds);
+    });
+  }, [allReactionIds]);
+
+  const clearSelected = useCallback(async () => {
+    if (!userId || selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setClearing(true);
+    try {
+      await communityApi.deleteMyReceivedReactions(userId, ids);
+      setReactions((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+      await refreshUnreadCount();
+      exitSelectionMode();
+    } catch (e) {
+      console.warn(e);
+      Alert.alert(T('commNotifClearFailTitle'), T('commTryAgainShort'));
+    } finally {
+      setClearing(false);
+    }
+  }, [userId, selectedIds, refreshUnreadCount, exitSelectionMode, T]);
 
   const handleShareResponse = async (sharedTaskId: string, accept: boolean) => {
     setRespondingIds(prev => new Set(prev).add(sharedTaskId));
@@ -903,47 +948,92 @@ export default function NotificationsScreen() {
       {/* Header */}
       <View style={styles.headerRow}>
         <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-        >
-          <Feather name="chevron-left" size={24} color={theme.text} />
-        </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>Notifications</Text>
-        <Pressable
-          disabled={clearing || reactions.length === 0}
-          onPress={() => {
-            Alert.alert(T('commNotifClearTitle'), T('commNotifClearBody'), [
-              { text: T('cancel'), style: 'cancel' },
-              {
-                text: T('commNotifClearAction'),
-                style: 'destructive',
-                onPress: async () => {
-                  if (!userId) return;
-                  setClearing(true);
-                  try {
-                    await communityApi.clearMyReceivedReactions(userId);
-                    setReactions([]);
-                    await refreshUnreadCount();
-                  } catch (e) {
-                    console.warn(e);
-                    Alert.alert(T('commNotifClearFailTitle'), T('commTryAgainShort'));
-                  }
-                  setClearing(false);
-                },
-              },
-            ]);
-          }}
+          onPress={() => (selectionMode ? exitSelectionMode() : router.back())}
           style={({ pressed }) => [
-            styles.clearHeaderBtn,
-            { borderColor: theme.border, opacity: reactions.length === 0 ? 0.35 : pressed ? 0.75 : 1 },
+            styles.backBtn,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && { opacity: 0.7 },
           ]}
         >
-          {clearing ? (
-            <ActivityIndicator size="small" color={theme.textSecondary} />
-          ) : (
-            <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>{T('commNotifClearAction')}</Text>
-          )}
+          <Feather name={selectionMode ? 'x' : 'chevron-left'} size={24} color={theme.text} />
         </Pressable>
+        <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+          {selectionMode
+            ? T('commNotifSelectedCount').replace('{count}', String(selectedIds.size))
+            : 'Notifications'}
+        </Text>
+
+        {selectionMode ? (
+          <View style={styles.headerActionsRow}>
+            <Pressable
+              disabled={reactions.length === 0}
+              onPress={toggleSelectAll}
+              style={({ pressed }) => [
+                styles.clearHeaderBtn,
+                {
+                  borderColor: theme.border,
+                  opacity: reactions.length === 0 ? 0.35 : pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>
+                {allSelected ? T('commNotifDeselectAll') : T('commNotifSelectAll')}
+              </Text>
+            </Pressable>
+            <Pressable
+              disabled={clearing || selectedIds.size === 0}
+              onPress={() => {
+                const count = selectedIds.size;
+                if (count === 0) return;
+                Alert.alert(
+                  T('commNotifClearSelectedTitle'),
+                  T('commNotifClearSelectedBody').replace('{count}', String(count)),
+                  [
+                    { text: T('cancel'), style: 'cancel' },
+                    {
+                      text: T('commNotifClearAction'),
+                      style: 'destructive',
+                      onPress: () => void clearSelected(),
+                    },
+                  ],
+                );
+              }}
+              style={({ pressed }) => [
+                styles.clearHeaderBtn,
+                styles.destructiveHeaderBtn,
+                {
+                  borderColor: '#ef4444',
+                  opacity: selectedIds.size === 0 ? 0.35 : pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              {clearing ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <Text style={[styles.clearHeaderBtnText, { color: '#ef4444' }]}>
+                  {T('commNotifClearAction')}
+                  {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            disabled={reactions.length === 0 || clearing}
+            onPress={() => setSelectionMode(true)}
+            style={({ pressed }) => [
+              styles.clearHeaderBtn,
+              {
+                borderColor: theme.border,
+                opacity: reactions.length === 0 ? 0.35 : pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.clearHeaderBtnText, { color: theme.textSecondary }]}>
+              {T('commNotifSelect')}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView
@@ -1207,19 +1297,48 @@ export default function NotificationsScreen() {
             const nameColor = isRead ? theme.textSecondary : theme.text;
             const subColor = isRead ? theme.tabIconDefault : theme.textSecondary;
             const timeColor = isRead ? theme.tabIconDefault : theme.textSecondary;
+            const isSelected = selectedIds.has(reaction.id);
             return (
               <Pressable
                 key={reaction.id}
                 style={({ pressed }) => [
                   styles.notifCard,
                   {
-                    backgroundColor: isRead ? theme.card : theme.primary + '08',
-                    borderColor: isRead ? theme.border : theme.primary + '30',
+                    backgroundColor: isSelected
+                      ? theme.primary + '16'
+                      : isRead
+                        ? theme.card
+                        : theme.primary + '08',
+                    borderColor: isSelected
+                      ? theme.primary
+                      : isRead
+                        ? theme.border
+                        : theme.primary + '30',
                   },
                   pressed && { opacity: 0.85 },
                 ]}
-                onPress={() => handleReply(reaction)}
+                onPress={() => {
+                  if (selectionMode) toggleSelected(reaction.id);
+                  else handleReply(reaction);
+                }}
+                onLongPress={() => {
+                  if (!selectionMode) setSelectionMode(true);
+                  toggleSelected(reaction.id);
+                }}
               >
+                {selectionMode ? (
+                  <View
+                    style={[
+                      styles.selectCheckbox,
+                      {
+                        borderColor: isSelected ? theme.primary : theme.border,
+                        backgroundColor: isSelected ? theme.primary : 'transparent',
+                      },
+                    ]}
+                  >
+                    {isSelected ? <Feather name="check" size={14} color="#fff" /> : null}
+                  </View>
+                ) : null}
                 <View style={isRead ? styles.avatarDim : undefined}>
                   <Avatar
                     name={reaction.sender_profile?.name}
@@ -1305,6 +1424,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   clearHeaderBtnText: { fontSize: 14, fontWeight: '700' },
+  headerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  destructiveHeaderBtn: {
+    borderWidth: 1.5,
+  },
+  selectCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
 
   list: { flex: 1 },
   listContent: { paddingHorizontal: 20, paddingTop: 8 },

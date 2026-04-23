@@ -45,7 +45,7 @@ export default function AttendanceCheckinScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={[styles.iconWrap, { backgroundColor: theme.primary + '22' }]}>
-          <ThemeIcon name="check-circle" size={40} color={theme.primary} />
+          <ThemeIcon name="checkCircle" size={40} color={theme.primary} />
         </View>
         <Text style={[styles.title, { color: theme.text }]}>Class check-in</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>

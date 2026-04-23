@@ -14,6 +14,7 @@ import {
   Switch,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
@@ -58,6 +59,19 @@ const THEME_LABEL_KEY: Record<
 
 const CLEAR_DATA_PHRASE = 'delete data';
 const DELETE_ACCOUNT_PHRASE = 'delete my account';
+
+// Keep in sync with app/(auth)/profile-setup.tsx and app/(tabs)/_layout.tsx.
+const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
+
+async function clearAllProfileSetupSkipFlags(): Promise<void> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const stale = keys.filter((k) => k.startsWith(PROFILE_SETUP_SKIPPED_KEY_PREFIX));
+    if (stale.length) await AsyncStorage.multiRemove(stale);
+  } catch {
+    /* non-fatal */
+  }
+}
 
 export default function Settings() {
   const {
@@ -192,6 +206,7 @@ export default function Settings() {
               const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
               await disconnectClassroom().catch(() => {});
             } catch {}
+            await clearAllProfileSetupSkipFlags();
             await supabase.auth.signOut();
             router.replace('/(auth)/login' as any);
           })();
@@ -241,6 +256,7 @@ export default function Settings() {
           const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
           await disconnectClassroom().catch(() => {});
         } catch {}
+        await clearAllProfileSetupSkipFlags();
         await supabase.auth.signOut().catch(() => {});
         router.replace('/(auth)/login' as any);
         return;

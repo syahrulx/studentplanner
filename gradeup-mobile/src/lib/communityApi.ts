@@ -1061,6 +1061,18 @@ export async function clearMyReceivedReactions(userId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Delete a specific set of received reaction rows for the current user (multi-select clear). */
+export async function deleteMyReceivedReactions(userId: string, ids: string[]): Promise<void> {
+  const list = Array.from(new Set((ids ?? []).filter((v) => typeof v === 'string' && v.trim().length > 0)));
+  if (list.length === 0) return;
+  const { error } = await supabase
+    .from('quick_reactions')
+    .delete()
+    .eq('receiver_id', userId)
+    .in('id', list);
+  if (error) throw error;
+}
+
 /** Send a bump (special reaction that triggers push notification) */
 export async function sendBump(senderId: string, receiverId: string) {
   return sendReaction(senderId, receiverId, 'bump', '💥 Bump!');

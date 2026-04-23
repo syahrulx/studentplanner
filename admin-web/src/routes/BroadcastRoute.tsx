@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   listUniversities,
+  listUsers,
   previewBroadcast,
   sendBroadcast,
+  type AdminUserRow,
   type BroadcastAudience,
   type BroadcastCategory,
   type SendBroadcastResult,
@@ -30,11 +32,22 @@ type FormState = {
   paramsText: string;
 };
 
+const USER_PAGE_SIZE = 25;
+
 function parseUserIds(raw: string): string[] {
   return raw
     .split(/[\s,;\n]+/)
     .map((v) => v.trim())
     .filter((v) => v.length > 0);
+}
+
+function userLabel(u: AdminUserRow): string {
+  const name = (u.name ?? '').trim();
+  const sid = (u.student_id ?? '').trim();
+  if (name && sid) return `${name} · ${sid}`;
+  if (name) return name;
+  if (sid) return sid;
+  return u.id.slice(0, 8);
 }
 
 function parseParams(raw: string): { ok: true; value: Record<string, string> } | { ok: false; error: string } {
@@ -80,6 +93,20 @@ export function BroadcastRoute() {
   const [sendErr, setSendErr] = useState('');
   const [sendResult, setSendResult] = useState<SendBroadcastResult | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // Individual user picker (audience === 'user_ids')
+  // ---------------------------------------------------------------------------
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerUniversityId, setPickerUniversityId] = useState('');
+  const [pickerPage, setPickerPage] = useState(0);
+  const [pickerItems, setPickerItems] = useState<AdminUserRow[]>([]);
+  const [pickerTotal, setPickerTotal] = useState(0);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [pickerErr, setPickerErr] = useState('');
+  // Map keeps label cache so selected chips don't disappear when user scrolls/filters.
+  const [selectedUsers, setSelectedUsers] = useState<Map<string, AdminUserRow>>(new Map());
+  const [showPasteBox, setShowPasteBox] = useState(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -91,13 +118,105 @@ export function BroadcastRoute() {
     })();
   }, []);
 
-  const parsedUserIds = useMemo(() => parseUserIds(form.userIdsText), [form.userIdsText]);
+  // Reset paging whenever search/filter changes.
+  useEffect(() => {
+    setPickerPage(0);
+  }, [pickerQuery, pickerUniversityId]);
+
+  // Fetch users when the picker is visible OR when query/filter/page changes.
+  useEffect(() => {
+    if (form.audience !== 'user_ids') return;
+    let cancelled = false;
+    (async () => {
+      setPickerBusy(true);
+      setPickerErr('');
+      try {
+        const res = await listUsers({
+          query: pickerQuery.trim() || undefined,
+          universityId: pickerUniversityId || undefined,
+          limit: USER_PAGE_SIZE,
+          offset: pickerPage * USER_PAGE_SIZE,
+        });
+        if (cancelled) return;
+        setPickerItems(res.items);
+        setPickerTotal(res.count);
+      } catch (e) {
+        if (!cancelled) setPickerErr(e instanceof Error ? e.message : 'Failed to load users');
+      } finally {
+        if (!cancelled) setPickerBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.audience, pickerQuery, pickerUniversityId, pickerPage]);
+
+  const parsedUserIds = useMemo(() => Array.from(selectedUsers.keys()), [selectedUsers]);
+  const pastedUserIds = useMemo(() => parseUserIds(form.userIdsText), [form.userIdsText]);
   const parsedParams = useMemo(() => parseParams(form.paramsText), [form.paramsText]);
+
+  const mergedUserIds = useMemo(() => {
+    if (!showPasteBox) return parsedUserIds;
+    const set = new Set<string>(parsedUserIds);
+    for (const id of pastedUserIds) set.add(id);
+    return Array.from(set);
+  }, [parsedUserIds, pastedUserIds, showPasteBox]);
+
+  const allOnPageSelected =
+    pickerItems.length > 0 && pickerItems.every((u) => selectedUsers.has(u.id));
+  const someOnPageSelected =
+    !allOnPageSelected && pickerItems.some((u) => selectedUsers.has(u.id));
+
+  const togglePickerUser = (u: AdminUserRow) => {
+    setSelectedUsers((prev) => {
+      const next = new Map(prev);
+      if (next.has(u.id)) next.delete(u.id);
+      else next.set(u.id, u);
+      return next;
+    });
+  };
+
+  const toggleAllOnPage = () => {
+    setSelectedUsers((prev) => {
+      const next = new Map(prev);
+      if (allOnPageSelected) {
+        for (const u of pickerItems) next.delete(u.id);
+      } else {
+        for (const u of pickerItems) next.set(u.id, u);
+      }
+      return next;
+    });
+  };
+
+  const selectAllMatching = async () => {
+    setPickerBusy(true);
+    setPickerErr('');
+    try {
+      // Cap at 1000 to avoid huge payloads; enough for typical broadcast lists.
+      const res = await listUsers({
+        query: pickerQuery.trim() || undefined,
+        universityId: pickerUniversityId || undefined,
+        limit: 1000,
+        offset: 0,
+      });
+      setSelectedUsers((prev) => {
+        const next = new Map(prev);
+        for (const u of res.items) next.set(u.id, u);
+        return next;
+      });
+    } catch (e) {
+      setPickerErr(e instanceof Error ? e.message : 'Failed to select all');
+    } finally {
+      setPickerBusy(false);
+    }
+  };
+
+  const clearSelection = () => setSelectedUsers(new Map());
 
   const canPreview =
     form.audience === 'all' ||
     (form.audience === 'university' && !!form.universityId) ||
-    (form.audience === 'user_ids' && parsedUserIds.length > 0);
+    (form.audience === 'user_ids' && mergedUserIds.length > 0);
 
   const routeInvalid = form.route.trim() !== '' && !form.route.trim().startsWith('/');
   const paramsInvalid = !parsedParams.ok;
@@ -116,7 +235,7 @@ export function BroadcastRoute() {
       const res = await previewBroadcast({
         audience: form.audience,
         universityId: form.audience === 'university' ? form.universityId : undefined,
-        userIds: form.audience === 'user_ids' ? parsedUserIds : undefined,
+        userIds: form.audience === 'user_ids' ? mergedUserIds : undefined,
       });
       setPreview(res);
     } catch (e) {
@@ -145,7 +264,7 @@ export function BroadcastRoute() {
       const res = await sendBroadcast({
         audience: form.audience,
         universityId: form.audience === 'university' ? form.universityId : undefined,
-        userIds: form.audience === 'user_ids' ? parsedUserIds : undefined,
+        userIds: form.audience === 'user_ids' ? mergedUserIds : undefined,
         title: form.title.trim(),
         body: form.body.trim(),
         category: form.category,
@@ -182,10 +301,17 @@ export function BroadcastRoute() {
                     setForm((f) => ({ ...f, audience: e.target.value as BroadcastAudience, userIdsText: f.userIdsText }))
                   }
                 >
-                  <option value="all">All users (with push enabled)</option>
+                  <option value="all">Everyone (all users with push enabled)</option>
                   <option value="university">By university</option>
-                  <option value="user_ids">Specific user IDs</option>
+                  <option value="user_ids">Select specific users</option>
                 </Select>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {form.audience === 'all'
+                    ? 'Sends to every eligible user.'
+                    : form.audience === 'university'
+                      ? 'Sends to everyone at the selected university.'
+                      : 'Pick individuals or “Select all matching” in the list below.'}
+                </div>
               </div>
 
               <div>
@@ -227,15 +353,187 @@ export function BroadcastRoute() {
 
             {form.audience === 'user_ids' ? (
               <div className="mt-5">
-                <Label>User IDs</Label>
-                <Textarea
-                  className="mt-1 min-h-[100px] font-mono text-xs"
-                  placeholder="Paste user UUIDs separated by comma, space, or newline"
-                  value={form.userIdsText}
-                  onChange={(e) => setForm((f) => ({ ...f, userIdsText: e.target.value }))}
-                />
-                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Parsed: {parsedUserIds.length} ID(s)
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Pick users</Label>
+                  <div className="text-xs font-black text-slate-600 dark:text-slate-300">
+                    {selectedUsers.size} selected
+                    {selectedUsers.size > 0 ? (
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="ml-2 font-semibold text-rose-600 hover:underline dark:text-rose-300"
+                      >
+                        clear
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-2 grid gap-2 md:grid-cols-[1fr_minmax(160px,240px)]">
+                  <TextInput
+                    placeholder="Search by name or student ID"
+                    value={pickerQuery}
+                    onChange={(e) => setPickerQuery(e.target.value)}
+                  />
+                  <Select
+                    value={pickerUniversityId}
+                    onChange={(e) => setPickerUniversityId(e.target.value)}
+                  >
+                    <option value="">All universities</option>
+                    {universities.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                {/* Selected chips */}
+                {selectedUsers.size > 0 ? (
+                  <div className="mt-3 flex max-h-28 flex-wrap gap-1.5 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950/40">
+                    {Array.from(selectedUsers.values()).map((u) => (
+                      <span
+                        key={u.id}
+                        className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-1 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"
+                      >
+                        {userLabel(u)}
+                        <button
+                          type="button"
+                          onClick={() => togglePickerUser(u)}
+                          className="rounded-full px-1 text-brand-700/70 hover:bg-brand-500/20 hover:text-brand-800 dark:text-brand-200/70 dark:hover:text-brand-100"
+                          aria-label={`Remove ${userLabel(u)}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Picker list */}
+                <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+                    <label className="inline-flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={allOnPageSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someOnPageSelected;
+                        }}
+                        onChange={toggleAllOnPage}
+                        disabled={pickerItems.length === 0}
+                      />
+                      <span>Select all on this page</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={selectAllMatching}
+                      className="rounded-full bg-white px-3 py-1 font-black text-brand-700 shadow-sm hover:bg-brand-50 disabled:opacity-40 dark:bg-slate-900 dark:text-brand-200 dark:hover:bg-brand-500/10"
+                      disabled={pickerBusy || pickerTotal === 0}
+                      title="Add every user matching your current search + university filter to the selection (max 1,000)."
+                    >
+                      + Select all matching ({pickerTotal.toLocaleString()})
+                    </button>
+                  </div>
+
+                  <div className="max-h-80 overflow-auto">
+                    {pickerBusy && pickerItems.length === 0 ? (
+                      <div className="p-4 text-center text-xs font-semibold text-slate-500">Loading…</div>
+                    ) : pickerItems.length === 0 ? (
+                      <div className="p-4 text-center text-xs font-semibold text-slate-500">No users match.</div>
+                    ) : (
+                      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {pickerItems.map((u) => {
+                          const checked = selectedUsers.has(u.id);
+                          return (
+                            <li key={u.id}>
+                              <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => togglePickerUser(u)}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                                    {u.name ?? <span className="italic text-slate-400">(no name)</span>}
+                                  </div>
+                                  <div className="truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                    {u.student_id ?? '—'} · {u.id.slice(0, 8)}…
+                                  </div>
+                                </div>
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${
+                                    u.status === 'active'
+                                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200'
+                                      : 'bg-slate-200 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {u.status}
+                                </span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Pager */}
+                  {pickerTotal > USER_PAGE_SIZE ? (
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+                      <div>
+                        {pickerPage * USER_PAGE_SIZE + 1}–
+                        {Math.min((pickerPage + 1) * USER_PAGE_SIZE, pickerTotal)} of{' '}
+                        {pickerTotal.toLocaleString()}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
+                          onClick={() => setPickerPage((p) => Math.max(0, p - 1))}
+                          disabled={pickerPage === 0 || pickerBusy}
+                        >
+                          Prev
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
+                          onClick={() => setPickerPage((p) => p + 1)}
+                          disabled={(pickerPage + 1) * USER_PAGE_SIZE >= pickerTotal || pickerBusy}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {pickerErr ? (
+                  <div className="mt-2 text-xs font-black text-rose-600 dark:text-rose-300">{pickerErr}</div>
+                ) : null}
+
+                {/* Advanced: paste raw UUIDs */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasteBox((v) => !v)}
+                    className="text-xs font-bold text-slate-500 hover:underline dark:text-slate-400"
+                  >
+                    {showPasteBox ? '− Hide' : '+ Advanced'}: paste user UUIDs
+                  </button>
+                  {showPasteBox ? (
+                    <div className="mt-2">
+                      <Textarea
+                        className="min-h-[72px] font-mono text-xs"
+                        placeholder="Paste user UUIDs separated by comma, space, or newline"
+                        value={form.userIdsText}
+                        onChange={(e) => setForm((f) => ({ ...f, userIdsText: e.target.value }))}
+                      />
+                      <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Parsed: {pastedUserIds.length} extra ID(s) — merged with picker selection.
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}

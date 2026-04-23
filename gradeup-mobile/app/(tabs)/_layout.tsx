@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet } from 'react-native';
 import { Redirect, Tabs, router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
@@ -10,6 +11,9 @@ import { GlassTabBar } from '@/components/GlassTabBar';
 import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
 import { supabase } from '@/src/lib/supabase';
+
+const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
+const skippedKeyFor = (uid: string) => `${PROFILE_SETUP_SKIPPED_KEY_PREFIX}${uid}`;
 
 export default function TabLayout() {
   const { language } = useApp();
@@ -37,7 +41,24 @@ export default function TabLayout() {
           .eq('id', uid)
           .maybeSingle();
         if (!alive) return;
-        setGate(profile?.university ? 'ready' : 'needs-profile');
+        if (profile?.university) {
+          // If they completed profile later, clear any prior skip for this user.
+          try {
+            await AsyncStorage.removeItem(skippedKeyFor(uid));
+          } catch {
+            /* ignore */
+          }
+          setGate('ready');
+          return;
+        }
+
+        // Allow continuing if THIS user explicitly skipped profile setup.
+        try {
+          const skipped = await AsyncStorage.getItem(skippedKeyFor(uid));
+          setGate(skipped ? 'ready' : 'needs-profile');
+        } catch {
+          setGate('needs-profile');
+        }
       } catch {
         if (!alive) return;
         setGate('needs-profile');

@@ -39,7 +39,7 @@ export default function Login() {
   const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const withTimeout = async <T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) =>
@@ -332,38 +332,49 @@ export default function Login() {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Social icon buttons */}
-          <View style={styles.socialRow}>
+          {/* Social sign-in — Apple first / equally prominent (App Store 4.8). */}
+          <View style={styles.socialStack}>
             <Pressable
               style={({ pressed }) => [
-                styles.socialIconBtn,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] },
+                styles.socialBtn,
+                styles.appleBtn,
+                pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
                 isLoading && { opacity: 0.6 },
               ]}
-              onPress={handleGoogleSignIn}
+              onPress={handleAppleSignIn}
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with Apple"
             >
-              {googleLoading ? (
-                <ActivityIndicator color="#4285F4" size="small" />
+              {appleLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={styles.googleIconText}>G</Text>
+                <>
+                  <Ionicons name="logo-apple" size={20} color="#fff" />
+                  <Text style={styles.appleBtnText}>Sign in with Apple</Text>
+                </>
               )}
             </Pressable>
 
             <Pressable
               style={({ pressed }) => [
-                styles.socialIconBtn,
-                styles.appleIconBtn,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] },
+                styles.socialBtn,
+                styles.googleBtn,
+                pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
                 isLoading && { opacity: 0.6 },
               ]}
-              onPress={handleAppleSignIn}
+              onPress={handleGoogleSignIn}
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with Google"
             >
-              {appleLoading ? (
-                <ActivityIndicator color="#fff" size="small" />
+              {googleLoading ? (
+                <ActivityIndicator color="#4285F4" size="small" />
               ) : (
-                <Ionicons name="logo-apple" size={22} color="#fff" />
+                <>
+                  <Text style={styles.googleIconText}>G</Text>
+                  <Text style={styles.googleBtnText}>Sign in with Google</Text>
+                </>
               )}
             </Pressable>
           </View>
@@ -455,31 +466,46 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  // Social icon buttons
-  socialRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
+  // Social sign-in buttons — Apple first, equally prominent (Guideline 4.8)
+  socialStack: {
+    flexDirection: 'column',
+    gap: 10,
     marginBottom: 4,
   },
-  socialIconBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+  socialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 50,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+  },
+  appleBtn: {
+    backgroundColor: '#000',
+  },
+  appleBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  googleBtn: {
     backgroundColor: '#fff',
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   googleIconText: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#4285F4',
+    width: 20,
+    textAlign: 'center',
   },
-  appleIconBtn: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+  googleBtnText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   // Divider

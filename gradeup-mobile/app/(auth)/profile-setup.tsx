@@ -10,13 +10,18 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase';
 import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
 import { useApp } from '@/src/context/AppContext';
+
+const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
+const skippedKeyFor = (uid: string) => `${PROFILE_SETUP_SKIPPED_KEY_PREFIX}${uid}`;
 
 const ACADEMIC_LEVELS = [
   { key: 'foundation', label: 'Foundation / Pre-U', icon: '📚' },
@@ -75,6 +80,11 @@ export default function ProfileSetup() {
         academicLevel: academicLevel as any,
       });
 
+      try {
+        await AsyncStorage.removeItem(skippedKeyFor(user.id));
+      } catch {
+        /* non-fatal */
+      }
       router.replace('/(tabs)');
     } catch (e) {
       setError('Could not save your profile. Please check your connection and try again.');
@@ -84,7 +94,27 @@ export default function ProfileSetup() {
   };
 
   const handleSkip = () => {
-    router.replace('/(tabs)');
+    Alert.alert(
+      'Skip profile setup?',
+      "No worries — you can continue. But your experience will be much better if you fill this in.\n\nEspecially if you're a UiTM student: we can unlock UiTM-specific timetable & academic calendar flows.\n\nYou can always complete this later in Settings.",
+      [
+        { text: 'Fill now', style: 'cancel' },
+        {
+          text: 'Skip anyway',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const uid = session?.user?.id;
+              if (uid) await AsyncStorage.setItem(skippedKeyFor(uid), '1');
+            } catch {
+              // Non-fatal: still route into the app; gate will behave as before if storage fails.
+            }
+            router.replace('/(tabs)');
+          },
+        },
+      ],
+    );
   };
 
   return (

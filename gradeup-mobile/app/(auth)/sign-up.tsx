@@ -372,21 +372,39 @@ export default function SignUp() {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Social icon buttons */}
-          <View style={styles.socialRow}>
+          {/* Social sign-up — Apple first / equally prominent (App Store 4.8). */}
+          <View style={styles.socialStack}>
             <Pressable
-              style={({ pressed }) => [styles.socialIconBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }, isLoading && { opacity: 0.6 }]}
-              onPress={handleGoogleSignUp}
-              disabled={isLoading}
-            >
-              {googleLoading ? <ActivityIndicator color="#4285F4" size="small" /> : <Text style={styles.googleIconText}>G</Text>}
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.socialIconBtn, styles.appleIconBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }, isLoading && { opacity: 0.6 }]}
+              style={({ pressed }) => [styles.socialBtn, styles.appleBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] }, isLoading && { opacity: 0.6 }]}
               onPress={handleAppleSignUp}
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Sign up with Apple"
             >
-              {appleLoading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="logo-apple" size={22} color="#fff" />}
+              {appleLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="logo-apple" size={20} color="#fff" />
+                  <Text style={styles.appleBtnText}>Sign up with Apple</Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.socialBtn, styles.googleBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] }, isLoading && { opacity: 0.6 }]}
+              onPress={handleGoogleSignUp}
+              disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Sign up with Google"
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#4285F4" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.googleIconText}>G</Text>
+                  <Text style={styles.googleBtnText}>Sign up with Google</Text>
+                </>
+              )}
             </Pressable>
           </View>
 
@@ -488,30 +506,45 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   cardTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a', letterSpacing: -0.3, marginBottom: 18 },
-  socialRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
+  socialStack: {
+    flexDirection: 'column',
+    gap: 10,
     marginBottom: 4,
   },
-  socialIconBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+  socialBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 50,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+  },
+  appleBtn: {
+    backgroundColor: '#000',
+  },
+  appleBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  googleBtn: {
     backgroundColor: '#fff',
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   googleIconText: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#4285F4',
+    width: 20,
+    textAlign: 'center',
   },
-  appleIconBtn: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+  googleBtnText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
   },
   hintText: {
     fontSize: 12,

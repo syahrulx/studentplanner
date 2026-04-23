@@ -958,6 +958,7 @@ export default function CommunityMap() {
         timetable={timetable}
         updateActivity={updateActivity}
         clearMyActivity={clearMyActivity}
+        refreshMyActivity={refreshMyActivity}
         theme={theme}
       />
     </View>
@@ -982,6 +983,7 @@ function StatusPopup({
   timetable,
   updateActivity,
   clearMyActivity,
+  refreshMyActivity,
   theme,
 }: {
   visible: boolean;
@@ -990,6 +992,7 @@ function StatusPopup({
   timetable: TimetableEntry[];
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
+  refreshMyActivity: () => Promise<void>;
   theme: any;
 }) {
   const [selectedType, setSelectedType] = useState<ActivityType>(
