@@ -22,12 +22,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { buildCorsHeaders } from '../_shared/cors.ts';
 
 type Category = 'reaction' | 'friend' | 'circle' | 'shared_task' | 'quiz' | 'goal';
 
@@ -68,7 +63,7 @@ function isCategoryEnabled(p: ProfileRow, category?: Category): boolean {
   }
 }
 
-function json(status: number, body: unknown): Response {
+function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
@@ -82,6 +77,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = buildCorsHeaders(req);
+  const json = (s: number, b: unknown) => jsonResp(s, b, corsHeaders);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 

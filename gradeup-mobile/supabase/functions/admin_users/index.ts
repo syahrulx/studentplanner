@@ -4,16 +4,11 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
+import { buildCorsHeaders } from '../_shared/cors.ts';
 
 type Json = Record<string, unknown>;
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(status: number, body: unknown) {
+function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
@@ -21,13 +16,15 @@ function json(status: number, body: unknown) {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+  const J = (s: number, b: unknown) => jsonResp(s, b, corsHeaders);
   try {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-    if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
+    if (req.method !== 'POST') return J(405, { error: 'method_not_allowed' });
 
     const auth = await authorizeAdminRequest(req);
-    if ('error' in auth) return json(auth.status, { error: auth.error });
-    const { admin } = auth;
+    if ('error' in auth) return J(auth.status, { error: auth.error });
+    const { admin, adminUserId } = auth;
 
     const payload = (await req.json().catch(() => ({}))) as Json;
     const action = String(payload.action || '');
@@ -38,25 +35,19 @@ serve(async (req) => {
         admin.from('universities').select('*', { count: 'exact', head: true }),
         admin.from('timetable_entries').select('*', { count: 'exact', head: true }),
       ]);
-      if (u.error) return json(400, { error: u.error.message });
-      if (uni.error) return json(400, { error: uni.error.message });
-      if (tt.error) return json(400, { error: tt.error.message });
+      if (u.error) return J(400, { error: u.error.message });
+      if (uni.error) return J(400, { error: uni.error.message });
+      if (tt.error) return J(400, { error: tt.error.message });
 
-      // Derive distinct course count in JS to avoid extra SQL in this simple function.
-      const distinctCourses = new Set(
-        // subjectCount.data is not fetched; we need query for distinct subject_id.
-        // Use a second query for distinct course ids when needed.
-        [],
-      );
-      // The `courseCount` query above isn't reliable for distinct count, so run a proper distinct query.
+      const distinctCourses = new Set<string>();
       const { data: distinctCourseRows, error: dcErr } = await admin
         .from('user_courses')
         .select('subject_id')
         .limit(100000);
-      if (dcErr) return json(400, { error: dcErr.message });
+      if (dcErr) return J(400, { error: dcErr.message });
       for (const r of (distinctCourseRows ?? []) as Array<{ subject_id: string }>) distinctCourses.add(r.subject_id);
 
-      return json(200, {
+      return J(200, {
         total_users: u.count ?? 0,
         total_universities: uni.count ?? 0,
         total_courses: distinctCourses.size,
@@ -80,58 +71,80 @@ serve(async (req) => {
       if (universityId) query = query.eq('university_id', universityId);
       if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
       if (q) {
-        query = query.or(`name.ilike.%${q}%,student_id.ilike.%${q}%`);
+        // Strip PostgREST `or(...)` control chars so users can't break out of
+        // the grouped filter and inject additional clauses.
+        const safe = q.replace(/[,():*\\%]/g, ' ').trim();
+        if (safe) query = query.or(`name.ilike.%${safe}%,student_id.ilike.%${safe}%`);
       }
 
       const { data, count, error: e } = await query;
-      if (e) return json(400, { error: e.message });
-      return json(200, { items: data ?? [], count: count ?? 0, offset, limit });
+      if (e) return J(400, { error: e.message });
+      return J(200, { items: data ?? [], count: count ?? 0, offset, limit });
     }
 
     if (action === 'set_status') {
       const userId = String(payload.userId || '').trim();
       const status = String(payload.status || '').trim();
-      if (!userId) return json(400, { error: 'missing_userId' });
-      if (!['active', 'disabled', 'banned'].includes(status)) return json(400, { error: 'invalid_status' });
+      if (!userId) return J(400, { error: 'missing_userId' });
+      if (!['active', 'disabled', 'banned'].includes(status)) return J(400, { error: 'invalid_status' });
 
       const { error: e } = await admin.from('profiles').update({ status }).eq('id', userId);
-      if (e) return json(400, { error: e.message });
-      await admin.from('admin_logs').insert({ type: 'api_request', status: 'success', meta: { action, userId, status } });
-      return json(200, { ok: true });
+      if (e) return J(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, userId, status, actor: adminUserId ?? null },
+      });
+      return J(200, { ok: true });
     }
 
     if (action === 'set_subscription_plan') {
       const userId = String(payload.userId || '').trim();
       const subscription_plan = String(payload.subscription_plan || '').trim();
-      if (!userId) return json(400, { error: 'missing_userId' });
-      if (!['free', 'plus', 'pro'].includes(subscription_plan)) return json(400, { error: 'invalid_subscription_plan' });
+      if (!userId) return J(400, { error: 'missing_userId' });
+      if (!['free', 'plus', 'pro'].includes(subscription_plan)) return J(400, { error: 'invalid_subscription_plan' });
 
       const { error: e } = await admin.from('profiles').update({ subscription_plan }).eq('id', userId);
-      if (e) return json(400, { error: e.message });
+      if (e) return J(400, { error: e.message });
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, userId, subscription_plan },
+        meta: { action, userId, subscription_plan, actor: adminUserId ?? null },
       });
-      return json(200, { ok: true });
+      return J(200, { ok: true });
     }
 
     if (action === 'delete') {
       const userId = String(payload.userId || '').trim();
-      if (!userId) return json(400, { error: 'missing_userId' });
+      if (!userId) return J(400, { error: 'missing_userId' });
+
+      // Cascade app-side data first (migration 054 wires on-delete cascades for
+      // auth.users, but run a belt-and-braces function in case the migration
+      // hasn't been applied to this environment yet).
+      try {
+        await admin.rpc('admin_cascade_delete_user', { p_user_id: userId });
+      } catch {
+        // The RPC may not exist on older deployments; fall back to the
+        // original minimal cleanup below.
+      }
 
       const { error: delErr } = await admin.auth.admin.deleteUser(userId);
-      if (delErr) return json(400, { error: delErr.message });
+      if (delErr) return J(400, { error: delErr.message });
 
+      // Legacy cleanup (safe no-op if the cascade already removed these).
       await admin.from('profiles').delete().eq('id', userId);
       await admin.from('timetable_entries').delete().eq('user_id', userId);
-      await admin.from('admin_logs').insert({ type: 'api_request', status: 'success', meta: { action, userId } });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, userId, actor: adminUserId ?? null },
+      });
 
-      return json(200, { ok: true });
+      return J(200, { ok: true });
     }
 
-    return json(400, { error: 'unknown_action' });
+    return J(400, { error: 'unknown_action' });
   } catch (e) {
-    return json(500, { error: e instanceof Error ? e.message : 'unknown_error' });
+    return J(500, { error: e instanceof Error ? e.message : 'unknown_error' });
   }
 });

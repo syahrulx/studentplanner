@@ -260,7 +260,12 @@ export async function listUsers(opts: {
     const universityId = (opts.universityId ?? '').trim();
     if (universityId) query = query.eq('university_id', universityId);
     if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
-    if (q) query = query.or(`name.ilike.%${q}%,student_id.ilike.%${q}%`);
+    if (q) {
+      // Strip PostgREST `or(...)` control chars so users can't break out of
+      // the grouped filter and inject additional clauses (e.g. `),email.ilike.%`).
+      const safe = q.replace(/[,():*\\%]/g, ' ').trim();
+      if (safe) query = query.or(`name.ilike.%${safe}%,student_id.ilike.%${safe}%`);
+    }
     const { data, error, count } = await query;
     if (error) throw toError(error);
     return {
@@ -278,34 +283,17 @@ export async function listUsers(opts: {
 }
 
 export async function setUserStatus(userId: string, status: AdminUserRow['status']) {
-  if (await hasSessionJwt()) {
-    const { error } = await supabase.from('profiles').update({ status }).eq('id', userId);
-    if (error) throw toError(error);
-    await supabase.from('admin_logs').insert({
-      type: 'api_request',
-      status: 'success',
-      meta: { action: 'set_status', userId, status },
-    });
-    return { ok: true as const };
-  }
-
+  // Always route through the Edge Function so the audit row is written
+  // server-side with the acting admin's uid (prevents self-reported logs
+  // from the browser).
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_users', { action: 'set_status', userId, status }, headers);
   return unwrapFunctionData<{ ok: boolean }>(data, error);
 }
 
 export async function setUserSubscriptionPlan(userId: string, subscription_plan: SubscriptionPlan) {
-  if (await hasSessionJwt()) {
-    const { error } = await supabase.from('profiles').update({ subscription_plan }).eq('id', userId);
-    if (error) throw toError(error);
-    await supabase.from('admin_logs').insert({
-      type: 'api_request',
-      status: 'success',
-      meta: { action: 'set_subscription_plan', userId, subscription_plan },
-    });
-    return { ok: true as const };
-  }
-
+  // Always route through the Edge Function so the audit row is written
+  // server-side with the acting admin's uid.
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_users',

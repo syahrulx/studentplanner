@@ -14,17 +14,16 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest, getServiceClient } from '../_shared/adminAuth.ts';
+import { buildCorsHeaders } from '../_shared/cors.ts';
 
 type Audience = 'all' | 'user_ids' | 'university';
 type Category = 'reaction' | 'shared_task' | 'circle' | 'friend';
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+// Per-admin rate limit: how many successful sends are allowed per window.
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT_MAX_SENDS = 3;
 
-function json(status: number, body: unknown): Response {
+function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
@@ -72,13 +71,32 @@ async function resolveRecipients(
   return (data ?? []).map((r: { id: string }) => r.id);
 }
 
+async function recentBroadcastCount(
+  admin: ReturnType<typeof getServiceClient>,
+  actor: string,
+): Promise<number> {
+  const sinceIso = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const { count, error } = await admin
+    .from('admin_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('type', 'api_request')
+    .eq('status', 'success')
+    .gte('created_at', sinceIso)
+    .contains('meta', { action: 'community_broadcast', actor });
+  if (error) return 0; // fail-open rather than block legitimate sends on log outage
+  return count ?? 0;
+}
+
 serve(async (req: Request) => {
+  const corsHeaders = buildCorsHeaders(req);
+  const json = (s: number, b: unknown) => jsonResp(s, b, corsHeaders);
+
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
   const auth = await authorizeAdminRequest(req);
   if ('error' in auth) return json(auth.status, { error: auth.error });
-  const { admin } = auth;
+  const { admin, adminUserId, viaDevSecret } = auth;
 
   let payload: Record<string, unknown>;
   try {
@@ -111,6 +129,21 @@ serve(async (req: Request) => {
       const body = String(payload.body ?? '').trim();
       if (!title || !body) return json(400, { error: 'missing_title_or_body' });
       if (recipients.length === 0) return json(200, { sent: 0, reason: 'no_recipients' });
+
+      // Rate-limit per admin (not applied to dev-secret bypass so automated
+      // tooling stays unblocked; tighten if needed).
+      if (!viaDevSecret && adminUserId) {
+        const recent = await recentBroadcastCount(admin, adminUserId);
+        if (recent >= RATE_LIMIT_MAX_SENDS) {
+          return json(429, {
+            error: 'rate_limited',
+            message: `You reached ${RATE_LIMIT_MAX_SENDS} broadcasts in the last ${Math.round(
+              RATE_LIMIT_WINDOW_MS / 60000,
+            )} minutes. Try again later.`,
+            retry_after_minutes: Math.round(RATE_LIMIT_WINDOW_MS / 60000),
+          });
+        }
+      }
 
       const category = ((): Category => {
         const c = String(payload.category ?? 'reaction');
@@ -172,13 +205,15 @@ serve(async (req: Request) => {
         parsed = { raw: text };
       }
 
-      // Log the broadcast for audit.
+      // Log the broadcast for audit with the acting admin id.
       try {
         await admin.from('admin_logs').insert({
           type: 'api_request',
           status: res.ok ? 'success' : 'failed',
           meta: {
             action: 'community_broadcast',
+            actor: adminUserId ?? null,
+            via_dev_secret: viaDevSecret,
             audience,
             universityId: universityId ?? null,
             recipient_count: recipients.length,

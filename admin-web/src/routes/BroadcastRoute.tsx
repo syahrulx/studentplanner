@@ -247,7 +247,19 @@ export function BroadcastRoute() {
 
   const runSend = async () => {
     if (!canSend) return;
-    if (
+
+    // Extra guard for blasting everyone: require typed confirmation so a
+    // mis-click on the Send button can't spam the whole user base.
+    if (form.audience === 'all') {
+      const typed = window.prompt(
+        `You are about to push "${form.title.trim()}" to EVERY eligible user ` +
+          `(${preview?.count?.toLocaleString() ?? 'N'}).\n\n` +
+          `Type SEND TO EVERYONE to confirm:`,
+      );
+      if (!typed || typed.trim() !== 'SEND TO EVERYONE') {
+        return;
+      }
+    } else if (
       !window.confirm(
         `Send push to ${preview?.count ?? 'N'} user(s)?\n\nTitle: ${form.title.trim()}\n\nThis cannot be undone.`,
       )

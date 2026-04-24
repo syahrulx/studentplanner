@@ -177,8 +177,16 @@ export function UsersRoute() {
                         <button
                           className="h-9 rounded-xl bg-slate-900 px-3 text-xs font-black text-white hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600"
                           onClick={async () => {
-                            const ok = confirm('Delete user permanently? This also deletes auth user.');
-                            if (!ok) return;
+                            const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
+                            const typed = window.prompt(
+                              `This permanently deletes user "${u.name || u.id}" and their auth account.\n\n` +
+                                `Type the student ID (or first 8 chars of their UUID) to confirm:\n\n${expected}`,
+                            );
+                            if (!typed) return;
+                            if (typed.trim() !== expected) {
+                              alert('Confirmation did not match. User was NOT deleted.');
+                              return;
+                            }
                             await deleteUser(u.id);
                             await refresh();
                           }}

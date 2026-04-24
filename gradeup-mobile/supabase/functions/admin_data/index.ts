@@ -5,18 +5,13 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
+import { buildCorsHeaders } from '../_shared/cors.ts';
 
 type Json = Record<string, unknown>;
 
 type PdfCandidate = { url: string; context?: string };
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(status: number, body: unknown) {
+function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' },
@@ -140,6 +135,8 @@ async function fetchPdfBytes(url: string, timeoutMs = 15_000): Promise<Uint8Arra
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+  const json = (status: number, body: unknown) => jsonResp(status, body, corsHeaders);
   try {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
