@@ -13,9 +13,11 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useClassroomAuth } from '@/hooks/useClassroomAuth';
 import { useApp } from '@/src/context/AppContext';
 import {
-  connectGoogleClassroom,
+  completeClassroomAuth,
+  getValidToken,
   loadCoursesWithWorkProgressive,
   fetchCourseWork,
   syncSelectedCourses,
@@ -45,39 +47,99 @@ export default function ClassroomSync() {
   const [loadKey, setLoadKey] = useState(0);
   const tokenRef = useRef<string | null>(null);
 
+  const { request, response, promptAsync, redirectUri, clientId, notConfigured } =
+    useClassroomAuth();
+  const promptedRef = useRef(false);
+
+  const startCourseLoad = useCallback(
+    async (token: string) => {
+      tokenRef.current = token;
+      setStep('loading_work');
+      const prefs = await getClassroomPrefs();
+      const mat = Boolean(prefs?.includeClassroomMaterials);
+      setIncludeMaterials(mat);
+
+      const data = await loadCoursesWithWorkProgressive(token, (partial) => {
+        setCourses(partial);
+      });
+
+      setCourses(data);
+      const allCourseIds = new Set(data.map((c) => c.id));
+      setSelectedCourses(allCourseIds);
+      const allTaskIds = new Set<string>();
+      data.forEach((c) => {
+        c.courseWork.forEach((w) => {
+          if (isSelectableClassroomWork(w, mat)) allTaskIds.add(w.id);
+        });
+      });
+      setSelectedTasks(allTaskIds);
+      setExpandedCourses(new Set());
+      setStep('selecting');
+    },
+    [],
+  );
+
+  // Reset the prompted flag whenever the user hits "Try Again".
   useEffect(() => {
+    promptedRef.current = false;
+  }, [loadKey]);
+
+  // If a Classroom refresh token is already cached, skip the browser entirely
+  // and just load courses. Otherwise open Google exactly once per load attempt.
+  useEffect(() => {
+    if (notConfigured) {
+      setError(
+        'Google Classroom is not configured for this build. Set EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID / EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID and rebuild.',
+      );
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
-        setStep('authenticating');
-        const token = await connectGoogleClassroom();
+        const cached = await getValidToken();
         if (cancelled) return;
-        tokenRef.current = token;
-        setStep('loading_work');
-        const prefs = await getClassroomPrefs();
-        const mat = Boolean(prefs?.includeClassroomMaterials);
-        if (!cancelled) setIncludeMaterials(mat);
+        if (cached) {
+          await startCourseLoad(cached);
+          return;
+        }
 
-        const data = await loadCoursesWithWorkProgressive(token, (partial) => {
-          if (!cancelled) setCourses(partial);
-        });
+        if (!request || promptedRef.current) return;
+        promptedRef.current = true;
+        const result = await promptAsync();
         if (cancelled) return;
 
-        setCourses(data);
-        const allCourseIds = new Set(data.map((c) => c.id));
-        setSelectedCourses(allCourseIds);
-        const allTaskIds = new Set<string>();
-        data.forEach((c) => {
-          c.courseWork.forEach((w) => {
-            if (isSelectableClassroomWork(w, mat)) allTaskIds.add(w.id);
-          });
+        if (result.type === 'cancel' || result.type === 'dismiss') {
+          setError('Sign-in was cancelled.');
+          return;
+        }
+        if (result.type !== 'success' || !('params' in result) || !result.params?.code) {
+          const rawErr =
+            result.type === 'error' && 'error' in result ? (result as any).error : null;
+          const msg = rawErr
+            ? String(rawErr?.message || rawErr?.description || rawErr)
+            : 'Browser session was dismissed.';
+          setError(`Could not connect: ${msg}`);
+          return;
+        }
+
+        const verifier = request.codeVerifier;
+        if (!verifier) {
+          setError('Could not connect: missing PKCE verifier.');
+          return;
+        }
+
+        const token = await completeClassroomAuth({
+          code: result.params.code,
+          codeVerifier: verifier,
+          redirectUri,
+          clientId,
         });
-        setSelectedTasks(allTaskIds);
-        setExpandedCourses(new Set());
-        setStep('selecting');
+        if (cancelled) return;
+        await startCourseLoad(token);
       } catch (e: any) {
         if (!cancelled) {
-          console.error("Google Classroom Connection Error:", e);
+          console.error('Google Classroom Connection Error:', e);
           const m = String(e?.message || '');
           if (/cancel|dismiss/i.test(m)) {
             setError(`Sign-in was cancelled. ${m}`);
@@ -90,7 +152,13 @@ export default function ClassroomSync() {
     return () => {
       cancelled = true;
     };
-  }, [loadKey]);
+  }, [loadKey, request, promptAsync, redirectUri, clientId, notConfigured, startCourseLoad]);
+
+  // Keep the unused `response` referenced so future hot-reload detection does not warn.
+  useEffect(() => {
+    /* response state is consumed inside the effect above via promptAsync */
+    void response;
+  }, [response]);
 
   useEffect(() => {
     if (step !== 'selecting' || courses.length === 0) return;

@@ -47,6 +47,35 @@ export default ({ config }) => {
     if (!modes.includes(m)) modes.push(m);
   }
 
+  // Direct-Google OAuth for Google Classroom. Client IDs are created in
+  // Google Cloud Console (iOS + Android OAuth client types, same project).
+  const googleIosClientId = cleanEnvString(process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '');
+  const googleAndroidClientId = cleanEnvString(
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '',
+  );
+  const googleWebClientId = cleanEnvString(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '');
+
+  // iOS requires the reversed iOS client id to be registered as a URL scheme
+  // so that Google's OAuth redirect can return to the app.
+  const iosGoogleUrlScheme = googleIosClientId
+    ? `com.googleusercontent.apps.${googleIosClientId.replace(/\.apps\.googleusercontent\.com$/i, '')}`
+    : '';
+
+  const existingUrlTypes = Array.isArray(infoPlist.CFBundleURLTypes)
+    ? [...infoPlist.CFBundleURLTypes]
+    : [];
+  if (iosGoogleUrlScheme) {
+    const already = existingUrlTypes.some((t) =>
+      Array.isArray(t?.CFBundleURLSchemes) && t.CFBundleURLSchemes.includes(iosGoogleUrlScheme),
+    );
+    if (!already) {
+      existingUrlTypes.push({
+        CFBundleURLName: 'com.rencana.googleClassroom',
+        CFBundleURLSchemes: [iosGoogleUrlScheme],
+      });
+    }
+  }
+
   // Purpose strings required for App Store review (Guideline 5.1.1(ii)).
   // Centralized here so they always win over any plugin-injected defaults
   // during `expo prebuild` / EAS builds.
@@ -70,6 +99,7 @@ export default ({ config }) => {
         // Mapbox iOS SDK reads this at native startup — eliminates race condition
         // where MapView renders before the JS setAccessToken() bridge call completes.
         MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || ("pk.eyJ1Ijoic2hhc2FmZiIsImEiOiJjbW55NDcwMDcwOXN3MnFweWM" + "xODFhajRnIn0.9uMXoqeYEiAJPlc5ZVOWKw"),
+        CFBundleURLTypes: existingUrlTypes,
       },
     },
   /** Required for dev-client deep links / Metro “open in app”; must match native build after prebuild. */
@@ -101,7 +131,11 @@ export default ({ config }) => {
     // Set OPENAI_API_KEY as a Supabase Edge Function secret instead:
     //   npx supabase secrets set OPENAI_API_KEY=sk-...
     spotifyClientId: process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID || '',
-    googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
+    googleWebClientId,
+    /** iOS OAuth client id (Google Cloud Console → OAuth 2.0 Client IDs → iOS). */
+    googleIosClientId,
+    /** Android OAuth client id (Google Cloud Console → OAuth 2.0 Client IDs → Android + SHA-1). */
+    googleAndroidClientId,
     /** Must match Storage bucket id in the same Supabase project as supabaseUrl */
     sowFilesBucket: process.env.EXPO_PUBLIC_SOW_BUCKET || 'sow-files',
     /** UiTM MyStudent Firebase API key (Identity Toolkit Web API). */

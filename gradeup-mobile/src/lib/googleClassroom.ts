@@ -1,5 +1,3 @@
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import { supabase } from './supabase';
 import { upsertTask } from './taskDb';
 import * as coursesDb from './coursesDb';
@@ -12,50 +10,24 @@ import {
   clearClassroomToken,
   getClassroomPrefs,
   setClassroomPrefs,
-  type ClassroomPrefs,
 } from '../storage';
-
-const SCOPES = [
-  'https://www.googleapis.com/auth/classroom.courses.readonly',
-  'https://www.googleapis.com/auth/classroom.coursework.me.readonly',
-].join(' ');
-
-WebBrowser.maybeCompleteAuthSession();
+import {
+  exchangeCodeForTokens,
+  refreshAccessToken,
+  revokeToken,
+  getGoogleClientIds,
+  pickPlatformClientId,
+} from './googleOauth';
 
 /**
- * Parse Supabase OAuth redirect (hash or query) into key/value pairs.
+ * Google Classroom integration.
+ *
+ * Classroom authentication runs through a dedicated Google OAuth client
+ * (see `googleOauth.ts`) and is completely decoupled from Supabase auth.
+ * Connecting or disconnecting Classroom therefore never mutates the user's
+ * Rencana login session, even when the Google account used for Classroom
+ * differs from the one used to sign in to Rencana.
  */
-function parseOAuthRedirectParams(url: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  const hashIdx = url.indexOf('#');
-  const queryIdx = url.indexOf('?');
-  const raw =
-    hashIdx >= 0
-      ? url.slice(hashIdx + 1)
-      : queryIdx >= 0
-        ? url.slice(queryIdx + 1).split('#')[0]
-        : '';
-  if (!raw) return out;
-  new URLSearchParams(raw).forEach((v, k) => {
-    out[k] = v;
-  });
-  return out;
-}
-
-/** Supabase JWT `sub` claim is the auth user id — used to prevent accidental account switch. */
-function decodeJwtSub(accessToken: string): string | null {
-  try {
-    const part = accessToken.split('.')[1];
-    if (!part) return null;
-    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = (4 - (b64.length % 4)) % 4;
-    const json = atob(b64 + '='.repeat(pad));
-    const payload = JSON.parse(json) as { sub?: string };
-    return payload.sub ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // ---------- Types ----------
 
@@ -102,156 +74,58 @@ export interface PendingNewTask {
 
 // ---------- Token management ----------
 
-export async function getValidToken(): Promise<string | null> {
-  const cached = await getClassroomToken();
-  if (cached && cached.expiresAt > Date.now() + 60_000) {
-    return cached.accessToken;
-  }
-
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.provider_token) {
-    await setClassroomToken({
-      accessToken: session.provider_token,
-      expiresAt: Date.now() + 3_600_000,
-      refreshToken: session.provider_refresh_token || cached?.refreshToken,
-    });
-    return session.provider_token;
-  }
-
-  // Attempt to refresh the Supabase session which may yield a new provider_token
-  try {
-    const { data, error } = await supabase.auth.refreshSession();
-    if (!error && data.session?.provider_token) {
-      await setClassroomToken({
-        accessToken: data.session.provider_token,
-        expiresAt: Date.now() + 3_600_000,
-        refreshToken: data.session.provider_refresh_token || cached?.refreshToken,
-      });
-      return data.session.provider_token;
-    }
-  } catch {}
-
-  return null;
+/**
+ * Finalize the OAuth handshake started by the `useClassroomAuth` hook.
+ * Exchanges the one-time auth code for access + refresh tokens and
+ * persists them locally. Returns the fresh access token.
+ */
+export async function completeClassroomAuth(params: {
+  code: string;
+  codeVerifier: string;
+  redirectUri: string;
+  clientId: string;
+}): Promise<string> {
+  const tok = await exchangeCodeForTokens(params);
+  await setClassroomToken({
+    accessToken: tok.accessToken,
+    expiresAt: tok.expiresAt,
+    refreshToken: tok.refreshToken,
+  });
+  return tok.accessToken;
 }
 
 /**
- * Full browser-based OAuth flow. Only called when cached/session tokens are unavailable.
- *
- * **Account safety:** The Rencana user id (`session.user.id`) is fixed before opening the browser.
- * After Google returns, we only call `setSession` if the JWT `sub` matches that id, so linking a
- * *student* Google account for Classroom does **not** merge you into a different Rencana profile or
- * switch your login — it only adds a linked identity + Classroom token to the profile you are
- * already signed into.
+ * Return a valid Classroom access token, refreshing via Google when the
+ * cached one is close to expiry. Returns null when no stored token exists
+ * or the refresh fails (user will be asked to reconnect).
  */
-export async function connectGoogleClassroom(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('You must be logged in first.');
+export async function getValidToken(): Promise<string | null> {
+  const cached = await getClassroomToken();
+  if (!cached) return null;
 
-  /** Never allow OAuth return to switch this Rencana account. */
-  const expectedUserId = session.user.id;
-
-  const existing = await getValidToken();
-  if (existing) return existing;
-
-  const redirectUrl = Linking.createURL('/google-callback');
-  const isLinked =
-    session.user.app_metadata?.providers?.includes('google') ||
-    session.user.identities?.some((id: any) => id.provider === 'google');
-
-  // Always force account selection to prevent Safari's WebBrowser from silently 
-  // reusing an old Google/Supabase cookie from a different account.
-  const queryParams: Record<string, string> = { 
-    access_type: 'offline',
-    prompt: 'consent select_account'
-  };
-
-  const oauthOpts = { redirectTo: redirectUrl, queryParams, scopes: SCOPES };
-
-  const { data, error } = isLinked
-    ? await supabase.auth.signInWithOAuth({ provider: 'google', options: oauthOpts })
-    : await supabase.auth.linkIdentity({ provider: 'google', options: oauthOpts });
-
-  if (error) throw new Error('Failed to start Google login: ' + error.message);
-  if (!data?.url) throw new Error('Failed to get authorization URL.');
-
-  const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-
-  if (res.type !== 'success' || !res.url) {
-    throw new Error(res.type === 'cancel' ? 'Sign-in was cancelled.' : 'Browser session was dismissed.');
+  if (cached.expiresAt > Date.now() + 60_000) {
+    return cached.accessToken;
   }
 
-  const params = parseOAuthRedirectParams(res.url);
+  if (!cached.refreshToken) return null;
 
-  if (params.error) {
-    const errDesc = params.error_description ? decodeURIComponent(params.error_description.replace(/\+/g, ' ')) : params.error;
-    throw new Error(`Google Auth Error: ${errDesc}`);
+  const clientId = pickPlatformClientId(getGoogleClientIds());
+  if (!clientId) return null;
+
+  try {
+    const tok = await refreshAccessToken({
+      refreshToken: cached.refreshToken,
+      clientId,
+    });
+    await setClassroomToken({
+      accessToken: tok.accessToken,
+      expiresAt: tok.expiresAt,
+      refreshToken: tok.refreshToken ?? cached.refreshToken,
+    });
+    return tok.accessToken;
+  } catch {
+    return null;
   }
-
-  const accessToken = params.access_token;
-  const refreshToken = params.refresh_token || null;
-  const code = params.code;
-
-  let token = params.provider_token ? decodeURIComponent(params.provider_token) : null;
-  let refreshOut = params.provider_refresh_token || params.provider_refresh ? decodeURIComponent(params.provider_refresh_token || params.provider_refresh) : undefined;
-
-  if (code) {
-    // PKCE flow - we must exchange the code to get the session & provider token
-    const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
-    if (exchangeErr) {
-      throw new Error(exchangeErr.message || 'Could not verify session from code.');
-    }
-    
-    if (exchangeData?.session?.provider_token) {
-      token = exchangeData.session.provider_token;
-      refreshOut = exchangeData.session.provider_refresh_token ?? refreshOut;
-    }
-
-    // Protect against silent account swaps
-    if (exchangeData?.session?.user?.id !== expectedUserId) {
-      // Revert the local session back to the user who started this action!
-      await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-    }
-  } else if (accessToken && refreshToken) {
-    // Implicit flow
-    const sub = decodeJwtSub(accessToken);
-    if (!sub) {
-      throw new Error('Could not verify your session. Please try connecting Google Classroom again.');
-    }
-
-    // Only update Supabase session if it belongs to exactly who we expect.
-    // If it belongs to a DIFFERENT user, we just ignore the session update! 
-    // We already extracted `token` from `params.provider_token` above.
-    if (sub === expectedUserId) {
-      const { error: sessErr } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (sessErr) {
-        throw new Error(sessErr.message || 'Could not finish linking Google Classroom.');
-      }
-    }
-  }
-
-  // Fallback to fresh session check if it wasn't returned natively
-  const { data: fresh } = await supabase.auth.getSession();
-  if (!token && fresh.session?.provider_token && fresh.session?.user?.id === expectedUserId) {
-    token = fresh.session.provider_token;
-    refreshOut = fresh.session.provider_refresh_token ?? refreshOut;
-  }
-
-  if (!token) {
-    throw new Error('Google sign-in succeeded but no Classroom token was returned. The account might not be fully linked.');
-  }
-
-  await setClassroomToken({
-    accessToken: token,
-    expiresAt: Date.now() + 3_600_000,
-    refreshToken: refreshOut,
-  });
-  return token;
 }
 
 // ---------- Paginated Google API helper ----------
@@ -283,18 +157,25 @@ async function fetchPaginated<T>(url: string, initialToken: string, key: string)
     if (res.status === 401) {
       if (!did401Retry) {
         did401Retry = true;
-        await clearClassroomToken();
-        const { data, error } = await supabase.auth.refreshSession();
-        const nextTok = data.session?.provider_token;
-        if (!error && nextTok) {
-          await setClassroomToken({
-            accessToken: nextTok,
-            expiresAt: Date.now() + 3_600_000,
-            refreshToken: data.session?.provider_refresh_token ?? undefined,
-          });
-          authToken = nextTok;
-          retries429 = 0;
-          continue;
+        const cached = await getClassroomToken();
+        const clientId = pickPlatformClientId(getGoogleClientIds());
+        if (cached?.refreshToken && clientId) {
+          try {
+            const tok = await refreshAccessToken({
+              refreshToken: cached.refreshToken,
+              clientId,
+            });
+            await setClassroomToken({
+              accessToken: tok.accessToken,
+              expiresAt: tok.expiresAt,
+              refreshToken: tok.refreshToken ?? cached.refreshToken,
+            });
+            authToken = tok.accessToken;
+            retries429 = 0;
+            continue;
+          } catch {
+            /* fall through to disconnect */
+          }
         }
       }
       await clearClassroomToken();
@@ -646,8 +527,16 @@ export async function checkForNewTasks(): Promise<PendingNewTask[]> {
   return result;
 }
 
-/** Clear all Classroom data (token + preferences). */
+/**
+ * Clear all Classroom data (token + preferences). Best-effort revokes the
+ * Google grant so the next connect triggers a fresh consent screen.
+ */
 export async function disconnectClassroom(): Promise<void> {
+  const cached = await getClassroomToken();
+  const tokenToRevoke = cached?.refreshToken || cached?.accessToken;
+  if (tokenToRevoke) {
+    await revokeToken(tokenToRevoke);
+  }
   await clearClassroomToken();
   await setClassroomPrefs(null);
 }
