@@ -6,7 +6,7 @@ import { useFonts } from 'expo-font';
 import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +21,9 @@ import {
   getAnsweredOccurrenceSet,
   handleAttendanceNotificationResponse,
 } from '@/src/attendanceRecording';
+import UpdatePrompt from '@/src/components/UpdatePrompt';
+import { useApp } from '@/src/context/AppContext';
+import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -240,9 +243,77 @@ function RootLayoutNav() {
       <CommunityProvider>
         <QuizProvider>
           <ThemeAwareLayout />
+          <AppUpdateGate />
         </QuizProvider>
       </CommunityProvider>
     </AppProvider>
+  );
+}
+
+const UPDATE_DISMISS_KEY = 'updatePromptDismissedFor:v1';
+
+/**
+ * Runs the version check after the providers are mounted (so `useApp` has a
+ * language available). Renders the soft / hard update prompt on top of the
+ * whole navigation tree.
+ *
+ * Dismissing a soft prompt remembers the target `latestVersion` so the banner
+ * doesn't nag on every cold start — it comes back automatically when a new
+ * `latestVersion` is published from the server. Hard prompts cannot be
+ * dismissed.
+ */
+function AppUpdateGate() {
+  const { language } = useApp();
+  const [result, setResult] = useState<UpdateCheckResult | null>(null);
+  const [dismissed, setDismissed] = useState<boolean>(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await checkForAppUpdate().catch(() => null);
+      if (!alive || !res) return;
+
+      if (res.severity === 'soft') {
+        try {
+          const raw = await AsyncStorage.getItem(UPDATE_DISMISS_KEY);
+          if (raw && raw === res.latestVersion) {
+            setDismissed(true);
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+      setResult(res);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const handleDismiss = useCallback(async () => {
+    setDismissed(true);
+    try {
+      if (result?.latestVersion) {
+        await AsyncStorage.setItem(UPDATE_DISMISS_KEY, result.latestVersion);
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }, [result?.latestVersion]);
+
+  if (!result) return null;
+  if (result.severity === 'none') return null;
+  if (result.severity === 'soft' && dismissed) return null;
+
+  const override = language === 'ms' ? result.messageMs : result.messageEn;
+
+  return (
+    <UpdatePrompt
+      severity={result.severity}
+      storeUrl={result.storeUrl}
+      messageOverride={override}
+      onDismiss={handleDismiss}
+    />
   );
 }
 

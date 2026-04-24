@@ -769,6 +769,15 @@ const translations = {
     manualWeekHint: 'Select your current week number. The system will automatically advance each week.',
     manualWeekSave: 'Set my week',
     manualCalendarLabel: 'Manual calendar',
+
+    updatePromptTitle: 'New version available',
+    updatePromptHardTitle: 'Update required',
+    updatePromptBody:
+      'Experience the latest features and improved performance. Rencana is now even better for you!',
+    updatePromptPrimary: 'Update now',
+    updatePromptSecondary: 'Maybe later',
+    updatePromptOpenFailedTitle: "Couldn't open the App Store",
+    updatePromptOpenFailedBody: 'Please open the App Store manually and search for Rencana.',
   },
 
   ms: {
@@ -1540,6 +1549,15 @@ const translations = {
     layout: 'Layout',
     timeline: 'Garis Masa',
     grid: 'Grid',
+
+    updatePromptTitle: 'Versi baharu tersedia',
+    updatePromptHardTitle: 'Kemas kini diperlukan',
+    updatePromptBody:
+      'Nikmati ciri terkini dan prestasi yang lebih baik. Rencana kini lebih mantap untuk anda!',
+    updatePromptPrimary: 'Kemas kini sekarang',
+    updatePromptSecondary: 'Nanti sahaja',
+    updatePromptOpenFailedTitle: 'Tidak dapat membuka App Store',
+    updatePromptOpenFailedBody: 'Sila buka App Store secara manual dan cari Rencana.',
   },
 } as const;
 

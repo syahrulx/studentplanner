@@ -23,6 +23,7 @@
     "@supabase/supabase-js": "^2.98.0",
     "base64-arraybuffer": "^1.0.2",
     "expo": "^55.0.14",
+    "expo-application": "~55.0.14",
     "expo-auth-session": "~55.0.13",
     "expo-clipboard": "~55.0.13",
     "expo-constants": "~55.0.13",
