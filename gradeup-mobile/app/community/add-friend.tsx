@@ -43,8 +43,9 @@ export default function AddFriendScreen() {
   const theme = useTheme();
   const { language } = useApp();
   const T = useTranslations(language);
-  const params = useLocalSearchParams<{ tab?: string | string[] }>();
+  const params = useLocalSearchParams<{ tab?: string | string[]; id?: string | string[] }>();
   const tabParam = typeof params.tab === 'string' ? params.tab : undefined;
+  const inviteFromId = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
   const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
   const [tab, setTab] = useState<'suggestions' | 'search' | 'incoming' | 'outgoing'>('suggestions');
@@ -55,6 +56,7 @@ export default function AddFriendScreen() {
   const [loading, setLoading] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const [inviteHandled, setInviteHandled] = useState(false);
 
   // Open Incoming / Sent when opened from a notification deep link
   useEffect(() => {
@@ -62,6 +64,63 @@ export default function AddFriendScreen() {
       setTab(tabParam);
     }
   }, [tabParam]);
+
+  // Handle deep link invite: rencana://community/add-friend?id=<userId>
+  useEffect(() => {
+    if (inviteHandled) return;
+    if (!userId) return;
+    if (!inviteFromId || !inviteFromId.trim()) return;
+    const inviterId = inviteFromId.trim();
+    if (inviterId === userId) {
+      setInviteHandled(true);
+      return;
+    }
+
+    let alive = true;
+    (async () => {
+      try {
+        const profile = await communityApi.getUserProfile(inviterId).catch(() => null);
+        const name = profile?.name?.trim() || 'this user';
+        Alert.alert(
+          'Add friend?',
+          `Do you want to send a friend request to ${name}?`,
+          [
+            { text: 'Not now', style: 'cancel', onPress: () => alive && setInviteHandled(true) },
+            {
+              text: 'Add',
+              onPress: async () => {
+                try {
+                  await communityApi.sendFriendRequest(userId, inviterId);
+                  setSentIds((prev) => new Set(prev).add(inviterId));
+                  await refreshRequests();
+                  await refreshFriends();
+                  setTab('outgoing');
+                } catch (e: any) {
+                  const msg = String(e?.message || '');
+                  if (/already friends/i.test(msg)) {
+                    Alert.alert('Already friends', 'You are already friends with this user.');
+                  } else if (/already sent/i.test(msg)) {
+                    Alert.alert('Already sent', 'You already sent a request to this user.');
+                    setTab('outgoing');
+                  } else {
+                    Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
+                  }
+                } finally {
+                  if (alive) setInviteHandled(true);
+                }
+              },
+            },
+          ],
+        );
+      } finally {
+        if (alive) setInviteHandled(true);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [inviteHandled, inviteFromId, refreshFriends, refreshRequests, T, userId]);
 
   const refreshOutgoingRequests = useCallback(async () => {
     if (!userId) return;

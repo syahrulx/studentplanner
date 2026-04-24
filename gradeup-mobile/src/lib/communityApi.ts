@@ -58,6 +58,8 @@ export interface Circle {
   created_by: string;
   created_at: string;
   member_count?: number;
+  /** Current user's role in this circle (if loaded via getMyCircles). */
+  my_role?: 'admin' | 'member';
 }
 
 export interface CircleMember {
@@ -640,13 +642,16 @@ export async function createCircle(userId: string, name: string, emoji: string =
 export async function getMyCircles(userId: string): Promise<Circle[]> {
   const { data: memberships, error: mErr } = await supabase
     .from('circle_members')
-    .select('circle_id')
+    .select('circle_id,role')
     .eq('user_id', userId);
 
   if (mErr) throw mErr;
   if (!memberships || memberships.length === 0) return [];
 
   const circleIds = memberships.map((m) => m.circle_id);
+  const myRoleByCircleId = new Map<string, 'admin' | 'member'>(
+    memberships.map((m) => [m.circle_id as string, (m as { role: 'admin' | 'member' }).role]),
+  );
 
   const { data: circles, error } = await supabase
     .from('circles')
@@ -670,6 +675,7 @@ export async function getMyCircles(userId: string): Promise<Circle[]> {
   return (circles || []).map((c) => ({
     ...c,
     member_count: countMap.get(c.id) || 0,
+    my_role: myRoleByCircleId.get(c.id) || 'member',
   }));
 }
 

@@ -75,13 +75,21 @@ export default function CirclesScreen() {
 
   const handleInviteFriend = useCallback(
     (circleId: string) => {
+      const circle = circles.find((c) => c.id === circleId);
+      if (circle && circle.my_role !== 'admin') {
+        Alert.alert(
+          T('commCircleInviteNotAdminTitle') || 'Only admins can invite',
+          T('commCircleInviteNotAdminBody') || 'Ask a circle admin to invite friends, or create your own circle.',
+        );
+        return;
+      }
       if (!friends.length) {
         Alert.alert(T('commCircleNoFriendsTitle'), T('commCircleNoFriendsBody'));
         return;
       }
       setInviteCircleId(circleId);
     },
-    [friends, T]
+    [friends, T, circles]
   );
 
   const handleSelectFriendToInvite = useCallback(
@@ -240,9 +248,17 @@ export default function CirclesScreen() {
               <Pressable
                 style={({ pressed }) => [styles.circleActionBtn, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                 onPress={() => handleInviteFriend(circle.id)}
+                disabled={circle.my_role !== 'admin'}
               >
                 <Feather name="user-plus" size={14} color={theme.primary} />
-                <Text style={[styles.circleActionText, { color: theme.primary }]}>Invite Friend</Text>
+                <Text
+                  style={[
+                    styles.circleActionText,
+                    { color: circle.my_role === 'admin' ? theme.primary : theme.textSecondary },
+                  ]}
+                >
+                  Invite Friend
+                </Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.circleActionBtn, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
