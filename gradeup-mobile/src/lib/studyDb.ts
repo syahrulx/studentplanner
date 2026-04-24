@@ -56,7 +56,7 @@ export async function getFlashcards(userId: string): Promise<Flashcard[]> {
 }
 
 export async function upsertNote(userId: string, note: Note): Promise<void> {
-  await supabase.from(NOTES_TABLE).upsert(
+  const { error } = await supabase.from(NOTES_TABLE).upsert(
     {
       id: note.id,
       user_id: userId,
@@ -73,12 +73,18 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
     },
     { onConflict: 'id,user_id' }
   );
+  if (error) {
+    // Notes historically failed silently because of a missing column — surface
+    // the real reason so we never lose user writes without noticing again.
+    if (__DEV__) console.error('[Note] upsert failed:', error);
+    throw error;
+  }
 }
 
 
 
 export async function upsertFlashcard(userId: string, card: Flashcard): Promise<void> {
-  await supabase.from(CARDS_TABLE).upsert(
+  const { error } = await supabase.from(CARDS_TABLE).upsert(
     {
       id: card.id,
       user_id: userId,
@@ -88,19 +94,35 @@ export async function upsertFlashcard(userId: string, card: Flashcard): Promise<
     },
     { onConflict: 'id,user_id' }
   );
+  if (error) {
+    if (__DEV__) console.error('[Flashcard] upsert failed:', error);
+    throw error;
+  }
 }
 
 export async function deleteNote(userId: string, noteId: string): Promise<void> {
-  await supabase.from(NOTES_TABLE).delete().eq('user_id', userId).eq('id', noteId);
+  const { error } = await supabase.from(NOTES_TABLE).delete().eq('user_id', userId).eq('id', noteId);
+  if (error) {
+    if (__DEV__) console.error('[Note] delete failed:', error);
+    throw error;
+  }
 }
 
 
 
 export async function deleteFlashcard(userId: string, cardId: string): Promise<void> {
-  await supabase.from(CARDS_TABLE).delete().eq('user_id', userId).eq('id', cardId);
+  const { error } = await supabase.from(CARDS_TABLE).delete().eq('user_id', userId).eq('id', cardId);
+  if (error) {
+    if (__DEV__) console.error('[Flashcard] delete failed:', error);
+    throw error;
+  }
 }
 
 /** Delete all flashcards for a specific note in one DB call. */
 export async function deleteFlashcardsForNote(userId: string, noteId: string): Promise<void> {
-  await supabase.from(CARDS_TABLE).delete().eq('user_id', userId).eq('note_id', noteId);
+  const { error } = await supabase.from(CARDS_TABLE).delete().eq('user_id', userId).eq('note_id', noteId);
+  if (error) {
+    if (__DEV__) console.error('[Flashcard] deleteForNote failed:', error);
+    throw error;
+  }
 }

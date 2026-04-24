@@ -1,5 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
+import {
+  checkMonthlyTokenLimit,
+  formatMonthlyLimitMessage,
+  logTokenUsage,
+  MONTHLY_LIMIT_ERROR_CODE,
+} from '../_shared/tokenLimit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -250,12 +256,47 @@ function normalizeSlots(raw: unknown): TimetableSlot[] {
   return out;
 }
 
+type TtUsage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+
+function addUsage(a: TtUsage, b: TtUsage): TtUsage {
+  return {
+    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
+    completion_tokens: a.completion_tokens + b.completion_tokens,
+    total_tokens: a.total_tokens + b.total_tokens,
+  };
+}
+
+function chatUsage(aiJson: unknown): TtUsage {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = (aiJson as any)?.usage ?? {};
+  return {
+    prompt_tokens: Number(u?.prompt_tokens) || 0,
+    completion_tokens: Number(u?.completion_tokens) || 0,
+    total_tokens: Number(u?.total_tokens) || 0,
+  };
+}
+
+function responsesUsage(aiJson: unknown): TtUsage {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = (aiJson as any)?.usage ?? {};
+  const p = Number(u?.input_tokens ?? u?.prompt_tokens) || 0;
+  const c = Number(u?.output_tokens ?? u?.completion_tokens) || 0;
+  return {
+    prompt_tokens: p,
+    completion_tokens: c,
+    total_tokens: Number(u?.total_tokens) || p + c,
+  };
+}
+
 async function openAiTimetableFromPdfNative(args: {
   apiKey: string;
   model: string;
   filename: string;
   pdfBytes: Uint8Array;
-}): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+}): Promise<
+  | { ok: true; text: string; usage: TtUsage }
+  | { ok: false; status: number; detail: string }
+> {
   const b64 = encodeBase64(args.pdfBytes);
   const userText = [
     buildUserPromptForText(),
@@ -295,14 +336,17 @@ async function openAiTimetableFromPdfNative(args: {
     return { ok: false, status: res.status, detail };
   }
   const json = await res.json();
-  return { ok: true, text: textFromResponsesApi(json) };
+  return { ok: true, text: textFromResponsesApi(json), usage: responsesUsage(json) };
 }
 
 async function openAiTimetableFromTextChat(args: {
   apiKey: string;
   model: string;
   documentText: string;
-}): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+}): Promise<
+  | { ok: true; text: string; usage: TtUsage }
+  | { ok: false; status: number; detail: string }
+> {
   const prompt = `${buildUserPromptForText()}\n${args.documentText.slice(0, 45000)}\n=== END ===`;
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -328,7 +372,7 @@ async function openAiTimetableFromTextChat(args: {
   }
   const aiJson = await res.json();
   const text = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
-  return { ok: true, text };
+  return { ok: true, text, usage: chatUsage(aiJson) };
 }
 
 function buildImageExtractionPrompt(): string {
@@ -383,7 +427,10 @@ async function openAiTimetableFromImage(args: {
   model: string;
   mime: string;
   base64: string;
-}): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+}): Promise<
+  | { ok: true; text: string; usage: TtUsage }
+  | { ok: false; status: number; detail: string }
+> {
   const url = `data:${args.mime};base64,${args.base64}`;
   const headers = {
     'Content-Type': 'application/json',
@@ -440,6 +487,7 @@ async function openAiTimetableFromImage(args: {
   }
   const step1Json = await step1Res.json();
   const description = String(step1Json?.choices?.[0]?.message?.content ?? '').trim();
+  const step1UsageVal = chatUsage(step1Json);
 
   if (!description) {
     return { ok: false, status: 500, detail: 'Step 1 returned empty description' };
@@ -490,7 +538,7 @@ async function openAiTimetableFromImage(args: {
   }
   const step2Json = await step2Res.json();
   const text = String(step2Json?.choices?.[0]?.message?.content ?? '').trim();
-  return { ok: true, text };
+  return { ok: true, text, usage: addUsage(step1UsageVal, chatUsage(step2Json)) };
 }
 
 
@@ -516,6 +564,19 @@ Deno.serve(async (req) => {
     const { data: authData, error: authError } = await supabaseUser.auth.getUser();
     if (authError || !authData.user) {
       return errorBody('Unauthorized: sign in again and retry.', 'UNAUTHORIZED');
+    }
+    const userId = authData.user.id;
+
+    // ── Monthly AI token budget check ──
+    const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAdminForLimit = serviceRole
+      ? createClient(supabaseUrl, serviceRole, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        })
+      : supabaseUser;
+    const monthCheck = await checkMonthlyTokenLimit(supabaseAdminForLimit, userId);
+    if (!monthCheck.allowed) {
+      return errorBody(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
     }
 
     let body: Record<string, unknown>;
@@ -574,6 +635,14 @@ Deno.serve(async (req) => {
         if (!textRes.ok) {
           return errorBody(`OpenAI error ${textRes.status}: ${textRes.detail}`, 'OPENAI');
         }
+        logTokenUsage(supabaseAdminForLimit, {
+          user_id: userId,
+          kind: 'timetable_extract_text',
+          model: textModel,
+          prompt_tokens: textRes.usage.prompt_tokens || null,
+          completion_tokens: textRes.usage.completion_tokens || null,
+          total_tokens: textRes.usage.total_tokens || null,
+        });
         modelText = textRes.text;
       } else {
         const pdfRes = await openAiTimetableFromPdfNative({
@@ -588,6 +657,14 @@ Deno.serve(async (req) => {
             'PDF_READ',
           );
         }
+        logTokenUsage(supabaseAdminForLimit, {
+          user_id: userId,
+          kind: 'timetable_extract_pdf',
+          model: pdfModel,
+          prompt_tokens: pdfRes.usage.prompt_tokens || null,
+          completion_tokens: pdfRes.usage.completion_tokens || null,
+          total_tokens: pdfRes.usage.total_tokens || null,
+        });
         modelText = pdfRes.text;
       }
     } else if (
@@ -605,6 +682,14 @@ Deno.serve(async (req) => {
       if (!imgRes.ok) {
         return errorBody(`OpenAI error ${imgRes.status}: ${imgRes.detail}`, 'OPENAI');
       }
+      logTokenUsage(supabaseAdminForLimit, {
+        user_id: userId,
+        kind: 'timetable_extract_image',
+        model: imageModel,
+        prompt_tokens: imgRes.usage.prompt_tokens || null,
+        completion_tokens: imgRes.usage.completion_tokens || null,
+        total_tokens: imgRes.usage.total_tokens || null,
+      });
       modelText = imgRes.text;
     } else {
       return errorBody(`Unsupported mime_type: ${mimeType}`, 'BAD_REQUEST');

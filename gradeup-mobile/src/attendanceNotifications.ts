@@ -9,6 +9,12 @@ import { attendanceOccurrenceKey, ensureAttendanceCategory, getAnsweredOccurrenc
 const CHANNEL_ATTENDANCE = 'attendance_checkin_v2';
 const ID_PREFIX = 'attendance-';
 
+// iOS caps pending local notifications at 64 per app. Leave headroom for task +
+// revision + push schedules so auto-generated (UiTM) timetables — which expand
+// to many occurrences across the horizon — don't silently drop the soonest
+// classes once the budget is exhausted. We keep the NEAREST occurrences.
+const MAX_ATTENDANCE_NOTIFICATIONS = 40;
+
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 type WeekdayLabel = (typeof WEEKDAY_LABELS)[number];
 
@@ -120,6 +126,14 @@ function localNotificationsAllowed(perm: Notifications.NotificationPermissionsSt
   return false;
 }
 
+type PlannedOccurrence = {
+  entry: TimetableEntry;
+  scheduledStartAt: Date;
+  fireAt: Date;
+  subject: string;
+  subjectKey: string;
+};
+
 export async function rescheduleAttendanceNotifications(
   userId: string,
   timetable: TimetableEntry[],
@@ -129,7 +143,16 @@ export async function rescheduleAttendanceNotifications(
     .catch(() => {})
     .then(async () => {
       const perm = await Notifications.getPermissionsAsync();
-      if (!localNotificationsAllowed(perm)) return;
+      if (!localNotificationsAllowed(perm)) {
+        if (__DEV__) {
+          const p = perm as unknown as { status?: string; granted?: boolean };
+          console.log(
+            '[attendance] skip reschedule: notification permission not granted',
+            { status: p.status, granted: p.granted },
+          );
+        }
+        return;
+      }
 
       await ensureAttendanceChannel();
       await ensureAttendanceCategory().catch(() => {});
@@ -141,55 +164,109 @@ export async function rescheduleAttendanceNotifications(
       const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
       const scheduledCanon = new Set<string>();
 
+      // PHASE 1: enumerate every valid future occurrence (no OS calls yet).
+      // We need all of them up-front so we can sort by fireAt and keep only the
+      // NEAREST MAX_ATTENDANCE_NOTIFICATIONS slots — iOS caps pending locals at
+      // 64 and a semester-wide UiTM timetable easily blows past that.
+      let skippedBadDayOrTime = 0;
+      const planned: PlannedOccurrence[] = [];
+
       for (const entry of timetable) {
         const day = normalizeWeekday(entry.day);
         const time = parseHHMM(entry.startTime);
-        if (!day || !time) continue;
+        if (!day || !time) {
+          skippedBadDayOrTime += 1;
+          continue;
+        }
 
         for (let i = 0; i <= horizonDays; i++) {
           const d = addDays(today, i);
           const weekdayLabel = WEEKDAY_LABELS[d.getDay()];
           if (weekdayLabel !== day) continue;
 
-          const scheduledStartAt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), time.hour, time.minute, 0, 0);
+          const scheduledStartAt = new Date(
+            d.getFullYear(), d.getMonth(), d.getDate(), time.hour, time.minute, 0, 0,
+          );
           // Exact wall-clock offset: trigger fires when (now >= classStart - 5min), i.e. at T−5 minutes.
           const fireAt = new Date(scheduledStartAt.getTime() - 5 * 60_000);
           if (fireAt.getTime() <= Date.now()) continue;
           if (answered.has(attendanceOccurrenceKey(entry.id, scheduledStartAt.toISOString()))) continue;
 
+          const subjectKey = subjectKeyFromEntry(entry);
           const slotMs = Math.round(scheduledStartAt.getTime() / (5 * 60_000)) * (5 * 60_000);
-          const canonKey = `${subjectKeyFromEntry(entry)}|${slotMs}`;
+          const canonKey = `${subjectKey}|${slotMs}`;
           if (scheduledCanon.has(canonKey)) continue;
           scheduledCanon.add(canonKey);
 
           const subject = (entry.displayName || entry.subjectName || entry.subjectCode || 'Class').trim();
+          planned.push({ entry, scheduledStartAt, fireAt, subject, subjectKey });
+        }
+      }
+
+      // Sort ASC by fire time so the nearest classes always get scheduled,
+      // even when the timetable is bigger than MAX_ATTENDANCE_NOTIFICATIONS.
+      planned.sort((a, b) => a.fireAt.getTime() - b.fireAt.getTime());
+      const budgeted = planned.slice(0, MAX_ATTENDANCE_NOTIFICATIONS);
+      const dropped = planned.length - budgeted.length;
+
+      // PHASE 2: schedule with per-iteration try/catch. A single bad entry must
+      // never poison the whole batch — that's the failure mode that makes
+      // auto-generated (UiTM) timetables appear to have "no notifications".
+      let scheduledOk = 0;
+      let scheduledFailed = 0;
+      for (const p of budgeted) {
+        try {
           await Notifications.scheduleNotificationAsync({
-            identifier: notifIdForOccurrence(subjectKeyFromEntry(entry), fireAt.getTime()),
+            identifier: notifIdForOccurrence(p.subjectKey, p.fireAt.getTime()),
             content: {
               title: 'Class check-in',
-              body: `Did you attend class "${subject}" in 5 more minutes?`,
+              body: `Did you attend class "${p.subject}" in 5 more minutes?`,
               sound: 'default',
               categoryIdentifier: 'attendance_checkin',
               data: {
                 type: 'attendance_checkin',
                 userId,
-                timetableEntryId: entry.id,
-                scheduledStartAt: scheduledStartAt.toISOString(),
-                fireAtMs: fireAt.getTime(),
-                subjectCode: entry.subjectCode ?? '',
-                subjectName: entry.subjectName ?? '',
-                subjectKey: subjectKeyFromEntry(entry),
-                displaySubject: subject,
+                timetableEntryId: p.entry.id,
+                scheduledStartAt: p.scheduledStartAt.toISOString(),
+                fireAtMs: p.fireAt.getTime(),
+                subjectCode: p.entry.subjectCode ?? '',
+                subjectName: p.entry.subjectName ?? '',
+                subjectKey: p.subjectKey,
+                displaySubject: p.subject,
               },
               ...(Platform.OS === 'android' ? { channelId: CHANNEL_ATTENDANCE } : {}),
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: fireAt,
+              date: p.fireAt,
               ...(Platform.OS === 'android' ? { channelId: CHANNEL_ATTENDANCE } : {}),
             },
           });
+          scheduledOk += 1;
+        } catch (err) {
+          scheduledFailed += 1;
+          if (__DEV__) {
+            console.error('[attendance] scheduleNotificationAsync failed', {
+              entryId: p.entry.id,
+              subject: p.subject,
+              fireAt: p.fireAt.toISOString(),
+              err,
+            });
+          }
         }
+      }
+
+      if (__DEV__) {
+        console.log('[attendance] reschedule summary', {
+          timetableRows: timetable.length,
+          skippedBadDayOrTime,
+          plannedOccurrences: planned.length,
+          dropped,
+          scheduledOk,
+          scheduledFailed,
+          horizonDays,
+          cap: MAX_ATTENDANCE_NOTIFICATIONS,
+        });
       }
     });
 

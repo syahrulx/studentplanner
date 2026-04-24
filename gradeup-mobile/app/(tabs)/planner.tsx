@@ -21,6 +21,7 @@ import {
 } from '@/src/utils/date';
 import { useTranslations } from '@/src/i18n';
 import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
+import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
 import { resolveDisplayTeachingWeeks, teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { useTheme } from '@/hooks/useTheme';
@@ -694,6 +695,9 @@ export default function Planner() {
             });
 
             if (extractedTasks.length === 0) {
+              if (error && handleMonthlyLimit(error, language)) {
+                return;
+              }
               setMessages((prev) => [
                 ...prev,
                 { role: 'ai', text: error ? error.message : T('reOptimizedMsg') },

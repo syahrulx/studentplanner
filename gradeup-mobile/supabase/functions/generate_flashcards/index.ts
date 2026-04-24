@@ -1,5 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { PDFDocument } from 'npm:pdf-lib@1.17.1';
+import {
+  checkMonthlyTokenLimit,
+  formatMonthlyLimitMessage,
+  MONTHLY_LIMIT_ERROR_CODE,
+} from '../_shared/tokenLimit.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -727,6 +732,13 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     const plan = profileData?.subscription_plan ?? 'free';
+
+    // Monthly token budget (shared across all AI features).
+    const monthCheck = await checkMonthlyTokenLimit(supabaseAdmin, userId, plan);
+    if (!monthCheck.allowed) {
+      return errorJson(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
+    }
+
     const rateCheck = await checkRateLimit(supabaseAdmin, userId, plan);
     if (!rateCheck.allowed) {
       return errorJson(

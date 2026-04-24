@@ -778,6 +778,12 @@ const translations = {
     updatePromptSecondary: 'Maybe later',
     updatePromptOpenFailedTitle: "Couldn't open the App Store",
     updatePromptOpenFailedBody: 'Please open the App Store manually and search for Rencana.',
+
+    aiMonthlyLimitTitle: 'Monthly AI limit reached',
+    aiMonthlyLimitMessage:
+      "You've used up all your AI tokens for this month on your current plan. Upgrade your plan to keep generating flashcards, quizzes, summaries, and more — or wait until next month when your free tokens reset.",
+    aiMonthlyLimitUpgrade: 'Upgrade plan',
+    aiMonthlyLimitLater: 'Maybe later',
   },
 
   ms: {
@@ -1558,6 +1564,12 @@ const translations = {
     updatePromptSecondary: 'Nanti sahaja',
     updatePromptOpenFailedTitle: 'Tidak dapat membuka App Store',
     updatePromptOpenFailedBody: 'Sila buka App Store secara manual dan cari Rencana.',
+
+    aiMonthlyLimitTitle: 'Had AI bulanan telah habis',
+    aiMonthlyLimitMessage:
+      'Anda telah menggunakan semua token AI untuk bulan ini pada pelan semasa anda. Naik taraf pelan untuk terus menjana flashcard, kuiz, ringkasan dan lain-lain — atau tunggu bulan depan apabila token percuma anda diset semula.',
+    aiMonthlyLimitUpgrade: 'Naik taraf pelan',
+    aiMonthlyLimitLater: 'Nanti sahaja',
   },
 } as const;
 

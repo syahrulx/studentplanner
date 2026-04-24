@@ -21,6 +21,7 @@ import { useTheme } from '@/hooks/useTheme';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadSowFile, SOW_FILES_BUCKET } from '@/src/lib/sowStorage';
 import { invokeExtractSow } from '@/src/lib/invokeExtractSow';
+import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
 import { supabase } from '@/src/lib/supabase';
 import * as coursesDb from '@/src/lib/coursesDb';
 import * as taskDb from '@/src/lib/taskDb';
@@ -324,6 +325,11 @@ export default function UploadSOW() {
         fnErr?.code != null ? String(fnErr.code) : body?.code != null ? String(body.code) : '';
 
       if (errMessage) {
+        // The monthly AI token limit alert is already shown by invokeExtractSow —
+        // don't also show the generic AI extraction failed alert on top of it.
+        if (isMonthlyLimitError({ message: errMessage, code: errCode })) {
+          return;
+        }
         const codeSuffix = errCode ? ` (${errCode})` : '';
         const isOpenAi =
           errCode === 'OPENAI' ||

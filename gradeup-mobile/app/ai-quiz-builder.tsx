@@ -13,6 +13,7 @@ import {
   type QuizDifficulty,
 } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
+import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
 import type { Note } from '@/src/types';
 
 const PAD = 20;
@@ -57,7 +58,7 @@ function truncateMiddle(s: string, maxLen: number): string {
 }
 
 export default function AIQuizBuilder() {
-  const { courses, notes, user, handleSaveNote } = useApp();
+  const { courses, notes, user, handleSaveNote, language } = useApp();
   const theme = useTheme();
 
   const [selectedSubject, setSelectedSubject] = useState<string>(courses[0]?.id ?? '');
@@ -247,7 +248,11 @@ export default function AIQuizBuilder() {
         },
       } as any);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Something went wrong generating the quiz.');
+      if (handleMonthlyLimit(e, language)) {
+        // upgrade alert already shown
+      } else {
+        Alert.alert('Error', e?.message || 'Something went wrong generating the quiz.');
+      }
     } finally {
       loadingPhaseTimeoutsRef.current.forEach(clearTimeout);
       loadingPhaseTimeoutsRef.current = [];

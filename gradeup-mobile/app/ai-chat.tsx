@@ -8,6 +8,7 @@ import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
 import { getTodayISO } from '@/src/utils/date';
 import { useTheme } from '@/hooks/useTheme';
+import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
 
 type Message = { role: 'ai' | 'user'; text: string };
 
@@ -86,6 +87,9 @@ export default function AiChat() {
           });
 
           if (tasks.length === 0) {
+            if (error && handleMonthlyLimit(error, language)) {
+              return;
+            }
             const detailText =
               error?.details != null
                 ? `\n\nDetails: ${
