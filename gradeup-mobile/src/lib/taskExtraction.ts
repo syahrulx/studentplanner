@@ -171,26 +171,38 @@ function toDtos(raw: any, args: ExtractTasksArgs): TaskExtractionDTO[] {
     }
     const courseRaw = String(t.course_id ?? '');
     const { id: courseId, isUnknown } = normalizeCourseId(courseRaw, args.courses);
-    const { iso, inferred, needsDate } = safeDateISO(t.due_date, args.todayISO);
-    const taskNeedsDate = needsDate || !!t.needs_date || !!t.is_inferred_date;
     const dueTime = safeTime(t.due_time);
-    const { risk, suggestedWeek } = computeRiskAndSuggestedWeek(iso, args);
-    tasks.push({
-      title,
-      course_id: courseId,
-      type: String(t.type ?? 'Assignment'),
-      due_date: iso,
-      due_time: dueTime,
-      priority: String(t.priority ?? 'Medium'),
-      effort_hours: clampEffort(t.effort_hours),
-      notes: t.notes ? String(t.notes) : undefined,
-      deadline_risk: t.deadline_risk ? String(t.deadline_risk) : risk,
-      suggested_week: typeof t.suggested_week === 'number' ? t.suggested_week : suggestedWeek,
-      confidence: typeof t.confidence === 'number' ? t.confidence : undefined,
-      is_inferred_date: inferred || !!t.is_inferred_date,
-      is_unknown_course: isUnknown || !!t.is_unknown_course,
-      needs_date: taskNeedsDate,
-    });
+
+    // Support multiple due dates for a single extracted task.
+    // When provided, duplicate the task into multiple TaskExtractionDTO rows (one per date).
+    const rawDates: unknown =
+      (t as any).due_dates ??
+      (t as any).dueDates ??
+      (t as any).dates ??
+      (t as any).due_date;
+
+    const dateList: Array<string | null | undefined> = Array.isArray(rawDates) ? rawDates : [rawDates as any];
+    for (const rawDate of dateList) {
+      const { iso, inferred, needsDate } = safeDateISO(rawDate as any, args.todayISO);
+      const taskNeedsDate = needsDate || !!t.needs_date || !!t.is_inferred_date;
+      const { risk, suggestedWeek } = computeRiskAndSuggestedWeek(iso, args);
+      tasks.push({
+        title,
+        course_id: courseId,
+        type: String(t.type ?? 'Assignment'),
+        due_date: iso,
+        due_time: dueTime,
+        priority: String(t.priority ?? 'Medium'),
+        effort_hours: clampEffort(t.effort_hours),
+        notes: t.notes ? String(t.notes) : undefined,
+        deadline_risk: t.deadline_risk ? String(t.deadline_risk) : risk,
+        suggested_week: typeof t.suggested_week === 'number' ? t.suggested_week : suggestedWeek,
+        confidence: typeof t.confidence === 'number' ? t.confidence : undefined,
+        is_inferred_date: inferred || !!t.is_inferred_date,
+        is_unknown_course: isUnknown || !!t.is_unknown_course,
+        needs_date: taskNeedsDate,
+      });
+    }
   }
   return tasks;
 }
@@ -213,7 +225,8 @@ function buildPrompt(args: ExtractTasksArgs): string {
     '      \"title\": string,',
     '      \"course_id\": string,  // use one of the known course codes when possible',
     '      \"type\": \"Assignment\" | \"Quiz\" | \"Project\" | \"Lab\" | \"Test\",',
-    '      \"due_date\": \"YYYY-MM-DD\" | null,  // null if date unknown/TBA/vague',
+    '      \"due_dates\"?: [\"YYYY-MM-DD\", ...] | null,  // use when the SAME task has multiple dates',
+    '      \"due_date\": \"YYYY-MM-DD\" | null,  // single date (omit when due_dates is used)',
     '      \"due_time\": \"HH:MM\" (24h),',
     '      \"needs_date\": boolean,  // true when due_date is null',
     '      \"priority\": \"High\" | \"Medium\" | \"Low\",',

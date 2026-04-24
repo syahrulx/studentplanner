@@ -101,10 +101,22 @@ export default function CirclesScreen() {
         Alert.alert(T('commCircleInviteSentTitle'), T('commCircleInviteSentBody'));
         setInviteCircleId(null);
       } catch (e: any) {
-        Alert.alert(T('commCircleInviteFailTitle'), T('commCircleInviteFailBody'));
+        const raw = String(e?.message || '').trim();
+        if (/already/i.test(raw) && /invit/i.test(raw)) {
+          Alert.alert(
+            T('commCircleInviteSentTitle'),
+            'This friend already has a pending invite to this circle.',
+          );
+          setInviteCircleId(null);
+          return;
+        }
+        // Surface the real reason instead of a vague retry message so admins
+        // can self-diagnose (e.g. missing RLS migration, network error).
+        const detail = raw ? `\n\n${raw}` : '';
+        Alert.alert(T('commCircleInviteFailTitle'), `${T('commCircleInviteFailBody')}${detail}`);
       }
     },
-    [inviteCircleId, userId, T]
+    [inviteCircleId, userId, T],
   );
 
   const handleLeave = useCallback(

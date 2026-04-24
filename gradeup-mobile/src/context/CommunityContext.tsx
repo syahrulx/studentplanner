@@ -617,14 +617,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setLocationVisibilityState(v);
 
       if (v === 'off') {
-        // Stop foreground watcher
+        // Stop foreground watcher — we no longer push GPS to the server for friends.
         if (locationWatchRef.current?.remove) {
           locationWatchRef.current.remove();
           locationWatchRef.current = null;
         }
-        // Clear local coordinates
-        setMyLatitude(null);
-        setMyLongitude(null);
+        // Keep last known myLatitude / myLongitude so the community map camera and
+        // "me" marker stay where the user was (ghost mode hides them from others,
+        // it should not pan the map to a random default).
       }
     } catch (e) {
       console.warn('Failed to update location visibility:', e);

@@ -127,6 +127,7 @@ Return VALID JSON ONLY with this exact shape:
       "title": string,
       "course_id": string,
       "type": "Assignment" | "Quiz" | "Project" | "Lab" | "Test",
+      "due_dates"?: ["YYYY-MM-DD", ...] | null,
       "due_date": "YYYY-MM-DD" | null,
       "due_time": "HH:MM",
       "needs_date": boolean,
@@ -143,6 +144,7 @@ Return VALID JSON ONLY with this exact shape:
 Rules:
 - Extract only real assessment/actionable tasks.
 - If date is unclear/TBA/vague, set due_date to null and needs_date true.
+- If the SAME task has multiple dates (e.g. multiple sessions/deadlines), return all dates in "due_dates" (and omit "due_date").
 - Never invent concrete dates.
 - Prefer provided course codes when available in input.
 - No markdown, no prose, JSON only.`,
