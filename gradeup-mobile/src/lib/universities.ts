@@ -1,3 +1,4 @@
+import { supabase } from './supabase';
 import type { UniversityConfig } from '../types';
 
 /**
@@ -177,10 +178,49 @@ export const UNIVERSITIES: UniversityConfig[] = [
   },
 ];
 
+let universitiesCache: UniversityConfig[] = [...UNIVERSITIES];
+
+function inferShortName(name: string, fallbackId: string): string {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return fallbackId.toUpperCase();
+  const acronym = trimmed
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+  if (acronym.length >= 2 && acronym.length <= 8) return acronym;
+  return trimmed.length > 18 ? trimmed.slice(0, 18) : trimmed;
+}
+
+function mergeRemoteUniversities(rows: Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>): UniversityConfig[] {
+  const byId = new Map(UNIVERSITIES.map((u) => [u.id, u]));
+  for (const row of rows) {
+    const id = String(row.id || '').trim();
+    const name = String(row.name || '').trim();
+    if (!id || !name) continue;
+    const existing = byId.get(id);
+    const mode = row.login_method === 'api' ? 'api' : 'webview';
+    const loginUrl =
+      String(row.api_endpoint || '').trim() ||
+      existing?.loginUrl ||
+      'https://example.com/';
+    byId.set(id, {
+      id,
+      name,
+      shortName: existing?.shortName ?? inferShortName(name, id),
+      loginUrl,
+      timetableUrl: existing?.timetableUrl,
+      mode,
+      logoEmoji: existing?.logoEmoji ?? '🏫',
+    });
+  }
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function searchUniversities(query: string): UniversityConfig[] {
   const q = query.trim().toLowerCase();
-  if (!q) return UNIVERSITIES;
-  return UNIVERSITIES.filter(
+  if (!q) return universitiesCache;
+  return universitiesCache.filter(
     (u) =>
       u.name.toLowerCase().includes(q) ||
       u.shortName.toLowerCase().includes(q) ||
@@ -189,7 +229,7 @@ export function searchUniversities(query: string): UniversityConfig[] {
 }
 
 export function getUniversityById(id: string): UniversityConfig | undefined {
-  return UNIVERSITIES.find((u) => u.id === id);
+  return universitiesCache.find((u) => u.id === id);
 }
 
 /**
@@ -244,5 +284,12 @@ export function resolveUniversityIdForCalendar(opts: {
 export type UniversityItem = UniversityConfig;
 
 export async function getMalaysianUniversities(): Promise<UniversityItem[]> {
-  return UNIVERSITIES;
+  const { data, error } = await supabase
+    .from('universities')
+    .select('id,name,api_endpoint,login_method')
+    .order('name', { ascending: true });
+  if (error || !data) return universitiesCache;
+  const rows = (data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>);
+  universitiesCache = mergeRemoteUniversities(rows);
+  return universitiesCache;
 }

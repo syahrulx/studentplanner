@@ -22,6 +22,7 @@ import { getAcademicProgressFromCalendar, getAcademicProgress } from '@/src/lib/
 import {
   searchUniversities,
   getUniversityById,
+  getMalaysianUniversities,
   inferSemesterFromStudentId,
   type UniversityItem,
 } from '@/src/lib/universities';
@@ -66,6 +67,7 @@ export default function AcademicCalendarScreen() {
   const [cfgBusy, setCfgBusy] = useState(false);
   const [uniGateOpen, setUniGateOpen] = useState(false);
   const [uniSearch, setUniSearch] = useState('');
+  const [uniOptions, setUniOptions] = useState<UniversityItem[]>([]);
   const [weekAlignOpen, setWeekAlignOpen] = useState(false);
   const [alignBusy, setAlignBusy] = useState(false);
   const [alignPickWeek, setAlignPickWeek] = useState(1);
@@ -135,6 +137,16 @@ export default function AcademicCalendarScreen() {
   }, [user.universityId]);
 
   useEffect(() => {
+    let cancelled = false;
+    void getMalaysianUniversities().then((list) => {
+      if (!cancelled) setUniOptions(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (configOpen) setCfgStudentId((user.studentId || '').trim());
   }, [configOpen, user.studentId]);
 
@@ -170,7 +182,17 @@ export default function AcademicCalendarScreen() {
     };
   }, [configOpen, user.universityId, academicCalendar?.startDate, academicCalendar?.semesterLabel]);
 
-  const uniSearchResults = useMemo(() => searchUniversities(uniSearch), [uniSearch]);
+  const uniSearchResults = useMemo(() => {
+    const base = uniOptions.length > 0 ? uniOptions : searchUniversities('');
+    const q = uniSearch.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.shortName.toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q),
+    );
+  }, [uniOptions, uniSearch]);
 
   const openWeekAlign = useCallback(() => {
     if (!academicCalendar?.startDate) return;

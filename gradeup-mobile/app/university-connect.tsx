@@ -8,7 +8,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations, type TranslationKey } from '@/src/i18n';
-import { searchUniversities, getUniversityById } from '@/src/lib/universities';
+import { searchUniversities, getUniversityById, getMalaysianUniversities } from '@/src/lib/universities';
 import { getTodayISO } from '@/src/utils/date';
 import {
   fetchUitmTimetable,
@@ -57,6 +57,7 @@ export default function UniversityConnectScreen() {
   const [step, setStep] = useState<Step>('login');
   const [selectedUni, setSelectedUni] = useState<UniversityConfig | null>(() => getUniversityById('uitm') ?? null);
   const [searchQuery, setSearchQuery] = useState(''); // legacy (kept to minimize churn)
+  const [uniOptions, setUniOptions] = useState<UniversityConfig[]>([]);
   const [studentEmail, setStudentEmail] = useState('');
   const [resolvedMatric, setResolvedMatric] = useState<string | null>(null);
   const [password, setPassword] = useState(''); // no longer required (kept for backwards UI stability)
@@ -67,7 +68,27 @@ export default function UniversityConnectScreen() {
   const [coursesInput, setCoursesInput] = useState('');
   const [lastMyStudentProfile, setLastMyStudentProfile] = useState<MyStudentProfilePayload | null>(null);
 
-  const filteredUnis = searchUniversities(searchQuery); // legacy
+  useEffect(() => {
+    let cancelled = false;
+    void getMalaysianUniversities().then((list) => {
+      if (!cancelled) setUniOptions(list as UniversityConfig[]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredUnis = (() => {
+    const base = uniOptions.length > 0 ? uniOptions : searchUniversities('');
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.shortName.toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q),
+    );
+  })();
 
   useEffect(() => {
     if (step === 'terms' && !selectedUni) setStep('university');
