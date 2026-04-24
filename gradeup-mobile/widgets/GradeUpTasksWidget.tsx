@@ -44,8 +44,9 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
     );
   }
 
-  const maxItems = large ? 6 : small ? 3 : 4;
-  const tasks = isLock ? p.tasks.slice(0, 3) : p.tasks.slice(0, maxItems);
+  // Always cap the visible list to 3 items to guarantee the header
+  // never gets pushed off-screen on small widget sizes.
+  const tasks = p.tasks.slice(0, 3);
 
   // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
   if (family === 'accessoryInline') {

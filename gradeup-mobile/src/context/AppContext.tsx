@@ -958,6 +958,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           userName: user.name,
           signedIn: Boolean(session?.user?.id),
           themeId: theme,
+          maxTasks: 3,
         }),
       );
     });
@@ -980,6 +981,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             userName: r.userName,
             signedIn: Boolean(session?.user?.id),
             themeId: r.theme,
+            maxTasks: 3,
           }),
         );
       });
