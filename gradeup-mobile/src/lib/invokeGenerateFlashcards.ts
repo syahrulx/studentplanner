@@ -6,6 +6,7 @@
  * server-side so the client only makes ONE request per generation.
  */
 import { supabase } from './supabase';
+import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +91,10 @@ export async function invokeGenerateFlashcards(
     // Edge Function error envelope
     if (data?.error?.message) {
       const msg = String(data.error.message);
+      if (isMonthlyLimitError(data.error)) {
+        showMonthlyLimitAlert();
+        return { data: null, error: msg };
+      }
       if (/daily ai limit reached/i.test(msg)) {
         return { data: null, error: 'Daily AI limit reached. Please try again tomorrow.' };
       }

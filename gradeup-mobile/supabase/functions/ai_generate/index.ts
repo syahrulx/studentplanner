@@ -1,4 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  checkMonthlyTokenLimit,
+  formatMonthlyLimitMessage,
+  logTokenUsage,
+  MONTHLY_LIMIT_ERROR_CODE,
+} from '../_shared/tokenLimit.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -295,6 +301,14 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     const plan = profileData?.subscription_plan ?? 'free';
+
+    // Monthly token budget (applies to all AI features combined).
+    const monthCheck = await checkMonthlyTokenLimit(supabaseAdmin, userId, plan);
+    if (!monthCheck.allowed) {
+      return errorJson(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
+    }
+
+    // Per-day per-request safety net (counts generations, not tokens).
     const rateCheck = await checkRateLimit(supabaseAdmin, userId, plan);
     if (!rateCheck.allowed) {
       return errorJson(
@@ -330,6 +344,17 @@ Deno.serve(async (req) => {
       return errorJson(result.error, 'OPENAI_ERROR');
     }
 
+    // Log every successful OpenAI call so the monthly budget reflects all AI
+    // spend (not just quiz). Fire-and-forget.
+    logTokenUsage(supabaseAdmin, {
+      user_id: userId,
+      kind,
+      model: 'gpt-4o-mini',
+      prompt_tokens: result.usage?.prompt_tokens ?? null,
+      completion_tokens: result.usage?.completion_tokens ?? null,
+      total_tokens: result.usage?.total_tokens ?? null,
+    });
+
     // ── Parse AI response ──
     const cleaned = result.content
       .replace(/```json\n?/g, '')
@@ -358,19 +383,6 @@ Deno.serve(async (req) => {
     if (!Array.isArray(parsed)) {
       return errorJson('AI returned unexpected format. Please try again.', 'PARSE_ERROR');
     }
-
-    // ── Log token usage (fire-and-forget) ──
-    supabaseAdmin
-      .from('ai_token_usage')
-      .insert({
-        user_id: userId,
-        kind,
-        model: 'gpt-4o-mini',
-        prompt_tokens: result.usage?.prompt_tokens ?? null,
-        completion_tokens: result.usage?.completion_tokens ?? null,
-        total_tokens: result.usage?.total_tokens ?? null,
-      })
-      .then(() => {}, () => {});
 
     // ── Return result ──
     if (kind === 'task_extract') {

@@ -4,6 +4,7 @@
  * so the OpenAI API key never touches the client bundle.
  */
 import { supabase } from './supabase';
+import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,6 +112,9 @@ export async function invokeAiGenerate<T = unknown>(
 
     // Edge Function returns { error: { message, code } } on failure
     if (data?.error?.message) {
+      if (isMonthlyLimitError(data.error)) {
+        showMonthlyLimitAlert();
+      }
       return { data: null, error: data.error.message };
     }
 

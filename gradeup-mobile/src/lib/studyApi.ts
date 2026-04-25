@@ -103,7 +103,11 @@ export async function generateQuizFromNotes(
   });
 
   if (error) {
-    if (error.includes('timed out') || error.includes('RATE_LIMIT')) {
+    if (
+      error.includes('timed out') ||
+      error.includes('RATE_LIMIT') ||
+      /monthly ai token limit|MONTHLY_TOKEN_LIMIT/i.test(error)
+    ) {
       throw new Error(error);
     }
     return [];

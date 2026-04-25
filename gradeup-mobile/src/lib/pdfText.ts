@@ -7,6 +7,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
 import { uploadNoteAttachment, NOTE_ATTACHMENTS_BUCKET } from './noteStorage';
+import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 
 export type PdfExtractStage =
   | 'local_pdfjs'
@@ -49,6 +50,9 @@ async function invokePdfExtractFromStorage(storagePath: string, bucket: string):
   }
 
   if (data?.error?.message) {
+    if (isMonthlyLimitError(data.error)) {
+      showMonthlyLimitAlert();
+    }
     return { text: '', stage: 'openai_response', detail: data.error.message };
   }
 

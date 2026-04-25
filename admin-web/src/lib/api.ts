@@ -211,6 +211,57 @@ export type SubscriptionPlan = 'free' | 'plus' | 'pro';
 
 export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = ['free', 'plus', 'pro'] as const;
 
+/**
+ * Monthly AI token quota per subscription plan.
+ * Keep in sync with `gradeup-mobile/supabase/functions/_shared/tokenLimit.ts`.
+ */
+export const MONTHLY_TOKEN_LIMITS: Record<SubscriptionPlan, number> = {
+  free: 20_000,
+  plus: 200_000,
+  pro: 1_000_000,
+};
+
+/** Resolve the effective monthly cap (admin override beats plan default). */
+export function resolveMonthlyLimit(
+  plan: SubscriptionPlan,
+  override: number | null | undefined,
+): number {
+  const base = MONTHLY_TOKEN_LIMITS[plan] ?? MONTHLY_TOKEN_LIMITS.free;
+  const n = Number(override);
+  if (!Number.isFinite(n) || n <= 0) return base;
+  return Math.floor(n);
+}
+
+/** Sum of `total_tokens` per user since the 1st of the current UTC month. */
+export async function listAiUsageForUsers(
+  userIds: string[],
+): Promise<Record<string, number>> {
+  if (!userIds.length) return {};
+
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+
+  const totals: Record<string, number> = {};
+  for (const id of userIds) totals[id] = 0;
+
+  // PostgREST IN filter has a URL length cap; chunk defensively.
+  const BATCH = 100;
+  for (let i = 0; i < userIds.length; i += BATCH) {
+    const ids = userIds.slice(i, i + BATCH);
+    const { data, error } = await supabase
+      .from('ai_token_usage')
+      .select('user_id,total_tokens')
+      .in('user_id', ids)
+      .gte('created_at', monthStart.toISOString());
+    if (error) throw toError(error);
+    for (const row of (data ?? []) as Array<{ user_id: string; total_tokens: number | null }>) {
+      totals[row.user_id] = (totals[row.user_id] ?? 0) + Number(row.total_tokens ?? 0);
+    }
+  }
+  return totals;
+}
+
 export function normalizeSubscriptionPlan(raw: string | null | undefined): SubscriptionPlan {
   if (raw === 'plus' || raw === 'pro') return raw;
   return 'free';
@@ -223,21 +274,40 @@ export type AdminUserRow = {
   university_id: string | null;
   status: 'active' | 'disabled' | 'banned';
   subscription_plan: SubscriptionPlan;
+  ai_token_limit_override: number | null;
   created_at: string;
   updated_at?: string | null;
 };
 
 function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
-  return (rows as Array<Partial<AdminUserRow> & { subscription_plan?: string | null }>).map((r) => ({
-    id: String(r.id ?? ''),
-    name: r.name ?? null,
-    student_id: r.student_id ?? null,
-    university_id: r.university_id ?? null,
-    status: (r.status as AdminUserRow['status']) ?? 'active',
-    subscription_plan: normalizeSubscriptionPlan(r.subscription_plan),
-    created_at: String(r.created_at ?? ''),
-    updated_at: r.updated_at ?? null,
-  }));
+  return (rows as Array<
+    Partial<AdminUserRow> & {
+      subscription_plan?: string | null;
+      ai_token_limit_override?: number | string | null;
+    }
+  >).map((r) => {
+    const rawOverride = r.ai_token_limit_override;
+    const overrideNum =
+      rawOverride == null
+        ? null
+        : typeof rawOverride === 'number'
+          ? rawOverride
+          : Number(rawOverride);
+    return {
+      id: String(r.id ?? ''),
+      name: r.name ?? null,
+      student_id: r.student_id ?? null,
+      university_id: r.university_id ?? null,
+      status: (r.status as AdminUserRow['status']) ?? 'active',
+      subscription_plan: normalizeSubscriptionPlan(r.subscription_plan),
+      ai_token_limit_override:
+        typeof overrideNum === 'number' && Number.isFinite(overrideNum) && overrideNum > 0
+          ? Math.floor(overrideNum)
+          : null,
+      created_at: String(r.created_at ?? ''),
+      updated_at: r.updated_at ?? null,
+    };
+  });
 }
 
 export async function listUsers(opts: {
@@ -253,7 +323,10 @@ export async function listUsers(opts: {
     const plan = opts.plan ?? 'all';
     let query = supabase
       .from('profiles')
-      .select('id,name,student_id,university_id,created_at,status,updated_at,subscription_plan', { count: 'exact' })
+      .select(
+        'id,name,student_id,university_id,created_at,status,updated_at,subscription_plan,ai_token_limit_override',
+        { count: 'exact' },
+      )
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     const q = (opts.query ?? '').trim();
@@ -289,6 +362,38 @@ export async function setUserStatus(userId: string, status: AdminUserRow['status
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction('admin_users', { action: 'set_status', userId, status }, headers);
   return unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+/**
+ * Wipe every `ai_token_usage` row for this user that falls in the current UTC
+ * month. Effectively resets their "X / limit" bar back to 0 so a capped user
+ * can immediately keep using AI — the admin panel calls this after a double
+ * confirmation. Returns the number of rows deleted.
+ */
+export async function resetUserMonthlyTokens(userId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_reset_user_monthly_tokens', {
+    p_user_id: userId,
+  });
+  if (error) throw toError(error);
+  const n = Number(data ?? 0);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/**
+ * Set a per-user monthly token cap that overrides their plan default.
+ * Pass `null` (or a non-positive number) to clear the override and fall back
+ * to the plan default.
+ */
+export async function setUserTokenLimit(
+  userId: string,
+  limit: number | null,
+): Promise<void> {
+  const clean = limit == null ? null : Math.floor(Number(limit));
+  const { error } = await supabase.rpc('admin_set_user_token_limit', {
+    p_user_id: userId,
+    p_limit: clean && clean > 0 ? clean : null,
+  });
+  if (error) throw toError(error);
 }
 
 export async function setUserSubscriptionPlan(userId: string, subscription_plan: SubscriptionPlan) {

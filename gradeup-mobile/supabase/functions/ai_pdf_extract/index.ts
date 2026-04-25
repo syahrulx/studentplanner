@@ -1,4 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  checkMonthlyTokenLimit,
+  formatMonthlyLimitMessage,
+  MONTHLY_LIMIT_ERROR_CODE,
+} from '../_shared/tokenLimit.ts';
 
 // ---------------------------------------------------------------------------
 // CORS & Response helpers
@@ -193,6 +198,12 @@ Deno.serve(async (req) => {
           auth: { persistSession: false, autoRefreshToken: false },
         })
       : supabaseUser;
+
+    // ── Monthly AI token budget check ──
+    const monthCheck = await checkMonthlyTokenLimit(supabaseAdmin, userId);
+    if (!monthCheck.allowed) {
+      return errorJson(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
+    }
 
     // ── Parse body ──
     let body: { storage_path?: string; bucket?: string };

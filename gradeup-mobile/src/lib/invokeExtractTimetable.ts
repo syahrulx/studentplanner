@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from '@supabase/functions-js';
 import { supabase } from '@/src/lib/supabase';
+import { showMonthlyLimitAlert, isMonthlyLimitError } from '@/src/lib/aiLimitError';
 
 export type ExtractTimetableHttpResult = {
   httpStatus: number;
@@ -39,6 +40,9 @@ export async function invokeExtractTimetable(payload: unknown): Promise<ExtractT
       data !== undefined && data !== null && typeof data === 'object'
         ? JSON.stringify(data)
         : String(data ?? '');
+    if (data && typeof data === 'object' && isMonthlyLimitError((data as { error?: unknown }).error as never)) {
+      showMonthlyLimitAlert();
+    }
     return { httpStatus: response.status, data, rawText };
   }
 
@@ -58,6 +62,9 @@ export async function invokeExtractTimetable(payload: unknown): Promise<ExtractT
           code: 'INVALID_RESPONSE',
         },
       };
+    }
+    if (parsed && typeof parsed === 'object' && isMonthlyLimitError((parsed as { error?: unknown }).error as never)) {
+      showMonthlyLimitAlert();
     }
     return { httpStatus, data: parsed, rawText };
   }

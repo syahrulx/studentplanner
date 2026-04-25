@@ -1,5 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
+import {
+  checkMonthlyTokenLimit,
+  formatMonthlyLimitMessage,
+  logTokenUsage,
+  MONTHLY_LIMIT_ERROR_CODE,
+} from '../_shared/tokenLimit.ts';
 
 type ExtractedSubject = {
   subject_id: string;
@@ -388,12 +394,40 @@ function buildExtractionRulesBlock(): string {
   ].join('\n');
 }
 
+type OpenAiUsage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+
+function readChatUsage(aiJson: unknown): OpenAiUsage {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = (aiJson as any)?.usage ?? {};
+  return {
+    prompt_tokens: Number(u?.prompt_tokens) || 0,
+    completion_tokens: Number(u?.completion_tokens) || 0,
+    total_tokens: Number(u?.total_tokens) || 0,
+  };
+}
+
+function readResponsesUsage(aiJson: unknown): OpenAiUsage {
+  // /v1/responses returns `usage: { input_tokens, output_tokens, total_tokens }`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const u = (aiJson as any)?.usage ?? {};
+  const p = Number(u?.input_tokens ?? u?.prompt_tokens) || 0;
+  const c = Number(u?.output_tokens ?? u?.completion_tokens) || 0;
+  return {
+    prompt_tokens: p,
+    completion_tokens: c,
+    total_tokens: Number(u?.total_tokens) || p + c,
+  };
+}
+
 async function openAiExtractViaPdfNative(args: {
   apiKey: string;
   model: string;
   filename: string;
   pdfBytes: Uint8Array;
-}): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+}): Promise<
+  | { ok: true; text: string; usage: OpenAiUsage }
+  | { ok: false; status: number; detail: string }
+> {
   const b64 = encodeBase64(args.pdfBytes);
   const userText = [
     buildExtractionRulesBlock(),
@@ -435,14 +469,17 @@ async function openAiExtractViaPdfNative(args: {
   }
 
   const json = await res.json();
-  return { ok: true, text: textFromResponsesApi(json) };
+  return { ok: true, text: textFromResponsesApi(json), usage: readResponsesUsage(json) };
 }
 
 async function openAiExtractViaTextChat(args: {
   apiKey: string;
   model: string;
   documentText: string;
-}): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+}): Promise<
+  | { ok: true; text: string; usage: OpenAiUsage }
+  | { ok: false; status: number; detail: string }
+> {
   const prompt = [
     buildExtractionRulesBlock(),
     '',
@@ -479,7 +516,7 @@ async function openAiExtractViaTextChat(args: {
 
   const aiJson = await res.json();
   const text = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
-  return { ok: true, text };
+  return { ok: true, text, usage: readChatUsage(aiJson) };
 }
 
 function tryNormalizeFromModelJson(
@@ -525,6 +562,17 @@ Deno.serve(async (req) => {
     }
 
     const userId = authData.user.id;
+
+    // ── Monthly AI token budget check ──
+    const supabaseAdminForLimit = serviceRole
+      ? createClient(supabaseUrl, serviceRole, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        })
+      : supabaseUser;
+    const monthCheck = await checkMonthlyTokenLimit(supabaseAdminForLimit, userId);
+    if (!monthCheck.allowed) {
+      return errorBody(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
+    }
 
     let body: Record<string, unknown>;
     try {
@@ -627,6 +675,16 @@ Deno.serve(async (req) => {
         filename: fileName,
         pdfBytes: bytes,
       });
+      if (pdfRes.ok) {
+        logTokenUsage(supabaseAdminForLimit, {
+          user_id: userId,
+          kind: 'sow_extract_pdf',
+          model: pdfModel,
+          prompt_tokens: pdfRes.usage.prompt_tokens || null,
+          completion_tokens: pdfRes.usage.completion_tokens || null,
+          total_tokens: pdfRes.usage.total_tokens || null,
+        });
+      }
       if (pdfRes.ok && pdfRes.text) {
         const n = tryNormalizeFromModelJson(pdfRes.text, normCtx);
         if (n && (n.subjects.length > 0 || n.tasks.length > 0)) {
@@ -660,6 +718,14 @@ Deno.serve(async (req) => {
       if (!textRes.ok) {
         return errorBody(`OpenAI error ${textRes.status}: ${textRes.detail}`, 'OPENAI');
       }
+      logTokenUsage(supabaseAdminForLimit, {
+        user_id: userId,
+        kind: 'sow_extract_text',
+        model: textModel,
+        prompt_tokens: textRes.usage.prompt_tokens || null,
+        completion_tokens: textRes.usage.completion_tokens || null,
+        total_tokens: textRes.usage.total_tokens || null,
+      });
       const n = tryNormalizeFromModelJson(textRes.text, normCtx);
       if (!n) {
         return errorBody('AI returned invalid JSON. Try another PDF or simplify the document.', 'PARSE');

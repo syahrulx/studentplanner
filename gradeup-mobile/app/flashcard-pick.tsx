@@ -524,8 +524,9 @@ export default function FlashcardPick() {
 
     let totalAdded = 0;
     let firstNoteWithNewCards: string | null = null;
-    const failLines: string[] = [];
+      const failLines: string[] = [];
     let stoppedOnDailyLimit = false;
+      let stoppedOnMonthlyLimit = false;
 
     try {
       if (isReplaceMode) {
@@ -636,6 +637,12 @@ export default function FlashcardPick() {
             const orig = notes.find((n) => n.id === note.id);
             if (orig) handleSaveNote({ ...orig, extractionError: error });
           }
+          if (/monthly ai token limit|MONTHLY_TOKEN_LIMIT/i.test(error)) {
+            failLines.push('Stopped: monthly AI limit reached.');
+            stoppedOnDailyLimit = true;
+            stoppedOnMonthlyLimit = true;
+            break;
+          }
           if (/daily.*limit/i.test(error)) {
             failLines.push('Stopped: daily limit reached.');
             stoppedOnDailyLimit = true;
@@ -669,7 +676,9 @@ export default function FlashcardPick() {
       setGenerateProgressUi(null);
       setGeneratingLabel('');
 
-      if (totalAdded === 0 && failLines.length > 0) {
+      // Monthly-limit UI is already shown centrally in invokeGenerateFlashcards().
+      // Avoid showing a second generic failure alert on top of that.
+      if (!stoppedOnMonthlyLimit && totalAdded === 0 && failLines.length > 0) {
         Alert.alert(T('flashcardPickGenerateFailedTitle'), failLines.slice(0, 3).join('\n'));
       } else if (totalAdded === 0) {
         Alert.alert(

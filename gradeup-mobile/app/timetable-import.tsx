@@ -19,6 +19,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeExtractTimetable } from '@/src/lib/invokeExtractTimetable';
+import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
 import { apiSlotsToTimetableEntries, parseExtractTimetableResponse } from '@/src/lib/timetableExtraction';
 import type { TimetableEntry } from '@/src/types';
 import { setHasSeenNonUitmTimetableIntro } from '@/src/storage';
@@ -105,6 +106,11 @@ export default function TimetableImportScreen() {
       const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
       const fnErr = body?.error as { message?: string; code?: string } | undefined;
       if (fnErr?.message) {
+        // Monthly token limit alert is already shown by invokeExtractTimetable;
+        // skip the generic error alert to avoid stacking dialogs.
+        if (isMonthlyLimitError(fnErr)) {
+          return;
+        }
         Alert.alert(T('error'), `${fnErr.message}${fnErr.code ? ` (${fnErr.code})` : ''}`);
         return;
       }

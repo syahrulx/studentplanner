@@ -419,6 +419,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     academicCalendar?.periods?.length ?? 0,
   ]);
 
+  /**
+   * Re-run attendance reschedule when the app returns to foreground.
+   *
+   * This covers two failure modes that previously left auto-generated (UiTM)
+   * timetables without any check-in notifications:
+   *   1. Notification permission was still "undetermined" the first time we
+   *      tried to schedule (right after UiTM sync on first launch) — the
+   *      reschedule bailed out and nothing ever re-triggered it because the
+   *      `timetable` state never changed again.
+   *   2. iOS dropped some pending locals while backgrounded — resuming
+   *      re-seeds the NEAREST 40 occurrences.
+   */
+  const timetableForAttendanceRef = useRef<TimetableEntry[]>([]);
+  useEffect(() => {
+    timetableForAttendanceRef.current = timetable;
+  }, [timetable]);
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const entries = timetableForAttendanceRef.current;
+      if (!entries || entries.length === 0) return;
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (!uid) return;
+        rescheduleAttendanceNotifications(uid, entries).catch(() => {});
+      });
+    });
+    return () => sub.remove();
+  }, []);
+
   /** Recompute teaching week when the app returns to foreground (e.g. new calendar day). */
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -555,18 +585,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r0.status === 'fulfilled') {
           loadedNotes = r0.value;
           if (validCourseIds) {
-            const rawNotes = loadedNotes;
-            loadedNotes = rawNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
-            
-            // Clean up ghost notes — but only if they're a small minority.
-            // If most notes look like ghosts, courses probably failed to load fully;
-            // deleting everything would cause cascading data loss.
-            const ghostNotes = rawNotes.filter((n) => !validCourseIds.has(n.subjectId.toUpperCase()));
-            if (ghostNotes.length > 0 && rawNotes.length > 0 && ghostNotes.length < rawNotes.length * 0.5) {
-              Promise.allSettled(
-                ghostNotes.map((gn) => studyDb.deleteNote(uid, gn.id))
-              ).catch(() => {});
-            }
+            // Soft-hide notes whose subject isn't in the user's current course
+            // list. We previously auto-deleted them from Supabase here, but
+            // that caused permanent data loss in edge cases (course loader
+            // glitches, subject_id case mismatches, etc.). Now it's
+            // display-only — the user can restore access by re-adding the
+            // course, or we can clean up server-side via an admin script.
+            loadedNotes = loadedNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
           }
           setNotes(loadedNotes);
         }
@@ -574,18 +599,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r1.status === 'fulfilled') {
           const loadedCards = r1.value;
           const validNoteIds = new Set(loadedNotes.map((n) => n.id));
-          
-          // Drop ghost cards that belong to notes that have been deleted
+
+          // Same policy as notes above: soft-hide cards whose parent note is
+          // missing/hidden. Never auto-delete from Supabase — a missing note
+          // can simply mean the note row hasn't synced yet.
           const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
           setFlashcards(validCards);
-
-          // Clean up orphaned cards — same 50% safety threshold as notes above.
-          const ghostCards = loadedCards.filter((c) => !c.noteId || !validNoteIds.has(c.noteId));
-          if (ghostCards.length > 0 && loadedCards.length > 0 && ghostCards.length < loadedCards.length * 0.5) {
-            Promise.allSettled(
-              ghostCards.map((gc) => studyDb.deleteFlashcard(uid, gc.id))
-            ).catch(() => {});
-          }
         }
         if (r2.status === 'fulfilled') {
           setTasks(r2.value);
@@ -1405,7 +1424,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return [note, ...prev];
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) studyDb.upsertNote(session.user.id, note);
+      if (session?.user?.id) {
+        studyDb.upsertNote(session.user.id, note).catch((err) => {
+          if (__DEV__) console.error('[Note] persist failed (save):', err);
+        });
+      }
     });
   }, []);
 
@@ -1416,8 +1439,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId)); // Also remove associated flashcards locally
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.id) {
-        studyDb.deleteNote(session.user.id, noteId);
-        studyDb.deleteFlashcardsForNote(session.user.id, noteId).catch(console.error); // Also remove from Supabase
+        studyDb.deleteNote(session.user.id, noteId).catch((err) => {
+          if (__DEV__) console.error('[Note] persist failed (delete):', err);
+        });
+        studyDb.deleteFlashcardsForNote(session.user.id, noteId).catch((err) => {
+          if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
+        });
       }
     });
   }, []);
