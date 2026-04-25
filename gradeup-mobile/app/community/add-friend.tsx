@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Share,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -22,6 +23,24 @@ import * as communityApi from '@/src/lib/communityApi';
 import type { FriendProfile, Friendship } from '@/src/lib/communityApi';
 
 type Tab = 'nearby' | 'incoming' | 'sent';
+
+/** Query `id` from `?id=` — Universal Links often omit it from `useLocalSearchParams`. */
+function pickIdFromQueryParams(q: Linking.QueryParams | null | undefined): string | undefined {
+  if (!q) return undefined;
+  const raw = q.id;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (Array.isArray(raw) && raw[0] != null && String(raw[0]).trim()) return String(raw[0]).trim();
+  return undefined;
+}
+
+function idFromAppLinkUrl(url: string | null | undefined): string | undefined {
+  if (!url || !url.trim()) return undefined;
+  try {
+    return pickIdFromQueryParams(Linking.parse(url).queryParams);
+  } catch {
+    return undefined;
+  }
+}
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -56,9 +75,25 @@ export default function AddFriendScreen() {
   const T = useTranslations(language);
   const params = useLocalSearchParams<{ tab?: string | string[]; id?: string | string[] }>();
   const tabParam = typeof params.tab === 'string' ? params.tab : undefined;
-  const inviteFromId =
+  const idFromParams =
     typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
+  /** Native URL (cold start + Universal / App Link) so `?id=` is not lost */
+  const linkingUrl = Linking.useURL();
+  const idFromLinking = useMemo(() => idFromAppLinkUrl(linkingUrl), [linkingUrl]);
+  const [idFromAsyncParse, setIdFromAsyncParse] = useState<string | undefined>(undefined);
+  const inviteFromId = idFromParams?.trim() || idFromLinking || idFromAsyncParse;
   const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
+
+  // `refreshRequests` / `T` change identity often and would re-run this effect while the alert is
+  // open — cleanup flips `alive` and deferred handlers no-op → broken state / duplicate alerts.
+  const refreshRequestsRef = useRef(refreshRequests);
+  const refreshFriendsRef = useRef(refreshFriends);
+  const TRef = useRef(T);
+  useEffect(() => {
+    refreshRequestsRef.current = refreshRequests;
+    refreshFriendsRef.current = refreshFriends;
+    TRef.current = T;
+  }, [refreshRequests, refreshFriends, T]);
 
   const [tab, setTab] = useState<Tab>('nearby');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,13 +106,28 @@ export default function AddFriendScreen() {
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const [inviteHandled, setInviteHandled] = useState(false);
 
+  // `useURL` can be null for a frame; `parseInitialURLAsync` is the other half of cold start.
+  useEffect(() => {
+    let ok = true;
+    Linking.parseInitialURLAsync()
+      .then((p) => {
+        if (!ok) return;
+        const id = pickIdFromQueryParams(p.queryParams);
+        if (id) setIdFromAsyncParse((prev) => prev || id);
+      })
+      .catch(() => {});
+    return () => {
+      ok = false;
+    };
+  }, []);
+
   // Map deep-link tab values to the new 3-tab model.
   useEffect(() => {
     if (tabParam === 'incoming') setTab('incoming');
     else if (tabParam === 'outgoing' || tabParam === 'sent') setTab('sent');
   }, [tabParam]);
 
-  // Handle deep link invite: rencana://community/add-friend?id=<userId>
+  // Handle invite: `https://…/community/add-friend?id=…` (Universal Link) or `rencana://…`
   useEffect(() => {
     if (inviteHandled) return;
     if (!userId) return;
@@ -88,51 +138,67 @@ export default function AddFriendScreen() {
       return;
     }
 
-    let alive = true;
+    let cancelled = false;
     (async () => {
       try {
         const profile = await communityApi.getUserProfile(inviterId).catch(() => null);
+        if (cancelled) return;
         const name = profile?.name?.trim() || 'this user';
+        const nameForMessage = name.replace(/[.!?,;:]+\s*$/g, '').trim() || 'this user';
+        const markHandled = () => {
+          // Next tick: avoid re-render fighting iOS alert dismissal (single-tap)
+          setTimeout(() => setInviteHandled(true), 0);
+        };
+        const inviteBody = `Do you want to send a friend request to ${nameForMessage}?`;
         Alert.alert(
           'Add friend?',
-          `Do you want to send a friend request to ${name}?`,
+          inviteBody,
           [
-            { text: 'Not now', style: 'cancel', onPress: () => alive && setInviteHandled(true) },
+            { text: 'Not now', style: 'cancel', onPress: markHandled },
             {
               text: 'Add',
-              onPress: async () => {
-                try {
-                  await communityApi.sendFriendRequest(userId, inviterId);
-                  setSentIds((prev) => new Set(prev).add(inviterId));
-                  await refreshRequests();
-                  await refreshFriends();
-                  setTab('sent');
-                } catch (e: any) {
-                  const msg = String(e?.message || '');
-                  if (/already friends/i.test(msg)) {
-                    Alert.alert('Already friends', 'You are already friends with this user.');
-                  } else if (/already sent/i.test(msg)) {
-                    Alert.alert('Already sent', 'You already sent a request to this user.');
-                    setTab('sent');
-                  } else {
-                    Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
-                  }
-                } finally {
-                  if (alive) setInviteHandled(true);
-                }
+              onPress: () => {
+                markHandled();
+                setTimeout(() => {
+                  void (async () => {
+                    try {
+                      await communityApi.sendFriendRequest(userId, inviterId);
+                      setSentIds((prev) => new Set(prev).add(inviterId));
+                      await refreshRequestsRef.current();
+                      await refreshFriendsRef.current();
+                      setTab('sent');
+                    } catch (e: any) {
+                      const msg = String(e?.message || '');
+                      if (/already friends/i.test(msg)) {
+                        Alert.alert('Already friends', 'You are already friends with this user.');
+                      } else if (/already sent/i.test(msg)) {
+                        Alert.alert('Already sent', 'You already sent a request to this user.');
+                        setTab('sent');
+                      } else {
+                        const tr = TRef.current;
+                        Alert.alert(
+                          tr('commFriendRequestNotSentTitle'),
+                          tr('commFriendRequestNotSentBody'),
+                        );
+                      }
+                    }
+                  })();
+                }, 0);
               },
             },
           ],
+          { cancelable: true, onDismiss: markHandled },
         );
-      } finally {
-        if (alive) setInviteHandled(true);
+      } catch {
+        if (!cancelled) setInviteHandled(true);
       }
     })();
 
     return () => {
-      alive = false;
+      cancelled = true;
     };
-  }, [inviteHandled, inviteFromId, refreshFriends, refreshRequests, T, userId]);
+    // Intentionally narrow: do not add refresh* or T (see refs above).
+  }, [inviteHandled, inviteFromId, userId]);
 
   const refreshOutgoingRequests = useCallback(async () => {
     if (!userId) return;
@@ -268,7 +334,8 @@ export default function AddFriendScreen() {
     if (!userId) return;
     const link = communityApi.generateInviteLink(userId);
     try {
-      await Share.share({ message: `Add me on Rencana! ${link}`, url: link });
+      // Only put the URL in `message`. Passing `url` on iOS duplicates the link in WhatsApp etc.
+      await Share.share({ message: `Add me on Rencana!\n\n${link}` });
     } catch (e) {
       console.warn(e);
     }

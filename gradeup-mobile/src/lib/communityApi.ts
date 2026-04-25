@@ -1128,9 +1128,20 @@ export async function removeFriendByUserId(userId: string, friendId: string) {
   await removeFriend(data.id);
 }
 
-/** Generate an invite deep link for adding friends */
+/**
+ * Public invite URL (HTTPS) so apps like WhatsApp linkify a tappable link.
+ * Requires hosting `aizztech.com` files (AASA, landing page) — see
+ * `legal/aizztech-website/README.md`. Universal Links / App Links open the app
+ * when installed; otherwise the web page tries `rencana://` and store links.
+ */
+const INVITE_HTTP_BASE =
+  (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_INVITE_HTTP_BASE) || 'https://aizztech.com';
+
+/** Generate a shareable invite link (https — not custom scheme) */
 export function generateInviteLink(userId: string): string {
-  return `rencana://community/add-friend?id=${userId}`;
+  const id = encodeURIComponent(userId);
+  const base = String(INVITE_HTTP_BASE).replace(/\/$/, '');
+  return `${base}/community/add-friend?id=${id}`;
 }
 
 /** Get list of user IDs in a circle (for map filtering) */

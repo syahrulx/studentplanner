@@ -86,10 +86,41 @@ export default ({ config }) => {
   const LOCATION_WHEN_IN_USE =
     'Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background.';
 
+  const baseAndroid = base.android ?? {};
+  const existingIntentFilters = Array.isArray(baseAndroid.intentFilters)
+    ? baseAndroid.intentFilters
+    : [];
+  const inviteHost =
+    cleanEnvString(process.env.EXPO_PUBLIC_INVITE_HTTP_BASE || 'https://aizztech.com')
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0] || 'aizztech.com';
+
   return {
     ...base,
+    android: {
+      ...baseAndroid,
+      intentFilters: [
+        ...existingIntentFilters,
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            {
+              scheme: 'https',
+              host: inviteHost,
+              pathPrefix: '/community/add-friend',
+            },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+      ],
+    },
     ios: {
       ...ios,
+      associatedDomains: [
+        ...(Array.isArray(ios.associatedDomains) ? ios.associatedDomains : []),
+        `applinks:${inviteHost}`,
+      ],
       infoPlist: {
         ...infoPlist,
         UIBackgroundModes: modes,

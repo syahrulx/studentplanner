@@ -55,3 +55,37 @@ Once live, paste the URL into:
   version if any)
 
 That's all Apple needs to clear Guideline 5.1.1(ii).
+
+## Add-friend deep links (Universal Links + WhatsApp tappable `https` URLs)
+
+`rencana://` links are **not** tappable in WhatsApp and do not work when pasted
+into a browser. The app now shares an **HTTPS** URL of the form:
+
+`https://aizztech.com/community/add-friend?id=<userId>`
+
+(Override with env `EXPO_PUBLIC_INVITE_HTTP_BASE` in `app.config.js` if you use
+another host.)
+
+### Publish these static files to `aizztech.com`
+
+1. **Landing (when the app is not installed, or the link opens in a browser):**
+   - Copy the folder `community/add-friend/` (contains `index.html`) next to
+     `privacy/` on your site, so the URL
+     `https://aizztech.com/community/add-friend?id=…` returns that HTML.
+2. **iOS — Universal Links:** upload **without** a `.json` extension:
+   - Path: `https://aizztech.com/.well-known/apple-app-site-association`
+   - Content: use the file from this repo
+     `legal/aizztech-website/.well-known/apple-app-site-association`
+   - The server should serve it with `Content-Type: application/json` (many
+     hosts do this for extensionless files under `.well-known/`).
+3. **Android — App Links:** `https://aizztech.com/.well-known/assetlinks.json`
+   - Replace `REPLACE_WITH_SHA256_FROM_GOOGLE_PLAY_APP_SIGNING` with the
+     **SHA-256** certificate fingerprint from Google Play Console → your app
+     → **App integrity** / **App signing** (or run `keytool` on your release
+     keystore). The placeholder will **not** verify until replaced.
+4. Rebuild the iOS and Android app after the native `associatedDomains` /
+   `intentFilters` config (EAS `production` or `development` with a new binary).
+
+Until AASA and `assetlinks` are live and a **new** app build is installed,
+`https` links will open the **web page**; that page will try
+`rencana://` and show **Open in Rencana** plus store links.
