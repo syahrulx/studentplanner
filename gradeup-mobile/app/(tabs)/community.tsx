@@ -145,8 +145,10 @@ function StableMarker({
 }) {
   const theme = useTheme();
 
-  // Don't render if coordinates are invalid (0,0 or undefined)
-  if (!coordinate.latitude || !coordinate.longitude) return null;
+  // Don't render invalid coords. Use isFinite (not truthiness) so 0°/equator is valid.
+  if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude)) {
+    return null;
+  }
 
   const emoji = getActivityEmoji(activityType);
   const isListeningActivity = activityType === 'listening_music';
@@ -296,6 +298,15 @@ export default function CommunityMap() {
     setLocationVisibility,
   } = useCommunity();
 
+  // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
+  const hasValidMyCoords =
+    myLatitude != null &&
+    myLongitude != null &&
+    Number.isFinite(myLatitude) &&
+    Number.isFinite(myLongitude);
+  const mapCenterLng = hasValidMyCoords ? myLongitude : 101.4810;
+  const mapCenterLat = hasValidMyCoords ? myLatitude : 3.0651;
+
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
@@ -355,14 +366,14 @@ export default function CommunityMap() {
   );
 
   const handleCenterOnMe = useCallback(() => {
-    if (myLatitude && myLongitude && cameraRef.current) {
+    if (hasValidMyCoords && cameraRef.current) {
       cameraRef.current.setCamera({
         centerCoordinate: [myLongitude, myLatitude],
         zoomLevel: 15,
         animationDuration: 500,
       });
     }
-  }, [myLatitude, myLongitude]);
+  }, [hasValidMyCoords, myLatitude, myLongitude]);
 
   const handleToggleGhostMode = useCallback(async () => {
     const targetVisibility = locationVisibility === 'off' ? 'friends' : 'off';
@@ -492,16 +503,16 @@ export default function CommunityMap() {
               zoomLevel={15}
               pitch={45}
               heading={0}
-              centerCoordinate={[myLongitude || 101.4810, myLatitude || 3.0651]}
+              centerCoordinate={[mapCenterLng, mapCenterLat]}
               animationMode="flyTo"
               animationDuration={1500}
             />
 
-            {/* My own marker — only render when we have valid coords */}
-            {!!(myLatitude && myLongitude) && (
+            {/* My own pin — hidden in ghost mode; coords stay in state for map center only */}
+            {hasValidMyCoords && locationVisibility !== 'off' && (
               <StableMarker
                 id="me"
-                coordinate={{ latitude: myLatitude, longitude: myLongitude }}
+                coordinate={{ latitude: myLatitude as number, longitude: myLongitude as number }}
                 anchor={{ x: 0.5, y: 1 }}
                 onPress={() => setShowStatusPopup(true)}
                 name={user.name}
@@ -816,7 +827,7 @@ export default function CommunityMap() {
             ]}
             onPress={() => {
               // Just zoom deeply into own location, don't show the popup
-              if (myLatitude && myLongitude && cameraRef.current) {
+              if (hasValidMyCoords && cameraRef.current) {
                 cameraRef.current.setCamera({
                   centerCoordinate: [myLongitude, myLatitude],
                   zoomLevel: 19,

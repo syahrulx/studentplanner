@@ -609,6 +609,32 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     };
   }, [locationPermissionGranted, userId, locationVisibility]);
 
+  // Ghost mode: foreground GPS watch is off, so on cold start `myLatitude` / `myLongitude` may
+  // stay null even though we still have a last point in `user_locations` (visibility off, coords kept).
+  // Hydrate so the "me" marker and map camera are not empty.
+  useEffect(() => {
+    if (!userId) return;
+    if (locationVisibility !== 'off') return;
+    if (myLatitude != null && myLongitude != null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const row = await communityApi.getMyLocation(userId);
+        if (cancelled || !row) return;
+        const { latitude: lat, longitude: lon } = row;
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          setMyLatitude(lat);
+          setMyLongitude(lon);
+        }
+      } catch (e) {
+        console.warn('[LOCATION] getMyLocation hydrate (ghost) failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, locationVisibility, myLatitude, myLongitude]);
+
   // ─── Location visibility ───
   const setLocationVisibility = useCallback(async (v: LocationVisibility) => {
     if (!userId) return;
