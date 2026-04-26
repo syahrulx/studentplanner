@@ -3,6 +3,7 @@
     "name": "Rencana",
     "slug": "gradeup-mobile",
     "version": "1.0.1",
+    "owner": "syahrulsss",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rencana",
