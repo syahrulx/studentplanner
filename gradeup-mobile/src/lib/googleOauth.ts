@@ -39,12 +39,25 @@ export function getGoogleClientIds(): GoogleClientIds {
   };
 }
 
-/** Pick the OAuth client that should be used on the current runtime platform. */
+/**
+ * Pick the OAuth client for the current platform.
+ *
+ * **Never** use the "Web" client on iOS/Android: native apps use a custom URL scheme
+ * redirect (`com.googleusercontent.apps...` or `com.aizztech.rencana:/...`). Google
+ * returns `400 invalid_request: Custom scheme URIs are not allowed for 'WEB' client type`
+ * if a web client id is used with that redirect.
+ * Web client ids are only valid with `https` redirect URIs (e.g. Supabase browser OAuth).
+ */
 export function pickPlatformClientId(ids: GoogleClientIds): string | null {
-  if (Platform.OS === 'ios' && ids.iosClientId) return ids.iosClientId;
-  if (Platform.OS === 'android' && ids.androidClientId) return ids.androidClientId;
-  if (ids.webClientId) return ids.webClientId;
-  return ids.iosClientId || ids.androidClientId || null;
+  if (Platform.OS === 'ios') {
+    return ids.iosClientId && ids.iosClientId.length > 0 ? ids.iosClientId : null;
+  }
+  if (Platform.OS === 'android') {
+    return ids.androidClientId && ids.androidClientId.length > 0 ? ids.androidClientId : null;
+  }
+  // e.g. Expo web: https redirects only
+  if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
+  return null;
 }
 
 export interface GoogleTokenResponse {

@@ -4,4 +4,9 @@
   <color name="gradeup_widget_text_primary">#FFF5F5F5</color>
   <color name="gradeup_widget_text_secondary">#FFE5E5EA</color>
   <color name="gradeup_widget_text_tertiary">#FFAEAEB2</color>
+  <color name="gradeup_widget_text_muted">#FF8E8E93</color>
+  <color name="gradeup_widget_accent">#FF3B82F6</color>
+  <color name="gradeup_widget_danger">#FFef4444</color>
+  <color name="gradeup_widget_warning">#FFf59e0b</color>
+  <color name="gradeup_widget_divider">#1Ae2e8f0</color>
 </resources>

@@ -12,7 +12,8 @@
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
         "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "195773797606-uklfgqldnm6c84vj73gcl8pviei9vhr5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "195773797606-41at5q2iep2hl8jm3rilr7gimns1b5s5.apps.googleusercontent.com"
       }
     },
     "preview": {
@@ -22,7 +23,8 @@
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
         "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "195773797606-uklfgqldnm6c84vj73gcl8pviei9vhr5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "195773797606-41at5q2iep2hl8jm3rilr7gimns1b5s5.apps.googleusercontent.com"
       }
     },
     "production": {
@@ -32,7 +34,8 @@
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
         "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "c5eb4326c4eb46888e7144992074ebb0",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "195773797606-uklfgqldnm6c84vj73gcl8pviei9vhr5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "195773797606-41at5q2iep2hl8jm3rilr7gimns1b5s5.apps.googleusercontent.com"
       }
     }
   },

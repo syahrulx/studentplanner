@@ -8,8 +8,8 @@
     "scheme": "rencana",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/icon1.png",
-      "resizeMode": "cover",
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#eaecf1"
     },
     "ios": {

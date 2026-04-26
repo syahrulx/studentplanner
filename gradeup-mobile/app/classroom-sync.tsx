@@ -89,7 +89,7 @@ export default function ClassroomSync() {
   useEffect(() => {
     if (notConfigured) {
       setError(
-        'Google Classroom is not configured for this build. Set EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID / EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID and rebuild.',
+        'Google Classroom needs the correct OAuth client for this device: use an iOS client id in EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (not the "Web" client) for iPhone, and an Android client id for EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID. Add them to EAS build env, then rebuild.',
       );
       return;
     }

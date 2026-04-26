@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <color name="gradeup_widget_bg">#FFF7F7F7</color>
-  <color name="gradeup_widget_text_primary">#FF111827</color>
-  <color name="gradeup_widget_text_secondary">#FF374151</color>
+  <color name="gradeup_widget_text_primary">#FF0f172a</color>
+  <color name="gradeup_widget_text_secondary">#FF1e293b</color>
   <color name="gradeup_widget_text_tertiary">#FF4B5563</color>
+  <color name="gradeup_widget_text_muted">#FF64748b</color>
+  <color name="gradeup_widget_accent">#FF2563eb</color>
+  <color name="gradeup_widget_danger">#FFdc2626</color>
+  <color name="gradeup_widget_warning">#FFd97706</color>
+  <color name="gradeup_widget_divider">#1Ae2e8f0</color>
 </resources>
