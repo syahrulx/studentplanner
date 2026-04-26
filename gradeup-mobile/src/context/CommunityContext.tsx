@@ -473,7 +473,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                   reactionType: reaction.reaction_type,
                   message: reaction.message ?? '',
                 },
-                sound: 'default',
+                sound: true,
                 ...(Platform.OS === 'android' ? { channelId: 'community' } : {}),
               },
               trigger: null,
@@ -609,6 +609,32 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     };
   }, [locationPermissionGranted, userId, locationVisibility]);
 
+  // Ghost mode: foreground GPS watch is off, so on cold start `myLatitude` / `myLongitude` may
+  // stay null even though we still have a last point in `user_locations` (visibility off, coords kept).
+  // Hydrate so the "me" marker and map camera are not empty.
+  useEffect(() => {
+    if (!userId) return;
+    if (locationVisibility !== 'off') return;
+    if (myLatitude != null && myLongitude != null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const row = await communityApi.getMyLocation(userId);
+        if (cancelled || !row) return;
+        const { latitude: lat, longitude: lon } = row;
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          setMyLatitude(lat);
+          setMyLongitude(lon);
+        }
+      } catch (e) {
+        console.warn('[LOCATION] getMyLocation hydrate (ghost) failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, locationVisibility, myLatitude, myLongitude]);
+
   // ─── Location visibility ───
   const setLocationVisibility = useCallback(async (v: LocationVisibility) => {
     if (!userId) return;
@@ -617,14 +643,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setLocationVisibilityState(v);
 
       if (v === 'off') {
-        // Stop foreground watcher
+        // Stop foreground watcher — we no longer push GPS to the server for friends.
         if (locationWatchRef.current?.remove) {
           locationWatchRef.current.remove();
           locationWatchRef.current = null;
         }
-        // Clear local coordinates
-        setMyLatitude(null);
-        setMyLongitude(null);
+        // Keep last known myLatitude / myLongitude so the community map camera and
+        // "me" marker stay where the user was (ghost mode hides them from others,
+        // it should not pan the map to a random default).
       }
     } catch (e) {
       console.warn('Failed to update location visibility:', e);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Share,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -20,6 +21,26 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { FriendProfile, Friendship } from '@/src/lib/communityApi';
+
+type Tab = 'nearby' | 'incoming' | 'sent';
+
+/** Query `id` from `?id=` — Universal Links often omit it from `useLocalSearchParams`. */
+function pickIdFromQueryParams(q: Linking.QueryParams | null | undefined): string | undefined {
+  if (!q) return undefined;
+  const raw = q.id;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (Array.isArray(raw) && raw[0] != null && String(raw[0]).trim()) return String(raw[0]).trim();
+  return undefined;
+}
+
+function idFromAppLinkUrl(url: string | null | undefined): string | undefined {
+  if (!url || !url.trim()) return undefined;
+  try {
+    return pickIdFromQueryParams(Linking.parse(url).queryParams);
+  } catch {
+    return undefined;
+  }
+}
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -33,7 +54,16 @@ function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: str
     return <Image source={{ uri: avatarUrl }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
   }
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors[i], alignItems: 'center', justifyContent: 'center' }}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: colors[i],
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.38 }}>{getInitials(name)}</Text>
     </View>
   );
@@ -45,27 +75,59 @@ export default function AddFriendScreen() {
   const T = useTranslations(language);
   const params = useLocalSearchParams<{ tab?: string | string[]; id?: string | string[] }>();
   const tabParam = typeof params.tab === 'string' ? params.tab : undefined;
-  const inviteFromId = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
+  const idFromParams =
+    typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
+  /** Native URL (cold start + Universal / App Link) so `?id=` is not lost */
+  const linkingUrl = Linking.useURL();
+  const idFromLinking = useMemo(() => idFromAppLinkUrl(linkingUrl), [linkingUrl]);
+  const [idFromAsyncParse, setIdFromAsyncParse] = useState<string | undefined>(undefined);
+  const inviteFromId = idFromParams?.trim() || idFromLinking || idFromAsyncParse;
   const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
-  const [tab, setTab] = useState<'suggestions' | 'search' | 'incoming' | 'outgoing'>('suggestions');
+  // `refreshRequests` / `T` change identity often and would re-run this effect while the alert is
+  // open — cleanup flips `alive` and deferred handlers no-op → broken state / duplicate alerts.
+  const refreshRequestsRef = useRef(refreshRequests);
+  const refreshFriendsRef = useRef(refreshFriends);
+  const TRef = useRef(T);
+  useEffect(() => {
+    refreshRequestsRef.current = refreshRequests;
+    refreshFriendsRef.current = refreshFriends;
+    TRef.current = T;
+  }, [refreshRequests, refreshFriends, T]);
+
+  const [tab, setTab] = useState<Tab>('nearby');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
   const [suggestions, setSuggestions] = useState<FriendProfile[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<Friendship[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingNearby, setLoadingNearby] = useState(false);
+  const [loadingSearch, setLoadingSearch] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const [inviteHandled, setInviteHandled] = useState(false);
 
-  // Open Incoming / Sent when opened from a notification deep link
+  // `useURL` can be null for a frame; `parseInitialURLAsync` is the other half of cold start.
   useEffect(() => {
-    if (tabParam === 'incoming' || tabParam === 'outgoing') {
-      setTab(tabParam);
-    }
+    let ok = true;
+    Linking.parseInitialURLAsync()
+      .then((p) => {
+        if (!ok) return;
+        const id = pickIdFromQueryParams(p.queryParams);
+        if (id) setIdFromAsyncParse((prev) => prev || id);
+      })
+      .catch(() => {});
+    return () => {
+      ok = false;
+    };
+  }, []);
+
+  // Map deep-link tab values to the new 3-tab model.
+  useEffect(() => {
+    if (tabParam === 'incoming') setTab('incoming');
+    else if (tabParam === 'outgoing' || tabParam === 'sent') setTab('sent');
   }, [tabParam]);
 
-  // Handle deep link invite: rencana://community/add-friend?id=<userId>
+  // Handle invite: `https://…/community/add-friend?id=…` (Universal Link) or `rencana://…`
   useEffect(() => {
     if (inviteHandled) return;
     if (!userId) return;
@@ -76,101 +138,115 @@ export default function AddFriendScreen() {
       return;
     }
 
-    let alive = true;
+    let cancelled = false;
     (async () => {
       try {
         const profile = await communityApi.getUserProfile(inviterId).catch(() => null);
+        if (cancelled) return;
         const name = profile?.name?.trim() || 'this user';
+        const nameForMessage = name.replace(/[.!?,;:]+\s*$/g, '').trim() || 'this user';
+        const markHandled = () => {
+          // Next tick: avoid re-render fighting iOS alert dismissal (single-tap)
+          setTimeout(() => setInviteHandled(true), 0);
+        };
+        const inviteBody = `Do you want to send a friend request to ${nameForMessage}?`;
         Alert.alert(
           'Add friend?',
-          `Do you want to send a friend request to ${name}?`,
+          inviteBody,
           [
-            { text: 'Not now', style: 'cancel', onPress: () => alive && setInviteHandled(true) },
+            { text: 'Not now', style: 'cancel', onPress: markHandled },
             {
               text: 'Add',
-              onPress: async () => {
-                try {
-                  await communityApi.sendFriendRequest(userId, inviterId);
-                  setSentIds((prev) => new Set(prev).add(inviterId));
-                  await refreshRequests();
-                  await refreshFriends();
-                  setTab('outgoing');
-                } catch (e: any) {
-                  const msg = String(e?.message || '');
-                  if (/already friends/i.test(msg)) {
-                    Alert.alert('Already friends', 'You are already friends with this user.');
-                  } else if (/already sent/i.test(msg)) {
-                    Alert.alert('Already sent', 'You already sent a request to this user.');
-                    setTab('outgoing');
-                  } else {
-                    Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
-                  }
-                } finally {
-                  if (alive) setInviteHandled(true);
-                }
+              onPress: () => {
+                markHandled();
+                setTimeout(() => {
+                  void (async () => {
+                    try {
+                      await communityApi.sendFriendRequest(userId, inviterId);
+                      setSentIds((prev) => new Set(prev).add(inviterId));
+                      await refreshRequestsRef.current();
+                      await refreshFriendsRef.current();
+                      setTab('sent');
+                    } catch (e: any) {
+                      const msg = String(e?.message || '');
+                      if (/already friends/i.test(msg)) {
+                        Alert.alert('Already friends', 'You are already friends with this user.');
+                      } else if (/already sent/i.test(msg)) {
+                        Alert.alert('Already sent', 'You already sent a request to this user.');
+                        setTab('sent');
+                      } else {
+                        const tr = TRef.current;
+                        Alert.alert(
+                          tr('commFriendRequestNotSentTitle'),
+                          tr('commFriendRequestNotSentBody'),
+                        );
+                      }
+                    }
+                  })();
+                }, 0);
               },
             },
           ],
+          { cancelable: true, onDismiss: markHandled },
         );
-      } finally {
-        if (alive) setInviteHandled(true);
+      } catch {
+        if (!cancelled) setInviteHandled(true);
       }
     })();
 
     return () => {
-      alive = false;
+      cancelled = true;
     };
-  }, [inviteHandled, inviteFromId, refreshFriends, refreshRequests, T, userId]);
+    // Intentionally narrow: do not add refresh* or T (see refs above).
+  }, [inviteHandled, inviteFromId, userId]);
 
   const refreshOutgoingRequests = useCallback(async () => {
     if (!userId) return;
     const data = await communityApi.getOutgoingRequests(userId).catch(() => [] as Friendship[]);
     setOutgoingRequests(data);
-    // Pre-populate sentIds so the UI shows "Sent" for already-requested users
-    setSentIds(prev => {
+    setSentIds((prev) => {
       const next = new Set(prev);
-      data.forEach(req => next.add(req.addressee_id));
+      data.forEach((req) => next.add(req.addressee_id));
       return next;
     });
   }, [userId]);
 
-  // Load suggestions on mount
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
+    setLoadingNearby(true);
     communityApi
       .getSuggestions(userId)
       .then(setSuggestions)
       .catch(console.warn)
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingNearby(false));
   }, [userId]);
 
-  // Load outgoing requests
   useEffect(() => {
     void refreshOutgoingRequests();
   }, [refreshOutgoingRequests]);
 
-  // Search
-  const handleSearch = useCallback(async () => {
-    if (!userId || !searchQuery.trim()) return;
-    setLoading(true);
-    try {
-      const results = await communityApi.searchUsers(userId, searchQuery);
-      setSearchResults(results);
-    } catch (e) {
-      console.warn(e);
-    }
-    setLoading(false);
-  }, [userId, searchQuery]);
-
+  // Debounced search — fires whenever the user types ≥ 2 characters.
   useEffect(() => {
-    if (tab === 'search' && searchQuery.length >= 2) {
-      const timeout = setTimeout(handleSearch, 500);
-      return () => clearTimeout(timeout);
+    if (!userId) return;
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
     }
-  }, [searchQuery, tab, handleSearch]);
+    setLoadingSearch(true);
+    const t = setTimeout(async () => {
+      try {
+        const results = await communityApi.searchUsers(userId, q);
+        setSearchResults(results);
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setLoadingSearch(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchQuery, userId]);
 
-  // Send friend request
   const handleSendRequest = useCallback(
     async (targetId: string) => {
       if (!userId) return;
@@ -181,7 +257,7 @@ export default function AddFriendScreen() {
         await refreshRequests();
         await refreshFriends();
       } catch (e: any) {
-        const msg = e.message || '';
+        const msg = e?.message || '';
         if (/duplicate key|already exists/i.test(msg)) {
           setSentIds((prev) => new Set(prev).add(targetId));
           await refreshOutgoingRequests();
@@ -190,10 +266,9 @@ export default function AddFriendScreen() {
         }
       }
     },
-    [userId, refreshOutgoingRequests, refreshRequests, refreshFriends, T]
+    [userId, refreshOutgoingRequests, refreshRequests, refreshFriends, T],
   );
 
-  // Accept request
   const handleAccept = useCallback(
     async (friendshipId: string) => {
       try {
@@ -204,7 +279,7 @@ export default function AddFriendScreen() {
         console.warn(e);
       }
     },
-    [refreshRequests, refreshFriends]
+    [refreshRequests, refreshFriends],
   );
 
   const handleDeclineIncoming = useCallback(
@@ -218,7 +293,7 @@ export default function AddFriendScreen() {
         Alert.alert(T('commCouldNotDecline'), T('commTryAgainShort'));
       }
     },
-    [refreshRequests, refreshFriends, T]
+    [refreshRequests, refreshFriends, T],
   );
 
   const handleCancelOutgoing = useCallback(
@@ -252,30 +327,65 @@ export default function AddFriendScreen() {
         },
       ]);
     },
-    [refreshOutgoingRequests, refreshRequests, T]
+    [refreshOutgoingRequests, refreshRequests, T],
   );
 
-  // Share invite link
   const handleShareInvite = useCallback(async () => {
     if (!userId) return;
     const link = communityApi.generateInviteLink(userId);
     try {
-      await Share.share({
-        message: `Add me on Rencana! ${link}`,
-        url: link,
-      });
+      // Only put the URL in `message`. Passing `url` on iOS duplicates the link in WhatsApp etc.
+      await Share.share({ message: `Add me on Rencana!\n\n${link}` });
     } catch (e) {
       console.warn(e);
     }
   }, [userId]);
 
-  const displayList = tab === 'search' ? searchResults : suggestions;
-  const tabs = [
-    { key: 'suggestions' as const, label: 'Nearby' },
-    { key: 'search' as const, label: 'Search' },
-    { key: 'incoming' as const, label: `Incoming (${incomingRequests.length})` },
-    { key: 'outgoing' as const, label: `Sent (${outgoingRequests.length})` },
-  ];
+  const searching = searchQuery.trim().length >= 2;
+
+  const tabs: { key: Tab; label: string; count?: number }[] = useMemo(
+    () => [
+      { key: 'nearby', label: 'Nearby' },
+      { key: 'incoming', label: 'Incoming', count: incomingRequests.length },
+      { key: 'sent', label: 'Sent', count: outgoingRequests.length },
+    ],
+    [incomingRequests.length, outgoingRequests.length],
+  );
+
+  const renderPerson = (person: FriendProfile) => {
+    const isSent = sentIds.has(person.id);
+    return (
+      <View key={person.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
+        <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
+        <View style={styles.personInfo}>
+          <Text style={[styles.personName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+            {person.name}
+          </Text>
+          <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
+            {[person.university, person.faculty, person.course].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+        {isSent ? (
+          <View style={[styles.sentBadge, { backgroundColor: theme.textSecondary + '20' }]}>
+            <Feather name="check" size={14} color={theme.textSecondary} />
+            <Text style={[styles.sentBadgeText, { color: theme.textSecondary }]}>Sent</Text>
+          </View>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [
+              styles.addBtn,
+              { backgroundColor: theme.primary },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => handleSendRequest(person.id)}
+          >
+            <Feather name="user-plus" size={14} color="#fff" />
+            <Text style={styles.addBtnText}>Add</Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -283,72 +393,159 @@ export default function AddFriendScreen() {
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [
+            styles.backBtn,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && { opacity: 0.7 },
+          ]}
         >
-          <Feather name="chevron-left" size={24} color={theme.text} />
+          <Feather name="chevron-left" size={22} color={theme.text} />
         </Pressable>
         <Text style={[styles.title, { color: theme.text }]}>Add Friends</Text>
         <Pressable
           onPress={handleShareInvite}
-          style={({ pressed }) => [styles.shareBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.8 }]}
+          style={({ pressed }) => [
+            styles.inviteHeaderBtn,
+            { backgroundColor: theme.primary },
+            pressed && { opacity: 0.85 },
+          ]}
         >
-          <Feather name="share" size={16} color="#fff" />
-          <Text style={styles.shareBtnText}>Invite</Text>
+          <Feather name="share" size={14} color="#fff" />
+          <Text style={styles.inviteHeaderBtnText}>Invite</Text>
         </Pressable>
       </View>
 
-      {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.tabRow, { borderBottomColor: theme.border }]}>
-        {tabs.map((t) => (
-          <Pressable
-            key={t.key}
-            onPress={() => setTab(t.key)}
-            style={[styles.tabItem, tab === t.key && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: tab === t.key ? theme.primary : theme.textSecondary },
-              ]}
-            >
-              {t.label}
-            </Text>
+      {/* Persistent search bar */}
+      <View style={[styles.searchBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Feather name="search" size={18} color={theme.textSecondary} />
+        <TextInput
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder="Search by name"
+          placeholderTextColor={theme.textSecondary}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+            <Feather name="x" size={18} color={theme.textSecondary} />
           </Pressable>
-        ))}
-      </ScrollView>
+        )}
+      </View>
 
-      {/* Search bar (only in search tab) */}
-      {tab === 'search' && (
-        <View style={[styles.searchBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Feather name="search" size={18} color={theme.textSecondary} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search by name..."
-            placeholderTextColor={theme.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')}>
-              <Feather name="x" size={18} color={theme.textSecondary} />
-            </Pressable>
-          )}
+      {/* Segmented tabs — hidden while searching */}
+      {!searching && (
+        <View style={[styles.segmented, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          {tabs.map((t) => {
+            const active = tab === t.key;
+            return (
+              <Pressable
+                key={t.key}
+                onPress={() => setTab(t.key)}
+                style={[
+                  styles.segmentedItem,
+                  active && { backgroundColor: theme.primary },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.segmentedText,
+                    { color: active ? '#fff' : theme.textSecondary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.label}
+                  {typeof t.count === 'number' ? ` · ${t.count}` : ''}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
       {/* Content */}
-      <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-        {loading && <ActivityIndicator style={{ marginTop: 24 }} color={theme.primary} />}
-
-        {/* Incoming Requests tab */}
-        {tab === 'incoming' && (
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── SEARCH MODE ────────────────────────────────────────── */}
+        {searching && (
           <>
+            {loadingSearch && (
+              <View style={styles.inlineLoader}>
+                <ActivityIndicator color={theme.primary} />
+              </View>
+            )}
+            {!loadingSearch && searchResults.length === 0 && (
+              <View style={[styles.inlineEmpty, { borderColor: theme.border }]}>
+                <Feather name="search" size={20} color={theme.textSecondary} />
+                <Text style={[styles.inlineEmptyText, { color: theme.textSecondary }]}>
+                  No results for &quot;{searchQuery.trim()}&quot;. Try a different name.
+                </Text>
+              </View>
+            )}
+            {searchResults.map(renderPerson)}
+          </>
+        )}
+
+        {/* ── NEARBY ─────────────────────────────────────────────── */}
+        {!searching && tab === 'nearby' && (
+          <>
+            <Pressable
+              onPress={handleShareInvite}
+              style={({ pressed }) => [
+                styles.inviteCard,
+                { backgroundColor: theme.primary + '14', borderColor: theme.primary + '33' },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <View style={[styles.inviteIconWrap, { backgroundColor: theme.primary }]}>
+                <Feather name="share-2" size={18} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.inviteTitle, { color: theme.text }]}>Invite a friend</Text>
+                <Text style={[styles.inviteSub, { color: theme.textSecondary }]} numberOfLines={2}>
+                  Share a link so they land on your profile.
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+            </Pressable>
+
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+              People near you{loadingNearby ? '…' : ''}
+            </Text>
+
+            {loadingNearby && suggestions.length === 0 && (
+              <View style={styles.inlineLoader}>
+                <ActivityIndicator color={theme.primary} />
+              </View>
+            )}
+            {!loadingNearby && suggestions.length === 0 && (
+              <View style={[styles.inlineEmpty, { borderColor: theme.border }]}>
+                <Feather name="users" size={20} color={theme.textSecondary} />
+                <Text style={[styles.inlineEmptyText, { color: theme.textSecondary }]}>
+                  No one nearby yet. Invite someone or search by name above.
+                </Text>
+              </View>
+            )}
+            {suggestions.map(renderPerson)}
+          </>
+        )}
+
+        {/* ── INCOMING ───────────────────────────────────────────── */}
+        {!searching && tab === 'incoming' && (
+          <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Incoming requests</Text>
             {incomingRequests.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Feather name="inbox" size={40} color={theme.textSecondary} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No incoming requests</Text>
+              <View style={[styles.inlineEmpty, { borderColor: theme.border }]}>
+                <Feather name="inbox" size={20} color={theme.textSecondary} />
+                <Text style={[styles.inlineEmptyText, { color: theme.textSecondary }]}>
+                  No incoming requests right now.
+                </Text>
               </View>
             ) : (
               incomingRequests.map((req) => (
@@ -363,7 +560,9 @@ export default function AddFriendScreen() {
                       {req.profile?.name || 'Unknown'}
                     </Text>
                     {req.profile?.university && (
-                      <Text style={[styles.personSub, { color: theme.textSecondary }]}>{req.profile.university}</Text>
+                      <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                        {req.profile.university}
+                      </Text>
                     )}
                   </View>
                   <View style={styles.requestActions}>
@@ -386,13 +585,16 @@ export default function AddFriendScreen() {
           </>
         )}
 
-        {/* Outgoing Requests tab */}
-        {tab === 'outgoing' && (
+        {/* ── SENT ───────────────────────────────────────────────── */}
+        {!searching && tab === 'sent' && (
           <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Sent requests</Text>
             {outgoingRequests.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Feather name="send" size={40} color={theme.textSecondary} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No sent requests</Text>
+              <View style={[styles.inlineEmpty, { borderColor: theme.border }]}>
+                <Feather name="send" size={20} color={theme.textSecondary} />
+                <Text style={[styles.inlineEmptyText, { color: theme.textSecondary }]}>
+                  You haven&apos;t sent any requests yet.
+                </Text>
               </View>
             ) : (
               outgoingRequests.map((req) => (
@@ -411,8 +613,9 @@ export default function AddFriendScreen() {
                       {req.addressee_profile?.name || 'Unknown'}
                     </Text>
                     <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {[req.addressee_profile?.university, req.addressee_profile?.course].filter(Boolean).join(' · ') ||
-                        'Waiting for response'}
+                      {[req.addressee_profile?.university, req.addressee_profile?.course]
+                        .filter(Boolean)
+                        .join(' · ') || 'Waiting for response'}
                     </Text>
                   </View>
                   <Pressable
@@ -436,63 +639,6 @@ export default function AddFriendScreen() {
           </>
         )}
 
-        {/* Search/suggestions */}
-        {(tab === 'search' || tab === 'suggestions') && (
-          <>
-            {!loading && displayList.length === 0 && (
-              <View style={styles.emptyState}>
-                <Feather name="users" size={40} color={theme.textSecondary} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  {tab === 'search'
-                    ? searchQuery.length < 2
-                      ? 'Type at least 2 characters to search'
-                      : 'No users found'
-                    : 'No nearby users found'}
-                </Text>
-              </View>
-            )}
-
-            {displayList.map((person) => {
-              const isSent = sentIds.has(person.id);
-              return (
-                <View key={person.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
-                  <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
-                  <View style={styles.personInfo}>
-                    <Text
-                      style={[styles.personName, { color: theme.text }]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      {person.name}
-                    </Text>
-                    <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {[person.university, person.faculty, person.course].filter(Boolean).join(' · ')}
-                    </Text>
-                  </View>
-                  {isSent ? (
-                    <View style={[styles.sentBadge, { backgroundColor: theme.textSecondary + '20' }]}>
-                      <Feather name="check" size={14} color={theme.textSecondary} />
-                      <Text style={[styles.sentBadgeText, { color: theme.textSecondary }]}>Sent</Text>
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.addBtn,
-                        { backgroundColor: theme.primary },
-                        pressed && { opacity: 0.8 },
-                      ]}
-                      onPress={() => handleSendRequest(person.id)}
-                    >
-                      <Feather name="user-plus" size={14} color="#fff" />
-                      <Text style={styles.addBtnText}>Add</Text>
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })}
-          </>
-        )}
-
         <View style={{ height: 60 }} />
       </ScrollView>
     </View>
@@ -501,54 +647,109 @@ export default function AddFriendScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 12,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 56 : 36,
+    paddingBottom: 8,
   },
-  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  title: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3, flex: 1 },
-  shareBtn: {
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  title: { flex: 1, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  inviteHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
-  shareBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  tabItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginRight: 4,
-  },
-  tabText: { fontSize: 13, fontWeight: '600' },
+  inviteHeaderBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 20,
-    marginVertical: 12,
-    paddingHorizontal: 14,
+    marginHorizontal: 16,
+    marginTop: 4,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 15 },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
+
+  segmented: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  segmentedItem: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentedText: { fontSize: 13, fontWeight: '700' },
 
   list: { flex: 1 },
-  listContent: { paddingHorizontal: 20 },
+  listContent: { paddingHorizontal: 16, paddingTop: 10 },
+
+  inviteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  inviteIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteTitle: { fontSize: 14, fontWeight: '700' },
+  inviteSub: { fontSize: 12, marginTop: 2 },
+
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 6,
+    marginBottom: 6,
+  },
+
+  inlineLoader: { paddingVertical: 20, alignItems: 'center' },
+  inlineEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: 'dashed',
+  },
+  inlineEmptyText: { flex: 1, fontSize: 13, lineHeight: 18 },
 
   personRow: {
     flexDirection: 'row',
@@ -558,56 +759,50 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   personInfo: { flex: 1, minWidth: 0 },
-  personName: { fontSize: 16, fontWeight: '700' },
-  personSub: { fontSize: 13, marginTop: 2 },
+  personName: { fontSize: 15, fontWeight: '700' },
+  personSub: { fontSize: 12, marginTop: 2 },
 
   requestActions: { flexDirection: 'row', gap: 8, flexShrink: 0 },
-  acceptBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 14,
-  },
-  acceptBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  acceptBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  acceptBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   declineBtn: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  declineBtnText: { fontSize: 14, fontWeight: '600' },
+  declineBtnText: { fontSize: 13, fontWeight: '600' },
+
   cancelOutgoingBtn: {
-    minWidth: 76,
-    paddingHorizontal: 12,
+    minWidth: 74,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelOutgoingBtnText: { fontSize: 14, fontWeight: '700' },
+  cancelOutgoingBtnText: { fontSize: 13, fontWeight: '700' },
 
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     flexShrink: 0,
   },
-  addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   sentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 10,
     flexShrink: 0,
   },
-  sentBadgeText: { fontSize: 13, fontWeight: '600' },
-
-  emptyState: { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyText: { fontSize: 14, fontWeight: '500' },
+  sentBadgeText: { fontSize: 12, fontWeight: '600' },
 });

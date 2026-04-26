@@ -1,39 +1,164 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- App widget layouts must be conservative: no letterSpacing, lineSpacingExtra,
+     ellipsize, or nested Views with match_parent in wrap_content parents — those
+     break RemoteViews inflation on some launchers. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/widget_root"
   android:layout_width="match_parent"
-  android:layout_height="match_parent"
+  android:layout_height="wrap_content"
+  android:minHeight="120dp"
   android:orientation="vertical"
-  android:padding="12dp"
+  android:padding="14dp"
   android:background="@color/gradeup_widget_bg">
 
-  <TextView
-    android:id="@+id/widget_greeting"
+  <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:textSize="15sp"
-    android:textStyle="bold"
-    android:textColor="@color/gradeup_widget_text_primary" />
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Today"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:textColor="@color/gradeup_widget_text_primary" />
+
+      <TextView
+        android:id="@+id/widget_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:textColor="@color/gradeup_widget_accent" />
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/widget_count"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:textSize="22sp"
+      android:textStyle="bold"
+      android:textColor="@color/gradeup_widget_accent"
+      android:paddingStart="8dp"
+      android:paddingEnd="4dp" />
+  </LinearLayout>
 
   <TextView
-    android:id="@+id/widget_tasks"
+    android:id="@+id/widget_divider"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="6dp"
-    android:textSize="13sp"
-    android:textColor="@color/gradeup_widget_text_secondary"
-    android:lineSpacingExtra="2dp"
-    android:maxLines="10"
-    android:ellipsize="end" />
+    android:layout_height="1dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
+    android:background="@color/gradeup_widget_divider" />
 
   <TextView
-    android:id="@+id/widget_classes"
+    android:id="@+id/widget_message"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="6dp"
     android:textSize="12sp"
-    android:textColor="@color/gradeup_widget_text_tertiary"
-    android:lineSpacingExtra="2dp"
-    android:maxLines="10"
-    android:ellipsize="end" />
+    android:textColor="@color/gradeup_widget_text_secondary"
+    android:visibility="gone" />
+
+  <LinearLayout
+    android:id="@+id/widget_columns"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal">
+
+    <LinearLayout
+      android:id="@+id/widget_tasks_column"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical"
+      android:paddingEnd="10dp">
+
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+          android:id="@+id/widget_tasks_label"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="TASKS"
+          android:textSize="8sp"
+          android:textStyle="bold"
+          android:textColor="@color/gradeup_widget_accent" />
+
+        <TextView
+          android:id="@+id/widget_tasks_count"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textSize="8sp"
+          android:textStyle="bold"
+          android:textColor="@color/gradeup_widget_text_muted" />
+      </LinearLayout>
+
+      <TextView
+        android:id="@+id/widget_tasks_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@color/gradeup_widget_text_primary"
+        android:maxLines="8" />
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/widget_classes_column"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="10dp"
+      android:orientation="vertical"
+      android:paddingStart="4dp">
+
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+          android:id="@+id/widget_classes_label"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="CLASSES"
+          android:textSize="8sp"
+          android:textStyle="bold"
+          android:textColor="@color/gradeup_widget_accent" />
+
+        <TextView
+          android:id="@+id/widget_classes_count"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textSize="8sp"
+          android:textStyle="bold"
+          android:textColor="@color/gradeup_widget_text_muted" />
+      </LinearLayout>
+
+      <TextView
+        android:id="@+id/widget_classes_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@color/gradeup_widget_text_primary"
+        android:maxLines="8" />
+    </LinearLayout>
+  </LinearLayout>
 </LinearLayout>

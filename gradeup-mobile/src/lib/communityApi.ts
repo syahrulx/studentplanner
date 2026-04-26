@@ -755,20 +755,34 @@ export async function deleteCircle(circleId: string) {
 /** Invite a friend to a circle */
 export async function inviteToCircle(circleId: string, inviterId: string, friendId: string) {
   // Unique constraint is (circle_id, invitee_id). Make this idempotent:
-  // - First invite creates a pending row
-  // - Re-inviting updates status back to pending (e.g. after reject) without throwing.
-  const { error } = await supabase
+  //   1. Try a plain INSERT (the happy path for new invitees).
+  //   2. If a row already exists, fall back to a targeted UPDATE that resets
+  //      the existing invitation back to "pending" (re-invite after reject).
+  //      This avoids relying on upsert's conversion to UPDATE, which in turn
+  //      avoids a RLS trap where some environments didn't yet have the admin
+  //      UPDATE policy applied (migration 057).
+  const insertRes = await supabase
     .from('circle_invitations')
-    .upsert(
-      {
-        circle_id: circleId,
-        inviter_id: inviterId,
-        invitee_id: friendId,
-        status: 'pending',
-      },
-      { onConflict: 'circle_id,invitee_id' },
-    );
-  if (error) throw error;
+    .insert({
+      circle_id: circleId,
+      inviter_id: inviterId,
+      invitee_id: friendId,
+      status: 'pending',
+    });
+
+  if (!insertRes.error) return;
+
+  const msg = insertRes.error.message || '';
+  const isDuplicate = /duplicate key|unique constraint|already exists/i.test(msg);
+  if (!isDuplicate) throw insertRes.error;
+
+  const updateRes = await supabase
+    .from('circle_invitations')
+    .update({ status: 'pending', inviter_id: inviterId })
+    .eq('circle_id', circleId)
+    .eq('invitee_id', friendId);
+
+  if (updateRes.error) throw updateRes.error;
 }
 
 export async function getMyCircleInvitations(userId: string): Promise<CircleInvitation[]> {
@@ -1114,9 +1128,20 @@ export async function removeFriendByUserId(userId: string, friendId: string) {
   await removeFriend(data.id);
 }
 
-/** Generate an invite deep link for adding friends */
+/**
+ * Public invite URL (HTTPS) so apps like WhatsApp linkify a tappable link.
+ * Requires hosting `aizztech.com` files (AASA, landing page) — see
+ * `legal/aizztech-website/README.md`. Universal Links / App Links open the app
+ * when installed; otherwise the web page tries `rencana://` and store links.
+ */
+const INVITE_HTTP_BASE =
+  (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_INVITE_HTTP_BASE) || 'https://aizztech.com';
+
+/** Generate a shareable invite link (https — not custom scheme) */
 export function generateInviteLink(userId: string): string {
-  return `rencana://community/add-friend?id=${userId}`;
+  const id = encodeURIComponent(userId);
+  const base = String(INVITE_HTTP_BASE).replace(/\/$/, '');
+  return `${base}/community/add-friend?id=${id}`;
 }
 
 /** Get list of user IDs in a circle (for map filtering) */

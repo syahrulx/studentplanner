@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -41,6 +43,149 @@ function getActivityLabel(type?: string): string {
 function getInitials(name?: string): string {
   if (!name) return '?';
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+/**
+ * Reaction button: soft stagger-in, slow calm press, and a very subtle
+ * float-away duplicate on tap (no constant idle motion, no harsh springs).
+ */
+function ReactionEmojiButton({
+  emoji,
+  onPress,
+  theme,
+  index,
+}: {
+  emoji: string;
+  onPress: () => void;
+  theme: any;
+  index: number;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const enterOpacity = useRef(new Animated.Value(0)).current;
+  const [flyingIds, setFlyingIds] = useState<number[]>([]);
+  const nextIdRef = useRef(0);
+
+  useEffect(() => {
+    enterOpacity.setValue(0);
+    scale.setValue(0.92);
+    Animated.parallel([
+      Animated.timing(enterOpacity, {
+        toValue: 1,
+        duration: 320,
+        delay: index * 70,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 8,
+        tension: 50,
+        delay: index * 70,
+        velocity: 0,
+      }),
+    ]).start();
+  }, [scale, enterOpacity, index]);
+
+  const pressIn = useCallback(() => {
+    Animated.timing(scale, {
+      toValue: 0.95,
+      duration: 120,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [scale]);
+
+  const pressOut = useCallback(() => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 64,
+    }).start();
+  }, [scale]);
+
+  const handlePress = useCallback(() => {
+    const id = nextIdRef.current++;
+    setFlyingIds((prev) => [...prev, id]);
+    onPress();
+  }, [onPress]);
+
+  const removeFlying = useCallback((id: number) => {
+    setFlyingIds((prev) => prev.filter((x) => x !== id));
+  }, []);
+
+  return (
+    <View style={s.emojiBtnWrap}>
+      {flyingIds.map((id) => (
+        <FlyingEmoji key={id} emoji={emoji} onDone={() => removeFlying(id)} />
+      ))}
+      <Pressable onPressIn={pressIn} onPressOut={pressOut} onPress={handlePress}>
+        <Animated.View
+          style={[
+            s.emojiBtn,
+            { backgroundColor: theme.card, borderColor: theme.border, opacity: enterOpacity },
+            { transform: [{ scale }] },
+          ]}
+        >
+          <Text style={s.emojiBtnText}>{emoji}</Text>
+        </Animated.View>
+      </Pressable>
+    </View>
+  );
+}
+
+/** Soft float + long fade (no bouncy scale / wild rotation). */
+function FlyingEmoji({ emoji, onDone }: { emoji: string; onDone: () => void }) {
+  const translateY = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0.92)).current;
+  const rotProgress = useRef(new Animated.Value(0)).current;
+  const endDegRef = useRef((Math.random() * 2 - 1) * 4);
+
+  useEffect(() => {
+    const duration = 1100;
+    const endDeg = endDegRef.current;
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: -36,
+        duration,
+        easing: Easing.bezier(0.22, 0.9, 0.32, 1),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.75, duration: 180, useNativeDriver: true }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: duration - 180,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(rotProgress, {
+        toValue: 1,
+        duration,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(() => onDone());
+  }, [translateY, opacity, rotProgress, onDone]);
+
+  const rotateZ = rotProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', `${endDegRef.current}deg`],
+  });
+
+  return (
+    <Animated.Text
+      pointerEvents="none"
+      style={[
+        s.flyingEmoji,
+        { opacity, transform: [{ translateY }, { rotate: rotateZ }] },
+      ]}
+    >
+      {emoji}
+    </Animated.Text>
+  );
 }
 
 function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUrl?: string; size?: number }) {
@@ -255,14 +400,14 @@ export default function FriendProfileScreen() {
       {/* ── react ── */}
       <Text style={[s.label, { color: theme.textSecondary }]}>REACT</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.emojiRow}>
-        {REACTION_EMOJIS.map((r) => (
-          <Pressable
+        {REACTION_EMOJIS.map((r, i) => (
+          <ReactionEmojiButton
             key={r.type}
-            style={({ pressed }) => [s.emojiBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { transform: [{ scale: 0.92 }] }]}
+            emoji={r.type}
+            theme={theme}
+            index={i}
             onPress={() => handleReaction(r.type)}
-          >
-            <Text style={s.emojiBtnText}>{r.type}</Text>
-          </Pressable>
+          />
         ))}
       </ScrollView>
 
@@ -528,9 +673,17 @@ const s = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 10, marginTop: 10, marginLeft: 4 },
 
   /* emoji row */
-  emojiRow: { gap: 10, paddingBottom: 4 },
+  emojiRow: { gap: 10, paddingBottom: 4, paddingTop: 20 /* headroom for flying emoji */ },
+  emojiBtnWrap: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
   emojiBtn: { width: 52, height: 52, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   emojiBtnText: { fontSize: 24 },
+  flyingEmoji: {
+    position: 'absolute',
+    top: 10,
+    fontSize: 26,
+    alignSelf: 'center',
+    zIndex: 10,
+  },
 
   /* message card */
   msgCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden', marginBottom: 4 },

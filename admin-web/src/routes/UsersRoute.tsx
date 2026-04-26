@@ -557,6 +557,7 @@ export function UsersRoute() {
         u.university_id,
         u.status,
         u.subscription_plan,
+        u.device_platform,
         u.created_at,
       ),
     );
@@ -679,6 +680,7 @@ export function UsersRoute() {
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Student ID</th>
                 <th className="px-3 py-2">University</th>
+                <th className="px-3 py-2">Device</th>
                 <th className="px-3 py-2">Plan</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Joined</th>
@@ -699,6 +701,11 @@ export function UsersRoute() {
                     <td className="px-3 py-3 text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</td>
                     <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.student_id || '-'}</td>
                     <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.university_id || '-'}</td>
+                    <td className="px-3 py-3">
+                      <Chip tone={u.device_platform === 'android' ? 'green' : u.device_platform === 'ios' ? 'amber' : 'slate'}>
+                        {u.device_platform ?? '-'}
+                      </Chip>
+                    </td>
                     <td className="px-3 py-3">
                       <Chip tone={planTone}>{u.subscription_plan}</Chip>
                     </td>
@@ -782,7 +789,7 @@ export function UsersRoute() {
               })}
               {rows.length === 0 && !busy ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <td colSpan={9} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
                     {searchQuery.trim() && items.length > 0
                       ? 'No loaded users match the top search. Clear it or run Search again.'
                       : 'No users found.'}

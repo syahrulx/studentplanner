@@ -11,5 +11,65 @@
         android:name="android.appwidget.provider"
         android:resource="@xml/gradeup_widget_info" />
     </receiver>
+
+    <receiver
+      android:name="expo.modules.homewidgetbridge.GradeUpLongTasksWidgetProvider"
+      android:exported="true"
+      android:label="@string/gradeup_widget_long_tasks_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/gradeup_widget_info_long_tasks" />
+    </receiver>
+
+    <receiver
+      android:name="expo.modules.homewidgetbridge.GradeUpLongClassesWidgetProvider"
+      android:exported="true"
+      android:label="@string/gradeup_widget_long_classes_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/gradeup_widget_info_long_classes" />
+    </receiver>
+
+    <receiver
+      android:name="expo.modules.homewidgetbridge.GradeUpSmallBothWidgetProvider"
+      android:exported="true"
+      android:label="@string/gradeup_widget_small_both_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/gradeup_widget_info_small_both" />
+    </receiver>
+
+    <receiver
+      android:name="expo.modules.homewidgetbridge.GradeUpSmallTasksWidgetProvider"
+      android:exported="true"
+      android:label="@string/gradeup_widget_small_tasks_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/gradeup_widget_info_small_tasks" />
+    </receiver>
+
+    <receiver
+      android:name="expo.modules.homewidgetbridge.GradeUpSmallClassesWidgetProvider"
+      android:exported="true"
+      android:label="@string/gradeup_widget_small_classes_name">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/gradeup_widget_info_small_classes" />
+    </receiver>
   </application>
 </manifest>

@@ -39,12 +39,27 @@ export function getGoogleClientIds(): GoogleClientIds {
   };
 }
 
-/** Pick the OAuth client that should be used on the current runtime platform. */
+/**
+ * Pick the OAuth client for the current platform.
+ *
+ * **iOS**: Use the iOS client id (supports reversed-client-id scheme redirect).
+ * **Android**: Use the Web client id. Google deprecated custom URI scheme
+ *   redirects for Android OAuth clients. The Classroom flow uses an HTTPS
+ *   redirect proxy (Supabase Edge Function) which requires a Web client.
+ * **Web**: Use the Web client id (HTTPS redirect only).
+ */
 export function pickPlatformClientId(ids: GoogleClientIds): string | null {
-  if (Platform.OS === 'ios' && ids.iosClientId) return ids.iosClientId;
-  if (Platform.OS === 'android' && ids.androidClientId) return ids.androidClientId;
-  if (ids.webClientId) return ids.webClientId;
-  return ids.iosClientId || ids.androidClientId || null;
+  if (Platform.OS === 'ios') {
+    return ids.iosClientId && ids.iosClientId.length > 0 ? ids.iosClientId : null;
+  }
+  if (Platform.OS === 'android') {
+    // Google deprecated custom URI scheme redirects for Android OAuth clients.
+    // Use the Web client id with HTTPS redirect via Edge Function proxy.
+    if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
+    return null;
+  }
+  if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
+  return null;
 }
 
 export interface GoogleTokenResponse {

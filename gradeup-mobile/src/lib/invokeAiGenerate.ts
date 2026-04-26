@@ -43,6 +43,8 @@ export type AiGenerateTaskExtractResult = {
     title: string;
     course_id: string;
     type: string;
+    /** When the same task has multiple due dates, AI can return them here. */
+    due_dates?: (string | null)[];
     due_date: string | null;
     due_time: string;
     needs_date?: boolean;

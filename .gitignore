@@ -26,3 +26,10 @@ dist-ssr
 
 # Supabase local temp artifacts
 gradeup-mobile/supabase/.temp/
+
+# Android build artifacts
+gradeup-mobile/*.aab
+gradeup-mobile/*.apks
+gradeup-mobile/tools/bundletool.jar
+gradeup-mobile/modules/home-widget-bridge/android/build/
+gradeup-mobile/modules/home-widget-bridge/android/.gradle/

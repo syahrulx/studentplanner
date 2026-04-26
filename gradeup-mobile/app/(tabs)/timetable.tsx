@@ -608,7 +608,8 @@ export default function TimetableScreen() {
     if (exporting) return;
     setExporting(true);
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      // writeOnly: avoid READ_MEDIA_IMAGES/VIDEO (Play policy); image export only needs add/save access.
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
       if (status !== 'granted') {
         setExporting(false);
         return;

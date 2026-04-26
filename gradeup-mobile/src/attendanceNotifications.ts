@@ -69,7 +69,6 @@ export async function ensureAttendanceChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(CHANNEL_ATTENDANCE, {
     name: 'Class attendance',
     importance: Notifications.AndroidImportance.HIGH,
-    sound: 'default',
   });
 }
 
@@ -221,7 +220,7 @@ export async function rescheduleAttendanceNotifications(
             content: {
               title: 'Class check-in',
               body: `Did you attend class "${p.subject}" in 5 more minutes?`,
-              sound: 'default',
+              sound: true,
               categoryIdentifier: 'attendance_checkin',
               data: {
                 type: 'attendance_checkin',

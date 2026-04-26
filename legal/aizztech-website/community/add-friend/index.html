@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Friend invite — Rencana</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 1.5rem;
+        max-width: 26rem;
+        margin: 0 auto;
+        line-height: 1.45;
+        color: #0f172a;
+      }
+      a {
+        color: #2563eb;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Rencana</h1>
+    <p id="msg">Opening the app…</p>
+    <p>
+      <a id="openApp" href="#" style="display: none; font-weight: 600">Open in Rencana</a>
+    </p>
+    <p>
+      If nothing happens, install Rencana from the
+      <a href="https://apps.apple.com/app/rencana/id6762103809">App Store</a>
+      or
+      <a href="https://play.google.com/store/apps/details?id=com.aizztech.rencana">Google Play</a>,
+      then return and tap <strong>Open in Rencana</strong> above.
+    </p>
+    <script>
+      (function () {
+        var q = new URLSearchParams(window.location.search);
+        var id = (q.get('id') || '').trim();
+        if (!id) {
+          document.getElementById('msg').textContent = 'This invite link is missing a user id.';
+          return;
+        }
+        var deep = 'rencana://community/add-friend?id=' + encodeURIComponent(id);
+        var link = document.getElementById('openApp');
+        link.href = deep;
+        link.style.display = 'inline';
+        document.getElementById('msg').textContent =
+          'If the Rencana app is installed, it should open now. You can also tap the link below.';
+        // Best-effort custom scheme (works in Safari; in-app browsers may block it)
+        setTimeout(function () {
+          try {
+            window.location.href = deep;
+          } catch (e) {}
+        }, 50);
+      })();
+    </script>
+  </body>
+</html>
