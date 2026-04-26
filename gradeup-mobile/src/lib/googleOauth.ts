@@ -42,20 +42,22 @@ export function getGoogleClientIds(): GoogleClientIds {
 /**
  * Pick the OAuth client for the current platform.
  *
- * **Never** use the "Web" client on iOS/Android: native apps use a custom URL scheme
- * redirect (`com.googleusercontent.apps...` or `com.aizztech.rencana:/...`). Google
- * returns `400 invalid_request: Custom scheme URIs are not allowed for 'WEB' client type`
- * if a web client id is used with that redirect.
- * Web client ids are only valid with `https` redirect URIs (e.g. Supabase browser OAuth).
+ * **iOS**: Use the iOS client id (supports reversed-client-id scheme redirect).
+ * **Android**: Use the Web client id. Google deprecated custom URI scheme
+ *   redirects for Android OAuth clients. The Classroom flow uses an HTTPS
+ *   redirect proxy (Supabase Edge Function) which requires a Web client.
+ * **Web**: Use the Web client id (HTTPS redirect only).
  */
 export function pickPlatformClientId(ids: GoogleClientIds): string | null {
   if (Platform.OS === 'ios') {
     return ids.iosClientId && ids.iosClientId.length > 0 ? ids.iosClientId : null;
   }
   if (Platform.OS === 'android') {
-    return ids.androidClientId && ids.androidClientId.length > 0 ? ids.androidClientId : null;
+    // Google deprecated custom URI scheme redirects for Android OAuth clients.
+    // Use the Web client id with HTTPS redirect via Edge Function proxy.
+    if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
+    return null;
   }
-  // e.g. Expo web: https redirects only
   if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
   return null;
 }

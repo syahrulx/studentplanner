@@ -7,7 +7,6 @@ import {
   GOOGLE_CLASSROOM_SCOPES,
   GOOGLE_DISCOVERY,
   getGoogleClientIds,
-  pickPlatformClientId,
 } from '@/src/lib/googleOauth';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -18,23 +17,54 @@ function clientIdPrefix(clientId: string): string {
 }
 
 /**
- * Compose the native OAuth redirect URI Google will send users back to.
+ * Supabase Edge Function URL that acts as an HTTPS→custom-scheme redirect
+ * proxy for Google Classroom OAuth on Android.
  *
- * iOS (iOS OAuth client): uses the reversed client id URL scheme that
- *   Google Cloud Console auto-registers for iOS clients — e.g.
- *   `com.googleusercontent.apps.123-abc:/oauth2redirect`.
- * Android (Android OAuth client): uses the app package scheme, which
- *   `expo-auth-session` handles via an intent filter added by its plugin.
+ * Google deprecated custom URI scheme redirects for Android OAuth clients.
+ * This function receives the OAuth callback over HTTPS (which Web clients
+ * accept), then 302-redirects to `rencana://oauth2redirect?code=...` so
+ * Chrome Custom Tabs can hand the result back to the app.
  */
-function composeRedirectUri(clientId: string): string {
+const SUPABASE_REF = 'ujxrtuogdialsrzxkcey';
+const ANDROID_CLASSROOM_REDIRECT = `https://${SUPABASE_REF}.supabase.co/functions/v1/classroom-redirect`;
+
+/**
+ * Pick the correct client id and redirect URI for the Classroom auth flow.
+ *
+ * **iOS**: Uses the iOS client id + reversed-client-id URL scheme redirect.
+ * **Android**: Uses the Web client id + HTTPS redirect via Edge Function proxy.
+ */
+function pickClientAndRedirect(ids: ReturnType<typeof getGoogleClientIds>): {
+  clientId: string;
+  redirectUri: string;
+} | null {
   if (Platform.OS === 'ios') {
-    return `com.googleusercontent.apps.${clientIdPrefix(clientId)}:/oauth2redirect`;
+    const cid = ids.iosClientId;
+    if (!cid || cid.length === 0) return null;
+    return {
+      clientId: cid,
+      redirectUri: `com.googleusercontent.apps.${clientIdPrefix(cid)}:/oauthredirect`,
+    };
   }
-  const pkg =
-    (Constants.expoConfig?.android?.package as string | undefined) ||
-    (Constants.expoConfig?.ios?.bundleIdentifier as string | undefined) ||
-    'com.aizztech.rencana';
-  return AuthSession.makeRedirectUri({ native: `${pkg}:/oauth2redirect` });
+
+  if (Platform.OS === 'android') {
+    // Google deprecated custom URI scheme redirects for Android OAuth clients.
+    // Use the Web client id with an HTTPS redirect through our Edge Function proxy.
+    const cid = ids.webClientId;
+    if (!cid || cid.length === 0) return null;
+    return {
+      clientId: cid,
+      redirectUri: ANDROID_CLASSROOM_REDIRECT,
+    };
+  }
+
+  // Web
+  const cid = ids.webClientId;
+  if (!cid || cid.length === 0) return null;
+  return {
+    clientId: cid,
+    redirectUri: AuthSession.makeRedirectUri(),
+  };
 }
 
 export interface ClassroomAuthState {
@@ -65,18 +95,13 @@ export interface ClassroomAuthState {
  * sign the user out or switch their Rencana session.
  */
 export function useClassroomAuth(): ClassroomAuthState {
-  const clientId = useMemo(() => pickPlatformClientId(getGoogleClientIds()) || '', []);
+  const resolved = useMemo(() => pickClientAndRedirect(getGoogleClientIds()), []);
+  const clientId = resolved?.clientId || '';
+  const redirectUri = resolved?.redirectUri || '';
   const notConfigured = clientId.length === 0;
-
-  const redirectUri = useMemo(
-    () => (notConfigured ? '' : composeRedirectUri(clientId)),
-    [clientId, notConfigured],
-  );
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
-      // Use a placeholder when misconfigured so the hook still loads;
-      // `safePromptAsync` below guards against actually opening it.
       clientId: clientId || 'not-configured',
       redirectUri: redirectUri || 'https://example.invalid/',
       responseType: AuthSession.ResponseType.Code,
@@ -84,8 +109,6 @@ export function useClassroomAuth(): ClassroomAuthState {
       usePKCE: true,
       extraParams: {
         access_type: 'offline',
-        // `consent` forces Google to return a refresh_token on every connect
-        // so the app can silently renew without ever reopening the browser.
         prompt: 'consent',
       },
     },
@@ -97,7 +120,10 @@ export function useClassroomAuth(): ClassroomAuthState {
       if (notConfigured) {
         return {
           type: 'error',
-          error: new Error('Google Classroom is not configured.'),
+          error: new Error(
+            'Google Classroom is not configured. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (Android) ' +
+            'or EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (iOS) in your build environment.',
+          ),
         } as unknown as AuthSession.AuthSessionResult;
       }
       return promptAsync();
