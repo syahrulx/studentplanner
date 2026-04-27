@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Crypto from 'expo-crypto';
 import {
   GOOGLE_CLASSROOM_SCOPES,
   GOOGLE_DISCOVERY,
@@ -27,6 +28,13 @@ function clientIdPrefix(clientId: string): string {
  */
 const SUPABASE_REF = 'ujxrtuogdialsrzxkcey';
 const ANDROID_CLASSROOM_REDIRECT = `https://${SUPABASE_REF}.supabase.co/functions/v1/classroom-redirect`;
+
+/**
+ * The custom scheme URL that the Edge Function 302-redirects to.
+ * Chrome Custom Tabs must watch for THIS URL (not the HTTPS one) to
+ * know when to close and return the result to the app.
+ */
+const ANDROID_APP_RETURN_URL = 'rencana://oauth2redirect';
 
 /**
  * Pick the correct client id and redirect URI for the Classroom auth flow.
@@ -82,6 +90,23 @@ export interface ClassroomAuthState {
   notConfigured: boolean;
 }
 
+/** Generate a random Base64-URL string for PKCE code_verifier. */
+async function generateCodeVerifier(): Promise<string> {
+  const bytes = await Crypto.getRandomBytesAsync(32);
+  return bytes.reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
+}
+
+/** SHA-256 hash → Base64-URL for PKCE code_challenge. */
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    verifier,
+    { encoding: Crypto.CryptoEncoding.BASE64 },
+  );
+  // Base64 → Base64-URL
+  return digest.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 /**
  * React hook that drives the direct-Google OAuth flow for Classroom.
  *
@@ -100,7 +125,8 @@ export function useClassroomAuth(): ClassroomAuthState {
   const redirectUri = resolved?.redirectUri || '';
   const notConfigured = clientId.length === 0;
 
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+  // ── iOS / Web: use the standard useAuthRequest hook ──
+  const [request, response, stdPromptAsync] = AuthSession.useAuthRequest(
     {
       clientId: clientId || 'not-configured',
       redirectUri: redirectUri || 'https://example.invalid/',
@@ -115,6 +141,77 @@ export function useClassroomAuth(): ClassroomAuthState {
     GOOGLE_DISCOVERY,
   );
 
+  // ── Android-specific state for manual flow ──
+  const [androidResponse, setAndroidResponse] = useState<AuthSession.AuthSessionResult | null>(null);
+  const codeVerifierRef = useRef<string | null>(null);
+  const androidRequestRef = useRef<{ codeVerifier: string } | null>(null);
+
+  const androidPromptAsync = useCallback(async (): Promise<AuthSession.AuthSessionResult> => {
+    try {
+      // Generate PKCE pair
+      const verifier = await generateCodeVerifier();
+      const challenge = await generateCodeChallenge(verifier);
+      codeVerifierRef.current = verifier;
+      androidRequestRef.current = { codeVerifier: verifier };
+
+      // Build the Google consent URL manually
+      const state = await generateCodeVerifier(); // random state
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: ANDROID_CLASSROOM_REDIRECT,
+        response_type: 'code',
+        scope: GOOGLE_CLASSROOM_SCOPES.join(' '),
+        access_type: 'offline',
+        prompt: 'consent',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        state,
+      });
+
+      const authUrl = `${GOOGLE_DISCOVERY.authorizationEndpoint}?${params.toString()}`;
+
+      // Open browser — tell it to watch for rencana://oauth2redirect (the custom scheme
+      // that our Edge Function 302-redirects to), NOT the HTTPS URL.
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, ANDROID_APP_RETURN_URL);
+
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url);
+        const code = url.searchParams.get('code');
+        const returnedState = url.searchParams.get('state');
+
+        if (code) {
+          const successResult: AuthSession.AuthSessionResult = {
+            type: 'success',
+            params: { code, state: returnedState || '' },
+            url: result.url,
+            authentication: null,
+          } as any;
+          setAndroidResponse(successResult);
+          return successResult;
+        }
+      }
+
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        const cancelResult = { type: 'cancel' } as AuthSession.AuthSessionResult;
+        setAndroidResponse(cancelResult);
+        return cancelResult;
+      }
+
+      const dismissResult = { type: 'dismiss' } as AuthSession.AuthSessionResult;
+      setAndroidResponse(dismissResult);
+      return dismissResult;
+    } catch (err: any) {
+      const errorResult = {
+        type: 'error',
+        error: err,
+      } as unknown as AuthSession.AuthSessionResult;
+      setAndroidResponse(errorResult);
+      return errorResult;
+    }
+  }, [clientId]);
+
+  const isAndroid = Platform.OS === 'android';
+
   const safePromptAsync = useMemo(() => {
     return async () => {
       if (notConfigured) {
@@ -126,13 +223,21 @@ export function useClassroomAuth(): ClassroomAuthState {
           ),
         } as unknown as AuthSession.AuthSessionResult;
       }
-      return promptAsync();
+      if (isAndroid) {
+        return androidPromptAsync();
+      }
+      return stdPromptAsync();
     };
-  }, [promptAsync, notConfigured]);
+  }, [stdPromptAsync, androidPromptAsync, notConfigured, isAndroid]);
+
+  // For Android, expose a synthetic request object with the codeVerifier
+  const effectiveRequest = isAndroid
+    ? (androidRequestRef.current as AuthSession.AuthRequest | null) ?? request
+    : request;
 
   return {
-    request,
-    response,
+    request: effectiveRequest,
+    response: isAndroid ? androidResponse : response,
     promptAsync: safePromptAsync,
     redirectUri,
     clientId,
