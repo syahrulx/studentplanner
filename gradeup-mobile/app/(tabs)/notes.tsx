@@ -41,8 +41,22 @@ function createStyles(theme: ThemePalette) {
     quickActionsRow: {
       flexDirection: 'row',
       gap: 12,
+      marginBottom: 12,
+    },
+    quickActionWide: {
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
       marginBottom: 28,
     },
+    quickActionWideTextWrap: { flex: 1 },
+    quickActionWideTitle: { fontSize: 14, fontWeight: '800', color: theme.text },
+    quickActionWideSub: { fontSize: 12, fontWeight: '500', color: theme.textSecondary, marginTop: 1 },
     quickAction: {
       flex: 1,
       borderRadius: 18,
@@ -303,8 +317,30 @@ function createStyles(theme: ThemePalette) {
       color: theme.textSecondary,
       textTransform: 'uppercase',
       letterSpacing: 0.7,
-      marginBottom: 10,
+      marginBottom: 8,
       paddingLeft: 2,
+    },
+    deckGroupBox: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      padding: 10,
+      marginBottom: 14,
+    },
+    deckGroupInlineSection: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      padding: 10,
+      marginRight: 12,
+      minWidth: 236,
+    },
+    deckGroupInlineCards: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      gap: 12,
     },
     deckHorizontalList: {
       paddingRight: 8,
@@ -636,6 +672,23 @@ export default function StudyHub() {
             <Text style={s.quickActionSub} numberOfLines={2}>See top scorers</Text>
           </Pressable>
         </View>
+        <Pressable
+          style={({ pressed }) => [
+            s.quickActionWide,
+            { backgroundColor: `${theme.primary}10` },
+            pressed && { opacity: 0.85 },
+          ]}
+          onPress={() => router.push('/quiz-library' as any)}
+        >
+          <View style={[s.quickActionIcon, { backgroundColor: theme.primary }]}>
+            <Feather name="bookmark" size={18} color="#fff" />
+          </View>
+          <View style={s.quickActionWideTextWrap}>
+            <Text style={s.quickActionWideTitle}>Revision Quiz</Text>
+            <Text style={s.quickActionWideSub}>Retake saved quizzes without new AI generation</Text>
+          </View>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
 
         {/* ─── Flashcard Decks ─── */}
         <Text style={s.sectionLabel}>FLASHCARD DECKS</Text>
@@ -690,70 +743,134 @@ export default function StudyHub() {
               </Pressable>
             </View>
 
-            {groupedDeckItems.map((section) => (
-              <View key={section.key} style={{ marginBottom: 18 }}>
-                {deckGroupMode === 'subject' && (
-                  <Text style={s.deckGroupTitle}>{section.title}</Text>
-                )}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={s.deckHorizontalList}
-                >
-                  {section.items.map((deck) => (
-                    <Pressable
-                      key={deck.id}
-                      style={({ pressed }) => [s.deckCard, pressed && s.deckCardPressed]}
-                      onPress={() => {
-                        if (deck.count > 0) {
-                          router.push({
-                            pathname: '/flashcard-deck-preview',
-                            params: { noteId: deck.id },
-                          } as any);
-                        } else {
-                          router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
-                        }
-                      }}
-                      onLongPress={() => {
-                        router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
-                      }}
-                    >
-                      <View style={s.deckCardHeader}>
-                        <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                          <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                          <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
-                            {deck.subjectId}
-                          </Text>
-                        </View>
+            {deckGroupMode === 'subject' ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.deckHorizontalList}
+              >
+                {groupedDeckItems.map((section) => (
+                  <View key={section.key} style={s.deckGroupInlineSection}>
+                    <Text style={s.deckGroupTitle}>{section.title}</Text>
+                    <View style={s.deckGroupInlineCards}>
+                      {section.items.map((deck) => (
                         <Pressable
-                          style={s.deckTrashBtn}
-                          hitSlop={8}
-                          onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                          key={deck.id}
+                          style={({ pressed }) => [s.deckCard, pressed && s.deckCardPressed]}
+                          onPress={() => {
+                            if (deck.count > 0) {
+                              router.push({
+                                pathname: '/flashcard-deck-preview',
+                                params: { noteId: deck.id },
+                              } as any);
+                            } else {
+                              router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                            }
+                          }}
+                          onLongPress={() => {
+                            router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                          }}
                         >
-                          <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                          <View style={s.deckCardHeader}>
+                            <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
+                              <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
+                              <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                                {deck.subjectId}
+                              </Text>
+                            </View>
+                            <Pressable
+                              style={s.deckTrashBtn}
+                              hitSlop={8}
+                              onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                            >
+                              <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                            </Pressable>
+                          </View>
+
+                          <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
+
+                          <View style={s.deckFooter}>
+                            <View style={s.deckCountBadge}>
+                              <Feather name="layers" size={12} color={theme.textSecondary} />
+                              <Text style={s.deckCountText}>{deck.count} cards</Text>
+                            </View>
+
+                            {deck.count > 0 && (
+                              <View style={s.deckReviewBtn}>
+                                <Feather name="play" size={10} color="#ffffff" />
+                                <Text style={s.deckReviewText}>Review</Text>
+                              </View>
+                            )}
+                          </View>
                         </Pressable>
-                      </View>
-
-                      <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
-
-                      <View style={s.deckFooter}>
-                        <View style={s.deckCountBadge}>
-                          <Feather name="layers" size={12} color={theme.textSecondary} />
-                          <Text style={s.deckCountText}>{deck.count} cards</Text>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              groupedDeckItems.map((section) => (
+                <View key={section.key} style={{ marginBottom: 18 }}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={s.deckHorizontalList}
+                  >
+                    {section.items.map((deck) => (
+                      <Pressable
+                        key={deck.id}
+                        style={({ pressed }) => [s.deckCard, pressed && s.deckCardPressed]}
+                        onPress={() => {
+                          if (deck.count > 0) {
+                            router.push({
+                              pathname: '/flashcard-deck-preview',
+                              params: { noteId: deck.id },
+                            } as any);
+                          } else {
+                            router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                          }
+                        }}
+                        onLongPress={() => {
+                          router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                        }}
+                      >
+                        <View style={s.deckCardHeader}>
+                          <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
+                            <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
+                            <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                              {deck.subjectId}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={s.deckTrashBtn}
+                            hitSlop={8}
+                            onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                          >
+                            <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                          </Pressable>
                         </View>
 
-                        {deck.count > 0 && (
-                          <View style={s.deckReviewBtn}>
-                            <Feather name="play" size={10} color="#ffffff" />
-                            <Text style={s.deckReviewText}>Review</Text>
+                        <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
+
+                        <View style={s.deckFooter}>
+                          <View style={s.deckCountBadge}>
+                            <Feather name="layers" size={12} color={theme.textSecondary} />
+                            <Text style={s.deckCountText}>{deck.count} cards</Text>
                           </View>
-                        )}
-                      </View>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            ))}
+
+                          {deck.count > 0 && (
+                            <View style={s.deckReviewBtn}>
+                              <Feather name="play" size={10} color="#ffffff" />
+                              <Text style={s.deckReviewText}>Review</Text>
+                            </View>
+                          )}
+                        </View>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ))
+            )}
           </View>
         )}
 

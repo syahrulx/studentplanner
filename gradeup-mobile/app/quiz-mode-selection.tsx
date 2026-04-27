@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -21,7 +21,7 @@ export default function QuizModeSelection() {
   const { language, flashcards } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
-  const { friendsWithStatus, circles } = useCommunity();
+  const { friendsWithStatus, circles, sendReaction } = useCommunity();
   const { createQuiz, joinQuiz } = useQuiz();
 
   const {
@@ -42,6 +42,7 @@ export default function QuizModeSelection() {
   const [multiOpen, setMultiOpen] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null);
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
+  const [inviteCodeInput, setInviteCodeInput] = useState('');
   const [loading, setLoading] = useState(false);
 
   const buildQuestions = useCallback(async () => {
@@ -103,6 +104,10 @@ export default function QuizModeSelection() {
   };
 
   const handleMultiplayer = async (matchType: MatchType) => {
+    if (matchType === 'friend' && !selectedFriend) {
+      Alert.alert('Select friend', 'Pick one friend first, then tap the arrow button to send challenge invite.');
+      return;
+    }
     setLoading(true);
     try {
       // For random: try to find existing session first
@@ -129,11 +134,36 @@ export default function QuizModeSelection() {
         questions,
         circleId: matchType === 'circle' ? (selectedCircle || undefined) : undefined,
       });
+      if (matchType === 'friend' && selectedFriend && session.invite_code) {
+        // Best-effort notification ping to selected friend via existing community push pipeline.
+        await sendReaction(
+          selectedFriend,
+          '🎮',
+          `Quiz challenge from friend! Join with code: ${session.invite_code}. If your AI limit is reached, you can still join this invite because questions are already generated.`,
+        ).catch(() => {});
+      }
       // Clear cached questions — they've been committed to the session
       if (useGenerated === '1') await clearGeneratedQuizQuestions();
       router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
     } catch (e: any) {
       Alert.alert('Could not create match', 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinByCode = async () => {
+    const code = inviteCodeInput.trim().toUpperCase();
+    if (!code || code.length < 4) {
+      Alert.alert('Invalid code', 'Please enter a valid invite code.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const session = await joinQuiz(code, true);
+      router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
+    } catch {
+      Alert.alert('Could not join', 'Invite code is invalid or the match already started.');
     } finally {
       setLoading(false);
     }
@@ -177,39 +207,67 @@ export default function QuizModeSelection() {
             <Text style={[styles.modeTitle, { color: theme.text }]}>{T('soloPractice')}</Text>
             <Text style={[styles.modeDesc, { color: theme.textSecondary }]}>{T('soloPracticeDesc')}</Text>
           </View>
-          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          <View style={[styles.arrowBtn, { backgroundColor: theme.primary }]}>
+            <Feather name="arrow-right" size={16} color="#fff" />
+          </View>
         </Pressable>
 
         {/* Multiplayer */}
         <Pressable
-          style={[styles.modeCard, { backgroundColor: '#003366' }]}
+          style={[styles.modeCard, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1.5 }]}
           onPress={() => setMultiOpen(!multiOpen)}
           disabled={loading}
         >
-          <View style={[styles.iconWrap, { backgroundColor: '#f59e0b' }]}>
-            <Feather name="zap" size={22} color="#fff" />
+          <View style={[styles.iconWrap, { backgroundColor: theme.primary + '20' }]}>
+            <Feather name="zap" size={22} color={theme.primary} />
           </View>
           <View style={styles.modeBody}>
-            <Text style={[styles.modeTitle, { color: '#fff' }]}>{T('multiplayerVs')}</Text>
-            <Text style={[styles.modeDesc, { color: 'rgba(255,255,255,0.7)' }]}>{T('multiplayerDesc')}</Text>
+            <Text style={[styles.modeTitle, { color: theme.text }]}>{T('multiplayerVs')}</Text>
+            <Text style={[styles.modeDesc, { color: theme.textSecondary }]}>{T('multiplayerDesc')}</Text>
           </View>
-          <Feather name={multiOpen ? 'chevron-up' : 'chevron-down'} size={20} color="rgba(255,255,255,0.7)" />
+          <View style={[styles.arrowBtn, { backgroundColor: theme.primary }]}>
+            <Feather name={multiOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#fff" />
+          </View>
         </Pressable>
 
         {/* Multiplayer sub-options */}
         {multiOpen && (
           <View style={styles.subOptions}>
+            <View style={[styles.joinCodeCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.joinCodeTitle, { color: theme.text }]}>Join with Invite Code</Text>
+              <View style={styles.joinCodeRow}>
+                <TextInput
+                  style={[styles.joinCodeInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+                  placeholder="Enter code"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  value={inviteCodeInput}
+                  onChangeText={(t) => setInviteCodeInput(t.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
+                />
+                <Pressable
+                  style={[styles.arrowBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleJoinByCode}
+                  disabled={loading}
+                >
+                  <Feather name="arrow-right" size={16} color="#fff" />
+                </Pressable>
+              </View>
+            </View>
+
             {/* Challenge Friend */}
             <View style={[styles.subCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <Pressable
-                style={styles.subCardHeader}
-                onPress={() => handleMultiplayer('friend')}
-                disabled={loading}
-              >
+              <View style={styles.subCardHeader}>
                 <Feather name="user-plus" size={18} color={theme.primary} />
-                <Text style={[styles.subTitle, { color: theme.text }]}>Challenge Friend</Text>
-                <Feather name="arrow-right" size={16} color={theme.textSecondary} />
-              </Pressable>
+                <Text style={[styles.subTitle, { color: theme.text, flex: 1 }]}>Challenge Friend</Text>
+                <Pressable
+                  style={[styles.arrowBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => handleMultiplayer('friend')}
+                  disabled={loading}
+                >
+                  <Feather name="arrow-right" size={16} color="#fff" />
+                </Pressable>
+              </View>
               {friendsWithStatus.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendRow}>
                   {friendsWithStatus.slice(0, 8).map((f) => {
@@ -239,7 +297,9 @@ export default function QuizModeSelection() {
               {circles.length > 0 && (
                 <Text style={[styles.subHint, { color: theme.textSecondary }]}>{circles.length} circles</Text>
               )}
-              <Feather name="arrow-right" size={16} color={theme.textSecondary} />
+              <View style={[styles.arrowBtn, { backgroundColor: theme.primary }]}>
+                <Feather name="arrow-right" size={16} color="#fff" />
+              </View>
             </Pressable>
 
             {/* Random Match */}
@@ -251,7 +311,9 @@ export default function QuizModeSelection() {
               <Feather name="globe" size={18} color="#f59e0b" />
               <Text style={[styles.subTitle, { color: theme.text, flex: 1 }]}>Random Match</Text>
               <Text style={[styles.subHint, { color: theme.textSecondary }]}>instant queue</Text>
-              <Feather name="arrow-right" size={16} color={theme.textSecondary} />
+              <View style={[styles.arrowBtn, { backgroundColor: theme.primary }]}>
+                <Feather name="arrow-right" size={16} color="#fff" />
+              </View>
             </Pressable>
           </View>
         )}
@@ -283,6 +345,26 @@ const styles = StyleSheet.create({
   subCardRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   subTitle: { fontSize: 15, fontWeight: '700' },
   subHint: { fontSize: 12, fontWeight: '500' },
+  joinCodeCard: { borderRadius: RADIUS_SM, borderWidth: 1, padding: 14 },
+  joinCodeTitle: { fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  joinCodeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  joinCodeInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  arrowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   friendRow: { paddingHorizontal: 16, paddingBottom: 14, gap: 14 },
   friendChip: { alignItems: 'center', width: 56 },
   friendAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },

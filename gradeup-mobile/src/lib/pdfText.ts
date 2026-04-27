@@ -12,8 +12,8 @@ import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 export type PdfExtractStage =
   | 'local_pdfjs'
   | 'local_raw_fallback'
-  | 'openai_upload'
-  | 'openai_response'
+  | 'ai_upload'
+  | 'ai_response'
   | 'done'
   | 'failed';
 
@@ -46,19 +46,19 @@ async function invokePdfExtractFromStorage(storagePath: string, bucket: string):
     const msg = typeof error === 'object' && 'message' in error
       ? `${(error as { message: string }).message} ${statusText}`
       : `${String(error)} ${statusText}`;
-    return { text: '', stage: 'openai_response', detail: msg };
+    return { text: '', stage: 'ai_response', detail: msg };
   }
 
   if (data?.error?.message) {
     if (isMonthlyLimitError(data.error)) {
       showMonthlyLimitAlert();
     }
-    return { text: '', stage: 'openai_response', detail: data.error.message };
+    return { text: '', stage: 'ai_response', detail: data.error.message };
   }
 
   const outputText = (data?.text ?? '').trim();
   if (!outputText) {
-    return { text: '', stage: 'openai_response', detail: 'Edge Function returned empty text.' };
+    return { text: '', stage: 'ai_response', detail: 'Edge Function returned empty text.' };
   }
 
   return { text: outputText.slice(0, 120000), stage: 'done', detail: 'edge function extraction ok' };
@@ -99,7 +99,7 @@ export async function extractPdfTextFromLocalUri(
     if (uploadErr || !path) {
       return {
         text: '',
-        stage: 'openai_upload',
+        stage: 'ai_upload',
         detail: uploadErr?.message ?? 'Failed to upload PDF to storage.',
       };
     }

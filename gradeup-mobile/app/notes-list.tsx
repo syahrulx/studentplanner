@@ -14,6 +14,7 @@ import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { useTranslations } from '@/src/i18n';
 
 const REGISTERED_NOTE_FOLDERS_KEY = 'notes_subject_registered_folders_v1';
+const MAX_PDF_AI_BYTES = 25 * 1024 * 1024;
 
 type RegisteredFoldersMap = Record<string, string[]>;
 
@@ -296,6 +297,17 @@ export default function NotesList() {
         return;
       }
       const file = result.assets[0];
+      const fileName = file.name ?? `attachment-${Date.now()}`;
+      const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+      const fileSize = typeof file.size === 'number' ? file.size : null;
+
+      if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
+        Alert.alert(
+          'File too large for AI extraction',
+          `This PDF is ${Math.round(fileSize / (1024 * 1024))}MB. AI extraction supports up to 25MB.\n\nPlease compress or split the PDF before importing.`,
+        );
+        return;
+      }
 
       setImportProgressUi({ progress: 12, label: T('noteImportReading') });
 
@@ -315,7 +327,6 @@ export default function NotesList() {
       }, 200);
 
       const noteId = `n${Date.now()}`;
-      const fileName = file.name ?? `attachment-${Date.now()}`;
 
       const { path, error } = await uploadNoteAttachment(
         session.user.id,
@@ -350,7 +361,6 @@ export default function NotesList() {
       };
       handleSaveNote(note);
 
-      const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
       if (isPdf && path) {
         setImportProgressUi({ progress: 95, label: 'Preparing PDF for AI...' });
         triggerPdfExtraction(noteId, path, fileName, note as any);
@@ -371,7 +381,7 @@ export default function NotesList() {
 
   const promptImportFileType = () => {
     if (isImportingRef.current) return;
-    Alert.alert(T('noteImportAlertTitle'), T('noteImportAlertMessage'), [
+    Alert.alert(T('noteImportAlertTitle'), `${T('noteImportAlertMessage')}\n\nAI extraction limit: PDF up to 25MB.\nFor faster results, use under 10MB when possible.`, [
       { text: T('noteImportChoosePdf'), onPress: () => setTimeout(() => handleImportFile('application/pdf').catch(() => {}), 400) },
       { text: T('cancel'), style: 'cancel' },
     ]);

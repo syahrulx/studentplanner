@@ -28,6 +28,7 @@ export default function QuizGameplay() {
   const [flashCorrect, setFlashCorrect] = useState(false);
   const [flashWrong, setFlashWrong] = useState(false);
   const [opponentFlash, setOpponentFlash] = useState('');
+  const hasRestoredProgressRef = useRef(false);
 
   const scoreRef = useRef(0);
   scoreRef.current = score;
@@ -36,6 +37,13 @@ export default function QuizGameplay() {
   const expiredRef = useRef(false);
   const qIndexRef = useRef(qIndex);
   qIndexRef.current = qIndex;
+  const submitLockRef = useRef(false);
+  const handledQuestionRef = useRef<number | null>(null);
+  const advanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputGateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inputEnabled, setInputEnabled] = useState(false);
+  const armedTapRef = useRef<{ qIndex: number; optionIdx: number } | null>(null);
+  const hasLocalSubmitRef = useRef(false);
   // Track last opponent questionIndex seen to suppress spurious flashes on initial join
   const lastOpponentQRef = useRef<Map<string, number>>(new Map());
 
@@ -50,18 +58,29 @@ export default function QuizGameplay() {
     }
   }, [sessionId, currentSession, joinQuiz]);
 
+  // Reset one-time restore guard whenever session changes.
+  useEffect(() => {
+    hasRestoredProgressRef.current = false;
+    hasLocalSubmitRef.current = false;
+  }, [session?.id]);
+
   // Sync reconnected state fast-forward — restore qIndex and score from existing answers
   useEffect(() => {
-    if (myAnswers && myAnswers.length > 0 && qIndex === 0) {
-      setQIndex(myAnswers.length);
-      // Include speed bonus (same formula as submitAnswerAction and finishParticipant)
-      const sum = myAnswers.reduce(
-        (acc, ans) => acc + (ans.correct ? 10 : 0) + (ans.correct && ans.timeMs < 5000 ? 5 : 0),
-        0,
-      );
-      setScore(sum);
-    }
-  }, [myAnswers]);
+    if (hasRestoredProgressRef.current) return;
+    if (hasLocalSubmitRef.current) return;
+    if (!myAnswers || myAnswers.length === 0) return;
+    if (qIndex !== 0) return;
+
+    // Run only once after initial join/reconnect.
+    hasRestoredProgressRef.current = true;
+    setQIndex(myAnswers.length);
+    // Include speed bonus (same formula as submitAnswerAction and finishParticipant)
+    const sum = myAnswers.reduce(
+      (acc, ans) => acc + (ans.correct ? 10 : 0) + (ans.correct && ans.timeMs < 5000 ? 5 : 0),
+      0,
+    );
+    setScore(sum);
+  }, [myAnswers, qIndex]);
 
   const questions: GeneratedQuizQuestion[] = useMemo(() => {
     return (session?.questions as GeneratedQuizQuestion[]) || [];
@@ -112,9 +131,14 @@ export default function QuizGameplay() {
   }, [finishQuiz]);
 
   const handleTimerExpired = useCallback(async () => {
+    const qi = qIndexRef.current;
+    if (submitLockRef.current || handledQuestionRef.current === qi) return;
+    submitLockRef.current = true;
+    handledQuestionRef.current = qi;
+    hasLocalSubmitRef.current = true;
     const timeMs = timerSeconds * 1000;
     if (myParticipantId) {
-      await submitAnswer(qIndexRef.current, -1, false, timeMs);
+      await submitAnswer(qi, -1, false, timeMs);
     }
     setStreak(0);
     setShortAnswer(''); // always clear short-answer input on expiry
@@ -129,9 +153,23 @@ export default function QuizGameplay() {
   // Timer — countdown only, NO side effects inside the updater
   useEffect(() => {
     if (!current) return;
+    if (advanceTimeoutRef.current) {
+      clearTimeout(advanceTimeoutRef.current);
+      advanceTimeoutRef.current = null;
+    }
+    if (inputGateTimeoutRef.current) {
+      clearTimeout(inputGateTimeoutRef.current);
+      inputGateTimeoutRef.current = null;
+    }
+    submitLockRef.current = false;
+    handledQuestionRef.current = null;
+    armedTapRef.current = null;
+    setInputEnabled(false);
     startTimeRef.current = Date.now();
     expiredRef.current = false;
     setTimeLeft(timerSeconds);
+    // Prevent ghost taps from previous question from auto-selecting next question.
+    inputGateTimeoutRef.current = setTimeout(() => setInputEnabled(true), 220);
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -143,6 +181,13 @@ export default function QuizGameplay() {
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [qIndex, timerSeconds, current]);
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
+      if (inputGateTimeoutRef.current) clearTimeout(inputGateTimeoutRef.current);
+    };
+  }, []);
 
   // Handle timer expiry in a separate effect to avoid setState-during-render
   useEffect(() => {
@@ -168,7 +213,15 @@ export default function QuizGameplay() {
 
 
   const handleOption = async (idx: number) => {
-    if (selectedIdx !== null) return;
+    const qi = qIndexRef.current;
+    const elapsed = Date.now() - startTimeRef.current;
+    if (elapsed < 550) return; // absorb ghost carry-over taps between question transitions
+    if (!inputEnabled || selectedIdx !== null || submitLockRef.current || handledQuestionRef.current === qi) return;
+    if (!armedTapRef.current || armedTapRef.current.qIndex !== qi || armedTapRef.current.optionIdx !== idx) return;
+    armedTapRef.current = null;
+    submitLockRef.current = true;
+    handledQuestionRef.current = qi;
+    hasLocalSubmitRef.current = true;
     setSelectedIdx(idx);
     const timeMs = Date.now() - startTimeRef.current;
     const correct = idx === current.correctIndex;
@@ -187,7 +240,7 @@ export default function QuizGameplay() {
     }
 
     if (myParticipantId) {
-      await submitAnswer(qIndex, idx, correct, timeMs);
+      await submitAnswer(qi, idx, correct, timeMs);
     }
 
     if (isLast) {
@@ -195,9 +248,9 @@ export default function QuizGameplay() {
       // navigateToResults reads the correct final score
       scoreRef.current = newScore;
       setScore(newScore);
-      setTimeout(() => navigateToResults(), 1000);
+      advanceTimeoutRef.current = setTimeout(() => navigateToResults(), 1000);
     } else {
-      setTimeout(() => {
+      advanceTimeoutRef.current = setTimeout(() => {
         setQIndex((i) => i + 1);
         setSelectedIdx(null);
         setShortAnswer('');
@@ -207,6 +260,13 @@ export default function QuizGameplay() {
   };
 
   const handleShortAnswerSubmit = async () => {
+    const qi = qIndexRef.current;
+    const elapsed = Date.now() - startTimeRef.current;
+    if (elapsed < 550) return; // absorb ghost carry-over taps between question transitions
+    if (!inputEnabled || selectedIdx !== null || submitLockRef.current || !shortAnswer.trim() || handledQuestionRef.current === qi) return;
+    submitLockRef.current = true;
+    handledQuestionRef.current = qi;
+    hasLocalSubmitRef.current = true;
     const timeMs = Date.now() - startTimeRef.current;
     const expected = (current.expectedAnswer || '').trim().toLowerCase();
     const given = shortAnswer.trim().toLowerCase();
@@ -231,16 +291,16 @@ export default function QuizGameplay() {
 
     setSelectedIdx(0);
     if (myParticipantId) {
-      await submitAnswer(qIndex, -1, correct, timeMs);
+      await submitAnswer(qi, -1, correct, timeMs);
     }
 
     if (isLast) {
       // Update ref immediately so navigateToResults has correct final score
       scoreRef.current = newScore;
       setScore(newScore);
-      setTimeout(() => navigateToResults(), 1000);
+      advanceTimeoutRef.current = setTimeout(() => navigateToResults(), 1000);
     } else {
-      setTimeout(() => {
+      advanceTimeoutRef.current = setTimeout(() => {
         setQIndex((i) => i + 1);
         setSelectedIdx(null);
         setShortAnswer('');
@@ -337,13 +397,13 @@ export default function QuizGameplay() {
             value={shortAnswer}
             onChangeText={setShortAnswer}
             editable={selectedIdx === null}
-            onSubmitEditing={handleShortAnswerSubmit}
+            onSubmitEditing={() => { void handleShortAnswerSubmit(); }}
             autoFocus
           />
           <Pressable
             style={[s.submitBtn, { backgroundColor: shortAnswer.trim() ? theme.primary : '#94a3b8' }]}
-            onPress={handleShortAnswerSubmit}
-            disabled={selectedIdx !== null || !shortAnswer.trim()}
+            onPress={() => { void handleShortAnswerSubmit(); }}
+            disabled={!inputEnabled || selectedIdx !== null || !shortAnswer.trim()}
           >
             <Feather name="send" size={18} color="#fff" />
             <Text style={s.submitBtnText}>Submit</Text>
@@ -372,10 +432,17 @@ export default function QuizGameplay() {
 
             return (
               <Pressable
-                key={idx}
+                key={`${qIndex}-${idx}`}
                 style={[s.optBtn, optStyle]}
                 onPress={() => handleOption(idx)}
-                disabled={selectedIdx !== null}
+                onPressIn={() => {
+                  const qi = qIndexRef.current;
+                  const elapsed = Date.now() - startTimeRef.current;
+                  if (inputEnabled && elapsed >= 220) {
+                    armedTapRef.current = { qIndex: qi, optionIdx: idx };
+                  }
+                }}
+                disabled={!inputEnabled || selectedIdx !== null}
               >
                 <View style={[s.optLabel, { backgroundColor: isSelected ? (isCorrect ? '#10b981' : '#ef4444') : theme.primary + '15' }]}>
                   <Text style={[s.optLabelText, { color: isSelected ? '#fff' : theme.primary }]}>{labels[idx]}</Text>

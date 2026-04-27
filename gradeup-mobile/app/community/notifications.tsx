@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useQuiz } from '@/src/context/QuizContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
@@ -79,6 +80,16 @@ function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): Reactio
   }
   const emoji = reaction.reaction_type?.trim() || '✨';
   return { lead: emoji, text: 'Sent you' };
+}
+
+function parseQuizInviteCode(message?: string | null): string | null {
+  const text = String(message || '').trim();
+  if (!text) return null;
+  const fromPhrase = text.match(/join with code:\s*([a-z0-9_-]{4,16})/i)?.[1];
+  if (fromPhrase) return fromPhrase.toUpperCase();
+  const codeOnly = text.match(/^([a-z0-9_-]{4,16})$/i)?.[1];
+  if (codeOnly) return codeOnly.toUpperCase();
+  return null;
 }
 
 type AttendanceNotifItem = {
@@ -392,6 +403,7 @@ export default function NotificationsScreen() {
   const { language } = useApp();
   const T = useTranslations(language);
   const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
+  const { joinQuiz } = useQuiz();
   const params = useLocalSearchParams<Record<string, string | string[]>>();
 
   const [reactions, setReactions] = useState<QuickReaction[]>([]);
@@ -402,6 +414,7 @@ export default function NotificationsScreen() {
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
   const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
   const [respondingFriendIds, setRespondingFriendIds] = useState<Set<string>>(new Set());
+  const [respondingQuizInviteIds, setRespondingQuizInviteIds] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Set<string>>(new Set());
 
@@ -943,6 +956,44 @@ export default function NotificationsScreen() {
     [],
   );
 
+  const handleQuizInviteAction = useCallback(
+    async (reaction: QuickReaction, accept: boolean) => {
+      if (!userId) return;
+      setRespondingQuizInviteIds((prev) => new Set(prev).add(reaction.id));
+      try {
+        if (accept) {
+          const inviteCode = parseQuizInviteCode(reaction.message);
+          if (!inviteCode) {
+            Alert.alert('Invalid invite', 'Could not find a valid invite code in this notification.');
+            return;
+          }
+          const session = await joinQuiz(inviteCode, true);
+          await communityApi.deleteMyReceivedReactions(userId, [reaction.id]).catch(() => {});
+          setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+          await refreshUnreadCount();
+          router.push({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
+          return;
+        }
+        await communityApi.deleteMyReceivedReactions(userId, [reaction.id]);
+        setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+        await refreshUnreadCount();
+      } catch {
+        if (accept) {
+          Alert.alert('Could not join', 'Invite code is invalid or the match already started.');
+        } else {
+          Alert.alert('Could not decline', 'Please try again.');
+        }
+      } finally {
+        setRespondingQuizInviteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(reaction.id);
+          return next;
+        });
+      }
+    },
+    [userId, joinQuiz, refreshUnreadCount],
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
@@ -1298,6 +1349,8 @@ export default function NotificationsScreen() {
             const subColor = isRead ? theme.tabIconDefault : theme.textSecondary;
             const timeColor = isRead ? theme.tabIconDefault : theme.textSecondary;
             const isSelected = selectedIds.has(reaction.id);
+            const quizInviteBusy = respondingQuizInviteIds.has(reaction.id);
+            const quizInviteCode = reaction.reaction_type === '🎮' ? parseQuizInviteCode(reaction.message) : null;
             return (
               <Pressable
                 key={reaction.id}
@@ -1372,23 +1425,30 @@ export default function NotificationsScreen() {
                       {text}
                     </Text>
                   </View>
-                  {reaction.reaction_type === '🎮' && reaction.message && (
-                    <Pressable
-                      style={[
-                        styles.joinQuizBtn,
-                        { backgroundColor: theme.primary },
-                        isRead && { opacity: 0.55 },
-                      ]}
-                      onPress={() => {
-                        const sessionId = reaction.message?.match(/session:(\S+)/)?.[1];
-                        if (sessionId) {
-                          router.push({ pathname: '/match-lobby', params: { sessionId } } as any);
-                        }
-                      }}
-                    >
-                      <Feather name="play" size={12} color="#fff" />
-                      <Text style={styles.joinQuizBtnText}>Join Quiz</Text>
-                    </Pressable>
+                  {reaction.reaction_type === '🎮' && (
+                    <View style={styles.shareActions}>
+                      <Pressable
+                        style={[
+                          styles.shareAcceptBtn,
+                          { backgroundColor: theme.primary, opacity: quizInviteBusy ? 0.6 : 1 },
+                        ]}
+                        disabled={quizInviteBusy || !quizInviteCode}
+                        onPress={() => void handleQuizInviteAction(reaction, true)}
+                      >
+                        <Feather name="check" size={14} color="#fff" />
+                        <Text style={styles.shareActionText}>Accept</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.shareDeclineBtn,
+                          { borderColor: theme.border, opacity: quizInviteBusy ? 0.6 : 1 },
+                        ]}
+                        disabled={quizInviteBusy}
+                        onPress={() => void handleQuizInviteAction(reaction, false)}
+                      >
+                        <Text style={[styles.shareDeclineText, { color: theme.textSecondary }]}>Decline</Text>
+                      </Pressable>
+                    </View>
                   )}
                 </View>
                 {!reaction.read && <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />}

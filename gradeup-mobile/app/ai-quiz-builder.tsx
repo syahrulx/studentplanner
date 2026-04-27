@@ -14,6 +14,7 @@ import {
 } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
+import { invokeGenerateFlashcards } from '@/src/lib/invokeGenerateFlashcards';
 import type { Note } from '@/src/types';
 
 const PAD = 20;
@@ -153,16 +154,74 @@ export default function AIQuizBuilder() {
             handleSaveNote({ ...note, extractedText: pdfText, extractionError: undefined });
           }
         } else {
-          failedPdfTitles.push(note.title);
-          const reason = pdfText.trim().length > 0 ? 'extracted text looks like PDF metadata, not content' : (extracted.stage + (extracted.detail ? ` - ${extracted.detail}` : ''));
-          extractionIssues.push(`${note.title}: ${reason}`);
-          if (handleSaveNote) handleSaveNote({ ...note, extractionError: reason });
+          // Fallback: if direct text extraction fails, try generating a small
+          // flashcard batch from the PDF and reuse it as quiz source content.
+          setLoadingBanner({
+            title: 'Trying backup extraction…',
+            detail: truncateMiddle(noteLoadingLabel(note), 44),
+          });
+          const backup = await invokeGenerateFlashcards({
+            source: 'pdf_storage',
+            storage_path: note.attachmentPath,
+            bucket: 'note-attachments',
+            note_id: note.id,
+            count: 8,
+          });
+          if (!backup.error && (backup.data?.cards?.length ?? 0) > 0) {
+            const backupText = backup.data!.cards
+              .map((c) => `${c.front}\n${c.back}`)
+              .join('\n\n');
+            contentParts.push(backupText);
+            if (handleSaveNote) {
+              handleSaveNote({ ...note, extractionError: undefined });
+            }
+          } else {
+            failedPdfTitles.push(note.title);
+            const reason = pdfText.trim().length > 0
+              ? 'extracted text looks like PDF metadata, not content'
+              : (extracted.stage + (extracted.detail ? ` - ${extracted.detail}` : ''));
+            const mergedReason = backup.error ? `${reason}; backup failed - ${backup.error}` : reason;
+            extractionIssues.push(`${note.title}: ${mergedReason}`);
+            if (handleSaveNote) handleSaveNote({ ...note, extractionError: mergedReason });
+          }
         }
       } catch (err: any) {
-        failedPdfTitles.push(note.title);
-        const msg = err?.message || 'unexpected exception in quiz builder';
-        extractionIssues.push(`${note.title}: failed - ${msg}`);
-        if (handleSaveNote) handleSaveNote({ ...note, extractionError: msg });
+        // Backup attempt in exception path too.
+        try {
+          setLoadingBanner({
+            title: 'Trying backup extraction…',
+            detail: truncateMiddle(noteLoadingLabel(note), 44),
+          });
+          const backup = await invokeGenerateFlashcards({
+            source: 'pdf_storage',
+            storage_path: note.attachmentPath,
+            bucket: 'note-attachments',
+            note_id: note.id,
+            count: 8,
+          });
+          if (!backup.error && (backup.data?.cards?.length ?? 0) > 0) {
+            const backupText = backup.data!.cards
+              .map((c) => `${c.front}\n${c.back}`)
+              .join('\n\n');
+            contentParts.push(backupText);
+            if (handleSaveNote) {
+              handleSaveNote({ ...note, extractionError: undefined });
+            }
+            continue;
+          }
+          const msg = err?.message || 'unexpected exception in quiz builder';
+          const merged = backup.error ? `${msg}; backup failed - ${backup.error}` : msg;
+          failedPdfTitles.push(note.title);
+          extractionIssues.push(`${note.title}: failed - ${merged}`);
+          if (handleSaveNote) handleSaveNote({ ...note, extractionError: merged });
+        } catch (backupErr: any) {
+          failedPdfTitles.push(note.title);
+          const msg = err?.message || 'unexpected exception in quiz builder';
+          const backupMsg = backupErr?.message || 'backup extraction failed';
+          const merged = `${msg}; ${backupMsg}`;
+          extractionIssues.push(`${note.title}: failed - ${merged}`);
+          if (handleSaveNote) handleSaveNote({ ...note, extractionError: merged });
+        }
       }
     }
 

@@ -32,6 +32,20 @@ export type GeneratedQuizQuestion = {
   correctIndex: number;
   /** For short-answer questions: the expected answer text */
   expectedAnswer?: string;
+  /** Brief reason/excerpt that supports why the answer is correct. */
+  proof?: string;
+};
+
+export type SavedQuizItem = {
+  id: string;
+  title: string;
+  createdAt: string;
+  questionCount: number;
+  sourceType: 'notes' | 'flashcards';
+  sourceId?: string;
+  quizType?: QuizType;
+  difficulty?: QuizDifficulty;
+  questions: GeneratedQuizQuestion[];
 };
 
 export type QuizType = 'mcq' | 'true_false' | 'mixed' | 'short_answer';
@@ -121,6 +135,7 @@ export async function generateQuizFromNotes(
 // ---------------------------------------------------------------------------
 
 const QUIZ_TEMP_KEY = '@quiz_generated_store';
+const QUIZ_SAVED_KEY = '@quiz_saved_library_v1';
 
 export async function setGeneratedQuizQuestions(questions: GeneratedQuizQuestion[]): Promise<void> {
   try {
@@ -144,6 +159,50 @@ export async function clearGeneratedQuizQuestions(): Promise<void> {
   try {
     await AsyncStorage.removeItem(QUIZ_TEMP_KEY);
   } catch {}
+}
+
+export async function getSavedQuizzes(): Promise<SavedQuizItem[]> {
+  try {
+    const data = await AsyncStorage.getItem(QUIZ_SAVED_KEY);
+    if (!data) return [];
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as SavedQuizItem[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveQuizToLibrary(input: {
+  title?: string;
+  sourceType: 'notes' | 'flashcards';
+  sourceId?: string;
+  quizType?: QuizType;
+  difficulty?: QuizDifficulty;
+  questions: GeneratedQuizQuestion[];
+}): Promise<SavedQuizItem> {
+  const questions = (input.questions || []).slice(0, 50);
+  const item: SavedQuizItem = {
+    id: `quiz_${Date.now()}`,
+    title: (input.title || 'Revision Quiz').trim() || 'Revision Quiz',
+    createdAt: new Date().toISOString(),
+    questionCount: questions.length,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    quizType: input.quizType,
+    difficulty: input.difficulty,
+    questions,
+  };
+  const existing = await getSavedQuizzes();
+  const next = [item, ...existing].slice(0, 40);
+  await AsyncStorage.setItem(QUIZ_SAVED_KEY, JSON.stringify(next));
+  return item;
+}
+
+export async function deleteSavedQuiz(id: string): Promise<void> {
+  const existing = await getSavedQuizzes();
+  const next = existing.filter((q) => q.id !== id);
+  await AsyncStorage.setItem(QUIZ_SAVED_KEY, JSON.stringify(next));
 }
 
 /**
