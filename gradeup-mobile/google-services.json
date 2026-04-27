@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "791768688791",
+    "project_id": "gen-lang-client-0982776400",
+    "storage_bucket": "gen-lang-client-0982776400.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:791768688791:android:68487359c8a92a3d99e1d2",
+        "android_client_info": {
+          "package_name": "com.aizztech.rencana"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "791768688791-2v8frmjqlo41r6bdtheh0le9agnlib10.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhT3PSF-DW6f3lspQvQdbV_fdB9jteuxA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "791768688791-2v8frmjqlo41r6bdtheh0le9agnlib10.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
