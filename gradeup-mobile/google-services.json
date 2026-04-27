@@ -1,34 +1,41 @@
 {
   "project_info": {
-    "project_number": "791768688791",
-    "project_id": "gen-lang-client-0982776400",
-    "storage_bucket": "gen-lang-client-0982776400.firebasestorage.app"
+    "project_number": "195773797606",
+    "project_id": "plated-airline-491706-e1",
+    "storage_bucket": "plated-airline-491706-e1.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:791768688791:android:68487359c8a92a3d99e1d2",
+        "mobilesdk_app_id": "1:195773797606:android:e7ba14463d4b98d9ac9727",
         "android_client_info": {
           "package_name": "com.aizztech.rencana"
         }
       },
       "oauth_client": [
         {
-          "client_id": "791768688791-2v8frmjqlo41r6bdtheh0le9agnlib10.apps.googleusercontent.com",
+          "client_id": "195773797606-uklfgqldnm6c84vj73gcl8pviei9vhr5.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyDhT3PSF-DW6f3lspQvQdbV_fdB9jteuxA"
+          "current_key": "AIzaSyCaOwJMX_RKIWV01-CaJ4pSajyCtgwedMw"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "791768688791-2v8frmjqlo41r6bdtheh0le9agnlib10.apps.googleusercontent.com",
+              "client_id": "195773797606-uklfgqldnm6c84vj73gcl8pviei9vhr5.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "195773797606-ge2nb6lbd96ssuil5mbljck2li7g8la9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.aizztech.rencana"
+              }
             }
           ]
         }
