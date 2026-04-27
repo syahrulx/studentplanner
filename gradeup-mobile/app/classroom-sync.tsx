@@ -123,7 +123,7 @@ export default function ClassroomSync() {
           return;
         }
 
-        const verifier = request.codeVerifier;
+        const verifier = result.params.codeVerifier || request.codeVerifier;
         if (!verifier) {
           setError('Could not connect: missing PKCE verifier.');
           return;

@@ -182,7 +182,7 @@ export function useClassroomAuth(): ClassroomAuthState {
         if (code) {
           const successResult: AuthSession.AuthSessionResult = {
             type: 'success',
-            params: { code, state: returnedState || '' },
+            params: { code, state: returnedState || '', codeVerifier: verifier },
             url: result.url,
             authentication: null,
           } as any;
