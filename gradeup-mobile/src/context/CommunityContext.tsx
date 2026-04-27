@@ -473,7 +473,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                   reactionType: reaction.reaction_type,
                   message: reaction.message ?? '',
                 },
-                sound: 'default',
+                sound: true,
                 ...(Platform.OS === 'android' ? { channelId: 'community' } : {}),
               },
               trigger: null,

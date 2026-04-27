@@ -23,6 +23,7 @@ import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
 import { apiSlotsToTimetableEntries, parseExtractTimetableResponse } from '@/src/lib/timetableExtraction';
 import type { TimetableEntry } from '@/src/types';
 import { setHasSeenNonUitmTimetableIntro } from '@/src/storage';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 
 const MAX_BASE64_CHARS = Math.ceil((8 * 1024 * 1024 * 4) / 3) + 1000;
 
@@ -59,9 +60,9 @@ export default function TimetableImportScreen() {
 
   const pickImage = useCallback(async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(T('error'), 'Photo library permission is needed.');
+      const ok = await ensureImageLibraryAccessForPicker();
+      if (!ok) {
+        Alert.alert(T('error'), 'Photo access is needed to import a screenshot.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({

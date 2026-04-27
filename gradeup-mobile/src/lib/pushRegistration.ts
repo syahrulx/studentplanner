@@ -11,6 +11,7 @@ function getExpoProjectId(): string | undefined {
 /** Obtain Expo push token and store on the signed-in user's profile (for remote push via Expo). */
 export async function syncExpoPushTokenToProfile(userId: string): Promise<void> {
   if (Platform.OS === 'web' || !userId) return;
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
 
   try {
     const { status } = await Notifications.getPermissionsAsync();
@@ -30,6 +31,7 @@ export async function syncExpoPushTokenToProfile(userId: string): Promise<void> 
       .update({
         expo_push_token: token,
         expo_push_token_updated_at: new Date().toISOString(),
+        ...(platform ? { device_platform: platform } : {}),
       })
       .eq('id', userId);
 
@@ -41,6 +43,7 @@ export async function syncExpoPushTokenToProfile(userId: string): Promise<void> 
 
 /** Re-save token when Expo rotates it (e.g. reinstall). */
 export function subscribeExpoPushTokenUpdates(getUserId: () => string | null): () => void {
+  const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
   const sub = Notifications.addPushTokenListener(({ data: token }) => {
     const uid = getUserId();
     if (!uid || !token) return;
@@ -49,6 +52,7 @@ export function subscribeExpoPushTokenUpdates(getUserId: () => string | null): (
       .update({
         expo_push_token: token,
         expo_push_token_updated_at: new Date().toISOString(),
+        ...(platform ? { device_platform: platform } : {}),
       })
       .eq('id', uid);
   });

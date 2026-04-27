@@ -8,6 +8,10 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +33,7 @@ import { getEnabledSubscriptionFeaturesForTier } from '@/src/lib/subscriptionFea
 import type { SubscriptionPlan } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 
 export default function Profile() {
   const {
@@ -60,6 +65,14 @@ export default function Profile() {
   const [circleDropdownOpen, setCircleDropdownOpen] = useState(false);
   const [planFeatureLines, setPlanFeatureLines] = useState<string[]>([]);
   const [planFeaturesLoading, setPlanFeaturesLoading] = useState(true);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editModalTitle, setEditModalTitle] = useState('');
+  const [editModalMessage, setEditModalMessage] = useState('');
+  const [editModalValue, setEditModalValue] = useState('');
+  const [editModalField, setEditModalField] = useState<
+    'name' | 'studentId' | 'program' | 'campus' | 'faculty' | 'portalSemester' | null
+  >(null);
+  const [editModalKeyboardType, setEditModalKeyboardType] = useState<'default' | 'number-pad'>('default');
 
   const subscriptionTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -104,136 +117,173 @@ export default function Profile() {
     }
   };
 
+  const openEditModal = (cfg: {
+    field: 'name' | 'studentId' | 'program' | 'campus' | 'faculty' | 'portalSemester';
+    title: string;
+    message: string;
+    value: string;
+    keyboardType?: 'default' | 'number-pad';
+  }) => {
+    setEditModalField(cfg.field);
+    setEditModalTitle(cfg.title);
+    setEditModalMessage(cfg.message);
+    setEditModalValue(cfg.value);
+    setEditModalKeyboardType(cfg.keyboardType ?? 'default');
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEditModal = async () => {
+    if (!editModalField) return;
+    const trimmed = editModalValue.trim();
+    setIsUpdating(true);
+    try {
+      if (editModalField === 'name') {
+        if (!trimmed) return;
+        await updateProfile({ name: trimmed });
+      } else if (editModalField === 'studentId') {
+        await updateProfile({ studentId: trimmed });
+      } else if (editModalField === 'program') {
+        await updateProfile({ program: trimmed });
+      } else if (editModalField === 'campus') {
+        await updateProfile({ campus: trimmed });
+      } else if (editModalField === 'faculty') {
+        await updateProfile({ faculty: trimmed });
+      } else if (editModalField === 'portalSemester') {
+        if (trimmed.length > 0 && !/^\d+$/.test(trimmed)) {
+          Alert.alert(T('error'), 'Please enter a valid semester number.');
+          return;
+        }
+        const parsed = trimmed.length > 0 ? Number(trimmed) : 0;
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          Alert.alert(T('error'), 'Please enter a valid semester number.');
+          return;
+        }
+        await updateProfile({ currentSemester: Math.floor(parsed) });
+      }
+      setEditModalVisible(false);
+    } catch {
+      if (editModalField === 'name') {
+        Alert.alert('Could not update name', 'Please try again.');
+      } else if (editModalField === 'studentId') {
+        Alert.alert(T('error'), T('studentIdUpdateFailed'));
+      } else if (editModalField === 'program') {
+        Alert.alert(T('error'), T('programUpdateFailed'));
+      } else if (editModalField === 'campus') {
+        Alert.alert(T('error'), T('campusUpdateFailed'));
+      } else if (editModalField === 'faculty') {
+        Alert.alert(T('error'), T('facultyUpdateFailed'));
+      } else if (editModalField === 'portalSemester') {
+        Alert.alert(T('error'), 'Failed to update semester');
+      }
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleEditName = () => {
-    Alert.prompt(
-      T('editName') || 'Edit Name',
-      T('enterYourName') || 'Please enter your full name',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Save',
-          onPress: async (newName: string | undefined) => {
-            if (!newName?.trim()) return;
-            setIsUpdating(true);
-            try {
-              await updateProfile({ name: newName.trim() });
-            } catch (e) {
-              Alert.alert('Could not update name', 'Please try again.');
-            } finally {
-              setIsUpdating(false);
-            }
-          },
-        },
-      ],
-      'plain-text',
-      user.name,
-    );
+    openEditModal({
+      field: 'name',
+      title: T('editName') || 'Edit Name',
+      message: T('enterYourName') || 'Please enter your full name',
+      value: user.name,
+    });
   };
 
   const handleEditStudentId = () => {
-    Alert.prompt(
-      T('studentIdEditTitle'),
-      T('studentIdEditMessage'),
-      [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: T('save'),
-          onPress: async (newId: string | undefined) => {
-            setIsUpdating(true);
-            try {
-              await updateProfile({ studentId: (newId ?? '').trim() });
-            } catch (e) {
-              Alert.alert(T('error'), T('studentIdUpdateFailed'));
-            } finally {
-              setIsUpdating(false);
-            }
-          },
-        },
-      ],
-      'plain-text',
-      user.studentId,
-    );
+    openEditModal({
+      field: 'studentId',
+      title: T('studentIdEditTitle'),
+      message: T('studentIdEditMessage'),
+      value: user.studentId,
+    });
   };
 
   const handleEditProgram = () => {
-    Alert.prompt(
-      T('editPrimaryProgram'),
-      T('enterPrimaryProgram'),
-      [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: T('save'),
-          onPress: async (v: string | undefined) => {
-            setIsUpdating(true);
-            try {
-              await updateProfile({ program: (v ?? '').trim() });
-            } catch {
-              Alert.alert(T('error'), T('programUpdateFailed'));
-            } finally {
-              setIsUpdating(false);
-            }
-          },
-        },
-      ],
-      'plain-text',
-      user.program,
-    );
+    openEditModal({
+      field: 'program',
+      title: T('editPrimaryProgram'),
+      message: T('enterPrimaryProgram'),
+      value: user.program,
+    });
   };
 
   const handleEditCampus = () => {
-    Alert.prompt(
-      T('editCampus'),
-      T('enterCampus'),
-      [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: T('save'),
-          onPress: async (v: string | undefined) => {
-            setIsUpdating(true);
-            try {
-              await updateProfile({ campus: (v ?? '').trim() });
-            } catch {
-              Alert.alert(T('error'), T('campusUpdateFailed'));
-            } finally {
-              setIsUpdating(false);
-            }
-          },
-        },
-      ],
-      'plain-text',
-      user.campus,
-    );
+    openEditModal({
+      field: 'campus',
+      title: T('editCampus'),
+      message: T('enterCampus'),
+      value: user.campus,
+    });
   };
 
   const handleEditFaculty = () => {
-    Alert.prompt(
-      T('editFaculty'),
-      T('enterFaculty'),
+    openEditModal({
+      field: 'faculty',
+      title: T('editFaculty'),
+      message: T('enterFaculty'),
+      value: user.faculty,
+    });
+  };
+
+  const handleEditPortalSemester = () => {
+    openEditModal({
+      field: 'portalSemester',
+      title: 'Edit semester (portal)',
+      message: 'Semester number (e.g. 1, 2, 5). Leave empty to clear.',
+      value: user.currentSemester != null && user.currentSemester > 0 ? String(Math.floor(user.currentSemester)) : '',
+      keyboardType: 'number-pad',
+    });
+  };
+
+  const handleEditStudyMode = () => {
+    Alert.alert(
+      'Select study mode',
+      'Choose your study mode.',
       [
-        { text: T('cancel'), style: 'cancel' },
         {
-          text: T('save'),
-          onPress: async (v: string | undefined) => {
+          text: 'Part Time',
+          onPress: async () => {
             setIsUpdating(true);
             try {
-              await updateProfile({ faculty: (v ?? '').trim() });
+              await updateProfile({ studyMode: 'Part Time' });
             } catch {
-              Alert.alert(T('error'), T('facultyUpdateFailed'));
+              Alert.alert(T('error'), 'Failed to update study mode');
             } finally {
               setIsUpdating(false);
             }
           },
         },
+        {
+          text: 'Full Time',
+          onPress: async () => {
+            setIsUpdating(true);
+            try {
+              await updateProfile({ studyMode: 'Full Time' });
+            } catch {
+              Alert.alert(T('error'), 'Failed to update study mode');
+            } finally {
+              setIsUpdating(false);
+            }
+          },
+        },
+        { text: T('cancel'), style: 'cancel' },
       ],
-      'plain-text',
-      user.faculty,
+      { cancelable: true },
     );
   };
 
+  const normalizedStudyMode = (user.studyMode ?? '').trim().toLowerCase();
+  const studyModeDisplay =
+    normalizedStudyMode === 'part time'
+      ? 'Part Time'
+      : normalizedStudyMode === 'full time'
+        ? 'Full Time'
+        : displayProfileText(user.studyMode);
+
   const handleEditAvatar = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
+      const ok = await ensureImageLibraryAccessForPicker();
+      if (!ok) {
         Alert.alert('Permission needed', 'Allow photo access in your device settings to change your profile picture.');
         return;
       }
@@ -366,19 +416,33 @@ export default function Profile() {
           </View>
         </Pressable>
         <View style={styles.divider} />
-        <View style={styles.cardRow}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={handleEditPortalSemester}
+          disabled={isUpdating}
+        >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('portalSemester')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
-            {displayPortalSemester(user.currentSemester)}
-          </Text>
-        </View>
+          <View style={styles.cardValueWrap}>
+            <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+              {displayPortalSemester(user.currentSemester)}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
         <View style={styles.divider} />
-        <View style={styles.cardRow}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={handleEditStudyMode}
+          disabled={isUpdating}
+        >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('studyModeLabel')}</Text>
-          <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
-            {displayProfileText(user.studyMode)}
-          </Text>
-        </View>
+          <View style={styles.cardValueWrap}>
+            <Text style={[styles.cardValue, { color: theme.textSecondary, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+              {studyModeDisplay}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
         <View style={styles.divider} />
         <View style={styles.progressContainer}>
           <View style={styles.progressHeader}>
@@ -569,6 +633,54 @@ export default function Profile() {
       </Pressable>
 
       <View style={{ height: 60 }} />
+
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setEditModalVisible(false)} />
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{editModalTitle}</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>{editModalMessage}</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundSecondary || theme.background },
+              ]}
+              value={editModalValue}
+              onChangeText={setEditModalValue}
+              autoFocus
+              keyboardType={editModalKeyboardType}
+              editable={!isUpdating}
+              returnKeyType="done"
+              onSubmitEditing={handleSaveEditModal}
+              placeholderTextColor={theme.textSecondary}
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: theme.border }]}
+                onPress={() => setEditModalVisible(false)}
+                disabled={isUpdating}
+              >
+                <Text style={[styles.modalBtnCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnSave, { backgroundColor: theme.primary }]}
+                onPress={handleSaveEditModal}
+                disabled={isUpdating}
+              >
+                <Text style={styles.modalBtnSaveText}>{T('save')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -752,5 +864,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
     paddingTop: 0,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  modalMessage: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 14,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  modalBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  modalBtnCancel: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  modalBtnSave: {},
+  modalBtnCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalBtnSaveText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
   },
 });

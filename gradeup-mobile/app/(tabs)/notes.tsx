@@ -276,14 +276,42 @@ function createStyles(theme: ThemePalette) {
     },
 
     // Flashcard deck cards
-    deckGrid: {
+    deckControlsRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 12,
+    },
+    deckControlBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    deckControlBtnText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.textSecondary,
+    },
+    deckGroupTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: theme.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.7,
+      marginBottom: 10,
+      paddingLeft: 2,
+    },
+    deckHorizontalList: {
+      paddingRight: 8,
       gap: 12,
-      marginBottom: 28,
     },
     deckCard: {
-      width: '47%' as any,
+      width: 212,
       borderRadius: 18,
       padding: 16,
       borderWidth: 1,
@@ -428,6 +456,8 @@ export default function StudyHub() {
   const [subjectsMode, setSubjectsMode] = useState<'idle' | 'rename' | 'delete'>('idle');
   const [renameTarget, setRenameTarget] = useState<Course | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [deckSortMode, setDeckSortMode] = useState<'cards_desc' | 'cards_asc' | 'title_asc' | 'updated_desc'>('cards_desc');
+  const [deckGroupMode, setDeckGroupMode] = useState<'none' | 'subject'>('none');
 
   const tx = (key: string, fallback: string) => ((T as any)(key) as string) || fallback;
 
@@ -495,9 +525,44 @@ export default function StudyHub() {
         const color = getColor(note.subjectId, idx);
         return { ...note, count, color };
       })
-      .filter(deck => deck.count > 0)
-      .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title));
+      .filter(deck => deck.count > 0);
   }, [notes, flashcards]);
+
+  const sortedDeckItems = useMemo(() => {
+    const list = [...deckItems];
+    list.sort((a, b) => {
+      if (deckSortMode === 'cards_asc') return (a.count - b.count) || a.title.localeCompare(b.title);
+      if (deckSortMode === 'title_asc') return a.title.localeCompare(b.title) || (b.count - a.count);
+      if (deckSortMode === 'updated_desc') return b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title);
+      return (b.count - a.count) || a.title.localeCompare(b.title);
+    });
+    return list;
+  }, [deckItems, deckSortMode]);
+
+  const groupedDeckItems = useMemo(() => {
+    if (deckGroupMode === 'none') {
+      return [{ key: 'all', title: 'All decks', items: sortedDeckItems }];
+    }
+    const grouped = new Map<string, typeof sortedDeckItems>();
+    for (const deck of sortedDeckItems) {
+      const bucket = grouped.get(deck.subjectId) ?? [];
+      bucket.push(deck);
+      grouped.set(deck.subjectId, bucket);
+    }
+    return Array.from(grouped.entries())
+      .map(([subjectId, items]) => ({ key: subjectId, title: subjectId, items }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [sortedDeckItems, deckGroupMode]);
+
+  const deckSortLabel =
+    deckSortMode === 'cards_asc'
+      ? 'Cards: Low to High'
+      : deckSortMode === 'title_asc'
+        ? 'Title: A to Z'
+        : deckSortMode === 'updated_desc'
+          ? 'Recently updated'
+          : 'Cards: High to Low';
+  const deckGroupLabel = deckGroupMode === 'subject' ? 'Group: Subject' : 'Group: None';
 
   const totalCards = flashcards.length;
   const totalNotes = notes.length;
@@ -583,57 +648,111 @@ export default function StudyHub() {
             </Text>
           </View>
         ) : (
-          <View style={s.deckGrid}>
-            {deckItems.map((deck) => (
+          <View style={{ marginBottom: 28 }}>
+            <View style={s.deckControlsRow}>
               <Pressable
-                key={deck.id}
-                style={({ pressed }) => [s.deckCard, pressed && s.deckCardPressed]}
-                onPress={() => {
-                  if (deck.count > 0) {
-                    router.push({
-                      pathname: '/flashcard-deck-preview',
-                      params: { noteId: deck.id },
-                    } as any);
-                  } else {
-                    router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
-                  }
-                }}
-                onLongPress={() => {
-                  router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
-                }}
+                style={({ pressed }) => [s.deckControlBtn, pressed && { opacity: 0.75 }]}
+                onPress={() =>
+                  Alert.alert(
+                    'Sort decks',
+                    'Choose sorting',
+                    [
+                      { text: 'Cards: High to Low', onPress: () => setDeckSortMode('cards_desc') },
+                      { text: 'Cards: Low to High', onPress: () => setDeckSortMode('cards_asc') },
+                      { text: 'Title: A to Z', onPress: () => setDeckSortMode('title_asc') },
+                      { text: 'Recently updated', onPress: () => setDeckSortMode('updated_desc') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ],
+                    { cancelable: true },
+                  )
+                }
               >
-                <View style={s.deckCardHeader}>
-                  <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                    <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                    <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
-                      {deck.subjectId}
-                    </Text>
-                  </View>
-                  <Pressable 
-                    style={s.deckTrashBtn} 
-                    hitSlop={8}
-                    onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                  >
-                    <Feather name="trash-2" size={15} color={theme.textSecondary} />
-                  </Pressable>
-                </View>
-                
-                <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
-                
-                <View style={s.deckFooter}>
-                  <View style={s.deckCountBadge}>
-                    <Feather name="layers" size={12} color={theme.textSecondary} />
-                    <Text style={s.deckCountText}>{deck.count} cards</Text>
-                  </View>
-                  
-                  {deck.count > 0 && (
-                    <View style={s.deckReviewBtn}>
-                      <Feather name="play" size={10} color="#ffffff" />
-                      <Text style={s.deckReviewText}>Review</Text>
-                    </View>
-                  )}
-                </View>
+                <Feather name="arrow-up-down" size={13} color={theme.textSecondary} />
+                <Text style={s.deckControlBtnText}>{deckSortLabel}</Text>
               </Pressable>
+              <Pressable
+                style={({ pressed }) => [s.deckControlBtn, pressed && { opacity: 0.75 }]}
+                onPress={() =>
+                  Alert.alert(
+                    'Group decks',
+                    'Choose grouping',
+                    [
+                      { text: 'No grouping', onPress: () => setDeckGroupMode('none') },
+                      { text: 'By subject', onPress: () => setDeckGroupMode('subject') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ],
+                    { cancelable: true },
+                  )
+                }
+              >
+                <Feather name="layers" size={13} color={theme.textSecondary} />
+                <Text style={s.deckControlBtnText}>{deckGroupLabel}</Text>
+              </Pressable>
+            </View>
+
+            {groupedDeckItems.map((section) => (
+              <View key={section.key} style={{ marginBottom: 18 }}>
+                {deckGroupMode === 'subject' && (
+                  <Text style={s.deckGroupTitle}>{section.title}</Text>
+                )}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={s.deckHorizontalList}
+                >
+                  {section.items.map((deck) => (
+                    <Pressable
+                      key={deck.id}
+                      style={({ pressed }) => [s.deckCard, pressed && s.deckCardPressed]}
+                      onPress={() => {
+                        if (deck.count > 0) {
+                          router.push({
+                            pathname: '/flashcard-deck-preview',
+                            params: { noteId: deck.id },
+                          } as any);
+                        } else {
+                          router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                        }
+                      }}
+                      onLongPress={() => {
+                        router.push({ pathname: '/notes-editor', params: { subjectId: deck.subjectId, noteId: deck.id } } as any);
+                      }}
+                    >
+                      <View style={s.deckCardHeader}>
+                        <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
+                          <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
+                          <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                            {deck.subjectId}
+                          </Text>
+                        </View>
+                        <Pressable
+                          style={s.deckTrashBtn}
+                          hitSlop={8}
+                          onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                        >
+                          <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                        </Pressable>
+                      </View>
+
+                      <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
+
+                      <View style={s.deckFooter}>
+                        <View style={s.deckCountBadge}>
+                          <Feather name="layers" size={12} color={theme.textSecondary} />
+                          <Text style={s.deckCountText}>{deck.count} cards</Text>
+                        </View>
+
+                        {deck.count > 0 && (
+                          <View style={s.deckReviewBtn}>
+                            <Feather name="play" size={10} color="#ffffff" />
+                            <Text style={s.deckReviewText}>Review</Text>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
             ))}
           </View>
         )}

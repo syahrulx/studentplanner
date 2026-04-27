@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="gradeup_widget_name">Rencana Today</string>
+  <string name="gradeup_widget_name">Rencana Long - Class &amp; Task</string>
   <string name="gradeup_widget_description">Today\'s tasks and timetable</string>
+  <string name="gradeup_widget_long_tasks_name">Rencana Long - Task</string>
+  <string name="gradeup_widget_long_tasks_description">Long widget showing today\'s tasks</string>
+  <string name="gradeup_widget_long_classes_name">Rencana Long - Class</string>
+  <string name="gradeup_widget_long_classes_description">Long widget showing today\'s classes</string>
+  <string name="gradeup_widget_small_both_name">Rencana Small - Class &amp; Task</string>
+  <string name="gradeup_widget_small_both_description">Small widget showing today summary</string>
+  <string name="gradeup_widget_small_tasks_name">Rencana Small - Task</string>
+  <string name="gradeup_widget_small_tasks_description">Small widget showing today\'s tasks</string>
+  <string name="gradeup_widget_small_classes_name">Rencana Small - Class</string>
+  <string name="gradeup_widget_small_classes_description">Small widget showing today\'s classes</string>
 </resources>

@@ -64,7 +64,7 @@ serve(async (req) => {
 
       let query = admin
         .from('profiles')
-        .select('id,name,student_id,university_id,created_at,status,updated_at,subscription_plan', { count: 'exact' })
+        .select('id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 

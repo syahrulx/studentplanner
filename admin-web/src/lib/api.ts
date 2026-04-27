@@ -272,6 +272,7 @@ export type AdminUserRow = {
   name: string | null;
   student_id: string | null;
   university_id: string | null;
+  device_platform: 'ios' | 'android' | null;
   status: 'active' | 'disabled' | 'banned';
   subscription_plan: SubscriptionPlan;
   ai_token_limit_override: number | null;
@@ -298,6 +299,7 @@ function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
       name: r.name ?? null,
       student_id: r.student_id ?? null,
       university_id: r.university_id ?? null,
+      device_platform: r.device_platform === 'ios' || r.device_platform === 'android' ? r.device_platform : null,
       status: (r.status as AdminUserRow['status']) ?? 'active',
       subscription_plan: normalizeSubscriptionPlan(r.subscription_plan),
       ai_token_limit_override:
@@ -324,7 +326,7 @@ export async function listUsers(opts: {
     let query = supabase
       .from('profiles')
       .select(
-        'id,name,student_id,university_id,created_at,status,updated_at,subscription_plan,ai_token_limit_override',
+        'id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,ai_token_limit_override',
         { count: 'exact' },
       )
       .order('created_at', { ascending: false })

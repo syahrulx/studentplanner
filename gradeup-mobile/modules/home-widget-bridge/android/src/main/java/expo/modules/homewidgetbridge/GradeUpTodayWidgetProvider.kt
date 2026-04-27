@@ -7,14 +7,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
-import android.text.style.StyleSpan
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -24,15 +18,28 @@ import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
 
-class GradeUpTodayWidgetProvider : AppWidgetProvider() {
+open class GradeUpTodayWidgetProvider : AppWidgetProvider() {
+  protected enum class ContentMode { TASKS, CLASSES, BOTH }
+  protected enum class LayoutMode { SMALL, LONG }
+
+  protected open fun contentMode(): ContentMode = ContentMode.BOTH
+  protected open fun layoutMode(): LayoutMode = LayoutMode.LONG
 
   override fun onEnabled(context: Context) {
     super.onEnabled(context)
-    WidgetRefreshScheduler.scheduleNextMidnight(context.applicationContext)
+    try {
+      WidgetRefreshScheduler.scheduleNextMidnight(context.applicationContext)
+    } catch (e: Exception) {
+      Log.w(TAG, "onEnabled: midnight scheduler skipped", e)
+    }
   }
 
   override fun onDisabled(context: Context) {
-    WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WidgetRefreshScheduler.UNIQUE_WORK_NAME)
+    try {
+      WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WidgetRefreshScheduler.UNIQUE_WORK_NAME)
+    } catch (e: Exception) {
+      Log.w(TAG, "onDisabled: cancel work failed", e)
+    }
     super.onDisabled(context)
   }
 
@@ -41,10 +48,20 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     appWidgetManager: AppWidgetManager,
     appWidgetIds: IntArray
   ) {
-    writeDebug(context, "onUpdate", JSONObject().put("appWidgetCount", appWidgetIds.size))
-    val json = readSnapshotJson(context)
-    val views = buildRemoteViews(context, json)
-    appWidgetManager.updateAppWidget(appWidgetIds, views)
+    try {
+      writeDebug(context, "onUpdate", JSONObject().put("appWidgetCount", appWidgetIds.size))
+      val json = readSnapshotJson(context)
+      val views = buildRemoteViews(context, json, contentMode(), layoutMode())
+      appWidgetManager.updateAppWidget(appWidgetIds, views)
+    } catch (e: Throwable) {
+      Log.e(TAG, "onUpdate failed", e)
+      try {
+        val fallback = buildErrorRemoteViews(context, e.message, layoutMode())
+        appWidgetManager.updateAppWidget(appWidgetIds, fallback)
+      } catch (e2: Exception) {
+        Log.e(TAG, "fallback widget update failed", e2)
+      }
+    }
   }
 
   companion object {
@@ -62,24 +79,35 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     private const val REQ_PLANNER = 0x4750_5050
     private const val REQ_TIMETABLE = 0x4750_5054
 
-    // ── Default theme colors (light) ──
-    private const val DEFAULT_ACCENT  = "#2563eb"
-    private const val DEFAULT_DANGER  = "#dc2626"
-    private const val DEFAULT_WARNING = "#d97706"
-    private const val DEFAULT_TEXT    = "#0f172a"
-    private const val DEFAULT_MUTED   = "#64748b"
-    private const val DEFAULT_BG      = "#ffffff"
-    private const val DEFAULT_DIVIDER = "#e2e8f0"
-
     fun refreshAllWidgets(context: Context) {
       val mgr = AppWidgetManager.getInstance(context)
-      val component = ComponentName(context, GradeUpTodayWidgetProvider::class.java)
-      val ids = mgr.getAppWidgetIds(component)
-      if (ids.isEmpty()) return
-      writeDebug(context, "refreshAllWidgets", JSONObject().put("appWidgetCount", ids.size))
-      val json = readSnapshotJson(context)
-      val views = buildRemoteViews(context, json)
-      mgr.updateAppWidget(ids, views)
+      val providers = listOf(
+        Pair(GradeUpTodayWidgetProvider::class.java, Pair(ContentMode.BOTH, LayoutMode.LONG)),
+        Pair(GradeUpLongTasksWidgetProvider::class.java, Pair(ContentMode.TASKS, LayoutMode.LONG)),
+        Pair(GradeUpLongClassesWidgetProvider::class.java, Pair(ContentMode.CLASSES, LayoutMode.LONG)),
+        Pair(GradeUpSmallBothWidgetProvider::class.java, Pair(ContentMode.BOTH, LayoutMode.SMALL)),
+        Pair(GradeUpSmallTasksWidgetProvider::class.java, Pair(ContentMode.TASKS, LayoutMode.SMALL)),
+        Pair(GradeUpSmallClassesWidgetProvider::class.java, Pair(ContentMode.CLASSES, LayoutMode.SMALL))
+      )
+      for ((providerClass, config) in providers) {
+        val ids = mgr.getAppWidgetIds(ComponentName(context, providerClass))
+        if (ids.isEmpty()) continue
+        try {
+          writeDebug(context, "refreshAllWidgets", JSONObject()
+            .put("provider", providerClass.simpleName)
+            .put("appWidgetCount", ids.size))
+          val json = readSnapshotJson(context)
+          val views = buildRemoteViews(context, json, config.first, config.second)
+          mgr.updateAppWidget(ids, views)
+        } catch (e: Throwable) {
+          Log.e(TAG, "refreshAllWidgets failed for ${providerClass.simpleName}", e)
+          try {
+            mgr.updateAppWidget(ids, buildErrorRemoteViews(context, e.message, config.second))
+          } catch (e2: Exception) {
+            Log.e(TAG, "refreshAllWidgets fallback failed for ${providerClass.simpleName}", e2)
+          }
+        }
+      }
     }
 
     private fun readSnapshotJson(context: Context): String? {
@@ -89,40 +117,26 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
 
     // ─── Main render ──────────────────────────────────────────────
 
-    private fun buildRemoteViews(context: Context, raw: String?): RemoteViews {
-      val rv = RemoteViews(context.packageName, R.layout.widget_gradeup_today)
+    private fun buildRemoteViews(
+      context: Context,
+      raw: String?,
+      contentMode: ContentMode,
+      layoutMode: LayoutMode
+    ): RemoteViews {
+      val rv = RemoteViews(
+        context.packageName,
+        if (layoutMode == LayoutMode.SMALL) R.layout.widget_gradeup_small else R.layout.widget_gradeup_today
+      )
       val json = parseJson(raw)
-
-      // Extract theme
-      val th = json?.optJSONObject("theme")
-      val accent  = safeColor(th?.optString("primary"), DEFAULT_ACCENT)
-      val danger  = safeColor(th?.optString("danger"), DEFAULT_DANGER)
-      val warning = safeColor(th?.optString("warning"), DEFAULT_WARNING)
-      val textPri = safeColor(th?.optString("text"), DEFAULT_TEXT)
-      val textSec = safeColor(th?.optString("textSecondary"), DEFAULT_MUTED)
-      val bg      = safeColor(th?.optString("background"), DEFAULT_BG)
-      val divider = safeColor(th?.optString("border"), DEFAULT_DIVIDER)
-      val dividerAlpha = Color.argb(40, Color.red(divider), Color.green(divider), Color.blue(divider))
-
-      // Apply base theme colors
-      try {
-        rv.setInt(R.id.widget_root, "setBackgroundColor", bg)
-        rv.setInt(R.id.widget_title, "setTextColor", textPri)
-        rv.setInt(R.id.widget_date, "setTextColor", accent)
-        rv.setInt(R.id.widget_count, "setTextColor", accent)
-        rv.setInt(R.id.widget_divider, "setBackgroundColor", dividerAlpha)
-        rv.setInt(R.id.widget_col_divider, "setBackgroundColor", dividerAlpha)
-        rv.setInt(R.id.widget_tasks_label, "setTextColor", accent)
-        rv.setInt(R.id.widget_classes_label, "setTextColor", accent)
-        rv.setInt(R.id.widget_tasks_count, "setTextColor", textSec)
-        rv.setInt(R.id.widget_classes_count, "setTextColor", textSec)
-        rv.setInt(R.id.widget_message, "setTextColor", textSec)
-      } catch (_: Exception) { /* some OEMs may not support all calls */ }
+      val theme = json?.optJSONObject("theme")
+      applyThemeColors(rv, theme, layoutMode)
+      // Apply app-selected theme colors best-effort.
+      // Any color action failures are swallowed to keep the widget load-safe.
 
       // ── No snapshot yet ──
       if (json == null) {
         writeDebug(context, "buildRemoteViews", JSONObject().put("state", "no_snapshot_json"))
-        showMessage(rv, "Open the app to load your schedule.")
+        showMessage(rv, "Open the app to load your schedule.", layoutMode)
         rv.setTextViewText(R.id.widget_title, "Rencana")
         rv.setTextViewText(R.id.widget_date, "")
         rv.setTextViewText(R.id.widget_count, "")
@@ -133,7 +147,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       // ── Signed out ──
       if (!json.optBoolean("signedIn", false)) {
         writeDebug(context, "buildRemoteViews", JSONObject().put("state", "signed_out"))
-        showMessage(rv, "Sign in to see today's tasks and classes.")
+        showMessage(rv, "Sign in to see today's tasks and classes.", layoutMode)
         rv.setTextViewText(R.id.widget_title, "Rencana")
         rv.setTextViewText(R.id.widget_date, "")
         rv.setTextViewText(R.id.widget_count, "")
@@ -154,7 +168,7 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       if (stale) {
         writeDebug(context, "buildRemoteViews", JSONObject()
           .put("state", "stale_snapshot").put("snapDate", snapDate).put("today", today))
-        showMessage(rv, "It's a new day! Open Rencana to refresh.")
+        showMessage(rv, "It's a new day! Open Rencana to refresh.", layoutMode)
         rv.setTextViewText(R.id.widget_count, "")
         attachDeepLinkClicks(context, rv, DeepLinkMode.ALL_HOME)
         return rv
@@ -163,15 +177,56 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       // ── Normal render ──
       val tasks = json.optJSONArray("tasks") ?: JSONArray()
       val classes = json.optJSONArray("classes") ?: JSONArray()
-      val totalCount = tasks.length() + classes.length()
+      val displayTasks = if (contentMode == ContentMode.CLASSES) JSONArray() else tasks
+      val displayClasses = if (contentMode == ContentMode.TASKS) JSONArray() else classes
+      val totalCount = displayTasks.length() + displayClasses.length()
 
       writeDebug(context, "buildRemoteViews", JSONObject()
-        .put("state", "rendered").put("tasksCount", tasks.length()).put("classesCount", classes.length()))
+        .put("state", "rendered")
+        .put("layoutMode", layoutMode.name)
+        .put("contentMode", contentMode.name)
+        .put("tasksCount", displayTasks.length())
+        .put("classesCount", displayClasses.length()))
 
       rv.setTextViewText(R.id.widget_count, totalCount.toString())
 
       if (totalCount == 0) {
-        showMessage(rv, "Nothing scheduled for today. Enjoy! 🎉")
+        showMessage(rv, "Nothing scheduled for today. Enjoy!", layoutMode)
+        attachDeepLinkClicks(context, rv, DeepLinkMode.SECTIONS)
+        return rv
+      }
+
+      if (layoutMode == LayoutMode.SMALL) {
+        rv.setViewVisibility(R.id.widget_message, View.GONE)
+        rv.setViewVisibility(R.id.widget_small_content, View.VISIBLE)
+        rv.setViewVisibility(R.id.widget_small_dual_row, View.GONE)
+        rv.setViewVisibility(R.id.widget_small_primary, View.VISIBLE)
+        rv.setViewVisibility(R.id.widget_small_secondary, View.VISIBLE)
+        rv.setViewVisibility(R.id.widget_small_label, View.VISIBLE)
+        when (contentMode) {
+          ContentMode.TASKS -> {
+            rv.setTextViewText(R.id.widget_small_label, "TASKS")
+            rv.setTextViewText(R.id.widget_small_primary, nearestTaskDetail(displayTasks))
+            rv.setTextViewText(R.id.widget_small_secondary, "")
+            rv.setViewVisibility(R.id.widget_small_secondary, View.GONE)
+          }
+          ContentMode.CLASSES -> {
+            rv.setTextViewText(R.id.widget_small_label, "CLASSES")
+            rv.setTextViewText(R.id.widget_small_primary, nearestClassPrimary(displayClasses))
+            rv.setTextViewText(R.id.widget_small_secondary, nearestClassSecondary(displayClasses))
+            if (nearestClassSecondary(displayClasses).isEmpty()) {
+              rv.setViewVisibility(R.id.widget_small_secondary, View.GONE)
+            }
+          }
+          ContentMode.BOTH -> {
+            rv.setViewVisibility(R.id.widget_small_label, View.GONE)
+            rv.setViewVisibility(R.id.widget_small_primary, View.GONE)
+            rv.setViewVisibility(R.id.widget_small_secondary, View.GONE)
+            rv.setViewVisibility(R.id.widget_small_dual_row, View.VISIBLE)
+            rv.setTextViewText(R.id.widget_small_tasks_value, nearestTaskDetail(displayTasks))
+            rv.setTextViewText(R.id.widget_small_classes_value, nearestClassPrimary(displayClasses))
+          }
+        }
         attachDeepLinkClicks(context, rv, DeepLinkMode.SECTIONS)
         return rv
       }
@@ -181,33 +236,44 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       rv.setViewVisibility(R.id.widget_columns, View.VISIBLE)
 
       // Tasks column
-      rv.setTextViewText(R.id.widget_tasks_count, tasks.length().toString())
-      if (tasks.length() == 0) {
-        rv.setTextViewText(R.id.widget_tasks_content, buildMutedText("All done! 🎉", textSec))
+      rv.setTextViewText(R.id.widget_tasks_count, displayTasks.length().toString())
+      if (displayTasks.length() == 0) {
+        rv.setTextViewText(R.id.widget_tasks_content, "All done!")
       } else {
-        rv.setTextViewText(R.id.widget_tasks_content,
-          buildTasksSpannable(tasks, textPri, textSec, accent, danger, warning))
+        rv.setTextViewText(R.id.widget_tasks_content, buildTasksPlain(displayTasks))
       }
 
       // Classes column
-      rv.setTextViewText(R.id.widget_classes_count, classes.length().toString())
-      if (classes.length() == 0) {
-        rv.setTextViewText(R.id.widget_classes_content, buildMutedText("Free! 🎉", textSec))
+      rv.setTextViewText(R.id.widget_classes_count, displayClasses.length().toString())
+      if (displayClasses.length() == 0) {
+        rv.setTextViewText(R.id.widget_classes_content, "Free!")
       } else {
-        rv.setTextViewText(R.id.widget_classes_content,
-          buildClassesSpannable(classes, textPri, textSec, accent))
+        rv.setTextViewText(R.id.widget_classes_content, buildClassesPlain(displayClasses))
+      }
+
+      if (contentMode == ContentMode.TASKS) {
+        rv.setTextViewText(R.id.widget_tasks_label, "TASK")
+        rv.setTextViewText(R.id.widget_tasks_content, buildTasksHorizontal(displayTasks))
+        rv.setViewVisibility(R.id.widget_classes_column, View.GONE)
+        rv.setViewVisibility(R.id.widget_tasks_column, View.VISIBLE)
+      } else if (contentMode == ContentMode.CLASSES) {
+        rv.setTextViewText(R.id.widget_classes_label, "CLASS")
+        rv.setTextViewText(R.id.widget_classes_content, buildClassesHorizontal(displayClasses))
+        rv.setViewVisibility(R.id.widget_tasks_column, View.GONE)
+        rv.setViewVisibility(R.id.widget_classes_column, View.VISIBLE)
+      } else {
+        rv.setViewVisibility(R.id.widget_tasks_column, View.VISIBLE)
+        rv.setViewVisibility(R.id.widget_classes_column, View.VISIBLE)
       }
 
       attachDeepLinkClicks(context, rv, DeepLinkMode.SECTIONS)
       return rv
     }
 
-    // ─── Rich text builders ──────────────────────────────────────
+    // ─── Plain text (RemoteViews + Spans breaks on some devices → "Can't load widget") ──
 
-    private fun buildTasksSpannable(
-      arr: JSONArray, textPri: Int, textSec: Int, accent: Int, danger: Int, warning: Int
-    ): SpannableStringBuilder {
-      val sb = SpannableStringBuilder()
+    private fun buildTasksPlain(arr: JSONArray): String {
+      val sb = StringBuilder()
       val n = minOf(arr.length(), 4)
       for (i in 0 until n) {
         val t = arr.optJSONObject(i) ?: continue
@@ -215,57 +281,22 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         if (title.isEmpty()) continue
         val accentType = t.optString("accent", "default")
         val subtitle = t.optString("subtitle", "").trim()
-
-        if (sb.isNotEmpty()) sb.append("\n")
-
-        // Colored dot
-        val dotColor = when (accentType) {
-          "overdue" -> danger
-          "today" -> warning
-          else -> accent
-        }
-        val dotStart = sb.length
-        sb.append("●  ")
-        sb.setSpan(ForegroundColorSpan(dotColor), dotStart, dotStart + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(RelativeSizeSpan(0.5f), dotStart, dotStart + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-
-        // Title (bold)
-        val titleStart = sb.length
-        sb.append(title)
-        sb.setSpan(StyleSpan(Typeface.BOLD), titleStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(ForegroundColorSpan(textPri), titleStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-
-        // Status text or subtitle
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append("• ").append(title)
         val statusText = when (accentType) {
           "overdue" -> "Overdue"
           "today" -> "Due today"
           else -> subtitle
         }
         if (statusText.isNotEmpty()) {
-          sb.append("\n")
-          val subStart = sb.length
-          // Add left-padding to align with title (after dot)
-          sb.append("     ")
-          sb.append(statusText)
-          val statusColor = when (accentType) {
-            "overdue" -> danger
-            "today" -> warning
-            else -> textSec
-          }
-          sb.setSpan(ForegroundColorSpan(statusColor), subStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          sb.setSpan(RelativeSizeSpan(0.75f), subStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          if (accentType == "overdue" || accentType == "today") {
-            sb.setSpan(StyleSpan(Typeface.BOLD), subStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          }
+          sb.append('\n').append("  ").append(statusText)
         }
       }
-      return sb
+      return if (sb.isEmpty()) "—" else sb.toString()
     }
 
-    private fun buildClassesSpannable(
-      arr: JSONArray, textPri: Int, textSec: Int, accent: Int
-    ): SpannableStringBuilder {
-      val sb = SpannableStringBuilder()
+    private fun buildClassesPlain(arr: JSONArray): String {
+      val sb = StringBuilder()
       val n = minOf(arr.length(), 4)
       for (i in 0 until n) {
         val c = arr.optJSONObject(i) ?: continue
@@ -273,48 +304,200 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         val label = c.optString("label", "").trim()
         val location = c.optString("location", "").trim()
         if (start.isEmpty() && label.isEmpty()) continue
-
-        if (sb.isNotEmpty()) sb.append("\n")
-
-        // Time (bold accent)
+        if (sb.isNotEmpty()) sb.append('\n')
         if (start.isNotEmpty()) {
-          val timeStart = sb.length
           sb.append(start)
-          sb.setSpan(StyleSpan(Typeface.BOLD), timeStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          sb.setSpan(ForegroundColorSpan(accent), timeStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          sb.setSpan(RelativeSizeSpan(0.9f), timeStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          sb.append("  ")
+          if (label.isNotEmpty()) sb.append("  ")
         }
-
-        // Label (bold)
-        if (label.isNotEmpty()) {
-          val labelStart = sb.length
-          sb.append(label)
-          sb.setSpan(StyleSpan(Typeface.BOLD), labelStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-          sb.setSpan(ForegroundColorSpan(textPri), labelStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-
-        // Location (small muted)
+        if (label.isNotEmpty()) sb.append(label)
         val loc = if (location.isNotEmpty()) location else "—"
-        sb.append("\n")
-        val locStart = sb.length
-        sb.append(loc)
-        sb.setSpan(ForegroundColorSpan(textSec), locStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sb.setSpan(RelativeSizeSpan(0.7f), locStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.append('\n').append(loc)
       }
-      return sb
+      return if (sb.isEmpty()) "—" else sb.toString()
     }
 
-    private fun buildMutedText(text: String, color: Int): SpannableStringBuilder {
-      val sb = SpannableStringBuilder(text)
-      sb.setSpan(ForegroundColorSpan(color), 0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-      return sb
+    private fun buildTasksCompact(arr: JSONArray): String {
+      val n = minOf(arr.length(), 2)
+      if (n == 0) return "All done!"
+      val sb = StringBuilder()
+      for (i in 0 until n) {
+        val t = arr.optJSONObject(i) ?: continue
+        val title = t.optString("title", "").trim()
+        if (title.isEmpty()) continue
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append("• ").append(title)
+      }
+      return if (sb.isEmpty()) "All done!" else sb.toString()
+    }
+
+    private fun buildClassesCompact(arr: JSONArray): String {
+      val n = minOf(arr.length(), 2)
+      if (n == 0) return "Free!"
+      val sb = StringBuilder()
+      for (i in 0 until n) {
+        val c = arr.optJSONObject(i) ?: continue
+        val start = c.optString("startTime", "").trim()
+        val label = c.optString("label", "").trim()
+        val line = listOf(start, label).filter { it.isNotEmpty() }.joinToString(" ")
+        if (line.isEmpty()) continue
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append(line)
+      }
+      return if (sb.isEmpty()) "Free!" else sb.toString()
+    }
+
+    private fun nearestTaskDetail(arr: JSONArray): String {
+      if (arr.length() == 0) return "No task"
+      val t = arr.optJSONObject(0) ?: return "No task"
+      val title = t.optString("title", "").trim()
+      val subtitle = t.optString("subtitle", "").trim()
+      if (title.isEmpty() && subtitle.isEmpty()) return "No task"
+      return listOf(title, subtitle).filter { it.isNotEmpty() }.joinToString(" - ")
+    }
+
+    private fun nearestClassPrimary(arr: JSONArray): String {
+      if (arr.length() == 0) return "No class"
+      val c = arr.optJSONObject(0) ?: return "No class"
+      val start = c.optString("startTime", "").trim()
+      val label = c.optString("label", "").trim()
+      val line = listOf(start, label).filter { it.isNotEmpty() }.joinToString(" ")
+      return if (line.isEmpty()) "No class" else line
+    }
+
+    private fun nearestClassSecondary(arr: JSONArray): String {
+      if (arr.length() == 0) return ""
+      val c = arr.optJSONObject(0) ?: return ""
+      return c.optString("location", "").trim()
+    }
+
+    private fun buildTasksHorizontal(arr: JSONArray): String {
+      val sb = StringBuilder()
+      val n = minOf(arr.length(), 4)
+      for (i in 0 until n) {
+        val t = arr.optJSONObject(i) ?: continue
+        val title = t.optString("title", "").trim()
+        if (title.isEmpty()) continue
+        val subtitle = t.optString("subtitle", "").trim()
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append("• ").append(title)
+        if (subtitle.isNotEmpty()) sb.append(" - ").append(subtitle)
+      }
+      return if (sb.isEmpty()) "All done!" else sb.toString()
+    }
+
+    private fun buildClassesHorizontal(arr: JSONArray): String {
+      val sb = StringBuilder()
+      val n = minOf(arr.length(), 4)
+      for (i in 0 until n) {
+        val c = arr.optJSONObject(i) ?: continue
+        val start = c.optString("startTime", "").trim()
+        val label = c.optString("label", "").trim()
+        val location = c.optString("location", "").trim()
+        val base = listOf(start, label).filter { it.isNotEmpty() }.joinToString(" ")
+        if (base.isEmpty() && location.isEmpty()) continue
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append("• ").append(base.ifEmpty { "Class" })
+        if (location.isNotEmpty()) sb.append(" @ ").append(location)
+      }
+      return if (sb.isEmpty()) "Free!" else sb.toString()
+    }
+
+    private fun applyThemeColors(rv: RemoteViews, th: JSONObject?, layoutMode: LayoutMode) {
+      if (th == null) return
+      val accent = parseHexColor(th.optString("primary", ""))
+      val textPrimary = parseHexColor(th.optString("text", ""))
+      val textSecondary = parseHexColor(th.optString("textSecondary", ""))
+      val background = parseHexColor(th.optString("background", ""))
+
+      // Apply only known-safe properties; failures are ignored to protect widget rendering.
+      try {
+        if (background != null) {
+          rv.setInt(R.id.widget_root, "setBackgroundColor", background)
+        }
+      } catch (_: Throwable) {
+      }
+
+      fun applyTextColor(id: Int, color: Int?) {
+        if (color == null) return
+        try {
+          rv.setTextColor(id, color)
+        } catch (_: Throwable) {
+        }
+      }
+
+      applyTextColor(R.id.widget_title, textPrimary)
+      applyTextColor(R.id.widget_date, accent ?: textSecondary)
+      applyTextColor(R.id.widget_count, accent ?: textPrimary)
+      applyTextColor(R.id.widget_message, textSecondary)
+
+      if (layoutMode == LayoutMode.SMALL) {
+        applyTextColor(R.id.widget_small_label, textSecondary)
+        applyTextColor(R.id.widget_small_primary, textPrimary)
+        applyTextColor(R.id.widget_small_secondary, textSecondary)
+        applyTextColor(R.id.widget_small_tasks_title, textSecondary)
+        applyTextColor(R.id.widget_small_tasks_value, textPrimary)
+        applyTextColor(R.id.widget_small_classes_title, textSecondary)
+        applyTextColor(R.id.widget_small_classes_value, textPrimary)
+      } else {
+        applyTextColor(R.id.widget_tasks_label, accent ?: textSecondary)
+        applyTextColor(R.id.widget_tasks_count, textSecondary)
+        applyTextColor(R.id.widget_tasks_content, textPrimary)
+        applyTextColor(R.id.widget_classes_label, accent ?: textSecondary)
+        applyTextColor(R.id.widget_classes_count, textSecondary)
+        applyTextColor(R.id.widget_classes_content, textPrimary)
+        if (accent != null) {
+          try {
+            rv.setTextColor(R.id.widget_divider, accent)
+          } catch (_: Throwable) {
+          }
+        }
+      }
+    }
+
+    private fun parseHexColor(raw: String?): Int? {
+      val value = raw?.trim().orEmpty()
+      if (value.isEmpty() || !value.startsWith("#")) return null
+      return try {
+        Color.parseColor(value)
+      } catch (_: Throwable) {
+        null
+      }
+    }
+
+    /**
+     * Safe fallback when [buildRemoteViews] throws (must be callable from [onUpdate]).
+     */
+    private fun buildErrorRemoteViews(
+      context: Context,
+      @Suppress("UNUSED_PARAMETER") err: String?,
+      layoutMode: LayoutMode
+    ): RemoteViews {
+      val rv = RemoteViews(
+        context.packageName,
+        if (layoutMode == LayoutMode.SMALL) R.layout.widget_gradeup_small else R.layout.widget_gradeup_today
+      )
+      if (layoutMode == LayoutMode.SMALL) {
+        rv.setViewVisibility(R.id.widget_small_content, View.GONE)
+      } else {
+        rv.setViewVisibility(R.id.widget_columns, View.GONE)
+      }
+      rv.setViewVisibility(R.id.widget_message, View.VISIBLE)
+      rv.setTextViewText(R.id.widget_message, "Open Rencana to load the widget.")
+      rv.setTextViewText(R.id.widget_title, "Rencana")
+      rv.setTextViewText(R.id.widget_date, "")
+      rv.setTextViewText(R.id.widget_count, "")
+      attachLaunchClicks(context, rv)
+      return rv
     }
 
     // ─── Helpers ─────────────────────────────────────────────────
 
-    private fun showMessage(rv: RemoteViews, msg: String) {
-      rv.setViewVisibility(R.id.widget_columns, View.GONE)
+    private fun showMessage(rv: RemoteViews, msg: String, layoutMode: LayoutMode) {
+      if (layoutMode == LayoutMode.SMALL) {
+        rv.setViewVisibility(R.id.widget_small_content, View.GONE)
+      } else {
+        rv.setViewVisibility(R.id.widget_columns, View.GONE)
+      }
       rv.setViewVisibility(R.id.widget_message, View.VISIBLE)
       rv.setTextViewText(R.id.widget_message, msg)
     }
@@ -345,12 +528,6 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     private fun parseJson(raw: String?): JSONObject? {
       if (raw.isNullOrBlank()) return null
       return try { JSONObject(raw) } catch (_: Exception) { null }
-    }
-
-    private fun safeColor(hex: String?, fallback: String): Int {
-      val h = hex?.trim() ?: return Color.parseColor(fallback)
-      if (h.length < 4 || !h.startsWith("#")) return Color.parseColor(fallback)
-      return try { Color.parseColor(h) } catch (_: Exception) { Color.parseColor(fallback) }
     }
 
     // ─── Click handling ──────────────────────────────────────────
@@ -415,4 +592,29 @@ class GradeUpTodayWidgetProvider : AppWidgetProvider() {
       }
     }
   }
+}
+
+class GradeUpSmallTasksWidgetProvider : GradeUpTodayWidgetProvider() {
+  override fun contentMode() = ContentMode.TASKS
+  override fun layoutMode() = LayoutMode.SMALL
+}
+
+class GradeUpSmallClassesWidgetProvider : GradeUpTodayWidgetProvider() {
+  override fun contentMode() = ContentMode.CLASSES
+  override fun layoutMode() = LayoutMode.SMALL
+}
+
+class GradeUpSmallBothWidgetProvider : GradeUpTodayWidgetProvider() {
+  override fun contentMode() = ContentMode.BOTH
+  override fun layoutMode() = LayoutMode.SMALL
+}
+
+class GradeUpLongTasksWidgetProvider : GradeUpTodayWidgetProvider() {
+  override fun contentMode() = ContentMode.TASKS
+  override fun layoutMode() = LayoutMode.LONG
+}
+
+class GradeUpLongClassesWidgetProvider : GradeUpTodayWidgetProvider() {
+  override fun contentMode() = ContentMode.CLASSES
+  override fun layoutMode() = LayoutMode.LONG
 }

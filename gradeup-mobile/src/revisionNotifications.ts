@@ -23,7 +23,6 @@ export async function ensureRevisionChannel(): Promise<void> {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Study reminders',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
     });
   }
 }

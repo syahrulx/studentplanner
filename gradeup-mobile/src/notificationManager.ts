@@ -16,17 +16,14 @@ export async function ensureNotificationChannels(): Promise<void> {
     Notifications.setNotificationChannelAsync(CHANNEL_TASKS, {
       name: 'Task reminders',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
     }),
     Notifications.setNotificationChannelAsync(CHANNEL_COMMUNITY, {
       name: 'Community',
       importance: Notifications.AndroidImportance.DEFAULT,
-      sound: 'default',
     }),
     Notifications.setNotificationChannelAsync(CHANNEL_WEEKLY, {
       name: 'Weekly summary',
       importance: Notifications.AndroidImportance.DEFAULT,
-      sound: 'default',
     }),
   ]);
 }
