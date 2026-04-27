@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, DeviceEventEmitter } from 'react-native';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
@@ -172,12 +172,40 @@ export function useClassroomAuth(): ClassroomAuthState {
 
       // Open browser — tell it to watch for rencana://oauth2redirect (the custom scheme
       // that our Edge Function 302-redirects to), NOT the HTTPS URL.
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, ANDROID_APP_RETURN_URL);
+      // 
+      // Because Android intents can sometimes be aggressively swallowed by Expo Router,
+      // openAuthSessionAsync might HANG forever without closing the browser.
+      // To fix this, we RACE the WebBrowser promise against a DeviceEventEmitter
+      // that gets triggered when Expo Router hits our app/oauth2redirect.tsx sinkhole screen!
+      const browserPromise = WebBrowser.openAuthSessionAsync(authUrl, ANDROID_APP_RETURN_URL);
+      
+      const eventPromise = new Promise<AuthSession.AuthSessionResult>((resolve) => {
+        const sub = DeviceEventEmitter.addListener('oauth_redirect', (eventParams: any) => {
+          if (eventParams.code) {
+            resolve({
+              type: 'success',
+              params: { code: eventParams.code, state: eventParams.state || '', codeVerifier: verifier },
+              url: `rencana://oauth2redirect?code=${eventParams.code}&state=${eventParams.state || ''}`,
+              authentication: null,
+            } as any);
+          } else {
+            resolve({ type: 'dismiss' } as AuthSession.AuthSessionResult);
+          }
+        });
+        // cleanup listener after 5 minutes just in case
+        setTimeout(() => { sub.remove(); resolve({ type: 'dismiss' } as any); }, 300000);
+      });
+
+      const result = await Promise.race([browserPromise, eventPromise]);
+      // Immediately remove the listener if browser finishes first
+      DeviceEventEmitter.removeAllListeners('oauth_redirect');
 
       if (result.type === 'success' && result.url) {
-        const url = new URL(result.url);
-        const code = url.searchParams.get('code');
-        const returnedState = url.searchParams.get('state');
+        // If it came from WebBrowser, it has a URL we need to parse.
+        // If it came from eventPromise, we already put the code in params, but parsing is safe.
+        const urlObj = new URL(result.url);
+        const code = urlObj.searchParams.get('code') || ('params' in result ? (result as any).params?.code : null);
+        const returnedState = urlObj.searchParams.get('state') || ('params' in result ? (result as any).params?.state : null);
 
         if (code) {
           const successResult: AuthSession.AuthSessionResult = {
