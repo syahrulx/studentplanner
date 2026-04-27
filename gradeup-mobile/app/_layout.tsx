@@ -6,6 +6,11 @@ import { useFonts } from 'expo-font';
 import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
+import * as WebBrowser from 'expo-web-browser';
+
+// Must be called at the root level so OAuth redirects (rencana://oauth2redirect)
+// are caught by expo-auth-session BEFORE Expo Router tries to match them to a screen.
+WebBrowser.maybeCompleteAuthSession();
 import { useCallback, useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
