@@ -337,6 +337,18 @@ const LARGE_GEMINI_FALLBACK_TIMEOUT_MS = 38_000;
 
 const MAX_USER_SELECTED_PAGES = 60;
 
+async function extractPdfTextWithUnpdf(pdfBytes: Uint8Array): Promise<string | null> {
+  try {
+    const { extractText, getDocumentProxy } = await import('npm:unpdf@0.12.1');
+    const pdf = await getDocumentProxy(pdfBytes, { verbosity: 0 });
+    const { text } = await extractText(pdf, { mergePages: true });
+    const cleaned = String(text ?? '').trim().slice(0, 120_000);
+    return cleaned.length > 0 ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
+
 function parsePdfPagesSpec(
   spec: string,
   totalPages: number,
@@ -436,6 +448,12 @@ async function extractPdfText(
     const pdfBytes = await pdfRes.arrayBuffer();
     if (pdfBytes.byteLength < 100) {
       return { text: '', error: 'File is too small to be a valid PDF.' };
+    }
+
+    // Fast fallback path for text-based PDFs: avoids Gemini availability spikes.
+    const unpdfFast = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
+    if (unpdfFast) {
+      return { text: unpdfFast };
     }
 
     if (!isLikelyLargePdf && pdfBytes.byteLength > LARGE_PDF_BODY_BYTES) {
@@ -626,6 +644,12 @@ async function extractPdfText(
           }
         }
       }
+    }
+
+    // Last-resort fallback: try local parser again before failing.
+    const unpdfFallback = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
+    if (unpdfFallback) {
+      return { text: unpdfFallback };
     }
 
     return { text: '', error: lastError || 'PDF extraction failed after retries.' };

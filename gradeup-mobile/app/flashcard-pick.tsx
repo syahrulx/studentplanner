@@ -38,6 +38,21 @@ import {
   maxFlashcardsForPlan,
 } from '@/src/lib/flashcardGenerationLimits';
 
+function formatFlashcardGenerationError(raw: string): string {
+  const msg = String(raw || '').trim();
+  if (!msg) return 'Generation failed';
+  if (/HTTP 503|UNAVAILABLE|high demand/i.test(msg)) {
+    return 'AI extraction is temporarily busy. Please retry in 30-60 seconds, or choose Custom pages and generate fewer pages at once.';
+  }
+  if (/too large|25MB|max supported size/i.test(msg)) {
+    return 'PDF is too large for AI extraction (max 25MB). Compress or split the file first.';
+  }
+  if (/timed out|timeout/i.test(msg)) {
+    return 'AI extraction timed out. Try again with fewer pages (Custom pages) for faster processing.';
+  }
+  return msg.length > 240 ? `${msg.slice(0, 240)}...` : msg;
+}
+
 function createStyles(theme: ThemePalette) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.background },
@@ -632,10 +647,10 @@ export default function FlashcardPick() {
         );
 
         if (error) {
-          failLines.push(`${note.title}: ${error}`);
+          failLines.push(`${note.title}: ${formatFlashcardGenerationError(error)}`);
           if (note.hasPdf && handleSaveNote) {
             const orig = notes.find((n) => n.id === note.id);
-            if (orig) handleSaveNote({ ...orig, extractionError: error });
+            if (orig) handleSaveNote({ ...orig, extractionError: formatFlashcardGenerationError(error) });
           }
           if (/monthly ai token limit|MONTHLY_TOKEN_LIMIT/i.test(error)) {
             failLines.push('Stopped: monthly AI limit reached.');

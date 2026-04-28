@@ -176,15 +176,15 @@ export default function MatchLobby() {
 
       {/* Invite Code */}
       {currentSession.invite_code && (
-        <View style={[styles.codeCard, { backgroundColor: '#003366' }]}>
-          <Text style={styles.codeLabel}>INVITE CODE</Text>
-          <Text style={styles.codeValue}>{currentSession.invite_code}</Text>
+        <View style={[styles.codeCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>INVITE CODE</Text>
+          <Text style={[styles.codeValue, { color: theme.primary }]}>{currentSession.invite_code}</Text>
           <View style={styles.codeActions}>
-            <Pressable style={styles.codeBtn} onPress={handleCopy}>
+            <Pressable style={[styles.codeBtn, { backgroundColor: theme.primary }]} onPress={handleCopy}>
               <Feather name="copy" size={16} color="#fff" />
               <Text style={styles.codeBtnText}>Copy</Text>
             </Pressable>
-            <Pressable style={styles.codeBtn} onPress={handleShare}>
+            <Pressable style={[styles.codeBtn, { backgroundColor: theme.primary }]} onPress={handleShare}>
               <Feather name="share" size={16} color="#fff" />
               <Text style={styles.codeBtnText}>Share</Text>
             </Pressable>
@@ -280,11 +280,11 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   infoValue: { fontSize: 13, fontWeight: '700' },
 
-  codeCard: { borderRadius: RADIUS, padding: 24, alignItems: 'center', marginBottom: 20 },
-  codeLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 1.5, marginBottom: 8 },
-  codeValue: { fontSize: 36, fontWeight: '800', color: '#fff', letterSpacing: 6, marginBottom: 16 },
+  codeCard: { borderRadius: RADIUS, padding: 24, alignItems: 'center', marginBottom: 20, borderWidth: 1 },
+  codeLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, marginBottom: 8 },
+  codeValue: { fontSize: 36, fontWeight: '800', letterSpacing: 6, marginBottom: 16 },
   codeActions: { flexDirection: 'row', gap: 16 },
-  codeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12 },
+  codeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
   codeBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   playersLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },

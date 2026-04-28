@@ -98,8 +98,8 @@ function buildQuizPrompt(
     true_false:
       'True/False questions. Options must be exactly ["True", "False"]. Set "correctIndex" to 0 for True, 1 for False.',
     short_answer:
-      'Short answer questions. Set "options" to an empty array []. Set "correctIndex" to -1. Include "expectedAnswer" with the correct answer text.',
-    mixed: 'A mix of MCQ (4 options), True/False (2 options: ["True","False"]), and Short Answer (empty options, include "expectedAnswer"). Vary the types.',
+      'Short answer questions. Set "options" to an empty array []. Set "correctIndex" to -1. Include "expectedAnswer" with a very short marking scheme: ideally 2-3 words, max 5 words.',
+    mixed: 'A mix of MCQ (4 options), True/False (2 options: ["True","False"]), and Short Answer (empty options, include "expectedAnswer"). For short-answer items, expectedAnswer must be very short (2-3 words, max 5 words). Vary the types.',
   };
 
   const diffInstr: Record<string, string> = {
@@ -117,9 +117,22 @@ Rules:
 - Focus ONLY on the educational/academic subject matter.
 - Questions must test the student's knowledge of the actual topics and concepts.
 - Return ONLY a JSON array. No markdown, no explanation.
-- Each object must have: "question" (string), "options" (string[]), "correctIndex" (number)${quizType === 'short_answer' || quizType === 'mixed' ? ', and optionally "expectedAnswer" (string)' : ''}.`,
+- Each object must have: "question" (string), "options" (string[]), "correctIndex" (number)${quizType === 'short_answer' || quizType === 'mixed' ? ', and optionally "expectedAnswer" (string)' : ''}.
+- Also include "proof" (string): one short line (max 18 words) citing why the answer is correct (definition/fact/excerpt).`,
     user: `Generate quiz questions from the following study material:\n\n${content}`,
   };
+}
+
+function normalizeExpectedAnswer(value: unknown): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  // Keep marking scheme concise for short-answer checking UX.
+  const words = raw
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 3);
+  return words.join(' ').slice(0, 80);
 }
 
 function buildTaskExtractPrompt(content: string): { system: string; user: string } {
@@ -385,17 +398,14 @@ Deno.serve(async (req) => {
     }
 
     // ── Return result ──
-    if (kind === 'task_extract') {
-      return json({ tasks: parsed });
-    } else {
-      const questions = (parsed as any[]).slice(0, count).map((q: any) => ({
-        question: String(q.question || '').slice(0, 500),
-        options: Array.isArray(q.options) ? q.options.map((o: any) => String(o).slice(0, 250)) : [],
-        correctIndex: Number(q.correctIndex ?? 0),
-        expectedAnswer: q.expectedAnswer ? String(q.expectedAnswer).slice(0, 250) : undefined,
-      }));
-      return json({ questions });
-    }
+    const questions = (parsed as any[]).slice(0, count).map((q: any) => ({
+      question: String(q.question || '').slice(0, 500),
+      options: Array.isArray(q.options) ? q.options.map((o: any) => String(o).slice(0, 250)) : [],
+      correctIndex: Number(q.correctIndex ?? 0),
+      expectedAnswer: normalizeExpectedAnswer(q.expectedAnswer),
+      proof: q.proof ? String(q.proof).replace(/\s+/g, ' ').trim().slice(0, 160) : undefined,
+    }));
+    return json({ questions });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return errorJson(message, 'INTERNAL');

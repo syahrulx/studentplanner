@@ -146,7 +146,7 @@ function RootLayoutNav() {
           if (isFriendRequestTap) {
             nav(() => router.push({ pathname: '/community/add-friend', params: { tab: 'incoming' } } as any));
           } else {
-            nav(() => router.push('/(tabs)/community' as any));
+            nav(() => router.push('/community/notifications' as any));
           }
           break;
         }

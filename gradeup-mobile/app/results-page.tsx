@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Share, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -9,13 +9,15 @@ import { useTranslations } from '@/src/i18n';
 import { useQuiz } from '@/src/context/QuizContext';
 import * as quizApi from '@/src/lib/quizApi';
 import type { QuizParticipant } from '@/src/lib/quizApi';
+import { saveQuizToLibrary } from '@/src/lib/studyApi';
+import { shareQuizResultsPdf } from '@/src/lib/quizResultsPdf';
 
 const PAD = 20;
 const RADIUS = 20;
 const RADIUS_SM = 14;
 
 export default function ResultsPage() {
-  const { language, user } = useApp();
+  const { language, user, courses } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
   const { currentSession, myAnswers, opponentProgress, leaveQuiz } = useQuiz();
@@ -26,6 +28,7 @@ export default function ResultsPage() {
 
   const [participants, setParticipants] = useState<QuizParticipant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sharingPdf, setSharingPdf] = useState(false);
 
   const scoreNum = parseInt(paramScore ?? '0', 10);
   const totalNum = Math.max(1, parseInt(paramTotal ?? '5', 10));
@@ -83,11 +86,81 @@ export default function ResultsPage() {
   };
 
   const handleShare = async () => {
+    const sid = sessionId || currentSession?.id;
+    let resolvedSession = currentSession;
+    if ((!resolvedSession?.questions?.length) && sid) {
+      resolvedSession = (await quizApi.getSession(sid)) ?? resolvedSession;
+    }
+    if (!resolvedSession?.questions?.length) {
+      Alert.alert('Nothing to share', 'Quiz questions are not available for this session.');
+      return;
+    }
+
+    const sourceLabel =
+      resolvedSession.source_type === 'notes'
+        ? (courses.find((c) => c.id === resolvedSession.source_id)?.name || resolvedSession.source_id || 'Notes')
+        : 'Flashcards';
+    const quizTypeLabel = (resolvedSession.quiz_type || 'mixed')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+    const difficultyLabel = (resolvedSession.difficulty || 'medium')
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+
+    setSharingPdf(true);
     try {
-      await Share.share({
-        message: `I scored ${correctCount}/${totalNum} (${accuracy}%) on a quiz! 🎯`,
+      await shareQuizResultsPdf({
+        questions: resolvedSession.questions,
+        myAnswers,
+        summary: {
+          correctCount: correctCount ?? 0,
+          totalQuestions: totalNum,
+          accuracyPct: accuracy,
+          points: scoreNum,
+          xp: baseXP,
+          avgTimeSec: avgTimeMs > 0 ? avgTimeMs / 1000 : null,
+          title: `${sourceLabel} · Quiz`,
+        },
+        meta: {
+          quizType: quizTypeLabel,
+          difficulty: difficultyLabel,
+          sourceLabel,
+        },
       });
-    } catch {}
+    } catch {
+      Alert.alert('Could not share', 'PDF export failed. Please try again.');
+    } finally {
+      setSharingPdf(false);
+    }
+  };
+
+  const handleSaveForRevision = async () => {
+    try {
+      const sid = sessionId || currentSession?.id;
+      const resolvedSession = currentSession || (sid ? await quizApi.getSession(sid) : null);
+      if (!resolvedSession?.questions?.length) {
+        Alert.alert('Nothing to save', 'This quiz does not contain questions to save.');
+        return;
+      }
+      const sourceLabel = resolvedSession.source_type === 'notes'
+        ? (courses.find((c) => c.id === resolvedSession.source_id)?.id || 'Notes')
+        : 'Flashcards';
+      const quizTypeLabel = (resolvedSession.quiz_type || 'mixed')
+        .replace('_', ' ')
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+      const difficultyLabel = (resolvedSession.difficulty || 'medium')
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+      await saveQuizToLibrary({
+        title: `${sourceLabel} • ${quizTypeLabel} • ${difficultyLabel}`,
+        sourceType: resolvedSession.source_type,
+        sourceId: resolvedSession.source_id || undefined,
+        quizType: resolvedSession.quiz_type as any,
+        difficulty: resolvedSession.difficulty as any,
+        questions: resolvedSession.questions,
+      });
+      Alert.alert('Saved', 'Quiz saved to Revision Quiz in Study.');
+    } catch {
+      Alert.alert('Save failed', 'Could not save this quiz right now. Please try again.');
+    }
   };
 
   return (
@@ -193,13 +266,26 @@ export default function ResultsPage() {
           </Pressable>
 
           <Pressable
-            style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1 }]}
+            style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border, flex: 1, opacity: sharingPdf ? 0.65 : 1 }]}
             onPress={handleShare}
+            disabled={sharingPdf}
           >
-            <Feather name="share" size={18} color={theme.primary} />
-            <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Share</Text>
+            {sharingPdf ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Feather name="share" size={18} color={theme.primary} />
+            )}
+            <Text style={[styles.secondaryBtnText, { color: theme.text }]}>{sharingPdf ? 'Preparing PDF…' : 'Share PDF'}</Text>
           </Pressable>
         </View>
+
+        <Pressable
+          style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+          onPress={handleSaveForRevision}
+        >
+          <Feather name="bookmark" size={18} color={theme.primary} />
+          <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Save for Revision</Text>
+        </Pressable>
 
         <Pressable
           style={[styles.secondaryBtn, { backgroundColor: theme.card, borderColor: theme.border }]}

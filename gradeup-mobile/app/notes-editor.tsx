@@ -18,6 +18,8 @@ type BannerState =
   | { kind: 'importing'; progress: number; label: string }
   | { kind: 'done'; message: string };
 
+const MAX_PDF_AI_BYTES = 25 * 1024 * 1024;
+
 export default function NotesEditor() {
   const { subjectId, noteId, folderId: paramFolderId } = useLocalSearchParams<{
     subjectId: string;
@@ -176,6 +178,18 @@ export default function NotesEditor() {
         return;
       }
       const file = result.assets[0];
+      const name = file.name ?? `attachment-${Date.now()}`;
+      const isPdf = (name || '').toLowerCase().endsWith('.pdf');
+      const fileSize = typeof file.size === 'number' ? file.size : null;
+
+      if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
+        setBanner({ kind: 'idle' });
+        Alert.alert(
+          'File too large for AI extraction',
+          `This PDF is ${Math.round(fileSize / (1024 * 1024))}MB. AI extraction supports up to 25MB.\n\nPlease compress or split the PDF before attaching.`,
+        );
+        return;
+      }
 
       setBanner({ progress: 12, label: T('noteAttachReading'), kind: 'importing' });
 
@@ -195,7 +209,6 @@ export default function NotesEditor() {
       }, 200);
 
       const noteIdForPath = existing?.id ?? currentNoteId ?? `n${Date.now()}`;
-      const name = file.name ?? `attachment-${Date.now()}`;
       const { path, error } = await uploadNoteAttachment(
         session.user.id,
         noteIdForPath,
