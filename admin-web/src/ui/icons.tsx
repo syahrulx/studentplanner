@@ -216,7 +216,6 @@ export function IconSubscription({ className }: Props) {
       <path d="M8.2 14.2h4.2M8.2 16.8h7.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.75" />
     </svg>
   );
-  );
 }
 
 export function IconClipboard({ className }: Props) {

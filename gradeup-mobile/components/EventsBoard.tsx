@@ -213,7 +213,6 @@ export default function EventsBoard() {
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={{ fontSize: 48 }}>📋</Text>
               <Text style={[styles.emptyTitle, { color: theme.text }]}>No posts yet</Text>
               <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>
                 Be the first to share an event or service with your university community!
