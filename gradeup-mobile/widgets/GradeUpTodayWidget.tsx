@@ -43,7 +43,8 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
-  const dense = !small && p.classes.length >= 4;
+  const totalItems = p.tasks.length + p.classes.length;
+  const dense = !small && (totalItems >= 6 || p.classes.length >= 4 || p.tasks.length >= 4);
 
   const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -225,7 +226,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   // ── MEDIUM / LARGE ──
-  const colMax  = large ? 4 : 4;
+  const colMax  = large ? 4 : 3;
   const colTask = p.tasks.slice(0, colMax);
   const colCls  = p.classes.slice(0, colMax);
 
@@ -251,7 +252,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
       <HStack spacing={0}>
 
         {/* TASKS column */}
-        <VStack spacing={6} modifiers={[padding({ trailing: 12 })]}>
+        <VStack spacing={dense ? 4 : 6} modifiers={[padding({ trailing: 12 })]}>
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>TASKS</Text>
             <Spacer />
@@ -263,23 +264,23 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           {colTask.length === 0 ? (
             <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done! 🎉</Text>
           ) : (
-            <VStack spacing={5}>
+            <VStack spacing={dense ? 3 : 5}>
               {colTask.map((t) => (
                 <HStack key={t.id} spacing={5}>
                   <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent)), padding({ top: 2 })]}>●</Text>
-                  <VStack spacing={1}>
-                    <Text modifiers={[font({ size: 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                  <VStack spacing={dense ? 0 : 1}>
+                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                       {t.title}
                     </Text>
-                    {stsTxt(t.accent) ? (
+                    {!dense && stsTxt(t.accent) ? (
                       <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(dotClr(t.accent)), lineLimit(1)]}>
                         {stsTxt(t.accent)}
                       </Text>
-                    ) : (
+                    ) : !dense ? (
                       <Text modifiers={[font({ size: 8 }), foregroundStyle(muted), lineLimit(1)]}>
                         {t.subtitle}
                       </Text>
-                    )}
+                    ) : null}
                   </VStack>
                   <Spacer />
                 </HStack>
