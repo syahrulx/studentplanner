@@ -143,13 +143,30 @@ export function useClassroomAuth(): ClassroomAuthState {
         return errorResult;
       }
 
+      // Check if the token has expired (with 60s buffer)
+      const isExpired = tokens.expiresAt && tokens.expiresAt < Date.now() + 60_000;
+      if (isExpired) {
+        // Clear the expired token
+        await AsyncStorage.removeItem('googleProviderTokens');
+        const errorResult = {
+          type: 'error',
+          error: new Error(
+            'Your Google Classroom session has expired. Please sign out and sign in again with Google to refresh it.',
+          ),
+        } as unknown as AuthSession.AuthSessionResult;
+        setAndroidResponse(errorResult);
+        return errorResult;
+      }
+
       // Return saved token — no browser needed
       const successResult: AuthSession.AuthSessionResult = {
         type: 'success',
         params: {
           __directToken: 'true',
           accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken || '',
+          // Don't pass Supabase's provider refresh token — it won't work
+          // with our client ID. Token refresh is handled by re-login.
+          refreshToken: '',
           expiresAt: String(tokens.expiresAt || Date.now() + 3600000),
         },
         url: '',
