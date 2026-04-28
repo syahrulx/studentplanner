@@ -99,18 +99,6 @@ export default function ClassroomSync() {
     })();
   }, []);
 
-  // ── Stable refs for callbacks so the main effect doesn't re-fire ──
-  const promptAsyncRef = useRef(promptAsync);
-  promptAsyncRef.current = promptAsync;
-  const startCourseLoadRef = useRef(startCourseLoad);
-  startCourseLoadRef.current = startCourseLoad;
-  const requestRef = useRef(request);
-  requestRef.current = request;
-  const redirectUriRef = useRef(redirectUri);
-  redirectUriRef.current = redirectUri;
-  const clientIdRef = useRef(clientId);
-  clientIdRef.current = clientId;
-
   // If a Classroom refresh token is already cached, skip the browser entirely
   // and just load courses. Otherwise open Google exactly once per load attempt.
   useEffect(() => {
@@ -127,13 +115,13 @@ export default function ClassroomSync() {
         const cached = await getValidToken();
         if (cancelled) return;
         if (cached) {
-          await startCourseLoadRef.current(cached);
+          await startCourseLoad(cached);
           return;
         }
 
-        if (!requestRef.current || promptedRef.current) return;
+        if (!request || promptedRef.current) return;
         promptedRef.current = true;
-        const result = await promptAsyncRef.current();
+        const result = await promptAsync();
         if (cancelled) return;
 
         if (result.type === 'cancel' || result.type === 'dismiss') {
@@ -167,7 +155,7 @@ export default function ClassroomSync() {
           });
 
           if (cancelled) return;
-          await startCourseLoadRef.current(accessToken);
+          await startCourseLoad(accessToken);
           return;
         }
 
@@ -177,7 +165,7 @@ export default function ClassroomSync() {
           return;
         }
 
-        const verifier = result.params.codeVerifier || requestRef.current.codeVerifier;
+        const verifier = result.params.codeVerifier || request.codeVerifier;
         if (!verifier) {
           setError('Could not connect: missing PKCE verifier.');
           return;
@@ -186,11 +174,11 @@ export default function ClassroomSync() {
         const token = await completeClassroomAuth({
           code: result.params.code,
           codeVerifier: verifier,
-          redirectUri: redirectUriRef.current,
-          clientId: clientIdRef.current,
+          redirectUri,
+          clientId,
         });
         if (cancelled) return;
-        await startCourseLoadRef.current(token);
+        await startCourseLoad(token);
       } catch (e: any) {
         if (!cancelled) {
           console.error('Google Classroom Connection Error:', e);
@@ -206,8 +194,7 @@ export default function ClassroomSync() {
     return () => {
       cancelled = true;
     };
-    // Only re-run on explicit retry (loadKey) or config change — NOT on callback identity changes
-  }, [loadKey, notConfigured]);
+  }, [loadKey, request, promptAsync, redirectUri, clientId, notConfigured, startCourseLoad]);
 
   // Keep the unused `response` referenced so future hot-reload detection does not warn.
   useEffect(() => {

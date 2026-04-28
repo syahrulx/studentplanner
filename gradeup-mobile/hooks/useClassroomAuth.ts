@@ -11,6 +11,7 @@ import {
 
 WebBrowser.maybeCompleteAuthSession();
 
+const DUMMY_REQUEST = {} as AuthSession.AuthRequest;
 /** Strip the `.apps.googleusercontent.com` tail from an OAuth client id. */
 function clientIdPrefix(clientId: string): string {
   return clientId.replace(/\.apps\.googleusercontent\.com$/i, '');
@@ -234,7 +235,7 @@ export function useClassroomAuth(): ClassroomAuthState {
   }, [stdPromptAsync, androidPromptAsync, notConfigured, isAndroid]);
 
   return {
-    request: isAndroid ? ({} as AuthSession.AuthRequest) : request,
+    request: isAndroid ? DUMMY_REQUEST : request,
     response: isAndroid ? androidResponse : response,
     promptAsync: safePromptAsync,
     redirectUri,
