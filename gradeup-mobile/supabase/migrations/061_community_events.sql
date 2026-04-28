@@ -3,6 +3,19 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
+-- 0. PROFILE: authority_status column  ← must exist BEFORE RLS policies below
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'authority_status'
+  ) then
+    alter table public.profiles add column authority_status text default null;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- 1. COMMUNITY POSTS (events, services, memos)
 -- ---------------------------------------------------------------------------
 create table if not exists public.community_posts (
@@ -59,10 +72,10 @@ create policy "Author can delete own posts"
   on public.community_posts for delete
   using (auth.uid() = author_id);
 
--- Admin full access
+-- Admin full access (uses no-arg is_admin() per migration 018)
 create policy "Admin full access community posts"
   on public.community_posts for all
-  using (public.is_admin(auth.uid()));
+  using (public.is_admin());
 
 -- Indexes
 create index if not exists idx_community_posts_author on public.community_posts(author_id);
@@ -101,36 +114,23 @@ create policy "Users can create authority requests"
 -- Admin can read all
 create policy "Admin can read all authority requests"
   on public.authority_requests for select
-  using (public.is_admin(auth.uid()));
+  using (public.is_admin());
 
 -- Admin can update (approve/reject)
 create policy "Admin can update authority requests"
   on public.authority_requests for update
-  using (public.is_admin(auth.uid()));
+  using (public.is_admin());
 
 -- Admin can delete
 create policy "Admin can delete authority requests"
   on public.authority_requests for delete
-  using (public.is_admin(auth.uid()));
+  using (public.is_admin());
 
 create index if not exists idx_authority_requests_user on public.authority_requests(user_id);
 create index if not exists idx_authority_requests_status on public.authority_requests(status);
 
 -- ---------------------------------------------------------------------------
--- 3. PROFILE: authority_status column
--- ---------------------------------------------------------------------------
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'profiles' and column_name = 'authority_status'
-  ) then
-    alter table public.profiles add column authority_status text default null;
-  end if;
-end $$;
-
--- ---------------------------------------------------------------------------
--- 4. STORAGE BUCKET for post images
+-- 3. STORAGE BUCKET for post images
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('community-images', 'community-images', true)

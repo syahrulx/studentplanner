@@ -56,14 +56,7 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
 
   let query = supabase
     .from('community_posts')
-    .select(`
-      *,
-      profiles!community_posts_author_id_fkey (
-        name,
-        avatar_url,
-        university
-      )
-    `)
+    .select('*')
     .eq('status', 'active')
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('pinned', { ascending: false })
@@ -83,13 +76,25 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
-    ...row,
-    author_name: row.profiles?.name || 'Unknown',
-    author_avatar: row.profiles?.avatar_url || null,
-    author_university: row.profiles?.university || null,
-    profiles: undefined,
-  }));
+  const posts = (data || []) as CommunityPost[];
+
+  // Enrich with author profiles (community_posts.author_id → auth.users, not profiles directly)
+  const authorIds = [...new Set(posts.map((p) => p.author_id))];
+  if (authorIds.length) {
+    const { data: profs } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_url, university')
+      .in('id', authorIds);
+    const pmap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    for (const post of posts) {
+      const prof = pmap.get(post.author_id);
+      post.author_name = prof?.name || 'Unknown';
+      post.author_avatar = prof?.avatar_url || null;
+      post.author_university = prof?.university || null;
+    }
+  }
+
+  return posts;
 }
 
 // ─── Fetch Single Post ──────────────────────────────────────────────────────
@@ -97,26 +102,26 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
 export async function fetchPost(postId: string): Promise<CommunityPost | null> {
   const { data, error } = await supabase
     .from('community_posts')
-    .select(`
-      *,
-      profiles!community_posts_author_id_fkey (
-        name,
-        avatar_url,
-        university
-      )
-    `)
+    .select('*')
     .eq('id', postId)
     .single();
 
   if (error || !data) return null;
 
-  return {
-    ...data,
-    author_name: (data as any).profiles?.name || 'Unknown',
-    author_avatar: (data as any).profiles?.avatar_url || null,
-    author_university: (data as any).profiles?.university || null,
-    profiles: undefined,
-  } as CommunityPost;
+  const post = data as CommunityPost;
+
+  // Enrich with author profile
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url, university')
+    .eq('id', post.author_id)
+    .maybeSingle();
+
+  post.author_name = (prof as any)?.name || 'Unknown';
+  post.author_avatar = (prof as any)?.avatar_url || null;
+  post.author_university = (prof as any)?.university || null;
+
+  return post;
 }
 
 // ─── Upload Image ───────────────────────────────────────────────────────────
