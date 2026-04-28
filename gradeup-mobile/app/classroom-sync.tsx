@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   Switch,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -46,6 +47,8 @@ export default function ClassroomSync() {
   const [includeMaterials, setIncludeMaterials] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
   const tokenRef = useRef<string | null>(null);
+  /** The Google email being used for Classroom (shown to Android users). */
+  const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
 
   const { request, response, promptAsync, redirectUri, clientId, notConfigured } =
     useClassroomAuth();
@@ -83,6 +86,18 @@ export default function ClassroomSync() {
   useEffect(() => {
     promptedRef.current = false;
   }, [loadKey]);
+
+  // Fetch the user's email to show Android users which account is being used.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    (async () => {
+      try {
+        const { supabase } = await import('@/src/lib/supabase');
+        const { data } = await supabase.auth.getUser();
+        if (data?.user?.email) setConnectedEmail(data.user.email);
+      } catch {}
+    })();
+  }, []);
 
   // If a Classroom refresh token is already cached, skip the browser entirely
   // and just load courses. Otherwise open Google exactly once per load attempt.
@@ -415,13 +430,21 @@ export default function ClassroomSync() {
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
         <Text style={[styles.loadText, { color: theme.text }]}>
-          {step === 'authenticating' ? 'Signing in to Google…' : 'Loading your classes and assignments…'}
+          {step === 'authenticating' ? 'Connecting to Google Classroom…' : 'Loading your classes and assignments…'}
         </Text>
         <Text style={[styles.subText, { color: theme.textSecondary }]}>
           {step === 'authenticating'
             ? 'Complete sign-in in the browser if prompted.'
             : 'Courses appear as they load. You can pick tasks in a moment.'}
         </Text>
+        {Platform.OS === 'android' && connectedEmail && (
+          <View style={styles.emailNotice}>
+            <Feather name="info" size={14} color="#3b82f6" />
+            <Text style={styles.emailNoticeText}>
+              Using your login account: <Text style={{ fontWeight: '700' }}>{connectedEmail}</Text>
+            </Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -482,6 +505,11 @@ export default function ClassroomSync() {
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
               No active courses found in your Google Classroom.
             </Text>
+            {Platform.OS === 'android' && connectedEmail && (
+              <Text style={[styles.emptyHint, { color: theme.textSecondary }]}>
+                Connected as {connectedEmail}. If your courses are on a different Google account, sign out and sign in with that account instead.
+              </Text>
+            )}
           </View>
         ) : visibleCourses.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -652,6 +680,19 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   loadText: { fontSize: 18, fontWeight: '600', marginTop: 20, textAlign: 'center' },
   subText: { fontSize: 14, marginTop: 8, textAlign: 'center' },
+  emailNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 20,
+    maxWidth: 320,
+  },
+  emailNoticeText: { fontSize: 13, color: '#1e40af', flex: 1 },
+  emptyHint: { fontSize: 13, marginTop: 12, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 },
   errorTitle: { fontSize: 20, fontWeight: '700', marginTop: 16 },
   errorMsg: { fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20 },
   retryBtn: { marginTop: 24, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12 },
