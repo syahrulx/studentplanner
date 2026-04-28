@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventsBoard from '@/components/EventsBoard';
 import {
   View,
@@ -310,7 +310,9 @@ export default function CommunityMap() {
   const mapCenterLat = hasValidMyCoords ? myLatitude : 3.0651;
 
   const [communityTab, setCommunityTab] = useState<'map' | 'events'>('map');
-  const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
+  // GlassTabBar: paddingTop(8) + BAR_H(64) + paddingBottom(max(insets.bottom,12))
+  const glassTabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
@@ -414,19 +416,7 @@ export default function CommunityMap() {
       </View>
 
       {communityTab === 'events' ? (
-        <View style={{ flex: 1 }}>
-          <EventsBoard />
-          <Pressable
-            style={({ pressed }) => [
-              styles.eventsFab,
-              { backgroundColor: theme.primary, bottom: tabBarHeight + 16 },
-              pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
-            ]}
-            onPress={() => router.push('/community/create-post' as any)}
-          >
-            <Feather name="plus" size={26} color="#fff" />
-          </Pressable>
-        </View>
+        <EventsBoard />
       ) : (
       <>
       {/* ─── TOP BAR ─── */}
@@ -1012,6 +1002,19 @@ export default function CommunityMap() {
       />
       </>
       )}
+      {/* ─── EVENTS FAB (direct child of root for proper absolute positioning) ─── */}
+      {communityTab === 'events' && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.eventsFab,
+            { backgroundColor: theme.primary, bottom: glassTabBarTotal + 16 },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
+          ]}
+          onPress={() => router.push('/community/create-post' as any)}
+        >
+          <Feather name="plus" size={26} color="#fff" />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -1331,12 +1334,14 @@ const styles = StyleSheet.create({
   communityTabText: { fontSize: 15, fontWeight: '700' },
   eventsFab: {
     position: 'absolute',
+    bottom: 24,
     right: 20,
     width: 58,
     height: 58,
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
