@@ -95,34 +95,106 @@ export async function completeClassroomAuth(params: {
 }
 
 /**
- * Return a valid Classroom access token, refreshing via Google when the
- * cached one is close to expiry. Returns null when no stored token exists
- * or the refresh fails (user will be asked to reconnect).
+ * Return a valid Classroom access token, refreshing when expired.
+ *
+ * **iOS**: Uses the stored refresh token + our client ID (client-side refresh).
+ * **Android**: No client-side refresh token available (Supabase's provider tokens
+ *   are tied to Supabase's Google client). Instead, calls the `refresh-classroom-token`
+ *   Edge Function which refreshes server-side using Supabase's stored credentials.
+ *
+ * Returns null when no stored token exists or all refresh attempts fail.
  */
 export async function getValidToken(): Promise<string | null> {
   const cached = await getClassroomToken();
   if (!cached) return null;
 
+  // Token still valid — use it
   if (cached.expiresAt > Date.now() + 60_000) {
     return cached.accessToken;
   }
 
-  if (!cached.refreshToken) return null;
+  // ── Try client-side refresh (works on iOS with real refresh token) ──
+  if (cached.refreshToken) {
+    const clientId = pickPlatformClientId(getGoogleClientIds());
+    if (clientId) {
+      try {
+        const tok = await refreshAccessToken({
+          refreshToken: cached.refreshToken,
+          clientId,
+        });
+        await setClassroomToken({
+          accessToken: tok.accessToken,
+          expiresAt: tok.expiresAt,
+          refreshToken: tok.refreshToken ?? cached.refreshToken,
+        });
+        return tok.accessToken;
+      } catch {
+        /* fall through to server-side refresh */
+      }
+    }
+  }
 
-  const clientId = pickPlatformClientId(getGoogleClientIds());
-  if (!clientId) return null;
-
+  // ── Try server-side refresh via Edge Function (Android) ──
   try {
-    const tok = await refreshAccessToken({
-      refreshToken: cached.refreshToken,
-      clientId,
+    const freshToken = await refreshTokenViaEdgeFunction();
+    if (freshToken) {
+      await setClassroomToken({
+        accessToken: freshToken.accessToken,
+        expiresAt: freshToken.expiresAt,
+        // No client-side refresh token — Edge Function handles it next time too
+      });
+      // Also update the saved provider tokens so useClassroomAuth stays fresh
+      const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+      await AsyncStorage.setItem(
+        'googleProviderTokens',
+        JSON.stringify({
+          accessToken: freshToken.accessToken,
+          refreshToken: '',
+          expiresAt: freshToken.expiresAt,
+        }),
+      );
+      return freshToken.accessToken;
+    }
+  } catch {
+    /* Edge Function not available or failed */
+  }
+
+  return null;
+}
+
+/**
+ * Call the `refresh-classroom-token` Edge Function to get a fresh Google
+ * access token. The Edge Function uses Supabase's stored Google refresh
+ * token + client secret to refresh server-side.
+ */
+async function refreshTokenViaEdgeFunction(): Promise<{
+  accessToken: string;
+  expiresAt: number;
+} | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const supabaseUrl = (await import('expo-constants')).default.expoConfig?.extra?.supabaseUrl;
+    if (!supabaseUrl) return null;
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/refresh-classroom-token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
     });
-    await setClassroomToken({
-      accessToken: tok.accessToken,
-      expiresAt: tok.expiresAt,
-      refreshToken: tok.refreshToken ?? cached.refreshToken,
-    });
-    return tok.accessToken;
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    if (!json.accessToken) return null;
+
+    return {
+      accessToken: json.accessToken,
+      expiresAt: json.expiresAt || Date.now() + 3600000,
+    };
   } catch {
     return null;
   }
