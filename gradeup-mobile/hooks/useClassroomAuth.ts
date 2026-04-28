@@ -146,8 +146,37 @@ export function useClassroomAuth(): ClassroomAuthState {
       // Check if the token has expired (with 60s buffer)
       const isExpired = tokens.expiresAt && tokens.expiresAt < Date.now() + 60_000;
       if (isExpired) {
-        // Clear the expired token
-        await AsyncStorage.removeItem('googleProviderTokens');
+        // Try refreshing via Edge Function before giving up
+        if (tokens.refreshToken) {
+          try {
+            const { getValidToken: tryRefresh } = await import('@/src/lib/googleClassroom');
+            // getValidToken will try the Edge Function and update AsyncStorage if successful
+            const freshToken = await tryRefresh();
+            if (freshToken) {
+              // Re-read the updated tokens
+              const updated = await AsyncStorage.getItem('googleProviderTokens');
+              if (updated) {
+                const updatedTokens = JSON.parse(updated);
+                const successResult: AuthSession.AuthSessionResult = {
+                  type: 'success',
+                  params: {
+                    __directToken: 'true',
+                    accessToken: updatedTokens.accessToken,
+                    refreshToken: '',
+                    expiresAt: String(updatedTokens.expiresAt || Date.now() + 3600000),
+                  },
+                  url: '',
+                  authentication: null,
+                } as any;
+                setAndroidResponse(successResult);
+                return successResult;
+              }
+            }
+          } catch {
+            /* refresh failed, fall through to error */
+          }
+        }
+
         const errorResult = {
           type: 'error',
           error: new Error(
