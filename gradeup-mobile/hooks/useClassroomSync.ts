@@ -1,5 +1,5 @@
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { router } from 'expo-router';
 import type { Task } from '@/src/types';
 import { getClassroomPrefs, type ClassroomPrefs } from '@/src/storage';
@@ -38,7 +38,32 @@ export function useClassroomSync(userStartDate: string | undefined, setTasks: Se
   const isClassroomLinked = classroomPrefs !== null && classroomPrefs.selectedCourseIds.length > 0;
 
   const openClassroomSetup = useCallback(() => {
-    router.push('/classroom-sync' as any);
+    if (Platform.OS === 'android') {
+      // On Android, prompt the user to confirm their account before syncing
+      supabase.auth.getUser().then(({ data }) => {
+        const email = data?.user?.email || 'your Google account';
+        Alert.alert(
+          'Google Classroom',
+          `You're signed in as ${email}.\n\nClassroom will sync using this account. Make sure this is your student Google account with your courses.`,
+          [
+            {
+              text: 'Sign Out',
+              style: 'destructive',
+              onPress: async () => {
+                await supabase.auth.signOut();
+                router.replace('/(auth)/login' as any);
+              },
+            },
+            {
+              text: 'Continue',
+              onPress: () => router.push('/classroom-sync' as any),
+            },
+          ],
+        );
+      });
+    } else {
+      router.push('/classroom-sync' as any);
+    }
   }, []);
 
   const runSync = useCallback(async () => {
