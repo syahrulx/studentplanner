@@ -13,7 +13,6 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -53,7 +52,6 @@ export default function EventsBoard() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const tabBarHeight = useBottomTabBarHeight();
   const [filter, setFilter] = useState<PostType | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
 
@@ -209,7 +207,7 @@ export default function EventsBoard() {
           data={posts}
           keyExtractor={(item) => item.id}
           renderItem={renderCard}
-          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 80 }]}
+          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} />
           }
@@ -223,18 +221,6 @@ export default function EventsBoard() {
           }
         />
       )}
-
-      {/* FAB */}
-      <Pressable
-        onPress={() => router.push('/community/create-post' as any)}
-        style={({ pressed }) => [
-          styles.fab,
-          { backgroundColor: theme.primary, bottom: tabBarHeight + 16 },
-          pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
-        ]}
-      >
-        <Feather name="plus" size={26} color="#fff" />
-      </Pressable>
     </View>
   );
 }
@@ -341,20 +327,5 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, fontWeight: '800' },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
 
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
+  // FAB (removed — lives in community.tsx)
 });
