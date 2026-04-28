@@ -106,15 +106,14 @@ export async function completeClassroomAuth(params: {
  */
 export async function getValidToken(): Promise<string | null> {
   const cached = await getClassroomToken();
-  if (!cached) return null;
 
-  // Token still valid — use it
-  if (cached.expiresAt > Date.now() + 60_000) {
+  // Token exists and still valid — use it
+  if (cached && cached.expiresAt > Date.now() + 60_000) {
     return cached.accessToken;
   }
 
   // ── Try client-side refresh (works on iOS with real refresh token) ──
-  if (cached.refreshToken) {
+  if (cached?.refreshToken) {
     const clientId = pickPlatformClientId(getGoogleClientIds());
     if (clientId) {
       try {
@@ -135,6 +134,9 @@ export async function getValidToken(): Promise<string | null> {
   }
 
   // ── Try server-side refresh via Edge Function (Android) ──
+  // This works even when classroomToken cache doesn't exist yet (first connect
+  // after token expiry) — the Edge Function reads the refresh token from
+  // googleProviderTokens in AsyncStorage.
   try {
     const freshToken = await refreshTokenViaEdgeFunction();
     if (freshToken) {
@@ -146,7 +148,6 @@ export async function getValidToken(): Promise<string | null> {
       await setClassroomToken({
         accessToken: freshToken.accessToken,
         expiresAt: freshToken.expiresAt,
-        // Still no client-side refresh — Edge Function handles it next time too
       });
       // Update the saved provider tokens with fresh access token + keep refresh token
       await AsyncStorage.setItem(
