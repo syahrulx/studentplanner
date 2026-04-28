@@ -97,10 +97,19 @@ export default function Settings() {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
 
+  /** Logged-in email from Supabase auth (shown in Android GC notice). */
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
 
   useEffect(() => {
     getNotificationPrefs().then(setNotifPrefs);
+    // Fetch user email for the Android Classroom notice
+    if (Platform.OS === 'android') {
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user?.email) setUserEmail(data.user.email);
+      });
+    }
   }, []);
 
   const updateNotifPref = useCallback(
@@ -835,7 +844,9 @@ export default function Settings() {
           )}
         </View>
         <Text style={[styles.notifSectionHint, { color: theme.textSecondary }]}>
-          Using your student email allows one-tap sync with Google Classroom.
+          {Platform.OS === 'android'
+            ? `Classroom will sync using your login account${userEmail ? ` (${userEmail})` : ''}. If your courses are on a different Google account, sign out and sign in with that account first.`
+            : 'Using your student email allows one-tap sync with Google Classroom.'}
         </Text>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>INTEGRATIONS & TOOLS</Text>
