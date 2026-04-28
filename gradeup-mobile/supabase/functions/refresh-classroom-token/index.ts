@@ -8,14 +8,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
  * No browser, no redirect — just a simple API call.
  *
  * Flow:
- * 1. App sends Supabase JWT in Authorization header
- * 2. We look up the user's Google identity in auth.identities
- * 3. We use the stored provider_refresh_token + Supabase's Google client secret
- *    to get a fresh access token from Google
- * 4. Return the fresh token to the app
+ * 1. App sends Supabase JWT + Google refresh_token in request body
+ * 2. We verify the user is authenticated
+ * 3. We use the refresh_token + GOOGLE_CLIENT_SECRET to get a fresh
+ *    access token from Google's token endpoint
+ * 4. Return the fresh access token to the app
+ *
+ * Why server-side? The Google refresh token is tied to the OAuth client
+ * that Supabase used during login. Refreshing it requires the client_secret,
+ * which must never be on the device. The Edge Function holds the secret.
  *
  * Required secrets (set via `npx supabase secrets set`):
- *   GOOGLE_CLIENT_ID     — The Web OAuth client ID (same as EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)
+ *   GOOGLE_CLIENT_ID     — The Web OAuth client ID (same one configured in Supabase Auth → Google)
  *   GOOGLE_CLIENT_SECRET — The Web OAuth client secret (from Google Cloud Console)
  */
 serve(async (req: Request) => {
@@ -50,12 +54,11 @@ serve(async (req: Request) => {
       );
     }
 
-    // Create admin client to read identity data
+    // Verify the user's JWT
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify the user's JWT and get their ID
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
@@ -63,67 +66,30 @@ serve(async (req: Request) => {
       return jsonResponse({ error: 'Invalid or expired session' }, 401);
     }
 
-    // 2. Find the Google identity and its refresh token
-    const googleIdentity = user.identities?.find(
-      (id) => id.provider === 'google',
-    );
-
-    if (!googleIdentity) {
-      return jsonResponse(
-        { error: 'No Google account linked. Sign in with Google first.' },
-        400,
-      );
+    // 2. Read the Google refresh token from the request body
+    let refreshToken: string | null = null;
+    try {
+      const body = await req.json();
+      refreshToken = body?.refreshToken || null;
+    } catch {
+      return jsonResponse({ error: 'Invalid request body' }, 400);
     }
 
-    // The provider refresh token is stored in identity_data by Supabase
-    // We need to query it from auth.identities directly
-    const { data: identityRows, error: identityError } = await supabaseAdmin
-      .from('identities')
-      .select('id, provider, identity_data')
-      .eq('user_id', user.id)
-      .eq('provider', 'google')
-      .limit(1);
-
-    // If the direct query doesn't work, try the auth schema
-    let providerRefreshToken: string | null = null;
-
-    if (identityRows && identityRows.length > 0) {
-      providerRefreshToken = identityRows[0].identity_data?.provider_refresh_token || null;
-    }
-
-    // Fallback: try reading from auth.refresh_tokens or the identity itself
-    if (!providerRefreshToken) {
-      // Try getting it from the user's raw app metadata
-      const rawMeta = (user as any).raw_app_meta_data || user.app_metadata;
-      providerRefreshToken = rawMeta?.provider_refresh_token || null;
-    }
-
-    if (!providerRefreshToken) {
-      // Last resort: query auth.identities directly via SQL
-      const { data: sqlResult } = await supabaseAdmin.rpc('get_google_refresh_token', {
-        p_user_id: user.id,
-      }).single();
-
-      if (sqlResult?.refresh_token) {
-        providerRefreshToken = sqlResult.refresh_token;
-      }
-    }
-
-    if (!providerRefreshToken) {
+    if (!refreshToken) {
       return jsonResponse(
         {
-          error: 'No Google refresh token found. Please sign out and sign in again with Google.',
+          error: 'No Google refresh token provided. Please sign out and sign in again with Google.',
           code: 'NO_REFRESH_TOKEN',
         },
         400,
       );
     }
 
-    // 3. Refresh the Google access token
+    // 3. Refresh the Google access token using the client secret
     const googleTokenUrl = 'https://oauth2.googleapis.com/token';
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: providerRefreshToken,
+      refresh_token: refreshToken,
       client_id: googleClientId,
       client_secret: googleClientSecret,
     });
@@ -140,7 +106,6 @@ serve(async (req: Request) => {
       const errMsg = googleJson.error_description || googleJson.error || 'Unknown error';
       console.error('Google token refresh failed:', errMsg);
 
-      // If the refresh token is revoked/expired, tell user to re-login
       if (googleJson.error === 'invalid_grant') {
         return jsonResponse(
           {

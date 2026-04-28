@@ -138,18 +138,22 @@ export async function getValidToken(): Promise<string | null> {
   try {
     const freshToken = await refreshTokenViaEdgeFunction();
     if (freshToken) {
+      // Read the existing refresh token so we preserve it for next time
+      const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+      const raw = await AsyncStorage.getItem('googleProviderTokens');
+      const existingRefresh = raw ? (JSON.parse(raw).refreshToken || '') : '';
+
       await setClassroomToken({
         accessToken: freshToken.accessToken,
         expiresAt: freshToken.expiresAt,
-        // No client-side refresh token — Edge Function handles it next time too
+        // Still no client-side refresh — Edge Function handles it next time too
       });
-      // Also update the saved provider tokens so useClassroomAuth stays fresh
-      const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+      // Update the saved provider tokens with fresh access token + keep refresh token
       await AsyncStorage.setItem(
         'googleProviderTokens',
         JSON.stringify({
           accessToken: freshToken.accessToken,
-          refreshToken: '',
+          refreshToken: existingRefresh,
           expiresAt: freshToken.expiresAt,
         }),
       );
@@ -164,8 +168,8 @@ export async function getValidToken(): Promise<string | null> {
 
 /**
  * Call the `refresh-classroom-token` Edge Function to get a fresh Google
- * access token. The Edge Function uses Supabase's stored Google refresh
- * token + client secret to refresh server-side.
+ * access token. The app sends the Google refresh token (saved at login time)
+ * and the Edge Function uses it + the server-side client secret to refresh.
  */
 async function refreshTokenViaEdgeFunction(): Promise<{
   accessToken: string;
@@ -174,6 +178,15 @@ async function refreshTokenViaEdgeFunction(): Promise<{
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return null;
+
+    // Read the Google refresh token saved during login
+    const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+    const raw = await AsyncStorage.getItem('googleProviderTokens');
+    if (!raw) return null;
+
+    const tokens = JSON.parse(raw);
+    const googleRefreshToken = tokens?.refreshToken;
+    if (!googleRefreshToken) return null;
 
     const supabaseUrl = (await import('expo-constants')).default.expoConfig?.extra?.supabaseUrl;
     if (!supabaseUrl) return null;
@@ -184,6 +197,7 @@ async function refreshTokenViaEdgeFunction(): Promise<{
         'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ refreshToken: googleRefreshToken }),
     });
 
     if (!res.ok) return null;
