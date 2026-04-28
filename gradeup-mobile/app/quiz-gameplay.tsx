@@ -86,7 +86,11 @@ export default function QuizGameplay() {
     return (session?.questions as GeneratedQuizQuestion[]) || [];
   }, [session]);
 
-  const timerSeconds = TIMER_MAP[session?.difficulty || 'medium'] || 15;
+  const timerFromQuestion = Number((questions?.[0] as any)?.__timerSeconds);
+  const timerSeconds =
+    Number.isFinite(timerFromQuestion) && timerFromQuestion >= 0
+      ? timerFromQuestion
+      : (TIMER_MAP[session?.difficulty || 'medium'] || 15);
   const [timeLeft, setTimeLeft] = useState(timerSeconds);
   const isMultiplayer = session?.mode === 'multiplayer';
 
@@ -170,6 +174,11 @@ export default function QuizGameplay() {
     setTimeLeft(timerSeconds);
     // Prevent ghost taps from previous question from auto-selecting next question.
     inputGateTimeoutRef.current = setTimeout(() => setInputEnabled(true), 220);
+    if (timerSeconds <= 0) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+      return;
+    }
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -362,20 +371,27 @@ export default function QuizGameplay() {
       </View>
 
       {/* Timer - circular ring */}
-      <View style={s.timerRow}>
-        <View style={[s.timerBg, { backgroundColor: theme.backgroundSecondary }]}>
-          <View
-            style={[
-              s.timerFill,
-              {
-                width: `${(timeLeft / timerSeconds) * 100}%`,
-                backgroundColor: timeLeft <= 5 ? '#ef4444' : theme.primary,
-              },
-            ]}
-          />
+      {timerSeconds > 0 ? (
+        <View style={s.timerRow}>
+          <View style={[s.timerBg, { backgroundColor: theme.backgroundSecondary }]}>
+            <View
+              style={[
+                s.timerFill,
+                {
+                  width: `${(timeLeft / timerSeconds) * 100}%`,
+                  backgroundColor: timeLeft <= 5 ? '#ef4444' : theme.primary,
+                },
+              ]}
+            />
+          </View>
+          <Text style={[s.timerText, { color: timeLeft <= 5 ? '#ef4444' : theme.textSecondary }]}>{timeLeft}s</Text>
         </View>
-        <Text style={[s.timerText, { color: timeLeft <= 5 ? '#ef4444' : theme.textSecondary }]}>{timeLeft}s</Text>
-      </View>
+      ) : (
+        <View style={s.timerOffRow}>
+          <Feather name="clock" size={14} color={theme.textSecondary} />
+          <Text style={[s.timerOffText, { color: theme.textSecondary }]}>No timer mode</Text>
+        </View>
+      )}
 
       {/* Question card */}
       <View style={[
@@ -483,6 +499,8 @@ const s = StyleSheet.create({
   timerBg: { flex: 1, height: 8, borderRadius: 4, overflow: 'hidden' },
   timerFill: { height: '100%', borderRadius: 4 },
   timerText: { fontSize: 13, fontWeight: '800', width: 30 },
+  timerOffRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 24 },
+  timerOffText: { fontSize: 13, fontWeight: '700' },
 
   card: { borderRadius: 24, padding: 28, marginBottom: 24, minHeight: 120, justifyContent: 'center' },
   question: { fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center', lineHeight: 26 },

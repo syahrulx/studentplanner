@@ -424,6 +424,22 @@ export default function Settings() {
           <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/in-app-themes' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
+              <Feather name="image" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>In App Themes</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Preview custom theme packs (locked for free users)
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/language-preference' as any)}
           >
             <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
