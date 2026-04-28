@@ -113,13 +113,40 @@ export default function ClassroomSync() {
           setError('Sign-in was cancelled.');
           return;
         }
-        if (result.type !== 'success' || !('params' in result) || !result.params?.code) {
+        if (result.type !== 'success' || !('params' in result)) {
           const rawErr =
             result.type === 'error' && 'error' in result ? (result as any).error : null;
           const msg = rawErr
             ? String(rawErr?.message || rawErr?.description || rawErr)
             : 'Browser session was dismissed.';
           setError(`Could not connect: ${msg}`);
+          return;
+        }
+
+        // ── Android: Direct token flow (no code exchange needed) ──
+        if (result.params?.__directToken === 'true') {
+          const { accessToken, refreshToken: providerRefresh, expiresAt } = result.params;
+          if (!accessToken) {
+            setError('Could not connect: missing Google access token. Please sign out and sign in again with Google.');
+            return;
+          }
+
+          // Save the token to the classroom cache so future auto-syncs work
+          const { setClassroomToken: saveToken } = await import('@/src/storage');
+          await saveToken({
+            accessToken,
+            expiresAt: Number(expiresAt) || Date.now() + 3600000,
+            refreshToken: providerRefresh || undefined,
+          });
+
+          if (cancelled) return;
+          await startCourseLoad(accessToken);
+          return;
+        }
+
+        // ── iOS / Web: Standard code exchange flow ──
+        if (!result.params?.code) {
+          setError('Could not connect: no authorization code received.');
           return;
         }
 

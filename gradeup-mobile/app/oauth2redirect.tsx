@@ -3,14 +3,21 @@ import { View, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
 
+/**
+ * Safe landing screen for the `rencana://oauth2redirect` deep link.
+ *
+ * On iOS, Google OAuth redirects through the reversed-client-id scheme,
+ * so this screen is rarely hit. On Android, the new flow (v7+) no longer
+ * uses browser redirects for Classroom at all, so this is purely a safety
+ * net in case old builds or edge cases fire the deep link.
+ *
+ * Behaviour: show a brief spinner, then navigate back to wherever the
+ * user came from (or to the main tabs if there's no history).
+ */
 export default function OAuth2Redirect() {
   const theme = useTheme();
-  
+
   useEffect(() => {
-    // This screen is a sinkhole for the Expo Router deep link.
-    // When the OAuth proxy redirects to rencana://oauth2redirect, 
-    // Expo Router navigates here. We just immediately pop back so 
-    // the previous screen (which is waiting for the auth promise) can continue.
     const timer = setTimeout(() => {
       if (router.canGoBack()) {
         router.back();

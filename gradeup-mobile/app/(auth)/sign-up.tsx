@@ -12,6 +12,8 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GOOGLE_CLASSROOM_SCOPES } from '@/src/lib/googleOauth';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -63,13 +65,19 @@ export default function SignUp() {
     setError(null);
     try {
       const redirectUrl = authRedirect('sign-up');
+
+      // On Android, request Classroom scopes upfront during sign-up
+      const extraScopes = Platform.OS === 'android' ? GOOGLE_CLASSROOM_SCOPES : [];
+
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
+          scopes: extraScopes.join(' '),
           queryParams: {
             prompt: 'select_account',
+            ...(Platform.OS === 'android' ? { access_type: 'offline', prompt: 'consent' } : {}),
           },
         },
       });
@@ -84,6 +92,9 @@ export default function SignUp() {
           const params = new URLSearchParams(url.hash.replace('#', ''));
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
+          const providerToken = params.get('provider_token');
+          const providerRefreshToken = params.get('provider_refresh_token');
+
           if (accessToken && refreshToken) {
             const { error: sessionError } = await supabase.auth.setSession({
               access_token: accessToken,
@@ -92,7 +103,21 @@ export default function SignUp() {
             if (sessionError) {
               setError('Sign-up failed. Please try again.');
             } else {
-              // Same exact check profile logic as login: redirect to user data form if needed
+              // Save Google provider tokens for Classroom (Android)
+              if (Platform.OS === 'android' && providerToken) {
+                try {
+                  await AsyncStorage.setItem(
+                    'googleProviderTokens',
+                    JSON.stringify({
+                      accessToken: providerToken,
+                      refreshToken: providerRefreshToken || '',
+                      expiresAt: Date.now() + 3600000,
+                    }),
+                  );
+                } catch {}
+              }
+
+              // Same exact check profile logic as login
               const { data: { user } } = await supabase.auth.getUser();
               if (user) {
                 const { data: profile } = await supabase.from('profiles').select('university').eq('id', user.id).maybeSingle();

@@ -539,6 +539,12 @@ export async function disconnectClassroom(): Promise<void> {
   }
   await clearClassroomToken();
   await setClassroomPrefs(null);
+
+  // Also clear saved provider tokens (Android direct-token flow)
+  try {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await AsyncStorage.removeItem('googleProviderTokens');
+  } catch {}
 }
 
 /** Whether user has completed initial setup with selected courses. */

@@ -11,6 +11,8 @@ import {
   ScrollView,
   Image,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GOOGLE_CLASSROOM_SCOPES } from '@/src/lib/googleOauth';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -113,14 +115,22 @@ export default function Login() {
     setError(null);
     try {
       const redirectUrl = authRedirect('login');
+
+      // On Android, request Classroom scopes upfront during login
+      // so the user never has to open a second browser for Classroom.
+      const extraScopes = Platform.OS === 'android' ? GOOGLE_CLASSROOM_SCOPES : [];
+
       const { data, error: oauthError } = await withTimeout(
         supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
             redirectTo: redirectUrl,
             skipBrowserRedirect: true,
+            scopes: extraScopes.join(' '),
             queryParams: {
               prompt: 'select_account',
+              // On Android, force consent + offline access so we get a refresh token
+              ...(Platform.OS === 'android' ? { access_type: 'offline', prompt: 'consent' } : {}),
             },
           },
         })
@@ -138,6 +148,12 @@ export default function Login() {
           const params = new URLSearchParams(url.hash.replace('#', ''));
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
+
+          // On Android, also capture the Google provider tokens
+          // so Classroom can use them directly without a second browser.
+          const providerToken = params.get('provider_token');
+          const providerRefreshToken = params.get('provider_refresh_token');
+
           if (accessToken && refreshToken) {
             const { data: sessionData, error: sessionError } = await withTimeout(
               supabase.auth.setSession({
@@ -147,7 +163,22 @@ export default function Login() {
             );
             if (sessionError) {
               setError('Sign-in failed. Please try again.');
-            } else if (sessionData.session) await routeAfterAuth();
+            } else if (sessionData.session) {
+              // Save Google provider tokens for Classroom (Android)
+              if (Platform.OS === 'android' && providerToken) {
+                try {
+                  await AsyncStorage.setItem(
+                    'googleProviderTokens',
+                    JSON.stringify({
+                      accessToken: providerToken,
+                      refreshToken: providerRefreshToken || '',
+                      expiresAt: Date.now() + 3600000, // ~1 hour
+                    }),
+                  );
+                } catch {}
+              }
+              await routeAfterAuth();
+            }
           } else {
             setError('Authentication failed. Please try again.');
           }
