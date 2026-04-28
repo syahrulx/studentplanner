@@ -1,16 +1,13 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   GOOGLE_CLASSROOM_SCOPES,
   GOOGLE_DISCOVERY,
   getGoogleClientIds,
 } from '@/src/lib/googleOauth';
-import { supabase } from '@/src/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -43,7 +40,7 @@ function pickClientAndRedirect(ids: ReturnType<typeof getGoogleClientIds>): {
     if (!cid || cid.length === 0) return null;
     return {
       clientId: cid,
-      redirectUri: '', // Not used for primary flow
+      redirectUri: '',
     };
   }
 
@@ -76,12 +73,13 @@ export interface ClassroomAuthState {
  *
  * **iOS / Web**: Uses the standard `expo-auth-session` browser flow (unchanged).
  *
- * **Android (OVERHAULED)**: Two-step approach:
- *   1. First, check for saved Google provider tokens from login (instant, no browser).
- *   2. If none exist (user logged in before this update, or used email/password),
- *      fallback to a one-time Supabase OAuth flow with Classroom scopes.
- *      This uses the SAME mechanism as the login page (which works on Android!).
- *      After this, the tokens are saved so future connects are instant.
+ * **Android**: Reads the Google provider tokens saved during the initial
+ * Supabase Google login. If no tokens exist (user logged in with email/password),
+ * returns an error asking the user to sign in with Google.
+ * This ensures:
+ *   - Classroom always uses the SAME Google account as the Rencana login
+ *   - No second browser session is ever opened
+ *   - No redirect/hanging issues
  */
 export function useClassroomAuth(): ClassroomAuthState {
   const resolved = useMemo(() => pickClientAndRedirect(getGoogleClientIds()), []);
@@ -109,128 +107,52 @@ export function useClassroomAuth(): ClassroomAuthState {
   const [androidResponse, setAndroidResponse] = useState<AuthSession.AuthSessionResult | null>(null);
 
   /**
-   * Android: Try to get Classroom tokens without opening a browser.
-   *
-   * Step 1: Check AsyncStorage for saved provider tokens from Google login.
-   * Step 2 (fallback): If no tokens saved, open a Supabase Google OAuth browser
-   *         session with Classroom scopes. This uses the EXACT same flow as the
-   *         login page (which works perfectly on Android), just with extra scopes.
-   *         The provider_token from the redirect is captured and saved.
+   * Android: Read saved Google provider tokens from AsyncStorage.
+   * These are saved during login/signup when the user signs in with Google.
+   * If no tokens exist, the user must sign out and sign in with Google.
    */
   const androidPromptAsync = useCallback(async (): Promise<AuthSession.AuthSessionResult> => {
     try {
-      // ── Step 1: Check for saved provider tokens (instant, no browser) ──
       const raw = await AsyncStorage.getItem('googleProviderTokens');
 
-      if (raw) {
-        const tokens = JSON.parse(raw) as {
-          accessToken: string;
-          refreshToken?: string;
-          expiresAt?: number;
-        };
-
-        if (tokens.accessToken) {
-          const successResult: AuthSession.AuthSessionResult = {
-            type: 'success',
-            params: {
-              __directToken: 'true',
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken || '',
-              expiresAt: String(tokens.expiresAt || Date.now() + 3600000),
-            },
-            url: '',
-            authentication: null,
-          } as any;
-          setAndroidResponse(successResult);
-          return successResult;
-        }
-      }
-
-      // ── Step 2 (fallback): No saved tokens — use Supabase OAuth ──
-      // This uses the SAME mechanism as login.tsx (which works on Android!).
-      // We add Classroom scopes so the returned provider_token has access.
-      const appScheme = (Constants.expoConfig?.scheme as string) || 'rencana';
-      const fallbackRedirect = makeRedirectUri({ scheme: appScheme, path: 'classroom-sync' });
-
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: fallbackRedirect,
-          skipBrowserRedirect: true,
-          scopes: GOOGLE_CLASSROOM_SCOPES.join(' '),
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-
-      if (oauthError || !data?.url) {
+      if (!raw) {
         const errorResult = {
           type: 'error',
           error: new Error(
-            oauthError?.message || 'Could not start Google sign-in for Classroom.',
+            'Google Classroom requires a Google account. Please sign out and sign in with Google to connect Classroom.',
           ),
         } as unknown as AuthSession.AuthSessionResult;
         setAndroidResponse(errorResult);
         return errorResult;
       }
 
-      // Open the Supabase OAuth URL — same as login page
-      const result = await WebBrowser.openAuthSessionAsync(data.url, fallbackRedirect);
+      const tokens = JSON.parse(raw) as {
+        accessToken: string;
+        refreshToken?: string;
+        expiresAt?: number;
+      };
 
-      if (result.type !== 'success' || !result.url) {
-        const cancelResult = { type: 'cancel' } as AuthSession.AuthSessionResult;
-        setAndroidResponse(cancelResult);
-        return cancelResult;
-      }
-
-      // Parse the redirect URL (same as login.tsx)
-      const url = new URL(result.url);
-      const params = new URLSearchParams(url.hash.replace('#', ''));
-      const providerToken = params.get('provider_token');
-      const providerRefreshToken = params.get('provider_refresh_token');
-      const supaAccessToken = params.get('access_token');
-      const supaRefreshToken = params.get('refresh_token');
-
-      // Re-set the Supabase session (the OAuth flow may have refreshed it)
-      if (supaAccessToken && supaRefreshToken) {
-        await supabase.auth.setSession({
-          access_token: supaAccessToken,
-          refresh_token: supaRefreshToken,
-        });
-      }
-
-      if (!providerToken) {
+      if (!tokens.accessToken) {
         const errorResult = {
           type: 'error',
           error: new Error(
-            'Google did not return a Classroom access token. Please try again.',
+            'Your Google session has expired. Please sign out and sign in again with Google.',
           ),
         } as unknown as AuthSession.AuthSessionResult;
         setAndroidResponse(errorResult);
         return errorResult;
       }
 
-      // Save the provider tokens for future instant access
-      await AsyncStorage.setItem(
-        'googleProviderTokens',
-        JSON.stringify({
-          accessToken: providerToken,
-          refreshToken: providerRefreshToken || '',
-          expiresAt: Date.now() + 3600000,
-        }),
-      );
-
+      // Return saved token — no browser needed
       const successResult: AuthSession.AuthSessionResult = {
         type: 'success',
         params: {
           __directToken: 'true',
-          accessToken: providerToken,
-          refreshToken: providerRefreshToken || '',
-          expiresAt: String(Date.now() + 3600000),
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken || '',
+          expiresAt: String(tokens.expiresAt || Date.now() + 3600000),
         },
-        url: result.url,
+        url: '',
         authentication: null,
       } as any;
       setAndroidResponse(successResult);
