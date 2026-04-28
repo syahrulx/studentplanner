@@ -19,7 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 import {
@@ -76,6 +76,8 @@ export default function TaskDetails() {
   const { tasks, courses, toggleTaskDone, deleteTask, updateTask, language } = useApp();
   const theme = useTheme();
   const themeId = useThemeId();
+  const themePack = useThemePack();
+  const isMonoTheme = themePack === 'mono';
   const insets = useSafeAreaInsets();
   const {
     friendsWithStatus: allFriends,
@@ -378,41 +380,55 @@ export default function TaskDetails() {
       >
         {/* ── Badges ────────────────────────────────────────────────────────── */}
         <View style={s.badgeRow}>
-          <View style={[s.badgeCourse, { backgroundColor: theme.primary }]}>
-            <Text style={s.badgeCourseText}>{formatSubjectName(localCourseId)}</Text>
+          <View
+            style={[
+              s.badgeCourse,
+              {
+                backgroundColor: isMonoTheme ? '#1a1a1a' : theme.primary,
+                borderWidth: isMonoTheme ? 1 : 0,
+                borderColor: isMonoTheme ? '#3a3a3a' : 'transparent',
+              },
+            ]}
+          >
+            <Text style={[s.badgeCourseText, isMonoTheme && { color: '#f5f5f5' }]}>{formatSubjectName(localCourseId)}</Text>
           </View>
           <View style={[s.badgeType, { backgroundColor: theme.backgroundSecondary }]}>
             <Text style={[s.badgeTypeText, { color: theme.textSecondary }]}>{localType}</Text>
           </View>
           {task.id.startsWith('gc-') ? (
-            <View style={s.badgeClassroom}>
-              <Feather name="book-open" size={12} color="#0f9d58" />
-              <Text style={s.badgeClassroomText}>Classroom</Text>
+            <View style={[s.badgeClassroom, isMonoTheme && { backgroundColor: '#1a1a1a' }]}>
+              <Feather name="book-open" size={12} color={isMonoTheme ? '#d4d4d4' : '#0f9d58'} />
+              <Text style={[s.badgeClassroomText, isMonoTheme && { color: '#d4d4d4' }]}>Classroom</Text>
             </View>
           ) : isAlreadyShared ? (
-            <View style={s.badgeShared}>
-              <Feather name="users" size={12} color="#6366f1" />
-              <Text style={s.badgeSharedText}>Shared</Text>
+            <View style={[s.badgeShared, isMonoTheme && { backgroundColor: '#1a1a1a' }]}>
+              <Feather name="users" size={12} color={isMonoTheme ? '#d4d4d4' : '#6366f1'} />
+              <Text style={[s.badgeSharedText, isMonoTheme && { color: '#d4d4d4' }]}>Shared</Text>
             </View>
           ) : (
-            <View style={s.badgePersonal}>
-              <Feather name="user" size={12} color="#64748b" />
-              <Text style={s.badgePersonalText}>Personal</Text>
+            <View style={[s.badgePersonal, isMonoTheme && { backgroundColor: '#1a1a1a' }]}>
+              <Feather name="user" size={12} color={isMonoTheme ? '#d4d4d4' : '#64748b'} />
+              <Text style={[s.badgePersonalText, isMonoTheme && { color: '#d4d4d4' }]}>Personal</Text>
             </View>
           )}
           {displayIsDone && (
-            <View style={s.badgeDone}>
-              <Feather name="check" size={12} color="#16a34a" />
-              <Text style={[s.badgeDoneText, { color: theme.success }]}>{T('completed')}</Text>
+            <View style={[s.badgeDone, isMonoTheme && { backgroundColor: '#1a1a1a' }]}>
+              <Feather name="check" size={12} color={isMonoTheme ? '#d4d4d4' : '#16a34a'} />
+              <Text style={[s.badgeDoneText, { color: isMonoTheme ? '#d4d4d4' : theme.success }]}>{T('completed')}</Text>
             </View>
           )}
         </View>
 
         {/* ── Shared-by banner (recipient view) ─────────────────────────────── */}
         {isReadOnlySharedTask && sharedBy ? (
-          <View style={s.sharedByBanner}>
-            <Feather name="users" size={14} color="#6366f1" />
-            <Text style={s.sharedByBannerText}>Shared by <Text style={{ fontWeight: '700' }}>{sharedBy}</Text></Text>
+          <View
+            style={[
+              s.sharedByBanner,
+              isMonoTheme && { backgroundColor: '#111111', borderColor: '#2f2f2f' },
+            ]}
+          >
+            <Feather name="users" size={14} color={isMonoTheme ? '#d4d4d4' : '#6366f1'} />
+            <Text style={[s.sharedByBannerText, isMonoTheme && { color: '#d4d4d4' }]}>Shared by <Text style={{ fontWeight: '700' }}>{sharedBy}</Text></Text>
           </View>
         ) : null}
 
@@ -454,14 +470,27 @@ export default function TaskDetails() {
         </View>
 
         {/* ── Urgency pill ──────────────────────────────────────────────────── */}
-        <View style={[s.urgencyPill, isOverdue && s.urgencyOverdue, isDueSoon && s.urgencySoon]}>
+        <View
+          style={[
+            s.urgencyPill,
+            isOverdue && s.urgencyOverdue,
+            isDueSoon && s.urgencySoon,
+            isMonoTheme && { backgroundColor: '#111111' },
+          ]}
+        >
           <Feather
             name={isOverdue ? 'alert-triangle' : 'clock'}
             size={14}
-            color={isOverdue ? theme.danger : isDueSoon ? theme.warning : theme.primary}
+            color={isMonoTheme ? '#d4d4d4' : isOverdue ? theme.danger : isDueSoon ? theme.warning : theme.primary}
           />
           <Text
-            style={[s.urgencyText, { color: theme.text }, isOverdue && { color: theme.danger }, isDueSoon && { color: theme.warning }]}
+            style={[
+              s.urgencyText,
+              { color: theme.text },
+              isOverdue && { color: theme.danger },
+              isDueSoon && { color: theme.warning },
+              isMonoTheme && { color: '#d4d4d4' },
+            ]}
           >
             {urgencyLabel}
           </Text>
@@ -469,9 +498,14 @@ export default function TaskDetails() {
 
         {/* ── Needs-date banner ─────────────────────────────────────────────── */}
         {task.needsDate ? (
-          <View style={s.needsDateBanner}>
-            <Feather name="alert-circle" size={14} color="#d97706" />
-            <Text style={s.needsDateBannerText}>
+          <View
+            style={[
+              s.needsDateBanner,
+              isMonoTheme && { backgroundColor: '#111111', borderColor: '#2f2f2f' },
+            ]}
+          >
+            <Feather name="alert-circle" size={14} color={isMonoTheme ? '#d4d4d4' : '#d97706'} />
+            <Text style={[s.needsDateBannerText, isMonoTheme && { color: '#d4d4d4' }]}>
               {task.id.startsWith('gc-')
                 ? T('needsDateBannerGc')
                 : task.sourceMessage
@@ -490,8 +524,8 @@ export default function TaskDetails() {
             style={({ pressed }) => [s.groupRow, { borderBottomColor: theme.border }, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setSubjectModalOpen(true)}
           >
-            <View style={[s.groupRowIcon, { backgroundColor: 'rgba(0,51,102,0.07)' }]}>
-              <Feather name="book" size={16} color={theme.primary} />
+            <View style={[s.groupRowIcon, { backgroundColor: isMonoTheme ? '#111111' : 'rgba(0,51,102,0.07)' }]}>
+              <Feather name="book" size={16} color={isMonoTheme ? '#d4d4d4' : theme.primary} />
             </View>
             <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Subject</Text>
             <Text style={[s.groupRowValue, { color: theme.text }]}>{formatSubjectName(localCourseId)}</Text>
@@ -505,8 +539,8 @@ export default function TaskDetails() {
             style={({ pressed }) => [s.groupRow, { borderBottomColor: theme.border }, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setTypeModalOpen(true)}
           >
-            <View style={[s.groupRowIcon, { backgroundColor: 'rgba(99,102,241,0.07)' }]}>
-              <Feather name="tag" size={16} color="#6366f1" />
+            <View style={[s.groupRowIcon, { backgroundColor: isMonoTheme ? '#111111' : 'rgba(99,102,241,0.07)' }]}>
+              <Feather name="tag" size={16} color={isMonoTheme ? '#d4d4d4' : '#6366f1'} />
             </View>
             <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Type</Text>
             <Text style={[s.groupRowValue, { color: theme.text }]}>{localType}</Text>
@@ -520,11 +554,11 @@ export default function TaskDetails() {
             style={({ pressed }) => [s.groupRow, { borderBottomColor: theme.border }, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setShowDateModal(true)}
           >
-            <View style={[s.groupRowIcon, { backgroundColor: 'rgba(0,51,102,0.07)' }]}>
-              <Feather name="calendar" size={16} color={theme.primary} />
+            <View style={[s.groupRowIcon, { backgroundColor: isMonoTheme ? '#111111' : 'rgba(0,51,102,0.07)' }]}>
+              <Feather name="calendar" size={16} color={isMonoTheme ? '#d4d4d4' : theme.primary} />
             </View>
             <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Due Date</Text>
-            <Text style={[s.groupRowValue, { color: task.needsDate ? theme.warning : theme.text }]}>
+            <Text style={[s.groupRowValue, { color: task.needsDate ? (isMonoTheme ? '#d4d4d4' : theme.warning) : theme.text }]}>
               {task.needsDate ? 'Not set' : formatDisplayDate(localDueDate)}
             </Text>
             <View style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}>
@@ -537,8 +571,8 @@ export default function TaskDetails() {
             style={({ pressed }) => [s.groupRow, s.groupRowLast, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setShowTimePicker(true)}
           >
-            <View style={[s.groupRowIcon, { backgroundColor: 'rgba(245,158,11,0.08)' }]}>
-              <Feather name="clock" size={16} color="#d97706" />
+            <View style={[s.groupRowIcon, { backgroundColor: isMonoTheme ? '#111111' : 'rgba(245,158,11,0.08)' }]}>
+              <Feather name="clock" size={16} color={isMonoTheme ? '#d4d4d4' : '#d97706'} />
             </View>
             <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Time</Text>
             <Text style={[s.groupRowValue, { color: theme.text }]}>{localDueTime.slice(0, 5)}</Text>
@@ -593,15 +627,15 @@ export default function TaskDetails() {
           <View style={s.sourceSection}>
             <View style={s.sourceHeaderRow}>
               <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>Google Classroom</Text>
-              <View style={[s.verifiedPill, { backgroundColor: 'rgba(15,157,88,0.08)' }]}>
-                <View style={[s.verifiedDot, { backgroundColor: '#0f9d58' }]} />
-                <Text style={[s.verifiedLabel, { color: '#0f9d58' }]}>Auto-synced</Text>
+              <View style={[s.verifiedPill, { backgroundColor: isMonoTheme ? '#111111' : 'rgba(15,157,88,0.08)' }]}>
+                <View style={[s.verifiedDot, { backgroundColor: isMonoTheme ? '#d4d4d4' : '#0f9d58' }]} />
+                <Text style={[s.verifiedLabel, { color: isMonoTheme ? '#d4d4d4' : '#0f9d58' }]}>Auto-synced</Text>
               </View>
             </View>
-            <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderLeftWidth: 3, borderLeftColor: '#0f9d58' }]}>
+            <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, borderLeftWidth: 3, borderLeftColor: isMonoTheme ? '#d4d4d4' : '#0f9d58' }]}>
               <View style={s.sourceTagWrap}>
-                <Feather name="book-open" size={12} color="#0f9d58" />
-                <Text style={[s.sourceTagText, { color: '#0f9d58' }]}>Google Classroom</Text>
+                <Feather name="book-open" size={12} color={isMonoTheme ? '#d4d4d4' : '#0f9d58'} />
+                <Text style={[s.sourceTagText, { color: isMonoTheme ? '#d4d4d4' : '#0f9d58' }]}>Google Classroom</Text>
               </View>
               {task.sourceMessage ? (
                 <Text style={[s.sourceBody, { color: theme.text }]} numberOfLines={1}>{task.sourceMessage}</Text>
@@ -612,9 +646,9 @@ export default function TaskDetails() {
           <View style={s.sourceSection}>
             <View style={s.sourceHeaderRow}>
               <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>{T('whatsappSource')}</Text>
-              <View style={s.verifiedPill}>
-                <View style={s.verifiedDot} />
-                <Text style={[s.verifiedLabel, { color: theme.success }]}>{T('verifiedByAi')}</Text>
+              <View style={[s.verifiedPill, isMonoTheme && { backgroundColor: '#111111' }]}>
+                <View style={[s.verifiedDot, isMonoTheme && { backgroundColor: '#d4d4d4' }]} />
+                <Text style={[s.verifiedLabel, { color: isMonoTheme ? '#d4d4d4' : theme.success }]}>{T('verifiedByAi')}</Text>
               </View>
             </View>
             <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>

@@ -2,8 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
+import { CatLottie } from '@/components/CatLottie';
 
 const PAD = 20;
 
@@ -18,20 +19,20 @@ type ThemePreview = {
 
 const THEME_PREVIEWS: ThemePreview[] = [
   {
-    id: 'capybara',
-    name: 'Capybara Theme',
+    id: 'cat',
+    name: 'Cat Theme',
     accent: '#f59e0b',
-    description: 'Warm beige cards, soft brown accents, calm focus vibe.',
+    description: 'Warm cream cards, playful cat accents, cozy study vibe.',
     background: '#fef7ea',
     card: '#fff9f0',
   },
   {
     id: 'sakura',
-    name: 'Sakura Theme',
-    accent: '#ec4899',
-    description: 'Pink highlights with clean white layout and gentle contrast.',
-    background: '#fff2f8',
-    card: '#fff7fb',
+    name: 'Mono Theme',
+    accent: '#000000',
+    description: 'Pitch-black minimalist pack with clean monochrome icons and strong contrast.',
+    background: '#000000',
+    card: '#0a0a0a',
   },
   {
     id: 'galaxy',
@@ -45,7 +46,10 @@ const THEME_PREVIEWS: ThemePreview[] = [
 
 export default function InAppThemesScreen() {
   const theme = useTheme();
-  const { user } = useApp();
+  const themePack = useThemePack();
+  const { user, setThemePack } = useApp();
+  const isCatApplied = themePack === 'cat';
+  const isMonoApplied = themePack === 'mono';
   const isFreePlan = (user.subscriptionPlan ?? 'free') === 'free';
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const selectedTheme = useMemo(
@@ -54,15 +58,16 @@ export default function InAppThemesScreen() {
   );
   const isGalaxy = selectedTheme?.id === 'galaxy';
   const isSakura = selectedTheme?.id === 'sakura';
-  const heroLabel = isGalaxy ? 'Cosmic Focus' : 'Capy Focus';
-  const heroLabelResolved = isSakura ? 'Sakura Focus' : heroLabel;
+  const isCat = selectedTheme?.id === 'cat';
+  const heroLabel = isGalaxy ? 'Cosmic Focus' : isSakura ? 'Mono Focus' : 'Cat Focus';
+  const heroLabelResolved = heroLabel;
   const heroIcon: 'moon' | 'sun' = isGalaxy ? 'moon' : 'sun';
-  const heroEmoji = isGalaxy ? '🌌' : isSakura ? '🌸' : '🦫';
-  const homeHeadlineColor = isGalaxy ? '#e8e7ff' : isSakura ? '#7a214d' : '#2a2118';
-  const homeSublineColor = isGalaxy ? '#b9b7f5' : isSakura ? '#9f4f73' : '#7a6552';
-  const homeCardTextColor = isGalaxy ? '#d9d9ff' : isSakura ? '#7a214d' : '#3d2b1f';
-  const timetableHeadline = isGalaxy ? 'Timetable Orbit' : isSakura ? 'Timetable Blossom' : 'Timetable';
-  const timetableMode = isGalaxy ? 'Week 7 - Galaxy Mode' : isSakura ? 'Week 7 - Sakura Mode' : 'Week 7 - Capybara Mode';
+  const heroEmoji = isGalaxy ? '🌌' : isSakura ? '◻' : '🐾';
+  const homeHeadlineColor = isGalaxy ? '#e8e7ff' : isSakura ? '#ffffff' : '#2a2118';
+  const homeSublineColor = isGalaxy ? '#b9b7f5' : isSakura ? '#b3b3b3' : '#7a6552';
+  const homeCardTextColor = isGalaxy ? '#d9d9ff' : isSakura ? '#e5e5e5' : '#3d2b1f';
+  const timetableHeadline = isGalaxy ? 'Timetable Orbit' : isSakura ? 'Timetable Minimal' : 'Timetable';
+  const timetableMode = isGalaxy ? 'Week 7 - Galaxy Mode' : isSakura ? 'Week 7 - Mono Mode' : 'Week 7 - Cat Mode';
   const slots = isGalaxy
     ? [
         { label: 'Mon 9:00', title: 'Astro Computing', bg: '#26224a' },
@@ -71,9 +76,9 @@ export default function InAppThemesScreen() {
       ]
     : isSakura
     ? [
-        { label: 'Mon 9:00', title: 'Literature Seminar', bg: '#ffe7f3' },
-        { label: 'Tue 14:00', title: 'Design Thinking Lab', bg: '#ffeef7' },
-        { label: 'Thu 10:30', title: 'Human Computer Interaction', bg: '#ffe2f0' },
+        { label: 'Mon 9:00', title: 'Systems Design', bg: '#0f0f0f' },
+        { label: 'Tue 14:00', title: 'Research Methods', bg: '#141414' },
+        { label: 'Thu 10:30', title: 'Software Architecture', bg: '#1a1a1a' },
       ]
     : [
         { label: 'Mon 9:00', title: 'Database Systems', bg: '#f7e4cb' },
@@ -95,21 +100,21 @@ export default function InAppThemesScreen() {
     if (isSakura) {
       return (
         <View style={styles.bgPatternWrap}>
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandA, { backgroundColor: '#f9a8d455' }]} />
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandB, { backgroundColor: '#fb718555' }]} />
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandC, { backgroundColor: '#f472b655' }]} />
-          <Text style={[styles.bgPetal, styles.bgPetalA]}>❀</Text>
-          <Text style={[styles.bgPetal, styles.bgPetalB]}>✿</Text>
+          <View style={[styles.bgRibbonBand, styles.bgRibbonBandA, { backgroundColor: '#ffffff18' }]} />
+          <View style={[styles.bgRibbonBand, styles.bgRibbonBandB, { backgroundColor: '#ffffff10' }]} />
+          <View style={[styles.bgRibbonBand, styles.bgRibbonBandC, { backgroundColor: '#ffffff14' }]} />
+          <Text style={[styles.bgPetal, styles.bgPetalA, { color: '#ffffff' }]}>◻</Text>
+          <Text style={[styles.bgPetal, styles.bgPetalB, { color: '#d4d4d4' }]}>○</Text>
         </View>
       );
     }
     return (
       <View style={styles.bgPatternWrap}>
-        <View style={[styles.bgBubble, styles.bgBubbleA, { backgroundColor: '#f59e0b33' }]} />
-        <View style={[styles.bgBubble, styles.bgBubbleB, { backgroundColor: '#84cc1633' }]} />
-        <View style={[styles.bgBubble, styles.bgBubbleC, { backgroundColor: '#fb923c33' }]} />
-        <Text style={[styles.bgPetal, styles.bgPetalA]}>🦫</Text>
-        <Text style={[styles.bgPetal, styles.bgPetalB]}>🌿</Text>
+        <View style={[styles.bgBubble, styles.bgBubbleA, { backgroundColor: '#f59e0b40' }]} />
+        <View style={[styles.bgBubble, styles.bgBubbleB, { backgroundColor: '#fbbf2460' }]} />
+        <View style={[styles.bgBubble, styles.bgBubbleC, { backgroundColor: '#fb923c45' }]} />
+        <Text style={[styles.bgPetal, styles.bgPetalA]}>🐾</Text>
+        <Text style={[styles.bgPetal, styles.bgPetalB]}>🐾</Text>
       </View>
     );
   };
@@ -127,7 +132,15 @@ export default function InAppThemesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.title, { color: theme.text }]}>In App Themes</Text>
+        <View style={styles.titleRow}>
+          <Text style={[styles.title, { color: theme.text }]}>In App Themes</Text>
+          <Pressable
+            onPress={() => setThemePack('none')}
+            style={[styles.topResetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
+          >
+            <Text style={[styles.topResetBtnText, { color: theme.text }]}>Reset to Default</Text>
+          </Pressable>
+        </View>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           {isFreePlan
             ? 'Preview only for now. All custom theme packs are locked on free plan.'
@@ -137,25 +150,31 @@ export default function InAppThemesScreen() {
         <View style={[styles.lockBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Feather name={isFreePlan ? 'lock' : 'unlock'} size={16} color={theme.textSecondary} />
           <Text style={[styles.lockBannerText, { color: theme.textSecondary }]}>
-            {isFreePlan ? 'Free user mode: theme designs are locked' : 'Pro/Plus mode: theme previews are visible'}
+            {isCatApplied
+              ? 'Cat theme is active now'
+              : isMonoApplied
+              ? 'Mono theme is active now'
+              : isFreePlan
+              ? 'Free user mode: theme designs are locked'
+              : 'Pro/Plus mode: theme previews are visible'}
           </Text>
         </View>
 
         {THEME_PREVIEWS.map((item) => (
           <View key={item.id} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={[styles.imageContent, { backgroundColor: `${item.accent}88` }]}>
-              {item.id === 'capybara' ? (
+              {item.id === 'cat' ? (
                 <View style={styles.cardPatternWrap}>
                   <View style={[styles.cardBubble, styles.cardBubbleA]} />
                   <View style={[styles.cardBubble, styles.cardBubbleB]} />
                   <View style={[styles.cardBubble, styles.cardBubbleC]} />
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>🦫</Text>
+                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>🐾</Text>
                 </View>
               ) : item.id === 'sakura' ? (
                 <View style={styles.cardPatternWrap}>
                   <View style={[styles.cardRibbon, styles.cardRibbonA]} />
                   <View style={[styles.cardRibbon, styles.cardRibbonB]} />
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>❀</Text>
+                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>◻</Text>
                 </View>
               ) : (
                 <View style={styles.cardPatternWrap}>
@@ -170,7 +189,63 @@ export default function InAppThemesScreen() {
             </View>
 
             <View style={styles.cardBody}>
+              {item.id === 'cat' ? (
+                <View style={styles.applyTitleRow}>
+                  <Text style={[styles.applyTitle, { color: theme.text }]}>Cat Theme Controls</Text>
+                  {isCatApplied ? (
+                    <View style={[styles.activeBadge, { backgroundColor: `${theme.primary}22` }]}>
+                      <Text style={[styles.activeBadgeText, { color: theme.primary }]}>Active</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : item.id === 'sakura' ? (
+                <View style={styles.applyTitleRow}>
+                  <Text style={[styles.applyTitle, { color: theme.text }]}>Mono Theme Controls</Text>
+                  {isMonoApplied ? (
+                    <View style={[styles.activeBadge, { backgroundColor: `${theme.primary}22` }]}>
+                      <Text style={[styles.activeBadgeText, { color: theme.primary }]}>Active</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
               <Text style={[styles.cardDescription, { color: theme.textSecondary }]}>{item.description}</Text>
+              {item.id === 'cat' ? (
+                <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
+                  Includes simple animated cat accents and playful Cat-theme visuals across selected screens.
+                </Text>
+              ) : null}
+              {item.id === 'cat' ? (
+                <View style={styles.applyActionRow}>
+                  <Pressable
+                    onPress={() => setThemePack('cat')}
+                    style={[styles.applyBtn, { backgroundColor: '#8d5a3b' }]}
+                  >
+                    <Text style={styles.applyBtnText}>Apply Cat Theme</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSelectedThemeId('cat')}
+                    style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
+                  >
+                    <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Animated Cat</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {item.id === 'sakura' ? (
+                <View style={styles.applyActionRow}>
+                  <Pressable
+                    onPress={() => setThemePack('mono')}
+                    style={[styles.applyBtn, { backgroundColor: '#000000', borderWidth: 1, borderColor: '#2a2a2a' }]}
+                  >
+                    <Text style={styles.applyBtnText}>Apply Mono Theme</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSelectedThemeId('sakura')}
+                    style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
+                  >
+                    <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Mono Theme</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <Pressable
                 onPress={() => setSelectedThemeId(item.id)}
                 style={[styles.lockedButton, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}
@@ -221,36 +296,77 @@ export default function InAppThemesScreen() {
                   },
                 ]}
               >
-                {renderThemePattern(false)}
-                <View style={styles.previewTopRow}>
-                  <View style={[styles.previewPill, { backgroundColor: `${selectedTheme?.accent ?? '#6366f1'}22` }]}>
-                    <Feather name={heroIcon} size={12} color={selectedTheme?.accent ?? '#6366f1'} />
-                    <Text style={[styles.previewPillText, { color: selectedTheme?.accent ?? '#6366f1' }]}>{heroLabelResolved}</Text>
-                  </View>
-                  <Text style={styles.capyEmoji}>{heroEmoji}</Text>
-                </View>
-
-                <Text style={[styles.previewHeadline, { color: homeHeadlineColor }]}>Good evening, Izwan</Text>
-                <Text style={[styles.previewSubline, { color: homeSublineColor }]}>
-                  {isGalaxy ? '2 missions + 1 revision orbit today' : isSakura ? '2 classes + 1 gentle review today' : '2 tasks + 1 revision due today'}
-                </Text>
-
-                <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
-                  <View style={styles.mockRow}>
-                    <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#3b2d69' : isSakura ? '#ffd5e8' : '#f2d7b3' }]}>
-                      <Feather name="book-open" size={12} color={isGalaxy ? '#c8b8ff' : isSakura ? '#b93473' : '#8a5b2d'} />
+                {isCat ? (
+                  <>
+                    {renderThemePattern(false)}
+                    <View style={styles.previewHomeHeader}>
+                      <Text style={styles.previewHomeHello}>Hello, Izwan.</Text>
                     </View>
-                    <Text style={[styles.mockText, { color: homeCardTextColor }]}>
-                      {isGalaxy ? 'Review Physics Nebula Chapter' : isSakura ? 'Review Communication Notes' : 'Review Biology Chapter 4'}
+                    <View style={styles.previewPulseBox}>
+                      <View style={styles.previewPulseTopRow}>
+                        <Text style={styles.previewPulseWeek}>WEEK 5</Text>
+                        <View style={styles.previewPulseBadge}>
+                          <Text style={styles.previewPulseBadgeText}>W8 PEAK</Text>
+                        </View>
+                      </View>
+                    <CatLottie variant="badge" style={styles.previewCatLottie} />
+                      <Text style={styles.previewPulseLabel}>SEMESTER PULSE</Text>
+                      <View style={styles.previewPulseDots}>
+                        {Array.from({ length: 11 }, (_, i) => (
+                          <View
+                            key={i}
+                            style={[
+                              styles.previewPulseDot,
+                              i === 4 && styles.previewPulseDotCurrent,
+                              i === 6 && styles.previewPulseDotPeak,
+                            ]}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                    <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
+                      <View style={styles.mockRow}>
+                        <View style={[styles.mockIcon, { backgroundColor: '#f2d7b3' }]}>
+                          <Feather name="book-open" size={12} color="#8a5b2d" />
+                        </View>
+                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>Webinar koloboratif ISP640</Text>
+                      </View>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {renderThemePattern(false)}
+                    <View style={styles.previewTopRow}>
+                      <View style={[styles.previewPill, { backgroundColor: `${selectedTheme?.accent ?? '#6366f1'}22` }]}>
+                        <Feather name={heroIcon} size={12} color={selectedTheme?.accent ?? '#6366f1'} />
+                        <Text style={[styles.previewPillText, { color: selectedTheme?.accent ?? '#6366f1' }]}>{heroLabelResolved}</Text>
+                      </View>
+                      <Text style={styles.capyEmoji}>{heroEmoji}</Text>
+                    </View>
+
+                    <Text style={[styles.previewHeadline, { color: homeHeadlineColor }]}>Good evening, Izwan</Text>
+                    <Text style={[styles.previewSubline, { color: homeSublineColor }]}>
+                      {isGalaxy ? '2 missions + 1 revision orbit today' : isSakura ? '2 classes + 1 gentle review today' : '2 tasks + 1 revision due today'}
                     </Text>
-                  </View>
-                  <View style={styles.mockRow}>
-                    <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#1d4a66' : isSakura ? '#ffe7f1' : '#d9e9cf' }]}>
-                      <Feather name="clock" size={12} color={isGalaxy ? '#91d5ff' : isSakura ? '#b93473' : '#4f7d3d'} />
+
+                    <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
+                      <View style={styles.mockRow}>
+                        <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#3b2d69' : isSakura ? '#101010' : '#f2d7b3' }]}>
+                          <Feather name="book-open" size={12} color={isGalaxy ? '#c8b8ff' : isSakura ? '#ffffff' : '#8a5b2d'} />
+                        </View>
+                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>
+                          {isGalaxy ? 'Review Physics Nebula Chapter' : isSakura ? 'Review Communication Notes' : 'Review Biology Chapter 4'}
+                        </Text>
+                      </View>
+                      <View style={styles.mockRow}>
+                        <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#1d4a66' : isSakura ? '#171717' : '#d9e9cf' }]}>
+                          <Feather name="clock" size={12} color={isGalaxy ? '#91d5ff' : isSakura ? '#d4d4d4' : '#4f7d3d'} />
+                        </View>
+                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>Focus timer: 25 min</Text>
+                      </View>
                     </View>
-                    <Text style={[styles.mockText, { color: homeCardTextColor }]}>Focus timer: 25 min</Text>
-                  </View>
-                </View>
+                  </>
+                )}
 
                 <View style={styles.screenLabelRow}>
                   <Feather name="home" size={12} color="#fff" />
@@ -275,8 +391,8 @@ export default function InAppThemesScreen() {
 
                 {slots.map((slot) => (
                   <View key={slot.label} style={[styles.slotCard, { backgroundColor: slot.bg }]}>
-                    <Text style={[styles.slotLabel, isGalaxy && { color: '#a9a0e8' }, isSakura && { color: '#a94473' }]}>{slot.label}</Text>
-                    <Text style={[styles.slotTitle, isGalaxy && { color: '#ebe9ff' }, isSakura && { color: '#7a214d' }]}>{slot.title}</Text>
+                  <Text style={[styles.slotLabel, isGalaxy && { color: '#a9a0e8' }, isSakura && { color: '#9ca3af' }]}>{slot.label}</Text>
+                    <Text style={[styles.slotTitle, isGalaxy && { color: '#ebe9ff' }, isSakura && { color: '#ffffff' }]}>{slot.title}</Text>
                   </View>
                 ))}
 
@@ -323,6 +439,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.5,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  topResetBtn: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  topResetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   subtitle: {
     marginTop: 8,
     fontSize: 14,
@@ -341,6 +473,60 @@ const styles = StyleSheet.create({
   lockBannerText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  applyTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  applyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  activeBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  activeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  applySubtitle: {
+    marginTop: 6,
+    fontSize: 12,
+  },
+  applyActionRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  catFeatureNote: {
+    marginTop: -2,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  applyBtn: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  applyBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  resetBtn: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  resetBtnText: {
+    fontWeight: '700',
+    fontSize: 12,
   },
   card: {
     marginTop: 14,
@@ -587,6 +773,83 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  previewHomeHeader: {
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  previewHomeHello: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#3d2b1f',
+  },
+  previewPulseBox: {
+    borderRadius: 10,
+    padding: 8,
+    backgroundColor: '#fff9f0',
+    position: 'relative',
+  },
+  previewCatLottie: {
+    position: 'absolute',
+    right: 4,
+    top: -16,
+    width: 44,
+    height: 32,
+    opacity: 0.98,
+  },
+  previewPulseTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  previewPulseWeek: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#3d2b1f',
+  },
+  previewPulseBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#f8efe3',
+  },
+  previewPulseBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4b3623',
+  },
+  previewPulseLabel: {
+    marginTop: 3,
+    fontSize: 8.5,
+    fontWeight: '700',
+    color: '#8a735f',
+    letterSpacing: 0.8,
+  },
+  previewPulseDots: {
+    marginTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  previewPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#e7d9c5',
+  },
+  previewPulseDotCurrent: {
+    backgroundColor: '#f59e0b',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  previewPulseDotPeak: {
+    borderWidth: 1.5,
+    borderColor: '#ef4444',
+    backgroundColor: 'transparent',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   previewPill: {
     flexDirection: 'row',

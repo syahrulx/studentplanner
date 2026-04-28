@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Initialize Mapbox with your public access token from environment variables.
 // In production builds (eas build), the token may not be in process.env
@@ -39,9 +40,10 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { Avatar } from '@/components/Avatar';
+import { CatLottie } from '@/components/CatLottie';
 
 
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -55,6 +57,7 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 
 // Mapbox components are imported at the top of the file.
 
@@ -261,6 +264,9 @@ function MapOpenMusicPill({
 
 export default function CommunityMap() {
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
   // Using Mapbox Standard style configuration
   const mapboxConfig = React.useMemo(() => ({
     theme: getMapState(theme.id),
@@ -311,6 +317,7 @@ export default function CommunityMap() {
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const cameraRef = useRef<Mapbox.Camera>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
@@ -334,7 +341,43 @@ export default function CommunityMap() {
     }
   }); // runs on every render, which is forced every 30s by useWallClockTick
 
-  const visibleFriends = filteredFriends;
+  const favoriteSet = useMemo(() => new Set(favoriteFriendIds), [favoriteFriendIds]);
+  const visibleFriends = useMemo(() => {
+    const sorted = [...filteredFriends];
+    sorted.sort((a, b) => {
+      const af = favoriteSet.has(a.id) ? 1 : 0;
+      const bf = favoriteSet.has(b.id) ? 1 : 0;
+      if (af !== bf) return bf - af; // favorites first
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [filteredFriends, favoriteSet]);
+  const favoriteNames = useMemo(
+    () => visibleFriends.filter((f) => favoriteSet.has(f.id)).map((f) => f.name),
+    [visibleFriends, favoriteSet],
+  );
+
+  useEffect(() => {
+    AsyncStorage.getItem(COMMUNITY_FAVORITES_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setFavoriteFriendIds(parsed.filter((x) => typeof x === 'string'));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggleFavoriteFriend = useCallback((friendId: string) => {
+    setFavoriteFriendIds((prev) => {
+      const next = prev.includes(friendId)
+        ? prev.filter((id) => id !== friendId)
+        : [friendId, ...prev];
+      AsyncStorage.setItem(COMMUNITY_FAVORITES_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
   // Song overlays are now embedded directly inside MarkerView (via the songStrip).
 
@@ -391,6 +434,7 @@ export default function CommunityMap() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {isCatTheme ? <CatLottie style={styles.floatingCat} /> : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={styles.topBarSide}>
@@ -559,31 +603,33 @@ export default function CommunityMap() {
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: theme.card },
+              { backgroundColor: isMonoTheme ? '#ffffff' : theme.card },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setShowStatusPopup(true)}
           >
-            <Feather name="edit-3" size={16} color={theme.primary} />
-            <Text style={[styles.mapOverlayBtnText, { color: theme.primary }]}>Set Status</Text>
+            <Feather name="edit-3" size={16} color={isMonoTheme ? '#000000' : theme.primary} />
+            <Text style={[styles.mapOverlayBtnText, { color: isMonoTheme ? '#000000' : theme.primary }]}>Set Status</Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
+              { backgroundColor: isMonoTheme ? '#ffffff' : theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleCenterOnMe}
           >
-            <Feather name="crosshair" size={20} color={theme.primary} />
+            <Feather name="crosshair" size={20} color={isMonoTheme ? '#000000' : theme.primary} />
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
               { 
-                backgroundColor: locationVisibility === 'off' ? theme.primary : theme.card, 
+                backgroundColor: isMonoTheme
+                  ? (locationVisibility === 'off' ? '#d1d5db' : '#ffffff')
+                  : (locationVisibility === 'off' ? theme.primary : theme.card), 
                 width: 44, 
                 paddingHorizontal: 0, 
                 justifyContent: 'center',
@@ -596,7 +642,7 @@ export default function CommunityMap() {
             <Feather 
               name={locationVisibility === 'off' ? "eye-off" : "eye"} 
               size={20} 
-              color={locationVisibility === 'off' ? "#FFF" : theme.primary} 
+              color={locationVisibility === 'off' ? (isMonoTheme ? '#000000' : "#FFF") : (isMonoTheme ? '#000000' : theme.primary)} 
             />
           </Pressable>
         </View>
@@ -811,6 +857,14 @@ export default function CommunityMap() {
             </Pressable>
           </View>
         </View>
+        {favoriteNames.length > 0 && (
+          <View style={[styles.favoriteRow, { borderColor: theme.border }]}>
+            <Feather name="heart" size={13} color={theme.primary} />
+            <Text style={[styles.favoriteRowText, { color: theme.text }]} numberOfLines={1}>
+              {favoriteNames.join(', ')}
+            </Text>
+          </View>
+        )}
 
         {/* Friends list */}
         <ScrollView
@@ -867,7 +921,16 @@ export default function CommunityMap() {
           </Pressable>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
+            isCatTheme || isMonoTheme ? (
+              <View style={styles.catLoadingWrap}>
+                <CatLottie
+                  variant={isCatTheme ? 'loading' : 'monoLoading'}
+                  style={isMonoTheme ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                />
+              </View>
+            ) : (
+              <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
+            )
           ) : visibleFriends.length === 0 ? (
             <View style={styles.emptyState}>
               <Feather name="users" size={40} color={theme.textSecondary} />
@@ -947,11 +1010,15 @@ export default function CommunityMap() {
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      handleQuickReact(friend.id, '❤️');
+                      toggleFavoriteFriend(friend.id);
                     }}
                     style={({ pressed }) => [pressed && { opacity: 0.5 }]}
                   >
-                    <Feather name="heart" size={18} color={theme.textSecondary} />
+                    <Feather
+                      name={favoriteSet.has(friend.id) ? 'heart' : 'heart'}
+                      size={18}
+                      color={favoriteSet.has(friend.id) ? '#ef4444' : theme.textSecondary}
+                    />
                   </Pressable>
                 </View>
               </Pressable>
@@ -1270,6 +1337,15 @@ const popupStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingCat: {
+    position: 'absolute',
+    right: 18,
+    bottom: SCREEN_HEIGHT * 0.4 - 10,
+    width: 62,
+    height: 46,
+    opacity: 0.96,
+    zIndex: 18,
+  },
 
   // Top bar
   topBar: {
@@ -1780,6 +1856,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
+  favoriteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  favoriteRowText: { fontSize: 12, fontWeight: '700', flex: 1 },
   bottomSheetTitle: { fontSize: 22, fontWeight: '800' },
   bottomSheetActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tabPill: {
@@ -1802,6 +1888,18 @@ const styles = StyleSheet.create({
   // Friends list
   peopleList: { flex: 1 },
   peopleListContent: { paddingHorizontal: 16 },
+  catLoadingWrap: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  catLoadingLottie: {
+    width: 84,
+    height: 58,
+  },
+  monoLoadingLottie: {
+    width: 122,
+    height: 88,
+  },
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',

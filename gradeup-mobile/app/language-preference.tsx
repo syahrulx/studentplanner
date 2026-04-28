@@ -1,25 +1,21 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { useApp } from '@/src/context/AppContext';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
 import { isDarkTheme } from '@/constants/Themes';
 
 export default function LanguagePreferenceScreen() {
-  const { language, setLanguage, loghat, setLoghat } = useApp();
+  const language = 'en';
   const theme = useTheme();
   const themeId = useThemeId();
   const dark = isDarkTheme(themeId);
   const T = useTranslations(language);
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={styles.content}>
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => router.back()}
@@ -35,18 +31,14 @@ export default function LanguagePreferenceScreen() {
       </View>
 
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-        {T('languageDesc')}
+        English is the only supported app language right now.
       </Text>
 
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.optionRow,
-            language === 'en' && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
-            pressed && styles.pressed,
-          ]}
-          onPress={() => setLanguage('en')}
-        >
+        <View style={[
+          styles.optionRow,
+          language === 'en' && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
+        ]}>
           <View style={[styles.radioOuter, { borderColor: theme.border }]}>
             {language === 'en' && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
           </View>
@@ -54,66 +46,10 @@ export default function LanguagePreferenceScreen() {
             <Text style={[styles.optionTitle, { color: theme.text }]}>{T('english')}</Text>
             <Text style={[styles.optionDesc, { color: theme.textSecondary }]}>{T('defaultLang')}</Text>
           </View>
-        </Pressable>
-
-        <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.optionRow,
-            language === 'ms' && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
-            pressed && styles.pressed,
-          ]}
-          onPress={() => setLanguage('ms')}
-        >
-          <View style={[styles.radioOuter, { borderColor: theme.border }]}>
-            {language === 'ms' && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
-          </View>
-          <View style={styles.optionTextWrap}>
-            <Text style={[styles.optionTitle, { color: theme.text }]}>{T('bahasaMelayu')}</Text>
-            <Text style={[styles.optionDesc, { color: theme.textSecondary }]}>{T('malayInterface')}</Text>
-          </View>
-        </Pressable>
-      </View>
-
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, opacity: language === 'ms' ? 1 : 0.5 }]}>
-        <View style={styles.languageHeader}>
-          <Text style={[styles.languageHeaderText, { color: theme.text }]}>{T('loghatDialect')}</Text>
-          {language !== 'ms' && (
-            <Text style={[styles.languageHeaderHint, { color: theme.textSecondary }]}>{T('switchToMalay')}</Text>
-          )}
         </View>
-
-        {[
-          { key: 'negeriSembilan' as const, label: 'Negeri Sembilan' },
-          { key: 'kelantan' as const, label: 'Kelantan' },
-          { key: 'kedah' as const, label: 'Kedah' },
-          { key: 'melaka' as const, label: 'Melaka' },
-        ].map((opt, index) => (
-          <React.Fragment key={opt.key}>
-            {index > 0 && <View style={[styles.divider, { backgroundColor: theme.border }]} />}
-            <Pressable
-              style={({ pressed }) => [
-                styles.optionRow,
-                loghat === opt.key && { backgroundColor: dark ? 'rgba(56,189,248,0.12)' : 'rgba(0,51,102,0.04)' },
-                pressed && language === 'ms' && styles.pressed,
-              ]}
-              onPress={() => {
-                if (language !== 'ms') return;
-                setLoghat(opt.key);
-              }}
-            >
-              <View style={[styles.radioOuter, { borderColor: theme.border }]}>
-                {loghat === opt.key && <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />}
-              </View>
-              <View style={styles.optionTextWrap}>
-                <Text style={[styles.optionTitle, { color: theme.text }]}>{opt.label}</Text>
-              </View>
-            </Pressable>
-          </React.Fragment>
-        ))}
       </View>
-    </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -161,9 +97,5 @@ const styles = StyleSheet.create({
   optionTextWrap: { flex: 1 },
   optionTitle: { fontSize: 15, fontWeight: '800' },
   optionDesc: { fontSize: 12, marginTop: 2 },
-  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
-  languageHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
-  languageHeaderText: { fontSize: 13, fontWeight: '800' },
-  languageHeaderHint: { fontSize: 11 },
 });
 

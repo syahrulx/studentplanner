@@ -24,6 +24,8 @@ import {
 import {
   getTheme,
   setTheme as persistTheme,
+  getThemePack,
+  setThemePack as persistThemePack,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
   setCompletedStudyKeys as persistCompletedStudies,
@@ -46,6 +48,7 @@ import {
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
+  type ThemePackId,
   type PlannerViewMode,
   type WeekStartsOn,
 } from '../storage';
@@ -143,6 +146,8 @@ type AppState = {
   clearPendingClassroomTasks: () => void;
   theme: ThemeId;
   setTheme: (theme: ThemeId) => void;
+  themePack: ThemePackId;
+  setThemePack: (pack: ThemePackId) => void;
   language: AppLanguage;
   setLanguage: (lang: AppLanguage) => void;
   loghat: AppLoghat | null;
@@ -268,6 +273,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pendingClassroomTasks, setPendingClassroomTasks] = useState<import('../lib/googleClassroom').PendingNewTask[]>([]);
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
   const [theme, setThemeState] = useState<ThemeId>('light');
+  const [themePack, setThemePackState] = useState<ThemePackId>('none');
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
   const defaultRevision: RevisionSettings = {
@@ -524,6 +530,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     getTheme().then(setThemeState);
+    getThemePack().then(setThemePackState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
@@ -1018,6 +1025,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
     persistTheme(next);
+  }, []);
+
+  const setThemePack = useCallback((next: ThemePackId) => {
+    setThemePackState(next);
+    persistThemePack(next);
   }, []);
 
   const setLanguage = useCallback((lang: AppLanguage) => {
@@ -1795,6 +1807,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clearPendingClassroomTasks,
     theme,
     setTheme,
+    themePack,
+    setThemePack,
     language,
     setLanguage,
     loghat,

@@ -16,6 +16,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@google/genai": "^1.42.0",
     "@gorhom/bottom-sheet": "^5.2.8",
+    "@lottiefiles/dotlottie-react-native": "^0.9.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
     "@react-navigation/native": "^7.1.8",

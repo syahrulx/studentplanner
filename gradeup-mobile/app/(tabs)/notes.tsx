@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
 
@@ -375,6 +375,31 @@ function createStyles(theme: ThemePalette) {
       height: 6,
       borderRadius: 3,
     },
+    monoMarker: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: '#ffffff',
+      borderWidth: 1,
+      borderColor: '#d4d4d4',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 1,
+      paddingVertical: 1,
+    },
+    monoMarkerRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 1,
+    },
+    monoMarkerDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: '#111111',
+    },
     deckSubjectText: {
       fontSize: 10,
       fontWeight: '800',
@@ -486,6 +511,8 @@ export default function StudyHub() {
   const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isMonoTheme = themePack === 'mono';
   const s = useMemo(() => createStyles(theme), [theme]);
 
   const [subjectsMenuOpen, setSubjectsMenuOpen] = useState(false);
@@ -551,6 +578,49 @@ export default function StudyHub() {
     const custom = getSubjectColor?.(courseId);
     if (custom && custom !== '#003366') return custom;
     return ACCENT_PALETTE[idx % ACCENT_PALETTE.length];
+  };
+
+  const monoSubjectOrder = useMemo(() => {
+    const subjectIds = Array.from(
+      new Set([
+        ...courses.map((c) => c.id),
+        ...notes.map((n) => n.subjectId),
+      ]),
+    );
+    subjectIds.sort((a, b) => a.localeCompare(b));
+    const map = new Map<string, number>();
+    subjectIds.forEach((id, idx) => {
+      map.set(id, idx + 1);
+    });
+    return map;
+  }, [courses, notes]);
+
+  const getMonoMarkerCount = (key: string): number => {
+    const indexCount = monoSubjectOrder.get(key);
+    if (indexCount) return indexCount;
+    return 1;
+  };
+
+  const renderMonoMarker = (key: string) => {
+    const dots = getMonoMarkerCount(key);
+    const rows: number[] = [];
+    let remaining = dots;
+    while (remaining > 0) {
+      const rowCount = Math.min(3, remaining);
+      rows.push(rowCount);
+      remaining -= rowCount;
+    }
+    return (
+      <View style={s.monoMarker}>
+        {rows.map((rowCount, rowIdx) => (
+          <View key={`${key}-row-${rowIdx}`} style={s.monoMarkerRow}>
+            {Array.from({ length: rowCount }, (_, i) => (
+              <View key={`${key}-dot-${rowIdx}-${i}`} style={s.monoMarkerDot} />
+            ))}
+          </View>
+        ))}
+      </View>
+    );
   };
 
   // All notes that act as flashcard decks
@@ -720,7 +790,7 @@ export default function StudyHub() {
                   )
                 }
               >
-                <Feather name="arrow-up-down" size={13} color={theme.textSecondary} />
+                <Feather name="filter" size={13} color={theme.textSecondary} />
                 <Text style={s.deckControlBtnText}>{deckSortLabel}</Text>
               </Pressable>
               <Pressable
@@ -772,9 +842,14 @@ export default function StudyHub() {
                           }}
                         >
                           <View style={s.deckCardHeader}>
-                            <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                              <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                              <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                            <View
+                              style={[
+                                s.deckSubjectBadge,
+                                { backgroundColor: isMonoTheme ? '#f5f5f5' : `${deck.color}15` },
+                              ]}
+                            >
+                              {isMonoTheme ? renderMonoMarker(deck.subjectId) : <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />}
+                              <Text style={[s.deckSubjectText, { color: isMonoTheme ? '#111111' : deck.color }]} numberOfLines={1}>
                                 {deck.subjectId}
                               </Text>
                             </View>
@@ -797,8 +872,8 @@ export default function StudyHub() {
 
                             {deck.count > 0 && (
                               <View style={s.deckReviewBtn}>
-                                <Feather name="play" size={10} color="#ffffff" />
-                                <Text style={s.deckReviewText}>Review</Text>
+                                <Feather name="play" size={10} color={isMonoTheme ? '#000000' : '#ffffff'} />
+                                <Text style={[s.deckReviewText, isMonoTheme && { color: '#000000' }]}>Review</Text>
                               </View>
                             )}
                           </View>
@@ -835,9 +910,14 @@ export default function StudyHub() {
                         }}
                       >
                         <View style={s.deckCardHeader}>
-                          <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                            <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                            <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                          <View
+                            style={[
+                              s.deckSubjectBadge,
+                              { backgroundColor: isMonoTheme ? '#f5f5f5' : `${deck.color}15` },
+                            ]}
+                          >
+                            {isMonoTheme ? renderMonoMarker(deck.subjectId) : <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />}
+                            <Text style={[s.deckSubjectText, { color: isMonoTheme ? '#111111' : deck.color }]} numberOfLines={1}>
                               {deck.subjectId}
                             </Text>
                           </View>
@@ -860,8 +940,8 @@ export default function StudyHub() {
 
                           {deck.count > 0 && (
                             <View style={s.deckReviewBtn}>
-                              <Feather name="play" size={10} color="#ffffff" />
-                              <Text style={s.deckReviewText}>Review</Text>
+                              <Feather name="play" size={10} color={isMonoTheme ? '#000000' : '#ffffff'} />
+                              <Text style={[s.deckReviewText, isMonoTheme && { color: '#000000' }]}>Review</Text>
                             </View>
                           )}
                         </View>
@@ -919,7 +999,7 @@ export default function StudyHub() {
                 style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
                 onPress={() => handleSubjectRowPress(course)}
               >
-                <View style={[s.colorDot, { backgroundColor: color }]} />
+                {isMonoTheme ? renderMonoMarker(course.id) : <View style={[s.colorDot, { backgroundColor: color }]} />}
                 <View style={s.rowBody}>
                   <Text style={s.rowTitle}>{course.id}</Text>
                   <Text style={s.rowSub} numberOfLines={1}>{course.name}</Text>

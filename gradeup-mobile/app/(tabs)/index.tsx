@@ -29,10 +29,11 @@ import {
   taskCountsByOpenDueWeek,
   teachingWeekNumberForDate,
 } from '@/src/lib/academicWeek';
-import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
 import { Avatar } from '@/components/Avatar';
 import { useFocusEffect } from '@react-navigation/native';
+import { CatLottie } from '@/components/CatLottie';
 const DASHBOARD_LIST = [{ key: 'home' as const }];
 
 /** Home header: darker base + stronger waves (only these themes; blush/emerald unchanged). */
@@ -116,7 +117,7 @@ type FocusStudyItem = {
   name: string;
 };
 
-function createDashboardStyles(theme: ThemePalette) {
+function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
   const primary = theme.primary;
   const bg = theme.background;
   const card = theme.card;
@@ -128,6 +129,8 @@ function createDashboardStyles(theme: ThemePalette) {
   const chipBorder = `${primary}44`;
   const metaPillOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.82)' : border;
   const taskCardOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.38)' : border;
+  const monoAccent = '#9ca3af';
+  const pulseCurrentColor = isMonoTheme ? monoAccent : GOLD;
 
   return StyleSheet.create({
     container: { flex: 1 },
@@ -235,7 +238,7 @@ function createDashboardStyles(theme: ThemePalette) {
       width: 14,
       height: 14,
       borderRadius: 7,
-      backgroundColor: GOLD,
+      backgroundColor: pulseCurrentColor,
     },
     peakAlertDotPast: {
       backgroundColor: textSecondary,
@@ -248,13 +251,19 @@ function createDashboardStyles(theme: ThemePalette) {
       borderColor: '#ef4444',
       backgroundColor: 'transparent',
     },
+    peakAlertDotPeakMono: {
+      borderColor: '#9ca3af',
+    },
     peakAlertDotCurrentPeak: {
       width: 14,
       height: 14,
       borderRadius: 7,
-      backgroundColor: GOLD,
+      backgroundColor: pulseCurrentColor,
       borderWidth: 2.5,
       borderColor: '#ef4444',
+    },
+    peakAlertDotCurrentPeakMono: {
+      borderColor: '#9ca3af',
     },
     headerGradient: {
       borderBottomLeftRadius: 28,
@@ -268,6 +277,103 @@ function createDashboardStyles(theme: ThemePalette) {
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
     },
+    monoHeaderPattern: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+      overflow: 'hidden',
+    },
+    monoGlitchBand: {
+      position: 'absolute',
+      left: -20,
+      right: -20,
+      borderRadius: 999,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    monoGlitchBandA: {
+      top: 8,
+      height: 24,
+      transform: [{ rotate: '-4deg' }],
+    },
+    monoGlitchBandB: {
+      top: 34,
+      height: 18,
+      transform: [{ rotate: '3deg' }],
+    },
+    monoGlitchBandC: {
+      top: 64,
+      height: 20,
+      transform: [{ rotate: '-3deg' }],
+    },
+    monoGlitchBandD: {
+      top: 96,
+      height: 16,
+      transform: [{ rotate: '4deg' }],
+    },
+    monoGlitchBandE: {
+      bottom: 54,
+      height: 20,
+      transform: [{ rotate: '-2deg' }],
+    },
+    monoGlitchBandF: {
+      bottom: 26,
+      height: 18,
+      transform: [{ rotate: '3deg' }],
+    },
+    monoGlitchBandG: {
+      bottom: -4,
+      height: 24,
+      transform: [{ rotate: '-4deg' }],
+    },
+    monoGlitchBlock: {
+      position: 'absolute',
+      backgroundColor: 'rgba(255,255,255,0.14)',
+      borderRadius: 4,
+    },
+    monoGlitchBlockA: {
+      top: 18,
+      left: 52,
+      width: 22,
+      height: 6,
+    },
+    monoGlitchBlockB: {
+      top: 58,
+      right: 68,
+      width: 18,
+      height: 5,
+    },
+    monoGlitchBlockC: {
+      bottom: 40,
+      left: 120,
+      width: 26,
+      height: 6,
+    },
+    monoGlitchBlockD: {
+      bottom: 14,
+      right: 110,
+      width: 20,
+      height: 5,
+    },
+    catHeaderPattern: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+      overflow: 'hidden',
+    },
+    catHeaderBubble: {
+      position: 'absolute',
+      borderRadius: 999,
+      backgroundColor: 'rgba(255,255,255,0.3)',
+    },
+    catHeaderBubbleA: { width: 210, height: 210, top: -80, left: -30 },
+    catHeaderBubbleB: { width: 150, height: 150, top: 24, right: -24 },
+    catHeaderBubbleC: { width: 180, height: 180, bottom: -92, left: 118 },
+    catHeaderPaw: {
+      position: 'absolute',
+      color: 'rgba(255,255,255,0.6)',
+      fontSize: 15,
+    },
+    catHeaderPawA: { top: 18, right: 86 },
+    catHeaderPawB: { top: 62, left: 50 },
+    catHeaderPawC: { bottom: 24, right: 42 },
     headerTextureOverlay: {
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
@@ -607,7 +713,10 @@ export default function Dashboard() {
   } = useCommunity();
   const theme = useTheme();
   const themeId = useThemeId();
-  const styles = useMemo(() => createDashboardStyles(theme), [theme]);
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
+  const styles = useMemo(() => createDashboardStyles(theme, isMonoTheme), [theme, isMonoTheme]);
 
   const headerVisualBoost = HEADER_VISUAL_BOOST_IDS.has(themeId);
 
@@ -616,7 +725,17 @@ export default function Dashboard() {
   let headerSecondary: string;
   let headerSheenAccent: string;
 
-  if (themeId === 'light') {
+  if (isCatTheme) {
+    headerAccent2 = '#f8d49f';
+    headerPrimary = '#f6c47f';
+    headerSecondary = '#f7ddb8';
+    headerSheenAccent = '#fff2de';
+  } else if (isMonoTheme) {
+    headerAccent2 = '#161616';
+    headerPrimary = '#1f1f1f';
+    headerSecondary = '#2a2a2a';
+    headerSheenAccent = '#6b7280';
+  } else if (themeId === 'light') {
     headerAccent2 = LIGHT_HOME_HEADER.accent2;
     headerPrimary = LIGHT_HOME_HEADER.primary;
     headerSecondary = LIGHT_HOME_HEADER.secondary;
@@ -642,11 +761,16 @@ export default function Dashboard() {
 
   /** Match profile hero: wave 0.35 + overlay rgba(0,51,102,0.35) — same recipe as profile. */
   const profileMatchTexture = themeId === 'light' || themeId === 'dark';
-  const headerWaveOpacity = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
-  const headerTextureOverlayAlpha = profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
-  const headerSheenAlpha = profileMatchTexture ? 0.08 : headerVisualBoost ? 0.12 : 0.22;
+  const headerWaveOpacity = isCatTheme ? 0.2 : isMonoTheme ? 0.16 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
+  const headerTextureOverlayAlpha = isCatTheme ? 0.08 : isMonoTheme ? 0.14 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
+  const headerSheenAlpha = isCatTheme ? 0.1 : isMonoTheme ? 0.1 : profileMatchTexture ? 0.08 : headerVisualBoost ? 0.12 : 0.22;
 
   const headerOnPrimary =
+    isCatTheme
+      ? '#5b3a22'
+      : isMonoTheme
+        ? '#f5f5f5'
+      :
     themeId === 'light' || themeId === 'midnight'
       ? '#ffffff'
       : themeId === 'dark' && headerVisualBoost
@@ -717,8 +841,38 @@ export default function Dashboard() {
     }, []),
   );
   const [refreshingHome, setRefreshingHome] = useState(false);
+  const [themeLoadingHold, setThemeLoadingHold] = useState(false);
+  const themeLoadingStartedAtRef = useRef<number | null>(null);
   const refreshSpin = useRef(new Animated.Value(0)).current;
   const refreshPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isCatTheme && !isMonoTheme) {
+      themeLoadingStartedAtRef.current = null;
+      setThemeLoadingHold(false);
+      return;
+    }
+    if (!dataReady) {
+      if (themeLoadingStartedAtRef.current == null) {
+        themeLoadingStartedAtRef.current = Date.now();
+      }
+      return;
+    }
+    const startedAt = themeLoadingStartedAtRef.current;
+    if (startedAt == null) return;
+    const MIN_THEME_LOADING_MS = isCatTheme ? 6000 : 4200;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= MIN_THEME_LOADING_MS) {
+      themeLoadingStartedAtRef.current = null;
+      setThemeLoadingHold(false);
+      return;
+    }
+    setThemeLoadingHold(true);
+    const timeoutId = setTimeout(() => {
+      themeLoadingStartedAtRef.current = null;
+      setThemeLoadingHold(false);
+    }, MIN_THEME_LOADING_MS - elapsed);
+    return () => clearTimeout(timeoutId);
+  }, [dataReady, isCatTheme, isMonoTheme]);
   useEffect(() => {
     if (refreshingHome) {
       const spinLoop = Animated.loop(
@@ -770,12 +924,13 @@ export default function Dashboard() {
       if (__DEV__) console.warn('[Home] pull refresh failed', e);
     } finally {
       const elapsed = Date.now() - started;
-      if (elapsed < 240) {
-        await new Promise((r) => setTimeout(r, 240 - elapsed));
+      const minRefreshMs = isCatTheme ? 3200 : isMonoTheme ? 3200 : 240;
+      if (elapsed < minRefreshMs) {
+        await new Promise((r) => setTimeout(r, minRefreshMs - elapsed));
       }
       setRefreshingHome(false);
     }
-  }, [refreshRemoteData, refreshCommunityAll]);
+  }, [isCatTheme, isMonoTheme, refreshRemoteData, refreshCommunityAll]);
   const homeTeachingWeek = useMemo(
     () =>
       teachingWeekNumberForDate(
@@ -949,7 +1104,9 @@ export default function Dashboard() {
       const subjectColor = getSubjectColor(focusTask.task.courseId);
       const days = info.days;
       let statusColor: string;
-      if (info.key === 'overdue' || days === 0) {
+      if (isMonoTheme) {
+        statusColor = '#9ca3af';
+      } else if (info.key === 'overdue' || days === 0) {
         statusColor = '#dc2626';
       } else if (days <= 3) {
         statusColor = '#ca8a04';
@@ -963,7 +1120,7 @@ export default function Dashboard() {
         code: formattedCourse,
         date: focusTask.task.dueDate,
         time: focusTask.task.dueTime,
-        accentColor: subjectColor,
+                        accentColor: isMonoTheme ? '#9ca3af' : subjectColor,
         statusColor,
         badgeBackground: theme.card,
         label:
@@ -990,8 +1147,8 @@ export default function Dashboard() {
         code: nextStudyItem.code,
         date: nextStudyItem.date,
         time: nextStudyItem.time,
-        accentColor: subjectColor,
-        statusColor: subjectColor,
+        accentColor: isMonoTheme ? '#9ca3af' : subjectColor,
+        statusColor: isMonoTheme ? '#9ca3af' : subjectColor,
         badgeBackground: theme.card,
         label:
           info.key === 'daysLeft'
@@ -1017,7 +1174,8 @@ export default function Dashboard() {
   // ── Solution A: Loading guard ─────────────────────────────────
   // Don't render dashboard content until real data has loaded.
   // This prevents the confusing "Hello, Student" flash with empty data.
-  if (!dataReady) {
+  const shouldShowLoading = !dataReady || ((isCatTheme || isMonoTheme) && themeLoadingHold);
+  if (shouldShowLoading) {
     return (
       <View
         style={[
@@ -1029,7 +1187,17 @@ export default function Dashboard() {
           },
         ]}
       >
-        <ActivityIndicator size="large" color={theme.primary} />
+        {isCatTheme || isMonoTheme ? (
+          <View style={catStyles.loadingBubble} />
+        ) : null}
+        {isCatTheme || isMonoTheme ? (
+          <CatLottie
+            variant={isCatTheme ? 'loading' : 'monoLoading'}
+            style={isMonoTheme ? catStyles.loadingMonoLottie : catStyles.loadingCatLottie}
+          />
+        ) : (
+          <ActivityIndicator size="large" color={theme.primary} />
+        )}
         <Text
           style={{
             color: theme.primary,
@@ -1057,6 +1225,14 @@ export default function Dashboard() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {isCatTheme ? (
+        <View style={catStyles.bgWrap} pointerEvents="none">
+          <View style={[catStyles.bgBubble, catStyles.bgBubbleA]} />
+          <View style={[catStyles.bgBubble, catStyles.bgBubbleB]} />
+          <View style={[catStyles.bgBubble, catStyles.bgBubbleC]} />
+          <Text style={[catStyles.bgPaw, catStyles.bgPawC]}>🐾</Text>
+        </View>
+      ) : null}
       <FlatList
         data={DASHBOARD_LIST}
         keyExtractor={(row) => row.key}
@@ -1098,12 +1274,35 @@ export default function Dashboard() {
           end={{ x: 1, y: 1 }}
           style={[StyleSheet.absoluteFillObject, styles.headerGradient]}
         />
-        <Image
-          source={require('../../assets/images/wave-texture.png')}
-          style={[StyleSheet.absoluteFillObject, styles.headerWave, { opacity: headerWaveOpacity }]}
-          // iPad/TestFlight can stretch this texture too much; repeat keeps it crisp on large ratios.
-          resizeMode={Platform.OS === 'ios' ? 'repeat' : 'cover'}
-        />
+        {isCatTheme ? (
+          <View style={[StyleSheet.absoluteFillObject, styles.catHeaderPattern]} pointerEvents="none">
+            <View style={[styles.catHeaderBubble, styles.catHeaderBubbleA]} />
+            <View style={[styles.catHeaderBubble, styles.catHeaderBubbleB]} />
+            <View style={[styles.catHeaderBubble, styles.catHeaderBubbleC]} />
+            <Text style={[styles.catHeaderPaw, styles.catHeaderPawC]}>🐾</Text>
+          </View>
+        ) : isMonoTheme ? (
+          <View style={[StyleSheet.absoluteFillObject, styles.monoHeaderPattern]} pointerEvents="none">
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandA]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandB]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandC]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandD]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandE]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandF]} />
+            <View style={[styles.monoGlitchBand, styles.monoGlitchBandG]} />
+            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockA]} />
+            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockB]} />
+            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockC]} />
+            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockD]} />
+          </View>
+        ) : (
+          <Image
+            source={require('../../assets/images/wave-texture.png')}
+            style={[StyleSheet.absoluteFillObject, styles.headerWave, { opacity: headerWaveOpacity }]}
+            // iPad/TestFlight can stretch this texture too much; repeat keeps it crisp on large ratios.
+            resizeMode={Platform.OS === 'ios' ? 'repeat' : 'cover'}
+          />
+        )}
         <View
           style={[
             StyleSheet.absoluteFillObject,
@@ -1171,6 +1370,7 @@ export default function Dashboard() {
               <Text style={styles.peakAlertLabel}>{T('semesterPulse')}</Text>
             </View>
             <View style={[styles.peakAlertBadge, semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted]}>
+                {isCatTheme ? <CatLottie style={catStyles.peakCatLottie} /> : null}
               <Text
                 style={[styles.peakAlertBadgeText, semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted]}
                 numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
@@ -1194,11 +1394,11 @@ export default function Dashboard() {
                 const isCurrent = weekNum === homeTeachingWeek;
                 const isTaskPeak = taskPeakMax > 0 && taskPeakWeek >= 1 && weekNum === taskPeakWeek;
                 if (isCurrent && isTaskPeak) {
-                  dotStyles = [styles.peakAlertDotCurrentPeak];
+                  dotStyles = [styles.peakAlertDotCurrentPeak, isMonoTheme && styles.peakAlertDotCurrentPeakMono];
                 } else if (isCurrent) {
                   dotStyles = [styles.peakAlertDotCurrent];
                 } else if (isTaskPeak) {
-                  dotStyles = [styles.peakAlertDotPeak];
+                  dotStyles = [styles.peakAlertDotPeak, isMonoTheme && styles.peakAlertDotPeakMono];
                 } else if (weekNum < homeTeachingWeek) {
                   dotStyles.push(styles.peakAlertDotPast);
                 }
@@ -1347,7 +1547,7 @@ export default function Dashboard() {
                 if (days < 0 || taskPast || days === 0) {
                   accent = '#dc2626'; // red – very near / overdue
                 } else if (days <= 3) {
-                  accent = '#eab308'; // yellow – medium near
+                  accent = isMonoTheme ? '#9ca3af' : '#eab308'; // medium near
                 } else {
                   accent = '#22c55e'; // green – far
                 }
@@ -1416,31 +1616,101 @@ export default function Dashboard() {
       />
       {refreshingHome ? (
         <View style={styles.homeRefreshOverlayTop} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.refreshRingOuter,
-              {
-                backgroundColor: hexToRgba(headerPrimary, 0.15),
-                transform: [{ scale: refreshPulse }],
-              },
-            ]}
-          >
+          {isCatTheme || isMonoTheme ? (
+            <CatLottie
+              variant={isCatTheme ? 'loading' : 'monoLoading'}
+              style={isMonoTheme ? catStyles.refreshMonoLottie : catStyles.refreshCatLottie}
+            />
+          ) : (
             <Animated.View
               style={[
-                styles.refreshRingInner,
+                styles.refreshRingOuter,
                 {
-                  borderBottomColor: headerOnPrimary,
-                  borderLeftColor: headerOnPrimary,
-                  transform: [{ rotate: refreshSpin.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '360deg'],
-                  }) }],
+                  backgroundColor: hexToRgba(headerPrimary, 0.15),
+                  transform: [{ scale: refreshPulse }],
                 },
               ]}
-            />
-          </Animated.View>
+            >
+              <Animated.View
+                style={[
+                  styles.refreshRingInner,
+                  {
+                    borderBottomColor: headerOnPrimary,
+                    borderLeftColor: headerOnPrimary,
+                    transform: [{ rotate: refreshSpin.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg'],
+                    }) }],
+                  },
+                ]}
+              />
+            </Animated.View>
+          )}
         </View>
       ) : null}
     </View>
   );
 }
+
+const catStyles = StyleSheet.create({
+  bgWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  bgBubble: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(244,196,127,0.25)',
+  },
+  bgBubbleA: { width: 180, height: 180, top: -40, left: -50 },
+  bgBubbleB: { width: 130, height: 130, top: 260, right: -36 },
+  bgBubbleC: { width: 210, height: 210, bottom: -70, left: 40 },
+  bgPaw: {
+    position: 'absolute',
+    fontSize: 14,
+    opacity: 0.32,
+  },
+  bgPawA: { top: 88, right: 24 },
+  bgPawB: { top: 360, left: 26 },
+  bgPawC: { bottom: 120, right: 30 },
+  loadingBubble: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    backgroundColor: 'rgba(198,135,87,0.16)',
+  },
+  loadingCatLottie: {
+    position: 'absolute',
+    marginTop: -46,
+    width: 92,
+    height: 64,
+    opacity: 0.95,
+  },
+  refreshCatLottie: {
+    width: 70,
+    height: 50,
+    opacity: 0.96,
+  },
+  loadingMonoLottie: {
+    position: 'absolute',
+    marginTop: -60,
+    width: 132,
+    height: 92,
+    opacity: 0.98,
+  },
+  refreshMonoLottie: {
+    width: 104,
+    height: 72,
+    opacity: 0.98,
+  },
+  peakCatLottie: {
+    position: 'absolute',
+    left: -16,
+    top: -30,
+    width: 58,
+    height: 42,
+    opacity: 0.98,
+    zIndex: 3,
+  },
+});

@@ -16,7 +16,7 @@ import Feather from '@expo/vector-icons/Feather';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
@@ -152,7 +152,15 @@ const JS_TO_DAY: DayOfWeek[] = [
 export default function TimetableScreen() {
   const { language, timetable, user, weekStartsOn, saveTimetableOnly, subjectColors } = useApp();
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
   const T = useTranslations(language);
+  const resolveSlotColor = useCallback(
+    (entry: TimetableEntry) => (isMonoTheme ? '#9ca3af' : entrySlotColor(entry, subjectColors)),
+    [isMonoTheme, subjectColors],
+  );
+
   const { width: winW, height: winH } = useWindowDimensions();
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -293,6 +301,15 @@ export default function TimetableScreen() {
 
     return (
       <View style={[s.container, { backgroundColor: theme.background }]}>
+        {isCatTheme ? (
+          <View style={s.catBgWrap} pointerEvents="none">
+            <View style={[s.catBgBubble, s.catBgBubbleA]} />
+            <View style={[s.catBgBubble, s.catBgBubbleB]} />
+            <View style={[s.catBgBubble, s.catBgBubbleC]} />
+            <Text style={[s.catBgPaw, s.catBgPawA]}>🐾</Text>
+            <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
+          </View>
+        ) : null}
         {renderHeader(true)}
         <Modal
           visible={showNonUitmIntro}
@@ -761,7 +778,7 @@ export default function TimetableScreen() {
 
   function renderClassDetailsModal() {
     if (!selectedClass) return null;
-    const color = entrySlotColor(selectedClass, subjectColors);
+    const color = resolveSlotColor(selectedClass);
     return (
       <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
         <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
@@ -847,7 +864,7 @@ export default function TimetableScreen() {
                     <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
                     {count > 0 ? (
                       <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                        <Text style={s.gridColCountText}>{count}</Text>
+                        <Text style={[s.gridColCountText, isMonoTheme && { color: '#000000' }]}>{count}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -934,7 +951,7 @@ export default function TimetableScreen() {
                         const endMin = timeToMinutes(entry.endTime);
                         const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
                         const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-                        const color = entrySlotColor(entry, subjectColors);
+                        const color = resolveSlotColor(entry);
                         const title = entryDisplayTitle(entry);
                         const hasTitle = Boolean(slotDetails.courseName && height > 38);
                         const metaParts = weekGridMetaParts(
@@ -1043,7 +1060,7 @@ export default function TimetableScreen() {
                   <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
                   {count > 0 ? (
                     <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                      <Text style={s.gridColCountText}>{count}</Text>
+                      <Text style={[s.gridColCountText, isMonoTheme && { color: '#000000' }]}>{count}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1096,7 +1113,7 @@ export default function TimetableScreen() {
                     const endMin = timeToMinutes(entry.endTime);
                     const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
                     const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-                    const color = entrySlotColor(entry, subjectColors);
+                    const color = resolveSlotColor(entry);
                     const title = entryDisplayTitle(entry);
                     const hasTitle = Boolean(slotDetails.courseName && height > 38);
                     const metaParts = weekGridMetaParts(
@@ -1204,7 +1221,7 @@ export default function TimetableScreen() {
               </View>
               <View style={s.listDayBoxBody}>
                 {items.map((e) => {
-                  const color = entrySlotColor(e, subjectColors);
+                  const color = resolveSlotColor(e);
                   const title = entryDisplayTitle(e);
                   const cardStyle = [s.listCard, { backgroundColor: theme.background, borderLeftColor: color }];
                   const cardInner = (
@@ -1273,6 +1290,15 @@ export default function TimetableScreen() {
 
   return (
     <View style={[s.container, { backgroundColor: theme.background }]}>
+      {isCatTheme ? (
+        <View style={s.catBgWrap} pointerEvents="none">
+          <View style={[s.catBgBubble, s.catBgBubbleA]} />
+          <View style={[s.catBgBubble, s.catBgBubbleB]} />
+          <View style={[s.catBgBubble, s.catBgBubbleC]} />
+          <Text style={[s.catBgPaw, s.catBgPawA]}>🐾</Text>
+          <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
+        </View>
+      ) : null}
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
@@ -1284,6 +1310,34 @@ export default function TimetableScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
+  catBgWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  catBgBubble: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(198,135,87,0.11)',
+  },
+  catBgBubbleA: { width: 160, height: 160, top: 92, left: -34 },
+  catBgBubbleB: { width: 120, height: 120, top: 340, right: -22 },
+  catBgBubbleC: { width: 190, height: 190, bottom: -64, left: 58 },
+  catBgPaw: {
+    position: 'absolute',
+    fontSize: 14,
+    opacity: 0.24,
+  },
+  catBgPawA: { top: 220, right: 18 },
+  catBgPawB: { bottom: 140, left: 22 },
+  floatingCat: {
+    position: 'absolute',
+    right: 12,
+    bottom: 114,
+    width: 70,
+    height: 50,
+    opacity: 0.94,
+    zIndex: 5,
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 64 : 48,
