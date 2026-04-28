@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import EventsBoard from '@/components/EventsBoard';
 import {
   View,
@@ -310,7 +310,7 @@ export default function CommunityMap() {
   const mapCenterLat = hasValidMyCoords ? myLatitude : 3.0651;
 
   const [communityTab, setCommunityTab] = useState<'map' | 'events'>('map');
-  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
@@ -419,7 +419,7 @@ export default function CommunityMap() {
           <Pressable
             style={({ pressed }) => [
               styles.eventsFab,
-              { backgroundColor: theme.primary, bottom: insets.bottom + 16 },
+              { backgroundColor: theme.primary, bottom: tabBarHeight + 16 },
               pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
             ]}
             onPress={() => router.push('/community/create-post' as any)}
