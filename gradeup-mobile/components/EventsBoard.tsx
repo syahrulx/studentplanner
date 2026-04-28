@@ -13,6 +13,7 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -52,6 +53,7 @@ export default function EventsBoard() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const tabBarHeight = useBottomTabBarHeight();
   const [filter, setFilter] = useState<PostType | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
 
@@ -207,7 +209,7 @@ export default function EventsBoard() {
           data={posts}
           keyExtractor={(item) => item.id}
           renderItem={renderCard}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 80 }]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} />
           }
@@ -224,12 +226,12 @@ export default function EventsBoard() {
 
       {/* FAB */}
       <Pressable
+        onPress={() => router.push('/community/create-post' as any)}
         style={({ pressed }) => [
           styles.fab,
-          { backgroundColor: theme.primary },
+          { backgroundColor: theme.primary, bottom: tabBarHeight + 16 },
           pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
         ]}
-        onPress={() => router.push('/community/create-post' as any)}
       >
         <Feather name="plus" size={26} color="#fff" />
       </Pressable>
