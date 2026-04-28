@@ -17,6 +17,9 @@ export default function CommunityLayout() {
       <Stack.Screen name="circles" />
       <Stack.Screen name="circle-detail" />
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="create-post" />
+      <Stack.Screen name="post-detail" />
+      <Stack.Screen name="request-authority" />
     </Stack>
   );
 }

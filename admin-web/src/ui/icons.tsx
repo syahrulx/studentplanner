@@ -216,5 +216,33 @@ export function IconSubscription({ className }: Props) {
       <path d="M8.2 14.2h4.2M8.2 16.8h7.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.75" />
     </svg>
   );
+  );
 }
 
+export function IconClipboard({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M9 2.8h6c.6 0 1 .4 1 1V5h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2V3.8c0-.6.4-1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M8 12h8M8 15.5h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.85" />
+    </svg>
+  );
+}
+
+export function IconShield({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M12 3.2 4.5 6.8v5.7c0 4.3 3.2 8.3 7.5 9.3 4.3-1 7.5-5 7.5-9.3V6.8L12 3.2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+    </svg>
+  );
+}

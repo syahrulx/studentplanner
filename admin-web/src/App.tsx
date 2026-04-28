@@ -9,6 +9,8 @@ import { CalendarUpdatesRoute } from './routes/CalendarUpdatesRoute';
 import { LogsRoute } from './routes/LogsRoute';
 import { LocationsRoute } from './routes/LocationsRoute';
 import { CirclesRoute } from './routes/CirclesRoute';
+import { EventsRoute } from './routes/EventsRoute';
+import { AuthorityRoute } from './routes/AuthorityRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
@@ -33,6 +35,8 @@ export default function App() {
             <Route path="calendar-updates" element={<CalendarUpdatesRoute />} />
             <Route path="locations" element={<LocationsRoute />} />
             <Route path="circles" element={<CirclesRoute />} />
+            <Route path="events" element={<EventsRoute />} />
+            <Route path="authorities" element={<AuthorityRoute />} />
             <Route path="broadcast" element={<BroadcastRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />

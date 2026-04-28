@@ -4,12 +4,14 @@ import { MotionSidebarItem } from '../ui/motion';
 import {
   IconCalendar,
   IconCircles,
+  IconClipboard,
   IconFileText,
   IconGrid,
   IconBell,
   IconMapPin,
   IconSchool,
   IconSettings,
+  IconShield,
   IconSubscription,
   IconUsers,
 } from '../ui/icons';
@@ -24,6 +26,8 @@ const nav = [
   { to: '/calendar-updates', label: 'Calendar updates', Icon: IconCalendar },
   { to: '/locations', label: 'Locations', Icon: IconMapPin },
   { to: '/circles', label: 'Circles', Icon: IconCircles },
+  { to: '/events', label: 'Events', Icon: IconClipboard },
+  { to: '/authorities', label: 'Authorities', Icon: IconShield },
   { to: '/broadcast', label: 'Broadcast', Icon: IconBell },
   { to: '/logs', label: 'Logs', Icon: IconFileText },
   { to: '/settings', label: 'Settings', Icon: IconSettings },

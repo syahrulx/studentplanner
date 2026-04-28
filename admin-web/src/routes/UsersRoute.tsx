@@ -602,204 +602,238 @@ export function UsersRoute() {
 
       <MotionSection delay={0.05} className="mt-6">
         <MotionPanel>
-      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="flex flex-1 flex-col gap-3 md:flex-row">
-            <label className="block flex-1">
-              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Search</div>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name or Student ID"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-              />
-            </label>
-            <label className="block md:w-64">
-              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">University</div>
-              <input
-                value={universityId}
-                onChange={(e) => setUniversityId(e.target.value)}
-                placeholder="e.g. uitm"
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-              />
-            </label>
-            <label className="block md:w-36">
-              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Show</div>
-              <select
-                value={rowLimit}
-                onChange={(e) => setRowLimit(e.target.value as RowLimit)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:flex-wrap">
+                <label className="block min-w-[220px] flex-1">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    Search
+                  </div>
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Name or Student ID"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </label>
+
+                <label className="block lg:w-64">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    University
+                  </div>
+                  <input
+                    value={universityId}
+                    onChange={(e) => setUniversityId(e.target.value)}
+                    placeholder="e.g. uitm"
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </label>
+
+                <label className="block lg:w-36">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    Show
+                  </div>
+                  <select
+                    value={rowLimit}
+                    onChange={(e) => setRowLimit(e.target.value as RowLimit)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value={25}>25 users</option>
+                    <option value={50}>50 users</option>
+                    <option value={100}>100 users</option>
+                    <option value={200}>200 users</option>
+                    <option value="all">All users</option>
+                  </select>
+                </label>
+
+                <label className="block lg:w-56">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    Sort
+                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortKey)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="newest">Newest joined</option>
+                    <option value="oldest">Oldest joined</option>
+                    <option value="name_az">Name A-Z</option>
+                    <option value="name_za">Name Z-A</option>
+                    <option value="usage_high">AI usage highest</option>
+                    <option value="usage_low">AI usage lowest</option>
+                  </select>
+                </label>
+              </div>
+
+              <button
+                onClick={refresh}
+                disabled={busy}
+                className="h-11 shrink-0 rounded-2xl bg-brand-600 px-5 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
               >
-                <option value={25}>25 users</option>
-                <option value={50}>50 users</option>
-                <option value={100}>100 users</option>
-                <option value={200}>200 users</option>
-                <option value="all">All users</option>
-              </select>
-            </label>
-            <label className="block md:w-44">
-              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Sort</div>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortKey)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="newest">Newest joined</option>
-                <option value="oldest">Oldest joined</option>
-                <option value="name_az">Name A-Z</option>
-                <option value="name_za">Name Z-A</option>
-                <option value="usage_high">AI usage highest</option>
-                <option value="usage_low">AI usage lowest</option>
-              </select>
-            </label>
-          </div>
-          <button
-            onClick={refresh}
-            disabled={busy}
-            className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-          >
-            {busy ? 'Loading…' : 'Search'}
-          </button>
-        </div>
+                {busy ? 'Loading…' : 'Search'}
+              </button>
+            </div>
 
-        {err ? (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-            {err}
-          </div>
-        ) : null}
+            {err ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
+                {err}
+              </div>
+            ) : null}
 
-        <div className="mt-4 flex items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          <span>Showing {rows.length} of {count}</span>
-          {usageLoading ? <span className="text-brand-600 dark:text-brand-400">· loading AI usage…</span> : null}
-        </div>
-
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[1040px] border-separate border-spacing-y-2">
-            <thead>
-              <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Student ID</th>
-                <th className="px-3 py-2">University</th>
-                <th className="px-3 py-2">Device</th>
-                <th className="px-3 py-2">Plan</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Joined</th>
-                <th className="px-3 py-2" title="AI tokens used this calendar month (UTC). Hover the bar for details.">
-                  AI usage · this month
-                </th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((u) => {
-                const tone = u.status === 'active' ? 'green' : u.status === 'disabled' ? 'amber' : 'rose';
-                const planTone =
-                  u.subscription_plan === 'free' ? 'slate' : u.subscription_plan === 'plus' ? 'green' : 'amber';
-                const used = usageByUser[u.id] ?? 0;
-                return (
-                  <tr key={u.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40">
-                    <td className="px-3 py-3 text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.student_id || '-'}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{u.university_id || '-'}</td>
-                    <td className="px-3 py-3">
-                      <Chip tone={u.device_platform === 'android' ? 'green' : u.device_platform === 'ios' ? 'amber' : 'slate'}>
-                        {u.device_platform ?? '-'}
-                      </Chip>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip tone={planTone}>{u.subscription_plan}</Chip>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip tone={tone}>{u.status}</Chip>
-                    </td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200" title={u.created_at || '-'}>
-                      {formatJoinDate(u.created_at)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <UsageBar
-                        used={used}
-                        plan={u.subscription_plan}
-                        override={u.ai_token_limit_override}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <ActionsMenu
-                        items={[
-                          {
-                            label: 'Activate',
-                            onClick: async () => {
-                              await setUserStatus(u.id, 'active');
-                              await refresh();
-                            },
-                          },
-                          {
-                            label: 'Disable',
-                            variant: 'amber',
-                            onClick: async () => {
-                              await setUserStatus(u.id, 'disabled');
-                              await refresh();
-                            },
-                          },
-                          {
-                            label: 'Ban',
-                            variant: 'rose',
-                            onClick: async () => {
-                              await setUserStatus(u.id, 'banned');
-                              await refresh();
-                            },
-                          },
-                          {
-                            label: 'Reset AI usage',
-                            variant: 'amber',
-                            divider: true,
-                            onClick: () => {
-                              setTokenDialog({ mode: 'reset', user: u, used });
-                            },
-                          },
-                          {
-                            label: 'Set AI limit',
-                            onClick: () => {
-                              setTokenDialog({ mode: 'set_limit', user: u, used });
-                            },
-                          },
-                          {
-                            label: 'Delete',
-                            variant: 'danger',
-                            divider: true,
-                            onClick: async () => {
-                              const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
-                              const typed = window.prompt(
-                                `This permanently deletes user "${u.name || u.id}" and their auth account.\n\n` +
-                                  `Type the student ID (or first 8 chars of their UUID) to confirm:\n\n${expected}`,
-                              );
-                              if (!typed) return;
-                              if (typed.trim() !== expected) {
-                                alert('Confirmation did not match. User was NOT deleted.');
-                                return;
-                              }
-                              await deleteUser(u.id);
-                              await refresh();
-                            },
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && !busy ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                    {searchQuery.trim() && items.length > 0
-                      ? 'No loaded users match the top search. Clear it or run Search again.'
-                      : 'No users found.'}
-                  </td>
-                </tr>
+            <div className="mt-4 flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                Showing {rows.length} of {count}
+                {rowLimit === 'all' ? <span className="ml-1">(all loaded)</span> : null}
+              </div>
+              {usageLoading ? (
+                <div className="text-brand-600 dark:text-brand-400">Loading AI usage…</div>
               ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[960px]">
+                  <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Student ID</th>
+                      <th className="px-4 py-3">University</th>
+                      <th className="px-4 py-3">Plan</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Joined</th>
+                      <th
+                        className="px-4 py-3"
+                        title="AI tokens used this calendar month (UTC). Hover the bar for details."
+                      >
+                        AI usage · this month
+                      </th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {rows.map((u) => {
+                      const tone = u.status === 'active' ? 'green' : u.status === 'disabled' ? 'amber' : 'rose';
+                      const planTone =
+                        u.subscription_plan === 'free'
+                          ? 'slate'
+                          : u.subscription_plan === 'plus'
+                            ? 'green'
+                            : 'amber';
+                      const used = usageByUser[u.id] ?? 0;
+                      return (
+                        <tr
+                          key={u.id}
+                          className="bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</div>
+                            <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              {u.id.slice(0, 8)}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            {u.student_id || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            {u.university_id || '-'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Chip tone={planTone}>{u.subscription_plan}</Chip>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Chip tone={tone}>{u.status}</Chip>
+                          </td>
+                          <td
+                            className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200"
+                            title={u.created_at || '-'}
+                          >
+                            {formatJoinDate(u.created_at)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <UsageBar used={used} plan={u.subscription_plan} override={u.ai_token_limit_override} />
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <ActionsMenu
+                              items={[
+                                {
+                                  label: 'Activate',
+                                  onClick: async () => {
+                                    await setUserStatus(u.id, 'active');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: 'Disable',
+                                  variant: 'amber',
+                                  onClick: async () => {
+                                    await setUserStatus(u.id, 'disabled');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: 'Ban',
+                                  variant: 'rose',
+                                  onClick: async () => {
+                                    await setUserStatus(u.id, 'banned');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: 'Reset AI usage',
+                                  variant: 'amber',
+                                  divider: true,
+                                  onClick: () => {
+                                    setTokenDialog({ mode: 'reset', user: u, used });
+                                  },
+                                },
+                                {
+                                  label: 'Set AI limit',
+                                  onClick: () => {
+                                    setTokenDialog({ mode: 'set_limit', user: u, used });
+                                  },
+                                },
+                                {
+                                  label: 'Delete',
+                                  variant: 'danger',
+                                  divider: true,
+                                  onClick: async () => {
+                                    const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
+                                    const typed = window.prompt(
+                                      `This permanently deletes user "${u.name || u.id}" and their auth account.\n\n` +
+                                        `Type the student ID (or first 8 chars of their UUID) to confirm:\n\n${expected}`,
+                                    );
+                                    if (!typed) return;
+                                    if (typed.trim() !== expected) {
+                                      alert('Confirmation did not match. User was NOT deleted.');
+                                      return;
+                                    }
+                                    await deleteUser(u.id);
+                                    await refresh();
+                                  },
+                                },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {rows.length === 0 && !busy ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
+                        >
+                          {searchQuery.trim() && items.length > 0
+                            ? 'No loaded users match the top search. Clear it or run Search again.'
+                            : 'No users found.'}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </MotionPanel>
       </MotionSection>
 

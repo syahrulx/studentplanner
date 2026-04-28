@@ -1214,3 +1214,150 @@ export async function extractCalendarFromUrl(extractUrl: string): Promise<{
   );
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; source_url: string; text_preview: string }>(data, error);
 }
+
+// ─── Community Posts (Events/Services/Memos) ──────────────────────────────
+
+export type AdminCommunityPostRow = {
+  id: string;
+  author_id: string;
+  post_type: 'event' | 'service' | 'memo';
+  title: string;
+  body: string | null;
+  image_url: string | null;
+  university_id: string | null;
+  campus: string | null;
+  event_date: string | null;
+  event_time: string | null;
+  location: string | null;
+  expires_at: string | null;
+  status: 'active' | 'closed' | 'flagged';
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  author_name?: string;
+  author_university?: string;
+};
+
+export async function listCommunityPosts(opts?: {
+  postType?: string;
+  status?: string;
+  universityId?: string;
+  limit?: number;
+}): Promise<AdminCommunityPostRow[]> {
+  const lim = Math.max(1, Math.min(500, opts?.limit ?? 200));
+  let q = supabase
+    .from('community_posts')
+    .select('*')
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(lim);
+  if (opts?.postType && opts.postType !== 'all') q = q.eq('post_type', opts.postType);
+  if (opts?.status && opts.status !== 'all') q = q.eq('status', opts.status);
+  if (opts?.universityId) q = q.eq('university_id', opts.universityId);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+
+  const posts = (data ?? []) as AdminCommunityPostRow[];
+  // Enrich with author names
+  const authorIds = [...new Set(posts.map((p) => p.author_id))];
+  if (authorIds.length) {
+    const { data: profs } = await supabase.from('profiles').select('id,name,university').in('id', authorIds);
+    const pmap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    for (const post of posts) {
+      const prof = pmap.get(post.author_id);
+      post.author_name = prof?.name || 'Unknown';
+      post.author_university = prof?.university || null;
+    }
+  }
+  return posts;
+}
+
+export async function updateCommunityPost(
+  id: string,
+  patch: Partial<Pick<AdminCommunityPostRow, 'status' | 'pinned'>>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('community_posts')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw toError(error);
+}
+
+export async function deleteCommunityPost(id: string): Promise<void> {
+  const { error } = await supabase.from('community_posts').delete().eq('id', id);
+  if (error) throw toError(error);
+}
+
+// ─── Authority Requests ──────────────────────────────────────────────────
+
+export type AdminAuthorityRequestRow = {
+  id: string;
+  user_id: string;
+  university_id: string | null;
+  role_title: string;
+  justification: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  user_name?: string;
+  user_university?: string;
+};
+
+export async function listAuthorityRequests(opts?: {
+  status?: string;
+  limit?: number;
+}): Promise<AdminAuthorityRequestRow[]> {
+  const lim = Math.max(1, Math.min(500, opts?.limit ?? 200));
+  let q = supabase
+    .from('authority_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(lim);
+  if (opts?.status && opts.status !== 'all') q = q.eq('status', opts.status);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+
+  const requests = (data ?? []) as AdminAuthorityRequestRow[];
+  const userIds = [...new Set(requests.map((r) => r.user_id))];
+  if (userIds.length) {
+    const { data: profs } = await supabase.from('profiles').select('id,name,university').in('id', userIds);
+    const pmap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    for (const req of requests) {
+      const prof = pmap.get(req.user_id);
+      req.user_name = prof?.name || 'Unknown';
+      req.user_university = prof?.university || null;
+    }
+  }
+  return requests;
+}
+
+export async function reviewAuthorityRequest(
+  id: string,
+  decision: 'approved' | 'rejected',
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Update the request
+  const { data: reqData, error: reqErr } = await supabase
+    .from('authority_requests')
+    .update({
+      status: decision,
+      reviewed_by: user?.id || null,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('user_id')
+    .single();
+  if (reqErr) throw toError(reqErr);
+
+  // Update the user's profile authority_status
+  const userId = (reqData as any)?.user_id;
+  if (userId) {
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ authority_status: decision })
+      .eq('id', userId);
+    if (profErr) throw toError(profErr);
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import EventsBoard from '@/components/EventsBoard';
 import {
   View,
   Text,
@@ -307,6 +308,7 @@ export default function CommunityMap() {
   const mapCenterLng = hasValidMyCoords ? myLongitude : 101.4810;
   const mapCenterLat = hasValidMyCoords ? myLatitude : 3.0651;
 
+  const [communityTab, setCommunityTab] = useState<'map' | 'events'>('map');
   const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
@@ -391,6 +393,28 @@ export default function CommunityMap() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* ─── COMMUNITY TAB SWITCHER ─── */}
+      <View style={[styles.communityTabBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <Pressable
+          style={[styles.communityTabBtn, communityTab === 'map' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
+          onPress={() => setCommunityTab('map')}
+        >
+          <Feather name="map" size={16} color={communityTab === 'map' ? theme.primary : theme.textSecondary} />
+          <Text style={[styles.communityTabText, { color: communityTab === 'map' ? theme.primary : theme.textSecondary }]}>Map</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.communityTabBtn, communityTab === 'events' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
+          onPress={() => setCommunityTab('events')}
+        >
+          <Feather name="clipboard" size={16} color={communityTab === 'events' ? theme.primary : theme.textSecondary} />
+          <Text style={[styles.communityTabText, { color: communityTab === 'events' ? theme.primary : theme.textSecondary }]}>Events</Text>
+        </Pressable>
+      </View>
+
+      {communityTab === 'events' ? (
+        <EventsBoard />
+      ) : (
+      <>
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={styles.topBarSide}>
@@ -972,6 +996,8 @@ export default function CommunityMap() {
         refreshMyActivity={refreshMyActivity}
         theme={theme}
       />
+      </>
+      )}
     </View>
   );
 }
@@ -1271,13 +1297,32 @@ const popupStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  // Community tab switcher (Map | Events)
+  communityTabBar: {
+    flexDirection: 'row',
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 30,
+  },
+  communityTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  communityTabText: { fontSize: 15, fontWeight: '700' },
+
   // Top bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 40,
+    paddingTop: 12,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
