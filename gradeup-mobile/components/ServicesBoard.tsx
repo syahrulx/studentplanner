@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/useTheme';
+import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import { Avatar } from '@/components/Avatar';
 import * as servicesApi from '@/src/lib/servicesApi';
@@ -62,6 +63,7 @@ function timeAgo(iso: string): string {
 
 export default function ServicesBoard() {
   const theme = useTheme();
+  const dark = isDarkTheme(theme.id);
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const userId = user?.id || null;
@@ -212,14 +214,14 @@ export default function ServicesBoard() {
                 style={[
                   styles.pill,
                   active
-                    ? { backgroundColor: theme.text, borderColor: theme.text }
+                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
                     : { backgroundColor: theme.card, borderColor: theme.border },
                 ]}
               >
                 <Text
                   style={[
                     styles.pillText,
-                    { color: active ? theme.background : theme.textSecondary },
+                    { color: active ? theme.textInverse : theme.textSecondary },
                   ]}
                 >
                   {k.label}
@@ -237,11 +239,11 @@ export default function ServicesBoard() {
             style={[
               styles.pill,
               !category
-                ? { backgroundColor: theme.text, borderColor: theme.text }
+                ? { backgroundColor: theme.primary, borderColor: theme.primary }
                 : { backgroundColor: theme.card, borderColor: theme.border },
             ]}
           >
-            <Text style={[styles.pillText, { color: !category ? theme.background : theme.textSecondary }]}>
+            <Text style={[styles.pillText, { color: !category ? theme.textInverse : theme.textSecondary }]}>
               All categories
             </Text>
           </Pressable>
@@ -287,7 +289,7 @@ export default function ServicesBoard() {
           onPress={() => router.push({ pathname: '/services/[id]', params: { id: item.id } } as any)}
           style={({ pressed }) => [
             styles.card,
-            { backgroundColor: theme.card, borderColor: theme.border },
+            { backgroundColor: theme.card, borderColor: theme.border, shadowColor: dark ? '#000' : '#0f172a' },
             pressed && { transform: [{ scale: 0.985 }], opacity: 0.97 },
           ]}
         >
@@ -300,18 +302,18 @@ export default function ServicesBoard() {
                 pointerEvents="none"
               />
               <View style={styles.heroTop}>
-                <View style={[styles.kindChip, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
+                <View style={[styles.kindChip, { backgroundColor: theme.card + 'E8' }]}>
                   <Feather
                     name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
                     size={11}
-                    color="#1c1c1e"
+                    color={theme.text}
                   />
-                  <Text style={styles.kindChipText}>
+                  <Text style={[styles.kindChipText, { color: theme.text }]}>
                     {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
                   </Text>
                 </View>
-                <View style={[styles.statusChip, { backgroundColor: sm.tint }]}>
-                  <Text style={styles.statusChipText}>{sm.label}</Text>
+                <View style={[styles.statusChip, { backgroundColor: sm.bg, borderColor: sm.tint }]}>
+                  <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
                 </View>
               </View>
             </View>
@@ -415,16 +417,16 @@ export default function ServicesBoard() {
           : 'Try adjusting filters or be the first to post.'}
       </Text>
       {scope !== 'taken' && (
-        <Pressable
-          onPress={() => router.push('/services/new' as any)}
-          style={({ pressed }) => [
-            styles.emptyCta,
-            { backgroundColor: theme.text },
-            pressed && { opacity: 0.85 },
-          ]}
-        >
-          <Feather name="plus" size={16} color={theme.background} />
-          <Text style={[styles.emptyCtaText, { color: theme.background }]}>Post a service</Text>
+          <Pressable
+            onPress={() => router.push('/services/new' as any)}
+            style={({ pressed }) => [
+              styles.emptyCta,
+              { backgroundColor: theme.primary },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Feather name="plus" size={16} color={theme.textInverse} />
+            <Text style={[styles.emptyCtaText, { color: theme.textInverse }]}>Post a service</Text>
         </Pressable>
       )}
     </View>
@@ -445,6 +447,7 @@ export default function ServicesBoard() {
           keyExtractor={(it) => it.id}
           renderItem={renderCard}
           ListHeaderComponent={renderHeader()}
+          style={{ backgroundColor: theme.background }}
           contentContainerStyle={[styles.listContent, { paddingBottom: tabBarTotal + 100 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -459,11 +462,11 @@ export default function ServicesBoard() {
         onPress={() => router.push('/services/new' as any)}
         style={({ pressed }) => [
           styles.fab,
-          { backgroundColor: theme.text, bottom: tabBarTotal + 16 },
+          { backgroundColor: theme.primary, bottom: tabBarTotal + 16 },
           pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
         ]}
       >
-        <Feather name="plus" size={22} color={theme.background} />
+        <Feather name="plus" size={22} color={theme.textInverse} />
       </Pressable>
     </View>
   );
@@ -589,18 +592,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  kindChipText: { fontSize: 11, fontWeight: '700', color: '#1c1c1e', letterSpacing: -0.1 },
+  kindChipText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
   statusChip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   statusChipPlain: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
   },
-  statusChipText: { fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: -0.1 },
+  statusChipText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
 
   cardBody: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   metaTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },

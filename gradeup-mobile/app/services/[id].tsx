@@ -234,7 +234,7 @@ export default function ServiceDetailScreen() {
         label: service.service_kind === 'offer' ? 'Take this offer' : 'Take this request',
         icon: 'check',
         onPress: onClaim,
-        color: '#0A84FF',
+        color: theme.primary,
       };
     }
     if (role === 'taker' && isClaimed) {
@@ -290,18 +290,18 @@ export default function ServiceDetailScreen() {
               pointerEvents="none"
             />
             <View style={styles.heroChips}>
-              <View style={[styles.chipFilled, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
+              <View style={[styles.chipFilled, { backgroundColor: theme.card + 'E8' }]}>
                 <Feather
                   name={service.service_kind === 'offer' ? 'gift' : 'help-circle'}
                   size={11}
-                  color="#1c1c1e"
+                  color={theme.text}
                 />
-                <Text style={[styles.chipText, { color: '#1c1c1e' }]}>
+                <Text style={[styles.chipText, { color: theme.text }]}>
                   {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
                 </Text>
               </View>
-              <View style={[styles.chipFilled, { backgroundColor: sm.tint }]}>
-                <Text style={[styles.chipText, { color: '#fff' }]}>{sm.label}</Text>
+              <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
+                <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
               </View>
             </View>
           </View>
@@ -319,8 +319,8 @@ export default function ServiceDetailScreen() {
                   {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
                 </Text>
               </View>
-              <View style={[styles.chipFilled, { backgroundColor: sm.tint }]}>
-                <Text style={[styles.chipText, { color: '#fff' }]}>{sm.label}</Text>
+              <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
+                <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
               </View>
             </View>
           </View>
@@ -517,11 +517,11 @@ export default function ServiceDetailScreen() {
             ]}
           >
             {acting ? (
-              <ActivityIndicator size="small" color={cta.secondary ? cta.color : '#fff'} />
+              <ActivityIndicator size="small" color={cta.secondary ? cta.color : theme.textInverse} />
             ) : (
               <>
-                <Feather name={cta.icon as any} size={17} color={cta.secondary ? cta.color : '#fff'} />
-                <Text style={[styles.ctaText, { color: cta.secondary ? cta.color : '#fff' }]}>
+                <Feather name={cta.icon as any} size={17} color={cta.secondary ? cta.color : theme.textInverse} />
+                <Text style={[styles.ctaText, { color: cta.secondary ? cta.color : theme.textInverse }]}>
                   {cta.label}
                 </Text>
               </>
@@ -580,15 +580,15 @@ export default function ServiceDetailScreen() {
               disabled={reviewSubmitting}
               style={({ pressed }) => [
                 styles.reviewSubmit,
-                { backgroundColor: theme.text },
+                { backgroundColor: theme.primary },
                 pressed && { opacity: 0.85 },
                 reviewSubmitting && { opacity: 0.5 },
               ]}
             >
               {reviewSubmitting ? (
-                <ActivityIndicator size="small" color={theme.background} />
+                <ActivityIndicator size="small" color={theme.textInverse} />
               ) : (
-                <Text style={[styles.reviewSubmitText, { color: theme.background }]}>Submit</Text>
+                <Text style={[styles.reviewSubmitText, { color: theme.textInverse }]}>Submit</Text>
               )}
             </Pressable>
           </Pressable>

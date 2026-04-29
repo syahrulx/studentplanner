@@ -213,15 +213,15 @@ export default function NewServiceScreen() {
             disabled={submitting || !title.trim()}
             style={({ pressed }) => [
               styles.postBtn,
-              { backgroundColor: theme.text },
+              { backgroundColor: theme.primary },
               (!title.trim() || submitting) && { opacity: 0.3 },
               pressed && { opacity: 0.75 },
             ]}
           >
             {submitting ? (
-              <ActivityIndicator size="small" color={theme.background} />
+              <ActivityIndicator size="small" color={theme.textInverse} />
             ) : (
-              <Text style={[styles.postBtnText, { color: theme.background }]}>
+              <Text style={[styles.postBtnText, { color: theme.textInverse }]}>
                 {isEditing ? 'Save' : 'Post'}
               </Text>
             )}
@@ -339,9 +339,9 @@ export default function NewServiceScreen() {
                 pointerEvents="none"
               />
               <View style={styles.heroActions}>
-                <Pressable onPress={pickImage} style={[styles.heroBtn, { backgroundColor: 'rgba(255,255,255,0.9)' }]}>
-                  <Feather name="camera" size={14} color="#1c1c1e" />
-                  <Text style={styles.heroBtnText}>Change</Text>
+                <Pressable onPress={pickImage} style={[styles.heroBtn, { backgroundColor: theme.card + 'E8' }]}>
+                  <Feather name="camera" size={14} color={theme.text} />
+                  <Text style={[styles.heroBtnText, { color: theme.text }]}>Change</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => { setImageUri(null); setExistingImageUrl(null); }}
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
   },
-  heroBtnText: { fontSize: 13, fontWeight: '600', color: '#1c1c1e' },
+  heroBtnText: { fontSize: 13, fontWeight: '600' },
   imagePlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',

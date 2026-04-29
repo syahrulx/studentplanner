@@ -190,7 +190,7 @@ export default function EventsBoard() {
                 style={({ pressed }) => [
                   styles.pill,
                   active
-                    ? { backgroundColor: theme.text, borderColor: theme.text }
+                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
                     : { backgroundColor: theme.card, borderColor: theme.border },
                   pressed && { opacity: 0.7 },
                 ]}
@@ -198,7 +198,7 @@ export default function EventsBoard() {
                 <Text
                   style={[
                     styles.pillText,
-                    { color: active ? theme.background : theme.textSecondary },
+                    { color: active ? theme.textInverse : theme.textSecondary },
                   ]}
                 >
                   {pill.label}
@@ -236,12 +236,12 @@ export default function EventsBoard() {
               style={({ pressed }) => [
                 styles.iconBtn,
                 styles.iconBtnFilled,
-                { backgroundColor: theme.text },
+                { backgroundColor: theme.primary },
                 pressed && { opacity: 0.85 },
               ]}
               accessibilityLabel="Compose post"
             >
-              <Feather name="plus" size={16} color={theme.background} />
+              <Feather name="plus" size={16} color={theme.textInverse} />
             </Pressable>
           )}
         </View>
@@ -325,15 +325,15 @@ export default function EventsBoard() {
               {/* Top-right badges */}
               <View style={styles.heroTopRow} pointerEvents="none">
                 {item.pinned && (
-                  <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
-                    <Feather name="bookmark" size={11} color="#1c1c1e" />
-                    <Text style={[styles.heroBadgeText, { color: '#1c1c1e' }]}>Pinned</Text>
+                  <View style={[styles.heroBadge, { backgroundColor: theme.card + 'E8' }]}>
+                    <Feather name="bookmark" size={11} color={theme.text} />
+                    <Text style={[styles.heroBadgeText, { color: theme.text }]}>Pinned</Text>
                   </View>
                 )}
                 {isOwn && (
-                  <View style={[styles.heroBadge, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
-                    <Feather name="edit-2" size={11} color="#fff" />
-                    <Text style={[styles.heroBadgeText, { color: '#fff' }]}>Yours</Text>
+                  <View style={[styles.heroBadge, { backgroundColor: theme.background + 'CC' }]}>
+                    <Feather name="edit-2" size={11} color={theme.text} />
+                    <Text style={[styles.heroBadgeText, { color: theme.text }]}>Yours</Text>
                   </View>
                 )}
               </View>
@@ -341,14 +341,14 @@ export default function EventsBoard() {
               {/* Bottom-left date capsule + type tag */}
               <View style={styles.heroBottomRow} pointerEvents="none">
                 {eventDate && (
-                  <View style={styles.dateCapsule}>
+                  <View style={[styles.dateCapsule, { backgroundColor: theme.card + 'F0' }]}>
                     <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>
                       {eventDate.month}
                     </Text>
-                    <Text style={styles.dateCapsuleDay}>{eventDate.day}</Text>
+                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
                   </View>
                 )}
-                <View style={[styles.heroTypeChip, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
+                <View style={[styles.heroTypeChip, { backgroundColor: theme.card + 'E8' }]}>
                   <Feather name={meta.icon as any} size={11} color={meta.tint} />
                   <Text style={[styles.heroTypeChipText, { color: meta.tint }]}>{meta.label}</Text>
                 </View>
@@ -485,6 +485,7 @@ export default function EventsBoard() {
           data={posts}
           keyExtractor={(item) => item.id}
           renderItem={renderCard}
+          style={{ backgroundColor: theme.background }}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={Header}
           showsVerticalScrollIndicator={false}
@@ -656,7 +657,7 @@ export default function EventsBoard() {
             <Pressable
               style={({ pressed }) => [
                 styles.applyBtn,
-                { backgroundColor: theme.text },
+                { backgroundColor: theme.primary },
                 pressed && { opacity: 0.85 },
               ]}
               onPress={() => {
@@ -667,7 +668,7 @@ export default function EventsBoard() {
                 setShowDatePicker(false);
               }}
             >
-              <Text style={[styles.applyBtnText, { color: theme.background }]}>Apply Filters</Text>
+              <Text style={[styles.applyBtnText, { color: theme.textInverse }]}>Apply Filters</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -806,7 +807,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   dateCapsuleMonth: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  dateCapsuleDay: { fontSize: 20, fontWeight: '800', color: '#1c1c1e', letterSpacing: -0.5, lineHeight: 22 },
+  dateCapsuleDay: { fontSize: 20, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 22 },
   heroTypeChip: {
     flexDirection: 'row',
     alignItems: 'center',
