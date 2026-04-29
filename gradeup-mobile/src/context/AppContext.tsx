@@ -80,7 +80,6 @@ import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
-import { buildHomeWidgetProps } from '../lib/homeWidgetProps';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
@@ -968,18 +967,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
-      syncHomeScreenWidget(
-        buildHomeWidgetProps({
-          tasks,
-          courses,
-          timetable,
-          pinnedTaskIds,
-          userName: user.name,
-          signedIn: Boolean(session?.user?.id),
-          themeId: theme,
-          maxTasks: 3,
-        }),
-      );
+      syncHomeScreenWidget({
+        tasks,
+        courses,
+        timetable,
+        pinnedTaskIds,
+        userName: user.name,
+        signedIn: Boolean(session?.user?.id),
+        themeId: theme,
+        maxTasks: 3,
+      });
     });
     return () => {
       cancelled = true;
@@ -991,18 +988,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (state !== 'active') return;
       const r = homeWidgetInputsRef.current;
       void supabase.auth.getSession().then(({ data: { session } }) => {
-        syncHomeScreenWidget(
-          buildHomeWidgetProps({
-            tasks: r.tasks,
-            courses: r.courses,
-            timetable: r.timetable,
-            pinnedTaskIds: r.pinnedTaskIds,
-            userName: r.userName,
-            signedIn: Boolean(session?.user?.id),
-            themeId: r.theme,
-            maxTasks: 3,
-          }),
-        );
+        syncHomeScreenWidget({
+          tasks: r.tasks,
+          courses: r.courses,
+          timetable: r.timetable,
+          pinnedTaskIds: r.pinnedTaskIds,
+          userName: r.userName,
+          signedIn: Boolean(session?.user?.id),
+          themeId: r.theme,
+          maxTasks: 3,
+        });
       });
     });
     return () => sub.remove();

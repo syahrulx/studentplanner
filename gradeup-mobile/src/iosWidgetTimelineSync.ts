@@ -67,16 +67,30 @@ function getNativeWidgetHandle(name: string): ResolvedWidgetHandle | null {
   return resolved;
 }
 
-export function updateGradeUpTodayTimelineFromHost(props: HomeWidgetProps): void {
+/**
+ * Push a multi-entry WidgetKit timeline. Each entry has a `date` at which WidgetKit
+ * will display its `props`. Used to schedule a midnight rollover so the widget
+ * shows tomorrow's snapshot automatically without the app being re-opened.
+ */
+export function updateGradeUpTodayTimelineFromHost(
+  entriesOrProps: JsTimelineEntry[] | HomeWidgetProps,
+): void {
   try {
+    const entries: JsTimelineEntry[] = Array.isArray(entriesOrProps)
+      ? entriesOrProps
+      : [{ date: new Date(), props: entriesOrProps }];
+    if (entries.length === 0) return;
+
     const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
     for (const name of names) {
       const resolved = getNativeWidgetHandle(name);
       if (!resolved) continue;
       if (resolved.source === 'module') {
-        resolved.handle.updateTimeline([{ date: new Date(), props }]);
+        resolved.handle.updateTimeline(entries);
       } else {
-        resolved.handle.updateTimeline([{ timestamp: Date.now(), props }]);
+        resolved.handle.updateTimeline(
+          entries.map((e) => ({ timestamp: e.date.getTime(), props: e.props })),
+        );
       }
     }
   } catch (e) {

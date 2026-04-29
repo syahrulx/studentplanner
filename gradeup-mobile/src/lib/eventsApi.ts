@@ -72,6 +72,9 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
   }
   if (postType) {
     query = query.eq('post_type', postType);
+  } else {
+    // Services live in their own marketplace; don't surface them in the events feed.
+    query = query.in('post_type', ['event', 'memo']);
   }
   if (date) {
     query = query.eq('event_date', date);

@@ -127,7 +127,8 @@ open class GradeUpTodayWidgetProvider : AppWidgetProvider() {
         context.packageName,
         if (layoutMode == LayoutMode.SMALL) R.layout.widget_gradeup_small else R.layout.widget_gradeup_today
       )
-      val json = parseJson(raw)
+      val root = parseJson(raw)
+      val json = pickActiveSnapshot(root)
       val theme = json?.optJSONObject("theme")
       applyThemeColors(rv, theme, layoutMode)
       // Apply app-selected theme colors best-effort.
@@ -528,6 +529,31 @@ open class GradeUpTodayWidgetProvider : AppWidgetProvider() {
     private fun parseJson(raw: String?): JSONObject? {
       if (raw.isNullOrBlank()) return null
       return try { JSONObject(raw) } catch (_: Exception) { null }
+    }
+
+    /**
+     * Picks the appropriate snapshot from the JSON pack the host pushed.
+     *
+     * Schema versions supported:
+     *  - New: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
+     *    → returns whichever slot's `dateISO` equals device's current local date.
+     *  - Legacy: HomeWidgetProps at root → returned as-is.
+     *
+     * This is what enables the midnight rollover: when the WorkManager worker fires
+     * at 00:00 and re-renders, the renderer naturally picks the `tomorrow` slot
+     * (which is now "today" by the device clock) without any new app sync.
+     */
+    private fun pickActiveSnapshot(root: JSONObject?): JSONObject? {
+      if (root == null) return null
+      val today = root.optJSONObject("today")
+      val tomorrow = root.optJSONObject("tomorrow")
+      if (today == null && tomorrow == null) return root // legacy flat schema
+      val isoNow = WidgetRefreshScheduler.localTodayISO()
+      if (today != null && today.optString("dateISO", "").trim().take(10) == isoNow) return today
+      if (tomorrow != null && tomorrow.optString("dateISO", "").trim().take(10) == isoNow) return tomorrow
+      // Neither matches device's "now" → return today slot so the existing
+      // "stale" code path can show its rollover prompt.
+      return today ?: tomorrow
     }
 
     // ─── Click handling ──────────────────────────────────────────

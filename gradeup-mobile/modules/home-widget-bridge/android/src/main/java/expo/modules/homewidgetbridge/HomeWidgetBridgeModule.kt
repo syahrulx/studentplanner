@@ -24,10 +24,19 @@ class HomeWidgetBridgeModule : Module() {
 
       try {
         val parsed = JSONObject(json)
-        debug.put("dateISO", parsed.optString("dateISO", ""))
-        debug.put("signedIn", parsed.optBoolean("signedIn", false))
-        debug.put("tasksCount", parsed.optJSONArray("tasks")?.length() ?: 0)
-        debug.put("classesCount", parsed.optJSONArray("classes")?.length() ?: 0)
+        // New schema: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
+        // Legacy: HomeWidgetProps at root.
+        val todaySnap = parsed.optJSONObject("today") ?: parsed
+        val tomorrowSnap = parsed.optJSONObject("tomorrow")
+
+        debug.put("dateISO", todaySnap.optString("dateISO", ""))
+        debug.put("signedIn", todaySnap.optBoolean("signedIn", false))
+        debug.put("tasksCount", todaySnap.optJSONArray("tasks")?.length() ?: 0)
+        debug.put("classesCount", todaySnap.optJSONArray("classes")?.length() ?: 0)
+        debug.put("hasTomorrowSnapshot", tomorrowSnap != null)
+        if (tomorrowSnap != null) {
+          debug.put("tomorrowDateISO", tomorrowSnap.optString("dateISO", ""))
+        }
       } catch (_: Exception) {
         debug.put("parseError", true)
       }

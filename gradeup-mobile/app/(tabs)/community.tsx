@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventsBoard from '@/components/EventsBoard';
+import ServicesBoard from '@/components/ServicesBoard';
 import {
   View,
   Text,
@@ -309,7 +310,7 @@ export default function CommunityMap() {
   const mapCenterLng = hasValidMyCoords ? myLongitude : 101.4810;
   const mapCenterLat = hasValidMyCoords ? myLatitude : 3.0651;
 
-  const [communityTab, setCommunityTab] = useState<'map' | 'events'>('map');
+  const [communityTab, setCommunityTab] = useState<'map' | 'events' | 'services'>('map');
   const insets = useSafeAreaInsets();
   // GlassTabBar: paddingTop(8) + BAR_H(64) + paddingBottom(max(insets.bottom,12))
   const glassTabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
@@ -403,20 +404,26 @@ export default function CommunityMap() {
           style={[styles.communityTabBtn, communityTab === 'map' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
           onPress={() => setCommunityTab('map')}
         >
-          <Feather name="map" size={16} color={communityTab === 'map' ? theme.primary : theme.textSecondary} />
           <Text style={[styles.communityTabText, { color: communityTab === 'map' ? theme.primary : theme.textSecondary }]}>Map</Text>
         </Pressable>
         <Pressable
           style={[styles.communityTabBtn, communityTab === 'events' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
           onPress={() => setCommunityTab('events')}
         >
-          <Feather name="clipboard" size={16} color={communityTab === 'events' ? theme.primary : theme.textSecondary} />
           <Text style={[styles.communityTabText, { color: communityTab === 'events' ? theme.primary : theme.textSecondary }]}>Events</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.communityTabBtn, communityTab === 'services' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
+          onPress={() => setCommunityTab('services')}
+        >
+          <Text style={[styles.communityTabText, { color: communityTab === 'services' ? theme.primary : theme.textSecondary }]}>Services</Text>
         </Pressable>
       </View>
 
       {communityTab === 'events' ? (
         <EventsBoard />
+      ) : communityTab === 'services' ? (
+        <ServicesBoard />
       ) : (
       <>
       {/* ─── TOP BAR ─── */}
