@@ -112,9 +112,14 @@ export default function PostDetailScreen() {
         </Pressable>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Post</Text>
         {isAuthor ? (
-          <Pressable onPress={handleDelete} hitSlop={10}>
-            <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <Pressable onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post!.id } } as any)} hitSlop={10}>
+              <Feather name="edit-2" size={20} color={theme.primary} />
+            </Pressable>
+            <Pressable onPress={handleDelete} hitSlop={10}>
+              <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
+            </Pressable>
+          </View>
         ) : (
           <View style={{ width: 24 }} />
         )}
@@ -212,17 +217,41 @@ export default function PostDetailScreen() {
 
         {/* Author actions */}
         {isAuthor && post.status === 'active' && (
-          <Pressable
-            style={({ pressed }) => [
-              styles.closeBtn,
-              { borderColor: theme.border },
-              pressed && { opacity: 0.7 },
-            ]}
-            onPress={handleClose}
-          >
-            <Feather name="x-circle" size={16} color={theme.textSecondary} />
-            <Text style={[styles.closeBtnText, { color: theme.textSecondary }]}>Close this post</Text>
-          </Pressable>
+          <View style={styles.authorActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn,
+                { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post!.id } } as any)}
+            >
+              <Feather name="edit-2" size={15} color={theme.primary} />
+              <Text style={[styles.actionBtnText, { color: theme.primary }]}>Edit</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn,
+                { backgroundColor: '#ef444412', borderColor: '#ef444430' },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleDelete}
+            >
+              <Feather name="trash-2" size={15} color="#ef4444" />
+              <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Delete</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionBtn,
+                { borderColor: theme.border },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={handleClose}
+            >
+              <Feather name="x-circle" size={15} color={theme.textSecondary} />
+              <Text style={[styles.actionBtnText, { color: theme.textSecondary }]}>Close</Text>
+            </Pressable>
+          </View>
         )}
       </ScrollView>
     </View>
@@ -273,16 +302,21 @@ const styles = StyleSheet.create({
   authorAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
   authorName: { fontSize: 15, fontWeight: '700' },
   authorUni: { fontSize: 12, marginTop: 2 },
-  closeBtn: {
+  authorActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+  actionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 20,
-    marginTop: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  closeBtnText: { fontSize: 14, fontWeight: '600' },
+  actionBtnText: { fontSize: 13, fontWeight: '700' },
 });

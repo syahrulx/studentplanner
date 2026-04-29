@@ -90,6 +90,7 @@ export default function EventsBoard() {
 
   const renderCard = useCallback(({ item }: { item: CommunityPost }) => {
     const badge = TYPE_BADGE[item.post_type];
+    const isOwn = item.author_id === user?.id;
     return (
       <Pressable
         style={({ pressed }) => [
@@ -97,8 +98,21 @@ export default function EventsBoard() {
           { backgroundColor: theme.card, borderColor: theme.border },
           pressed && { opacity: 0.85, transform: [{ scale: 0.985 }] },
         ]}
-        onPress={() => router.push({ pathname: '/community/post-detail', params: { postId: item.id } } as any)}
+        onPress={() => {
+          if (isOwn) {
+            router.push({ pathname: '/community/create-post', params: { editId: item.id } } as any);
+          } else {
+            router.push({ pathname: '/community/post-detail', params: { postId: item.id } } as any);
+          }
+        }}
       >
+        {/* Own post indicator */}
+        {isOwn && (
+          <View style={[styles.ownBadge, { backgroundColor: theme.primary + '15' }]}>
+            <Feather name="edit-2" size={10} color={theme.primary} />
+            <Text style={[styles.ownBadgeText, { color: theme.primary }]}>Your Post</Text>
+          </View>
+        )}
         {/* Pinned badge */}
         {item.pinned && (
           <View style={[styles.pinnedBadge, { backgroundColor: theme.primary + '15' }]}>
@@ -271,6 +285,16 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 12,
   },
   pinnedText: { fontSize: 10, fontWeight: '700' },
+  ownBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderBottomRightRadius: 12,
+  },
+  ownBadgeText: { fontSize: 10, fontWeight: '700' },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',

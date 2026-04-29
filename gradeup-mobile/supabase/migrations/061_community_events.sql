@@ -40,19 +40,21 @@ create table if not exists public.community_posts (
 alter table public.community_posts enable row level security;
 
 -- All authenticated users can read active posts
-create policy "Anyone can read active community posts"
+DROP POLICY IF EXISTS "Anyone can read active community posts" ON public.community_posts;
+CREATE POLICY "Anyone can read active community posts"
   on public.community_posts for select
   using (auth.uid() is not null);
 
--- Users can create event/service posts; memo requires authority
-create policy "Users can create community posts"
+-- Only service is open to all; event and memo require authority
+DROP POLICY IF EXISTS "Users can create community posts" ON public.community_posts;
+CREATE POLICY "Users can create community posts"
   on public.community_posts for insert
   with check (
     auth.uid() = author_id
     and (
-      post_type in ('event', 'service')
+      post_type = 'service'
       or (
-        post_type = 'memo'
+        post_type in ('event', 'memo')
         and exists (
           select 1 from public.profiles p
           where p.id = auth.uid()
@@ -63,17 +65,20 @@ create policy "Users can create community posts"
   );
 
 -- Author can update own posts
-create policy "Author can update own posts"
+DROP POLICY IF EXISTS "Author can update own posts" ON public.community_posts;
+CREATE POLICY "Author can update own posts"
   on public.community_posts for update
   using (auth.uid() = author_id);
 
 -- Author can delete own posts
-create policy "Author can delete own posts"
+DROP POLICY IF EXISTS "Author can delete own posts" ON public.community_posts;
+CREATE POLICY "Author can delete own posts"
   on public.community_posts for delete
   using (auth.uid() = author_id);
 
 -- Admin full access (uses no-arg is_admin() per migration 018)
-create policy "Admin full access community posts"
+DROP POLICY IF EXISTS "Admin full access community posts" ON public.community_posts;
+CREATE POLICY "Admin full access community posts"
   on public.community_posts for all
   using (public.is_admin());
 
@@ -93,36 +98,53 @@ create table if not exists public.authority_requests (
   university_id text,
   role_title text not null,
   justification text,
+  proof_url text,
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   reviewed_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   reviewed_at timestamptz
 );
 
+-- Add proof_url column if table already exists without it
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'authority_requests' and column_name = 'proof_url'
+  ) then
+    alter table public.authority_requests add column proof_url text;
+  end if;
+end $$;
+
 alter table public.authority_requests enable row level security;
 
 -- Users can read own requests
-create policy "Users can read own authority requests"
+DROP POLICY IF EXISTS "Users can read own authority requests" ON public.authority_requests;
+CREATE POLICY "Users can read own authority requests"
   on public.authority_requests for select
   using (auth.uid() = user_id);
 
 -- Users can create requests
-create policy "Users can create authority requests"
+DROP POLICY IF EXISTS "Users can create authority requests" ON public.authority_requests;
+CREATE POLICY "Users can create authority requests"
   on public.authority_requests for insert
   with check (auth.uid() = user_id);
 
 -- Admin can read all
-create policy "Admin can read all authority requests"
+DROP POLICY IF EXISTS "Admin can read all authority requests" ON public.authority_requests;
+CREATE POLICY "Admin can read all authority requests"
   on public.authority_requests for select
   using (public.is_admin());
 
 -- Admin can update (approve/reject)
-create policy "Admin can update authority requests"
+DROP POLICY IF EXISTS "Admin can update authority requests" ON public.authority_requests;
+CREATE POLICY "Admin can update authority requests"
   on public.authority_requests for update
   using (public.is_admin());
 
 -- Admin can delete
-create policy "Admin can delete authority requests"
+DROP POLICY IF EXISTS "Admin can delete authority requests" ON public.authority_requests;
+CREATE POLICY "Admin can delete authority requests"
   on public.authority_requests for delete
   using (public.is_admin());
 
@@ -134,19 +156,22 @@ create index if not exists idx_authority_requests_status on public.authority_req
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('community-images', 'community-images', true)
-on conflict (id) do nothing;
+on conflict (id) do update set public = true;
 
 -- Anyone authenticated can upload
-create policy "Authenticated users can upload community images"
+DROP POLICY IF EXISTS "Authenticated users can upload community images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload community images"
   on storage.objects for insert
   with check (bucket_id = 'community-images' and auth.uid() is not null);
 
 -- Public read
-create policy "Public read community images"
+DROP POLICY IF EXISTS "Public read community images" ON storage.objects;
+CREATE POLICY "Public read community images"
   on storage.objects for select
   using (bucket_id = 'community-images');
 
 -- Author can delete own uploads (path starts with their user id)
-create policy "Users can delete own community images"
+DROP POLICY IF EXISTS "Users can delete own community images" ON storage.objects;
+CREATE POLICY "Users can delete own community images"
   on storage.objects for delete
   using (bucket_id = 'community-images' and auth.uid()::text = (storage.foldername(name))[1]);

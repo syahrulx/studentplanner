@@ -12,7 +12,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -23,19 +23,22 @@ import * as eventsApi from '@/src/lib/eventsApi';
 import type { PostType } from '@/src/lib/eventsApi';
 
 const POST_TYPES: { type: PostType; label: string; emoji: string; desc: string }[] = [
-  { type: 'event', label: 'Event', emoji: '📅', desc: 'Share a university event' },
   { type: 'service', label: 'Service', emoji: '🔧', desc: 'Offer or request a service' },
-  { type: 'memo', label: 'Memo', emoji: '📋', desc: 'Official memo (authority only)' },
+  { type: 'event', label: 'Event', emoji: '📅', desc: 'Share an event (authority)' },
+  { type: 'memo', label: 'Memo', emoji: '📋', desc: 'Official memo (authority)' },
 ];
 
 export default function CreatePostScreen() {
   const theme = useTheme();
   const { user } = useApp();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const isEditing = !!editId;
 
-  const [postType, setPostType] = useState<PostType>('event');
+  const [postType, setPostType] = useState<PostType>('service');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [eventDate, setEventDate] = useState<Date | null>(null);
   const [eventTime, setEventTime] = useState('');
   const [location, setLocation] = useState('');
@@ -45,6 +48,7 @@ export default function CreatePostScreen() {
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(false);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
   const userCampus = (user as any)?.campus || null;
@@ -53,7 +57,32 @@ export default function CreatePostScreen() {
     eventsApi.getMyAuthorityStatus().then(setAuthorityStatus);
   }, []);
 
+  // Load existing post data for editing
+  useEffect(() => {
+    if (!editId) return;
+    setLoadingEdit(true);
+    eventsApi.fetchPost(editId).then((post) => {
+      if (post) {
+        setPostType(post.post_type);
+        setTitle(post.title);
+        setBody(post.body || '');
+        setExistingImageUrl(post.image_url);
+        setEventTime(post.event_time || '');
+        setLocation(post.location || '');
+        if (post.event_date) {
+          setEventDate(new Date(post.event_date + 'T00:00:00'));
+        }
+        if (post.expires_at) {
+          setHasExpiry(true);
+          setExpiresAt(new Date(post.expires_at));
+        }
+      }
+      setLoadingEdit(false);
+    });
+  }, [editId]);
+
   const isAuthority = authorityStatus === 'approved';
+  const canPostEvent = isAuthority;
   const canPostMemo = isAuthority;
 
   const pickImage = async () => {
@@ -74,30 +103,80 @@ export default function CreatePostScreen() {
       return;
     }
     if (postType === 'memo' && !canPostMemo) {
-      Alert.alert('Not Authorized', 'You need authority status to post memos. Request authority in your profile.');
+      Alert.alert('Not Authorized', 'You need authority status to post memos.');
+      return;
+    }
+    if (postType === 'event' && !canPostEvent) {
+      Alert.alert('Not Authorized', 'You need authority status to post events.');
       return;
     }
 
     setSubmitting(true);
     try {
-      await eventsApi.createPost({
-        post_type: postType,
-        title: title.trim(),
-        body: body.trim() || undefined,
-        image_uri: imageUri || undefined,
-        university_id: userUni || undefined,
-        campus: userCampus || undefined,
-        event_date: eventDate ? eventDate.toISOString().split('T')[0] : undefined,
-        event_time: eventTime.trim() || undefined,
-        location: location.trim() || undefined,
-        expires_at: hasExpiry ? expiresAt.toISOString() : undefined,
-      });
+      if (isEditing) {
+        // Upload new image if changed
+        let image_url = existingImageUrl;
+        if (imageUri) {
+          image_url = await eventsApi.uploadPostImage(imageUri);
+        }
+        await eventsApi.updatePost(editId!, {
+          title: title.trim(),
+          body: body.trim() || null,
+          image_url,
+          event_date: eventDate ? eventDate.toISOString().split('T')[0] : null,
+          event_time: eventTime.trim() || null,
+          location: location.trim() || null,
+          expires_at: hasExpiry ? expiresAt.toISOString() : null,
+        });
+      } else {
+        await eventsApi.createPost({
+          post_type: postType,
+          title: title.trim(),
+          body: body.trim() || undefined,
+          image_uri: imageUri || undefined,
+          university_id: userUni || undefined,
+          campus: userCampus || undefined,
+          event_date: eventDate ? eventDate.toISOString().split('T')[0] : undefined,
+          event_time: eventTime.trim() || undefined,
+          location: location.trim() || undefined,
+          expires_at: hasExpiry ? expiresAt.toISOString() : undefined,
+        });
+      }
       router.back();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create post.');
+      Alert.alert('Error', e.message || `Failed to ${isEditing ? 'update' : 'create'} post.`);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  if (loadingEdit) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
+
+  const handleDelete = () => {
+    if (!editId) return;
+    Alert.alert('Delete Post', 'Are you sure you want to delete this post?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setSubmitting(true);
+          try {
+            await eventsApi.deletePost(editId);
+            router.back();
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Failed to delete post.');
+            setSubmitting(false);
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -110,8 +189,14 @@ export default function CreatePostScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10}>
           <Feather name="arrow-left" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>New Post</Text>
-        <View style={{ width: 24 }} />
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{isEditing ? 'Edit Post' : 'New Post'}</Text>
+        {isEditing ? (
+          <Pressable onPress={handleDelete} hitSlop={10} disabled={submitting}>
+            <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -120,7 +205,7 @@ export default function CreatePostScreen() {
         <View style={styles.typeRow}>
           {POST_TYPES.map((pt) => {
             const active = postType === pt.type;
-            const disabled = pt.type === 'memo' && !canPostMemo;
+            const locked = (pt.type === 'memo' && !canPostMemo) || (pt.type === 'event' && !canPostEvent);
             return (
               <Pressable
                 key={pt.type}
@@ -129,13 +214,30 @@ export default function CreatePostScreen() {
                   {
                     backgroundColor: active ? theme.primary + '15' : theme.card,
                     borderColor: active ? theme.primary : theme.border,
-                    opacity: disabled ? 0.4 : 1,
+                    opacity: locked ? 0.5 : 1,
                   },
                 ]}
-                onPress={() => !disabled && setPostType(pt.type)}
-                disabled={disabled}
+                onPress={() => {
+                  if (locked) {
+                    Alert.alert(
+                      'Authority Required',
+                      `You need authority status to post ${pt.type}s. Would you like to request authority?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Request Authority', onPress: () => router.push('/community/request-authority' as any) },
+                      ]
+                    );
+                  } else {
+                    setPostType(pt.type);
+                  }
+                }}
               >
-                <Text style={{ fontSize: 22 }}>{pt.emoji}</Text>
+                {locked && (
+                  <View style={styles.lockBadge}>
+                    <Feather name="lock" size={10} color="#8b5cf6" />
+                  </View>
+                )}
+
                 <Text style={[styles.typeCardLabel, { color: active ? theme.primary : theme.text }]}>
                   {pt.label}
                 </Text>
@@ -147,17 +249,7 @@ export default function CreatePostScreen() {
           })}
         </View>
 
-        {postType === 'memo' && !canPostMemo && (
-          <Pressable
-            style={[styles.authorityBanner, { backgroundColor: '#8b5cf6' + '15', borderColor: '#8b5cf6' + '30' }]}
-            onPress={() => router.push('/community/request-authority' as any)}
-          >
-            <Feather name="shield" size={16} color="#8b5cf6" />
-            <Text style={[styles.authorityBannerText, { color: '#8b5cf6' }]}>
-              Request authority status to post memos →
-            </Text>
-          </Pressable>
-        )}
+
 
         {/* Title */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>TITLE *</Text>
@@ -192,6 +284,17 @@ export default function CreatePostScreen() {
               <Feather name="x" size={18} color="#fff" />
             </Pressable>
           </View>
+        ) : existingImageUrl ? (
+          <View style={styles.imagePreviewWrap}>
+            <Image source={{ uri: existingImageUrl }} style={styles.imagePreview} resizeMode="cover" />
+            <Pressable style={styles.imageRemove} onPress={() => setExistingImageUrl(null)}>
+              <Feather name="x" size={18} color="#fff" />
+            </Pressable>
+            <Pressable style={[styles.imageChange, { backgroundColor: theme.primary }]} onPress={pickImage}>
+              <Feather name="camera" size={14} color="#fff" />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Change</Text>
+            </Pressable>
+          </View>
         ) : (
           <Pressable
             style={[styles.imagePicker, { backgroundColor: theme.card, borderColor: theme.border }]}
@@ -202,50 +305,56 @@ export default function CreatePostScreen() {
           </Pressable>
         )}
 
-        {/* Event-specific fields */}
-        {postType === 'event' && (
-          <>
-            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>EVENT DATE</Text>
-            <Pressable
-              style={[styles.input, styles.dateBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Feather name="calendar" size={16} color={theme.primary} />
-              <Text style={{ color: eventDate ? theme.text : theme.textSecondary, fontSize: 15 }}>
-                {eventDate ? eventDate.toLocaleDateString() : 'Select date'}
-              </Text>
-            </Pressable>
-            {showDatePicker && (
-              <DateTimePicker
-                value={eventDate || new Date()}
-                mode="date"
-                display="default"
-                onChange={(_, date) => {
-                  setShowDatePicker(false);
-                  if (date) setEventDate(date);
-                }}
-              />
+        {/* Date, Time, Location — available for all post types */}
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>DATE</Text>
+        <Pressable
+          style={[styles.input, styles.dateBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <Feather name="calendar" size={16} color={theme.primary} />
+          <Text style={{ color: eventDate ? theme.text : theme.textSecondary, fontSize: 15 }}>
+            {eventDate ? eventDate.toLocaleDateString() : 'Select date (optional)'}
+          </Text>
+        </Pressable>
+        {showDatePicker && (
+          <View style={[styles.pickerWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <DateTimePicker
+              value={eventDate || new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_, date) => {
+                if (Platform.OS !== 'ios') setShowDatePicker(false);
+                if (date) setEventDate(date);
+              }}
+            />
+            {Platform.OS === 'ios' && (
+              <Pressable
+                style={[styles.pickerDone, { backgroundColor: theme.primary }]}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Done</Text>
+              </Pressable>
             )}
-
-            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>EVENT TIME</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-              placeholder="e.g. 10:00 AM - 2:00 PM"
-              placeholderTextColor={theme.textSecondary}
-              value={eventTime}
-              onChangeText={setEventTime}
-            />
-
-            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>LOCATION</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-              placeholder="e.g. Dewan Sri Budiman"
-              placeholderTextColor={theme.textSecondary}
-              value={location}
-              onChangeText={setLocation}
-            />
-          </>
+          </View>
         )}
+
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>TIME</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+          placeholder="e.g. 10:00 AM - 2:00 PM (optional)"
+          placeholderTextColor={theme.textSecondary}
+          value={eventTime}
+          onChangeText={setEventTime}
+        />
+
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>LOCATION</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
+          placeholder="e.g. Dewan Sri Budiman (optional)"
+          placeholderTextColor={theme.textSecondary}
+          value={location}
+          onChangeText={setLocation}
+        />
 
         {/* Expiry */}
         <View style={styles.expiryRow}>
@@ -272,16 +381,26 @@ export default function CreatePostScreen() {
               </Text>
             </Pressable>
             {showExpiryPicker && (
-              <DateTimePicker
-                value={expiresAt}
-                mode="date"
-                display="default"
-                minimumDate={new Date()}
-                onChange={(_, date) => {
-                  setShowExpiryPicker(false);
-                  if (date) setExpiresAt(date);
-                }}
-              />
+              <View style={[styles.pickerWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <DateTimePicker
+                  value={expiresAt}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== 'ios') setShowExpiryPicker(false);
+                    if (date) setExpiresAt(date);
+                  }}
+                />
+                {Platform.OS === 'ios' && (
+                  <Pressable
+                    style={[styles.pickerDone, { backgroundColor: theme.primary }]}
+                    onPress={() => setShowExpiryPicker(false)}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Done</Text>
+                  </Pressable>
+                )}
+              </View>
             )}
           </>
         )}
@@ -302,7 +421,7 @@ export default function CreatePostScreen() {
           ) : (
             <>
               <Feather name="send" size={18} color="#fff" />
-              <Text style={styles.submitBtnText}>Post</Text>
+              <Text style={styles.submitBtnText}>{isEditing ? 'Update' : 'Post'}</Text>
             </>
           )}
         </Pressable>
@@ -335,16 +454,17 @@ const styles = StyleSheet.create({
   },
   typeCardLabel: { fontSize: 13, fontWeight: '700' },
   typeCardDesc: { fontSize: 9, textAlign: 'center' },
-  authorityBanner: {
-    flexDirection: 'row',
+  lockBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#8b5cf620',
     alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 12,
+    justifyContent: 'center',
   },
-  authorityBannerText: { fontSize: 13, fontWeight: '600', flex: 1 },
   input: {
     borderRadius: 12,
     borderWidth: 1,
@@ -377,6 +497,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  imageChange: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
   expiryRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 12 },
   toggle: { width: 48, height: 28, borderRadius: 14, padding: 3, justifyContent: 'center' },
   toggleThumb: {
@@ -401,4 +532,16 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  pickerWrap: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  pickerDone: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+  },
 });

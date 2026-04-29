@@ -696,7 +696,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
 
         setUserState((prev) => {
-          let next = { ...prev };
+          let next = { ...prev, id: uid };
           if (profile !== undefined) {
             const profileName = (profile?.name || '').trim();
             const fallbackName = (authFallbackName || '').trim();

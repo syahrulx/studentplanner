@@ -130,17 +130,20 @@ export async function uploadPostImage(uri: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
-  const fileName = `${user.id}/${Date.now()}.${ext}`;
+  const fileName = `${user.id}/${Date.now()}.jpg`;
 
-  // Read file as blob
-  const response = await fetch(uri);
-  const blob = await response.blob();
+  // React Native: use FormData with file URI object (most reliable method)
+  const formData = new FormData();
+  formData.append('', {
+    uri,
+    name: fileName,
+    type: 'image/jpeg',
+  } as any);
 
   const { error } = await supabase.storage
     .from('community-images')
-    .upload(fileName, blob, {
-      contentType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+    .upload(fileName, formData, {
+      contentType: 'multipart/form-data',
       upsert: false,
     });
 
@@ -244,9 +247,16 @@ export async function requestAuthority(input: {
   university_id: string;
   role_title: string;
   justification: string;
+  proof_uri?: string;
 }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  // Upload proof image if provided
+  let proof_url: string | null = null;
+  if (input.proof_uri) {
+    proof_url = await uploadPostImage(input.proof_uri);
+  }
 
   // Insert request
   const { error: reqError } = await supabase
@@ -256,6 +266,7 @@ export async function requestAuthority(input: {
       university_id: input.university_id,
       role_title: input.role_title.trim(),
       justification: input.justification.trim(),
+      proof_url,
     });
 
   if (reqError) throw reqError;

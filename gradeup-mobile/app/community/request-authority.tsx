@@ -9,9 +9,11 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as ImagePicker from 'expo-image-picker';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -23,6 +25,7 @@ export default function RequestAuthorityScreen() {
 
   const [roleTitle, setRoleTitle] = useState('');
   const [justification, setJustification] = useState('');
+  const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [existingRequest, setExistingRequest] = useState<eventsApi.AuthorityRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,13 +39,28 @@ export default function RequestAuthorityScreen() {
     });
   }, []);
 
+  const pickProofImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setProofUri(result.assets[0].uri);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!roleTitle.trim()) {
-      Alert.alert('Required', 'Please enter your role title.');
+      Alert.alert('Required', 'Please enter your jawatan (position/role).');
       return;
     }
     if (!justification.trim()) {
       Alert.alert('Required', 'Please provide a justification.');
+      return;
+    }
+    if (!proofUri) {
+      Alert.alert('Required', 'Please upload proof of your jawatankuasa (e.g. appointment letter, ID card).');
       return;
     }
 
@@ -52,6 +70,7 @@ export default function RequestAuthorityScreen() {
         university_id: userUni,
         role_title: roleTitle.trim(),
         justification: justification.trim(),
+        proof_uri: proofUri,
       });
       Alert.alert('Request Submitted', 'Your authority request has been sent to the admin for review.', [
         { text: 'OK', onPress: () => router.back() },
@@ -88,15 +107,15 @@ export default function RequestAuthorityScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Info banner */}
         <View style={[styles.infoBanner, { backgroundColor: '#8b5cf6' + '12', borderColor: '#8b5cf6' + '30' }]}>
           <Feather name="shield" size={20} color="#8b5cf6" />
           <View style={{ flex: 1 }}>
             <Text style={[styles.infoTitle, { color: '#8b5cf6' }]}>What is Authority Status?</Text>
             <Text style={[styles.infoDesc, { color: theme.textSecondary }]}>
-              Authority status allows you to post official memos on behalf of your university or organization. 
-              Your request will be reviewed by the admin team.
+              Authority status allows you to post official events and memos on behalf of your university or organization.{'\n'}
+              You must provide proof of your committee/jawatankuasa role. Your request will be reviewed by admin.
             </Text>
           </View>
         </View>
@@ -117,12 +136,12 @@ export default function RequestAuthorityScreen() {
               </View>
             </View>
             <View style={styles.statusRow}>
-              <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>Role</Text>
+              <Text style={[styles.statusLabel, { color: theme.textSecondary }]}>Jawatan</Text>
               <Text style={[styles.statusValue, { color: theme.text }]}>{existingRequest.role_title}</Text>
             </View>
             {existingRequest.status === 'approved' && (
               <Text style={[styles.approvedText, { color: '#10b981' }]}>
-                ✅ You can now post memos!
+                ✅ You can now post events and memos!
               </Text>
             )}
             {existingRequest.status === 'rejected' && (
@@ -136,10 +155,10 @@ export default function RequestAuthorityScreen() {
         {/* Form (hide if approved or pending) */}
         {(!existingRequest || existingRequest.status === 'rejected') && (
           <>
-            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>YOUR ROLE TITLE *</Text>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>JAWATAN (POSITION) *</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-              placeholder="e.g. Student Council President"
+              placeholder="e.g. Ketua Biro Publisiti MPP"
               placeholderTextColor={theme.textSecondary}
               value={roleTitle}
               onChangeText={setRoleTitle}
@@ -149,7 +168,7 @@ export default function RequestAuthorityScreen() {
             <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>JUSTIFICATION *</Text>
             <TextInput
               style={[styles.input, styles.textArea, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-              placeholder="Why should you be granted authority status? Describe your role and responsibilities..."
+              placeholder="Describe your role, responsibilities, and why you need authority status..."
               placeholderTextColor={theme.textSecondary}
               value={justification}
               onChangeText={setJustification}
@@ -157,6 +176,32 @@ export default function RequestAuthorityScreen() {
               numberOfLines={5}
               textAlignVertical="top"
             />
+
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>PROOF OF JAWATANKUASA *</Text>
+            <Text style={[styles.proofHint, { color: theme.textSecondary }]}>
+              Upload a photo of your appointment letter, committee ID, or any official document proving your role.
+            </Text>
+            {proofUri ? (
+              <View style={styles.proofPreviewWrap}>
+                <Image source={{ uri: proofUri }} style={styles.proofPreview} resizeMode="cover" />
+                <Pressable style={styles.proofRemove} onPress={() => setProofUri(null)}>
+                  <Feather name="x" size={18} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={[styles.proofPicker, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onPress={pickProofImage}
+              >
+                <Feather name="upload" size={24} color="#8b5cf6" />
+                <Text style={[styles.proofPickerText, { color: '#8b5cf6' }]}>
+                  Tap to upload proof
+                </Text>
+                <Text style={[styles.proofPickerSub, { color: theme.textSecondary }]}>
+                  Surat pelantikan, kad jawatankuasa, etc.
+                </Text>
+              </Pressable>
+            )}
 
             <Pressable
               style={({ pressed }) => [
@@ -232,6 +277,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   textArea: { minHeight: 120 },
+  proofHint: { fontSize: 12, lineHeight: 18, marginBottom: 10 },
+  proofPicker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 140,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    gap: 6,
+  },
+  proofPickerText: { fontSize: 14, fontWeight: '700' },
+  proofPickerSub: { fontSize: 11 },
+  proofPreviewWrap: { borderRadius: 14, overflow: 'hidden', position: 'relative' },
+  proofPreview: { width: '100%', height: 220, borderRadius: 14 },
+  proofRemove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
