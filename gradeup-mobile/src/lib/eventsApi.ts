@@ -44,6 +44,7 @@ export interface AuthorityRequest {
 export interface PostFilters {
   universityId?: string | null;
   campus?: string | null;
+  date?: string | null;
   postType?: PostType | null;
   limit?: number;
   offset?: number;
@@ -52,7 +53,7 @@ export interface PostFilters {
 // ─── Fetch Posts ─────────────────────────────────────────────────────────────
 
 export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPost[]> {
-  const { universityId, campus, postType, limit = 50, offset = 0 } = filters;
+  const { universityId, campus, date, postType, limit = 50, offset = 0 } = filters;
 
   let query = supabase
     .from('community_posts')
@@ -71,6 +72,9 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
   }
   if (postType) {
     query = query.eq('post_type', postType);
+  }
+  if (date) {
+    query = query.eq('event_date', date);
   }
 
   const { data, error } = await query;

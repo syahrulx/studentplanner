@@ -176,6 +176,22 @@ export interface Flashcard {
   answer?: string;
 }
 
+export interface ChatSession {
+  id: string;
+  subjectId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'ai';
+  content: string;
+  createdAt: string;
+}
+
 /* ── University & Timetable ─────────────────────────────── */
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';

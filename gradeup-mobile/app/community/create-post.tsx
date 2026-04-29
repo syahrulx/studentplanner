@@ -199,7 +199,11 @@ export default function CreatePostScreen() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView 
+        contentContainerStyle={styles.content} 
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
+      >
         {/* Post type selector */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>POST TYPE</Text>
         <View style={styles.typeRow}>

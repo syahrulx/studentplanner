@@ -10,7 +10,7 @@ import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 // Types
 // ---------------------------------------------------------------------------
 
-export type AiGenerateKind = 'flashcards' | 'flashcards_pdf' | 'quiz' | 'task_extract';
+export type AiGenerateKind = 'flashcards' | 'flashcards_pdf' | 'quiz' | 'task_extract' | 'chat';
 
 export interface AiGenerateRequest {
   kind: AiGenerateKind;
@@ -21,6 +21,7 @@ export interface AiGenerateRequest {
   today_iso?: string;
   current_week?: number;
   courses?: { id: string; name: string }[];
+  chat_history?: { role: 'user' | 'assistant'; content: string }[];
 }
 
 export type AiGenerateFlashcardsResult = {
@@ -57,6 +58,11 @@ export type AiGenerateTaskExtractResult = {
     is_inferred_date?: boolean;
     is_unknown_course?: boolean;
   }[];
+  error?: string;
+};
+
+export type AiGenerateChatResult = {
+  response: string;
   error?: string;
 };
 

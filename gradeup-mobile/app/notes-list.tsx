@@ -12,6 +12,7 @@ import { supabase } from '@/src/lib/supabase';
 import { ImportProgressBar } from '@/components/ImportProgressBar';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { useTranslations } from '@/src/i18n';
+import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 
 const REGISTERED_NOTE_FOLDERS_KEY = 'notes_subject_registered_folders_v1';
 const MAX_PDF_AI_BYTES = 25 * 1024 * 1024;
@@ -160,6 +161,41 @@ function createStyles(theme: ThemePalette) {
     },
     importOverlayTitle: { fontSize: 17, fontWeight: '800', color: theme.text, marginBottom: 4 },
     importOverlaySub: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginBottom: 16, lineHeight: 18 },
+
+    fab: {
+      position: 'absolute',
+      bottom: 30,
+      right: 20,
+      backgroundColor: '#8b5cf6',
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      borderRadius: 999,
+      shadowColor: '#8b5cf6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 10,
+      elevation: 8,
+      gap: 10,
+    },
+    fabText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    fabBadge: {
+      backgroundColor: 'rgba(255, 255, 255, 0.25)',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      marginLeft: -2,
+    },
+    fabBadgeText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: '#fff',
+    },
   });
 }
 
@@ -167,7 +203,7 @@ export default function NotesList() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
   const subjectId =
     typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
-  const { notes, handleSaveNote, deleteNote, language } = useApp();
+  const { notes, handleSaveNote, deleteNote, language, user } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -449,6 +485,8 @@ export default function NotesList() {
         </View>
       )}
 
+
+
       {/* Flashcard shortcut */}
       <Pressable
         style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
@@ -570,6 +608,36 @@ export default function NotesList() {
           );
         }}
       />
+
+      {/* AI Subject Tutor FAB */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.fab,
+          pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }
+        ]}
+        onPress={() => {
+          if (!isAtLeastPlus(user.subscriptionPlan)) {
+            Alert.alert(
+              'Plus Feature',
+              'AI Subject Tutor is available on Plus and Pro plans. It reads all your notes for this subject and answers your questions.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
+              ]
+            );
+            return;
+          }
+          router.push({ pathname: '/subject-chat' as any, params: { subjectId } });
+        }}
+      >
+        <Feather name="message-circle" size={20} color="#fff" />
+        <Text style={styles.fabText}>Ask AI</Text>
+        {!isAtLeastPlus(user.subscriptionPlan) && (
+          <View style={styles.fabBadge}>
+             <Text style={styles.fabBadgeText}>PRO</Text>
+          </View>
+        )}
+      </Pressable>
 
       {/* + menu */}
       <Modal visible={showPlusMenu} transparent animationType="fade">

@@ -375,6 +375,7 @@ export default function TaskDetails() {
         contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
       >
         {/* ── Badges ────────────────────────────────────────────────────────── */}
         <View style={s.badgeRow}>

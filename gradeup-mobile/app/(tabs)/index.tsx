@@ -857,7 +857,7 @@ export default function Dashboard() {
       date: t.dueDate,
       time: t.dueTime,
       code: t.courseId,
-      room: T('onlineSubmission'),
+      room: t.type,
       type: 'DEADLINE' as const,
       name: t.title,
       isSharedTask: (t as any).isSharedTask,
@@ -897,7 +897,7 @@ export default function Dashboard() {
     const d = a.date.localeCompare(b.date);
     return d !== 0 ? d : a.time.localeCompare(b.time);
   });
-  const previewItems = scheduleWithinMonth.slice(0, 8);
+  const previewItems = scheduleWithinMonth.slice(0, 15);
   const hiddenUpcomingCount = Math.max(0, scheduleWithinMonth.length - previewItems.length);
 
   const nextStudyItem = useMemo(() => {
@@ -1392,8 +1392,12 @@ export default function Dashboard() {
                         ) : null}
                         <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
                         <Text style={styles.upcomingMetaText} numberOfLines={1}>{formatSubjectName(item.code)}</Text>
-                        <Text style={styles.upcomingMetaDivider}>•</Text>
-                        <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.room}</Text>
+                        {!!item.room && (
+                          <>
+                            <Text style={styles.upcomingMetaDivider}>•</Text>
+                            <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.room}</Text>
+                          </>
+                        )}
                       </View>
                     </View>
                   </Pressable>

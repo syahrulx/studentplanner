@@ -9,9 +9,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  Modal,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -58,17 +62,32 @@ export default function EventsBoard() {
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
   const userCampus = (user as any)?.campus || null;
 
+  // Advanced Filters
+  const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
+  const [filterCampus, setFilterCampus] = useState<string | null>(null);
+  const [filterDate, setFilterDate] = useState<string | null>(null);
+
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [tempUni, setTempUni] = useState('');
+  const [tempCampus, setTempCampus] = useState('');
+  const [tempDate, setTempDate] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const activeUni = filterUniversity !== null ? filterUniversity : userUni;
+
   const loadPosts = useCallback(async () => {
     try {
       const data = await eventsApi.fetchPosts({
         postType: filter,
-        universityId: userUni,
+        universityId: activeUni,
+        campus: filterCampus,
+        date: filterDate,
       });
       setPosts(data);
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
     }
-  }, [filter, userUni]);
+  }, [filter, activeUni, filterCampus, filterDate]);
 
   const loadAuthority = useCallback(async () => {
     const status = await eventsApi.getMyAuthorityStatus();
@@ -188,6 +207,22 @@ export default function EventsBoard() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Filter pills */}
       <View style={styles.filterBar}>
+        <Pressable
+          style={[
+            styles.filterPill,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            (filterCampus || filterDate || filterUniversity !== null) && { borderColor: theme.primary, borderWidth: 1 }
+          ]}
+          onPress={() => {
+            setTempUni(filterUniversity !== null ? filterUniversity : (userUni || ''));
+            setTempCampus(filterCampus || '');
+            setTempDate(filterDate);
+            setShowFilterModal(true);
+          }}
+        >
+          <Feather name="filter" size={13} color={theme.primary} />
+          <Text style={[styles.filterPillText, { color: theme.primary }]}>Filters</Text>
+        </Pressable>
         {TYPE_PILLS.map((pill) => {
           const active = filter === pill.value;
           return (
@@ -235,6 +270,113 @@ export default function EventsBoard() {
           }
         />
       )}
+
+      {/* Advanced Filter Modal */}
+      <Modal visible={showFilterModal} animationType="slide" transparent={true} onRequestClose={() => setShowFilterModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Filter Events</Text>
+              <Pressable onPress={() => setShowFilterModal(false)} hitSlop={10}>
+                <Feather name="x" size={24} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>University (UiTM)</Text>
+            <TextInput
+              style={[styles.inputField, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
+              value={tempUni}
+              onChangeText={setTempUni}
+              placeholder="e.g. uitm"
+              placeholderTextColor={theme.textSecondary}
+              autoCapitalize="none"
+            />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Campus</Text>
+            <TextInput
+              style={[styles.inputField, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
+              value={tempCampus}
+              onChangeText={setTempCampus}
+              placeholder="e.g. Puncak Alam"
+              placeholderTextColor={theme.textSecondary}
+            />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Event Date</Text>
+            
+            {Platform.OS === 'ios' && showDatePicker ? (
+              <View style={{ backgroundColor: theme.card, borderRadius: 12, marginTop: 8, overflow: 'hidden' }}>
+                <DateTimePicker
+                  value={tempDate ? new Date(tempDate) : new Date()}
+                  mode="date"
+                  display="spinner"
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) setTempDate(selectedDate.toISOString().split('T')[0]);
+                  }}
+                />
+                <Pressable style={styles.iosDateDone} onPress={() => setShowDatePicker(false)}>
+                  <Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 16 }}>Done</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                <Pressable
+                  style={[styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Feather name="calendar" size={16} color={theme.primary} />
+                  <Text style={{ color: tempDate ? theme.text : theme.textSecondary, marginLeft: 8 }}>
+                    {tempDate ? tempDate : 'Select a date...'}
+                  </Text>
+                </Pressable>
+                {tempDate && (
+                  <Pressable onPress={() => setTempDate(null)} hitSlop={10}>
+                    <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {Platform.OS === 'android' && showDatePicker && (
+              <DateTimePicker
+                value={tempDate ? new Date(tempDate) : new Date()}
+                mode="date"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShowDatePicker(false);
+                  if (event.type === 'set' && selectedDate) {
+                    setTempDate(selectedDate.toISOString().split('T')[0]);
+                  }
+                }}
+              />
+            )}
+
+            <View style={styles.modalFooter}>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => {
+                  setFilterUniversity(null);
+                  setFilterCampus(null);
+                  setFilterDate(null);
+                  setShowFilterModal(false);
+                }}
+              >
+                <Text style={{ color: theme.text }}>Reset</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  setFilterUniversity(tempUni.trim() ? tempUni.trim() : null);
+                  setFilterCampus(tempCampus.trim() ? tempCampus.trim() : null);
+                  setFilterDate(tempDate);
+                  setShowFilterModal(false);
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Apply</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -351,5 +493,54 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, fontWeight: '800' },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
 
-  // FAB (removed — lives in community.tsx)
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800' },
+  inputLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 16 },
+  inputField: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+  },
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flex: 1,
+  },
+  iosDateDone: { alignSelf: 'flex-end', marginTop: 10, marginBottom: 10, paddingHorizontal: 10 },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 32,
+    gap: 12,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

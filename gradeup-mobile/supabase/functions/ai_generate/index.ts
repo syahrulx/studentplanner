@@ -10,7 +10,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-type GenerateKind = 'quiz' | 'task_extract';
+type GenerateKind = 'quiz' | 'task_extract' | 'chat';
 
 interface RequestBody {
   kind: GenerateKind;
@@ -25,6 +25,8 @@ interface RequestBody {
   today_iso?: string;
   current_week?: number;
   courses?: { id: string; name: string }[];
+  /** Chat history for chat kind. */
+  chat_history?: { role: 'user' | 'assistant'; content: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -171,14 +173,26 @@ Rules:
   };
 }
 
+function buildChatPrompt(content: string): { system: string } {
+  return {
+    system: `You are an AI Subject Tutor for a university student.
+You must answer the student's questions based strictly on the provided study notes below.
+If the answer is not found in the notes, say "I cannot find the answer in your notes."
+Do not invent information. Keep your answers clear, concise, and helpful.
+Do NOT use markdown formatting like bold (**), italics, or hashes. Keep the text plain.
+
+Provided Notes:
+${content}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // OpenAI call
 // ---------------------------------------------------------------------------
 
 async function callOpenAI(
   apiKey: string,
-  systemPrompt: string,
-  userPrompt: string,
+  messages: { role: string; content: string }[],
   maxTokens: number,
 ): Promise<{ content: string; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
@@ -194,10 +208,7 @@ async function callOpenAI(
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+        messages,
         temperature: 0.7,
         max_tokens: maxTokens,
       }),
@@ -288,8 +299,8 @@ Deno.serve(async (req) => {
     }
 
     const kind = body.kind;
-    if (!kind || !['quiz', 'task_extract'].includes(kind)) {
-      return errorJson('Invalid "kind". Must be: quiz or task_extract.', 'BAD_REQUEST');
+    if (!kind || !['quiz', 'task_extract', 'chat'].includes(kind)) {
+      return errorJson('Invalid "kind". Must be: quiz, task_extract, or chat.', 'BAD_REQUEST');
     }
 
     const content = (body.content ?? '').trim();
@@ -321,6 +332,10 @@ Deno.serve(async (req) => {
       return errorJson(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
     }
 
+    if (kind === 'chat' && plan !== 'plus' && plan !== 'pro') {
+      return errorJson('AI Subject Tutor is only available on Plus and Pro plans.', 'UPGRADE_REQUIRED');
+    }
+
     // Per-day per-request safety net (counts generations, not tokens).
     const rateCheck = await checkRateLimit(supabaseAdmin, userId, plan);
     if (!rateCheck.allowed) {
@@ -331,27 +346,38 @@ Deno.serve(async (req) => {
     }
 
     // ── Build prompt & call OpenAI ──
-    let systemPrompt: string;
-    let userPrompt: string;
+    let messages: { role: string; content: string }[] = [];
     let maxTokens: number;
 
     const count = Math.min(Math.max(1, body.count ?? 10), 30); // 1-30 items
 
     if (kind === 'task_extract') {
       const prompts = buildTaskExtractPrompt(truncatedContent);
-      systemPrompt = prompts.system;
-      userPrompt = prompts.user;
+      messages = [
+        { role: 'system', content: prompts.system },
+        { role: 'user', content: prompts.user },
+      ];
       maxTokens = 2500;
+    } else if (kind === 'chat') {
+      const prompts = buildChatPrompt(truncatedContent);
+      const history = Array.isArray(body.chat_history) ? body.chat_history : [];
+      messages = [
+        { role: 'system', content: prompts.system },
+        ...history.map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
+      ];
+      maxTokens = 1000;
     } else {
       const quizType = body.quiz_type || 'mcq';
       const difficulty = body.difficulty || 'medium';
       const prompts = buildQuizPrompt(truncatedContent, count, quizType, difficulty);
-      systemPrompt = prompts.system;
-      userPrompt = prompts.user;
+      messages = [
+        { role: 'system', content: prompts.system },
+        { role: 'user', content: prompts.user },
+      ];
       maxTokens = 4000;
     }
 
-    const result = await callOpenAI(openAiKey, systemPrompt, userPrompt, maxTokens);
+    const result = await callOpenAI(openAiKey, messages, maxTokens);
 
     if (result.error) {
       return errorJson(result.error, 'OPENAI_ERROR');
@@ -376,6 +402,10 @@ Deno.serve(async (req) => {
 
     let parsed: unknown;
     try {
+      // For chat, we just return the string content directly.
+      if (kind === 'chat') {
+        return json({ response: result.content });
+      }
       parsed = JSON.parse(cleaned);
     } catch {
       return errorJson('AI returned invalid JSON. Please try again.', 'PARSE_ERROR');

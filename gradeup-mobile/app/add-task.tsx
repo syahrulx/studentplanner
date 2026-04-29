@@ -504,6 +504,7 @@ export default function AddTask() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         bounces={false}
+        automaticallyAdjustKeyboardInsets={true}
       >
         <View style={styles.topBar}>
           <Pressable onPress={() => router.back()} hitSlop={12} style={({ pressed }) => [pressed && { opacity: 0.5 }]}>
