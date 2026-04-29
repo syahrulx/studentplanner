@@ -11,28 +11,43 @@ const PAD = 20;
 type ThemePreview = {
   id: string;
   name: string;
+  /** Used in pills & mini-headlines to tint subtle accents in the modal preview. */
   accent: string;
   description: string;
+  /** Real background color the user sees once the theme is applied. */
   background: string;
+  /** Real card color in the applied theme. */
   card: string;
+  /** Real header bar color (or gradient base) the user will see. */
+  headerColor: string;
+  /** Optional gradient end color for the hero header. */
+  headerColorEnd?: string;
+  /** Foreground color used for header text/icons in the applied theme. */
+  headerOnPrimary: string;
 };
 
 const THEME_PREVIEWS: ThemePreview[] = [
   {
     id: 'cat',
     name: 'Cat Theme',
-    accent: '#f59e0b',
+    accent: '#b26f45',
     description: 'Warm cream cards, playful cat accents, cozy study vibe.',
-    background: '#fef7ea',
-    card: '#fff9f0',
+    background: '#fff8f1',
+    card: '#fffdf9',
+    headerColor: '#f6c47f',
+    headerColorEnd: '#f7ddb8',
+    headerOnPrimary: '#5b3a22',
   },
   {
     id: 'sakura',
     name: 'Mono Theme',
-    accent: '#000000',
+    accent: '#ffffff',
     description: 'Pitch-black minimalist pack with clean monochrome icons and strong contrast.',
     background: '#000000',
     card: '#0a0a0a',
+    headerColor: '#2a2a2a',
+    headerColorEnd: '#1f1f1f',
+    headerOnPrimary: '#f5f5f5',
   },
   {
     id: 'spider',
@@ -42,15 +57,23 @@ const THEME_PREVIEWS: ThemePreview[] = [
       'Near-black surfaces with deep crimson thread accents—high contrast, focused study mode.',
     background: '#050508',
     card: '#0c0c12',
+    headerColor: '#140506',
+    headerColorEnd: '#7f1d1d',
+    headerOnPrimary: '#fef2f2',
   },
   {
     id: 'purple',
     name: 'Aurora Purple Theme',
     accent: '#b794f4',
     description:
-      'Soft lavender aesthetic — muted violet, lilac and powdered orchid over a calm midnight-plum base.',
-    background: '#15102a',
-    card: '#221a3f',
+      'Lilac wallpaper header with a marbled aurora pulse card — soft white surfaces underneath.',
+    background: '#f7f4ff',
+    card: '#ffffff',
+    /** Header base is lilac, but in the real app a dark veil sits over a glitter
+     *  wallpaper, so the header reads as deep violet with white text. */
+    headerColor: '#e4d8ff',
+    headerColorEnd: '#d4c2ff',
+    headerOnPrimary: '#ffffff',
   },
 ];
 
@@ -82,26 +105,30 @@ export default function InAppThemesScreen() {
   const heroLabelResolved = heroLabel;
   const heroIcon: 'grid' | 'sun' | 'feather' = isSpider ? 'grid' : isPurple ? 'feather' : 'sun';
   const heroEmoji = isSpider ? '◇' : isSakura ? '◻' : isPurple ? '☾' : '🐾';
+  const headerOnPrimary = selectedTheme?.headerOnPrimary ?? '#ffffff';
+  const headerColor = selectedTheme?.headerColor ?? '#6366f1';
+  const headerColorEnd = selectedTheme?.headerColorEnd ?? headerColor;
+  /** Body text on the page background (NOT inside the header). */
   const homeHeadlineColor = isSpider
     ? '#fafafa'
     : isSakura
     ? '#ffffff'
     : isPurple
-    ? '#f5f3ff'
+    ? '#3f2f69'
     : '#2a2118';
   const homeSublineColor = isSpider
     ? '#d4d4d8'
     : isSakura
     ? '#b3b3b3'
     : isPurple
-    ? '#c4b5fd'
+    ? '#66558e'
     : '#7a6552';
   const homeCardTextColor = isSpider
     ? '#e4e4e7'
     : isSakura
     ? '#e5e5e5'
     : isPurple
-    ? '#ede9fe'
+    ? '#3f2f69'
     : '#3d2b1f';
   const timetableHeadline = isSpider
     ? 'Timetable'
@@ -131,9 +158,9 @@ export default function InAppThemesScreen() {
       ]
     : isPurple
     ? [
-        { label: 'Mon 9:00', title: 'Quantum Methods', bg: '#1f1640' },
-        { label: 'Tue 14:00', title: 'Visual Studies', bg: '#241548' },
-        { label: 'Thu 10:30', title: 'Creative Writing', bg: '#1a0f37' },
+        { label: 'Mon 9:00', title: 'Quantum Methods', bg: '#f3edff' },
+        { label: 'Tue 14:00', title: 'Visual Studies', bg: '#ece2ff' },
+        { label: 'Thu 10:30', title: 'Creative Writing', bg: '#efe6ff' },
       ]
     : [
         { label: 'Mon 9:00', title: 'Database Systems', bg: '#f7e4cb' },
@@ -142,7 +169,7 @@ export default function InAppThemesScreen() {
       ];
   const renderThemePattern = (forTimetable: boolean) => {
     if (isSpider) {
-      const line = forTimetable ? 'rgba(185,28,28,0.2)' : 'rgba(220,38,38,0.24)';
+      const line = forTimetable ? 'rgba(185,28,28,0.22)' : 'rgba(220,38,38,0.26)';
       const node = forTimetable ? 'rgba(248,113,113,0.32)' : 'rgba(252,165,165,0.4)';
       return (
         <View style={styles.bgPatternWrap}>
@@ -158,32 +185,23 @@ export default function InAppThemesScreen() {
     if (isSakura) {
       return (
         <View style={styles.bgPatternWrap}>
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandA, { backgroundColor: '#ffffff18' }]} />
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandB, { backgroundColor: '#ffffff10' }]} />
-          <View style={[styles.bgRibbonBand, styles.bgRibbonBandC, { backgroundColor: '#ffffff14' }]} />
-          <Text style={[styles.bgPetal, styles.bgPetalA, { color: '#ffffff' }]}>◻</Text>
-          <Text style={[styles.bgPetal, styles.bgPetalB, { color: '#d4d4d4' }]}>○</Text>
+          <View style={styles.bgMonoTopBar} />
+          <View style={styles.bgMonoSideAccent} />
         </View>
       );
     }
     if (isPurple) {
       return (
         <View style={styles.bgPatternWrap}>
-          <Image
-            source={require('../assets/purple-wallpaper-dark.jpg')}
-            style={styles.bgPurpleWallpaper}
-            resizeMode="cover"
-          />
-          <View style={styles.bgPurpleVeil} />
-          <Text style={[styles.bgPetal, styles.bgPetalA, { color: '#ede4ff' }]}>☾</Text>
+          <View style={styles.bgPurpleSoftWash} />
         </View>
       );
     }
     return (
       <View style={styles.bgPatternWrap}>
-        <View style={[styles.bgBubble, styles.bgBubbleA, { backgroundColor: '#f59e0b40' }]} />
-        <View style={[styles.bgBubble, styles.bgBubbleB, { backgroundColor: '#fbbf2460' }]} />
-        <View style={[styles.bgBubble, styles.bgBubbleC, { backgroundColor: '#fb923c45' }]} />
+        <View style={[styles.bgBubble, styles.bgBubbleA, { backgroundColor: '#f59e0b30' }]} />
+        <View style={[styles.bgBubble, styles.bgBubbleB, { backgroundColor: '#fbbf2440' }]} />
+        <View style={[styles.bgBubble, styles.bgBubbleC, { backgroundColor: '#fb923c30' }]} />
         <Text style={[styles.bgPetal, styles.bgPetalA]}>🐾</Text>
         <Text style={[styles.bgPetal, styles.bgPetalB]}>🐾</Text>
       </View>
@@ -237,40 +255,48 @@ export default function InAppThemesScreen() {
 
         {THEME_PREVIEWS.map((item) => (
           <View key={item.id} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={[styles.imageContent, { backgroundColor: `${item.accent}88` }]}>
+            <View style={[styles.imageContent, { backgroundColor: item.headerColor }]}>
+              {item.headerColorEnd ? (
+                <View style={[styles.heroGradientSheen, { backgroundColor: item.headerColorEnd }]} />
+              ) : null}
               {item.id === 'cat' ? (
                 <View style={styles.cardPatternWrap}>
-                  <View style={[styles.cardBubble, styles.cardBubbleA]} />
-                  <View style={[styles.cardBubble, styles.cardBubbleB]} />
-                  <View style={[styles.cardBubble, styles.cardBubbleC]} />
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>🐾</Text>
+                  <View style={[styles.cardBubble, styles.cardBubbleA, { backgroundColor: 'rgba(255,255,255,0.32)' }]} />
+                  <View style={[styles.cardBubble, styles.cardBubbleB, { backgroundColor: 'rgba(255,255,255,0.22)' }]} />
+                  <View style={[styles.cardBubble, styles.cardBubbleC, { backgroundColor: 'rgba(255,255,255,0.18)' }]} />
+                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA, { color: '#5b3a22', opacity: 0.78 }]}>🐾</Text>
                 </View>
               ) : item.id === 'sakura' ? (
                 <View style={styles.cardPatternWrap}>
-                  <View style={[styles.cardRibbon, styles.cardRibbonA]} />
-                  <View style={[styles.cardRibbon, styles.cardRibbonB]} />
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>◻</Text>
+                  <View style={styles.heroMonoLineA} />
+                  <View style={styles.heroMonoLineB} />
+                  <View style={styles.heroMonoChipA} />
+                  <View style={styles.heroMonoDotA} />
                 </View>
               ) : item.id === 'spider' ? (
                 <View style={styles.cardPatternWrap}>
-                  <View style={[styles.cardWebLine, styles.cardWebRayA]} />
-                  <View style={[styles.cardWebLine, styles.cardWebRayB]} />
-                  <View style={[styles.cardWebStrand, styles.cardWebStrandA]} />
-                  <View style={[styles.cardWebNode, styles.cardWebNodePos]} />
+                  <Image
+                    source={require('../assets/spider-header-web.png')}
+                    style={styles.cardSpiderWebImage}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.heroSpiderShade} />
                 </View>
               ) : (
                 <View style={styles.cardPatternWrap}>
                   <Image
-                    source={require('../assets/purple-wallpaper-dark.jpg')}
-                    style={styles.cardPurpleWallpaper}
+                    source={require('../assets/purple-wallpaper-glitter.jpg')}
+                    style={styles.cardPurpleGlitterImage}
                     resizeMode="cover"
                   />
-                  <View style={styles.cardPurpleVeil} />
-                  <Feather name="feather" size={16} color="#ede4ff" style={styles.cardPurpleIcon} />
+                  <View style={styles.cardPurpleGlitterVeil} />
+                  <Feather name="feather" size={16} color="#ffffff" style={styles.cardPurpleIcon} />
                 </View>
               )}
-              <Text style={styles.previewTitle}>{item.name}</Text>
-              <Text style={styles.previewTag}>Preview</Text>
+              <Text style={[styles.previewTitle, { color: item.headerOnPrimary }]}>{item.name}</Text>
+              <View style={[styles.previewTag, { backgroundColor: `${item.headerOnPrimary}22` }]}>
+                <Text style={[styles.previewTagText, { color: item.headerOnPrimary }]}>Preview</Text>
+              </View>
             </View>
 
             <View style={styles.cardBody}>
@@ -445,77 +471,195 @@ export default function InAppThemesScreen() {
                   },
                 ]}
               >
-                {isCat ? (
-                  <>
-                    {renderThemePattern(false)}
-                    <View style={styles.previewHomeHeader}>
-                      <Text style={styles.previewHomeHello}>Hello, Izwan.</Text>
+                {renderThemePattern(false)}
+
+                {/* Mini Home Header — matches the real applied theme header */}
+                <View style={[styles.previewHeaderBar, { backgroundColor: headerColor }]}>
+                  <View style={[styles.previewHeaderSheen, { backgroundColor: headerColorEnd }]} />
+                  {isSpider ? (
+                    <Image
+                      source={require('../assets/spider-header-web.png')}
+                      style={styles.previewSpiderHeaderWeb}
+                      resizeMode="contain"
+                    />
+                  ) : null}
+                  {isPurple ? (
+                    <>
+                      <Image
+                        source={require('../assets/purple-wallpaper-glitter.jpg')}
+                        style={styles.previewPurpleHeaderImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.previewPurpleHeaderVeil} />
+                    </>
+                  ) : null}
+                  <View style={styles.previewHeaderRow}>
+                    <View style={[styles.previewPill, { backgroundColor: `${headerOnPrimary}1f` }]}>
+                      <Feather name={heroIcon} size={10} color={headerOnPrimary} />
+                      <Text style={[styles.previewPillText, { color: headerOnPrimary }]}>{heroLabelResolved}</Text>
                     </View>
-                    <View style={styles.previewPulseBox}>
-                      <View style={styles.previewPulseTopRow}>
-                        <Text style={styles.previewPulseWeek}>WEEK 5</Text>
-                        <View style={styles.previewPulseBadge}>
-                          <Text style={styles.previewPulseBadgeText}>W8 PEAK</Text>
-                        </View>
-                      </View>
-                    <CatLottie variant="badge" style={styles.previewCatLottie} />
-                      <Text style={styles.previewPulseLabel}>SEMESTER PULSE</Text>
-                      <View style={styles.previewPulseDots}>
-                        {Array.from({ length: 11 }, (_, i) => (
-                          <View
-                            key={i}
-                            style={[
-                              styles.previewPulseDot,
-                              i === 4 && styles.previewPulseDotCurrent,
-                              i === 6 && styles.previewPulseDotPeak,
-                            ]}
-                          />
-                        ))}
+                    <Text style={[styles.previewHeaderEmoji, { color: headerOnPrimary }]}>{heroEmoji}</Text>
+                  </View>
+                  <Text style={[styles.previewHeaderHello, { color: headerOnPrimary }]}>Hello, Izwan</Text>
+                </View>
+
+                {/* Mini Week Pulse card — replicates per-theme pulse styling */}
+                {isPurple ? (
+                  <View style={styles.previewPulseBoxPurple}>
+                    <Image
+                      source={require('../assets/purple-weekpulse-gradient.png')}
+                      style={styles.previewPulseBoxImage}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.previewPulseBoxImageVeil} />
+                    <View style={styles.previewPulseTopRow}>
+                      <Text style={[styles.previewPulseWeek, { color: '#ffffff' }]}>WEEK 5</Text>
+                      <View style={[styles.previewPulseBadge, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                        <Text style={[styles.previewPulseBadgeText, { color: '#ffffff' }]}>W8 PEAK</Text>
                       </View>
                     </View>
-                    <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
-                      <View style={styles.mockRow}>
-                        <View style={[styles.mockIcon, { backgroundColor: '#f2d7b3' }]}>
-                          <Feather name="book-open" size={12} color="#8a5b2d" />
-                        </View>
-                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>Webinar koloboratif ISP640</Text>
+                    <Text style={[styles.previewPulseLabel, { color: 'rgba(255,255,255,0.85)' }]}>SEMESTER PULSE</Text>
+                    <View style={styles.previewPulseDots}>
+                      {Array.from({ length: 11 }, (_, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.previewPulseDot,
+                            { backgroundColor: 'rgba(255,255,255,0.32)' },
+                            i === 4 && { backgroundColor: '#ffffff', width: 8, height: 8, borderRadius: 4 },
+                            i === 6 && { borderWidth: 1.5, borderColor: '#ffffff', backgroundColor: 'transparent', width: 8, height: 8, borderRadius: 4 },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : isSpider ? (
+                  <View style={[styles.previewPulseBoxDark, { backgroundColor: '#0c0c12', borderColor: '#1f0d0e' }]}>
+                    <Image
+                      source={require('../assets/spider-card-web.png')}
+                      style={styles.previewPulseSpiderWeb}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.previewPulseTopRow}>
+                      <Text style={[styles.previewPulseWeek, { color: '#fafafa' }]}>WEEK 5</Text>
+                      <View style={[styles.previewPulseBadge, { backgroundColor: '#1a0a0c' }]}>
+                        <Text style={[styles.previewPulseBadgeText, { color: '#fecaca' }]}>W8 PEAK</Text>
                       </View>
                     </View>
-                  </>
+                    <Text style={[styles.previewPulseLabel, { color: '#a8a29e' }]}>SEMESTER PULSE</Text>
+                    <View style={styles.previewPulseDots}>
+                      {Array.from({ length: 11 }, (_, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.previewPulseDot,
+                            { backgroundColor: '#27272a' },
+                            i === 4 && { backgroundColor: '#b91c1c', width: 8, height: 8, borderRadius: 4 },
+                            i === 6 && { borderWidth: 1.5, borderColor: '#dc2626', backgroundColor: 'transparent', width: 8, height: 8, borderRadius: 4 },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : isSakura ? (
+                  <View style={[styles.previewPulseBoxDark, { backgroundColor: '#0a0a0a', borderColor: '#1f1f1f' }]}>
+                    <View style={styles.previewPulseTopRow}>
+                      <Text style={[styles.previewPulseWeek, { color: '#fafafa' }]}>WEEK 5</Text>
+                      <View style={[styles.previewPulseBadge, { backgroundColor: '#1f1f1f' }]}>
+                        <Text style={[styles.previewPulseBadgeText, { color: '#e5e5e5' }]}>W8 PEAK</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.previewPulseLabel, { color: '#9ca3af' }]}>SEMESTER PULSE</Text>
+                    <View style={styles.previewPulseDots}>
+                      {Array.from({ length: 11 }, (_, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.previewPulseDot,
+                            { backgroundColor: '#1f1f1f' },
+                            i === 4 && { backgroundColor: '#fafafa', width: 8, height: 8, borderRadius: 4 },
+                            i === 6 && { borderWidth: 1.5, borderColor: '#d4d4d4', backgroundColor: 'transparent', width: 8, height: 8, borderRadius: 4 },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
                 ) : (
-                  <>
-                    {renderThemePattern(false)}
-                    <View style={styles.previewTopRow}>
-                      <View style={[styles.previewPill, { backgroundColor: `${selectedTheme?.accent ?? '#6366f1'}22` }]}>
-                        <Feather name={heroIcon} size={12} color={selectedTheme?.accent ?? '#6366f1'} />
-                        <Text style={[styles.previewPillText, { color: selectedTheme?.accent ?? '#6366f1' }]}>{heroLabelResolved}</Text>
-                      </View>
-                      <Text style={styles.capyEmoji}>{heroEmoji}</Text>
-                    </View>
-
-                    <Text style={[styles.previewHeadline, { color: homeHeadlineColor }]}>Good evening, Izwan</Text>
-                    <Text style={[styles.previewSubline, { color: homeSublineColor }]}>
-                      {isSpider ? '2 classes + 1 review thread today' : isSakura ? '2 classes + 1 gentle review today' : '2 tasks + 1 revision due today'}
-                    </Text>
-
-                    <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
-                      <View style={styles.mockRow}>
-                        <View style={[styles.mockIcon, { backgroundColor: isSpider ? '#1a0a0c' : isSakura ? '#101010' : '#f2d7b3' }]}>
-                          <Feather name="book-open" size={12} color={isSpider ? '#fca5a5' : isSakura ? '#ffffff' : '#8a5b2d'} />
-                        </View>
-                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>
-                          {isSpider ? 'Review Methods chapter draft' : isSakura ? 'Review Communication Notes' : 'Review Biology Chapter 4'}
-                        </Text>
-                      </View>
-                      <View style={styles.mockRow}>
-                        <View style={[styles.mockIcon, { backgroundColor: isSpider ? '#0f0a0b' : isSakura ? '#171717' : '#d9e9cf' }]}>
-                          <Feather name="clock" size={12} color={isSpider ? '#f87171' : isSakura ? '#d4d4d4' : '#4f7d3d'} />
-                        </View>
-                        <Text style={[styles.mockText, { color: homeCardTextColor }]}>Focus timer: 25 min</Text>
+                  <View style={styles.previewPulseBox}>
+                    <View style={styles.previewPulseTopRow}>
+                      <Text style={styles.previewPulseWeek}>WEEK 5</Text>
+                      <View style={styles.previewPulseBadge}>
+                        <Text style={styles.previewPulseBadgeText}>W8 PEAK</Text>
                       </View>
                     </View>
-                  </>
+                    <CatLottie variant="badge" style={styles.previewCatLottie} />
+                    <Text style={styles.previewPulseLabel}>SEMESTER PULSE</Text>
+                    <View style={styles.previewPulseDots}>
+                      {Array.from({ length: 11 }, (_, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.previewPulseDot,
+                            i === 4 && styles.previewPulseDotCurrent,
+                            i === 6 && styles.previewPulseDotPeak,
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
                 )}
+
+                {/* Mini task card — uses the real applied card color */}
+                <View
+                  style={[
+                    styles.mockCard,
+                    {
+                      backgroundColor: selectedTheme?.card ?? '#fff',
+                      borderWidth: isSakura || isSpider ? 1 : 0,
+                      borderColor: isSpider ? '#3a0d11' : isSakura ? '#1f1f1f' : 'transparent',
+                    },
+                  ]}
+                >
+                  <View style={styles.mockRow}>
+                    <View
+                      style={[
+                        styles.mockIcon,
+                        {
+                          backgroundColor: isSpider
+                            ? '#3f0a0d'
+                            : isSakura
+                            ? '#1f1f1f'
+                            : isPurple
+                            ? '#ece2ff'
+                            : '#f2d7b3',
+                        },
+                      ]}
+                    >
+                      <Feather
+                        name="book-open"
+                        size={12}
+                        color={
+                          isSpider
+                            ? '#fca5a5'
+                            : isSakura
+                            ? '#ffffff'
+                            : isPurple
+                            ? '#7762bd'
+                            : '#8a5b2d'
+                        }
+                      />
+                    </View>
+                    <Text style={[styles.mockText, { color: homeCardTextColor }]}>
+                      {isSpider
+                        ? 'Review Methods draft'
+                        : isSakura
+                        ? 'Review Communication Notes'
+                        : isPurple
+                        ? 'Aurora study plan today'
+                        : 'Webinar koloboratif ISP640'}
+                    </Text>
+                  </View>
+                </View>
 
                 <View style={styles.screenLabelRow}>
                   <Feather name="home" size={12} color="#fff" />
@@ -533,19 +677,51 @@ export default function InAppThemesScreen() {
                 ]}
               >
                 {renderThemePattern(true)}
-                <Text style={[styles.previewHeadline, { color: homeHeadlineColor }]}>{timetableHeadline}</Text>
-                <View style={[styles.timetableHeader, { backgroundColor: `${selectedTheme?.accent ?? '#6366f1'}22` }]}>
-                  <Text style={[styles.timetableHeaderText, { color: selectedTheme?.accent ?? '#6366f1' }]}>{timetableMode}</Text>
+
+                {/* Mini Timetable header — matches real header colors */}
+                <View style={[styles.previewHeaderBar, { backgroundColor: headerColor }]}>
+                  <View style={[styles.previewHeaderSheen, { backgroundColor: headerColorEnd }]} />
+                  {isSpider ? (
+                    <Image
+                      source={require('../assets/spider-header-web.png')}
+                      style={styles.previewSpiderHeaderWeb}
+                      resizeMode="contain"
+                    />
+                  ) : null}
+                  {isPurple ? (
+                    <>
+                      <Image
+                        source={require('../assets/purple-wallpaper-glitter.jpg')}
+                        style={styles.previewPurpleHeaderImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.previewPurpleHeaderVeil} />
+                    </>
+                  ) : null}
+                  <View style={styles.previewHeaderRow}>
+                    <Feather name="calendar" size={11} color={headerOnPrimary} />
+                    <Text style={[styles.previewHeaderHello, { color: headerOnPrimary, marginTop: 0 }]}>{timetableHeadline}</Text>
+                  </View>
+                  <Text style={[styles.previewHeaderSub, { color: headerOnPrimary }]}>{timetableMode}</Text>
                 </View>
 
                 {slots.map((slot) => (
-                  <View key={slot.label} style={[styles.slotCard, { backgroundColor: slot.bg }]}>
+                  <View
+                    key={slot.label}
+                    style={[
+                      styles.slotCard,
+                      { backgroundColor: slot.bg },
+                      isSpider && { borderWidth: 1, borderColor: '#3a0d11' },
+                      isSakura && { borderWidth: 1, borderColor: '#1f1f1f' },
+                      isPurple && { borderWidth: 1, borderColor: '#ddd3fb' },
+                    ]}
+                  >
                     <Text
                       style={[
                         styles.slotLabel,
                         isSpider && { color: '#f87171' },
                         isSakura && { color: '#9ca3af' },
-                        isPurple && { color: '#c084fc' },
+                        isPurple && { color: '#7762bd' },
                       ]}
                     >
                       {slot.label}
@@ -555,7 +731,7 @@ export default function InAppThemesScreen() {
                         styles.slotTitle,
                         isSpider && { color: '#fafafa' },
                         isSakura && { color: '#ffffff' },
-                        isPurple && { color: '#f5f3ff' },
+                        isPurple && { color: '#3f2f69' },
                       ]}
                     >
                       {slot.title}
@@ -755,20 +931,247 @@ const styles = StyleSheet.create({
   cardPatternGlyphA: { top: 10, right: 12 },
   cardPatternGlyphB: { top: 34, left: 10 },
   previewTitle: {
-    color: '#ffffff',
     fontSize: 18,
     fontWeight: '800',
   },
   previewTag: {
     marginTop: 6,
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-    backgroundColor: 'rgba(15,23,42,0.35)',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
     alignSelf: 'flex-start',
+  },
+  previewTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroGradientSheen: {
+    position: 'absolute',
+    right: -30,
+    top: -20,
+    width: 180,
+    height: 180,
+    borderRadius: 999,
+    opacity: 0.55,
+  },
+  heroMonoLineA: {
+    position: 'absolute',
+    width: 130,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    top: 18,
+    left: -10,
+    transform: [{ rotate: '-9deg' }],
+  },
+  heroMonoLineB: {
+    position: 'absolute',
+    width: 80,
+    height: 3,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    top: 50,
+    right: 10,
+    transform: [{ rotate: '8deg' }],
+  },
+  heroMonoChipA: {
+    position: 'absolute',
+    width: 26,
+    height: 10,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    top: 14,
+    right: 14,
+  },
+  heroMonoDotA: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#f5f5f5',
+    top: 16,
+    right: 16,
+  },
+  heroSpiderShade: {
+    position: 'absolute',
+    bottom: -12,
+    left: -20,
+    width: 200,
+    height: 70,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  cardPurpleHeroImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 0.92,
+    transform: [{ rotate: '90deg' }, { scale: 1.4 }],
+  },
+  cardPurpleHeroVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(228,216,255,0.18)',
+  },
+  cardSpiderWebImage: {
+    position: 'absolute',
+    top: -8,
+    left: -28,
+    width: 240,
+    height: 170,
+    opacity: 0.32,
+    tintColor: '#f3f4f6',
+  },
+  cardPurpleGlitterImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 1,
+  },
+  cardPurpleGlitterVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(54, 31, 124, 0.74)',
+  },
+  bgMonoTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 64,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  bgMonoSideAccent: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    width: 70,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 999,
+  },
+  bgPurpleSoftWash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(232,222,255,0.55)',
+  },
+  previewHeaderBar: {
+    marginHorizontal: -8,
+    marginTop: -8,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 8,
+    position: 'relative',
+  },
+  previewHeaderSheen: {
+    position: 'absolute',
+    right: -40,
+    top: -30,
+    width: 160,
+    height: 160,
+    borderRadius: 999,
+    opacity: 0.45,
+  },
+  previewHeaderWebRayA: {
+    height: 80,
+    top: -10,
+    right: 18,
+    transform: [{ rotate: '32deg' }],
+  },
+  previewHeaderWebRayB: {
+    height: 70,
+    top: 4,
+    right: 38,
+    transform: [{ rotate: '-22deg' }],
+  },
+  previewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewHeaderEmoji: {
+    fontSize: 14,
+  },
+  previewHeaderHello: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  previewHeaderSub: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '700',
+    opacity: 0.85,
+  },
+  previewPulseBoxPurple: {
+    borderRadius: 10,
+    padding: 8,
+    position: 'relative',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#d6c8fb',
+  },
+  previewPulseBoxImage: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 220,
+    height: 340,
+    opacity: 0.92,
+    transform: [{ translateX: -102 }, { translateY: -174 }, { rotate: '90deg' }],
+  },
+  previewPulseBoxImageVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(60,40,90,0.18)',
+  },
+  previewPulseBoxDark: {
+    borderRadius: 10,
+    padding: 8,
+    borderWidth: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  previewPulseWebRayA: {
+    height: 70,
+    top: -8,
+    right: 12,
+    transform: [{ rotate: '36deg' }],
+  },
+  previewPulseWebRayB: {
+    height: 60,
+    top: 8,
+    right: 32,
+    transform: [{ rotate: '-22deg' }],
+  },
+  previewSpiderHeaderWeb: {
+    position: 'absolute',
+    top: -4,
+    left: -16,
+    width: 230,
+    height: 160,
+    opacity: 0.30,
+    tintColor: '#f3f4f6',
+  },
+  previewPurpleHeaderImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 1,
+  },
+  previewPurpleHeaderVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(54, 31, 124, 0.74)',
+  },
+  previewPulseSpiderWeb: {
+    position: 'absolute',
+    right: -50,
+    top: -32,
+    width: 190,
+    height: 130,
+    opacity: 0.55,
+    tintColor: '#7f1d1d',
   },
   cardBody: {
     padding: 12,
