@@ -108,7 +108,11 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                   shadowRadius: 10,
                   elevation: 6,
                 }}>
-                  {options.tabBarIcon?.({ focused, color: focused ? (isMonoTheme ? '#000000' : '#ffffff') : inactiveColor, size: 24 })}
+                  {options.tabBarIcon?.({
+                    focused,
+                    color: focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor,
+                    size: 24,
+                  })}
                   {focused && isCatTheme ? <Text style={styles.catHomePaw}>🐾</Text> : null}
                 </View>
                 <Text style={[styles.label, { color }]} numberOfLines={1}>

@@ -53,11 +53,80 @@ const MONO_THEME_OVERRIDE: ThemePalette = {
   shortcutColors: ['#ffffff', '#ffffff', '#ffffff'],
 };
 
+/**
+ * Aurora Purple Theme — soft lavender aesthetic.
+ *
+ * Three-tone palette tuned toward pastel lavender so it stays gentle on dark
+ * surfaces: muted violet (#b794f4), soft lilac (#d8b4fe), and a powdered
+ * lavender highlight (#e9d5ff). Surfaces use a hint of plum so the wallpaper
+ * art blends smoothly without harsh seams.
+ */
+const PURPLE_THEME_OVERRIDE: ThemePalette = {
+  id: 'dark',
+  name: 'Aurora Purple Theme',
+  background: '#f7f4ff',
+  backgroundSecondary: '#f1ebff',
+  card: '#ffffff',
+  cardBorder: '#ddd3fb',
+  primary: '#8d72cb',
+  secondary: '#b49be3',
+  accent: '#efe7ff',
+  accent2: '#9579d6',
+  accent3: '#d6c7fb',
+  text: '#3f2f69',
+  textSecondary: '#66558e',
+  textInverse: '#ffffff',
+  border: '#d6c8fb',
+  tabIconDefault: '#8f7abf',
+  tabIconSelected: '#7a61b0',
+  success: '#34d399',
+  warning: '#fbbf24',
+  danger: '#fb7185',
+  focusCard: '#f2ecff',
+  focusCardText: '#4a3977',
+  shortcutColors: ['#8d72cb', '#b49be3', '#d9c8ff'],
+};
+
+/** Dark ink base + deep red thread accents (Spider Theme). */
+const SPIDER_THEME_OVERRIDE: ThemePalette = {
+  id: 'dark',
+  name: 'Spider Theme',
+  background: '#050508',
+  backgroundSecondary: '#08080d',
+  card: '#0c0c12',
+  cardBorder: '#1f1418',
+  primary: '#b91c1c',
+  secondary: '#dc2626',
+  accent: '#991b1b',
+  accent2: '#7f1d1d',
+  accent3: '#450a0a',
+  text: '#f4f4f5',
+  textSecondary: '#a1a1aa',
+  textInverse: '#fafafa',
+  border: '#241418',
+  tabIconDefault: '#9f7378',
+  tabIconSelected: '#fca5a5',
+  success: '#22c55e',
+  warning: '#eab308',
+  danger: '#dc2626',
+  focusCard: '#120a0c',
+  focusCardText: '#fef2f2',
+  shortcutColors: ['#991b1b', '#b91c1c', '#7f1d1d'],
+};
+
 export function useTheme(): ThemePalette {
   const { theme, themePack } = useApp();
   if (themePack === 'cat') return CAT_THEME_OVERRIDE;
   if (themePack === 'mono') return MONO_THEME_OVERRIDE;
+  if (themePack === 'spider') return SPIDER_THEME_OVERRIDE;
+  if (themePack === 'purple') return PURPLE_THEME_OVERRIDE;
   return THEMES[theme];
+}
+
+/** Mono + Spider: neutral subject colors, planner greyscale, shared “dark minimal” UI rules. */
+export function useDarkMinimalThemePack(): boolean {
+  const { themePack } = useApp();
+  return themePack === 'mono' || themePack === 'spider';
 }
 
 export function useThemeId(): ThemeId {

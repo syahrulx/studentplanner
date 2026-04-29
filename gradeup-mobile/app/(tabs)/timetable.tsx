@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   Pressable,
   ScrollView,
@@ -10,13 +11,18 @@ import {
   Alert,
   useWindowDimensions,
   Switch,
+  Animated as RNAnimated,
+  Easing,
+  PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme, useThemePack } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
+import { SpiderLottie } from '@/components/SpiderLottie';
+import { PlaygroundCatLottie } from '@/components/PlaygroundCatLottie';
 import { useTranslations } from '@/src/i18n';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
@@ -60,6 +66,7 @@ const TIME_GUTTER = 46;
 const DAY_COLUMN_MIN_W = 84;
 /** gridRoot paddingHorizontal 6 + 6 */
 const GRID_OUTER_H_PAD = 12;
+const CAT_PLAYGROUND_SIZE = 120;
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -154,11 +161,14 @@ export default function TimetableScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
-  const isMonoTheme = themePack === 'mono';
+  const isSpiderTheme = themePack === 'spider';
+  const isPurpleTheme = themePack === 'purple';
+  const purplePageBg = '#f3efff';
+  const isDarkMinimal = useDarkMinimalThemePack();
   const T = useTranslations(language);
   const resolveSlotColor = useCallback(
-    (entry: TimetableEntry) => (isMonoTheme ? '#9ca3af' : entrySlotColor(entry, subjectColors)),
-    [isMonoTheme, subjectColors],
+    (entry: TimetableEntry) => (isDarkMinimal ? '#9ca3af' : entrySlotColor(entry, subjectColors)),
+    [isDarkMinimal, subjectColors],
   );
 
   const { width: winW, height: winH } = useWindowDimensions();
@@ -265,6 +275,181 @@ export default function TimetableScreen() {
     return Math.min(exportSize.width / naturalGrid.w, exportSize.height / naturalGrid.h);
   }, [exportSize.width, exportSize.height, naturalGrid.w, naturalGrid.h]);
 
+  /**
+   * Playground cat hops between subject slots in week view.
+   * Coordinates are derived from current grid geometry.
+   */
+  const playgroundTargets = useMemo(() => {
+    if (!isCatTheme) return [] as Array<{ x: number; y: number }>;
+    const targets: Array<{ x: number; y: number }> = [];
+    daysForWeekGrid.forEach(({ key }, dayIdx) => {
+      const items = timetable
+        .filter((e) => e.day === key)
+        .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+      items.forEach((entry) => {
+        const startMin = timeToMinutes(entry.startTime);
+        const endMin = timeToMinutes(entry.endTime);
+        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
+        const slotHeight = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
+        const catSize = 120;
+        const catHalf = catSize / 2;
+        const platformX = TIME_GUTTER + dayIdx * dayColumnWidth + dayColumnWidth / 2 - catHalf;
+        // Land on the "top surface" of the card, not inside it.
+        const platformY = top - catSize * 0.92;
+        targets.push({
+          x: Math.max(TIME_GUTTER - 8, platformX),
+          y: Math.max(14, platformY),
+        });
+      });
+    });
+    return targets;
+  }, [isCatTheme, daysForWeekGrid, timetable, dayColumnWidth]);
+
+  const catX = useRef(new RNAnimated.Value(TIME_GUTTER + 8)).current;
+  const catY = useRef(new RNAnimated.Value(64)).current;
+  const catHop = useRef(new RNAnimated.Value(0)).current;
+  const catScale = useRef(new RNAnimated.Value(1)).current;
+  const catXCurrent = useRef(TIME_GUTTER + 8);
+  const catYCurrent = useRef(64);
+  const catLaneY = useRef(64);
+  const catHoldUntilMs = useRef(0);
+  const [catDragging, setCatDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const dragStartY = useRef(0);
+  const shouldPlaygroundCat = isCatTheme && viewMode === 'week' && !gridEditMode && playgroundTargets.length > 0;
+  const shouldAutoPlaygroundCat = shouldPlaygroundCat && !catDragging;
+
+  const clamp = useCallback((v: number, min: number, max: number) => Math.max(min, Math.min(max, v)), []);
+
+  useEffect(() => {
+    const xId = catX.addListener(({ value }) => {
+      catXCurrent.current = value;
+    });
+    const yId = catY.addListener(({ value }) => {
+      catYCurrent.current = value;
+    });
+    return () => {
+      catX.removeListener(xId);
+      catY.removeListener(yId);
+    };
+  }, [catX, catY]);
+
+  const catPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => shouldPlaygroundCat,
+        onStartShouldSetPanResponderCapture: () => shouldPlaygroundCat,
+        onMoveShouldSetPanResponder: () => shouldPlaygroundCat,
+        onMoveShouldSetPanResponderCapture: () => shouldPlaygroundCat,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: () => {
+          setCatDragging(true);
+          catHop.setValue(0);
+          catScale.setValue(1.04);
+          dragStartX.current = catXCurrent.current;
+          dragStartY.current = catYCurrent.current;
+          catX.stopAnimation();
+          catY.stopAnimation();
+        },
+        onPanResponderMove: (_evt, gestureState) => {
+          const maxX = Math.max(TIME_GUTTER + 8, gridContentWidth - CAT_PLAYGROUND_SIZE - 8);
+          const maxY = Math.max(16, gridBodyHeight - CAT_PLAYGROUND_SIZE - 6);
+          catX.setValue(clamp(dragStartX.current + gestureState.dx, TIME_GUTTER - 8, maxX));
+          catY.setValue(clamp(dragStartY.current + gestureState.dy, 14, maxY));
+        },
+        onPanResponderRelease: () => {
+          // Snap drop to the nearest valid subject-top lane (no floating between blocks).
+          if (playgroundTargets.length > 0) {
+            const nearest = playgroundTargets.reduce((best, t) => {
+              const d = Math.abs(t.y - catYCurrent.current) + Math.abs(t.x - catXCurrent.current) * 0.2;
+              return d < best.d ? { d, t } : best;
+            }, { d: Number.POSITIVE_INFINITY, t: playgroundTargets[0] });
+            catLaneY.current = nearest.t.y;
+            catY.setValue(nearest.t.y);
+            catX.setValue(nearest.t.x);
+          } else {
+            catLaneY.current = catYCurrent.current;
+          }
+          catHoldUntilMs.current = Date.now() + 4500;
+          setCatDragging(false);
+          catScale.setValue(1);
+        },
+        onPanResponderTerminate: () => {
+          if (playgroundTargets.length > 0) {
+            const nearest = playgroundTargets.reduce((best, t) => {
+              const d = Math.abs(t.y - catYCurrent.current) + Math.abs(t.x - catXCurrent.current) * 0.2;
+              return d < best.d ? { d, t } : best;
+            }, { d: Number.POSITIVE_INFINITY, t: playgroundTargets[0] });
+            catLaneY.current = nearest.t.y;
+            catY.setValue(nearest.t.y);
+            catX.setValue(nearest.t.x);
+          } else {
+            catLaneY.current = catYCurrent.current;
+          }
+          catHoldUntilMs.current = Date.now() + 4500;
+          setCatDragging(false);
+          catScale.setValue(1);
+        },
+      }),
+    [shouldPlaygroundCat, catHop, catScale, catX, catY, clamp, gridContentWidth, gridBodyHeight, playgroundTargets],
+  );
+
+  useEffect(() => {
+    if (!shouldPlaygroundCat || playgroundTargets.length === 0 || catDragging) return;
+    const laneHasTargets = playgroundTargets.some((t) => Math.abs(t.y - catLaneY.current) <= 10);
+    if (laneHasTargets) return;
+    const nearest = playgroundTargets.reduce((best, t) => {
+      const d = Math.abs(t.y - catYCurrent.current) + Math.abs(t.x - catXCurrent.current) * 0.2;
+      return d < best.d ? { d, t } : best;
+    }, { d: Number.POSITIVE_INFINITY, t: playgroundTargets[0] });
+    catLaneY.current = nearest.t.y;
+    catY.setValue(nearest.t.y);
+    catX.setValue(nearest.t.x);
+  }, [shouldPlaygroundCat, playgroundTargets, catDragging, catX, catY]);
+
+  useEffect(() => {
+    if (!shouldAutoPlaygroundCat) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const run = () => {
+      if (cancelled || playgroundTargets.length === 0) return;
+      const sameLaneTargets = playgroundTargets.filter((t) => Math.abs(t.y - catLaneY.current) <= 10);
+      if (sameLaneTargets.length === 0) {
+        const nearest = playgroundTargets.reduce((best, t) => {
+          const d = Math.abs(t.y - catYCurrent.current);
+          return d < best.d ? { d, t } : best;
+        }, { d: Number.POSITIVE_INFINITY, t: playgroundTargets[0] });
+        catLaneY.current = nearest.t.y;
+        catY.setValue(nearest.t.y);
+        timer = setTimeout(run, 2200);
+        return;
+      }
+      const target = sameLaneTargets[Math.floor(Math.random() * sameLaneTargets.length)];
+      // Stay on current top-lane and walk horizontally only.
+      catY.setValue(catLaneY.current);
+      RNAnimated.timing(catX, {
+        toValue: target.x,
+        duration: 2600,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start(() => {
+        if (cancelled) return;
+        timer = setTimeout(run, 3800 + Math.random() * 2400);
+      });
+    };
+    const waitMs = Math.max(0, catHoldUntilMs.current - Date.now());
+    timer = setTimeout(run, waitMs);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      catX.stopAnimation();
+      catY.stopAnimation();
+      catHop.stopAnimation();
+      catScale.stopAnimation();
+    };
+  }, [shouldAutoPlaygroundCat, playgroundTargets, catX, catY, catHop, catScale]);
+
   const previewScale = useMemo(() => {
     // Preview box is limited; scale down to fit visually.
     const pw = winW - 32 - 28; // panel padding + frame padding-ish
@@ -300,7 +485,14 @@ export default function TimetableScreen() {
     ];
 
     return (
-      <View style={[s.container, { backgroundColor: theme.background }]}>
+      <View style={[s.container, { backgroundColor: isPurpleTheme ? purplePageBg : theme.background }]}>
+        {isPurpleTheme ? (
+          <Image
+            source={require('../../assets/purple-task-bg-blur.png')}
+            style={s.purpleBgImage}
+            resizeMode="cover"
+          />
+        ) : null}
         {isCatTheme ? (
           <View style={s.catBgWrap} pointerEvents="none">
             <View style={[s.catBgBubble, s.catBgBubbleA]} />
@@ -310,6 +502,7 @@ export default function TimetableScreen() {
             <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
           </View>
         ) : null}
+        {isSpiderTheme ? <SpiderLottie variant="net" style={s.spiderNetBg} /> : null}
         {renderHeader(true)}
         <Modal
           visible={showNonUitmIntro}
@@ -430,15 +623,20 @@ export default function TimetableScreen() {
 
   /* ── Header ───────────────────────────────────────── */
   function renderHeader(showMenu: boolean) {
+    const purpleHeaderText = '#ffffff';
+    const purpleHeaderSubText = 'rgba(255,255,255,0.9)';
+    const headerMainColor = isPurpleTheme ? purpleHeaderText : theme.text;
+    const headerSubColor = isPurpleTheme ? purpleHeaderSubText : theme.textSecondary;
+    const headerIconColor = isPurpleTheme ? purpleHeaderText : theme.primary;
     return (
       <View style={[s.header, { borderBottomColor: theme.border }]}>
         <View style={s.headerLeft}>
           <View style={[s.headerIconWrap, { backgroundColor: `${theme.primary}10` }]}>
-            <Feather name="calendar" size={20} color={theme.primary} />
+            <Feather name="calendar" size={20} color={headerIconColor} />
           </View>
           <View>
-            <Text style={[s.headerTitle, { color: theme.text }]}>{(T as any)('timetableHeader') || 'Timetable'}</Text>
-            <Text style={[s.headerSub, { color: theme.textSecondary }]}>
+            <Text style={[s.headerTitle, { color: headerMainColor }]}>{(T as any)('timetableHeader') || 'Timetable'}</Text>
+            <Text style={[s.headerSub, { color: headerSubColor }]}>
               {uniName ? uniName : (T as any)('timetableSubtitle')}
             </Text>
           </View>
@@ -467,7 +665,7 @@ export default function TimetableScreen() {
                   : T('timetableEditClasses')
               }
             >
-              <Feather name="edit-2" size={20} color={theme.primary} />
+              <Feather name="edit-2" size={20} color={headerIconColor} />
             </Pressable>
             <Pressable
               onPress={() => setMenuOpen(true)}
@@ -475,7 +673,7 @@ export default function TimetableScreen() {
               hitSlop={10}
               accessibilityLabel="Menu"
             >
-              <Feather name="more-vertical" size={22} color={theme.text} />
+              <Feather name="more-vertical" size={22} color={headerMainColor} />
             </Pressable>
           </View>
         )}
@@ -864,7 +1062,7 @@ export default function TimetableScreen() {
                     <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
                     {count > 0 ? (
                       <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                        <Text style={[s.gridColCountText, isMonoTheme && { color: '#000000' }]}>{count}</Text>
+                        <Text style={[s.gridColCountText, isDarkMinimal && { color: theme.textInverse }]}>{count}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -882,7 +1080,7 @@ export default function TimetableScreen() {
                 <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
                   {hours.map((h) => (
                     <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
-                      <Text style={[s.gridHourText, { color: theme.textSecondary }]}>
+                      <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
                         {h.toString().padStart(2, '0')}:00
                       </Text>
                     </View>
@@ -1028,6 +1226,23 @@ export default function TimetableScreen() {
                     </View>
                   );
                 })}
+                {shouldPlaygroundCat ? (
+                  <RNAnimated.View
+                    {...catPanResponder.panHandlers}
+                    style={[
+                      s.playgroundCatLayer,
+                      {
+                        transform: [
+                          { translateX: catX },
+                          { translateY: RNAnimated.add(catY, catHop) },
+                          { scale: catScale },
+                        ],
+                      },
+                    ]}
+                  >
+                    <PlaygroundCatLottie style={s.playgroundCatAsset} />
+                  </RNAnimated.View>
+                ) : null}
               </View>
             </ScrollView>
           </View>
@@ -1060,7 +1275,7 @@ export default function TimetableScreen() {
                   <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
                   {count > 0 ? (
                     <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                      <Text style={[s.gridColCountText, isMonoTheme && { color: '#000000' }]}>{count}</Text>
+                      <Text style={[s.gridColCountText, isDarkMinimal && { color: theme.textInverse }]}>{count}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -1072,7 +1287,7 @@ export default function TimetableScreen() {
             <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
               {hours.map((h) => (
                 <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
-                  <Text style={[s.gridHourText, { color: theme.textSecondary }]}>
+                  <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
                     {h.toString().padStart(2, '0')}:00
                   </Text>
                 </View>
@@ -1289,7 +1504,14 @@ export default function TimetableScreen() {
   }
 
   return (
-    <View style={[s.container, { backgroundColor: theme.background }]}>
+    <View style={[s.container, { backgroundColor: isPurpleTheme ? purplePageBg : theme.background }]}>
+      {isPurpleTheme ? (
+        <Image
+          source={require('../../assets/purple-task-bg-blur.png')}
+          style={s.purpleBgImage}
+          resizeMode="cover"
+        />
+      ) : null}
       {isCatTheme ? (
         <View style={s.catBgWrap} pointerEvents="none">
           <View style={[s.catBgBubble, s.catBgBubbleA]} />
@@ -1299,6 +1521,7 @@ export default function TimetableScreen() {
           <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
         </View>
       ) : null}
+      {isSpiderTheme ? <SpiderLottie variant="net" style={s.spiderNetBg} /> : null}
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
@@ -1310,6 +1533,13 @@ export default function TimetableScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
+  purpleBgImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    opacity: 0.5,
+    zIndex: 0,
+  },
   catBgWrap: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
@@ -1337,6 +1567,24 @@ const s = StyleSheet.create({
     height: 50,
     opacity: 0.94,
     zIndex: 5,
+  },
+  spiderNetBg: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.36,
+    zIndex: 0,
+  },
+  playgroundCatLayer: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  playgroundCatAsset: {
+    width: 120,
+    height: 120,
   },
   header: {
     paddingHorizontal: 20,

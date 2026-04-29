@@ -41,9 +41,14 @@ import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { Avatar } from '@/components/Avatar';
 import { CatLottie } from '@/components/CatLottie';
+import { SpiderLottie } from '@/components/SpiderLottie';
 
 
-import { useTheme, useThemePack } from '@/hooks/useTheme';
+import {
+  useDarkMinimalThemePack,
+  useTheme,
+  useThemePack,
+} from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -266,7 +271,9 @@ export default function CommunityMap() {
   const theme = useTheme();
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
-  const isMonoTheme = themePack === 'mono';
+  const isSpiderTheme = themePack === 'spider';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isMonoOnly = themePack === 'mono';
   // Using Mapbox Standard style configuration
   const mapboxConfig = React.useMemo(() => ({
     theme: getMapState(theme.id),
@@ -435,6 +442,7 @@ export default function CommunityMap() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {isCatTheme ? <CatLottie style={styles.floatingCat} /> : null}
+      {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={styles.topBarSide}>
@@ -446,8 +454,10 @@ export default function CommunityMap() {
           >
             <Feather name="bell" size={22} color={theme.text} />
             {communityBadgeCount > 0 ? (
-              <View style={[styles.notifBadge, { backgroundColor: theme.primary }]}>
-                <Text style={styles.notifBadgeText}>{communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}</Text>
+              <View style={[styles.notifBadge, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }]}>
+                <Text style={[styles.notifBadgeText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
+                  {communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}
+                </Text>
               </View>
             ) : null}
           </Pressable>
@@ -603,31 +613,31 @@ export default function CommunityMap() {
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: isMonoTheme ? '#ffffff' : theme.card },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.card },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setShowStatusPopup(true)}
           >
-            <Feather name="edit-3" size={16} color={isMonoTheme ? '#000000' : theme.primary} />
-            <Text style={[styles.mapOverlayBtnText, { color: isMonoTheme ? '#000000' : theme.primary }]}>Set Status</Text>
+            <Feather name="edit-3" size={16} color={isMonoOnly ? '#000000' : theme.primary} />
+            <Text style={[styles.mapOverlayBtnText, { color: isMonoOnly ? '#000000' : theme.primary }]}>Set Status</Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: isMonoTheme ? '#ffffff' : theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleCenterOnMe}
           >
-            <Feather name="crosshair" size={20} color={isMonoTheme ? '#000000' : theme.primary} />
+            <Feather name="crosshair" size={20} color={isMonoOnly ? '#000000' : theme.primary} />
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
               { 
-                backgroundColor: isMonoTheme
+                backgroundColor: isMonoOnly
                   ? (locationVisibility === 'off' ? '#d1d5db' : '#ffffff')
                   : (locationVisibility === 'off' ? theme.primary : theme.card), 
                 width: 44, 
@@ -642,7 +652,7 @@ export default function CommunityMap() {
             <Feather 
               name={locationVisibility === 'off' ? "eye-off" : "eye"} 
               size={20} 
-              color={locationVisibility === 'off' ? (isMonoTheme ? '#000000' : "#FFF") : (isMonoTheme ? '#000000' : theme.primary)} 
+              color={locationVisibility === 'off' ? (isMonoOnly ? '#000000' : "#FFF") : (isMonoOnly ? '#000000' : theme.primary)} 
             />
           </Pressable>
         </View>
@@ -834,26 +844,56 @@ export default function CommunityMap() {
             <Pressable
               style={({ pressed }) => [
                 styles.tabPill,
-                activeTab === 'places' && { backgroundColor: theme.primary + '18' },
+                activeTab === 'places' &&
+                  (isMonoOnly
+                    ? { backgroundColor: '#ffffff' }
+                    : themePack === 'spider'
+                    ? { backgroundColor: theme.primary }
+                    : { backgroundColor: theme.primary + '18' }),
                 pressed && { opacity: 0.7 },
               ]}
               onPress={() => setActiveTab(activeTab === 'places' ? 'people' : 'places')}
             >
-              <Feather name="map" size={14} color={activeTab === 'places' ? theme.primary : theme.textSecondary} />
+              <Feather
+                name="map"
+                size={14}
+                color={
+                  activeTab === 'places'
+                    ? isMonoOnly
+                      ? '#000000'
+                      : themePack === 'spider'
+                      ? theme.textInverse
+                      : theme.primary
+                    : theme.textSecondary
+                }
+              />
               <Text
                 style={[
                   styles.tabPillText,
-                  { color: activeTab === 'places' ? theme.primary : theme.textSecondary },
+                  {
+                    color:
+                      activeTab === 'places'
+                        ? isMonoOnly
+                          ? '#000000'
+                          : themePack === 'spider'
+                          ? theme.textInverse
+                          : theme.primary
+                        : theme.textSecondary,
+                  },
                 ]}
               >
                 Places
               </Text>
             </Pressable>
             <Pressable
-              style={({ pressed }) => [styles.addFriendBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [
+                styles.addFriendBtn,
+                { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
+                pressed && { opacity: 0.8 },
+              ]}
               onPress={() => router.push('/community/add-friend' as any)}
             >
-              <Feather name="user-plus" size={14} color="#fff" />
+              <Feather name="user-plus" size={14} color={isMonoOnly ? '#000000' : theme.textInverse} />
             </Pressable>
           </View>
         </View>
@@ -921,12 +961,16 @@ export default function CommunityMap() {
           </Pressable>
 
           {loading ? (
-            isCatTheme || isMonoTheme ? (
+            isCatTheme || isDarkMinimal ? (
               <View style={styles.catLoadingWrap}>
-                <CatLottie
-                  variant={isCatTheme ? 'loading' : 'monoLoading'}
-                  style={isMonoTheme ? styles.monoLoadingLottie : styles.catLoadingLottie}
-                />
+                {themePack === 'spider' ? (
+                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+                ) : (
+                  <CatLottie
+                    variant={isCatTheme ? 'loading' : 'monoLoading'}
+                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                  />
+                )}
               </View>
             ) : (
               <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
@@ -939,11 +983,14 @@ export default function CommunityMap() {
                 Add friends to see them on the map and stay connected
               </Text>
               <Pressable
-                style={[styles.emptyBtn, { backgroundColor: theme.primary }]}
+                style={[
+                  styles.emptyBtn,
+                  { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
+                ]}
                 onPress={() => router.push('/community/add-friend' as any)}
               >
-                <Feather name="user-plus" size={16} color="#fff" />
-                <Text style={styles.emptyBtnText}>Add Friends</Text>
+                <Feather name="user-plus" size={16} color={isMonoOnly ? '#000000' : theme.textInverse} />
+                <Text style={[styles.emptyBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>Add Friends</Text>
               </Pressable>
             </View>
           ) : (
@@ -1073,6 +1120,9 @@ function StatusPopup({
   refreshMyActivity: () => Promise<void>;
   theme: any;
 }) {
+  const themePack = useThemePack();
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isMonoOnly = themePack === 'mono';
   const [selectedType, setSelectedType] = useState<ActivityType>(
     (myActivity?.activity_type as ActivityType) || 'idle'
   );
@@ -1162,8 +1212,12 @@ function StatusPopup({
                   style={({ pressed }) => [
                     popupStyles.statusCard,
                     {
-                      backgroundColor: isSelected ? theme.primary + '12' : theme.background,
-                      borderColor: isSelected ? theme.primary : theme.border,
+                      backgroundColor: isSelected
+                        ? isDarkMinimal
+                          ? 'rgba(255,255,255,0.12)'
+                          : theme.primary + '12'
+                        : theme.background,
+                      borderColor: isSelected ? (isMonoOnly ? '#ffffff' : theme.primary) : theme.border,
                     },
                     pressed && { transform: [{ scale: 0.96 }] },
                   ]}
@@ -1173,7 +1227,13 @@ function StatusPopup({
                   <Text
                     style={[
                       popupStyles.statusLabel,
-                      { color: isSelected ? theme.primary : theme.textSecondary },
+                      {
+                        color: isSelected
+                          ? isDarkMinimal
+                            ? theme.text
+                            : theme.primary
+                          : theme.textSecondary,
+                      },
                       isSelected && { fontWeight: '700' },
                     ]}
                     numberOfLines={1}
@@ -1197,15 +1257,29 @@ function StatusPopup({
               router.push('/set-vibe' as any);
             }}
           >
-            <View style={[popupStyles.vibeBtnIcon, { backgroundColor: theme.primary + '15' }]}>
-              <Feather name="music" size={16} color={theme.primary} />
+            <View
+              style={[
+                popupStyles.vibeBtnIcon,
+                {
+                  backgroundColor: isDarkMinimal ? 'rgba(255,255,255,0.12)' : theme.primary + '15',
+                },
+              ]}
+            >
+              <Feather
+                name="music"
+                size={16}
+                color={isDarkMinimal ? theme.text : theme.primary}
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[popupStyles.vibeBtnTitle, { color: theme.text }]}>
                 {isVibing ? 'Change Song' : 'Pick a Song'}
               </Text>
               {isVibing && (
-                <Text style={[popupStyles.vibeBtnSub, { color: theme.primary }]} numberOfLines={1}>
+                <Text
+                  style={[popupStyles.vibeBtnSub, { color: isDarkMinimal ? theme.textSecondary : theme.primary }]}
+                  numberOfLines={1}
+                >
                   ♪ {myActivity.song_name}
                 </Text>
               )}
@@ -1217,15 +1291,22 @@ function StatusPopup({
           <Pressable
             style={({ pressed }) => [
               popupStyles.saveBtn,
-              { backgroundColor: theme.primary },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
               saving && { opacity: 0.5 },
               pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
             ]}
             onPress={handleSave}
             disabled={saving}
           >
-            <Feather name="check" size={18} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={popupStyles.saveBtnText}>{saving ? 'Saving...' : 'Update Status'}</Text>
+            <Feather
+              name="check"
+              size={18}
+              color={isMonoOnly ? '#000000' : theme.textInverse}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[popupStyles.saveBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
+              {saving ? 'Saving...' : 'Update Status'}
+            </Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -1345,6 +1426,16 @@ const styles = StyleSheet.create({
     height: 46,
     opacity: 0.96,
     zIndex: 18,
+  },
+  /** Spider theme: decorative web at map bottom-right. */
+  spiderTopLine: {
+    position: 'absolute',
+    right: 10,
+    bottom: Platform.OS === 'ios' ? 310 : 116,
+    width: 100,
+    height: 124,
+    opacity: 0.80,
+    zIndex: 4,
   },
 
   // Top bar
@@ -1899,6 +1990,10 @@ const styles = StyleSheet.create({
   monoLoadingLottie: {
     width: 122,
     height: 88,
+  },
+  spiderLoadingLottie: {
+    width: 124,
+    height: 94,
   },
   personRow: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Modal } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
@@ -35,12 +35,22 @@ const THEME_PREVIEWS: ThemePreview[] = [
     card: '#0a0a0a',
   },
   {
-    id: 'galaxy',
-    name: 'Galaxy Theme',
-    accent: '#6366f1',
-    description: 'Deep dark surfaces with neon indigo glow and sharp buttons.',
-    background: '#151432',
-    card: '#1d1b42',
+    id: 'spider',
+    name: 'Spider Theme',
+    accent: '#b91c1c',
+    description:
+      'Near-black surfaces with deep crimson thread accents—high contrast, focused study mode.',
+    background: '#050508',
+    card: '#0c0c12',
+  },
+  {
+    id: 'purple',
+    name: 'Aurora Purple Theme',
+    accent: '#b794f4',
+    description:
+      'Soft lavender aesthetic — muted violet, lilac and powdered orchid over a calm midnight-plum base.',
+    background: '#15102a',
+    card: '#221a3f',
   },
 ];
 
@@ -50,29 +60,68 @@ export default function InAppThemesScreen() {
   const { user, setThemePack } = useApp();
   const isCatApplied = themePack === 'cat';
   const isMonoApplied = themePack === 'mono';
+  const isSpiderApplied = themePack === 'spider';
+  const isPurpleApplied = themePack === 'purple';
   const isFreePlan = (user.subscriptionPlan ?? 'free') === 'free';
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const selectedTheme = useMemo(
     () => THEME_PREVIEWS.find((x) => x.id === selectedThemeId) ?? null,
     [selectedThemeId],
   );
-  const isGalaxy = selectedTheme?.id === 'galaxy';
+  const isSpider = selectedTheme?.id === 'spider';
   const isSakura = selectedTheme?.id === 'sakura';
   const isCat = selectedTheme?.id === 'cat';
-  const heroLabel = isGalaxy ? 'Cosmic Focus' : isSakura ? 'Mono Focus' : 'Cat Focus';
+  const isPurple = selectedTheme?.id === 'purple';
+  const heroLabel = isSpider
+    ? 'Thread Focus'
+    : isSakura
+    ? 'Mono Focus'
+    : isPurple
+    ? 'Aurora Focus'
+    : 'Cat Focus';
   const heroLabelResolved = heroLabel;
-  const heroIcon: 'moon' | 'sun' = isGalaxy ? 'moon' : 'sun';
-  const heroEmoji = isGalaxy ? '🌌' : isSakura ? '◻' : '🐾';
-  const homeHeadlineColor = isGalaxy ? '#e8e7ff' : isSakura ? '#ffffff' : '#2a2118';
-  const homeSublineColor = isGalaxy ? '#b9b7f5' : isSakura ? '#b3b3b3' : '#7a6552';
-  const homeCardTextColor = isGalaxy ? '#d9d9ff' : isSakura ? '#e5e5e5' : '#3d2b1f';
-  const timetableHeadline = isGalaxy ? 'Timetable Orbit' : isSakura ? 'Timetable Minimal' : 'Timetable';
-  const timetableMode = isGalaxy ? 'Week 7 - Galaxy Mode' : isSakura ? 'Week 7 - Mono Mode' : 'Week 7 - Cat Mode';
-  const slots = isGalaxy
+  const heroIcon: 'grid' | 'sun' | 'feather' = isSpider ? 'grid' : isPurple ? 'feather' : 'sun';
+  const heroEmoji = isSpider ? '◇' : isSakura ? '◻' : isPurple ? '☾' : '🐾';
+  const homeHeadlineColor = isSpider
+    ? '#fafafa'
+    : isSakura
+    ? '#ffffff'
+    : isPurple
+    ? '#f5f3ff'
+    : '#2a2118';
+  const homeSublineColor = isSpider
+    ? '#d4d4d8'
+    : isSakura
+    ? '#b3b3b3'
+    : isPurple
+    ? '#c4b5fd'
+    : '#7a6552';
+  const homeCardTextColor = isSpider
+    ? '#e4e4e7'
+    : isSakura
+    ? '#e5e5e5'
+    : isPurple
+    ? '#ede9fe'
+    : '#3d2b1f';
+  const timetableHeadline = isSpider
+    ? 'Timetable'
+    : isSakura
+    ? 'Timetable Minimal'
+    : isPurple
+    ? 'Timetable Aurora'
+    : 'Timetable';
+  const timetableMode = isSpider
+    ? 'Week 7 — Thread view'
+    : isSakura
+    ? 'Week 7 - Mono Mode'
+    : isPurple
+    ? 'Week 7 — Aurora Mode'
+    : 'Week 7 - Cat Mode';
+  const slots = isSpider
     ? [
-        { label: 'Mon 9:00', title: 'Astro Computing', bg: '#26224a' },
-        { label: 'Tue 14:00', title: 'Neural Networks Lab', bg: '#1f2d52' },
-        { label: 'Thu 10:30', title: 'Quantum Algorithms', bg: '#2f2458' },
+        { label: 'Mon 9:00', title: 'Linear Systems', bg: '#14080a' },
+        { label: 'Tue 14:00', title: 'Academic Writing', bg: '#0f0608' },
+        { label: 'Thu 10:30', title: 'Data Structures', bg: '#120709' },
       ]
     : isSakura
     ? [
@@ -80,20 +129,29 @@ export default function InAppThemesScreen() {
         { label: 'Tue 14:00', title: 'Research Methods', bg: '#141414' },
         { label: 'Thu 10:30', title: 'Software Architecture', bg: '#1a1a1a' },
       ]
+    : isPurple
+    ? [
+        { label: 'Mon 9:00', title: 'Quantum Methods', bg: '#1f1640' },
+        { label: 'Tue 14:00', title: 'Visual Studies', bg: '#241548' },
+        { label: 'Thu 10:30', title: 'Creative Writing', bg: '#1a0f37' },
+      ]
     : [
         { label: 'Mon 9:00', title: 'Database Systems', bg: '#f7e4cb' },
         { label: 'Tue 14:00', title: 'Software Eng Lab', bg: '#dbead4' },
         { label: 'Thu 10:30', title: 'Data Structures', bg: '#fce7d3' },
       ];
   const renderThemePattern = (forTimetable: boolean) => {
-    if (isGalaxy) {
+    if (isSpider) {
+      const line = forTimetable ? 'rgba(185,28,28,0.2)' : 'rgba(220,38,38,0.24)';
+      const node = forTimetable ? 'rgba(248,113,113,0.32)' : 'rgba(252,165,165,0.4)';
       return (
         <View style={styles.bgPatternWrap}>
-          <Text style={[styles.bgStar, styles.bgStarA, { color: forTimetable ? '#c4b5fd' : '#a78bfa' }]}>✦</Text>
-          <Text style={[styles.bgStar, styles.bgStarB, { color: '#67e8f9' }]}>✶</Text>
-          <Text style={[styles.bgStar, styles.bgStarC, { color: '#ddd6fe' }]}>✧</Text>
-          <View style={[styles.bgNebula, styles.bgNebulaTop, { backgroundColor: '#7c3aed33' }]} />
-          <View style={[styles.bgNebula, styles.bgNebulaBottom, { backgroundColor: '#06b6d433' }]} />
+          <View style={[styles.bgWebNode, { top: 22, right: 26, backgroundColor: node }]} />
+          <View style={[styles.bgWebLine, styles.bgWebRayA, { backgroundColor: line }]} />
+          <View style={[styles.bgWebLine, styles.bgWebRayB, { backgroundColor: line }]} />
+          <View style={[styles.bgWebLine, styles.bgWebRayC, { backgroundColor: line }]} />
+          <View style={[styles.bgWebStrand, styles.bgWebStrandA, { backgroundColor: line }]} />
+          <View style={[styles.bgWebStrand, styles.bgWebStrandB, { backgroundColor: line }]} />
         </View>
       );
     }
@@ -105,6 +163,19 @@ export default function InAppThemesScreen() {
           <View style={[styles.bgRibbonBand, styles.bgRibbonBandC, { backgroundColor: '#ffffff14' }]} />
           <Text style={[styles.bgPetal, styles.bgPetalA, { color: '#ffffff' }]}>◻</Text>
           <Text style={[styles.bgPetal, styles.bgPetalB, { color: '#d4d4d4' }]}>○</Text>
+        </View>
+      );
+    }
+    if (isPurple) {
+      return (
+        <View style={styles.bgPatternWrap}>
+          <Image
+            source={require('../assets/purple-wallpaper-dark.jpg')}
+            style={styles.bgPurpleWallpaper}
+            resizeMode="cover"
+          />
+          <View style={styles.bgPurpleVeil} />
+          <Text style={[styles.bgPetal, styles.bgPetalA, { color: '#ede4ff' }]}>☾</Text>
         </View>
       );
     }
@@ -154,6 +225,10 @@ export default function InAppThemesScreen() {
               ? 'Cat theme is active now'
               : isMonoApplied
               ? 'Mono theme is active now'
+              : isSpiderApplied
+              ? 'Spider theme is active now'
+              : isPurpleApplied
+              ? 'Aurora Purple theme is active now'
               : isFreePlan
               ? 'Free user mode: theme designs are locked'
               : 'Pro/Plus mode: theme previews are visible'}
@@ -176,12 +251,22 @@ export default function InAppThemesScreen() {
                   <View style={[styles.cardRibbon, styles.cardRibbonB]} />
                   <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>◻</Text>
                 </View>
+              ) : item.id === 'spider' ? (
+                <View style={styles.cardPatternWrap}>
+                  <View style={[styles.cardWebLine, styles.cardWebRayA]} />
+                  <View style={[styles.cardWebLine, styles.cardWebRayB]} />
+                  <View style={[styles.cardWebStrand, styles.cardWebStrandA]} />
+                  <View style={[styles.cardWebNode, styles.cardWebNodePos]} />
+                </View>
               ) : (
                 <View style={styles.cardPatternWrap}>
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphA]}>✦</Text>
-                  <Text style={[styles.cardPatternGlyph, styles.cardPatternGlyphB]}>✶</Text>
-                  <View style={[styles.cardNebula, styles.cardNebulaA]} />
-                  <View style={[styles.cardNebula, styles.cardNebulaB]} />
+                  <Image
+                    source={require('../assets/purple-wallpaper-dark.jpg')}
+                    style={styles.cardPurpleWallpaper}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.cardPurpleVeil} />
+                  <Feather name="feather" size={16} color="#ede4ff" style={styles.cardPurpleIcon} />
                 </View>
               )}
               <Text style={styles.previewTitle}>{item.name}</Text>
@@ -207,11 +292,37 @@ export default function InAppThemesScreen() {
                     </View>
                   ) : null}
                 </View>
+              ) : item.id === 'spider' ? (
+                <View style={styles.applyTitleRow}>
+                  <Text style={[styles.applyTitle, { color: theme.text }]}>Spider Theme Controls</Text>
+                  {isSpiderApplied ? (
+                    <View style={[styles.activeBadge, { backgroundColor: `${theme.primary}22` }]}>
+                      <Text style={[styles.activeBadgeText, { color: theme.primary }]}>Active</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : item.id === 'purple' ? (
+                <View style={styles.applyTitleRow}>
+                  <Text style={[styles.applyTitle, { color: theme.text }]}>Aurora Purple Theme Controls</Text>
+                  {isPurpleApplied ? (
+                    <View style={[styles.activeBadge, { backgroundColor: `${theme.primary}22` }]}>
+                      <Text style={[styles.activeBadgeText, { color: theme.primary }]}>Active</Text>
+                    </View>
+                  ) : null}
+                </View>
               ) : null}
               <Text style={[styles.cardDescription, { color: theme.textSecondary }]}>{item.description}</Text>
               {item.id === 'cat' ? (
                 <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
                   Includes simple animated cat accents and playful Cat-theme visuals across selected screens.
+                </Text>
+              ) : item.id === 'spider' ? (
+                <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
+                  Applies the dark charcoal + deep red Spider palette everywhere; optional motion accents can hook in later.
+                </Text>
+              ) : item.id === 'purple' ? (
+                <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
+                  Three-tone soft palette — lavender, lilac and orchid — paired with quiet aurora backdrops and a crescent moon accent.
                 </Text>
               ) : null}
               {item.id === 'cat' ? (
@@ -243,6 +354,44 @@ export default function InAppThemesScreen() {
                     style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
                   >
                     <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Mono Theme</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {item.id === 'spider' ? (
+                <View style={styles.applyActionRow}>
+                  <Pressable
+                    onPress={() => setThemePack('spider')}
+                    style={[
+                      styles.applyBtn,
+                      { backgroundColor: '#7f1d1d', borderWidth: 1, borderColor: '#b91c1c' },
+                    ]}
+                  >
+                    <Text style={styles.applyBtnText}>Apply Spider Theme</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSelectedThemeId('spider')}
+                    style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
+                  >
+                    <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Spider Theme</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {item.id === 'purple' ? (
+                <View style={styles.applyActionRow}>
+                  <Pressable
+                    onPress={() => setThemePack('purple')}
+                    style={[
+                      styles.applyBtn,
+                      { backgroundColor: '#4d3b85', borderWidth: 1, borderColor: '#b794f4' },
+                    ]}
+                  >
+                    <Text style={styles.applyBtnText}>Apply Purple Theme</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSelectedThemeId('purple')}
+                    style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
+                  >
+                    <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Purple Theme</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -346,21 +495,21 @@ export default function InAppThemesScreen() {
 
                     <Text style={[styles.previewHeadline, { color: homeHeadlineColor }]}>Good evening, Izwan</Text>
                     <Text style={[styles.previewSubline, { color: homeSublineColor }]}>
-                      {isGalaxy ? '2 missions + 1 revision orbit today' : isSakura ? '2 classes + 1 gentle review today' : '2 tasks + 1 revision due today'}
+                      {isSpider ? '2 classes + 1 review thread today' : isSakura ? '2 classes + 1 gentle review today' : '2 tasks + 1 revision due today'}
                     </Text>
 
                     <View style={[styles.mockCard, { backgroundColor: selectedTheme?.card ?? '#fff' }]}>
                       <View style={styles.mockRow}>
-                        <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#3b2d69' : isSakura ? '#101010' : '#f2d7b3' }]}>
-                          <Feather name="book-open" size={12} color={isGalaxy ? '#c8b8ff' : isSakura ? '#ffffff' : '#8a5b2d'} />
+                        <View style={[styles.mockIcon, { backgroundColor: isSpider ? '#1a0a0c' : isSakura ? '#101010' : '#f2d7b3' }]}>
+                          <Feather name="book-open" size={12} color={isSpider ? '#fca5a5' : isSakura ? '#ffffff' : '#8a5b2d'} />
                         </View>
                         <Text style={[styles.mockText, { color: homeCardTextColor }]}>
-                          {isGalaxy ? 'Review Physics Nebula Chapter' : isSakura ? 'Review Communication Notes' : 'Review Biology Chapter 4'}
+                          {isSpider ? 'Review Methods chapter draft' : isSakura ? 'Review Communication Notes' : 'Review Biology Chapter 4'}
                         </Text>
                       </View>
                       <View style={styles.mockRow}>
-                        <View style={[styles.mockIcon, { backgroundColor: isGalaxy ? '#1d4a66' : isSakura ? '#171717' : '#d9e9cf' }]}>
-                          <Feather name="clock" size={12} color={isGalaxy ? '#91d5ff' : isSakura ? '#d4d4d4' : '#4f7d3d'} />
+                        <View style={[styles.mockIcon, { backgroundColor: isSpider ? '#0f0a0b' : isSakura ? '#171717' : '#d9e9cf' }]}>
+                          <Feather name="clock" size={12} color={isSpider ? '#f87171' : isSakura ? '#d4d4d4' : '#4f7d3d'} />
                         </View>
                         <Text style={[styles.mockText, { color: homeCardTextColor }]}>Focus timer: 25 min</Text>
                       </View>
@@ -391,8 +540,26 @@ export default function InAppThemesScreen() {
 
                 {slots.map((slot) => (
                   <View key={slot.label} style={[styles.slotCard, { backgroundColor: slot.bg }]}>
-                  <Text style={[styles.slotLabel, isGalaxy && { color: '#a9a0e8' }, isSakura && { color: '#9ca3af' }]}>{slot.label}</Text>
-                    <Text style={[styles.slotTitle, isGalaxy && { color: '#ebe9ff' }, isSakura && { color: '#ffffff' }]}>{slot.title}</Text>
+                    <Text
+                      style={[
+                        styles.slotLabel,
+                        isSpider && { color: '#f87171' },
+                        isSakura && { color: '#9ca3af' },
+                        isPurple && { color: '#c084fc' },
+                      ]}
+                    >
+                      {slot.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.slotTitle,
+                        isSpider && { color: '#fafafa' },
+                        isSakura && { color: '#ffffff' },
+                        isPurple && { color: '#f5f3ff' },
+                      ]}
+                    >
+                      {slot.title}
+                    </Text>
                   </View>
                 ))}
 
@@ -768,6 +935,120 @@ const styles = StyleSheet.create({
     height: 100,
     bottom: -30,
     right: -20,
+  },
+  /** Spider theme: subtle radial threads + strands (no character imagery). */
+  bgWebLine: {
+    position: 'absolute',
+    width: StyleSheet.hairlineWidth * 2,
+    borderRadius: 1,
+  },
+  bgWebRayA: {
+    height: 168,
+    top: -16,
+    left: '40%',
+    transform: [{ rotate: '34deg' }],
+  },
+  bgWebRayB: {
+    height: 152,
+    top: 4,
+    left: '36%',
+    transform: [{ rotate: '-22deg' }],
+  },
+  bgWebRayC: {
+    height: 148,
+    top: 16,
+    left: '48%',
+    transform: [{ rotate: '72deg' }],
+  },
+  bgWebStrand: {
+    position: 'absolute',
+    height: StyleSheet.hairlineWidth * 2,
+    borderRadius: 1,
+  },
+  bgWebStrandA: {
+    width: 76,
+    top: 52,
+    left: 10,
+    transform: [{ rotate: '-26deg' }],
+  },
+  bgWebStrandB: {
+    width: 92,
+    top: 72,
+    left: 22,
+    transform: [{ rotate: '11deg' }],
+  },
+  bgWebNode: {
+    position: 'absolute',
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  cardWebLine: {
+    position: 'absolute',
+    width: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(248,113,113,0.42)',
+    borderRadius: 1,
+  },
+  cardWebRayA: {
+    height: 78,
+    top: 6,
+    right: 28,
+    transform: [{ rotate: '36deg' }],
+  },
+  cardWebRayB: {
+    height: 70,
+    bottom: 10,
+    left: 16,
+    transform: [{ rotate: '-28deg' }],
+  },
+  cardWebStrand: {
+    position: 'absolute',
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(185,28,28,0.35)',
+    borderRadius: 1,
+  },
+  cardWebStrandA: {
+    width: 54,
+    top: 46,
+    left: 8,
+    transform: [{ rotate: '-16deg' }],
+  },
+  cardWebNode: {
+    position: 'absolute',
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(254,202,202,0.65)',
+  },
+  cardWebNodePos: {
+    top: 12,
+    right: 38,
+  },
+  bgPurpleWallpaper: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 0.4,
+  },
+  bgPurpleVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(34,26,63,0.55)',
+  },
+  cardPurpleWallpaper: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    opacity: 0.55,
+  },
+  cardPurpleVeil: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(34,26,63,0.4)',
+  },
+  cardPurpleIcon: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    opacity: 0.9,
   },
   previewTopRow: {
     flexDirection: 'row',

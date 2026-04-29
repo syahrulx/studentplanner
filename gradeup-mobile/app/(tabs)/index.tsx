@@ -29,11 +29,14 @@ import {
   taskCountsByOpenDueWeek,
   teachingWeekNumberForDate,
 } from '@/src/lib/academicWeek';
-import { useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
 import { Avatar } from '@/components/Avatar';
 import { useFocusEffect } from '@react-navigation/native';
 import { CatLottie } from '@/components/CatLottie';
+import { SpiderLottie } from '@/components/SpiderLottie';
+import { SpiderHeaderWebOverlay } from '@/components/SpiderHeaderWebOverlay';
+import { PurpleAuroraOverlay } from '@/components/PurpleAuroraOverlay';
 const DASHBOARD_LIST = [{ key: 'home' as const }];
 
 /** Home header: darker base + stronger waves (only these themes; blush/emerald unchanged). */
@@ -107,6 +110,32 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** Stable 1–3 for mono “glyph” markers on upcoming rows (no subject hues). */
+function monoInnerDotCountForSubject(code: string): number {
+  let h = 0;
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) >>> 0;
+  return (h % 3) + 1;
+}
+
+/** Vertical dot stack opacities for mono upcoming accent (replaces solid color bar). */
+function monoUpcomingAccentDotOpacities(
+  isStudy: boolean,
+  days: number,
+  taskPast: boolean,
+): number[] {
+  const n = 6;
+  const base = isStudy
+    ? 0.36
+    : days < 0 || taskPast
+      ? 0.92
+      : days === 0
+        ? 0.82
+        : days <= 3
+          ? 0.58
+          : 0.38;
+  return Array.from({ length: n }, (_, i) => base * (0.72 + 0.28 * (i / Math.max(n - 1, 1))));
+}
+
 type FocusStudyItem = {
   studyKey: string;
   date: string;
@@ -117,7 +146,12 @@ type FocusStudyItem = {
   name: string;
 };
 
-function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
+function createDashboardStyles(
+  theme: ThemePalette,
+  isDarkMinimal: boolean,
+  isSpiderTheme: boolean,
+  isPurpleTheme: boolean,
+) {
   const primary = theme.primary;
   const bg = theme.background;
   const card = theme.card;
@@ -130,7 +164,7 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
   const metaPillOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.82)' : border;
   const taskCardOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.38)' : border;
   const monoAccent = '#9ca3af';
-  const pulseCurrentColor = isMonoTheme ? monoAccent : GOLD;
+  const pulseCurrentColor = isSpiderTheme ? primary : isDarkMinimal ? monoAccent : GOLD;
 
   return StyleSheet.create({
     container: { flex: 1 },
@@ -147,15 +181,47 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
       elevation: 4,
       overflow: 'hidden',
     },
+    /** Wraps week pulse card; spider is absolutely positioned so it doesn’t stretch the header. */
+    peakAlertSection: {
+      marginTop: 22,
+      width: '100%',
+      position: 'relative',
+      zIndex: 1,
+    },
     peakAlertBox: {
       backgroundColor: card,
       borderRadius: 18,
       paddingHorizontal: 20,
       paddingVertical: 20,
-      marginTop: 22,
       zIndex: 1,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: border,
+    },
+    peakAlertSpiderWebClip: {
+      borderRadius: 18,
+      overflow: 'hidden',
+    },
+    peakAlertSpiderWebImage: {
+      position: 'absolute',
+      right: -80,
+      top: -50,
+      width: 292,
+      height: 204,
+      opacity: 0.52,
+      tintColor: '#7f1d1d',
+    },
+    peakAlertPurpleBgImage: {
+      position: 'absolute',
+      left: '50%',
+      top: '50%',
+      width: 350,
+      height: 540,
+      opacity: 0.9,
+      transform: [{ translateX: -160 }, { translateY: -290 }, { rotate: '90deg' }],
+    },
+    peakAlertPurpleBgTint: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(33, 14, 90, 0.42)',
     },
     peakAlertTop: {
       flexDirection: 'row',
@@ -254,6 +320,12 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
     peakAlertDotPeakMono: {
       borderColor: '#9ca3af',
     },
+    peakAlertDotPeakSpider: {
+      borderColor: primary,
+    },
+    peakAlertDotCurrentSpider: {
+      backgroundColor: `${primary}55`,
+    },
     peakAlertDotCurrentPeak: {
       width: 14,
       height: 14,
@@ -264,6 +336,10 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
     },
     peakAlertDotCurrentPeakMono: {
       borderColor: '#9ca3af',
+    },
+    peakAlertDotCurrentPeakSpider: {
+      borderColor: primary,
+      backgroundColor: `${primary}50`,
     },
     headerGradient: {
       borderBottomLeftRadius: 28,
@@ -281,6 +357,12 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
       overflow: 'hidden',
+    },
+    monoHeaderSolid: {
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+      backgroundColor: '#2a2a2a',
+      opacity: 0.94,
     },
     monoGlitchBand: {
       position: 'absolute',
@@ -426,8 +508,14 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
 
     sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
     sectionWrapperFirst: { marginTop: 24 },
-    sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: primary },
-    sectionSubcopy: { fontSize: 13, lineHeight: 19, color: textSecondary, marginBottom: 16, maxWidth: '92%' },
+    sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: isPurpleTheme ? text : primary },
+    sectionSubcopy: {
+      fontSize: 13,
+      lineHeight: 19,
+      color: isPurpleTheme ? text : textSecondary,
+      marginBottom: 16,
+      maxWidth: '92%',
+    },
 
     focusCard: {
       borderRadius: 26,
@@ -636,6 +724,41 @@ function createDashboardStyles(theme: ThemePalette, isMonoTheme: boolean) {
       alignSelf: 'stretch',
       borderRadius: 999,
     },
+    upcomingAccentDotsColumn: {
+      width: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'stretch',
+      paddingVertical: 4,
+      gap: 5,
+    },
+    upcomingAccentDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: text,
+    },
+    upcomingMonoMetaRing: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      borderWidth: 1.5,
+      borderColor: text,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    upcomingMonoMetaInnerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    upcomingMonoMetaInnerDot: {
+      width: 2.5,
+      height: 2.5,
+      borderRadius: 1.25,
+      backgroundColor: text,
+    },
     upcomingCardBody: { flex: 1, minWidth: 0 },
     upcomingCardTop: {
       flexDirection: 'row',
@@ -716,7 +839,13 @@ export default function Dashboard() {
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
   const isMonoTheme = themePack === 'mono';
-  const styles = useMemo(() => createDashboardStyles(theme, isMonoTheme), [theme, isMonoTheme]);
+  const isSpiderTheme = themePack === 'spider';
+  const isPurpleTheme = themePack === 'purple';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const styles = useMemo(
+    () => createDashboardStyles(theme, isDarkMinimal, isSpiderTheme, isPurpleTheme),
+    [theme, isDarkMinimal, isSpiderTheme, isPurpleTheme],
+  );
 
   const headerVisualBoost = HEADER_VISUAL_BOOST_IDS.has(themeId);
 
@@ -730,11 +859,21 @@ export default function Dashboard() {
     headerPrimary = '#f6c47f';
     headerSecondary = '#f7ddb8';
     headerSheenAccent = '#fff2de';
+  } else if (isSpiderTheme) {
+    headerAccent2 = '#140506';
+    headerPrimary = '#7f1d1d';
+    headerSecondary = '#b91c1c';
+    headerSheenAccent = '#dc2626';
   } else if (isMonoTheme) {
     headerAccent2 = '#161616';
     headerPrimary = '#1f1f1f';
     headerSecondary = '#2a2a2a';
     headerSheenAccent = '#6b7280';
+  } else if (isPurpleTheme) {
+    headerAccent2 = '#f0e9ff';
+    headerPrimary = '#e4d8ff';
+    headerSecondary = '#d4c2ff';
+    headerSheenAccent = '#ffffff';
   } else if (themeId === 'light') {
     headerAccent2 = LIGHT_HOME_HEADER.accent2;
     headerPrimary = LIGHT_HOME_HEADER.primary;
@@ -761,15 +900,19 @@ export default function Dashboard() {
 
   /** Match profile hero: wave 0.35 + overlay rgba(0,51,102,0.35) — same recipe as profile. */
   const profileMatchTexture = themeId === 'light' || themeId === 'dark';
-  const headerWaveOpacity = isCatTheme ? 0.2 : isMonoTheme ? 0.16 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
-  const headerTextureOverlayAlpha = isCatTheme ? 0.08 : isMonoTheme ? 0.14 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
-  const headerSheenAlpha = isCatTheme ? 0.1 : isMonoTheme ? 0.1 : profileMatchTexture ? 0.08 : headerVisualBoost ? 0.12 : 0.22;
+  const headerWaveOpacity = isCatTheme ? 0.2 : isDarkMinimal ? 0.16 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.58 : 0.35;
+  const headerTextureOverlayAlpha = isCatTheme ? 0.08 : isDarkMinimal ? 0.14 : profileMatchTexture ? 0.35 : headerVisualBoost ? 0.18 : 0.35;
+  const headerSheenAlpha = isCatTheme ? 0.1 : isDarkMinimal ? 0.1 : profileMatchTexture ? 0.08 : headerVisualBoost ? 0.12 : 0.22;
 
   const headerOnPrimary =
     isCatTheme
       ? '#5b3a22'
+      : isSpiderTheme
+        ? '#fef2f2'
       : isMonoTheme
         ? '#f5f5f5'
+      : isPurpleTheme
+        ? '#ffffff'
       :
     themeId === 'light' || themeId === 'midnight'
       ? '#ffffff'
@@ -846,7 +989,7 @@ export default function Dashboard() {
   const refreshSpin = useRef(new Animated.Value(0)).current;
   const refreshPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!isCatTheme && !isMonoTheme) {
+    if (!isCatTheme && !isDarkMinimal) {
       themeLoadingStartedAtRef.current = null;
       setThemeLoadingHold(false);
       return;
@@ -872,7 +1015,7 @@ export default function Dashboard() {
       setThemeLoadingHold(false);
     }, MIN_THEME_LOADING_MS - elapsed);
     return () => clearTimeout(timeoutId);
-  }, [dataReady, isCatTheme, isMonoTheme]);
+  }, [dataReady, isCatTheme, isDarkMinimal]);
   useEffect(() => {
     if (refreshingHome) {
       const spinLoop = Animated.loop(
@@ -924,13 +1067,13 @@ export default function Dashboard() {
       if (__DEV__) console.warn('[Home] pull refresh failed', e);
     } finally {
       const elapsed = Date.now() - started;
-      const minRefreshMs = isCatTheme ? 3200 : isMonoTheme ? 3200 : 240;
+      const minRefreshMs = isCatTheme ? 3200 : isDarkMinimal ? 3200 : 240;
       if (elapsed < minRefreshMs) {
         await new Promise((r) => setTimeout(r, minRefreshMs - elapsed));
       }
       setRefreshingHome(false);
     }
-  }, [isCatTheme, isMonoTheme, refreshRemoteData, refreshCommunityAll]);
+  }, [isCatTheme, isDarkMinimal, refreshRemoteData, refreshCommunityAll]);
   const homeTeachingWeek = useMemo(
     () =>
       teachingWeekNumberForDate(
@@ -1104,7 +1247,7 @@ export default function Dashboard() {
       const subjectColor = getSubjectColor(focusTask.task.courseId);
       const days = info.days;
       let statusColor: string;
-      if (isMonoTheme) {
+      if (isDarkMinimal) {
         statusColor = '#9ca3af';
       } else if (info.key === 'overdue' || days === 0) {
         statusColor = '#dc2626';
@@ -1120,7 +1263,7 @@ export default function Dashboard() {
         code: formattedCourse,
         date: focusTask.task.dueDate,
         time: focusTask.task.dueTime,
-                        accentColor: isMonoTheme ? '#9ca3af' : subjectColor,
+                        accentColor: isDarkMinimal ? '#9ca3af' : subjectColor,
         statusColor,
         badgeBackground: theme.card,
         label:
@@ -1147,8 +1290,8 @@ export default function Dashboard() {
         code: nextStudyItem.code,
         date: nextStudyItem.date,
         time: nextStudyItem.time,
-        accentColor: isMonoTheme ? '#9ca3af' : subjectColor,
-        statusColor: isMonoTheme ? '#9ca3af' : subjectColor,
+        accentColor: isDarkMinimal ? '#9ca3af' : subjectColor,
+        statusColor: isDarkMinimal ? '#9ca3af' : subjectColor,
         badgeBackground: theme.card,
         label:
           info.key === 'daysLeft'
@@ -1160,7 +1303,7 @@ export default function Dashboard() {
     }
 
     return null;
-  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName]);
+  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName, isDarkMinimal]);
 
   const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
 
@@ -1174,7 +1317,7 @@ export default function Dashboard() {
   // ── Solution A: Loading guard ─────────────────────────────────
   // Don't render dashboard content until real data has loaded.
   // This prevents the confusing "Hello, Student" flash with empty data.
-  const shouldShowLoading = !dataReady || ((isCatTheme || isMonoTheme) && themeLoadingHold);
+  const shouldShowLoading = !dataReady || ((isCatTheme || isDarkMinimal) && themeLoadingHold);
   if (shouldShowLoading) {
     return (
       <View
@@ -1187,14 +1330,18 @@ export default function Dashboard() {
           },
         ]}
       >
-        {isCatTheme || isMonoTheme ? (
+        {isCatTheme || isDarkMinimal ? (
           <View style={catStyles.loadingBubble} />
         ) : null}
-        {isCatTheme || isMonoTheme ? (
-          <CatLottie
-            variant={isCatTheme ? 'loading' : 'monoLoading'}
-            style={isMonoTheme ? catStyles.loadingMonoLottie : catStyles.loadingCatLottie}
-          />
+        {isCatTheme || isDarkMinimal ? (
+          isSpiderTheme ? (
+            <SpiderLottie variant="loading" style={catStyles.loadingSpiderLottie} />
+          ) : (
+            <CatLottie
+              variant={isCatTheme ? 'loading' : 'monoLoading'}
+              style={!isCatTheme && isDarkMinimal ? catStyles.loadingMonoLottie : catStyles.loadingCatLottie}
+            />
+          )
         ) : (
           <ActivityIndicator size="large" color={theme.primary} />
         )}
@@ -1282,19 +1429,11 @@ export default function Dashboard() {
             <Text style={[styles.catHeaderPaw, styles.catHeaderPawC]}>🐾</Text>
           </View>
         ) : isMonoTheme ? (
-          <View style={[StyleSheet.absoluteFillObject, styles.monoHeaderPattern]} pointerEvents="none">
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandA]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandB]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandC]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandD]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandE]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandF]} />
-            <View style={[styles.monoGlitchBand, styles.monoGlitchBandG]} />
-            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockA]} />
-            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockB]} />
-            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockC]} />
-            <View style={[styles.monoGlitchBlock, styles.monoGlitchBlockD]} />
-          </View>
+          <View style={[StyleSheet.absoluteFillObject, styles.monoHeaderSolid]} pointerEvents="none" />
+        ) : isSpiderTheme ? (
+          <SpiderHeaderWebOverlay />
+        ) : isPurpleTheme ? (
+          <PurpleAuroraOverlay variant="soft" opacity={1.0} veilColor="rgba(54, 31, 124, 0.74)" />
         ) : (
           <Image
             source={require('../../assets/images/wave-texture.png')}
@@ -1351,14 +1490,40 @@ export default function Dashboard() {
             </Pressable>
           </View>
         </View>
-        {/* Week peak alert – compact white box inside header */}
+        {/* Week peak alert – card + (Spider) decoration in red header under bottom-right corner */}
+        <View style={styles.peakAlertSection}>
         <Pressable
           style={({ pressed }) => [styles.peakAlertBox, pressed && styles.pressed]}
           onPress={() => router.push('/stress-map' as any)}
         >
+          {isSpiderTheme ? (
+            <View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFillObject, styles.peakAlertSpiderWebClip]}
+            >
+              <Image
+                source={require('../../assets/spider-card-web.png')}
+                style={styles.peakAlertSpiderWebImage}
+                resizeMode="contain"
+              />
+            </View>
+          ) : null}
+          {isPurpleTheme ? (
+            <View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFillObject, styles.peakAlertSpiderWebClip]}
+            >
+              <Image
+                source={require('../../assets/purple-weekpulse-gradient.png')}
+                style={styles.peakAlertPurpleBgImage}
+                resizeMode="cover"
+              />
+              <View style={styles.peakAlertPurpleBgTint} />
+            </View>
+          ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={styles.peakAlertWeek}>{pulseMainTitle}</Text>
+              <Text style={[styles.peakAlertWeek, isPurpleTheme && { color: '#ffffff' }]}>{pulseMainTitle}</Text>
               {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
                 <Text style={styles.peakAlertSubline}>
                   {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
@@ -1367,10 +1532,17 @@ export default function Dashboard() {
               {semesterPhase === 'no_calendar' ? (
                 <Text style={styles.peakAlertSubline}>{T('tapToSetCalendar')}</Text>
               ) : null}
-              <Text style={styles.peakAlertLabel}>{T('semesterPulse')}</Text>
+              <Text style={[styles.peakAlertLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.92)' }]}>
+                {T('semesterPulse')}
+              </Text>
             </View>
-            <View style={[styles.peakAlertBadge, semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted]}>
-                {isCatTheme ? <CatLottie style={catStyles.peakCatLottie} /> : null}
+            <View
+              style={[
+                styles.peakAlertBadge,
+                semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted,
+              ]}
+            >
+              {isCatTheme ? <CatLottie style={catStyles.peakCatLottie} /> : null}
               <Text
                 style={[styles.peakAlertBadgeText, semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted]}
                 numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
@@ -1381,8 +1553,10 @@ export default function Dashboard() {
             </View>
           </View>
           <View style={styles.peakAlertBottom}>
-            <Text style={styles.peakAlertProgressLabel}>{T('progress')}</Text>
-            <Text style={styles.peakAlertFinalLabel}>
+            <Text style={[styles.peakAlertProgressLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.9)' }]}>
+              {T('progress')}
+            </Text>
+            <Text style={[styles.peakAlertFinalLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.95)' }]}>
               W{totalWeeks} {T('final')}
             </Text>
           </View>
@@ -1394,11 +1568,16 @@ export default function Dashboard() {
                 const isCurrent = weekNum === homeTeachingWeek;
                 const isTaskPeak = taskPeakMax > 0 && taskPeakWeek >= 1 && weekNum === taskPeakWeek;
                 if (isCurrent && isTaskPeak) {
-                  dotStyles = [styles.peakAlertDotCurrentPeak, isMonoTheme && styles.peakAlertDotCurrentPeakMono];
+                  dotStyles = [styles.peakAlertDotCurrentPeak];
+                  if (isMonoTheme) dotStyles.push(styles.peakAlertDotCurrentPeakMono);
+                  else if (isSpiderTheme) dotStyles.push(styles.peakAlertDotCurrentPeakSpider);
                 } else if (isCurrent) {
                   dotStyles = [styles.peakAlertDotCurrent];
+                  if (isSpiderTheme) dotStyles.push(styles.peakAlertDotCurrentSpider);
                 } else if (isTaskPeak) {
-                  dotStyles = [styles.peakAlertDotPeak, isMonoTheme && styles.peakAlertDotPeakMono];
+                  dotStyles = [styles.peakAlertDotPeak];
+                  if (isMonoTheme) dotStyles.push(styles.peakAlertDotPeakMono);
+                  else if (isSpiderTheme) dotStyles.push(styles.peakAlertDotPeakSpider);
                 } else if (weekNum < homeTeachingWeek) {
                   dotStyles.push(styles.peakAlertDotPast);
                 }
@@ -1409,6 +1588,8 @@ export default function Dashboard() {
             })}
           </View>
         </Pressable>
+        {isSpiderTheme ? <SpiderLottie style={catStyles.spiderBelowPeakLottie} /> : null}
+        </View>
       </View>
 
       {/* Today's focus */}
@@ -1535,23 +1716,27 @@ export default function Dashboard() {
               const showDateHeader = idx === 0 || previewItems[idx - 1].date !== item.date;
               const isStudy = item.type === 'STUDY';
               const studyDone = isStudy && completedStudyKeys.includes((item as { studyKey?: string }).studyKey ?? '');
+              const daysLeft = getDaysLeft(item.date);
+              const taskPast =
+                !isStudy &&
+                isTaskPastDueNow({ dueDate: item.date, dueTime: item.time || '23:59' });
               let accent: string;
               if (isStudy) {
                 // Study time: always dark grey accent, independent of urgency
                 accent = '#4b5563';
               } else {
                 // Tasks: color by how near the deadline is
-                const days = getDaysLeft(item.date);
-                const taskPast =
-                  isTaskPastDueNow({ dueDate: item.date, dueTime: item.time || '23:59' });
-                if (days < 0 || taskPast || days === 0) {
+                if (daysLeft < 0 || taskPast || daysLeft === 0) {
                   accent = '#dc2626'; // red – very near / overdue
-                } else if (days <= 3) {
-                  accent = isMonoTheme ? '#9ca3af' : '#eab308'; // medium near
+                } else if (daysLeft <= 3) {
+                  accent = isDarkMinimal ? '#9ca3af' : '#eab308'; // medium near
                 } else {
-                  accent = '#22c55e'; // green – far
+                  accent = isDarkMinimal ? '#9ca3af' : '#22c55e'; // green – far (dark minimal: neutral grey)
                 }
               }
+              const monoAccentOpacities = isMonoTheme
+                ? monoUpcomingAccentDotOpacities(isStudy, daysLeft, Boolean(taskPast))
+                : null;
               return (
                 <View key={`${item.type}-${item.date}-${item.time}-${idx}`}>
                   {showDateHeader && (
@@ -1574,7 +1759,15 @@ export default function Dashboard() {
                       }
                     }}
                   >
-                    <View style={[styles.upcomingAccent, { backgroundColor: accent }]} />
+                    {isMonoTheme && monoAccentOpacities ? (
+                      <View style={styles.upcomingAccentDotsColumn}>
+                        {monoAccentOpacities.map((op, dotIdx) => (
+                          <View key={dotIdx} style={[styles.upcomingAccentDot, { opacity: op }]} />
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={[styles.upcomingAccent, { backgroundColor: accent }]} />
+                    )}
                     <View style={styles.upcomingCardBody}>
                       <View style={styles.upcomingCardTop}>
                         <View style={styles.upcomingTimeWrap}>
@@ -1590,7 +1783,17 @@ export default function Dashboard() {
                         {('isSharedTask' in item && item.isSharedTask) ? (
                           <Avatar name={(item as any).sharedBy} avatarUrl={(item as any).sharedByAvatar} size={18} />
                         ) : null}
-                        <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
+                        {isMonoTheme ? (
+                          <View style={styles.upcomingMonoMetaRing}>
+                            <View style={styles.upcomingMonoMetaInnerRow}>
+                              {Array.from({ length: monoInnerDotCountForSubject(item.code) }, (_, k) => (
+                                <View key={k} style={styles.upcomingMonoMetaInnerDot} />
+                              ))}
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={[styles.upcomingSubjectDot, { backgroundColor: accent }]} />
+                        )}
                         <Text style={styles.upcomingMetaText} numberOfLines={1}>{formatSubjectName(item.code)}</Text>
                         <Text style={styles.upcomingMetaDivider}>•</Text>
                         <Text style={styles.upcomingMetaText} numberOfLines={1}>{item.room}</Text>
@@ -1616,11 +1819,15 @@ export default function Dashboard() {
       />
       {refreshingHome ? (
         <View style={styles.homeRefreshOverlayTop} pointerEvents="none">
-          {isCatTheme || isMonoTheme ? (
-            <CatLottie
-              variant={isCatTheme ? 'loading' : 'monoLoading'}
-              style={isMonoTheme ? catStyles.refreshMonoLottie : catStyles.refreshCatLottie}
-            />
+          {isCatTheme || isDarkMinimal ? (
+            isSpiderTheme ? (
+              <SpiderLottie variant="loading" style={catStyles.refreshSpiderLottie} />
+            ) : (
+              <CatLottie
+                variant={isCatTheme ? 'loading' : 'monoLoading'}
+                style={!isCatTheme && isDarkMinimal ? catStyles.refreshMonoLottie : catStyles.refreshCatLottie}
+              />
+            )
           ) : (
             <Animated.View
               style={[
@@ -1704,6 +1911,18 @@ const catStyles = StyleSheet.create({
     height: 72,
     opacity: 0.98,
   },
+  loadingSpiderLottie: {
+    position: 'absolute',
+    marginTop: -60,
+    width: 124,
+    height: 94,
+    opacity: 0.96,
+  },
+  refreshSpiderLottie: {
+    width: 108,
+    height: 82,
+    opacity: 0.96,
+  },
   peakCatLottie: {
     position: 'absolute',
     left: -16,
@@ -1712,5 +1931,16 @@ const catStyles = StyleSheet.create({
     height: 42,
     opacity: 0.98,
     zIndex: 3,
+  },
+  /** Spider pack: crimson strip under card corner — absolute so header height stays unchanged. */
+  spiderBelowPeakLottie: {
+    position: 'absolute',
+    right: 0,
+    top: '100%',
+    marginTop: -22,
+    width: 84,
+    height: 64,
+    opacity: 0.94,
+    zIndex: 2,
   },
 });

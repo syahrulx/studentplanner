@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
-import { useTheme, useThemePack } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme } from '@/hooks/useTheme';
 import { Icons } from '@/src/constants';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
@@ -15,10 +15,10 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 
-function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
+function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   const monoAccent = '#9ca3af';
-  const primaryCta = isMonoTheme ? monoAccent : '#fbbf24';
-  const primaryCtaText = isMonoTheme ? '#111827' : '#0f172a';
+  const primaryCta = isDarkMinimal ? monoAccent : '#fbbf24';
+  const primaryCtaText = isDarkMinimal ? '#111827' : '#0f172a';
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 56 : 40, paddingBottom: 16 },
     headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingHorizontal: 24 },
@@ -41,7 +41,7 @@ function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
     progressMetaLeft: { fontSize: 11, fontWeight: '800', color: theme.textSecondary, letterSpacing: 1.2 },
     progressMetaRight: { fontSize: 11, fontWeight: '800', color: theme.textSecondary, letterSpacing: 1.2, textAlign: 'right', opacity: 0.6 },
     progressBarBg: { height: 4, borderRadius: 2, backgroundColor: theme.border, marginBottom: 20 },
-    progressBarFill: { height: '100%', borderRadius: 2, backgroundColor: isMonoTheme ? monoAccent : '#facc15' },
+    progressBarFill: { height: '100%', borderRadius: 2, backgroundColor: isDarkMinimal ? monoAccent : '#facc15' },
     cardArea: {
       flex: 1,
       justifyContent: 'center',
@@ -95,7 +95,7 @@ function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
     // BACK card
     cardBack: {
       borderRadius: 28,
-      backgroundColor: isMonoTheme ? '#f5f5f5' : theme.primary,
+      backgroundColor: isDarkMinimal ? '#f5f5f5' : theme.primary,
       paddingVertical: 36,
       paddingHorizontal: 28,
       alignItems: 'center',
@@ -117,7 +117,7 @@ function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
     cardAnswer: {
       fontSize: 19,
       fontWeight: '700',
-      color: isMonoTheme ? '#000000' : '#ffffff',
+      color: isDarkMinimal ? '#000000' : '#ffffff',
       textAlign: 'center',
       lineHeight: 26,
       marginBottom: 20,
@@ -134,9 +134,9 @@ function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    backActionSecondary: { backgroundColor: isMonoTheme ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)' },
+    backActionSecondary: { backgroundColor: isDarkMinimal ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)' },
     backActionPrimary: { backgroundColor: primaryCta },
-    backActionSecondaryText: { fontSize: 13, fontWeight: '800', color: isMonoTheme ? '#000000' : '#ffffff', letterSpacing: 0.5 },
+    backActionSecondaryText: { fontSize: 13, fontWeight: '800', color: isDarkMinimal ? '#000000' : '#ffffff', letterSpacing: 0.5 },
     backActionPrimaryText: { fontSize: 13, fontWeight: '800', color: primaryCtaText, letterSpacing: 0.5 },
     footerHint: {
       marginTop: 12,
@@ -158,7 +158,7 @@ function createStyles(theme: ThemePalette, isMonoTheme: boolean) {
       borderRadius: 14,
       alignItems: 'center',
     },
-    emptyPrimaryBtnText: { color: isMonoTheme ? '#000000' : '#fff', fontWeight: '800', fontSize: 16 },
+    emptyPrimaryBtnText: { color: isDarkMinimal ? '#000000' : '#fff', fontWeight: '800', fontSize: 16 },
     emptySecondaryBtn: {
       paddingVertical: 14,
       paddingHorizontal: 22,
@@ -177,9 +177,8 @@ export default function FlashcardReview() {
   const { flashcards, notes, user, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
-  const themePack = useThemePack();
-  const isMonoTheme = themePack === 'mono';
-  const styles = useMemo(() => createStyles(theme, isMonoTheme), [theme, isMonoTheme]);
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const styles = useMemo(() => createStyles(theme, isDarkMinimal), [theme, isDarkMinimal]);
 
   const sourceList = useMemo(() => {
     if (noteId) return flashcards.filter((c) => c.noteId === noteId);
@@ -380,7 +379,7 @@ export default function FlashcardReview() {
           style={[styles.backIconWrap, shuffled && { backgroundColor: theme.primary }]}
           hitSlop={8}
         >
-          <Feather name="shuffle" size={18} color={shuffled ? (isMonoTheme ? '#000000' : '#fff') : theme.textSecondary} />
+          <Feather name="shuffle" size={18} color={shuffled ? (isDarkMinimal ? '#000000' : '#fff') : theme.textSecondary} />
         </Pressable>
       </View>
 
@@ -411,7 +410,7 @@ export default function FlashcardReview() {
             /* ── BACK ── */
             <Pressable style={styles.cardBack} onPress={toggleFlip}>
               <View style={styles.cardBackIconCircle}>
-                <Icons.Sparkles size={26} color={isMonoTheme ? '#000000' : '#fff'} />
+                <Icons.Sparkles size={26} color={isDarkMinimal ? '#000000' : '#fff'} />
               </View>
               <Text style={styles.cardAnswer}>{back}</Text>
               <View style={styles.cardBackActions}>

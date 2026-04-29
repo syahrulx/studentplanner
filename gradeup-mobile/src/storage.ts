@@ -74,13 +74,15 @@ export async function setTheme(theme: ThemeId): Promise<void> {
   } catch {}
 }
 
-export type ThemePackId = 'none' | 'cat' | 'mono';
+export type ThemePackId = 'none' | 'cat' | 'mono' | 'spider' | 'purple';
 
 export async function getThemePack(): Promise<ThemePackId> {
   try {
     const raw = await AsyncStorage.getItem(KEY_THEME_PACK);
     if (raw === 'cat') return 'cat';
     if (raw === 'mono') return 'mono';
+    if (raw === 'spider') return 'spider';
+    if (raw === 'purple') return 'purple';
   } catch {}
   return 'none';
 }
