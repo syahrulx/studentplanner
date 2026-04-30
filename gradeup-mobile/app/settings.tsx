@@ -449,12 +449,12 @@ export default function Settings() {
             onPress={() => router.push('/in-app-themes' as any)}
           >
             <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
-              <Feather name="image" size={18} color="#fff" />
+              <Feather name="award" size={18} color="#fff" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>In App Themes</Text>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Premium Themes</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                Preview custom theme packs (locked for free users)
+                Unlock premium theme packs (locked for free users)
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />

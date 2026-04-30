@@ -17,19 +17,22 @@ import {
   Linking,
   type ViewStyle,
 } from 'react-native';
-import Mapbox from '@rnmapbox/maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Initialize Mapbox with your public access token from environment variables.
-// In production builds (eas build), the token may not be in process.env
-// (removed from eas.json for GitHub secret scanning). In that case, the native
-// MBXAccessToken in Info.plist (set by app.config.js) is used as the primary source.
-const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
-if (_mapboxToken) {
-  console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
-  Mapbox.setAccessToken(_mapboxToken);
-} else {
-  console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
+// Mapbox requires native code compiled into a dev build — it throws in Expo Go.
+// Wrap in try-catch so the module still loads and exports its default component.
+let Mapbox: typeof import('@rnmapbox/maps').default | null = null;
+try {
+  Mapbox = require('@rnmapbox/maps').default as typeof import('@rnmapbox/maps').default;
+  const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+  if (_mapboxToken) {
+    console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
+    (Mapbox as any).setAccessToken(_mapboxToken);
+  } else {
+    console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
+  }
+} catch {
+  console.log('[MAP] Mapbox native code not available (Expo Go) — map tab will show placeholder');
 }
 
 // Mapbox Standard configuration helper
@@ -173,8 +176,10 @@ function StableMarker({
     ? (artistLabel ? `${songLabel} — ${artistLabel}` : songLabel)
     : '';
 
+  if (!Mapbox) return null;
+  const MB = Mapbox as any;
   return (
-    <Mapbox.MarkerView
+    <MB.MarkerView
       id={id}
       coordinate={[coordinate.longitude, coordinate.latitude]}
       anchor={anchor}
@@ -220,7 +225,7 @@ function StableMarker({
           <View style={styles.pinTriangle} />
         </View>
       </Pressable>
-    </Mapbox.MarkerView>
+    </MB.MarkerView>
   );
 }
 
@@ -332,7 +337,7 @@ export default function CommunityMap() {
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
-  const cameraRef = useRef<Mapbox.Camera>(null);
+  const cameraRef = useRef<any>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
 
@@ -579,24 +584,33 @@ export default function CommunityMap() {
 
       {/* ─── MAP SECTION ─── */}
       <View style={styles.mapContainer}>
+        {!Mapbox ? (
+          <View style={[styles.map, { alignItems: 'center', justifyContent: 'center', backgroundColor: theme.backgroundSecondary }]}>
+            <Feather name="map" size={40} color={theme.textSecondary} />
+            <Text style={{ color: theme.textSecondary, marginTop: 12, fontSize: 15, fontWeight: '600' }}>Map unavailable</Text>
+            <Text style={{ color: theme.textSecondary, marginTop: 4, fontSize: 13, textAlign: 'center', paddingHorizontal: 32 }}>
+              Use a development build to see the live map.
+            </Text>
+          </View>
+        ) : (
           <Mapbox.MapView
             style={styles.map}
-            styleURL={Mapbox.StyleURL.Street}
+            styleURL={(Mapbox as any).StyleURL.Street}
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
             scaleBarEnabled={false}
           >
 
-            <Mapbox.Camera
-              ref={cameraRef}
-              zoomLevel={15}
-              pitch={45}
-              heading={0}
-              centerCoordinate={[mapCenterLng, mapCenterLat]}
-              animationMode="flyTo"
-              animationDuration={1500}
-            />
+            {React.createElement((Mapbox as any).Camera, {
+              ref: cameraRef,
+              zoomLevel: 15,
+              pitch: 45,
+              heading: 0,
+              centerCoordinate: [mapCenterLng, mapCenterLat],
+              animationMode: 'flyTo',
+              animationDuration: 1500,
+            })}
 
             {/* My own pin — hidden in ghost mode; coords stay in state for map center only */}
             {hasValidMyCoords && locationVisibility !== 'off' && (
@@ -643,6 +657,7 @@ export default function CommunityMap() {
               ))}
 
           </Mapbox.MapView>
+        )}
 
         {/* Map overlay buttons */}
         <View style={styles.mapOverlay}>

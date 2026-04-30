@@ -87,14 +87,18 @@ const PURPLE_THEME_OVERRIDE: ThemePalette = {
   shortcutColors: ['#8d72cb', '#b49be3', '#d9c8ff'],
 };
 
-/** Dark ink base + deep red thread accents (Spider Theme). */
+/**
+ * Dark ink base + deep red accents (Spider Theme).
+ * Borders use Spider-Man's iconic suit blue (#1e3a8a) so card edges,
+ * dividers, and input outlines all carry the blue-suit colour.
+ */
 const SPIDER_THEME_OVERRIDE: ThemePalette = {
   id: 'dark',
   name: 'Spider Theme',
   background: '#050508',
   backgroundSecondary: '#08080d',
   card: '#0c0c12',
-  cardBorder: '#1f1418',
+  cardBorder: '#1a326a',   // Spider-Man suit blue — card outlines
   primary: '#b91c1c',
   secondary: '#dc2626',
   accent: '#991b1b',
@@ -103,14 +107,14 @@ const SPIDER_THEME_OVERRIDE: ThemePalette = {
   text: '#f4f4f5',
   textSecondary: '#a1a1aa',
   textInverse: '#fafafa',
-  border: '#241418',
-  tabIconDefault: '#9f7378',
+  border: '#1e3a8a',       // Spider-Man suit blue — all component borders
+  tabIconDefault: '#4a6fbd',
   tabIconSelected: '#fca5a5',
   success: '#22c55e',
   warning: '#eab308',
   danger: '#dc2626',
-  focusCard: '#120a0c',
-  focusCardText: '#fef2f2',
+  focusCard: '#0a0c18',
+  focusCardText: '#dbeafe',
   shortcutColors: ['#991b1b', '#b91c1c', '#7f1d1d'],
 };
 
