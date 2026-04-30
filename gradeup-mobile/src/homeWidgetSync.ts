@@ -24,6 +24,7 @@ export interface WidgetSyncInputs {
   userName: string;
   signedIn: boolean;
   themeId: ThemeId;
+  themePack?: string;
   maxTasks?: number;
 }
 

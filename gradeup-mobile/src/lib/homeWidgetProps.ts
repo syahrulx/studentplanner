@@ -1,5 +1,5 @@
-import type { ThemeId } from '@/constants/Themes';
-import { THEMES } from '@/constants/Themes';
+import type { ThemeId, ThemePalette } from '@/constants/Themes';
+import { THEMES, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, SPIDER_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE } from '@/constants/Themes';
 import type { Course, DayOfWeek, Task, TimetableEntry } from '../types';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { compareTasksByDueDate, getDaysUntilTaskDue } from './taskUtils';
@@ -31,6 +31,7 @@ export type HomeWidgetClassRow = {
 /** Snapshot of app theme colors for home-screen widgets (matches Profile → App theme). */
 export type HomeWidgetTheme = {
   themeId: ThemeId;
+  themePack?: string;
   background: string;
   backgroundSecondary: string;
   card: string;
@@ -51,13 +52,18 @@ export type HomeWidgetProps = {
   theme: HomeWidgetTheme;
 };
 
-export function homeWidgetThemeFromId(themeId: ThemeId): HomeWidgetTheme {
-  const t = THEMES[themeId] ?? THEMES.light;
+export function homeWidgetThemeFromId(themeId: ThemeId, themePack?: string): HomeWidgetTheme {
+  let t: ThemePalette = THEMES[themeId] ?? THEMES.light;
+  if (themePack === 'cat') t = CAT_THEME_OVERRIDE;
+  else if (themePack === 'mono') t = MONO_THEME_OVERRIDE;
+  else if (themePack === 'spider') t = SPIDER_THEME_OVERRIDE;
+  else if (themePack === 'purple') t = PURPLE_THEME_OVERRIDE;
 
   // Pass through ALL theme colors directly so the widget fully mirrors
   // the user's chosen app theme — background, text, accents, everything.
   return {
     themeId: t.id,
+    themePack,
     background: t.background,
     backgroundSecondary: t.backgroundSecondary,
     card: t.card,
@@ -73,8 +79,9 @@ export function homeWidgetThemeFromId(themeId: ThemeId): HomeWidgetTheme {
 /** Use when widget receives an older snapshot without `theme`. */
 export function resolveHomeWidgetTheme(props: Partial<HomeWidgetProps> | null | undefined): HomeWidgetTheme {
   const id = props?.theme?.themeId;
-  if (id && id in THEMES) return homeWidgetThemeFromId(id as ThemeId);
-  return homeWidgetThemeFromId('light');
+  const pack = props?.theme?.themePack;
+  if (id && id in THEMES) return homeWidgetThemeFromId(id as ThemeId, pack);
+  return homeWidgetThemeFromId('light', pack);
 }
 
 function timeSortKey(t: string): number {
@@ -91,6 +98,7 @@ export function buildHomeWidgetProps(input: {
   userName: string;
   signedIn: boolean;
   themeId: ThemeId;
+  themePack?: string;
   todayISO?: string;
   maxTasks?: number;
   maxClasses?: number;
@@ -98,7 +106,7 @@ export function buildHomeWidgetProps(input: {
   const todayISO = input.todayISO ?? getTodayISO();
   const maxTasks = input.maxTasks ?? 5;
   const maxClasses = input.maxClasses ?? 6;
-  const theme = homeWidgetThemeFromId(input.themeId);
+  const theme = homeWidgetThemeFromId(input.themeId, input.themePack);
 
   if (!input.signedIn) {
     return {

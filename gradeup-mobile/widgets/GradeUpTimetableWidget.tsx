@@ -1,4 +1,4 @@
-import { Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
+import { ZStack, Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, frame, opacity, background } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps } from '../src/lib/homeWidgetProps';
@@ -12,6 +12,15 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   const muted  = props?.theme?.textSecondary  || '#64748b';
   const accent = props?.theme?.primary        || '#2563eb';
   const line   = props?.theme?.border         || '#e2e8f0';
+  const pack   = props?.theme?.themePack;
+  const packIcon = pack === 'cat' ? '🐾' : pack === 'spider' ? '🕸' : pack === 'purple' ? '✨' : '';
+
+  // Increase blue presence for Spider theme
+  const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
+  const iconColor = pack === 'spider' ? (props?.theme?.border || accent) : 
+                    pack === 'cat' ? (props?.theme?.primary || accent) : title;
+  const iconOpacity = pack === 'spider' ? 0.45 : 
+                      pack === 'cat' ? 0.4 : 0.25;
 
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props || fallback;
@@ -23,10 +32,17 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
-        <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Classes</Text>
-        <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view timetable</Text>
-      </VStack>
+      <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+        {packIcon ? (
+          <Text modifiers={[font({ size: 110 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: -25, trailing: -20 })]}>
+            {packIcon}
+          </Text>
+        ) : null}
+        <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+          <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Classes</Text>
+          <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view timetable</Text>
+        </VStack>
+      </ZStack>
     );
   }
 
@@ -94,17 +110,23 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
   // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <VStack
-      modifiers={[padding({ all: denseSmall ? 12 : denseMedium ? 10 : 14 }), background(bg)]}
-      spacing={small ? (denseSmall ? 6 : 8) : denseMedium ? 4 : 10}
-    >
+    <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+      {packIcon ? (
+        <Text modifiers={[font({ size: large ? 200 : small ? 120 : 160 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: small ? -25 : -35, trailing: small ? -20 : -30 })]}>
+          {packIcon}
+        </Text>
+      ) : null}
+      <VStack
+        modifiers={[padding({ all: denseSmall ? 12 : denseMedium ? 10 : 14 })]}
+        spacing={small ? (denseSmall ? 6 : 8) : denseMedium ? 4 : 10}
+      >
 
-      {/* Header */}
-      <HStack spacing={6}>
-        <VStack spacing={2}>
-          <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
-            {small ? 'Classes' : "Today's Classes"}
-          </Text>
+        {/* Header */}
+        <HStack spacing={6}>
+          <VStack spacing={2}>
+            <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
+              {small ? 'Classes' : "Today's Classes"}
+            </Text>
           {!denseMedium ? (
             <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
               {small ? 'Today' : "Today's Schedule"}
@@ -160,7 +182,8 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
         </VStack>
       )}
 
-    </VStack>
+      </VStack>
+    </ZStack>
   );
 }
 

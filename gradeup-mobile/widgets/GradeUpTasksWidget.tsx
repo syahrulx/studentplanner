@@ -1,4 +1,4 @@
-import { Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
+import { ZStack, Text, VStack, HStack, Spacer, Divider, Link } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, lineLimit, padding, opacity, background } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
@@ -14,6 +14,15 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const red    = props?.theme?.danger         || '#dc2626';
   const warn   = props?.theme?.warning        || '#d97706';
   const line   = props?.theme?.border         || '#e2e8f0';
+  const pack   = props?.theme?.themePack;
+  const packIcon = pack === 'cat' ? '🐾' : pack === 'spider' ? '🕸' : pack === 'purple' ? '✨' : '';
+
+  // Increase blue presence for Spider theme
+  const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
+  const iconColor = pack === 'spider' ? (props?.theme?.border || accent) : 
+                    pack === 'cat' ? (props?.theme?.primary || accent) : title;
+  const iconOpacity = pack === 'spider' ? 0.45 : 
+                      pack === 'cat' ? 0.4 : 0.25;
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -37,10 +46,17 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   if (!p.signedIn) {
     return (
-      <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={6}>
-        <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Tasks</Text>
-        <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view tasks</Text>
-      </VStack>
+      <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+        {packIcon ? (
+          <Text modifiers={[font({ size: 110 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: -25, trailing: -20 })]}>
+            {packIcon}
+          </Text>
+        ) : null}
+        <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+          <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Tasks</Text>
+          <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view tasks</Text>
+        </VStack>
+      </ZStack>
     );
   }
 
@@ -101,14 +117,20 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <VStack modifiers={[padding({ all: 14 }), background(bg)]} spacing={small ? 8 : 10}>
+    <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+      {packIcon ? (
+        <Text modifiers={[font({ size: large ? 200 : small ? 120 : 160 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: small ? -25 : -35, trailing: small ? -20 : -30 })]}>
+          {packIcon}
+        </Text>
+      ) : null}
+      <VStack modifiers={[padding({ all: 14 })]} spacing={small ? 8 : 10}>
 
-      {/* Header */}
-      <HStack spacing={6}>
-        <VStack spacing={2}>
-          <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), foregroundStyle(title)]}>
-            Tasks
-          </Text>
+        {/* Header */}
+        <HStack spacing={6}>
+          <VStack spacing={2}>
+            <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), foregroundStyle(title)]}>
+              Tasks
+            </Text>
           <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
             {String(p.tasks.length)} pending
           </Text>
@@ -118,11 +140,13 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
           <Text modifiers={[font({ size: small ? 22 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
             {String(p.tasks.length)}
           </Text>
-          <Link destination="rencana://add-task">
-            <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(accent)]}>
-              + Add
-            </Text>
-          </Link>
+          {!small ? (
+            <Link destination="rencana://add-task">
+              <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(accent)]}>
+                + Add
+              </Text>
+            </Link>
+          ) : null}
         </VStack>
       </HStack>
 
@@ -159,7 +183,8 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
       )}
 
-    </VStack>
+      </VStack>
+    </ZStack>
   );
 }
 

@@ -309,6 +309,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     pinnedTaskIds,
     userName: user.name,
     theme,
+    themePack,
   });
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
@@ -966,29 +967,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme };
+  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack };
 
   // Solution C: Gate widget sync — only push to widgets once real data is loaded
   useEffect(() => {
     if (!dataReady) return; // Skip seed-data writes to widget
     let cancelled = false;
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (cancelled) return;
-      syncHomeScreenWidget({
-        tasks,
-        courses,
-        timetable,
-        pinnedTaskIds,
-        userName: user.name,
-        signedIn: Boolean(session?.user?.id),
-        themeId: theme,
-        maxTasks: 3,
+    const timer = setTimeout(() => {
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (cancelled) return;
+        syncHomeScreenWidget({
+          tasks,
+          courses,
+          timetable,
+          pinnedTaskIds,
+          userName: user.name,
+          signedIn: Boolean(session?.user?.id),
+          themeId: theme,
+          themePack,
+          maxTasks: 3,
+        });
       });
-    });
+    }, 500); // Debounce to prevent JSI pressure
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme]);
+  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme, themePack]);
 
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -1003,6 +1008,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           userName: r.userName,
           signedIn: Boolean(session?.user?.id),
           themeId: r.theme,
+          themePack: r.themePack,
           maxTasks: 3,
         });
       });
