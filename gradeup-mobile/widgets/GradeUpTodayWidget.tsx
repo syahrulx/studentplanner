@@ -252,7 +252,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   // ── MEDIUM / LARGE ──
-  const colMax  = large ? 4 : 3;
+  const colMax  = large ? 4 : 2;
   const colTask = p.tasks.slice(0, colMax);
   const colCls  = p.classes.slice(0, colMax);
 

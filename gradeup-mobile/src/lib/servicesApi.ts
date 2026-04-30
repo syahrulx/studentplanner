@@ -106,7 +106,7 @@ export interface ServiceFilters {
 export function formatPrice(p: Pick<ServicePost, 'price_type' | 'price_amount' | 'currency'>): string {
   if (p.price_type === 'free') return 'Free';
   if (p.price_type === 'fixed' && p.price_amount != null) {
-    return `${p.currency || 'MYR'} ${p.price_amount.toLocaleString()}`;
+    return `${p.currency === 'MYR' || !p.currency ? 'RM' : p.currency} ${p.price_amount.toLocaleString()}`;
   }
   return 'Negotiable';
 }
@@ -521,7 +521,84 @@ export async function setMyWhatsAppNumber(number: string | null): Promise<void> 
 /** Convenience: format the agreed price (uses accepted_amount when available). */
 export function formatAgreedPrice(s: ServicePost): string {
   if (s.accepted_amount != null) {
-    return `${s.currency || 'MYR'} ${Number(s.accepted_amount).toLocaleString()}`;
+    return `${s.currency === 'MYR' || !s.currency ? 'RM' : s.currency} ${Number(s.accepted_amount).toLocaleString()}`;
   }
   return formatPrice(s);
+}
+
+// ─── Service Chat ──────────────────────────────────────────────────────────
+
+export interface ServiceMessage {
+  id: string;
+  service_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  // joined fields
+  sender_name?: string;
+  sender_avatar?: string | null;
+}
+
+export async function fetchServiceMessages(serviceId: string): Promise<ServiceMessage[]> {
+  const { data, error } = await supabase
+    .from('service_chat_messages')
+    .select('*')
+    .eq('service_id', serviceId)
+    .order('created_at', { ascending: true });
+    
+  if (error) {
+    console.error('Failed to fetch service messages', error);
+    return [];
+  }
+  
+  const rows = (data ?? []) as ServiceMessage[];
+  if (!rows.length) return rows;
+  
+  // Enrich with sender profiles
+  const senderIds = [...new Set(rows.map(r => r.sender_id))];
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url')
+    .in('id', senderIds);
+    
+  const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
+  for (const r of rows) {
+    const p = pm.get(r.sender_id);
+    r.sender_name = p?.name || 'Unknown';
+    r.sender_avatar = p?.avatar_url || null;
+  }
+  
+  return rows;
+}
+
+export async function sendServiceMessage(serviceId: string, content: string): Promise<ServiceMessage | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  
+  const { data, error } = await supabase
+    .from('service_chat_messages')
+    .insert({
+      service_id: serviceId,
+      sender_id: user.id,
+      content: content.trim()
+    })
+    .select()
+    .single();
+    
+  if (error) throw error;
+  
+  const msg = data as ServiceMessage;
+  // Pre-fill my own profile since I just sent it
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('name, avatar_url')
+    .eq('id', user.id)
+    .single();
+    
+  if (prof) {
+    msg.sender_name = prof.name;
+    msg.sender_avatar = prof.avatar_url;
+  }
+  
+  return msg;
 }

@@ -30,13 +30,7 @@ import {
   formatAgreedPrice,
   statusMeta,
   getViewerRole,
-  buildWhatsAppLink,
-  type ServicePost,
-  type ServiceReview,
-  type ServiceOffer,
 } from '@/src/lib/servicesApi';
-
-const WHATSAPP_GREEN = '#25D366';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDateLong(iso: string) {
@@ -204,7 +198,7 @@ export default function ServiceDetailScreen() {
           onPress: () =>
             wrap('Accept offer', async () => {
               await servicesApi.acceptOffer(offer.id);
-            }, 'Offer accepted — you can now WhatsApp each other.'),
+            }, 'Offer accepted — you can now chat with each other.'),
         },
       ]
     );
@@ -237,20 +231,9 @@ export default function ServiceDetailScreen() {
       ]
     );
 
-  /** Opens WhatsApp chat with the other party once a service is claimed. */
-  const openWhatsAppWith = (otherNumber: string | null | undefined, otherName: string) => {
-    const greeting = `Hi ${otherName.split(' ')[0] || 'there'}, this is about your "${service.title}" on Rencana.`;
-    const url = buildWhatsAppLink(otherNumber, greeting);
-    if (!url) {
-      Alert.alert(
-        'No WhatsApp number',
-        `${otherName} hasn't added a WhatsApp number yet. Try messaging them in-app or wait for them to add one.`
-      );
-      return;
-    }
-    Linking.openURL(url).catch(() =>
-      Alert.alert('Could not open WhatsApp', 'Make sure WhatsApp is installed.')
-    );
+  /** Opens the in-app chat room once a service is claimed. */
+  const openChat = () => {
+    router.push(`/services/chat/${service.id}`);
   };
 
   const onUnclaim = () =>
@@ -485,7 +468,7 @@ export default function ServiceDetailScreen() {
               <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
             </View>
             <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>
-              <Feather name="dollar-sign" size={11} color={theme.primary} />
+              <Text style={[styles.metaChipText, { color: theme.primary, fontWeight: '900' }]}>RM</Text>
               <Text style={[styles.metaChipText, { color: theme.primary }]}>
                 {(isClaimed || isCompleted) ? formatAgreedPrice(service) : formatPrice(service)}
               </Text>
@@ -576,19 +559,19 @@ export default function ServiceDetailScreen() {
                   {service.author_university ? `  ·  ${service.author_university.toUpperCase()}` : ''}
                 </Text>
               </View>
-              {/* WhatsApp the requester (only if I'm the taker and a chat is in progress). */}
+              {/* Chat with the requester (only if I'm the taker and a chat is in progress). */}
               {role === 'taker' && (isClaimed || isCompleted) && service.author_id !== userId && (
                 <Pressable
-                  onPress={() => openWhatsAppWith(service.author_whatsapp, service.author_name || 'them')}
+                  onPress={openChat}
                   style={({ pressed }) => [
                     styles.waChip,
-                    { backgroundColor: WHATSAPP_GREEN },
+                    { backgroundColor: theme.primary },
                     pressed && { opacity: 0.85 },
                   ]}
-                  accessibilityLabel="WhatsApp the requester"
+                  accessibilityLabel="Message the requester"
                 >
                   <Feather name="message-circle" size={14} color="#fff" />
-                  <Text style={styles.waChipText}>WhatsApp</Text>
+                  <Text style={styles.waChipText}>Message</Text>
                 </Pressable>
               )}
             </View>
@@ -605,19 +588,19 @@ export default function ServiceDetailScreen() {
                       {service.service_kind === 'offer' ? 'Receiver' : 'Provider'}
                     </Text>
                   </View>
-                  {/* WhatsApp the taker (only if I'm the requester). */}
+                  {/* Chat with the taker (only if I'm the requester). */}
                   {role === 'requester' && (isClaimed || isCompleted) && service.claimed_by !== userId && (
                     <Pressable
-                      onPress={() => openWhatsAppWith(service.claimer_whatsapp, service.claimer_name || 'them')}
+                      onPress={openChat}
                       style={({ pressed }) => [
                         styles.waChip,
-                        { backgroundColor: WHATSAPP_GREEN },
+                        { backgroundColor: theme.primary },
                         pressed && { opacity: 0.85 },
                       ]}
-                      accessibilityLabel="WhatsApp the taker"
+                      accessibilityLabel="Message the taker"
                     >
                       <Feather name="message-circle" size={14} color="#fff" />
-                      <Text style={styles.waChipText}>WhatsApp</Text>
+                      <Text style={styles.waChipText}>Message</Text>
                     </Pressable>
                   )}
                 </View>

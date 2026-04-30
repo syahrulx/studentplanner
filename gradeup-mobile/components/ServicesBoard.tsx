@@ -357,7 +357,7 @@ export default function ServicesBoard() {
               </View>
 
               <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                <Feather name="dollar-sign" size={10} color={theme.text} />
+                <Text style={{ fontWeight: '900', fontSize: 10, marginRight: 2 }}>RM</Text>
                 <Text style={[styles.metaChipText, { color: theme.text }]}>
                   {formatPrice(item)}
                 </Text>
