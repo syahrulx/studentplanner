@@ -50,6 +50,8 @@ export interface ServicePost {
   service_category: string | null;
   price_type: PriceType | null;
   price_amount: number | null;
+  /** Snapshot of the agreed amount once an offer is accepted. */
+  accepted_amount?: number | null;
   currency: string | null;
   service_status: ServiceStatus;
   claimed_by: string | null;
@@ -62,8 +64,31 @@ export interface ServicePost {
   author_name?: string;
   author_avatar?: string | null;
   author_university?: string | null;
+  author_whatsapp?: string | null;
   claimer_name?: string;
   claimer_avatar?: string | null;
+  claimer_whatsapp?: string | null;
+}
+
+// ─── Offers (negotiation) ──────────────────────────────────────────────────
+
+export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+
+export interface ServiceOffer {
+  id: string;
+  service_id: string;
+  offerer_id: string;
+  amount: number | null;
+  currency: string | null;
+  message: string | null;
+  status: OfferStatus;
+  created_at: string;
+  updated_at: string;
+
+  // joined
+  offerer_name?: string;
+  offerer_avatar?: string | null;
+  offerer_whatsapp?: string | null;
 }
 
 export interface ServiceFilters {
@@ -138,7 +163,7 @@ async function enrichWithProfiles(rows: ServicePost[]): Promise<ServicePost[]> {
 
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, avatar_url, university')
+    .select('id, name, avatar_url, university, whatsapp_number')
     .in('id', Array.from(ids));
 
   const map = new Map((profs ?? []).map((p: any) => [p.id, p]));
@@ -147,11 +172,13 @@ async function enrichWithProfiles(rows: ServicePost[]): Promise<ServicePost[]> {
     r.author_name = a?.name || 'Unknown';
     r.author_avatar = a?.avatar_url || null;
     r.author_university = a?.university || null;
+    r.author_whatsapp = a?.whatsapp_number || null;
 
     if (r.claimed_by) {
       const c = map.get(r.claimed_by);
       r.claimer_name = c?.name || 'Unknown';
       r.claimer_avatar = c?.avatar_url || null;
+      r.claimer_whatsapp = c?.whatsapp_number || null;
     }
   }
   return rows;
@@ -344,4 +371,157 @@ export function getViewerRole(s: ServicePost, viewerId?: string | null): ViewerR
   if (s.author_id === viewerId) return 'requester';
   if (s.claimed_by === viewerId) return 'taker';
   return 'observer';
+}
+
+// ─── Offer RPCs ────────────────────────────────────────────────────────────
+
+/** Fetch all offers for a service (pending first, then by amount/created). */
+export async function fetchOffersForService(serviceId: string): Promise<ServiceOffer[]> {
+  const { data, error } = await supabase
+    .from('service_offers')
+    .select('*')
+    .eq('service_id', serviceId)
+    .order('status', { ascending: true })
+    .order('amount', { ascending: true })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  const rows = (data ?? []) as ServiceOffer[];
+  if (!rows.length) return rows;
+
+  const offererIds = [...new Set(rows.map((r) => r.offerer_id))];
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url, whatsapp_number')
+    .in('id', offererIds);
+  const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
+  for (const r of rows) {
+    const p = pm.get(r.offerer_id);
+    r.offerer_name = p?.name || 'Unknown';
+    r.offerer_avatar = p?.avatar_url || null;
+    r.offerer_whatsapp = p?.whatsapp_number || null;
+  }
+  return rows;
+}
+
+/** Returns the current viewer's pending offer on a service, if any. */
+export async function fetchMyPendingOffer(serviceId: string): Promise<ServiceOffer | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from('service_offers')
+    .select('*')
+    .eq('service_id', serviceId)
+    .eq('offerer_id', user.id)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (error) return null;
+  return (data as ServiceOffer) || null;
+}
+
+export async function makeOffer(input: {
+  service_id: string;
+  amount: number | null;
+  message?: string | null;
+}): Promise<ServiceOffer> {
+  const { data, error } = await supabase.rpc('make_service_offer', {
+    p_service_id: input.service_id,
+    p_amount: input.amount,
+    p_message: input.message || null,
+  });
+  if (error) throw error;
+  return data as ServiceOffer;
+}
+
+export async function withdrawOffer(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('withdraw_service_offer', { p_offer_id: offerId });
+  if (error) throw error;
+}
+
+export async function rejectOffer(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('reject_service_offer', { p_offer_id: offerId });
+  if (error) throw error;
+}
+
+export async function acceptOffer(offerId: string): Promise<ServicePost> {
+  const { data, error } = await supabase.rpc('accept_service_offer', { p_offer_id: offerId });
+  if (error) throw error;
+  return data as ServicePost;
+}
+
+// ─── WhatsApp handoff ──────────────────────────────────────────────────────
+
+/**
+ * Normalize a phone number to a `wa.me`-compatible E.164-ish digits-only form.
+ *
+ * Rules:
+ *  • If the raw input starts with `+`, we trust the user's country code and
+ *    just return the digits — this preserves SG/ID/US numbers etc.
+ *  • Otherwise we treat it as a Malaysian local number (the app is
+ *    Malaysia-first), strip a leading 0, and prepend `60`.
+ *
+ * Returns null when the input doesn't look like a valid phone.
+ */
+export function normalizeWhatsAppNumber(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const hadPlus = trimmed.startsWith('+');
+  let digits = trimmed.replace(/\D/g, '');
+  if (!digits) return null;
+
+  if (hadPlus) {
+    if (digits.length < 8) return null;
+    return digits;
+  }
+
+  // No + prefix → assume Malaysian local. Drop leading zeros and require
+  // at least 9 digits (typical mobile is 9–10 after stripping the 0).
+  if (digits.startsWith('0')) digits = digits.replace(/^0+/, '');
+  if (digits.length < 9) return null;
+  // Already starts with the MY country code? Keep as-is; otherwise prepend it.
+  if (digits.startsWith('60') && digits.length >= 10) return digits;
+  return `60${digits}`;
+}
+
+export function buildWhatsAppLink(
+  rawNumber: string | null | undefined,
+  message?: string,
+): string | null {
+  const norm = normalizeWhatsAppNumber(rawNumber);
+  if (!norm) return null;
+  const text = message ? `?text=${encodeURIComponent(message)}` : '';
+  return `https://wa.me/${norm}${text}`;
+}
+
+export async function getMyWhatsAppNumber(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from('profiles')
+    .select('whatsapp_number')
+    .eq('id', user.id)
+    .maybeSingle();
+  return (data?.whatsapp_number as string | null) || null;
+}
+
+export async function setMyWhatsAppNumber(number: string | null): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const value = number?.trim() || null;
+  const { error } = await supabase
+    .from('profiles')
+    .update({ whatsapp_number: value })
+    .eq('id', user.id);
+  if (error) throw error;
+}
+
+/** Convenience: format the agreed price (uses accepted_amount when available). */
+export function formatAgreedPrice(s: ServicePost): string {
+  if (s.accepted_amount != null) {
+    return `${s.currency || 'MYR'} ${Number(s.accepted_amount).toLocaleString()}`;
+  }
+  return formatPrice(s);
 }

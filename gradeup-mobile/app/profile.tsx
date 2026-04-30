@@ -34,6 +34,7 @@ import type { SubscriptionPlan } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { getMyWhatsAppNumber, setMyWhatsAppNumber, normalizeWhatsAppNumber } from '@/src/lib/servicesApi';
 
 export default function Profile() {
   const {
@@ -73,6 +74,51 @@ export default function Profile() {
     'name' | 'studentId' | 'program' | 'campus' | 'faculty' | 'portalSemester' | null
   >(null);
   const [editModalKeyboardType, setEditModalKeyboardType] = useState<'default' | 'number-pad'>('default');
+
+  // WhatsApp number — used to enable the "Chat on WhatsApp" handoff in the
+  // services marketplace once an offer is accepted.
+  const [whatsappNumber, setWhatsappNumber] = useState<string | null>(null);
+  const [waModalVisible, setWaModalVisible] = useState(false);
+  const [waModalValue, setWaModalValue] = useState('');
+  const [waSaving, setWaSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMyWhatsAppNumber()
+      .then((n) => {
+        if (!cancelled) setWhatsappNumber(n);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openWhatsappEditor = () => {
+    setWaModalValue(whatsappNumber || '');
+    setWaModalVisible(true);
+  };
+
+  const handleSaveWhatsapp = async () => {
+    const trimmed = waModalValue.trim();
+    if (trimmed && !normalizeWhatsAppNumber(trimmed)) {
+      Alert.alert(
+        'Invalid number',
+        'Please enter a valid WhatsApp number with country code (e.g. +60 12 345 6789).'
+      );
+      return;
+    }
+    setWaSaving(true);
+    try {
+      await setMyWhatsAppNumber(trimmed || null);
+      setWhatsappNumber(trimmed || null);
+      setWaModalVisible(false);
+    } catch (e: any) {
+      Alert.alert('Could not save', e?.message || 'Please try again.');
+    } finally {
+      setWaSaving(false);
+    }
+  };
 
   const subscriptionTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -370,6 +416,28 @@ export default function Profile() {
             <Feather name="edit-2" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
           </Pressable>
         </View>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>CONTACT</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={openWhatsappEditor}
+        >
+          <Text style={[styles.cardLabel, { color: theme.text }]}>WhatsApp number</Text>
+          <View style={styles.cardValueWrap}>
+            <Text
+              style={[
+                styles.cardValue,
+                { color: whatsappNumber ? theme.textSecondary : theme.primary },
+              ]}
+              numberOfLines={1}
+            >
+              {whatsappNumber || 'Add number'}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
       </View>
 
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACADEMIC INFO</Text>
@@ -676,6 +744,59 @@ export default function Profile() {
                 disabled={isUpdating}
               >
                 <Text style={styles.modalBtnSaveText}>{T('save')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={waModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWaModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setWaModalVisible(false)} />
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>WhatsApp number</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>
+              Used so people you trade services with can chat you on WhatsApp. Include country code (e.g. +60 12 345 6789). Leave empty to remove.
+            </Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundSecondary || theme.background },
+              ]}
+              value={waModalValue}
+              onChangeText={setWaModalValue}
+              autoFocus
+              keyboardType="phone-pad"
+              editable={!waSaving}
+              placeholder="+60 12 345 6789"
+              placeholderTextColor={theme.textSecondary}
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: theme.border }]}
+                onPress={() => setWaModalVisible(false)}
+                disabled={waSaving}
+              >
+                <Text style={[styles.modalBtnCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnSave, { backgroundColor: theme.primary }]}
+                onPress={handleSaveWhatsapp}
+                disabled={waSaving}
+              >
+                {waSaving ? (
+                  <ActivityIndicator size="small" color={theme.textInverse || '#fff'} />
+                ) : (
+                  <Text style={styles.modalBtnSaveText}>{T('save')}</Text>
+                )}
               </Pressable>
             </View>
           </View>

@@ -12,6 +12,7 @@ import {
   Modal,
   TextInput,
   ActionSheetIOS,
+  Linking,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,11 +27,16 @@ import * as servicesApi from '@/src/lib/servicesApi';
 import {
   getCategory,
   formatPrice,
+  formatAgreedPrice,
   statusMeta,
   getViewerRole,
+  buildWhatsAppLink,
   type ServicePost,
   type ServiceReview,
+  type ServiceOffer,
 } from '@/src/lib/servicesApi';
+
+const WHATSAPP_GREEN = '#25D366';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDateLong(iso: string) {
@@ -59,6 +65,7 @@ export default function ServiceDetailScreen() {
 
   const [service, setService] = useState<ServicePost | null>(null);
   const [reviews, setReviews] = useState<ServiceReview[]>([]);
+  const [offers, setOffers] = useState<ServiceOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
 
@@ -67,15 +74,23 @@ export default function ServiceDetailScreen() {
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
+  // Offer state
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerAmount, setOfferAmount] = useState('');
+  const [offerMessage, setOfferMessage] = useState('');
+  const [offerSubmitting, setOfferSubmitting] = useState(false);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [s, r] = await Promise.all([
+      const [s, r, o] = await Promise.all([
         servicesApi.fetchService(id),
         servicesApi.fetchReviewsForService(id),
+        servicesApi.fetchOffersForService(id),
       ]);
       setService(s);
       setReviews(r);
+      setOffers(o);
     } catch (e) {
       console.error('[ServiceDetail] load error:', e);
     }
@@ -121,6 +136,7 @@ export default function ServiceDetailScreen() {
     }
   };
 
+  /** For "free" services, claim directly (no negotiation needed). */
   const onClaim = () =>
     Alert.alert(
       service.service_kind === 'offer' ? 'Take this offer?' : 'Take this request?',
@@ -132,6 +148,110 @@ export default function ServiceDetailScreen() {
         { text: 'Take it', onPress: () => wrap('Claim', () => servicesApi.claimService(service.id)) },
       ]
     );
+
+  /** Open the offer modal pre-filled with the asking price (if any). */
+  const openOfferModal = () => {
+    const myPending = offers.find((o) => o.offerer_id === userId && o.status === 'pending');
+    if (myPending) {
+      setOfferAmount(myPending.amount != null ? String(myPending.amount) : '');
+      setOfferMessage(myPending.message || '');
+    } else if (service.price_type === 'fixed' && service.price_amount != null) {
+      setOfferAmount(String(service.price_amount));
+      setOfferMessage('');
+    } else {
+      setOfferAmount('');
+      setOfferMessage('');
+    }
+    setOfferOpen(true);
+  };
+
+  const submitOffer = async () => {
+    if (!service) return;
+    const trimmed = offerAmount.trim();
+    const amount = trimmed === '' ? null : Number(trimmed);
+    if (trimmed !== '' && (Number.isNaN(amount) || (amount as number) < 0)) {
+      Alert.alert('Invalid amount', 'Please enter a valid number.');
+      return;
+    }
+    setOfferSubmitting(true);
+    try {
+      await servicesApi.makeOffer({
+        service_id: service.id,
+        amount,
+        message: offerMessage.trim() || null,
+      });
+      setOfferOpen(false);
+      setOfferAmount('');
+      setOfferMessage('');
+      await load();
+    } catch (e: any) {
+      Alert.alert('Could not send offer', e.message || 'Something went wrong');
+    } finally {
+      setOfferSubmitting(false);
+    }
+  };
+
+  const onAcceptOffer = (offer: ServiceOffer) =>
+    Alert.alert(
+      'Accept this offer?',
+      `You're agreeing to ${offer.offerer_name} at ${
+        offer.amount != null ? `${offer.currency || 'MYR'} ${Number(offer.amount).toLocaleString()}` : 'their proposed terms'
+      }. Other pending offers will be auto-rejected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept',
+          onPress: () =>
+            wrap('Accept offer', async () => {
+              await servicesApi.acceptOffer(offer.id);
+            }, 'Offer accepted — you can now WhatsApp each other.'),
+        },
+      ]
+    );
+
+  const onRejectOffer = (offer: ServiceOffer) =>
+    Alert.alert(
+      'Reject this offer?',
+      `${offer.offerer_name}'s offer will be marked as rejected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: () => wrap('Reject offer', () => servicesApi.rejectOffer(offer.id)),
+        },
+      ]
+    );
+
+  const onWithdrawOffer = (offer: ServiceOffer) =>
+    Alert.alert(
+      'Withdraw your offer?',
+      'You can submit a new one later if the service is still open.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Withdraw',
+          style: 'destructive',
+          onPress: () => wrap('Withdraw offer', () => servicesApi.withdrawOffer(offer.id)),
+        },
+      ]
+    );
+
+  /** Opens WhatsApp chat with the other party once a service is claimed. */
+  const openWhatsAppWith = (otherNumber: string | null | undefined, otherName: string) => {
+    const greeting = `Hi ${otherName.split(' ')[0] || 'there'}, this is about your "${service.title}" on Rencana.`;
+    const url = buildWhatsAppLink(otherNumber, greeting);
+    if (!url) {
+      Alert.alert(
+        'No WhatsApp number',
+        `${otherName} hasn't added a WhatsApp number yet. Try messaging them in-app or wait for them to add one.`
+      );
+      return;
+    }
+    Linking.openURL(url).catch(() =>
+      Alert.alert('Could not open WhatsApp', 'Make sure WhatsApp is installed.')
+    );
+  };
 
   const onUnclaim = () =>
     Alert.alert(
@@ -228,12 +348,35 @@ export default function ServiceDetailScreen() {
   // ─── CTA config based on (role, status) ──────────────────────────────────
   // Requester actions (edit/cancel) live in the action sheet via the "more" button,
   // so the bottom CTA is reserved for primary forward actions only.
+  const myPendingOffer = offers.find((o) => o.offerer_id === userId && o.status === 'pending');
+  const isFreeService = service.price_type === 'free';
   const cta: { label: string; icon: string; onPress: () => void; color: string; secondary?: boolean } | null = (() => {
     if (role === 'observer' && isOpen) {
+      // Free services: skip negotiation; one-tap claim.
+      if (isFreeService) {
+        return {
+          label: service.service_kind === 'offer' ? 'Take this offer' : 'Take this request',
+          icon: 'check',
+          onPress: onClaim,
+          color: theme.primary,
+        };
+      }
+      // Already submitted an offer — let them edit or withdraw via the modal.
+      if (myPendingOffer) {
+        return {
+          label: 'Update your offer',
+          icon: 'edit-2',
+          onPress: openOfferModal,
+          color: theme.primary,
+          secondary: true,
+        };
+      }
+      // Fixed price: encourage acceptance at asking price; modal pre-fills it.
+      // Negotiable: prompt user to propose an amount.
       return {
-        label: service.service_kind === 'offer' ? 'Take this offer' : 'Take this request',
-        icon: 'check',
-        onPress: onClaim,
+        label: service.price_type === 'fixed' ? 'Accept this price' : 'Make an offer',
+        icon: 'tag',
+        onPress: openOfferModal,
         color: theme.primary,
       };
     }
@@ -341,9 +484,11 @@ export default function ServiceDetailScreen() {
               <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
               <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
             </View>
-            <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-              <Feather name="dollar-sign" size={11} color={theme.text} />
-              <Text style={[styles.metaChipText, { color: theme.text }]}>{formatPrice(service)}</Text>
+            <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>
+              <Feather name="dollar-sign" size={11} color={theme.primary} />
+              <Text style={[styles.metaChipText, { color: theme.primary }]}>
+                {(isClaimed || isCompleted) ? formatAgreedPrice(service) : formatPrice(service)}
+              </Text>
             </View>
             {service.deadline_at && (
               <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
@@ -431,6 +576,21 @@ export default function ServiceDetailScreen() {
                   {service.author_university ? `  ·  ${service.author_university.toUpperCase()}` : ''}
                 </Text>
               </View>
+              {/* WhatsApp the requester (only if I'm the taker and a chat is in progress). */}
+              {role === 'taker' && (isClaimed || isCompleted) && service.author_id !== userId && (
+                <Pressable
+                  onPress={() => openWhatsAppWith(service.author_whatsapp, service.author_name || 'them')}
+                  style={({ pressed }) => [
+                    styles.waChip,
+                    { backgroundColor: WHATSAPP_GREEN },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  accessibilityLabel="WhatsApp the requester"
+                >
+                  <Feather name="message-circle" size={14} color="#fff" />
+                  <Text style={styles.waChipText}>WhatsApp</Text>
+                </Pressable>
+              )}
             </View>
             {service.claimed_by && (
               <>
@@ -445,11 +605,131 @@ export default function ServiceDetailScreen() {
                       {service.service_kind === 'offer' ? 'Receiver' : 'Provider'}
                     </Text>
                   </View>
+                  {/* WhatsApp the taker (only if I'm the requester). */}
+                  {role === 'requester' && (isClaimed || isCompleted) && service.claimed_by !== userId && (
+                    <Pressable
+                      onPress={() => openWhatsAppWith(service.claimer_whatsapp, service.claimer_name || 'them')}
+                      style={({ pressed }) => [
+                        styles.waChip,
+                        { backgroundColor: WHATSAPP_GREEN },
+                        pressed && { opacity: 0.85 },
+                      ]}
+                      accessibilityLabel="WhatsApp the taker"
+                    >
+                      <Feather name="message-circle" size={14} color="#fff" />
+                      <Text style={styles.waChipText}>WhatsApp</Text>
+                    </Pressable>
+                  )}
                 </View>
               </>
             )}
           </View>
         </View>
+
+        {/* Offers (negotiation) */}
+        {(() => {
+          const pendingOffers = offers.filter((o) => o.status === 'pending');
+          const myOffer = offers.find((o) => o.offerer_id === userId && o.status === 'pending');
+          const showAsRequester = role === 'requester' && isOpen && pendingOffers.length > 0;
+          const showAsObserver = role === 'observer' && !!myOffer;
+          if (!showAsRequester && !showAsObserver) return null;
+
+          // What the requester sees: every pending offer with accept/reject controls.
+          // What an offerer sees: only their own pending offer with edit/withdraw.
+          const visible = showAsRequester ? pendingOffers : myOffer ? [myOffer] : [];
+
+          return (
+            <View style={styles.section}>
+              <View style={styles.offersHeaderRow}>
+                <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginBottom: 0 }]}>
+                  {showAsRequester ? `OFFERS · ${pendingOffers.length}` : 'YOUR OFFER'}
+                </Text>
+              </View>
+
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                {visible.map((o, idx) => {
+                  const amountLabel =
+                    o.amount != null
+                      ? `${o.currency || 'MYR'} ${Number(o.amount).toLocaleString()}`
+                      : 'Open to your terms';
+                  const isMine = o.offerer_id === userId;
+                  return (
+                    <React.Fragment key={o.id}>
+                      {idx > 0 && (
+                        <View style={[styles.timelineSep, { backgroundColor: theme.border, marginLeft: 16 + 36 + 10 }]} />
+                      )}
+                      <View style={styles.offerRow}>
+                        <Avatar name={o.offerer_name} avatarUrl={o.offerer_avatar || undefined} size={36} />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={[styles.offerName, { color: theme.text }]}>
+                            {isMine ? 'You' : o.offerer_name || 'Someone'}
+                          </Text>
+                          <Text style={[styles.offerAmount, { color: theme.primary }]}>{amountLabel}</Text>
+                          {o.message ? (
+                            <Text style={[styles.offerMsg, { color: theme.textSecondary }]} numberOfLines={3}>
+                              {o.message}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {showAsRequester ? (
+                          <View style={styles.offerActions}>
+                            <Pressable
+                              onPress={() => onRejectOffer(o)}
+                              disabled={acting}
+                              style={({ pressed }) => [
+                                styles.offerBtnGhost,
+                                { borderColor: theme.border },
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Feather name="x" size={14} color={theme.textSecondary} />
+                            </Pressable>
+                            <Pressable
+                              onPress={() => onAcceptOffer(o)}
+                              disabled={acting}
+                              style={({ pressed }) => [
+                                styles.offerBtnSolid,
+                                { backgroundColor: theme.primary },
+                                pressed && { opacity: 0.85 },
+                              ]}
+                            >
+                              <Feather name="check" size={14} color={theme.textInverse} />
+                              <Text style={[styles.offerBtnSolidText, { color: theme.textInverse }]}>Accept</Text>
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <View style={styles.offerActions}>
+                            <Pressable
+                              onPress={openOfferModal}
+                              style={({ pressed }) => [
+                                styles.offerBtnGhost,
+                                { borderColor: theme.border },
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Feather name="edit-2" size={14} color={theme.text} />
+                            </Pressable>
+                            <Pressable
+                              onPress={() => onWithdrawOffer(o)}
+                              style={({ pressed }) => [
+                                styles.offerBtnGhost,
+                                { borderColor: theme.border },
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Feather name="trash-2" size={14} color={theme.danger} />
+                            </Pressable>
+                          </View>
+                        )}
+                      </View>
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* Reviews */}
         {(reviews.length > 0 || canReview) && (
@@ -589,6 +869,74 @@ export default function ServiceDetailScreen() {
                 <ActivityIndicator size="small" color={theme.textInverse} />
               ) : (
                 <Text style={[styles.reviewSubmitText, { color: theme.textInverse }]}>Submit</Text>
+              )}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Offer modal */}
+      <Modal visible={offerOpen} transparent animationType="slide" onRequestClose={() => setOfferOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setOfferOpen(false)}>
+          <Pressable
+            style={[styles.sheet, { backgroundColor: theme.card }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.grabber} />
+            <Text style={[styles.sheetTitle, { color: theme.text }]}>
+              {myPendingOffer ? 'Update your offer' : service.price_type === 'fixed' ? 'Accept this price' : 'Make an offer'}
+            </Text>
+            <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
+              {service.price_type === 'fixed' && service.price_amount != null
+                ? `Asking price is ${service.currency || 'MYR'} ${Number(service.price_amount).toLocaleString()}. Match it or counter.`
+                : 'Propose what you\u2019re willing to do this for.'}
+            </Text>
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>AMOUNT ({service.currency || 'MYR'})</Text>
+            <View style={[styles.amountField, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+              <Text style={[styles.amountPrefix, { color: theme.textSecondary }]}>{service.currency || 'MYR'}</Text>
+              <TextInput
+                style={[styles.amountFieldInput, { color: theme.text }]}
+                placeholder="0.00"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="decimal-pad"
+                value={offerAmount}
+                onChangeText={setOfferAmount}
+              />
+              {offerAmount ? (
+                <Pressable onPress={() => setOfferAmount('')} hitSlop={8}>
+                  <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>MESSAGE (OPTIONAL)</Text>
+            <TextInput
+              style={[styles.reviewInput, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border }]}
+              placeholder="e.g. I can do it tonight after class"
+              placeholderTextColor={theme.textSecondary}
+              value={offerMessage}
+              onChangeText={setOfferMessage}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Pressable
+              onPress={submitOffer}
+              disabled={offerSubmitting}
+              style={({ pressed }) => [
+                styles.reviewSubmit,
+                { backgroundColor: theme.primary },
+                pressed && { opacity: 0.85 },
+                offerSubmitting && { opacity: 0.5 },
+              ]}
+            >
+              {offerSubmitting ? (
+                <ActivityIndicator size="small" color={theme.textInverse} />
+              ) : (
+                <Text style={[styles.reviewSubmitText, { color: theme.textInverse }]}>
+                  {myPendingOffer ? 'Update offer' : 'Send offer'}
+                </Text>
               )}
             </Pressable>
           </Pressable>
@@ -828,4 +1176,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reviewSubmitText: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+
+  // Offer modal field
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginTop: 18,
+    marginBottom: 8,
+    paddingLeft: 4,
+  },
+  amountField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  amountPrefix: { fontSize: 14, fontWeight: '600' },
+  amountFieldInput: { flex: 1, fontSize: 17, fontWeight: '600', padding: 0 },
+
+  // Offers section
+  offersHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingLeft: 4,
+  },
+  offerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  offerName: { fontSize: 14, fontWeight: '600', letterSpacing: -0.1 },
+  offerAmount: { fontSize: 13, fontWeight: '700', marginTop: 2, letterSpacing: -0.1 },
+  offerMsg: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  offerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 6 },
+  offerBtnGhost: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offerBtnSolid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  offerBtnSolidText: { fontSize: 12, fontWeight: '700', letterSpacing: -0.1 },
+
+  // WhatsApp chip in PEOPLE rows
+  waChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  waChipText: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: -0.1 },
 });
