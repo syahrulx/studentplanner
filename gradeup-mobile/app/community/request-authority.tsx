@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -30,14 +32,32 @@ export default function RequestAuthorityScreen() {
   const [existingRequest, setExistingRequest] = useState<eventsApi.AuthorityRequest | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
+  const [organizations, setOrganizations] = useState<eventsApi.Organization[]>([]);
+  const [selectedCampusId, setSelectedCampusId] = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerData, setPickerData] = useState<{ id: string; name: string }[]>([]);
+  const [pickerTitle, setPickerTitle] = useState('');
+  const [pickerOnSelect, setPickerOnSelect] = useState<(id: string) => void>(() => () => {});
+
   const userUni = (user as any)?.university_id || (user as any)?.universityId || '';
 
   useEffect(() => {
-    eventsApi.getMyAuthorityRequest().then((req) => {
+    Promise.all([
+      eventsApi.getMyAuthorityRequest(),
+      userUni ? eventsApi.fetchCampuses(userUni) : Promise.resolve([]),
+      userUni ? eventsApi.fetchOrganizations(userUni) : Promise.resolve([])
+    ]).then(([req, camps, orgs]) => {
       setExistingRequest(req);
+      setCampuses(camps);
+      setOrganizations(orgs);
       setLoading(false);
     });
-  }, []);
+  }, [userUni]);
+
+  const availableOrgs = organizations.filter(o => !o.campus_id || o.campus_id === selectedCampusId);
 
   const pickProofImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -68,6 +88,8 @@ export default function RequestAuthorityScreen() {
     try {
       await eventsApi.requestAuthority({
         university_id: userUni,
+        campus_id: selectedCampusId || undefined,
+        organization_id: selectedOrgId || undefined,
         role_title: roleTitle.trim(),
         justification: justification.trim(),
         proof_uri: proofUri,
@@ -155,6 +177,39 @@ export default function RequestAuthorityScreen() {
         {/* Form (hide if approved or pending) */}
         {(!existingRequest || existingRequest.status === 'rejected') && (
           <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>CAMPUS (OPTIONAL)</Text>
+            <Pressable
+              style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, justifyContent: 'center' }]}
+              onPress={() => {
+                setPickerTitle('Select Campus');
+                setPickerData([{ id: '', name: 'None' }, ...campuses]);
+                setPickerOnSelect(() => (id: string) => {
+                  setSelectedCampusId(id || null);
+                  setSelectedOrgId(null); // reset org when campus changes
+                });
+                setPickerVisible(true);
+              }}
+            >
+              <Text style={{ color: selectedCampusId ? theme.text : theme.textSecondary, fontSize: 15 }}>
+                {selectedCampusId ? campuses.find(c => c.id === selectedCampusId)?.name : 'Select your campus...'}
+              </Text>
+            </Pressable>
+
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>ORGANIZATION / CLUB (OPTIONAL)</Text>
+            <Pressable
+              style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, justifyContent: 'center' }]}
+              onPress={() => {
+                setPickerTitle('Select Organization');
+                setPickerData([{ id: '', name: 'None' }, ...availableOrgs]);
+                setPickerOnSelect(() => (id: string) => setSelectedOrgId(id || null));
+                setPickerVisible(true);
+              }}
+            >
+              <Text style={{ color: selectedOrgId ? theme.text : theme.textSecondary, fontSize: 15 }}>
+                {selectedOrgId ? organizations.find(o => o.id === selectedOrgId)?.name : 'Select organization...'}
+              </Text>
+            </Pressable>
+
             <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>JAWATAN (POSITION) *</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
@@ -225,6 +280,34 @@ export default function RequestAuthorityScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Reusable Picker Modal */}
+      <Modal visible={pickerVisible} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={e => e.stopPropagation()}>
+            <View style={styles.grabber} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: theme.text }]}>{pickerTitle}</Text>
+            </View>
+            <FlatList
+              data={pickerData}
+              keyExtractor={item => item.id}
+              style={{ maxHeight: 400 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.sheetItem, { borderBottomColor: theme.border }]}
+                  onPress={() => {
+                    pickerOnSelect(item.id);
+                    setPickerVisible(false);
+                  }}
+                >
+                  <Text style={[styles.sheetItemText, { color: theme.text }]}>{item.name}</Text>
+                </Pressable>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -312,4 +395,37 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    maxHeight: '80%',
+  },
+  grabber: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#cbd5e1',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+  },
+  sheetHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  sheetTitle: { fontSize: 16, fontWeight: '700' },
+  sheetItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetItemText: { fontSize: 16 },
 });

@@ -15,6 +15,8 @@ export interface CommunityPost {
   image_url: string | null;
   university_id: string | null;
   campus: string | null;
+  campus_id: string | null;
+  organization_id: string | null;
   event_date: string | null;
   event_time: string | null;
   location: string | null;
@@ -33,6 +35,8 @@ export interface AuthorityRequest {
   id: string;
   user_id: string;
   university_id: string | null;
+  campus_id: string | null;
+  organization_id: string | null;
   role_title: string;
   justification: string | null;
   status: 'pending' | 'approved' | 'rejected';
@@ -44,6 +48,8 @@ export interface AuthorityRequest {
 export interface PostFilters {
   universityId?: string | null;
   campus?: string | null;
+  campusId?: string | null;
+  organizationId?: string | null;
   date?: string | null;
   postType?: PostType | null;
   limit?: number;
@@ -53,7 +59,7 @@ export interface PostFilters {
 // ─── Fetch Posts ─────────────────────────────────────────────────────────────
 
 export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPost[]> {
-  const { universityId, campus, date, postType, limit = 50, offset = 0 } = filters;
+  const { universityId, campus, campusId, organizationId, date, postType, limit = 50, offset = 0 } = filters;
 
   let query = supabase
     .from('community_posts')
@@ -69,6 +75,12 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
   }
   if (campus) {
     query = query.eq('campus', campus);
+  }
+  if (campusId) {
+    query = query.eq('campus_id', campusId);
+  }
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId);
   }
   if (postType) {
     query = query.eq('post_type', postType);
@@ -172,6 +184,8 @@ export interface CreatePostInput {
   image_uri?: string; // local URI — will be uploaded
   university_id?: string;
   campus?: string;
+  campus_id?: string;
+  organization_id?: string;
   event_date?: string;
   event_time?: string;
   location?: string;
@@ -197,6 +211,8 @@ export async function createPost(input: CreatePostInput): Promise<CommunityPost>
       image_url,
       university_id: input.university_id || null,
       campus: input.campus || null,
+      campus_id: input.campus_id || null,
+      organization_id: input.organization_id || null,
       event_date: input.event_date || null,
       event_time: input.event_time || null,
       location: input.location?.trim() || null,
@@ -252,6 +268,8 @@ export async function getMyAuthorityStatus(): Promise<'approved' | 'pending' | '
 
 export async function requestAuthority(input: {
   university_id: string;
+  campus_id?: string;
+  organization_id?: string;
   role_title: string;
   justification: string;
   proof_uri?: string;
@@ -271,6 +289,8 @@ export async function requestAuthority(input: {
     .insert({
       user_id: user.id,
       university_id: input.university_id,
+      campus_id: input.campus_id || null,
+      organization_id: input.organization_id || null,
       role_title: input.role_title.trim(),
       justification: input.justification.trim(),
       proof_url,
@@ -301,4 +321,57 @@ export async function getMyAuthorityRequest(): Promise<AuthorityRequest | null> 
 
   if (error || !data) return null;
   return data as AuthorityRequest;
+}
+
+// ─── Fetch Campuses & Organizations ─────────────────────────────────────────
+
+export interface University {
+  id: string;
+  name: string;
+}
+
+export interface Campus {
+  id: string;
+  university_id: string;
+  name: string;
+}
+
+export interface Organization {
+  id: string;
+  university_id: string;
+  campus_id: string | null;
+  name: string;
+}
+
+export async function fetchUniversities(): Promise<University[]> {
+  const { data, error } = await supabase
+    .from('universities')
+    .select('id, name')
+    .order('name');
+  if (error) throw error;
+  return data as University[];
+}
+
+export async function fetchCampuses(universityId: string): Promise<Campus[]> {
+  const { data, error } = await supabase
+    .from('campuses')
+    .select('*')
+    .eq('university_id', universityId)
+    .order('name');
+  if (error) throw error;
+  return data as Campus[];
+}
+
+export async function fetchOrganizations(universityId: string, campusId?: string): Promise<Organization[]> {
+  let query = supabase
+    .from('organizations')
+    .select('*')
+    .eq('university_id', universityId)
+    .order('name');
+  if (campusId) {
+    query = query.eq('campus_id', campusId);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data as Organization[];
 }

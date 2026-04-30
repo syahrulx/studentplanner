@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TextInput,
   Platform,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -89,6 +90,8 @@ function formatTime(t?: string | null): string | null {
 
 export default function EventsBoard() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const CARD_WIDTH = (width - 32 - 12) / 2; // 32 for padding (16*2), 12 for gap
   const { user } = useApp();
   const dark = isDarkTheme(theme.id);
 
@@ -102,31 +105,92 @@ export default function EventsBoard() {
 
   // Advanced filters
   const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
-  const [filterCampus, setFilterCampus] = useState<string | null>(null);
+  const [filterCampusId, setFilterCampusId] = useState<string | null>(null);
+  const [filterOrgId, setFilterOrgId] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState<string | null>(null);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [tempUni, setTempUni] = useState('');
-  const [tempCampus, setTempCampus] = useState('');
+  const [tempUni, setTempUni] = useState<string | null>(null);
+  const [tempCampusId, setTempCampusId] = useState<string | null>(null);
+  const [tempOrgId, setTempOrgId] = useState<string | null>(null);
   const [tempDate, setTempDate] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  const [universities, setUniversities] = useState<eventsApi.University[]>([]);
+  const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
+  const [organizations, setOrganizations] = useState<eventsApi.Organization[]>([]);
+
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerData, setPickerData] = useState<{ id: string; name: string }[]>([]);
+  const [pickerTitle, setPickerTitle] = useState('');
+  const [pickerOnSelect, setPickerOnSelect] = useState<(id: string) => void>(() => () => {});
+
   const activeUni = filterUniversity !== null ? filterUniversity : userUni;
-  const hasAdvancedFilter = filterUniversity !== null || !!filterCampus || !!filterDate;
+  const hasAdvancedFilter = filterUniversity !== null || !!filterCampusId || !!filterOrgId || !!filterDate;
+
+  useEffect(() => {
+    eventsApi.fetchUniversities().then(setUniversities);
+  }, []);
+
+  const currentUniToFetch = showFilterModal ? tempUni : activeUni;
+
+  // Fetch campuses and organizations when active filter university changes
+  useEffect(() => {
+    if (currentUniToFetch) {
+      Promise.all([
+        eventsApi.fetchCampuses(currentUniToFetch),
+        eventsApi.fetchOrganizations(currentUniToFetch)
+      ]).then(([camps, orgs]) => {
+        setCampuses(camps);
+        setOrganizations(orgs);
+      });
+    } else {
+      setCampuses([]);
+      setOrganizations([]);
+    }
+  }, [currentUniToFetch]);
+
+  const renderPickerContent = () => (
+    <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
+      <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={e => e.stopPropagation()}>
+        <View style={styles.grabber} />
+        <View style={styles.sheetHeader}>
+          <Text style={[styles.sheetTitle, { color: theme.text }]}>{pickerTitle}</Text>
+        </View>
+        <FlatList
+          data={pickerData}
+          keyExtractor={item => item.id}
+          style={{ maxHeight: 400 }}
+          renderItem={({ item }) => (
+            <Pressable
+              style={[styles.sheetItem, { borderBottomColor: theme.border }]}
+              onPress={() => {
+                pickerOnSelect(item.id);
+                setPickerVisible(false);
+              }}
+            >
+              <Text style={[styles.sheetItemText, { color: theme.text }]}>{item.name}</Text>
+            </Pressable>
+          )}
+        />
+      </Pressable>
+    </Pressable>
+  );
 
   const loadPosts = useCallback(async () => {
     try {
       const data = await eventsApi.fetchPosts({
         postType: filter,
         universityId: activeUni,
-        campus: filterCampus,
+        campusId: filterCampusId,
+        organizationId: filterOrgId,
         date: filterDate,
       });
       setPosts(data);
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
     }
-  }, [filter, activeUni, filterCampus, filterDate]);
+  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate]);
 
   const loadAuthority = useCallback(async () => {
     const status = await eventsApi.getMyAuthorityStatus();
@@ -156,8 +220,13 @@ export default function EventsBoard() {
         onClear: () => setFilterUniversity(null),
       });
     }
-    if (filterCampus) {
-      chips.push({ key: 'campus', label: filterCampus, onClear: () => setFilterCampus(null) });
+    if (filterCampusId) {
+      const cName = campuses.find(c => c.id === filterCampusId)?.name || 'Campus';
+      chips.push({ key: 'campus', label: cName, onClear: () => setFilterCampusId(null) });
+    }
+    if (filterOrgId) {
+      const oName = organizations.find(o => o.id === filterOrgId)?.name || 'Organization';
+      chips.push({ key: 'org', label: oName, onClear: () => setFilterOrgId(null) });
     }
     if (filterDate) {
       const p = parseEventDate(filterDate);
@@ -168,7 +237,7 @@ export default function EventsBoard() {
       });
     }
     return chips;
-  }, [filterUniversity, filterCampus, filterDate]);
+  }, [filterUniversity, filterCampusId, filterOrgId, filterDate, campuses, organizations]);
 
   // ─── Header: scrollable pills + pinned action buttons ────────────────────
   const Header = (
@@ -212,8 +281,9 @@ export default function EventsBoard() {
         <View style={[styles.headerActions, { backgroundColor: theme.background }]}>
           <Pressable
             onPress={() => {
-              setTempUni(filterUniversity !== null ? filterUniversity : userUni || '');
-              setTempCampus(filterCampus || '');
+              setTempUni(filterUniversity !== null ? filterUniversity : userUni || null);
+              setTempCampusId(filterCampusId);
+              setTempOrgId(filterOrgId);
               setTempDate(filterDate);
               setShowFilterModal(true);
             }}
@@ -224,26 +294,11 @@ export default function EventsBoard() {
             ]}
             accessibilityLabel="Filter events"
           >
-            <Feather name="sliders" size={16} color={theme.text} />
+            <Feather name="sliders" size={18} color={theme.text} />
             {hasAdvancedFilter && (
               <View style={[styles.iconBtnDot, { backgroundColor: theme.primary }]} />
             )}
           </Pressable>
-
-          {authorityStatus === 'approved' && (
-            <Pressable
-              onPress={() => router.push('/community/create-post' as any)}
-              style={({ pressed }) => [
-                styles.iconBtn,
-                styles.iconBtnFilled,
-                { backgroundColor: theme.primary },
-                pressed && { opacity: 0.85 },
-              ]}
-              accessibilityLabel="Compose post"
-            >
-              <Feather name="plus" size={16} color={theme.textInverse} />
-            </Pressable>
-          )}
         </View>
       </View>
 
@@ -273,7 +328,8 @@ export default function EventsBoard() {
           <Pressable
             onPress={() => {
               setFilterUniversity(null);
-              setFilterCampus(null);
+              setFilterCampusId(null);
+              setFilterOrgId(null);
               setFilterDate(null);
             }}
             style={[styles.activeChip, { backgroundColor: theme.card, borderColor: theme.border }]}
@@ -285,24 +341,26 @@ export default function EventsBoard() {
     </View>
   );
 
-  // ─── Card ─────────────────────────────────────────────────────────────────
+  // ─── Render Event Poster Card ──────────────────────────────────────────────
   const renderCard = useCallback(
-    ({ item }: { item: CommunityPost }) => {
-      const meta = TYPE_META[item.post_type];
-      const isOwn = item.author_id === user?.id;
+    ({ item }: { item: any }) => {
+      const meta = TYPE_META[item.post_type as keyof typeof TYPE_META] || TYPE_META.other;
       const eventDate = parseEventDate(item.event_date);
-      const eventTime = formatTime(item.event_time);
+      const isOwn = user?.id === item.author_id;
+      const orgName = item.organization_id ? organizations.find(o => o.id === item.organization_id)?.name || 'Organization' : null;
+      const uniName = item.university_id ? item.university_id.toUpperCase() : 'Community';
 
       return (
         <Pressable
           style={({ pressed }) => [
             styles.card,
             {
+              width: CARD_WIDTH,
               backgroundColor: theme.card,
               borderColor: theme.border,
               shadowColor: dark ? '#000' : '#0f172a',
             },
-            pressed && { transform: [{ scale: 0.985 }], opacity: 0.96 },
+            pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
           ]}
           onPress={() => {
             if (isOwn) {
@@ -312,144 +370,67 @@ export default function EventsBoard() {
             }
           }}
         >
-          {/* Hero image with overlays */}
+          {/* Poster Image */}
           {item.image_url ? (
             <View style={styles.heroWrap}>
               <Image source={{ uri: item.image_url }} style={styles.heroImage} resizeMode="cover" />
               <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.55)']}
+                colors={['transparent', 'rgba(0,0,0,0.6)']}
                 style={styles.heroOverlay}
                 pointerEvents="none"
               />
 
-              {/* Top-right badges */}
+              {/* Top badges */}
               <View style={styles.heroTopRow} pointerEvents="none">
                 {item.pinned && (
                   <View style={[styles.heroBadge, { backgroundColor: theme.card + 'E8' }]}>
-                    <Feather name="bookmark" size={11} color={theme.text} />
-                    <Text style={[styles.heroBadgeText, { color: theme.text }]}>Pinned</Text>
+                    <Feather name="bookmark" size={10} color={theme.text} />
                   </View>
                 )}
-                {isOwn && (
-                  <View style={[styles.heroBadge, { backgroundColor: theme.background + 'CC' }]}>
-                    <Feather name="edit-2" size={11} color={theme.text} />
-                    <Text style={[styles.heroBadgeText, { color: theme.text }]}>Yours</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Bottom-left date capsule + type tag */}
-              <View style={styles.heroBottomRow} pointerEvents="none">
-                {eventDate && (
-                  <View style={[styles.dateCapsule, { backgroundColor: theme.card + 'F0' }]}>
-                    <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>
-                      {eventDate.month}
-                    </Text>
-                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
-                  </View>
-                )}
-                <View style={[styles.heroTypeChip, { backgroundColor: theme.card + 'E8' }]}>
-                  <Feather name={meta.icon as any} size={11} color={meta.tint} />
-                  <Text style={[styles.heroTypeChipText, { color: meta.tint }]}>{meta.label}</Text>
+                <View style={[styles.heroBadge, { backgroundColor: theme.card + 'E8' }]}>
+                  <Feather name={meta.icon as any} size={10} color={meta.tint} />
                 </View>
               </View>
+
+              {/* Date Capsule */}
+              {eventDate && (
+                <View style={styles.heroBottomRow} pointerEvents="none">
+                  <View style={[styles.dateCapsule, { backgroundColor: theme.card + 'F0' }]}>
+                    <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>{eventDate.month}</Text>
+                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
+                  </View>
+                </View>
+              )}
             </View>
           ) : (
-            // No-image header: type chip + date row inside card
-            <View style={styles.cardHeaderNoImage}>
-              <View
-                style={[
-                  styles.typeChip,
-                  { backgroundColor: meta.tint + '15', borderColor: meta.tint + '33' },
-                ]}
-              >
-                <Feather name={meta.icon as any} size={12} color={meta.tint} />
-                <Text style={[styles.typeChipText, { color: meta.tint }]}>{meta.label}</Text>
-              </View>
-
-              <View style={styles.cardHeaderBadges}>
-                {item.pinned && (
-                  <View style={[styles.miniChip, { backgroundColor: theme.backgroundSecondary }]}>
-                    <Feather name="bookmark" size={10} color={theme.text} />
-                    <Text style={[styles.miniChipText, { color: theme.text }]}>Pinned</Text>
+            // No Image placeholder (just fill the space nicely)
+            <View style={[styles.heroWrap, { backgroundColor: meta.tint + '15', justifyContent: 'center', alignItems: 'center' }]}>
+              <Feather name={meta.icon as any} size={32} color={meta.tint + '50'} />
+              {eventDate && (
+                <View style={[styles.heroBottomRow, { left: 8, bottom: 8 }]} pointerEvents="none">
+                  <View style={[styles.dateCapsule, { backgroundColor: theme.card }]}>
+                    <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>{eventDate.month}</Text>
+                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
                   </View>
-                )}
-                {isOwn && (
-                  <View
-                    style={[
-                      styles.miniChip,
-                      { backgroundColor: theme.primary + '15' },
-                    ]}
-                  >
-                    <Feather name="edit-2" size={10} color={theme.primary} />
-                    <Text style={[styles.miniChipText, { color: theme.primary }]}>Yours</Text>
-                  </View>
-                )}
-              </View>
+                </View>
+              )}
             </View>
           )}
 
-          {/* Body */}
+          {/* Compact Info Body */}
           <View style={styles.cardBody}>
             <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={2}>
               {item.title}
             </Text>
-
-            {item.body ? (
-              <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]} numberOfLines={2}>
-                {item.body}
-              </Text>
-            ) : null}
-
-            {/* Meta rows: date/time/location — quiet, single line each */}
-            {(eventDate || eventTime || item.location) && (
-              <View style={styles.metaList}>
-                {eventDate && (
-                  <View style={styles.metaRow}>
-                    <Feather name="calendar" size={13} color={theme.textSecondary} />
-                    <Text style={[styles.metaText, { color: theme.text }]} numberOfLines={1}>
-                      {eventDate.full}
-                      {eventTime ? `  ·  ${eventTime}` : ''}
-                    </Text>
-                  </View>
-                )}
-                {item.location ? (
-                  <View style={styles.metaRow}>
-                    <Feather name="map-pin" size={13} color={theme.textSecondary} />
-                    <Text style={[styles.metaText, { color: theme.text }]} numberOfLines={1}>
-                      {item.location}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            )}
-          </View>
-
-          {/* Footer: hairline + author row */}
-          <View style={[styles.hairline, { backgroundColor: theme.border }]} />
-          <View style={styles.cardFooter}>
-            <Avatar
-              name={item.author_name}
-              avatarUrl={(item as any).author_avatar || undefined}
-              size={28}
-            />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.authorName, { color: theme.text }]} numberOfLines={1}>
-                {item.author_name || 'Unknown'}
-              </Text>
-              <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                {item.university_id ? item.university_id.toUpperCase() : 'Community'}
-                {item.campus ? ` · ${item.campus}` : ''}
-                {' · '}
-                {timeAgo(item.created_at)}
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+            
+            <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+              {orgName || uniName}
+            </Text>
           </View>
         </Pressable>
       );
     },
-    [theme, user, dark]
+    [theme, user, dark, campuses, organizations]
   );
 
   // ─── Empty State ──────────────────────────────────────────────────────────
@@ -484,6 +465,8 @@ export default function EventsBoard() {
         <FlatList
           data={posts}
           keyExtractor={(item) => item.id}
+          numColumns={2}
+          columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
           renderItem={renderCard}
           style={{ backgroundColor: theme.background }}
           contentContainerStyle={styles.listContent}
@@ -521,8 +504,9 @@ export default function EventsBoard() {
               <Text style={[styles.sheetTitle, { color: theme.text }]}>Filters</Text>
               <Pressable
                 onPress={() => {
-                  setTempUni('');
-                  setTempCampus('');
+                  setTempUni(null);
+                  setTempCampusId(null);
+                  setTempOrgId(null);
                   setTempDate(null);
                 }}
                 hitSlop={10}
@@ -530,7 +514,7 @@ export default function EventsBoard() {
                 <Text
                   style={[
                     styles.sheetReset,
-                    { color: theme.primary, opacity: tempUni || tempCampus || tempDate ? 1 : 0.3 },
+                    { color: theme.primary, opacity: tempUni || tempCampusId || tempOrgId || tempDate ? 1 : 0.3 },
                   ]}
                 >
                   Reset
@@ -544,49 +528,88 @@ export default function EventsBoard() {
               keyboardShouldPersistTaps="handled"
             >
               <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>UNIVERSITY</Text>
-              <View
+              <Pressable
                 style={[
                   styles.inputRow,
                   { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
                 ]}
+                onPress={() => {
+                  setPickerTitle('Select University');
+                  setPickerData([{ id: '', name: 'Any University' }, ...universities]);
+                  setPickerOnSelect(() => (id: string) => {
+                    setTempUni(id || null);
+                    setTempCampusId(null);
+                    setTempOrgId(null);
+                  });
+                  setPickerVisible(true);
+                }}
               >
                 <Feather name="award" size={16} color={theme.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.text }]}
-                  value={tempUni}
-                  onChangeText={setTempUni}
-                  placeholder="e.g. uitm"
-                  placeholderTextColor={theme.textSecondary}
-                  autoCapitalize="none"
-                />
+                <Text style={[styles.input, { color: tempUni ? theme.text : theme.textSecondary }]}>
+                  {tempUni ? universities.find(u => u.id === tempUni)?.name || tempUni.toUpperCase() : 'Any University'}
+                </Text>
                 {tempUni ? (
-                  <Pressable onPress={() => setTempUni('')} hitSlop={6}>
+                  <Pressable onPress={() => { setTempUni(null); setTempCampusId(null); setTempOrgId(null); }} hitSlop={6}>
                     <Feather name="x-circle" size={16} color={theme.textSecondary} />
                   </Pressable>
                 ) : null}
-              </View>
+              </Pressable>
 
-              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CAMPUS</Text>
-              <View
-                style={[
-                  styles.inputRow,
-                  { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
-                ]}
-              >
-                <Feather name="map-pin" size={16} color={theme.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.text }]}
-                  value={tempCampus}
-                  onChangeText={setTempCampus}
-                  placeholder="e.g. Puncak Alam"
-                  placeholderTextColor={theme.textSecondary}
-                />
-                {tempCampus ? (
-                  <Pressable onPress={() => setTempCampus('')} hitSlop={6}>
-                    <Feather name="x-circle" size={16} color={theme.textSecondary} />
+              {tempUni && (
+                <>
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CAMPUS</Text>
+                  <Pressable
+                    style={[
+                      styles.inputRow,
+                      { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                    ]}
+                    onPress={() => {
+                      setPickerTitle('Select Campus');
+                      setPickerData([{ id: '', name: 'Any Campus' }, ...campuses]);
+                      setPickerOnSelect(() => (id: string) => {
+                        setTempCampusId(id || null);
+                        setTempOrgId(null);
+                      });
+                      setPickerVisible(true);
+                    }}
+                  >
+                    <Feather name="map-pin" size={16} color={theme.textSecondary} />
+                    <Text style={[styles.input, { color: tempCampusId ? theme.text : theme.textSecondary }]}>
+                      {tempCampusId ? campuses.find(c => c.id === tempCampusId)?.name : 'Any Campus'}
+                    </Text>
+                    {tempCampusId ? (
+                      <Pressable onPress={() => { setTempCampusId(null); setTempOrgId(null); }} hitSlop={6}>
+                        <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    ) : null}
                   </Pressable>
-                ) : null}
-              </View>
+
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>ORGANIZATION / CLUB</Text>
+                  <Pressable
+                    style={[
+                      styles.inputRow,
+                      { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                    ]}
+                    onPress={() => {
+                      const orgs = organizations.filter(o => !o.campus_id || o.campus_id === tempCampusId);
+                      setPickerTitle('Select Organization');
+                      setPickerData([{ id: '', name: 'Any Organization' }, ...orgs]);
+                      setPickerOnSelect(() => (id: string) => setTempOrgId(id || null));
+                      setPickerVisible(true);
+                    }}
+                  >
+                    <Feather name="users" size={16} color={theme.textSecondary} />
+                    <Text style={[styles.input, { color: tempOrgId ? theme.text : theme.textSecondary }]}>
+                      {tempOrgId ? organizations.find(o => o.id === tempOrgId)?.name : 'Any Organization'}
+                    </Text>
+                    {tempOrgId ? (
+                      <Pressable onPress={() => setTempOrgId(null)} hitSlop={6}>
+                        <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    ) : null}
+                  </Pressable>
+                </>
+              )}
 
               <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>EVENT DATE</Text>
 
@@ -661,8 +684,9 @@ export default function EventsBoard() {
                 pressed && { opacity: 0.85 },
               ]}
               onPress={() => {
-                setFilterUniversity(tempUni.trim() ? tempUni.trim() : null);
-                setFilterCampus(tempCampus.trim() ? tempCampus.trim() : null);
+                setFilterUniversity(tempUni || null);
+                setFilterCampusId(tempCampusId || null);
+                setFilterOrgId(tempOrgId || null);
                 setFilterDate(tempDate);
                 setShowFilterModal(false);
                 setShowDatePicker(false);
@@ -672,6 +696,16 @@ export default function EventsBoard() {
             </Pressable>
           </Pressable>
         </Pressable>
+        {pickerVisible && (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
+            {renderPickerContent()}
+          </View>
+        )}
+      </Modal>
+
+      {/* Reusable Picker Modal (used only when Filter modal is closed) */}
+      <Modal visible={pickerVisible && !showFilterModal} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
+        {renderPickerContent()}
       </Modal>
     </View>
   );
@@ -718,9 +752,9 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
   },
   iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
@@ -728,8 +762,8 @@ const styles = StyleSheet.create({
   iconBtnFilled: { borderWidth: 0 },
   iconBtnDot: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
     width: 7,
     height: 7,
     borderRadius: 4,
@@ -755,22 +789,22 @@ const styles = StyleSheet.create({
   activeChipText: { fontSize: 12, fontWeight: '600', maxWidth: 180 },
 
   // List
-  listContent: { paddingHorizontal: 20, paddingBottom: 120 },
+  listContent: { paddingBottom: 120 },
 
-  // Card
+  // Card (Poster format)
   card: {
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 14,
+    marginBottom: 16,
     overflow: 'hidden',
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
 
-  // Hero
-  heroWrap: { width: '100%', height: 190, position: 'relative' },
+  // Hero (Poster A4 aspect ratio)
+  heroWrap: { width: '100%', aspectRatio: 210 / 297, position: 'relative' },
   heroImage: { width: '100%', height: '100%' },
   heroOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
   heroTopRow: {
@@ -781,33 +815,28 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   heroBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
     borderRadius: 12,
   },
-  heroBadgeText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
   heroBottomRow: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
+    left: 8,
+    bottom: 8,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
   },
   dateCapsule: {
-    width: 50,
+    width: 44,
     backgroundColor: 'rgba(255,255,255,0.96)',
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 5,
     overflow: 'hidden',
   },
-  dateCapsuleMonth: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  dateCapsuleDay: { fontSize: 20, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 22 },
+  dateCapsuleMonth: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  dateCapsuleDay: { fontSize: 16, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 18 },
   heroTypeChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -848,21 +877,19 @@ const styles = StyleSheet.create({
   miniChipText: { fontSize: 10, fontWeight: '700' },
 
   // Card body
-  cardBody: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 },
+  cardBody: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 12 },
   cardTitle: {
-    fontSize: 19,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    lineHeight: 24,
-  },
-  cardSubtitle: {
     fontSize: 14,
-    fontWeight: '400',
-    lineHeight: 19,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 18,
+  },
+  authorMeta: {
+    fontSize: 11,
+    fontWeight: '600',
     marginTop: 6,
     letterSpacing: -0.1,
   },
-  metaList: { marginTop: 12, gap: 6 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   metaText: { fontSize: 13, fontWeight: '500', flex: 1, letterSpacing: -0.1 },
 
@@ -963,4 +990,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   applyBtnText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  sheetItem: {
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetItemText: { fontSize: 16 },
 });

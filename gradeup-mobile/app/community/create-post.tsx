@@ -61,15 +61,14 @@ export default function CreatePostScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
+  const [authorityRequest, setAuthorityRequest] = useState<eventsApi.AuthorityRequest | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
-  const userCampus = (user as any)?.campus || null;
-  const isAuthority = authorityStatus === 'approved';
+  const isAuthority = authorityRequest?.status === 'approved';
 
   useEffect(() => {
-    eventsApi.getMyAuthorityStatus().then(setAuthorityStatus);
+    eventsApi.getMyAuthorityRequest().then(setAuthorityRequest);
   }, []);
 
   useEffect(() => {
@@ -98,7 +97,7 @@ export default function CreatePostScreen() {
       mediaTypes: ['images'],
       quality: 0.8,
       allowsEditing: true,
-      aspect: [16, 9],
+      aspect: [210, 297], // A4 ratio
     });
     if (!result.canceled && result.assets[0]) setImageUri(result.assets[0].uri);
   };
@@ -132,8 +131,9 @@ export default function CreatePostScreen() {
           title: title.trim(),
           body: body.trim() || undefined,
           image_uri: imageUri || undefined,
-          university_id: userUni || undefined,
-          campus: userCampus || undefined,
+          university_id: authorityRequest?.university_id || userUni || undefined,
+          campus_id: authorityRequest?.campus_id || undefined,
+          organization_id: authorityRequest?.organization_id || undefined,
           event_date: eventDate ? eventDate.toISOString().split('T')[0] : undefined,
           event_time: eventTime.trim() || undefined,
           location: location.trim() || undefined,
@@ -355,7 +355,7 @@ export default function CreatePostScreen() {
                 Add a cover image
               </Text>
               <Text style={[styles.imagePlaceholderSub, { color: theme.textSecondary }]}>
-                Optional · 16:9 recommended
+                Optional · A4 Portrait recommended
               </Text>
             </Pressable>
           )}
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   heroWrap: {
     borderRadius: 16,
     overflow: 'hidden',
-    height: 200,
+    aspectRatio: 210 / 297,
     position: 'relative',
   },
   heroImg: { width: '100%', height: '100%' },
@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 120,
+    aspectRatio: 210 / 297,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 8,

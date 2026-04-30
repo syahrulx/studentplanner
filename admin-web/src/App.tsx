@@ -11,6 +11,8 @@ import { LocationsRoute } from './routes/LocationsRoute';
 import { CirclesRoute } from './routes/CirclesRoute';
 import { EventsRoute } from './routes/EventsRoute';
 import { AuthorityRoute } from './routes/AuthorityRoute';
+import { CampusesRoute } from './routes/CampusesRoute';
+import { OrganizationsRoute } from './routes/OrganizationsRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
@@ -37,6 +39,8 @@ export default function App() {
             <Route path="circles" element={<CirclesRoute />} />
             <Route path="events" element={<EventsRoute />} />
             <Route path="authorities" element={<AuthorityRoute />} />
+            <Route path="campuses" element={<CampusesRoute />} />
+            <Route path="organizations" element={<OrganizationsRoute />} />
             <Route path="broadcast" element={<BroadcastRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />

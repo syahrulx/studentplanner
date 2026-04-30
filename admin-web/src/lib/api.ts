@@ -1294,14 +1294,19 @@ export type AdminAuthorityRequestRow = {
   id: string;
   user_id: string;
   university_id: string | null;
+  campus_id: string | null;
+  organization_id: string | null;
   role_title: string;
   justification: string | null;
+  proof_url: string | null;
   status: 'pending' | 'approved' | 'rejected';
   reviewed_by: string | null;
   created_at: string;
   reviewed_at: string | null;
   user_name?: string;
   user_university?: string;
+  campus_name?: string;
+  organization_name?: string;
 };
 
 export async function listAuthorityRequests(opts?: {
@@ -1319,16 +1324,27 @@ export async function listAuthorityRequests(opts?: {
   if (error) throw toError(error);
 
   const requests = (data ?? []) as AdminAuthorityRequestRow[];
-  const userIds = [...new Set(requests.map((r) => r.user_id))];
-  if (userIds.length) {
-    const { data: profs } = await supabase.from('profiles').select('id,name,university').in('id', userIds);
+    const userIds = [...new Set(requests.map((r) => r.user_id))];
+    const campusIds = [...new Set(requests.map((r) => r.campus_id).filter(Boolean))] as string[];
+    const orgIds = [...new Set(requests.map((r) => r.organization_id).filter(Boolean))] as string[];
+
+    const [{ data: profs }, { data: camps }, { data: orgs }] = await Promise.all([
+      userIds.length ? supabase.from('profiles').select('id,name,university').in('id', userIds) : Promise.resolve({ data: [] }),
+      campusIds.length ? supabase.from('campuses').select('id,name').in('id', campusIds) : Promise.resolve({ data: [] }),
+      orgIds.length ? supabase.from('organizations').select('id,name').in('id', orgIds) : Promise.resolve({ data: [] }),
+    ]);
+
     const pmap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    const cmap = new Map((camps ?? []).map((c: any) => [c.id, c]));
+    const omap = new Map((orgs ?? []).map((o: any) => [o.id, o]));
+
     for (const req of requests) {
       const prof = pmap.get(req.user_id);
       req.user_name = prof?.name || 'Unknown';
       req.user_university = prof?.university || null;
+      if (req.campus_id) req.campus_name = cmap.get(req.campus_id)?.name || req.campus_id;
+      if (req.organization_id) req.organization_name = omap.get(req.organization_id)?.name || req.organization_id;
     }
-  }
   return requests;
 }
 
@@ -1360,4 +1376,98 @@ export async function reviewAuthorityRequest(
       .eq('id', userId);
     if (profErr) throw toError(profErr);
   }
+}
+
+export async function deleteAuthorityRequest(id: string): Promise<void> {
+  const { data: reqData, error: reqErr } = await supabase
+    .from('authority_requests')
+    .delete()
+    .eq('id', id)
+    .select('user_id')
+    .single();
+
+  if (reqErr) throw toError(reqErr);
+
+  const userId = (reqData as any)?.user_id;
+  if (userId) {
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ authority_status: 'none' })
+      .eq('id', userId);
+    if (profErr) throw toError(profErr);
+  }
+}
+
+// ─── Campuses & Organizations ────────────────────────────────────────────
+
+export type AdminCampusRow = {
+  id: string;
+  university_id: string;
+  name: string;
+  created_at: string;
+};
+
+export async function listCampuses(universityId?: string): Promise<AdminCampusRow[]> {
+  let q = supabase.from('campuses').select('*').order('name');
+  if (universityId) q = q.eq('university_id', universityId);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+  return data as AdminCampusRow[];
+}
+
+export async function createCampus(universityId: string, name: string): Promise<AdminCampusRow> {
+  const { data, error } = await supabase
+    .from('campuses')
+    .insert({ university_id: universityId, name })
+    .select()
+    .single();
+  if (error) throw toError(error);
+  return data as AdminCampusRow;
+}
+
+export async function updateCampus(id: string, name: string): Promise<void> {
+  const { error } = await supabase.from('campuses').update({ name }).eq('id', id);
+  if (error) throw toError(error);
+}
+
+export async function deleteCampus(id: string): Promise<void> {
+  const { error } = await supabase.from('campuses').delete().eq('id', id);
+  if (error) throw toError(error);
+}
+
+export type AdminOrganizationRow = {
+  id: string;
+  university_id: string;
+  campus_id: string | null;
+  name: string;
+  created_at: string;
+};
+
+export async function listOrganizations(universityId?: string, campusId?: string): Promise<AdminOrganizationRow[]> {
+  let q = supabase.from('organizations').select('*').order('name');
+  if (universityId) q = q.eq('university_id', universityId);
+  if (campusId) q = q.eq('campus_id', campusId);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+  return data as AdminOrganizationRow[];
+}
+
+export async function createOrganization(universityId: string, campusId: string | null, name: string): Promise<AdminOrganizationRow> {
+  const { data, error } = await supabase
+    .from('organizations')
+    .insert({ university_id: universityId, campus_id: campusId, name })
+    .select()
+    .single();
+  if (error) throw toError(error);
+  return data as AdminOrganizationRow;
+}
+
+export async function updateOrganization(id: string, campusId: string | null, name: string): Promise<void> {
+  const { error } = await supabase.from('organizations').update({ campus_id: campusId, name }).eq('id', id);
+  if (error) throw toError(error);
+}
+
+export async function deleteOrganization(id: string): Promise<void> {
+  const { error } = await supabase.from('organizations').delete().eq('id', id);
+  if (error) throw toError(error);
 }
