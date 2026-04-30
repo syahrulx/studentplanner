@@ -149,19 +149,24 @@ returns public.service_offers
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_uid uuid := auth.uid();
-  v_row public.service_offers;
+  v_uid        uuid := auth.uid();
+  v_row        public.service_offers;
   v_svc_author uuid;
 begin
   if v_uid is null then raise exception 'Not authenticated'; end if;
 
-  select o.*, s.author_id
-    into v_row, v_svc_author
-    from public.service_offers o
-    join public.community_posts s on s.id = o.service_id
-   where o.id = p_offer_id;
+  -- Fetch the offer row first (record variable must be alone in INTO).
+  select * into v_row
+    from public.service_offers
+   where id = p_offer_id;
 
   if v_row.id is null then raise exception 'Offer not found'; end if;
+
+  -- Then fetch the service author separately into a scalar.
+  select author_id into v_svc_author
+    from public.community_posts
+   where id = v_row.service_id;
+
   if v_svc_author <> v_uid then raise exception 'Only the requester can reject offers'; end if;
 
   update public.service_offers
