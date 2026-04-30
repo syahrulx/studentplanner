@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
-import { useTheme } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
 
@@ -375,6 +375,38 @@ function createStyles(theme: ThemePalette) {
       height: 6,
       borderRadius: 3,
     },
+    monoMarker: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: '#ffffff',
+      borderWidth: 1,
+      borderColor: '#d4d4d4',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 1,
+      paddingVertical: 1,
+    },
+    monoMarkerRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 1,
+    },
+    monoMarkerDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: '#111111',
+    },
+    /** Spider pack: solid accent — no dot-grid glyph (Mono-only). */
+    spiderSubjectGlyph: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: theme.primary,
+    },
     deckSubjectText: {
       fontSize: 10,
       fontWeight: '800',
@@ -486,7 +518,16 @@ export default function StudyHub() {
   const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isMonoTheme = themePack === 'mono';
+  const isSpiderTheme = themePack === 'spider';
+  const isDarkMinimal = useDarkMinimalThemePack();
   const s = useMemo(() => createStyles(theme), [theme]);
+  /** Mono uses pure white tiles + black icons; Spider/other packs use theme primary + textInverse. */
+  const onPrimaryIcon = isMonoTheme ? '#000000' : theme.textInverse;
+  const quickActionIconBg = isMonoTheme ? '#ffffff' : theme.primary;
+  const quickActionCardTint = isDarkMinimal ? 'rgba(255,255,255,0.08)' : `${theme.primary}15`;
+  const quickActionWideTint = isDarkMinimal ? 'rgba(255,255,255,0.06)' : `${theme.primary}10`;
 
   const [subjectsMenuOpen, setSubjectsMenuOpen] = useState(false);
   const [subjectsMode, setSubjectsMode] = useState<'idle' | 'rename' | 'delete'>('idle');
@@ -551,6 +592,49 @@ export default function StudyHub() {
     const custom = getSubjectColor?.(courseId);
     if (custom && custom !== '#003366') return custom;
     return ACCENT_PALETTE[idx % ACCENT_PALETTE.length];
+  };
+
+  const monoSubjectOrder = useMemo(() => {
+    const subjectIds = Array.from(
+      new Set([
+        ...courses.map((c) => c.id),
+        ...notes.map((n) => n.subjectId),
+      ]),
+    );
+    subjectIds.sort((a, b) => a.localeCompare(b));
+    const map = new Map<string, number>();
+    subjectIds.forEach((id, idx) => {
+      map.set(id, idx + 1);
+    });
+    return map;
+  }, [courses, notes]);
+
+  const getMonoMarkerCount = (key: string): number => {
+    const indexCount = monoSubjectOrder.get(key);
+    if (indexCount) return indexCount;
+    return 1;
+  };
+
+  const renderMonoMarker = (key: string) => {
+    const dots = getMonoMarkerCount(key);
+    const rows: number[] = [];
+    let remaining = dots;
+    while (remaining > 0) {
+      const rowCount = Math.min(3, remaining);
+      rows.push(rowCount);
+      remaining -= rowCount;
+    }
+    return (
+      <View style={s.monoMarker}>
+        {rows.map((rowCount, rowIdx) => (
+          <View key={`${key}-row-${rowIdx}`} style={s.monoMarkerRow}>
+            {Array.from({ length: rowCount }, (_, i) => (
+              <View key={`${key}-dot-${rowIdx}-${i}`} style={s.monoMarkerDot} />
+            ))}
+          </View>
+        ))}
+      </View>
+    );
   };
 
   // All notes that act as flashcard decks
@@ -626,13 +710,13 @@ export default function StudyHub() {
           <Pressable
             style={({ pressed }) => [
               s.quickAction,
-              { backgroundColor: `${theme.primary}15` },
+              { backgroundColor: quickActionCardTint },
               pressed && { opacity: 0.85 },
             ]}
             onPress={() => router.push('/ai-quiz-builder' as any)}
           >
-            <View style={[s.quickActionIcon, { backgroundColor: theme.primary }]}>
-              <Feather name="zap" size={20} color="#fff" />
+            <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+              <Feather name="zap" size={20} color={onPrimaryIcon} />
             </View>
             <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>AI Quiz</Text>
             <Text style={s.quickActionSub} numberOfLines={2}>Auto-generate</Text>
@@ -641,13 +725,13 @@ export default function StudyHub() {
           <Pressable
             style={({ pressed }) => [
               s.quickAction,
-              { backgroundColor: `${theme.primary}15` },
+              { backgroundColor: quickActionCardTint },
               pressed && { opacity: 0.85 },
             ]}
             onPress={() => router.push('/flashcard-pick' as any)}
           >
-            <View style={[s.quickActionIcon, { backgroundColor: theme.primary }]}>
-              <Feather name="layers" size={20} color="#fff" />
+            <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+              <Feather name="layers" size={20} color={onPrimaryIcon} />
             </View>
             <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>
               {(T as any)('flashcardsAllSheetsTitle')}
@@ -660,13 +744,13 @@ export default function StudyHub() {
           <Pressable
             style={({ pressed }) => [
               s.quickAction,
-              { backgroundColor: `${theme.primary}15` },
+              { backgroundColor: quickActionCardTint },
               pressed && { opacity: 0.85 },
             ]}
             onPress={() => router.push('/leaderboard' as any)}
           >
-            <View style={[s.quickActionIcon, { backgroundColor: theme.primary }]}>
-              <Feather name="award" size={20} color="#fff" />
+            <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+              <Feather name="award" size={20} color={onPrimaryIcon} />
             </View>
             <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>Rankings</Text>
             <Text style={s.quickActionSub} numberOfLines={2}>See top scorers</Text>
@@ -675,13 +759,13 @@ export default function StudyHub() {
         <Pressable
           style={({ pressed }) => [
             s.quickActionWide,
-            { backgroundColor: `${theme.primary}10` },
+            { backgroundColor: quickActionWideTint },
             pressed && { opacity: 0.85 },
           ]}
           onPress={() => router.push('/quiz-library' as any)}
         >
-          <View style={[s.quickActionIcon, { backgroundColor: theme.primary }]}>
-            <Feather name="bookmark" size={18} color="#fff" />
+          <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+            <Feather name="bookmark" size={18} color={onPrimaryIcon} />
           </View>
           <View style={s.quickActionWideTextWrap}>
             <Text style={s.quickActionWideTitle}>Revision Quiz</Text>
@@ -720,7 +804,7 @@ export default function StudyHub() {
                   )
                 }
               >
-                <Feather name="arrow-up-down" size={13} color={theme.textSecondary} />
+                <Feather name="filter" size={13} color={theme.textSecondary} />
                 <Text style={s.deckControlBtnText}>{deckSortLabel}</Text>
               </Pressable>
               <Pressable
@@ -772,9 +856,36 @@ export default function StudyHub() {
                           }}
                         >
                           <View style={s.deckCardHeader}>
-                            <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                              <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                              <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                            <View
+                              style={[
+                                s.deckSubjectBadge,
+                                {
+                                  backgroundColor: isMonoTheme
+                                    ? '#f5f5f5'
+                                    : isSpiderTheme
+                                      ? 'rgba(185, 28, 28, 0.16)'
+                                      : `${deck.color}15`,
+                                  borderWidth: isSpiderTheme ? StyleSheet.hairlineWidth : 0,
+                                  borderColor: isSpiderTheme ? 'rgba(185, 28, 28, 0.45)' : 'transparent',
+                                },
+                              ]}
+                            >
+                              {isMonoTheme ? (
+                                renderMonoMarker(deck.subjectId)
+                              ) : isSpiderTheme ? (
+                                <View style={s.spiderSubjectGlyph} />
+                              ) : (
+                                <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
+                              )}
+                              <Text
+                                style={[
+                                  s.deckSubjectText,
+                                  {
+                                    color: isMonoTheme ? '#111111' : isSpiderTheme ? '#fecaca' : deck.color,
+                                  },
+                                ]}
+                                numberOfLines={1}
+                              >
                                 {deck.subjectId}
                               </Text>
                             </View>
@@ -797,8 +908,8 @@ export default function StudyHub() {
 
                             {deck.count > 0 && (
                               <View style={s.deckReviewBtn}>
-                                <Feather name="play" size={10} color="#ffffff" />
-                                <Text style={s.deckReviewText}>Review</Text>
+                                <Feather name="play" size={10} color={onPrimaryIcon} />
+                                <Text style={[s.deckReviewText, isDarkMinimal && { color: theme.textInverse }]}>Review</Text>
                               </View>
                             )}
                           </View>
@@ -835,9 +946,36 @@ export default function StudyHub() {
                         }}
                       >
                         <View style={s.deckCardHeader}>
-                          <View style={[s.deckSubjectBadge, { backgroundColor: `${deck.color}15` }]}>
-                            <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
-                            <Text style={[s.deckSubjectText, { color: deck.color }]} numberOfLines={1}>
+                          <View
+                            style={[
+                              s.deckSubjectBadge,
+                              {
+                                backgroundColor: isMonoTheme
+                                  ? '#f5f5f5'
+                                  : isSpiderTheme
+                                    ? 'rgba(185, 28, 28, 0.16)'
+                                    : `${deck.color}15`,
+                                borderWidth: isSpiderTheme ? StyleSheet.hairlineWidth : 0,
+                                borderColor: isSpiderTheme ? 'rgba(185, 28, 28, 0.45)' : 'transparent',
+                              },
+                            ]}
+                          >
+                            {isMonoTheme ? (
+                              renderMonoMarker(deck.subjectId)
+                            ) : isSpiderTheme ? (
+                              <View style={s.spiderSubjectGlyph} />
+                            ) : (
+                              <View style={[s.deckSubjectDot, { backgroundColor: deck.color }]} />
+                            )}
+                            <Text
+                              style={[
+                                s.deckSubjectText,
+                                {
+                                  color: isMonoTheme ? '#111111' : isSpiderTheme ? '#fecaca' : deck.color,
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
                               {deck.subjectId}
                             </Text>
                           </View>
@@ -860,8 +998,8 @@ export default function StudyHub() {
 
                           {deck.count > 0 && (
                             <View style={s.deckReviewBtn}>
-                              <Feather name="play" size={10} color="#ffffff" />
-                              <Text style={s.deckReviewText}>Review</Text>
+                              <Feather name="play" size={10} color={onPrimaryIcon} />
+                              <Text style={[s.deckReviewText, isDarkMinimal && { color: theme.textInverse }]}>Review</Text>
                             </View>
                           )}
                         </View>
@@ -888,19 +1026,19 @@ export default function StudyHub() {
             </Pressable>
           ) : (
             <Pressable onPress={() => setSubjectsMode('idle')} hitSlop={10}>
-              <Text style={s.sectionDoneText}>{tx('done', 'Done')}</Text>
+              <Text style={[s.sectionDoneText, isDarkMinimal && { color: theme.text }]}>{tx('done', 'Done')}</Text>
             </Pressable>
           )}
         </View>
 
         {subjectsMode !== 'idle' && (
-          <View style={s.modeBanner}>
+          <View style={[s.modeBanner, isDarkMinimal && { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
             <Feather
               name={subjectsMode === 'rename' ? 'edit-2' : 'trash-2'}
               size={14}
-              color={theme.primary}
+              color={isDarkMinimal ? theme.text : theme.primary}
             />
-            <Text style={s.modeBannerText}>
+            <Text style={[s.modeBannerText, isDarkMinimal && { color: theme.text }]}>
               {subjectsMode === 'rename'
                 ? tx('tapToRename', 'Tap a subject to rename')
                 : tx('tapToDelete', 'Tap a subject to delete')}
@@ -919,7 +1057,13 @@ export default function StudyHub() {
                 style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
                 onPress={() => handleSubjectRowPress(course)}
               >
-                <View style={[s.colorDot, { backgroundColor: color }]} />
+                {isMonoTheme ? (
+                  renderMonoMarker(course.id)
+                ) : isSpiderTheme ? (
+                  <View style={s.spiderSubjectGlyph} />
+                ) : (
+                  <View style={[s.colorDot, { backgroundColor: color }]} />
+                )}
                 <View style={s.rowBody}>
                   <Text style={s.rowTitle}>{course.id}</Text>
                   <Text style={s.rowSub} numberOfLines={1}>{course.name}</Text>
@@ -935,14 +1079,20 @@ export default function StudyHub() {
                       s.rowActionIcon,
                       {
                         backgroundColor:
-                          subjectsMode === 'delete' ? '#ef444422' : `${theme.primary}22`,
+                          subjectsMode === 'delete'
+                            ? '#ef444422'
+                            : isDarkMinimal
+                              ? 'rgba(255,255,255,0.12)'
+                              : `${theme.primary}22`,
                       },
                     ]}
                   >
                     <Feather
                       name={subjectsMode === 'rename' ? 'edit-2' : 'trash-2'}
                       size={14}
-                      color={subjectsMode === 'delete' ? '#ef4444' : theme.primary}
+                      color={
+                        subjectsMode === 'delete' ? '#ef4444' : isDarkMinimal ? theme.text : theme.primary
+                      }
                     />
                   </View>
                 )}
@@ -957,11 +1107,18 @@ export default function StudyHub() {
               style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
               onPress={() => router.push('/add-subject' as any)}
             >
-              <View style={[s.colorDot, { backgroundColor: theme.primary, borderRadius: 5 }]}>
-                <Feather name="plus" size={10} color="#ffffff" />
+              <View
+                style={[
+                  s.colorDot,
+                  { backgroundColor: isMonoTheme ? '#ffffff' : theme.primary, borderRadius: 5 },
+                ]}
+              >
+                <Feather name="plus" size={10} color={onPrimaryIcon} />
               </View>
               <View style={s.rowBody}>
-                <Text style={[s.rowTitle, { color: theme.primary }]}>{tx('addSubject', 'Add Subject')}</Text>
+                <Text style={[s.rowTitle, { color: isDarkMinimal ? theme.text : theme.primary }]}>
+                  {tx('addSubject', 'Add Subject')}
+                </Text>
               </View>
               <Feather name="chevron-right" size={16} color={theme.textSecondary} />
             </Pressable>
@@ -989,8 +1146,15 @@ export default function StudyHub() {
                 router.push('/add-subject' as any);
               }}
             >
-              <View style={[s.sheetItemIcon, { backgroundColor: `${theme.primary}22` }]}>
-                <Feather name="plus" size={18} color={theme.primary} />
+              <View
+                style={[
+                  s.sheetItemIcon,
+                  {
+                    backgroundColor: isDarkMinimal ? 'rgba(255,255,255,0.12)' : `${theme.primary}22`,
+                  },
+                ]}
+              >
+                <Feather name="plus" size={18} color={isDarkMinimal ? theme.text : theme.primary} />
               </View>
               <Text style={s.sheetItemLabel}>{tx('addSubject', 'Add subject')}</Text>
               <Feather name="chevron-right" size={16} color={theme.textSecondary} />
@@ -1005,8 +1169,15 @@ export default function StudyHub() {
                 setSubjectsMode('rename');
               }}
             >
-              <View style={[s.sheetItemIcon, { backgroundColor: `${theme.primary}22` }]}>
-                <Feather name="edit-2" size={16} color={theme.primary} />
+              <View
+                style={[
+                  s.sheetItemIcon,
+                  {
+                    backgroundColor: isDarkMinimal ? 'rgba(255,255,255,0.12)' : `${theme.primary}22`,
+                  },
+                ]}
+              >
+                <Feather name="edit-2" size={16} color={isDarkMinimal ? theme.text : theme.primary} />
               </View>
               <Text style={s.sheetItemLabel}>{tx('renameSubject', 'Rename subject')}</Text>
               <Feather name="chevron-right" size={16} color={theme.textSecondary} />
@@ -1073,10 +1244,17 @@ export default function StudyHub() {
                   <Text style={s.renameBtnCancelText}>{tx('cancel', 'Cancel')}</Text>
                 </Pressable>
                 <Pressable
-                  style={({ pressed }) => [s.renameBtn, s.renameBtnSave, pressed && { opacity: 0.85 }]}
+                  style={({ pressed }) => [
+                    s.renameBtn,
+                    s.renameBtnSave,
+                    isDarkMinimal && { backgroundColor: theme.primary },
+                    pressed && { opacity: 0.85 },
+                  ]}
                   onPress={handleRenameSave}
                 >
-                  <Text style={s.renameBtnSaveText}>{tx('save', 'Save')}</Text>
+                  <Text style={[s.renameBtnSaveText, isDarkMinimal && { color: theme.textInverse }]}>
+                    {tx('save', 'Save')}
+                  </Text>
                 </Pressable>
               </View>
             </Pressable>

@@ -35,6 +35,12 @@ const DIFFICULTIES: { key: QuizDifficulty; label: string; color: string }[] = [
 ];
 
 const Q_COUNTS = [5, 10, 15, 20];
+const TIMER_CHOICES = [
+  { key: '20', label: '20s' },
+  { key: '30', label: '30s' },
+  { key: 'off', label: 'No timer' },
+] as const;
+type TimerChoice = (typeof TIMER_CHOICES)[number]['key'];
 
 /** Check if extracted text looks like real educational content vs PDF garbage. */
 function looksLikeRealContent(text: string): boolean {
@@ -67,6 +73,7 @@ export default function AIQuizBuilder() {
   const [quizType, setQuizType] = useState<QuizType>('mixed');
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('medium');
   const [questionCount, setQuestionCount] = useState(10);
+  const [timerChoice, setTimerChoice] = useState<TimerChoice>('30');
   const [loading, setLoading] = useState(false);
   /** Primary line stays short; optional detail shows file name with middle truncation. */
   const [loadingBanner, setLoadingBanner] = useState<{ title: string; detail?: string } | null>(null);
@@ -302,6 +309,7 @@ export default function AIQuizBuilder() {
           total: String(questions.length),
           quizType,
           difficulty,
+          timer: timerChoice,
           sourceType: 'notes',
           sourceId: selectedSubject,
         },
@@ -478,6 +486,25 @@ export default function AIQuizBuilder() {
         })}
       </View>
 
+      {/* 6. Timer */}
+      <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Timer</Text>
+      <View style={[styles.segmentedWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {TIMER_CHOICES.map((opt) => {
+          const active = timerChoice === opt.key;
+          return (
+            <Pressable
+              key={opt.key}
+              style={[styles.segment, active && { backgroundColor: theme.primary }]}
+              onPress={() => setTimerChoice(opt.key)}
+            >
+              <Text style={[styles.segmentText, active ? { color: '#fff', fontWeight: '700' } : { color: theme.textSecondary }]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* CTA */}
       <View style={{ gap: 10, marginTop: 24 }}>
         <Pressable
@@ -513,7 +540,7 @@ export default function AIQuizBuilder() {
 
         {selectedTopicIds.size > 0 && !loading && (
           <Text style={[styles.ctaSummary, { color: theme.textSecondary }]}>
-            {selectedTopicIds.size} note{selectedTopicIds.size > 1 ? 's' : ''} · {questionCount} questions · {difficulty}
+            {selectedTopicIds.size} note{selectedTopicIds.size > 1 ? 's' : ''} · {questionCount} questions · {difficulty} · {timerChoice === 'off' ? 'no timer' : `${timerChoice}s`}
           </Text>
         )}
       </View>

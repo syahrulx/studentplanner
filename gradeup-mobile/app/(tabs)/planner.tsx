@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch, Image } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate } from 'react-native-reanimated';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
@@ -24,10 +24,11 @@ import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/
 import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
 import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
 import { resolveDisplayTeachingWeeks, teachingWeekNumberForDate } from '@/src/lib/academicWeek';
-import { useTheme } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import { Avatar } from '@/components/Avatar'; // Trigger reload
 import { themePrefersLightOutline, type ThemePalette } from '@/constants/Themes';
 import { useTabBarAddMenu } from '@/contexts/TabBarContext';
+import { CatLottie } from '@/components/CatLottie';
 
 const WEEKDAY_TO_NUM: Record<string, number> = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
 
@@ -38,6 +39,86 @@ function getDaysUntilDue(dueDate: string): number {
   due.setHours(0, 0, 0, 0);
   return Math.ceil((due.getTime() - today.getTime()) / 864e5);
 }
+
+const plannerCatDecor = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  bubble: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(198,135,87,0.11)',
+  },
+  bubbleA: { width: 180, height: 180, top: 80, right: -48 },
+  bubbleB: { width: 140, height: 140, top: 320, left: -36 },
+  bubbleC: { width: 220, height: 220, bottom: -84, right: 20 },
+  paw: {
+    position: 'absolute',
+    fontSize: 14,
+    opacity: 0.24,
+  },
+  pawA: { top: 200, left: 18 },
+  pawB: { bottom: 120, right: 26 },
+  floatingCat: {
+    position: 'absolute',
+    right: 12,
+    bottom: 116,
+    width: 72,
+    height: 52,
+    opacity: 0.94,
+    zIndex: 6,
+  },
+  headerCat: {
+    position: 'absolute',
+    top: 78,
+    right: 88,
+    width: 84,
+    height: 62,
+    opacity: 0.96,
+    zIndex: 7,
+  },
+  lineCat: {
+    position: 'absolute',
+    top: 97,
+    right: 126,
+    width: 70,
+    height: 52,
+    opacity: 0.96,
+    zIndex: 7,
+  },
+});
+
+const plannerSpiderDecor = StyleSheet.create({
+  bgWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  cornerWeb: {
+    position: 'absolute',
+    width: 220,
+    height: 260,
+    opacity: 0.22,
+  },
+  cornerWebRight: {
+    top: 20,
+    right: -20,
+    transform: [{ scaleX: -1 }],
+  },
+});
+
+const plannerPurpleDecor = StyleSheet.create({
+  bgWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  bgImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    opacity: 0.68,
+  },
+});
 
 // Format a Date to YYYY-MM-DD using local timezone (avoids UTC shift for GMT+8)
 function toLocalISO(d: Date): string {
@@ -109,7 +190,13 @@ export default function Planner() {
   const scrollRef = useRef<ScrollView>(null);
   const weekGridScrollRef = useRef<ScrollView>(null);
   const theme = useTheme();
-  const s = useMemo(() => createPlannerStyles(theme), [theme]);
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isSpiderTheme = themePack === 'spider';
+  const isMonoTheme = themePack === 'mono';
+  const isPurpleTheme = themePack === 'purple';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const s = useMemo(() => createPlannerStyles(theme, isDarkMinimal), [theme, isDarkMinimal]);
   const headerOutline = useMemo(
     () => (themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.58)' : '#d7dee8'),
     [theme],
@@ -143,6 +230,10 @@ export default function Planner() {
     shareStreams, toggleShareStream, toggleCircleShareStream,
   } = useCommunity();
   const T = useTranslations(language);
+  const resolveSubjectColor = useCallback(
+    (subjectId: string) => (isDarkMinimal ? '#9ca3af' : getSubjectColor(subjectId)),
+    [getSubjectColor, isDarkMinimal],
+  );
   const openAddMenu = useTabBarAddMenu();
   const [view, setView] = useState<ViewMode>(lastPlannerView);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -1042,7 +1133,7 @@ export default function Planner() {
     const title = getCardTitle(item);
     const timeRange = getCardTimeRange(item);
     const subject = getCardSubject(item);
-    const subjectColor = getSubjectColor(subject);
+    const subjectColor = resolveSubjectColor(subject);
     const daysUntil = item.itemType === 'task' ? getDaysUntilDue(item.dueDate) : 99;
     const taskRow = item.itemType === 'task' ? (item as PlannerTaskItem) : null;
     const isOverdue =
@@ -1103,9 +1194,16 @@ export default function Planner() {
       <View key={`card-${idx}`} style={s.taskCardShell}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); handleItemAction(item); }}
-          style={[s.taskActionOutside, item.isDone && s.taskActionOutsideDone]}
+          style={[
+            s.taskActionOutside,
+            item.isDone && (isDarkMinimal ? s.taskActionOutsideDoneMono : s.taskActionOutsideDone),
+          ]}
         >
-          <Feather name={item.isDone ? 'check' : 'circle'} size={16} color={item.isDone ? '#15803d' : theme.primary} />
+          <Feather
+            name={item.isDone ? 'check' : 'circle'}
+            size={16}
+            color={item.isDone ? (isDarkMinimal ? theme.text : '#15803d') : theme.primary}
+          />
         </Pressable>
         <Pressable
           style={[
@@ -1363,7 +1461,7 @@ export default function Planner() {
                                     <>
                                       {showItems.map((item, idx) => {
                                         const subject = item.itemType === 'task' ? item.courseId : (item.subjectId || 'Study');
-                                        const color = getSubjectColor(subject);
+                                        const color = resolveSubjectColor(subject);
                                         const title = item.itemType === 'task' ? item.title : (item.topic || T('study'));
                                         const isDone = item.isDone;
 
@@ -1494,7 +1592,7 @@ export default function Planner() {
                   const seenColors = new Set<string>();
                   for (const item of dayItems) {
                     const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
-                    const color = getSubjectColor(subject);
+                    const color = resolveSubjectColor(subject);
                     const isShared = item.itemType === 'task' && !!(item as PlannerTaskItem).isSharedTask;
                     const key = `${color}-${isShared}`;
                     if (!seenColors.has(key) && dotInfos.length < 3) {
@@ -1686,8 +1784,24 @@ export default function Planner() {
                     const isPast = slot.hour < currentHour;
                     return (
                       <View key={slot.hour} style={{ height: hourHeight, justifyContent: 'flex-start', paddingTop: 6, paddingLeft: 10 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: isPast ? theme.textSecondary : theme.text }}>{slot.label.split(' ')[0]}</Text>
-                        <Text style={{ fontSize: 8, fontWeight: '600', color: theme.textSecondary }}>{slot.label.split(' ')[1]}</Text>
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontWeight: '700',
+                            color: isPurpleTheme ? '#4f5f86' : isPast ? theme.textSecondary : theme.text,
+                          }}
+                        >
+                          {slot.label.split(' ')[0]}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 8,
+                            fontWeight: '600',
+                            color: isPurpleTheme ? '#4f5f86' : theme.textSecondary,
+                          }}
+                        >
+                          {slot.label.split(' ')[1]}
+                        </Text>
                       </View>
                     );
                   })}
@@ -1797,7 +1911,7 @@ export default function Planner() {
                             boundedHeight = Math.max(minChip, gridHeight - boundedTop);
                           }
                           const subject = item.itemType === 'task' ? item.courseId : item.subjectId;
-                          const color = getSubjectColor(subject);
+                          const color = resolveSubjectColor(subject);
                           const isPast = isToday && h < currentHour;
 
                           if (boundedHeight < minChip || boundedTop >= gridHeight) return null;
@@ -1851,7 +1965,16 @@ export default function Planner() {
                                       {title}
                                     </Text>
                                     {boundedHeight > 40 && (
-                                      <Text style={{ fontSize: 8, color: theme.textSecondary, marginTop: 2, fontWeight: '600' }}>{timeStr}</Text>
+                                      <Text
+                                        style={{
+                                          fontSize: 8,
+                                          color: isPurpleTheme ? '#4f5f86' : theme.textSecondary,
+                                          marginTop: 2,
+                                          fontWeight: '600',
+                                        }}
+                                      >
+                                        {timeStr}
+                                      </Text>
                                     )}
                                   </View>
                                 );
@@ -1873,6 +1996,39 @@ export default function Planner() {
 
   return (
     <View style={s.safe}>
+      {isCatTheme ? (
+        <View style={plannerCatDecor.wrap} pointerEvents="none">
+          <View style={[plannerCatDecor.bubble, plannerCatDecor.bubbleA]} />
+          <View style={[plannerCatDecor.bubble, plannerCatDecor.bubbleB]} />
+          <View style={[plannerCatDecor.bubble, plannerCatDecor.bubbleC]} />
+          <Text style={[plannerCatDecor.paw, plannerCatDecor.pawA]}>🐾</Text>
+          <Text style={[plannerCatDecor.paw, plannerCatDecor.pawB]}>🐾</Text>
+        </View>
+      ) : null}
+      {isSpiderTheme ? (
+        <View style={plannerSpiderDecor.bgWrap} pointerEvents="none">
+          <Image
+            source={require('../../assets/spider-corner.png')}
+            style={[plannerSpiderDecor.cornerWeb, plannerSpiderDecor.cornerWebRight]}
+            resizeMode="contain"
+          />
+        </View>
+      ) : null}
+      {isPurpleTheme ? (
+        <View style={plannerPurpleDecor.bgWrap} pointerEvents="none">
+          <Image
+            source={require('../../assets/purple-task-bg-blur.png')}
+            style={plannerPurpleDecor.bgImage}
+            resizeMode="cover"
+          />
+        </View>
+      ) : null}
+      {isCatTheme ? (
+        <CatLottie
+          variant="task"
+          style={view === 'day' ? plannerCatDecor.headerCat : plannerCatDecor.lineCat}
+        />
+      ) : null}
       {/* Header */}
       <View style={s.header}>
         <View style={s.headerTopRow}>
@@ -1973,14 +2129,20 @@ export default function Planner() {
                             : 'list'
                         }
                         size={14}
-                        color={view === mode ? '#ffffff' : theme.text}
+                        color={view === mode ? (isDarkMinimal ? theme.textInverse : '#ffffff') : theme.text}
                       />
-                      <Text style={[s.viewDropdownText, view === mode && s.viewDropdownTextActive]}>
+                      <Text
+                        style={[
+                          s.viewDropdownText,
+                          view === mode && s.viewDropdownTextActive,
+                          view === mode && isDarkMinimal && { color: theme.textInverse },
+                        ]}
+                      >
                         {mode.charAt(0).toUpperCase() + mode.slice(1)}
                       </Text>
                     </View>
                     {view === mode && (
-                      <Feather name="check" size={12} color="#ffffff" />
+                      <Feather name="check" size={12} color={isDarkMinimal ? theme.textInverse : '#ffffff'} />
                     )}
                   </Pressable>
                 ))}
@@ -2025,9 +2187,13 @@ export default function Planner() {
                 const isToday = day.dateISO === todayISO;
                 const count = getItemCountOnDay(day.dateISO);
                 let dotColor: string | null = null;
-                if (count === 1) dotColor = '#10b981';
-                else if (count >= 2 && count <= 3) dotColor = '#f59e0b';
-                else if (count >= 4) dotColor = '#ef4444';
+                if (isMonoTheme) {
+                  if (count >= 1) dotColor = '#d1d5db';
+                } else {
+                  if (count === 1) dotColor = '#10b981';
+                  else if (count >= 2 && count <= 3) dotColor = '#f59e0b';
+                  else if (count >= 4) dotColor = '#ef4444';
+                }
 
                 return (
                   <Pressable
@@ -2035,14 +2201,25 @@ export default function Planner() {
                     style={[
                       s.dayCell, 
                       { width: 44, height: 60, borderRadius: 12 }, 
-                      isActive && { backgroundColor: theme.card, borderColor: theme.primary, borderWidth: 1, shadowColor: '#003366', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }
+                      isActive && {
+                        backgroundColor: theme.card,
+                        borderColor: theme.primary,
+                        borderWidth: 1,
+                        shadowColor: isMonoTheme ? '#000000' : '#003366',
+                        shadowOpacity: 0.1,
+                        shadowRadius: 8,
+                        shadowOffset: { width: 0, height: 4 },
+                        elevation: 4,
+                      }
                     ]}
                     onPress={() => setActiveDate(day.dateISO)}
                   >
                     <Text style={[s.dayLabel, isActive && s.dayLabelActive]}>{day.label.toUpperCase()}</Text>
                     <Text style={[s.dayDate, isActive && s.dayDateActive]}>{day.dayNum}</Text>
                     <View style={s.dayDotRow}>
-                      {isToday && !isActive && <View style={[s.dayDot, { backgroundColor: '#ef4444' }]} />}
+                      {isToday && !isActive && (
+                        <View style={[s.dayDot, { backgroundColor: isMonoTheme ? '#f3f4f6' : '#ef4444' }]} />
+                      )}
                       {dotColor && <View style={[s.dayDot, { backgroundColor: dotColor }]} />}
                     </View>
                   </Pressable>
@@ -2116,7 +2293,7 @@ export default function Planner() {
               {/* Hour row */}
               <View style={s.hourRow}>
                 <View style={s.timeColumn}>
-                  <Text style={s.timeLabel}>{slot.label}</Text>
+                  <Text style={[s.timeLabel, isPurpleTheme && { color: '#4f5f86' }]}>{slot.label}</Text>
                 </View>
                 <View style={s.hourDivider} />
               </View>
@@ -2325,7 +2502,7 @@ export default function Planner() {
 
 const GOLD = '#f59e0b';
 
-function createPlannerStyles(theme: ThemePalette) {
+function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   const lightOutline = themePrefersLightOutline(theme);
   const detailChipOutline = lightOutline ? 'rgba(255,255,255,0.82)' : theme.border;
   const actionRingOutline = lightOutline ? 'rgba(255,255,255,0.58)' : '#d7dee8';
@@ -2993,6 +3170,10 @@ function createPlannerStyles(theme: ThemePalette) {
     backgroundColor: lightOutline ? 'rgba(34,197,94,0.12)' : '#ecfdf5',
     borderColor: actionRingOutlineDone,
   },
+  taskActionOutsideDoneMono: {
+    backgroundColor: lightOutline ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.06)',
+    borderColor: lightOutline ? 'rgba(255,255,255,0.38)' : theme.border,
+  },
   taskMainRow: { marginBottom: 6 },
   /** Task: title + due time on one row (saves vertical space vs stacked title + clock row) */
   taskTitleRow: {
@@ -3031,10 +3212,10 @@ function createPlannerStyles(theme: ThemePalette) {
   taskMetaDivider: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
   taskInlineStatusText: { fontSize: 11, fontWeight: '700' },
   taskInlineStatusNeutral: { color: theme.primary },
-  taskInlineStatusSoon: { color: '#c2410c' },
-  taskInlineStatusOverdue: { color: '#b91c1c' },
-  taskInlineStatusStudy: { color: '#0f766e' },
-  taskInlineStatusDone: { color: '#15803d' },
+  taskInlineStatusSoon: { color: isDarkMinimal ? '#a3a3a3' : '#c2410c' },
+  taskInlineStatusOverdue: { color: isDarkMinimal ? '#e5e5e5' : '#b91c1c' },
+  taskInlineStatusStudy: { color: isDarkMinimal ? '#9ca3af' : '#0f766e' },
+  taskInlineStatusDone: { color: isDarkMinimal ? '#d4d4d4' : '#15803d' },
   taskInlineStatusFar: { color: theme.text },
   taskSecondaryMeta: { flexShrink: 1, fontSize: 11, fontWeight: '600', color: theme.textSecondary },
 

@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import Feather from '@expo/vector-icons/Feather';
 import type { ThemeIconKey } from '@/constants/ThemeIcons';
@@ -86,6 +86,8 @@ export default function Settings() {
     setAutoDeletePastTasks,
   } = useApp();
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
   const T = useTranslations(language);
 
   const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
@@ -397,6 +399,14 @@ export default function Settings() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {isCatTheme ? (
+          <View style={catDecor.wrap} pointerEvents="none">
+            <View style={[catDecor.bubble, catDecor.bubbleA]} />
+            <View style={[catDecor.bubble, catDecor.bubbleB]} />
+            <Text style={[catDecor.paw, catDecor.pawA]}>🐾</Text>
+            <Text style={[catDecor.paw, catDecor.pawB]}>🐾</Text>
+          </View>
+        ) : null}
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => router.back()}
@@ -409,6 +419,9 @@ export default function Settings() {
 
         <View style={styles.titleWrap}>
           <Text style={[styles.largeTitle, { color: theme.text }]}>Settings</Text>
+          {isCatTheme ? (
+            <Text style={[styles.catBadge, { color: theme.primary }]}>Cat mode active</Text>
+          ) : null}
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
@@ -433,12 +446,17 @@ export default function Settings() {
           <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/language-preference' as any)}
+            onPress={() => router.push('/in-app-themes' as any)}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
-              <Feather name="globe" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
+              <Feather name="image" size={18} color="#fff" />
             </View>
-            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('languagePref')}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>In App Themes</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Preview custom theme packs (locked for free users)
+              </Text>
+            </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={styles.dividerList} />
@@ -1175,6 +1193,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.6,
   },
+  catBadge: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
@@ -1298,4 +1321,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
   },
+});
+
+const catDecor = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  bubble: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(198,135,87,0.10)',
+  },
+  bubbleA: { width: 160, height: 160, top: 40, right: -40 },
+  bubbleB: { width: 190, height: 190, bottom: 70, left: -54 },
+  paw: {
+    position: 'absolute',
+    fontSize: 13,
+    opacity: 0.24,
+  },
+  pawA: { top: 140, left: 20 },
+  pawB: { bottom: 140, right: 24 },
 });

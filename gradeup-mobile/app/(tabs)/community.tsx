@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventsBoard from '@/components/EventsBoard';
 import ServicesBoard from '@/components/ServicesBoard';
@@ -18,6 +18,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Initialize Mapbox with your public access token from environment variables.
 // In production builds (eas build), the token may not be in process.env
@@ -42,9 +43,15 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { Avatar } from '@/components/Avatar';
+import { CatLottie } from '@/components/CatLottie';
+import { SpiderLottie } from '@/components/SpiderLottie';
 
 
-import { useTheme } from '@/hooks/useTheme';
+import {
+  useDarkMinimalThemePack,
+  useTheme,
+  useThemePack,
+} from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -58,6 +65,7 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 
 // Mapbox components are imported at the top of the file.
 
@@ -264,6 +272,11 @@ function MapOpenMusicPill({
 
 export default function CommunityMap() {
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isSpiderTheme = themePack === 'spider';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isMonoOnly = themePack === 'mono';
   // Using Mapbox Standard style configuration
   const mapboxConfig = React.useMemo(() => ({
     theme: getMapState(theme.id),
@@ -318,6 +331,7 @@ export default function CommunityMap() {
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const cameraRef = useRef<Mapbox.Camera>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
@@ -341,7 +355,43 @@ export default function CommunityMap() {
     }
   }); // runs on every render, which is forced every 30s by useWallClockTick
 
-  const visibleFriends = filteredFriends;
+  const favoriteSet = useMemo(() => new Set(favoriteFriendIds), [favoriteFriendIds]);
+  const visibleFriends = useMemo(() => {
+    const sorted = [...filteredFriends];
+    sorted.sort((a, b) => {
+      const af = favoriteSet.has(a.id) ? 1 : 0;
+      const bf = favoriteSet.has(b.id) ? 1 : 0;
+      if (af !== bf) return bf - af; // favorites first
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [filteredFriends, favoriteSet]);
+  const favoriteNames = useMemo(
+    () => visibleFriends.filter((f) => favoriteSet.has(f.id)).map((f) => f.name),
+    [visibleFriends, favoriteSet],
+  );
+
+  useEffect(() => {
+    AsyncStorage.getItem(COMMUNITY_FAVORITES_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setFavoriteFriendIds(parsed.filter((x) => typeof x === 'string'));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggleFavoriteFriend = useCallback((friendId: string) => {
+    setFavoriteFriendIds((prev) => {
+      const next = prev.includes(friendId)
+        ? prev.filter((id) => id !== friendId)
+        : [friendId, ...prev];
+      AsyncStorage.setItem(COMMUNITY_FAVORITES_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
   // Song overlays are now embedded directly inside MarkerView (via the songStrip).
 
@@ -426,6 +476,9 @@ export default function CommunityMap() {
         <ServicesBoard />
       ) : (
       <>
+      {/* Theme-pack overlays: absolutely positioned decorations, map tab only */}
+      {isCatTheme ? <CatLottie style={styles.floatingCat} /> : null}
+      {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={styles.topBarSide}>
@@ -437,8 +490,10 @@ export default function CommunityMap() {
           >
             <Feather name="bell" size={22} color={theme.text} />
             {communityBadgeCount > 0 ? (
-              <View style={[styles.notifBadge, { backgroundColor: theme.primary }]}>
-                <Text style={styles.notifBadgeText}>{communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}</Text>
+              <View style={[styles.notifBadge, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }]}>
+                <Text style={[styles.notifBadgeText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
+                  {communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}
+                </Text>
               </View>
             ) : null}
           </Pressable>
@@ -594,31 +649,33 @@ export default function CommunityMap() {
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: theme.card },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.card },
               pressed && { opacity: 0.8 },
             ]}
             onPress={() => setShowStatusPopup(true)}
           >
-            <Feather name="edit-3" size={16} color={theme.primary} />
-            <Text style={[styles.mapOverlayBtnText, { color: theme.primary }]}>Set Status</Text>
+            <Feather name="edit-3" size={16} color={isMonoOnly ? '#000000' : theme.primary} />
+            <Text style={[styles.mapOverlayBtnText, { color: isMonoOnly ? '#000000' : theme.primary }]}>Set Status</Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
-              { backgroundColor: theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.card, width: 44, paddingHorizontal: 0, justifyContent: 'center' },
               pressed && { opacity: 0.8 },
             ]}
             onPress={handleCenterOnMe}
           >
-            <Feather name="crosshair" size={20} color={theme.primary} />
+            <Feather name="crosshair" size={20} color={isMonoOnly ? '#000000' : theme.primary} />
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
               { 
-                backgroundColor: locationVisibility === 'off' ? theme.primary : theme.card, 
+                backgroundColor: isMonoOnly
+                  ? (locationVisibility === 'off' ? '#d1d5db' : '#ffffff')
+                  : (locationVisibility === 'off' ? theme.primary : theme.card), 
                 width: 44, 
                 paddingHorizontal: 0, 
                 justifyContent: 'center',
@@ -631,7 +688,7 @@ export default function CommunityMap() {
             <Feather 
               name={locationVisibility === 'off' ? "eye-off" : "eye"} 
               size={20} 
-              color={locationVisibility === 'off' ? "#FFF" : theme.primary} 
+              color={locationVisibility === 'off' ? (isMonoOnly ? '#000000' : "#FFF") : (isMonoOnly ? '#000000' : theme.primary)} 
             />
           </Pressable>
         </View>
@@ -823,29 +880,67 @@ export default function CommunityMap() {
             <Pressable
               style={({ pressed }) => [
                 styles.tabPill,
-                activeTab === 'places' && { backgroundColor: theme.primary + '18' },
+                activeTab === 'places' &&
+                  (isMonoOnly
+                    ? { backgroundColor: '#ffffff' }
+                    : themePack === 'spider'
+                    ? { backgroundColor: theme.primary }
+                    : { backgroundColor: theme.primary + '18' }),
                 pressed && { opacity: 0.7 },
               ]}
               onPress={() => setActiveTab(activeTab === 'places' ? 'people' : 'places')}
             >
-              <Feather name="map" size={14} color={activeTab === 'places' ? theme.primary : theme.textSecondary} />
+              <Feather
+                name="map"
+                size={14}
+                color={
+                  activeTab === 'places'
+                    ? isMonoOnly
+                      ? '#000000'
+                      : themePack === 'spider'
+                      ? theme.textInverse
+                      : theme.primary
+                    : theme.textSecondary
+                }
+              />
               <Text
                 style={[
                   styles.tabPillText,
-                  { color: activeTab === 'places' ? theme.primary : theme.textSecondary },
+                  {
+                    color:
+                      activeTab === 'places'
+                        ? isMonoOnly
+                          ? '#000000'
+                          : themePack === 'spider'
+                          ? theme.textInverse
+                          : theme.primary
+                        : theme.textSecondary,
+                  },
                 ]}
               >
                 Places
               </Text>
             </Pressable>
             <Pressable
-              style={({ pressed }) => [styles.addFriendBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [
+                styles.addFriendBtn,
+                { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
+                pressed && { opacity: 0.8 },
+              ]}
               onPress={() => router.push('/community/add-friend' as any)}
             >
-              <Feather name="user-plus" size={14} color="#fff" />
+              <Feather name="user-plus" size={14} color={isMonoOnly ? '#000000' : theme.textInverse} />
             </Pressable>
           </View>
         </View>
+        {favoriteNames.length > 0 && (
+          <View style={[styles.favoriteRow, { borderColor: theme.border }]}>
+            <Feather name="heart" size={13} color={theme.primary} />
+            <Text style={[styles.favoriteRowText, { color: theme.text }]} numberOfLines={1}>
+              {favoriteNames.join(', ')}
+            </Text>
+          </View>
+        )}
 
         {/* Friends list */}
         <ScrollView
@@ -902,7 +997,20 @@ export default function CommunityMap() {
           </Pressable>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
+            isCatTheme || isDarkMinimal ? (
+              <View style={styles.catLoadingWrap}>
+                {themePack === 'spider' ? (
+                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+                ) : (
+                  <CatLottie
+                    variant={isCatTheme ? 'loading' : 'monoLoading'}
+                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                  />
+                )}
+              </View>
+            ) : (
+              <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
+            )
           ) : visibleFriends.length === 0 ? (
             <View style={styles.emptyState}>
               <Feather name="users" size={40} color={theme.textSecondary} />
@@ -911,11 +1019,14 @@ export default function CommunityMap() {
                 Add friends to see them on the map and stay connected
               </Text>
               <Pressable
-                style={[styles.emptyBtn, { backgroundColor: theme.primary }]}
+                style={[
+                  styles.emptyBtn,
+                  { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
+                ]}
                 onPress={() => router.push('/community/add-friend' as any)}
               >
-                <Feather name="user-plus" size={16} color="#fff" />
-                <Text style={styles.emptyBtnText}>Add Friends</Text>
+                <Feather name="user-plus" size={16} color={isMonoOnly ? '#000000' : theme.textInverse} />
+                <Text style={[styles.emptyBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>Add Friends</Text>
               </Pressable>
             </View>
           ) : (
@@ -982,11 +1093,15 @@ export default function CommunityMap() {
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      handleQuickReact(friend.id, '❤️');
+                      toggleFavoriteFriend(friend.id);
                     }}
                     style={({ pressed }) => [pressed && { opacity: 0.5 }]}
                   >
-                    <Feather name="heart" size={18} color={theme.textSecondary} />
+                    <Feather
+                      name={favoriteSet.has(friend.id) ? 'heart' : 'heart'}
+                      size={18}
+                      color={favoriteSet.has(friend.id) ? '#ef4444' : theme.textSecondary}
+                    />
                   </Pressable>
                 </View>
               </Pressable>
@@ -1056,6 +1171,9 @@ function StatusPopup({
   refreshMyActivity: () => Promise<void>;
   theme: any;
 }) {
+  const themePack = useThemePack();
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isMonoOnly = themePack === 'mono';
   const [selectedType, setSelectedType] = useState<ActivityType>(
     (myActivity?.activity_type as ActivityType) || 'idle'
   );
@@ -1145,8 +1263,12 @@ function StatusPopup({
                   style={({ pressed }) => [
                     popupStyles.statusCard,
                     {
-                      backgroundColor: isSelected ? theme.primary + '12' : theme.background,
-                      borderColor: isSelected ? theme.primary : theme.border,
+                      backgroundColor: isSelected
+                        ? isDarkMinimal
+                          ? 'rgba(255,255,255,0.12)'
+                          : theme.primary + '12'
+                        : theme.background,
+                      borderColor: isSelected ? (isMonoOnly ? '#ffffff' : theme.primary) : theme.border,
                     },
                     pressed && { transform: [{ scale: 0.96 }] },
                   ]}
@@ -1156,7 +1278,13 @@ function StatusPopup({
                   <Text
                     style={[
                       popupStyles.statusLabel,
-                      { color: isSelected ? theme.primary : theme.textSecondary },
+                      {
+                        color: isSelected
+                          ? isDarkMinimal
+                            ? theme.text
+                            : theme.primary
+                          : theme.textSecondary,
+                      },
                       isSelected && { fontWeight: '700' },
                     ]}
                     numberOfLines={1}
@@ -1180,15 +1308,29 @@ function StatusPopup({
               router.push('/set-vibe' as any);
             }}
           >
-            <View style={[popupStyles.vibeBtnIcon, { backgroundColor: theme.primary + '15' }]}>
-              <Feather name="music" size={16} color={theme.primary} />
+            <View
+              style={[
+                popupStyles.vibeBtnIcon,
+                {
+                  backgroundColor: isDarkMinimal ? 'rgba(255,255,255,0.12)' : theme.primary + '15',
+                },
+              ]}
+            >
+              <Feather
+                name="music"
+                size={16}
+                color={isDarkMinimal ? theme.text : theme.primary}
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[popupStyles.vibeBtnTitle, { color: theme.text }]}>
                 {isVibing ? 'Change Song' : 'Pick a Song'}
               </Text>
               {isVibing && (
-                <Text style={[popupStyles.vibeBtnSub, { color: theme.primary }]} numberOfLines={1}>
+                <Text
+                  style={[popupStyles.vibeBtnSub, { color: isDarkMinimal ? theme.textSecondary : theme.primary }]}
+                  numberOfLines={1}
+                >
                   ♪ {myActivity.song_name}
                 </Text>
               )}
@@ -1200,15 +1342,22 @@ function StatusPopup({
           <Pressable
             style={({ pressed }) => [
               popupStyles.saveBtn,
-              { backgroundColor: theme.primary },
+              { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
               saving && { opacity: 0.5 },
               pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
             ]}
             onPress={handleSave}
             disabled={saving}
           >
-            <Feather name="check" size={18} color="#fff" style={{ marginRight: 6 }} />
-            <Text style={popupStyles.saveBtnText}>{saving ? 'Saving...' : 'Update Status'}</Text>
+            <Feather
+              name="check"
+              size={18}
+              color={isMonoOnly ? '#000000' : theme.textInverse}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={[popupStyles.saveBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
+              {saving ? 'Saving...' : 'Update Status'}
+            </Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -1320,6 +1469,25 @@ const popupStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingCat: {
+    position: 'absolute',
+    right: 18,
+    bottom: SCREEN_HEIGHT * 0.4 - 10,
+    width: 62,
+    height: 46,
+    opacity: 0.96,
+    zIndex: 18,
+  },
+  /** Spider theme: decorative web at map bottom-right. */
+  spiderTopLine: {
+    position: 'absolute',
+    right: 10,
+    bottom: Platform.OS === 'ios' ? 310 : 116,
+    width: 100,
+    height: 124,
+    opacity: 0.80,
+    zIndex: 4,
+  },
 
   // Community tab switcher (Map | Events)
   communityTabBar: {
@@ -1865,6 +2033,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 8,
   },
+  favoriteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  favoriteRowText: { fontSize: 12, fontWeight: '700', flex: 1 },
   bottomSheetTitle: { fontSize: 22, fontWeight: '800' },
   bottomSheetActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tabPill: {
@@ -1887,6 +2065,22 @@ const styles = StyleSheet.create({
   // Friends list
   peopleList: { flex: 1 },
   peopleListContent: { paddingHorizontal: 16 },
+  catLoadingWrap: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  catLoadingLottie: {
+    width: 84,
+    height: 58,
+  },
+  monoLoadingLottie: {
+    width: 122,
+    height: 88,
+  },
+  spiderLoadingLottie: {
+    width: 124,
+    height: 94,
+  },
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',

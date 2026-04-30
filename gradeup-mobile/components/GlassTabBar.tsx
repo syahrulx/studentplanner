@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { useTheme, useThemeId } from '@/hooks/useTheme';
+import { useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 
@@ -30,6 +30,9 @@ function hexToRgba(hex: string, alpha: number): string {
 export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const theme = useTheme();
   const themeId = useThemeId();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
   const isDark = isDarkTheme(themeId);
   const insets = useSafeAreaInsets();
   const { communityBadgeCount } = useCommunity();
@@ -40,7 +43,7 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
       
   const topEdgeColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.50)';
   const outlineColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
-  const activeColor = theme.primary;
+  const activeColor = isCatTheme ? '#8d5a3b' : theme.primary;
   const inactiveColor = theme.tabIconDefault;
 
   return (
@@ -105,7 +108,12 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                   shadowRadius: 10,
                   elevation: 6,
                 }}>
-                  {options.tabBarIcon?.({ focused, color: focused ? '#ffffff' : inactiveColor, size: 24 })}
+                  {options.tabBarIcon?.({
+                    focused,
+                    color: focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor,
+                    size: 24,
+                  })}
+                  {focused && isCatTheme ? <Text style={styles.catHomePaw}>🐾</Text> : null}
                 </View>
                 <Text style={[styles.label, { color }]} numberOfLines={1}>
                   {(options.tabBarLabel as string) ?? options.title ?? route.name}
@@ -136,7 +144,15 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
               >
                 {(options.tabBarLabel as string) ?? options.title ?? route.name}
               </Text>
-              {focused && <View style={[styles.indicator, { backgroundColor: activeColor }]} />}
+              {focused && (
+                <View
+                  style={[
+                    styles.indicator,
+                    isCatTheme ? styles.indicatorCat : null,
+                    { backgroundColor: activeColor },
+                  ]}
+                />
+              )}
             </Pressable>
           );
         })}
@@ -240,6 +256,18 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     marginTop: 1,
+  },
+  indicatorCat: {
+    width: 9,
+    height: 4,
+    borderRadius: 999,
+  },
+  catHomePaw: {
+    position: 'absolute',
+    right: -1,
+    top: -2,
+    fontSize: 10,
+    opacity: 0.95,
   },
   pressed: {
     opacity: 0.7,

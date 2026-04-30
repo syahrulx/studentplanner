@@ -5,6 +5,7 @@ import type { Course } from './types';
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO = 'hasSeenNonUitmTimetableIntro';
 const KEY_THEME = 'appTheme';
+const KEY_THEME_PACK = 'appThemePack';
 const KEY_LANGUAGE = 'appLanguage';
 const KEY_LOGHAT = 'appLoghat';
 
@@ -73,30 +74,43 @@ export async function setTheme(theme: ThemeId): Promise<void> {
   } catch {}
 }
 
-export type AppLanguage = 'en' | 'ms';
+export type ThemePackId = 'none' | 'cat' | 'mono' | 'spider' | 'purple';
+
+export async function getThemePack(): Promise<ThemePackId> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_THEME_PACK);
+    if (raw === 'cat') return 'cat';
+    if (raw === 'mono') return 'mono';
+    if (raw === 'spider') return 'spider';
+    if (raw === 'purple') return 'purple';
+  } catch {}
+  return 'none';
+}
+
+export async function setThemePack(pack: ThemePackId): Promise<void> {
+  try {
+    if (pack === 'none') {
+      await AsyncStorage.removeItem(KEY_THEME_PACK);
+      return;
+    }
+    await AsyncStorage.setItem(KEY_THEME_PACK, pack);
+  } catch {}
+}
+
+export type AppLanguage = 'en';
 export type AppLoghat = 'negeriSembilan' | 'kelantan' | 'kedah' | 'melaka';
 
 export async function getLanguage(): Promise<AppLanguage> {
-  try {
-    const value = await AsyncStorage.getItem(KEY_LANGUAGE);
-    if (value === 'en' || value === 'ms') return value;
-  } catch {}
+  try { await AsyncStorage.removeItem(KEY_LANGUAGE); } catch {}
   return 'en';
 }
 
 export async function setLanguage(lang: AppLanguage): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEY_LANGUAGE, lang);
-  } catch {}
+  try { await AsyncStorage.setItem(KEY_LANGUAGE, 'en'); } catch {}
 }
 
 export async function getLoghat(): Promise<AppLoghat | null> {
-  try {
-    const value = await AsyncStorage.getItem(KEY_LOGHAT);
-    if (value === 'negeriSembilan' || value === 'kelantan' || value === 'kedah' || value === 'melaka') {
-      return value;
-    }
-  } catch {}
+  try { await AsyncStorage.removeItem(KEY_LOGHAT); } catch {}
   return null;
 }
 

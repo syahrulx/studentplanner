@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import {
   peakWeekFromTaskCounts,
   resolveDisplayTeachingWeeks,
@@ -21,6 +21,8 @@ export default function StressMap() {
   const { user, tasks, courses, academicCalendar, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isMonoTheme = themePack === 'mono';
   const insets = useSafeAreaInsets();
 
   const totalWeeks = useMemo(
@@ -123,10 +125,15 @@ export default function StressMap() {
         </View>
       </View>
 
-      <View style={[styles.velocityCard, { backgroundColor: theme.primary }]}>
+      <View
+        style={[
+          styles.velocityCard,
+          { backgroundColor: isMonoTheme ? '#0f0f0f' : theme.primary, borderColor: isMonoTheme ? '#2a2a2a' : 'transparent' },
+        ]}
+      >
         <View style={styles.velocityHeader}>
           <View>
-            <Text style={styles.velocityLabel}>WORKLOAD VELOCITY</Text>
+            <Text style={[styles.velocityLabel, isMonoTheme && { color: '#f5f5f5' }]}>WORKLOAD VELOCITY</Text>
             <View style={styles.criticalRow}>
               <View
                 style={[
@@ -134,7 +141,7 @@ export default function StressMap() {
                   { backgroundColor: isPeakWave ? '#ef4444' : '#22c55e' },
                 ]}
               />
-              <Text style={styles.criticalText}>
+              <Text style={[styles.criticalText, isMonoTheme && { color: '#e5e5e5' }]}>
                 {isPeakWave ? T('workloadPeakWave') : T('workloadSteady')}
               </Text>
             </View>
@@ -160,7 +167,11 @@ export default function StressMap() {
                   ]}
                 />
                 <Text
-                  style={[styles.barWeekLabel, isCurrent && styles.barWeekLabelCurrent]}
+                  style={[
+                    styles.barWeekLabel,
+                    isCurrent && styles.barWeekLabelCurrent,
+                    isMonoTheme && { color: '#d4d4d4' },
+                  ]}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                 >
@@ -171,10 +182,10 @@ export default function StressMap() {
           })}
         </View>
         {maxLoadInAnyWeek === 0 ? (
-          <Text style={styles.emptyHint}>{T('tasksPulseNoTasks')}</Text>
+          <Text style={[styles.emptyHint, isMonoTheme && { color: '#a3a3a3' }]}>{T('tasksPulseNoTasks')}</Text>
         ) : null}
         {tasksOutsideTeachingWindow > 0 ? (
-          <Text style={[styles.emptyHint, { marginTop: 8 }]}>
+          <Text style={[styles.emptyHint, { marginTop: 8 }, isMonoTheme && { color: '#a3a3a3' }]}>
             {T('stressMapTasksOutsideRange')
               .replace('{count}', String(tasksOutsideTeachingWindow))
               .replace('{total}', String(totalWeeks))}

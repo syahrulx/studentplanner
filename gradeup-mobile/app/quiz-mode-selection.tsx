@@ -16,6 +16,7 @@ const PAD = 20;
 const SECTION = 24;
 const RADIUS = 20;
 const RADIUS_SM = 14;
+type TimerMode = '20' | '30' | 'off';
 
 export default function QuizModeSelection() {
   const { language, flashcards } = useApp();
@@ -27,10 +28,11 @@ export default function QuizModeSelection() {
   const {
     noteId, total, fromBuilder, useGenerated,
     quizType: paramQuizType, difficulty: paramDifficulty,
-    sourceType: paramSourceType, sourceId: paramSourceId,
+    sourceType: paramSourceType, sourceId: paramSourceId, timer: paramTimer,
   } = useLocalSearchParams<{
     noteId?: string; total?: string; fromBuilder?: string; useGenerated?: string;
     quizType?: string; difficulty?: string; sourceType?: string; sourceId?: string;
+    timer?: string;
   }>();
 
   const totalNum = parseInt(total || '5', 10);
@@ -44,6 +46,11 @@ export default function QuizModeSelection() {
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
   const [inviteCodeInput, setInviteCodeInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const initialTimerMode: TimerMode =
+    paramTimer === '20' || paramTimer === '30' || paramTimer === 'off'
+      ? paramTimer
+      : '30';
+  const selectedTimerSeconds = initialTimerMode === 'off' ? 0 : Number(initialTimerMode);
 
   const buildQuestions = useCallback(async () => {
     if (useGenerated === '1') {
@@ -79,10 +86,20 @@ export default function QuizModeSelection() {
     });
   }, [useGenerated, noteId, flashcards, totalNum]);
 
+  const applyTimerToQuestions = useCallback(
+    (questions: any[]) =>
+      questions.map((q) => ({
+        ...q,
+        __timerSeconds: selectedTimerSeconds,
+      })),
+    [selectedTimerSeconds],
+  );
+
   const handleSolo = async () => {
     setLoading(true);
     try {
-      const questions = await buildQuestions();
+      const rawQuestions = await buildQuestions();
+      const questions = applyTimerToQuestions(rawQuestions as any[]);
       const session = await createQuiz({
         mode: 'solo',
         matchType: 'friend',
@@ -122,7 +139,8 @@ export default function QuizModeSelection() {
         }
       }
 
-      const questions = await buildQuestions();
+      const rawQuestions = await buildQuestions();
+      const questions = applyTimerToQuestions(rawQuestions as any[]);
       const session = await createQuiz({
         mode: 'multiplayer',
         matchType,
