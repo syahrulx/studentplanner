@@ -1,5 +1,5 @@
 import { ZStack, Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, frame, opacity, background } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, frame, opacity, background, containerRelativeFrame } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
@@ -16,7 +16,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const warn   = props?.theme?.warning        || '#d97706';
   const line   = props?.theme?.border         || '#e2e8f0';
   const pack   = props?.theme?.themePack;
-  const packIcon = pack === 'cat' ? '🐾' : pack === 'spider' ? '🕸' : pack === 'purple' ? '✨' : '';
+  const packIcon = pack === 'cat' ? '🐾' : pack === 'purple' ? '✨' : '';
 
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
@@ -54,9 +54,15 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
+  const contentInsets = {
+    top: small ? 16 : large ? 18 : 17,
+    side: small ? 13 : 14,
+    bottom: small ? 12 : 13,
+  };
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
-  const totalItems = p.tasks.length + p.classes.length;
-  const dense = !small && (totalItems >= 6 || p.classes.length >= 4 || p.tasks.length >= 4);
+  // Layout never gets crowded now that columns are capped to 2 — keep the
+  // breathable (non-dense) spacing for medium/large.
+  const dense = false;
 
   const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -95,13 +101,18 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   if (!p.signedIn) {
     return (
-      <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
         {packIcon ? (
-          <Text modifiers={[font({ size: 110 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: -25, trailing: -20 })]}>
+          <Text modifiers={[font({ size: 130 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -38, leading: -32 })]}>
             {packIcon}
           </Text>
         ) : null}
-        <VStack modifiers={[padding({ all: 14 })]} spacing={6}>
+        <VStack
+          alignment="leading"
+          modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
+          spacing={6}
+        >
+          <Spacer />
           <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Rencana</Text>
           <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
         </VStack>
@@ -182,15 +193,19 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
     const sTasks = p.tasks.slice(0, 2);
     const sCls   = p.classes.slice(0, 2);
     return (
-      <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
         {packIcon ? (
-          <Text modifiers={[font({ size: 120 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: -25, trailing: -20 })]}>
+          <Text modifiers={[font({ size: 140 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -42, leading: -36 })]}>
             {packIcon}
           </Text>
         ) : null}
-        <VStack modifiers={[padding({ all: 13 })]} spacing={6}>
-          <HStack spacing={4}>
-            <VStack spacing={1}>
+        <VStack
+          alignment="leading"
+          modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
+          spacing={6}
+        >
+          <HStack spacing={4} alignment="top">
+            <VStack spacing={1} alignment="leading" modifiers={[padding({ leading: 4, top: 4 })]}>
               <Text modifiers={[font({ weight: 'heavy', size: 13 }), foregroundStyle(title), lineLimit(1)]}>
                 Today
               </Text>
@@ -207,13 +222,14 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         <Divider modifiers={[foregroundStyle(line), opacity(0.18)]} />
 
         {sTasks.length > 0 ? (
-          <VStack spacing={4}>
+          <VStack spacing={4} alignment="leading">
             {sTasks.map((t) => (
-              <HStack key={t.id} spacing={5}>
+              <HStack key={t.id} spacing={5} alignment="center">
                 <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent))]}>●</Text>
                 <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(body), lineLimit(1)]}>
                   {t.title}
                 </Text>
+                <Spacer />
               </HStack>
             ))}
           </VStack>
@@ -224,13 +240,13 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         ) : null}
 
         {sCls.length > 0 ? (
-          <VStack spacing={5}>
+          <VStack spacing={5} alignment="leading">
             {sCls.map((c, i) => (
-              <HStack key={`${c.startTime}-${i}`} spacing={6}>
+              <HStack key={`${c.startTime}-${i}`} spacing={6} alignment="top">
                 <Text modifiers={[font({ size: 10, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
                   {c.startTime}
                 </Text>
-                <VStack spacing={0}>
+                <VStack spacing={0} alignment="leading">
                   <Text modifiers={[font({ size: 11, weight: 'bold' }), foregroundStyle(body), lineLimit(1)]}>
                     {c.label}
                   </Text>
@@ -238,6 +254,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
                     {c.location || '—'}
                   </Text>
                 </VStack>
+                <Spacer />
               </HStack>
             ))}
           </VStack>
@@ -252,22 +269,26 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   // ── MEDIUM / LARGE ──
-  const colMax  = large ? 4 : 2;
+  const colMax  = large ? 2 : 2;
   const colTask = p.tasks.slice(0, colMax);
   const colCls  = p.classes.slice(0, colMax);
 
   return (
-    <ZStack alignment="bottomTrailing" modifiers={[background(widgetBg)]}>
+    <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
       {packIcon ? (
-        <Text modifiers={[font({ size: large ? 200 : 160 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ bottom: -35, trailing: -30 })]}>
+        <Text modifiers={[font({ size: large ? 220 : 180 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: large ? -55 : -45, leading: large ? -50 : -42 })]}>
           {packIcon}
         </Text>
       ) : null}
-      <VStack modifiers={[padding({ top: dense ? 14 : 16, leading: 14, trailing: 14, bottom: dense ? 10 : 12 })]} spacing={dense ? 6 : 10}>
+      <VStack
+        alignment="leading"
+        modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
+        spacing={dense ? 6 : 10}
+      >
 
         {/* Header */}
-        <HStack spacing={6}>
-          <VStack spacing={2}>
+        <HStack spacing={6} alignment="top">
+          <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: dense ? 14 : 17 }), foregroundStyle(title), lineLimit(1), padding({ top: dense ? 2 : 0 })]}>
               Today
             </Text>
@@ -281,10 +302,10 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
       <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
 
       {/* Two-column content */}
-      <HStack spacing={0}>
+      <HStack spacing={0} alignment="top">
 
         {/* TASKS column */}
-        <VStack spacing={dense ? 4 : 6} modifiers={[padding({ trailing: 12 })]}>
+        <VStack spacing={dense ? 4 : 6} alignment="leading" modifiers={[padding({ trailing: 12 })]}>
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>TASKS</Text>
             <Spacer />
@@ -296,11 +317,11 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           {colTask.length === 0 ? (
             <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done! 🎉</Text>
           ) : (
-            <VStack spacing={dense ? 3 : 5}>
+            <VStack spacing={dense ? 3 : 5} alignment="leading">
               {colTask.map((t) => (
-                <HStack key={t.id} spacing={5}>
-                  <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent)), padding({ top: 2 })]}>●</Text>
-                  <VStack spacing={dense ? 0 : 1}>
+                <HStack key={t.id} spacing={5} alignment="top">
+                  <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent)), padding({ top: 4 })]}>●</Text>
+                  <VStack spacing={dense ? 0 : 1} alignment="leading">
                     <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                       {t.title}
                     </Text>
@@ -328,7 +349,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
 
         {/* CLASSES column */}
-        <VStack spacing={dense ? 2 : 6} modifiers={[padding({ leading: 12 })]}>
+        <VStack spacing={dense ? 2 : 6} alignment="leading" modifiers={[padding({ leading: 12 })]}>
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>CLASSES</Text>
             <Spacer />
@@ -340,16 +361,17 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           {colCls.length === 0 ? (
             <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free! 🎉</Text>
           ) : (
-            <VStack spacing={dense ? 2 : 6}>
+            <VStack spacing={dense ? 2 : 6} alignment="leading">
               {colCls.map((c, i) => (
-                <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={dense ? 0 : 1}>
-                  <HStack spacing={dense ? 4 : 5}>
+                <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={dense ? 0 : 1} alignment="leading">
+                  <HStack spacing={dense ? 4 : 5} alignment="firstTextBaseline">
                     <Text modifiers={[font({ size: dense ? 10 : 11, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
                       {c.startTime}
                     </Text>
                     <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
                       {c.label}
                     </Text>
+                    <Spacer />
                   </HStack>
                   <Text modifiers={[font({ size: dense ? 7 : 8 }), foregroundStyle(muted), lineLimit(1)]}>
                     {c.location || '—'}

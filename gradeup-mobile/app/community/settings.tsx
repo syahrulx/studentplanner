@@ -25,7 +25,7 @@ import {
   type CommunityPushPrefs,
 } from '@/src/lib/communityPushPrefs';
 import { Avatar } from '@/components/Avatar';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
 import type { LocationVisibility } from '@/src/lib/communityApi';
@@ -43,6 +43,11 @@ export default function CommunitySettings() {
     userId,
   } = useCommunity();
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isMonoTheme = themePack === 'mono';
+  const switchTrackOff = isMonoTheme ? '#262626' : theme.border;
+  const switchTrackOn = isMonoTheme ? '#525252' : theme.primary;
+  const switchThumb = isMonoTheme ? '#ffffff' : undefined;
   const T = useTranslations(language);
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -299,6 +304,9 @@ export default function CommunitySettings() {
               value={pushPrefs.communityPushEnabled}
               onValueChange={(v) => togglePushPref('communityPushEnabled', v)}
               disabled={loadingPushPrefs}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
           <View style={styles.dividerList} />
@@ -313,6 +321,9 @@ export default function CommunitySettings() {
               value={pushPrefs.pushReactionsEnabled}
               onValueChange={(v) => togglePushPref('pushReactionsEnabled', v)}
               disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
           <View style={styles.dividerList} />
@@ -327,6 +338,9 @@ export default function CommunitySettings() {
               value={pushPrefs.pushFriendRequestsEnabled}
               onValueChange={(v) => togglePushPref('pushFriendRequestsEnabled', v)}
               disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
           <View style={styles.dividerList} />
@@ -341,6 +355,9 @@ export default function CommunitySettings() {
               value={pushPrefs.pushCircleEnabled}
               onValueChange={(v) => togglePushPref('pushCircleEnabled', v)}
               disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
           <View style={styles.dividerList} />
@@ -355,6 +372,9 @@ export default function CommunitySettings() {
               value={pushPrefs.pushSharedTaskEnabled}
               onValueChange={(v) => togglePushPref('pushSharedTaskEnabled', v)}
               disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
         </View>

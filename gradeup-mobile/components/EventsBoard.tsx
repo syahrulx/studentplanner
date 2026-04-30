@@ -19,12 +19,14 @@ import Feather from '@expo/vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { useTheme } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 import { Avatar } from '@/components/Avatar';
+import { CatLottie } from '@/components/CatLottie';
+import { SpiderLottie } from '@/components/SpiderLottie';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -89,6 +91,10 @@ function formatTime(t?: string | null): string | null {
 
 export default function EventsBoard() {
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isSpiderTheme = themePack === 'spider';
   const { user } = useApp();
   const dark = isDarkTheme(theme.id);
 
@@ -477,7 +483,18 @@ export default function EventsBoard() {
         <View style={{ flex: 1 }}>
           {Header}
           <View style={styles.center}>
-            <ActivityIndicator size="small" color={theme.textSecondary} />
+            {isCatTheme || isDarkMinimal ? (
+              isSpiderTheme ? (
+                <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+              ) : (
+                <CatLottie
+                  variant={isCatTheme ? 'loading' : 'monoLoading'}
+                  style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                />
+              )
+            ) : (
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            )}
           </View>
         </View>
       ) : (
@@ -498,6 +515,22 @@ export default function EventsBoard() {
           }
           ListEmptyComponent={Empty}
         />
+      )}
+      {refreshing && (
+        <View pointerEvents="none" style={styles.refreshOverlay}>
+          {isCatTheme || isDarkMinimal ? (
+            isSpiderTheme ? (
+              <SpiderLottie variant="loading" style={styles.spiderRefreshLottie} />
+            ) : (
+              <CatLottie
+                variant={isCatTheme ? 'loading' : 'monoLoading'}
+                style={!isCatTheme && isDarkMinimal ? styles.monoRefreshLottie : styles.catRefreshLottie}
+              />
+            )
+          ) : (
+            <ActivityIndicator size="small" color={theme.primary} />
+          )}
+        </View>
       )}
 
       {/* ─── Filter Modal (iOS-style sheet) ─── */}
@@ -682,6 +715,39 @@ export default function EventsBoard() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  refreshOverlay: {
+    position: 'absolute',
+    top: 72,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 40,
+  },
+  catLoadingLottie: {
+    width: 84,
+    height: 58,
+  },
+  monoLoadingLottie: {
+    width: 122,
+    height: 88,
+  },
+  spiderLoadingLottie: {
+    width: 124,
+    height: 94,
+  },
+  catRefreshLottie: {
+    width: 74,
+    height: 52,
+  },
+  monoRefreshLottie: {
+    width: 106,
+    height: 78,
+  },
+  spiderRefreshLottie: {
+    width: 104,
+    height: 78,
+  },
 
   // Header
   header: {

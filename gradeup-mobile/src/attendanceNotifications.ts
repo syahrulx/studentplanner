@@ -3,10 +3,15 @@ import * as Notifications from 'expo-notifications';
 import { IosAuthorizationStatus } from 'expo-notifications';
 import type { TimetableEntry } from './types';
 import { attendanceOccurrenceKey, ensureAttendanceCategory, getAnsweredOccurrenceSet } from './attendanceRecording';
+import { getAttendanceCheckinPopupEnabled } from './storage';
 
 // Android channel importance cannot be changed once created.
 // Bump the channel id so existing installs get a fresh HIGH-importance channel (restores popup/banner).
 const CHANNEL_ATTENDANCE = 'attendance_checkin_v2';
+// Sibling channel used when the user turns the popup OFF in Settings. LOW importance
+// keeps the entry in the notification shade (and in the in-app Notification Manager)
+// without showing a heads-up banner or playing a sound.
+const CHANNEL_ATTENDANCE_SILENT = 'attendance_checkin_silent_v1';
 const ID_PREFIX = 'attendance-';
 
 // iOS caps pending local notifications at 64 per app. Leave headroom for task +
@@ -69,6 +74,14 @@ export async function ensureAttendanceChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(CHANNEL_ATTENDANCE, {
     name: 'Class attendance',
     importance: Notifications.AndroidImportance.HIGH,
+  });
+  // Always-create the silent sibling so toggling the popup off doesn't need a
+  // round-trip to native channel creation later.
+  await Notifications.setNotificationChannelAsync(CHANNEL_ATTENDANCE_SILENT, {
+    name: 'Class attendance (silent)',
+    importance: Notifications.AndroidImportance.LOW,
+    sound: null,
+    enableVibrate: false,
   });
 }
 
@@ -157,6 +170,13 @@ export async function rescheduleAttendanceNotifications(
       await ensureAttendanceCategory().catch(() => {});
       await cancelAllAttendanceNotifications();
 
+      // Read once per reschedule. When OFF we schedule each notification so the
+      // OS delivers it silently — no banner, no sound — but the request stays
+      // pending so it appears in the in-app Notification Manager and the OS
+      // notification center where the user can still tap it to record attendance.
+      const popupEnabled = await getAttendanceCheckinPopupEnabled().catch(() => true);
+      const androidChannelId = popupEnabled ? CHANNEL_ATTENDANCE : CHANNEL_ATTENDANCE_SILENT;
+
       const horizonDays = Math.max(1, Math.min(31, Number(opts?.horizonDays ?? 14)));
       const now = new Date();
       const today = startOfDay(now);
@@ -220,8 +240,12 @@ export async function rescheduleAttendanceNotifications(
             content: {
               title: 'Class check-in',
               body: `Did you attend class "${p.subject}" in 5 more minutes?`,
-              sound: true,
+              sound: popupEnabled,
               categoryIdentifier: 'attendance_checkin',
+              // iOS: 'passive' delivers the notification straight to the
+              // notification center without lighting up the screen or playing
+              // a sound — exactly what "popup off" should mean.
+              ...(popupEnabled ? {} : { interruptionLevel: 'passive' as const }),
               data: {
                 type: 'attendance_checkin',
                 userId,
@@ -233,12 +257,12 @@ export async function rescheduleAttendanceNotifications(
                 subjectKey: p.subjectKey,
                 displaySubject: p.subject,
               },
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ATTENDANCE } : {}),
+              ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.DATE,
               date: p.fireAt,
-              ...(Platform.OS === 'android' ? { channelId: CHANNEL_ATTENDANCE } : {}),
+              ...(Platform.OS === 'android' ? { channelId: androidChannelId } : {}),
             },
           });
           scheduledOk += 1;

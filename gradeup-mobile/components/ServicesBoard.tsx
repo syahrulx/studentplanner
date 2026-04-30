@@ -260,7 +260,7 @@ export default function ServicesBoard() {
                     : { backgroundColor: theme.card, borderColor: theme.border },
                 ]}
               >
-                <Text style={{ fontSize: 13 }}>{c.emoji}</Text>
+                <Feather name={c.icon as any} size={13} color={active ? c.tint : theme.textSecondary} />
                 <Text
                   style={[
                     styles.pillText,
@@ -352,7 +352,7 @@ export default function ServicesBoard() {
 
             <View style={styles.metaRow}>
               <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
-                <Text style={{ fontSize: 11 }}>{cat.emoji}</Text>
+                <Feather name={cat.icon as any} size={11} color={cat.tint} />
                 <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
               </View>
 

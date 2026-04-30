@@ -1,5 +1,6 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
-import { Platform } from 'react-native';
+import { File, Paths } from 'expo-file-system';
+import { Image as RNImage, Platform } from 'react-native';
 import { updateAndroidHomeWidgetSnapshot } from 'home-widget-bridge';
 import { buildHomeWidgetProps, type HomeWidgetProps } from './lib/homeWidgetProps';
 import { updateGradeUpTodayTimelineFromHost } from './iosWidgetTimelineSync';
@@ -7,12 +8,37 @@ import type { Course, Task, TimetableEntry } from './types';
 import type { ThemeId } from '@/constants/Themes';
 import { getTodayISO } from './utils/date';
 
+const IOS_WIDGET_APP_GROUP_ID = 'group.com.aizztech.rencana';
+const SPIDER_WEB_FILENAME = 'spider-widget-web.png';
+
 function iosWidgetSnapshotModulesAvailable(): boolean {
   const hasExpoUI = requireOptionalNativeModule('ExpoUI') != null;
   const hasExpoWidgets = requireOptionalNativeModule('ExpoWidgets') != null;
   // GradeUpTodayWidget imports @expo/ui (ExpoUI) and uses expo-widgets (ExpoWidgets). Loading that
   // module in Expo Go or other builds without those natives throws synchronously — guard here first.
   return hasExpoUI && hasExpoWidgets;
+}
+
+function ensureSpiderWebImageUri(): string | undefined {
+  if (Platform.OS !== 'ios') return undefined;
+  try {
+    const shared = Paths.appleSharedContainers?.[IOS_WIDGET_APP_GROUP_ID];
+    if (!shared) return undefined;
+
+    const dest = new File(shared, SPIDER_WEB_FILENAME);
+    const source = RNImage.resolveAssetSource(require('../assets/spider-widget-web.png'));
+    const srcUri = typeof source?.uri === 'string' ? source.uri : '';
+    if (!srcUri.startsWith('file://')) return undefined;
+
+    const src = new File(srcUri);
+    if (!src.exists || src.size <= 0) return undefined;
+    // Always replace to avoid stale cached image in widget shared container.
+    if (dest.exists) dest.delete();
+    src.copy(dest);
+    return dest.uri;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Inputs needed to build a widget snapshot for any given day. */
@@ -56,9 +82,10 @@ function nextLocalMidnight(): Date {
 export function syncHomeScreenWidget(input: WidgetSyncInputs): void {
   const todayISO = getTodayISO();
   const tomorrowISO = addDaysISO(todayISO, 1);
+  const spiderWebImageUri = ensureSpiderWebImageUri();
 
-  const todayProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO });
-  const tomorrowProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO: tomorrowISO });
+  const todayProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO, spiderWebImageUri });
+  const tomorrowProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO: tomorrowISO, spiderWebImageUri });
 
   if (Platform.OS === 'android') {
     // Schema: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }

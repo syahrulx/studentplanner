@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
@@ -42,6 +42,8 @@ function formatDate(d: Date): string {
 
 export default function CreatePostScreen() {
   const theme = useTheme();
+  const themePack = useThemePack();
+  const isMonoOnly = themePack === 'mono';
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const dark = isDarkTheme(theme.id);
@@ -171,6 +173,7 @@ export default function CreatePostScreen() {
 
   const heroUri = imageUri || existingImageUrl;
   const activeMeta = POST_TYPES.find((p) => p.type === postType)!;
+  const activeTint = isMonoOnly ? '#f3f4f6' : activeMeta.tint;
 
   if (loadingEdit) {
     return (
@@ -264,8 +267,8 @@ export default function CreatePostScreen() {
                     }}
                     style={({ pressed }) => [styles.typeRow, pressed && { opacity: 0.7 }]}
                   >
-                    <View style={[styles.typeIcon, { backgroundColor: pt.tint + '18' }]}>
-                      <Feather name={pt.icon as any} size={16} color={pt.tint} />
+                    <View style={[styles.typeIcon, { backgroundColor: isMonoOnly ? '#1f1f1f' : pt.tint + '18' }]}>
+                      <Feather name={pt.icon as any} size={16} color={isMonoOnly ? '#f3f4f6' : pt.tint} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.typeLabel, { color: theme.text }]}>{pt.label}</Text>
@@ -274,7 +277,7 @@ export default function CreatePostScreen() {
                     {locked ? (
                       <Feather name="lock" size={14} color={theme.textSecondary} />
                     ) : active ? (
-                      <Feather name="check-circle" size={18} color={pt.tint} />
+                      <Feather name="check-circle" size={18} color={isMonoOnly ? '#f3f4f6' : pt.tint} />
                     ) : (
                       <View style={[styles.radioEmpty, { borderColor: theme.border }]} />
                     )}
@@ -371,7 +374,7 @@ export default function CreatePostScreen() {
               onPress={() => setShowDatePicker((v) => !v)}
               style={({ pressed }) => [styles.detailRow, pressed && { opacity: 0.7 }]}
             >
-              <Feather name="calendar" size={16} color={activeMeta.tint} style={styles.detailIcon} />
+              <Feather name="calendar" size={16} color={activeTint} style={styles.detailIcon} />
               <Text style={[styles.detailLabel, { color: theme.text }]}>Date</Text>
               <Text style={[styles.detailValue, { color: eventDate ? theme.text : theme.textSecondary }]}>
                 {eventDate ? formatDate(eventDate) : 'Optional'}
@@ -390,7 +393,7 @@ export default function CreatePostScreen() {
                   mode="date"
                   display="inline"
                   themeVariant={dark ? 'dark' : 'light'}
-                  accentColor={activeMeta.tint}
+                  accentColor={activeTint}
                   onChange={(_, d) => { if (d) setEventDate(d); }}
                 />
                 {eventDate && (
@@ -419,7 +422,7 @@ export default function CreatePostScreen() {
 
             {/* Time */}
             <View style={styles.detailRow}>
-              <Feather name="clock" size={16} color={activeMeta.tint} style={styles.detailIcon} />
+              <Feather name="clock" size={16} color={activeTint} style={styles.detailIcon} />
               <Text style={[styles.detailLabel, { color: theme.text }]}>Time</Text>
               <TextInput
                 style={[styles.detailInput, { color: theme.text }]}
@@ -435,7 +438,7 @@ export default function CreatePostScreen() {
 
             {/* Location */}
             <View style={styles.detailRow}>
-              <Feather name="map-pin" size={16} color={activeMeta.tint} style={styles.detailIcon} />
+              <Feather name="map-pin" size={16} color={activeTint} style={styles.detailIcon} />
               <Text style={[styles.detailLabel, { color: theme.text }]}>Location</Text>
               <TextInput
                 style={[styles.detailInput, { color: theme.text }]}
@@ -462,7 +465,7 @@ export default function CreatePostScreen() {
               </View>
               <Pressable
                 onPress={() => setHasExpiry((v) => !v)}
-                style={[styles.toggle, { backgroundColor: hasExpiry ? activeMeta.tint : theme.backgroundSecondary }]}
+                style={[styles.toggle, { backgroundColor: hasExpiry ? activeTint : theme.backgroundSecondary }]}
               >
                 <View style={[styles.toggleThumb, hasExpiry && styles.toggleThumbOn]} />
               </Pressable>
@@ -493,7 +496,7 @@ export default function CreatePostScreen() {
                       display="inline"
                       minimumDate={new Date()}
                       themeVariant={dark ? 'dark' : 'light'}
-                      accentColor={activeMeta.tint}
+                      accentColor={activeTint}
                       onChange={(_, d) => { if (d) setExpiresAt(d); }}
                     />
                   </View>

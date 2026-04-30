@@ -7,6 +7,7 @@ import {
   Text,
   Pressable,
   ScrollView,
+  RefreshControl,
   StyleSheet,
   Platform,
   Dimensions,
@@ -337,6 +338,7 @@ export default function CommunityMap() {
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
+  const [refreshingCommunity, setRefreshingCommunity] = useState(false);
   const cameraRef = useRef<any>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
@@ -406,6 +408,19 @@ export default function CommunityMap() {
       refreshFriends().catch(() => {});
     }, [refreshMyActivity, refreshFriends])
   );
+
+  const handleRefreshCommunity = useCallback(async () => {
+    if (refreshingCommunity) return;
+    setRefreshingCommunity(true);
+    try {
+      await Promise.all([
+        refreshMyActivity().catch(() => {}),
+        refreshFriends().catch(() => {}),
+      ]);
+    } finally {
+      setRefreshingCommunity(false);
+    }
+  }, [refreshingCommunity, refreshMyActivity, refreshFriends]);
 
   const getSharedCountWith = useCallback((friendId: string) => {
     return (acceptedSharedTasks || []).filter(
@@ -962,7 +977,33 @@ export default function CommunityMap() {
           style={styles.peopleList}
           contentContainerStyle={styles.peopleListContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshingCommunity}
+              onRefresh={handleRefreshCommunity}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
+              progressBackgroundColor={Platform.OS === 'android' ? theme.card : undefined}
+            />
+          }
         >
+          {refreshingCommunity ? (
+            isCatTheme || isDarkMinimal ? (
+              <View style={styles.catLoadingWrap}>
+                {themePack === 'spider' ? (
+                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+                ) : (
+                  <CatLottie
+                    variant={isCatTheme ? 'loading' : 'monoLoading'}
+                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                  />
+                )}
+              </View>
+            ) : (
+              <ActivityIndicator style={{ marginTop: 12, marginBottom: 6 }} color={theme.primary} />
+            )
+          ) : null}
+
           {/* Me row - always shown at top */}
           <Pressable
             style={({ pressed }) => [
@@ -1144,12 +1185,17 @@ export default function CommunityMap() {
         <Pressable
           style={({ pressed }) => [
             styles.eventsFab,
-            { backgroundColor: theme.primary, bottom: glassTabBarTotal + 16 },
+            {
+              backgroundColor: isMonoOnly ? '#1f1f1f' : theme.primary,
+              borderWidth: isMonoOnly ? 1 : 0,
+              borderColor: isMonoOnly ? '#3f3f46' : 'transparent',
+              bottom: glassTabBarTotal + 16,
+            },
             pressed && { opacity: 0.85, transform: [{ scale: 0.92 }] },
           ]}
           onPress={() => router.push('/community/create-post' as any)}
         >
-          <Feather name="plus" size={26} color="#fff" />
+          <Feather name="plus" size={26} color={isMonoOnly ? '#ffffff' : '#fff'} />
         </Pressable>
       )}
     </View>
