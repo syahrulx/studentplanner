@@ -384,6 +384,8 @@ export async function fetchOffersForService(serviceId: string): Promise<ServiceO
     .order('status', { ascending: true })
     .order('amount', { ascending: true })
     .order('created_at', { ascending: false });
+  // PGRST205: table not in schema (migration not applied on this project yet)
+  if (error?.code === 'PGRST205') return [];
   if (error) throw error;
 
   const rows = (data ?? []) as ServiceOffer[];

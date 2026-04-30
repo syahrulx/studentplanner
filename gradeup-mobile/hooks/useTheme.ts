@@ -1,12 +1,12 @@
 import { useApp } from '@/src/context/AppContext';
-import { THEMES, type ThemePalette, type ThemeId, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, SPIDER_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE } from '@/constants/Themes';
+import { THEMES, type ThemePalette, type ThemeId, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE, resolveSpiderTheme } from '@/constants/Themes';
 
 
 export function useTheme(): ThemePalette {
-  const { theme, themePack } = useApp();
+  const { theme, themePack, spiderBlueAccents } = useApp();
   if (themePack === 'cat') return CAT_THEME_OVERRIDE;
   if (themePack === 'mono') return MONO_THEME_OVERRIDE;
-  if (themePack === 'spider') return SPIDER_THEME_OVERRIDE;
+  if (themePack === 'spider') return resolveSpiderTheme(spiderBlueAccents);
   if (themePack === 'purple') return PURPLE_THEME_OVERRIDE;
   return THEMES[theme];
 }

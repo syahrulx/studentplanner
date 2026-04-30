@@ -25,6 +25,7 @@ export interface WidgetSyncInputs {
   signedIn: boolean;
   themeId: ThemeId;
   themePack?: string;
+  spiderBlueAccents?: boolean;
   maxTasks?: number;
 }
 

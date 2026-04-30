@@ -6,6 +6,7 @@ const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO = 'hasSeenNonUitmTimetableIntro';
 const KEY_THEME = 'appTheme';
 const KEY_THEME_PACK = 'appThemePack';
+const KEY_SPIDER_BLUE_ACCENTS = 'spiderBlueAccents';
 const KEY_LANGUAGE = 'appLanguage';
 const KEY_LOGHAT = 'appLoghat';
 
@@ -94,6 +95,20 @@ export async function setThemePack(pack: ThemePackId): Promise<void> {
       return;
     }
     await AsyncStorage.setItem(KEY_THEME_PACK, pack);
+  } catch {}
+}
+
+export async function getSpiderBlueAccents(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_SPIDER_BLUE_ACCENTS);
+    if (raw === 'false') return false;
+  } catch {}
+  return true;
+}
+
+export async function setSpiderBlueAccents(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_SPIDER_BLUE_ACCENTS, enabled ? 'true' : 'false');
   } catch {}
 }
 
