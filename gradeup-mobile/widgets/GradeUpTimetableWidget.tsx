@@ -13,14 +13,9 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   const accent = props?.theme?.primary        || '#2563eb';
   const line   = props?.theme?.border         || '#e2e8f0';
   const pack   = props?.theme?.themePack;
-  const packIcon = pack === 'cat' ? '🐾' : pack === 'purple' ? '✨' : '';
 
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
-  const iconColor = pack === 'spider' ? (props?.theme?.border || accent) : 
-                    pack === 'cat' ? (props?.theme?.primary || accent) : title;
-  const iconOpacity = pack === 'spider' ? 0.45 : 
-                      pack === 'cat' ? 0.4 : 0.25;
 
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props || fallback;
@@ -38,11 +33,6 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   if (!p.signedIn) {
     return (
       <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-        {packIcon ? (
-          <Text modifiers={[font({ size: 130 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -38, leading: -32 })]}>
-            {packIcon}
-          </Text>
-        ) : null}
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -121,11 +111,6 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   // ─── HOME SCREEN (small / medium / large) ───
   return (
     <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-      {packIcon ? (
-        <Text modifiers={[font({ size: large ? 220 : small ? 140 : 180 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: small ? -42 : large ? -55 : -45, leading: small ? -36 : large ? -50 : -42 })]}>
-          {packIcon}
-        </Text>
-      ) : null}
       <VStack
         alignment="leading"
         modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -159,7 +144,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
       {/* Class list */}
       {cls.length === 0 ? (
-        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today 🎉</Text>
+        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
       ) : (
         <VStack spacing={0} alignment="leading">
           {cls.map((c, i) => (

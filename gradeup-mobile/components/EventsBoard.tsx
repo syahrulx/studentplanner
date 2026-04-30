@@ -45,6 +45,7 @@ const TYPE_META: Record<PostType, { label: string; icon: string; tint: string }>
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const EVENTS_REFRESH_MIN_MS = 1200;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -147,9 +148,17 @@ export default function EventsBoard() {
   );
 
   const handleRefresh = useCallback(async () => {
+    const startedAt = Date.now();
     setRefreshing(true);
-    await loadPosts();
-    setRefreshing(false);
+    try {
+      await loadPosts();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < EVENTS_REFRESH_MIN_MS) {
+        await new Promise((resolve) => setTimeout(resolve, EVENTS_REFRESH_MIN_MS - elapsed));
+      }
+      setRefreshing(false);
+    }
   }, [loadPosts]);
 
   // ─── Active filter chips (advanced) ───────────────────────────────────────
@@ -506,11 +515,15 @@ export default function EventsBoard() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={Header}
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical
+          overScrollMode="always"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={theme.textSecondary}
+              tintColor="transparent"
+              colors={['transparent']}
+              progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
             />
           }
           ListEmptyComponent={Empty}
@@ -717,11 +730,12 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   refreshOverlay: {
     position: 'absolute',
-    top: 72,
+    top: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 10,
     zIndex: 40,
   },
   catLoadingLottie: {

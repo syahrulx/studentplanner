@@ -15,14 +15,9 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const warn   = props?.theme?.warning        || '#d97706';
   const line   = props?.theme?.border         || '#e2e8f0';
   const pack   = props?.theme?.themePack;
-  const packIcon = pack === 'cat' ? '🐾' : pack === 'purple' ? '✨' : '';
 
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
-  const iconColor = pack === 'spider' ? (props?.theme?.border || accent) : 
-                    pack === 'cat' ? (props?.theme?.primary || accent) : title;
-  const iconOpacity = pack === 'spider' ? 0.45 : 
-                      pack === 'cat' ? 0.4 : 0.25;
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -52,11 +47,6 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   if (!p.signedIn) {
     return (
       <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-        {packIcon ? (
-          <Text modifiers={[font({ size: 130 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -38, leading: -32 })]}>
-            {packIcon}
-          </Text>
-        ) : null}
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -79,11 +69,11 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
     const t = tasks[0];
     const total = p.tasks.length;
     if (!t) {
-      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due ✓</Text>;
+      return <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>No tasks due</Text>;
     }
     return (
       <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
-        {total} tasks · {t.accent === 'overdue' ? '⚠ ' : ''}{t.title}
+        {total} tasks · {t.accent === 'overdue' ? '! ' : ''}{t.title}
       </Text>
     );
   }
@@ -105,13 +95,13 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
           {String(p.tasks.length)} Tasks Due
         </Text>
         {show.length === 0 ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>All caught up! ✓</Text>
+          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>All caught up</Text>
         ) : (
           <VStack spacing={1}>
             {show.map((t) => (
               <HStack key={t.id} spacing={4}>
                 <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
-                  {t.accent === 'overdue' ? '⚠' : t.accent === 'today' ? '•' : '○'}
+                  {t.accent === 'overdue' ? '!' : t.accent === 'today' ? '•' : '○'}
                 </Text>
                 <Text modifiers={[font({ size: 10 }), lineLimit(1)]}>
                   {t.title}
@@ -128,11 +118,6 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   // ─── HOME SCREEN (small / medium / large) ───
   return (
     <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-      {packIcon ? (
-        <Text modifiers={[font({ size: large ? 220 : small ? 140 : 180 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: small ? -42 : large ? -55 : -45, leading: small ? -36 : large ? -50 : -42 })]}>
-          {packIcon}
-        </Text>
-      ) : null}
       <VStack
         alignment="leading"
         modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -168,7 +153,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
       {/* Task list */}
       {tasks.length === 0 ? (
-        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up! 🎉</Text>
+        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up</Text>
       ) : (
         <VStack spacing={0} alignment="leading">
           {tasks.map((t, i) => (

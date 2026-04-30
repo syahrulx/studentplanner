@@ -22,7 +22,7 @@ import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { DEEP_SEA_PALETTE } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
-import type { LocationVisibility } from '@/src/lib/communityApi';
+import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 import {
   displayProfileText,
   displayPortalSemester,
@@ -357,11 +357,11 @@ export default function Profile() {
     }
   };
 
-  const privacyOptions: { value: LocationVisibility; label: string; icon: string; desc: string }[] = [
-    { value: 'public', label: 'Public', icon: '🌍', desc: 'Everyone can see your location' },
-    { value: 'friends', label: 'Friends Only', icon: '👥', desc: 'Only friends can see your location' },
-    { value: 'circles', label: 'Circles', icon: '⭕️', desc: 'Only people in your circles can see your location' },
-    { value: 'off', label: 'Off', icon: '🔒', desc: 'No one can see your location' },
+  const privacyOptions: { value: LocationVisibility; label: string; icon: React.ComponentProps<typeof Feather>['name']; desc: string }[] = [
+    { value: 'public', label: 'Public', icon: 'globe', desc: 'Everyone can see your location' },
+    { value: 'friends', label: 'Friends Only', icon: 'users', desc: 'Only friends can see your location' },
+    { value: 'circles', label: 'Circles', icon: 'circle', desc: 'Only people in your circles can see your location' },
+    { value: 'off', label: 'Off', icon: 'lock', desc: 'No one can see your location' },
   ];
 
   return (
@@ -562,7 +562,9 @@ export default function Profile() {
                 }
               }}
             >
-              <Text style={styles.privacyEmoji}>{opt.icon}</Text>
+              <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+                <Feather name={opt.icon} size={22} color={theme.primary} />
+              </View>
               <View style={styles.privacyBody}>
                 <Text style={[styles.privacyLabel, { color: theme.text }]}>{opt.label}</Text>
                 <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>{opt.desc}</Text>
@@ -606,7 +608,9 @@ export default function Profile() {
                           ]}
                           onPress={() => toggleCircleVisibility(c.id)}
                         >
-                          <Text style={styles.circleVisibilityEmoji}>{c.emoji}</Text>
+                          <View style={{ width: 28, alignItems: 'center', marginRight: 10 }}>
+                            <Feather name={featherForLegacyCircleEmoji(c.emoji)} size={18} color={theme.primary} />
+                          </View>
                           <View style={styles.circleVisibilityBody}>
                             <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{c.name}</Text>
                             <Text style={[styles.circleVisibilityDesc, { color: theme.textSecondary }]}>

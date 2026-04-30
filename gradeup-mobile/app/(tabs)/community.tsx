@@ -63,6 +63,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import { ACTIVITY_TYPES } from '@/src/lib/communityApi';
+import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 import type { FriendWithStatus, Circle, SharedGoal, ActivityType, UserActivity } from '@/src/lib/communityApi';
 import type { TimetableEntry } from '@/src/types';
 import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
@@ -70,17 +71,13 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
+const COMMUNITY_REFRESH_MIN_MS = 1200;
 
 // Mapbox components are imported at the top of the file.
 
 // =============================================================================
 // HELPER
 // =============================================================================
-
-function getActivityEmoji(type?: string): string {
-  const found = ACTIVITY_TYPES.find((a) => a.type === type);
-  return found?.emoji || '⏸️';
-}
 
 function getActivityLabel(type?: string): string {
   const found = ACTIVITY_TYPES.find((a) => a.type === type);
@@ -165,7 +162,7 @@ function StableMarker({
     return null;
   }
 
-  const emoji = getActivityEmoji(activityType);
+  const statusIcon = communityApi.getActivityFeatherIcon(activityType) as any;
   const isListeningActivity = activityType === 'listening_music';
   const isActive = activityType && activityType !== 'idle' && !isListeningActivity;
   const songLabel = listeningSongName?.trim() || '';
@@ -205,7 +202,7 @@ function StableMarker({
               styles.songStrip,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}>
-              <Text style={[styles.songStripIcon, { color: theme.primary }]}>♪</Text>
+              <Feather name="music" size={11} color={theme.primary} />
               <Text style={[styles.songStripText, { color: theme.text }]}>
                 {songDisplayText}
               </Text>
@@ -216,7 +213,7 @@ function StableMarker({
             <View style={[
               styles.statusCloud, isMe && styles.statusCloudMe,
             ]}>
-              <Text style={styles.statusCloudText}>{emoji}</Text>
+              <Feather name={statusIcon} size={18} color="#1e293b" />
             </View>
           )}
           {/* Avatar */}
@@ -412,12 +409,17 @@ export default function CommunityMap() {
   const handleRefreshCommunity = useCallback(async () => {
     if (refreshingCommunity) return;
     setRefreshingCommunity(true);
+    const startedAt = Date.now();
     try {
       await Promise.all([
         refreshMyActivity().catch(() => {}),
         refreshFriends().catch(() => {}),
       ]);
     } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < COMMUNITY_REFRESH_MIN_MS) {
+        await new Promise((resolve) => setTimeout(resolve, COMMUNITY_REFRESH_MIN_MS - elapsed));
+      }
       setRefreshingCommunity(false);
     }
   }, [refreshingCommunity, refreshMyActivity, refreshFriends]);
@@ -456,7 +458,7 @@ export default function CommunityMap() {
     const targetVisibility = locationVisibility === 'off' ? 'friends' : 'off';
     await setLocationVisibility(targetVisibility);
     Alert.alert(
-      targetVisibility === 'off' ? 'Ghost Mode Activated 👻' : 'Ghost Mode Deactivated',
+      targetVisibility === 'off' ? 'Ghost mode activated' : 'Ghost mode deactivated',
       targetVisibility === 'off' ? 'Your location is now hidden from your friends.' : 'Your friends can now see your location.'
     );
   }, [locationVisibility, setLocationVisibility]);
@@ -563,7 +565,10 @@ export default function CommunityMap() {
               setShowCircleSelector(false);
             }}
           >
-            <Text style={[styles.circleDropdownText, { color: theme.text }]}>👥 All Friends</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="users" size={16} color={theme.text} />
+              <Text style={[styles.circleDropdownText, { color: theme.text }]}>All Friends</Text>
+            </View>
           </Pressable>
           {circles.map((circle) => (
             <Pressable
@@ -577,9 +582,12 @@ export default function CommunityMap() {
                 setShowCircleSelector(false);
               }}
             >
-              <Text style={[styles.circleDropdownText, { color: theme.text }]}>
-                {circle.emoji} {circle.name}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Feather name={featherForLegacyCircleEmoji(circle.emoji)} size={16} color={theme.text} />
+                <Text style={[styles.circleDropdownText, { color: theme.text }]} numberOfLines={1}>
+                  {circle.name}
+                </Text>
+              </View>
               <Text style={[styles.circleDropdownCount, { color: theme.textSecondary }]}>
                 {circle.member_count}
               </Text>
@@ -746,10 +754,17 @@ export default function CommunityMap() {
                 </Text>
                 {selectedFriend.activity?.activity_type !== 'idle' &&
                   selectedFriend.activity?.activity_type !== 'listening_music' && (
-                    <Text style={[styles.friendPopupActivity, { color: theme.textSecondary }]} numberOfLines={2}>
-                      {getActivityEmoji(selectedFriend.activity?.activity_type)}{' '}
-                      {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                      <Feather
+                        name={communityApi.getActivityFeatherIcon(selectedFriend.activity?.activity_type) as any}
+                        size={14}
+                        color={theme.textSecondary}
+                        style={{ marginTop: 2 }}
+                      />
+                      <Text style={[styles.friendPopupActivity, { color: theme.textSecondary, flex: 1 }]} numberOfLines={2}>
+                        {activityStatusDetailLine(selectedFriend.activity, { isSelf: false, timetable })}
+                      </Text>
+                    </View>
                   )}
                 <Pressable
                   onPress={() => {
@@ -864,21 +879,25 @@ export default function CommunityMap() {
             <View style={styles.friendPopupActions}>
               <Text style={[styles.friendPopupReactionsLabel, { color: theme.textSecondary }]}>Quick reactions</Text>
               <View style={styles.friendPopupReactions}>
-                {['👋', '🔥', '💪', '📚', '❤️'].map((emoji) => (
+                {(['👋', '🔥', '💪', '📚', '❤️'] as const).map((reactionType) => {
+                  const meta = communityApi.REACTION_EMOJIS.find((r) => r.type === reactionType);
+                  const icon = (meta?.icon ?? 'star') as any;
+                  return (
                   <Pressable
-                    key={emoji}
+                    key={reactionType}
                     accessibilityRole="button"
-                    accessibilityLabel={`Send ${emoji} reaction`}
+                    accessibilityLabel={`Send ${meta?.label ?? 'reaction'}`}
                     style={({ pressed }) => [
                       styles.reactionDisc,
                       { backgroundColor: theme.background, borderColor: theme.border },
                       pressed && { opacity: 0.72 },
                     ]}
-                    onPress={() => handleQuickReact(selectedFriend.id, emoji)}
+                    onPress={() => handleQuickReact(selectedFriend.id, reactionType)}
                   >
-                    <Text style={styles.reactionEmoji}>{emoji}</Text>
+                    <Feather name={icon} size={20} color={theme.primary} />
                   </Pressable>
-                ))}
+                  );
+                })}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Send bump"
@@ -977,33 +996,18 @@ export default function CommunityMap() {
           style={styles.peopleList}
           contentContainerStyle={styles.peopleListContent}
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical
+          overScrollMode="always"
           refreshControl={
             <RefreshControl
               refreshing={refreshingCommunity}
               onRefresh={handleRefreshCommunity}
-              tintColor={theme.primary}
-              colors={[theme.primary]}
-              progressBackgroundColor={Platform.OS === 'android' ? theme.card : undefined}
+              tintColor="transparent"
+              colors={['transparent']}
+              progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
             />
           }
         >
-          {refreshingCommunity ? (
-            isCatTheme || isDarkMinimal ? (
-              <View style={styles.catLoadingWrap}>
-                {themePack === 'spider' ? (
-                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
-                ) : (
-                  <CatLottie
-                    variant={isCatTheme ? 'loading' : 'monoLoading'}
-                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
-                  />
-                )}
-              </View>
-            ) : (
-              <ActivityIndicator style={{ marginTop: 12, marginBottom: 6 }} color={theme.primary} />
-            )
-          ) : null}
-
           {/* Me row - always shown at top */}
           <Pressable
             style={({ pressed }) => [
@@ -1036,17 +1040,26 @@ export default function CommunityMap() {
                 <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
               </Text>
               {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
-                <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
-                  {getActivityEmoji(myActivity.activity_type)}{' '}
-                  {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Feather
+                    name={communityApi.getActivityFeatherIcon(myActivity.activity_type) as any}
+                    size={14}
+                    color={theme.primary}
+                  />
+                  <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                    {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
+                  </Text>
+                </View>
               ) : myActivity?.activity_type === 'idle' ? (
                 <Text style={[styles.personStatus, { color: theme.textSecondary }]}>Tap to set your status</Text>
               ) : null}
               {myActivity?.is_playing && myActivity.song_name ? (
-                <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
-                  ♪ {myActivity.song_name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="music" size={14} color={theme.primary} />
+                  <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                    {myActivity.song_name}
+                  </Text>
+                </View>
               ) : null}
             </View>
             <Feather name="edit-3" size={16} color={theme.textSecondary} />
@@ -1125,15 +1138,24 @@ export default function CommunityMap() {
                     {friend.location?.place_name || (friend.location ? 'Location shared' : 'Location off')}
                   </Text>
                   {friend.activity && friend.activity.activity_type !== 'idle' && friend.activity.activity_type !== 'listening_music' && (
-                    <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
-                      {getActivityEmoji(friend.activity.activity_type)}{' '}
-                      {activityStatusDetailLine(friend.activity, { isSelf: false, timetable })}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Feather
+                        name={communityApi.getActivityFeatherIcon(friend.activity.activity_type) as any}
+                        size={14}
+                        color={theme.primary}
+                      />
+                      <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                        {activityStatusDetailLine(friend.activity, { isSelf: false, timetable })}
+                      </Text>
+                    </View>
                   )}
                   {friend.music?.isPlaying && friend.music.song ? (
-                    <Text style={[styles.personActivity, { color: theme.primary }]} numberOfLines={1}>
-                      ♪ {friend.music.song}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Feather name="music" size={14} color={theme.primary} />
+                      <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                        {friend.music.song}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
                 <View style={styles.personRight}>
@@ -1165,6 +1187,22 @@ export default function CommunityMap() {
           )}
           <View style={{ height: 120 }} />
         </ScrollView>
+        {refreshingCommunity ? (
+          <View pointerEvents="none" style={styles.peopleRefreshOverlayTop}>
+            {isCatTheme || isDarkMinimal ? (
+              themePack === 'spider' ? (
+                <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+              ) : (
+                <CatLottie
+                  variant={isCatTheme ? 'loading' : 'monoLoading'}
+                  style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                />
+              )
+            ) : (
+              <ActivityIndicator color={theme.primary} />
+            )}
+          </View>
+        ) : null}
       </View>
 
       {/* ─── SET STATUS POPUP ─── */}
@@ -1206,12 +1244,7 @@ export default function CommunityMap() {
 // STATUS POPUP COMPONENT
 // =============================================================================
 
-const POPUP_STATUSES: { type: ActivityType; emoji: string; label: string }[] = [
-  { type: 'studying', emoji: '📚', label: 'Studying' },
-  { type: 'in_class', emoji: '🏫', label: 'In Class' },
-  { type: 'taking_break', emoji: '😴', label: 'Taking a Break' },
-  { type: 'listening_music', emoji: '🎵', label: 'Listening to Music' },
-];
+const POPUP_ACTIVITY_TYPES: ActivityType[] = ['studying', 'in_class', 'taking_break', 'listening_music'];
 
 function StatusPopup({
   visible,
@@ -1291,7 +1324,7 @@ function StatusPopup({
         <Pressable style={[popupStyles.container, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
           <View style={popupStyles.header}>
-            <Text style={[popupStyles.title, { color: theme.text }]}>What's up? 👋</Text>
+            <Text style={[popupStyles.title, { color: theme.text }]}>What&apos;s up?</Text>
             <Pressable onPress={onClose} style={({ pressed }) => [popupStyles.closeBtn, pressed && { opacity: 0.6 }]}>
               <Feather name="x" size={20} color={theme.textSecondary} />
             </Pressable>
@@ -1300,7 +1333,12 @@ function StatusPopup({
           {/* Current status */}
           {hasStatus && (
             <View style={[popupStyles.currentRow, { borderColor: theme.border }]}>
-              <Text style={popupStyles.currentEmoji}>{currentTypeInfo?.emoji}</Text>
+              <Feather
+                name={(currentTypeInfo?.icon ?? 'pause-circle') as any}
+                size={22}
+                color={theme.primary}
+                style={{ marginRight: 10 }}
+              />
               <Text style={[popupStyles.currentLabel, { color: theme.text }]} numberOfLines={1}>
                 {currentTypeInfo?.label}
               </Text>
@@ -1316,7 +1354,9 @@ function StatusPopup({
 
           {/* Status grid — 2×2 */}
           <View style={popupStyles.grid}>
-            {POPUP_STATUSES.map((activity) => {
+            {POPUP_ACTIVITY_TYPES.map((atype) => {
+              const activity = ACTIVITY_TYPES.find((a) => a.type === atype);
+              if (!activity) return null;
               const isSelected = selectedType === activity.type;
               return (
                 <Pressable
@@ -1335,7 +1375,18 @@ function StatusPopup({
                   ]}
                   onPress={() => setSelectedType(activity.type)}
                 >
-                  <Text style={popupStyles.statusEmoji}>{activity.emoji}</Text>
+                  <Feather
+                    name={activity.icon as any}
+                    size={26}
+                    color={
+                      isSelected
+                        ? isDarkMinimal
+                          ? theme.text
+                          : theme.primary
+                        : theme.textSecondary
+                    }
+                    style={{ marginBottom: 8 }}
+                  />
                   <Text
                     style={[
                       popupStyles.statusLabel,
@@ -1388,12 +1439,15 @@ function StatusPopup({
                 {isVibing ? 'Change Song' : 'Pick a Song'}
               </Text>
               {isVibing && (
-                <Text
-                  style={[popupStyles.vibeBtnSub, { color: isDarkMinimal ? theme.textSecondary : theme.primary }]}
-                  numberOfLines={1}
-                >
-                  ♪ {myActivity.song_name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <Feather name="music" size={12} color={isDarkMinimal ? theme.textSecondary : theme.primary} />
+                  <Text
+                    style={[popupStyles.vibeBtnSub, { color: isDarkMinimal ? theme.textSecondary : theme.primary, flex: 1 }]}
+                    numberOfLines={1}
+                  >
+                    {myActivity.song_name}
+                  </Text>
+                </View>
               )}
             </View>
             <Feather name="chevron-right" size={18} color={theme.textSecondary} />
@@ -1467,7 +1521,6 @@ const popupStyles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 16,
   },
-  currentEmoji: { fontSize: 22 },
   currentLabel: { fontSize: 14, fontWeight: '600', flex: 1 },
   clearBtn: {
     flexDirection: 'row',
@@ -1494,7 +1547,6 @@ const popupStyles = StyleSheet.create({
     borderWidth: 1,
     gap: 4,
   },
-  statusEmoji: { fontSize: 28 },
   statusLabel: { fontSize: 13, fontWeight: '600' },
   saveBtn: {
     flexDirection: 'row',
@@ -1926,8 +1978,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
   },
-  reactionEmoji: { fontSize: 22 },
-
   // Unified Map Pin
   markerWrapper: {
     width: 240,
@@ -1954,10 +2004,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 5,
-  },
-  songStripIcon: {
-    fontSize: 10,
-    fontWeight: '700',
   },
   songStripText: {
     fontSize: 10,
@@ -2019,11 +2065,8 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
   },
   statusCloudMe: {
-    borderColor: '#fff', 
+    borderColor: '#fff',
     backgroundColor: '#fff',
-  },
-  statusCloudText: {
-    fontSize: 16,
   },
   musicBubble: {
     position: 'absolute',
@@ -2126,6 +2169,14 @@ const styles = StyleSheet.create({
   // Friends list
   peopleList: { flex: 1 },
   peopleListContent: { paddingHorizontal: 16 },
+  peopleRefreshOverlayTop: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 25,
+  },
   catLoadingWrap: {
     alignItems: 'center',
     marginTop: 14,

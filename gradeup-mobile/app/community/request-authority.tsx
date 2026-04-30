@@ -141,7 +141,7 @@ export default function RequestAuthorityScreen() {
             </View>
             {existingRequest.status === 'approved' && (
               <Text style={[styles.approvedText, { color: '#10b981' }]}>
-                ✅ You can now post events and memos!
+                You can now post events and memos.
               </Text>
             )}
             {existingRequest.status === 'rejected' && (

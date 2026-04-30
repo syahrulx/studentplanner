@@ -27,6 +27,7 @@ import {
   REACTION_EMOJIS,
   REACTION_TEMPLATES,
   getSharedTasksBetweenUsers,
+  getActivityFeatherIcon,
 } from '@/src/lib/communityApi';
 import * as communityApi from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
@@ -34,9 +35,6 @@ import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
 
 
-function getActivityEmoji(type?: string): string {
-  return ACTIVITY_TYPES.find((a) => a.type === type)?.emoji || '⏸️';
-}
 function getActivityLabel(type?: string): string {
   return ACTIVITY_TYPES.find((a) => a.type === type)?.label || 'Idle';
 }
@@ -46,16 +44,17 @@ function getInitials(name?: string): string {
 }
 
 /**
- * Reaction button: soft stagger-in, slow calm press, and a very subtle
- * float-away duplicate on tap (no constant idle motion, no harsh springs).
+ * Reaction button: soft stagger-in, calm press, subtle floating duplicate on tap.
  */
 function ReactionEmojiButton({
-  emoji,
+  iconName,
+  iconColor,
   onPress,
   theme,
   index,
 }: {
-  emoji: string;
+  iconName: React.ComponentProps<typeof Feather>['name'];
+  iconColor: string;
   onPress: () => void;
   theme: any;
   index: number;
@@ -118,7 +117,7 @@ function ReactionEmojiButton({
   return (
     <View style={s.emojiBtnWrap}>
       {flyingIds.map((id) => (
-        <FlyingEmoji key={id} emoji={emoji} onDone={() => removeFlying(id)} />
+        <FlyingGlyph key={id} iconName={iconName} iconColor={iconColor} onDone={() => removeFlying(id)} />
       ))}
       <Pressable onPressIn={pressIn} onPressOut={pressOut} onPress={handlePress}>
         <Animated.View
@@ -128,15 +127,23 @@ function ReactionEmojiButton({
             { transform: [{ scale }] },
           ]}
         >
-          <Text style={s.emojiBtnText}>{emoji}</Text>
+          <Feather name={iconName} size={22} color={iconColor} />
         </Animated.View>
       </Pressable>
     </View>
   );
 }
 
-/** Soft float + long fade (no bouncy scale / wild rotation). */
-function FlyingEmoji({ emoji, onDone }: { emoji: string; onDone: () => void }) {
+/** Soft float + long fade for the duplicate glyph */
+function FlyingGlyph({
+  iconName,
+  iconColor,
+  onDone,
+}: {
+  iconName: React.ComponentProps<typeof Feather>['name'];
+  iconColor: string;
+  onDone: () => void;
+}) {
   const translateY = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0.92)).current;
   const rotProgress = useRef(new Animated.Value(0)).current;
@@ -144,7 +151,6 @@ function FlyingEmoji({ emoji, onDone }: { emoji: string; onDone: () => void }) {
 
   useEffect(() => {
     const duration = 1100;
-    const endDeg = endDegRef.current;
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: -36,
@@ -176,15 +182,12 @@ function FlyingEmoji({ emoji, onDone }: { emoji: string; onDone: () => void }) {
   });
 
   return (
-    <Animated.Text
+    <Animated.View
       pointerEvents="none"
-      style={[
-        s.flyingEmoji,
-        { opacity, transform: [{ translateY }, { rotate: rotateZ }] },
-      ]}
+      style={[s.flyingEmoji, { opacity, transform: [{ translateY }, { rotate: rotateZ }] }]}
     >
-      {emoji}
-    </Animated.Text>
+      <Feather name={iconName} size={22} color={iconColor} />
+    </Animated.View>
   );
 }
 
@@ -210,7 +213,7 @@ export default function FriendProfileScreen() {
   const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);
-  const [sentReaction, setSentReaction] = useState<string | null>(null);
+  const [sentFeedback, setSentFeedback] = useState<string | null>(null);
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
 
   const isAutoShareEnabled = friendId
@@ -221,10 +224,26 @@ export default function FriendProfileScreen() {
     if (friendId) getSharedTasksBetweenUsers(friendId).then(setSharedTasks).catch(() => {});
   }, [friendId]);
 
-  const flash = (emoji: string) => { setSentReaction(emoji); setTimeout(() => setSentReaction(null), 1800); };
-  const handleReaction = async (type: string) => { if (!friendId) return; await sendReaction(friendId, type); flash(type); };
-  const handleTemplate = async (msg: string) => { if (!friendId) return; await sendReaction(friendId, '💬', msg); flash('💬'); };
-  const handleBump = async () => { if (!friendId) return; await sendBump(friendId); flash('💥'); };
+  const flashFeedback = (msg: string) => {
+    setSentFeedback(msg);
+    setTimeout(() => setSentFeedback(null), 1800);
+  };
+  const handleReaction = async (type: string) => {
+    if (!friendId) return;
+    await sendReaction(friendId, type);
+    const row = REACTION_EMOJIS.find((r) => r.type === type);
+    flashFeedback(row ? `${row.label} sent!` : 'Reaction sent!');
+  };
+  const handleTemplate = async (msg: string) => {
+    if (!friendId) return;
+    await sendReaction(friendId, '💬', msg);
+    flashFeedback('Message sent!');
+  };
+  const handleBump = async () => {
+    if (!friendId) return;
+    await sendBump(friendId);
+    flashFeedback('Bump sent!');
+  };
 
   const handleRemove = () => {
     const name = friend?.name || '?';
@@ -346,7 +365,11 @@ export default function FriendProfileScreen() {
 
         {/* status pill */}
         <View style={[s.bubble, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={s.bubbleEmoji}>{getActivityEmoji(friend.activity?.activity_type)}</Text>
+          <Feather
+            name={getActivityFeatherIcon(friend.activity?.activity_type) as React.ComponentProps<typeof Feather>['name']}
+            size={15}
+            color={theme.primary}
+          />
           <Text style={[s.bubbleText, { color: theme.text }]} numberOfLines={1}>
             {getActivityLabel(friend.activity?.activity_type)}
             {friend.activity?.activity_type === 'studying' && studyingSubtitle && studyingSubtitle !== 'Studying'
@@ -379,7 +402,8 @@ export default function FriendProfileScreen() {
           style={({ pressed }) => [s.actionPill, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
           onPress={handleBump}
         >
-          <Text style={s.actionPillText}>💥 Bump</Text>
+          <Feather name="zap" size={16} color="#fff" />
+          <Text style={s.actionPillText}>Bump</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [s.actionPill, s.actionPillOutline, { borderColor: theme.border, backgroundColor: theme.card }, pressed && { opacity: 0.85 }]}
@@ -391,9 +415,9 @@ export default function FriendProfileScreen() {
       </View>
 
       {/* ── sent flash ── */}
-      {sentReaction && (
+      {sentFeedback && (
         <View style={[s.flash, { backgroundColor: '#10b981' }]}>
-          <Text style={s.flashText}>{sentReaction === '💥' ? 'Bump sent!' : `${sentReaction} Sent`}</Text>
+          <Text style={s.flashText}>{sentFeedback}</Text>
         </View>
       )}
 
@@ -403,7 +427,8 @@ export default function FriendProfileScreen() {
         {REACTION_EMOJIS.map((r, i) => (
           <ReactionEmojiButton
             key={r.type}
-            emoji={r.type}
+            iconName={r.icon as React.ComponentProps<typeof Feather>['name']}
+            iconColor={theme.primary}
             theme={theme}
             index={i}
             onPress={() => handleReaction(r.type)}
@@ -655,7 +680,6 @@ const s = StyleSheet.create({
 
   /* status pill */
   bubble: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
-  bubbleEmoji: { fontSize: 14 },
   bubbleText: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
 
   /* actions */
@@ -676,12 +700,12 @@ const s = StyleSheet.create({
   emojiRow: { gap: 10, paddingBottom: 4, paddingTop: 20 /* headroom for flying emoji */ },
   emojiBtnWrap: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
   emojiBtn: { width: 52, height: 52, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  emojiBtnText: { fontSize: 24 },
   flyingEmoji: {
     position: 'absolute',
     top: 10,
-    fontSize: 26,
     alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 10,
   },
 

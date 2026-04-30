@@ -81,7 +81,7 @@ export async function scheduleTaskNotifications(task: Task, prefs?: Notification
     await Notifications.scheduleNotificationAsync({
       identifier: taskNotifId(task.id, daysBefore),
       content: {
-        title: `📋 ${label}: ${task.title}`,
+        title: `${label}: ${task.title}`,
         body: `${task.courseId} · ${task.type}`,
         sound: true,
         data: { type: 'task_reminder', taskId: task.id },
@@ -104,7 +104,7 @@ export async function scheduleTaskNotifications(task: Task, prefs?: Notification
         await Notifications.scheduleNotificationAsync({
           identifier: taskOverdueNotifId(task.id),
           content: {
-            title: `⚠️ Overdue: ${task.title}`,
+            title: `Overdue: ${task.title}`,
             body: `Past due ${task.dueDate} ${(task.dueTime ?? '').slice(0, 5)} · ${task.courseId} · ${task.type}`,
             sound: true,
             data: { type: 'task_overdue', taskId: task.id },
@@ -149,7 +149,7 @@ export async function scheduleStudyTimerComplete(focusMinutes: number, courseId?
   await Notifications.scheduleNotificationAsync({
     identifier: STUDY_TIMER_ID,
     content: {
-      title: '✅ Focus session complete!',
+      title: 'Focus session complete',
       body: courseId
         ? `${focusMinutes}min session for ${courseId} is done. Time for a break!`
         : `${focusMinutes}min focus session is done. Time for a break!`,
@@ -179,7 +179,7 @@ export async function fireClassroomSyncNotification(newCount: number): Promise<v
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: '📚 New Classroom Tasks',
+      title: 'New Classroom tasks',
       body: `${newCount} new task${newCount !== 1 ? 's' : ''} found in Google Classroom.`,
       sound: true,
       data: { type: 'classroom_sync' },
@@ -197,7 +197,7 @@ export async function fireSharedTaskNotification(fromName: string, taskTitle: st
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: '📩 New shared task',
+      title: 'New shared task',
       body: `${fromName} shared "${taskTitle}" with you.`,
       sound: true,
       data: { type: 'shared_task' },
@@ -228,7 +228,7 @@ export async function scheduleWeeklySummary(prefs?: NotificationPrefs): Promise<
   await Notifications.scheduleNotificationAsync({
     identifier: WEEKLY_SUMMARY_ID,
     content: {
-      title: '📊 Weekly Summary',
+      title: 'Weekly summary',
       body: 'Check your progress and upcoming tasks for the week.',
       sound: true,
       data: { type: 'weekly_summary' },

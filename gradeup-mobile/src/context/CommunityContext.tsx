@@ -438,27 +438,27 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
             switch (reaction.reaction_type) {
               case 'bump':
-                title = '💥 Bump!';
+                title = 'Bump';
                 body = `${senderName} bumped you!`;
                 break;
               case '👋':
-                title = '👋 Friend Request';
+                title = 'Friend request';
                 body = reaction.message || `${senderName} sent you a friend request!`;
                 break;
               case '🤝':
-                title = '🤝 Friend Accepted';
+                title = 'Friend accepted';
                 body = reaction.message || `${senderName} accepted your friend request!`;
                 break;
               case '📋':
-                title = '📋 Task Shared';
+                title = 'Task shared';
                 body = reaction.message || `${senderName} shared a task with you!`;
                 break;
               case '🎮':
-                title = '🎮 Quiz Invite';
+                title = 'Quiz invite';
                 body = reaction.message || `${senderName} invited you to a quiz!`;
                 break;
               default:
-                title = `${reaction.reaction_type || '✨'} New Reaction`;
+                title = 'New reaction';
                 body = reaction.message || `${senderName} sent you a reaction`;
                 break;
             }

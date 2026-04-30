@@ -8,7 +8,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
-import type { CircleMember } from '@/src/lib/communityApi';
+import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 
 function getInitials(name?: string) {
   if (!name) return '?';
@@ -109,15 +109,28 @@ export default function CircleDetailScreen() {
         >
           <Feather name="chevron-left" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.title, { color: theme.text }]}>
-          {circle?.emoji} {circle?.name || 'Circle'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'center' }}>
+          {circle ? (
+            <>
+              <Feather name={featherForLegacyCircleEmoji(circle.emoji)} size={20} color={theme.primary} />
+              <Text style={[styles.title, { color: theme.text, flexShrink: 1 }]} numberOfLines={1}>
+                {circle.name}
+              </Text>
+            </>
+          ) : (
+            <Text style={[styles.title, { color: theme.text }]}>Circle</Text>
+          )}
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {/* Circle Info Card */}
         <View style={[styles.infoCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={{ fontSize: 48, textAlign: 'center' }}>{circle?.emoji || '👥'}</Text>
+          <View style={{ alignItems: 'center', marginBottom: 10 }}>
+            <View style={[styles.heroGlyph, { borderColor: theme.border, backgroundColor: theme.primary + '14' }]}>
+              <Feather name={featherForLegacyCircleEmoji(circle?.emoji)} size={36} color={theme.primary} />
+            </View>
+          </View>
           <Text style={[styles.circleName, { color: theme.text }]}>{circle?.name}</Text>
           <Text style={[styles.memberCount, { color: theme.textSecondary }]}>
             {members.length} member{members.length !== 1 ? 's' : ''}
@@ -321,6 +334,14 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     marginBottom: 24,
+  },
+  heroGlyph: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   circleName: { fontSize: 22, fontWeight: '800', marginTop: 8 },
   memberCount: { fontSize: 14, marginTop: 4 },

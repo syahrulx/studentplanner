@@ -80,7 +80,7 @@ export default function SetVibeScreen() {
       await spotifyAuth.setMyVibe(track);
       await refreshMyActivity();
       setCurrentVibe({ song: track.name, artist: track.artist });
-      Alert.alert('Vibe Set! 🎵', `${track.name} — ${track.artist}`);
+      Alert.alert('Vibe set', `${track.name} — ${track.artist}`);
       router.back();
     } catch (e) {
       Alert.alert('Could not set vibe', 'Please try again.');

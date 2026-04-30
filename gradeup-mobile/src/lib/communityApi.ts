@@ -224,46 +224,51 @@ export interface SharedGoal {
 // CONSTANTS
 // =============================================================================
 
-// Activity type metadata for UI
-export const ACTIVITY_TYPES: { type: ActivityType; emoji: string; label: string }[] = [
-  { type: 'studying', emoji: '📚', label: 'Studying' },
-  { type: 'in_class', emoji: '🏫', label: 'In Class' },
-  { type: 'in_lab', emoji: '🔬', label: 'In Lab' },
-  { type: 'doing_assignment', emoji: '✍️', label: 'Doing Assignment' },
-  { type: 'in_exam', emoji: '📝', label: 'In Exam' },
-  { type: 'group_study', emoji: '👥', label: 'Group Study' },
-  { type: 'revision', emoji: '🔄', label: 'Revision' },
-  { type: 'listening_music', emoji: '🎵', label: 'Listening to Music' },
-  { type: 'at_library', emoji: '📖', label: 'At Library' },
-  { type: 'at_cafeteria', emoji: '☕', label: 'At Cafeteria' },
-  { type: 'exercising', emoji: '💪', label: 'Exercising' },
-  { type: 'commuting', emoji: '🚌', label: 'Commuting' },
-  { type: 'taking_break', emoji: '😴', label: 'Taking a Break' },
-  { type: 'in_meeting', emoji: '🤝', label: 'In Meeting' },
-  { type: 'working_on_project', emoji: '💻', label: 'Working on Project' },
-  { type: 'tutoring', emoji: '🎓', label: 'Tutoring' },
-  { type: 'at_event', emoji: '🎪', label: 'At Event' },
-  { type: 'idle', emoji: '⏸️', label: 'Idle' },
-  { type: 'custom', emoji: '✨', label: 'Custom' },
+// Activity type metadata for UI (Feather glyph names via `@expo/vector-icons/Feather`)
+export const ACTIVITY_TYPES: { type: ActivityType; label: string; icon: string }[] = [
+  { type: 'studying', label: 'Studying', icon: 'book-open' },
+  { type: 'in_class', label: 'In Class', icon: 'home' },
+  { type: 'in_lab', label: 'In Lab', icon: 'activity' },
+  { type: 'doing_assignment', label: 'Doing Assignment', icon: 'edit-3' },
+  { type: 'in_exam', label: 'In Exam', icon: 'file-text' },
+  { type: 'group_study', label: 'Group Study', icon: 'users' },
+  { type: 'revision', label: 'Revision', icon: 'refresh-cw' },
+  { type: 'listening_music', label: 'Listening to Music', icon: 'music' },
+  { type: 'at_library', label: 'At Library', icon: 'book' },
+  { type: 'at_cafeteria', label: 'At Cafeteria', icon: 'coffee' },
+  { type: 'exercising', label: 'Exercising', icon: 'activity' },
+  { type: 'commuting', label: 'Commuting', icon: 'navigation' },
+  { type: 'taking_break', label: 'Taking a Break', icon: 'moon' },
+  { type: 'in_meeting', label: 'In Meeting', icon: 'users' },
+  { type: 'working_on_project', label: 'Working on Project', icon: 'monitor' },
+  { type: 'tutoring', label: 'Tutoring', icon: 'award' },
+  { type: 'at_event', label: 'At Event', icon: 'calendar' },
+  { type: 'idle', label: 'Idle', icon: 'pause-circle' },
+  { type: 'custom', label: 'Custom', icon: 'star' },
 ];
 
-// Quick reaction options
+export function getActivityFeatherIcon(type?: string | null): string {
+  const row = ACTIVITY_TYPES.find((a) => a.type === type);
+  return row?.icon ?? 'pause-circle';
+}
+
+// Quick reaction options — `type` stays emoji for wire compatibility with existing rows / triggers
 export const REACTION_EMOJIS = [
-  { type: '👋', label: 'Wave' },
-  { type: '🔥', label: 'Fire' },
-  { type: '💪', label: 'Flex' },
-  { type: '📚', label: 'Study nudge' },
-  { type: '❤️', label: 'Heart' },
-  { type: '👍', label: 'Thumbs up' },
-  { type: '🎉', label: 'Celebrate' },
+  { type: '👋', label: 'Wave', icon: 'send' },
+  { type: '🔥', label: 'Fire', icon: 'trending-up' },
+  { type: '💪', label: 'Flex', icon: 'activity' },
+  { type: '📚', label: 'Study nudge', icon: 'book-open' },
+  { type: '❤️', label: 'Heart', icon: 'heart' },
+  { type: '👍', label: 'Thumbs up', icon: 'thumbs-up' },
+  { type: '🎉', label: 'Celebrate', icon: 'award' },
 ];
 
 export const REACTION_TEMPLATES = [
   "Let's study together!",
-  "Good job, keep it up! 💪",
-  "Take a break, you deserve it! 😴",
-  "Want to grab lunch? 🍔",
-  "Are you free later?",
+  'Good job, keep it up!',
+  'Take a break, you deserve it!',
+  'Want to grab lunch?',
+  'Are you free later?',
   "Need help? I'm nearby!",
 ];
 

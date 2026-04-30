@@ -433,7 +433,7 @@ export default function ServiceDetailScreen() {
           </View>
         ) : (
           <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '14' }]}>
-            <Text style={{ fontSize: 56 }}>{cat.emoji}</Text>
+            <Feather name={cat.icon as any} size={52} color={cat.tint} />
             <View style={styles.heroChipsAlt}>
               <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.card }]}>
                 <Feather
@@ -464,7 +464,7 @@ export default function ServiceDetailScreen() {
         <View style={styles.section}>
           <View style={styles.metaRow}>
             <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
-              <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
+              <Feather name={cat.icon as any} size={13} color={cat.tint} />
               <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
             </View>
             <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>

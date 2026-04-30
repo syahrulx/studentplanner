@@ -16,14 +16,9 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const warn   = props?.theme?.warning        || '#d97706';
   const line   = props?.theme?.border         || '#e2e8f0';
   const pack   = props?.theme?.themePack;
-  const packIcon = pack === 'cat' ? '🐾' : pack === 'purple' ? '✨' : '';
 
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
-  const iconColor = pack === 'spider' ? (props?.theme?.border || accent) : 
-                    pack === 'cat' ? (props?.theme?.primary || accent) : title;
-  const iconOpacity = pack === 'spider' ? 0.45 : 
-                      pack === 'cat' ? 0.4 : 0.25;
 
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
@@ -102,11 +97,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   if (!p.signedIn) {
     return (
       <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-        {packIcon ? (
-          <Text modifiers={[font({ size: 130 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -38, leading: -32 })]}>
-            {packIcon}
-          </Text>
-        ) : null}
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -123,7 +113,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   // ── Lock screen: accessoryInline ──
   if (family === 'accessoryInline') {
     if (nextTask) {
-      const prefix = nextTask.accent === 'overdue' ? '⚠' : '•';
+      const prefix = nextTask.accent === 'overdue' ? '!' : '•';
       return (
         <Text modifiers={[font({ size: 12, weight: 'semibold' }), lineLimit(1)]}>
           {prefix} {nextTask.title}
@@ -162,7 +152,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         {showTasks.map((t) => (
           <HStack key={t.id} spacing={4}>
             <Text modifiers={[font({ size: 10, weight: 'bold' }), lineLimit(1)]}>
-              {t.accent === 'overdue' ? '⚠' : '•'}
+              {t.accent === 'overdue' ? '!' : '•'}
             </Text>
             <Text modifiers={[font({ size: 10 }), lineLimit(1)]}>
               {t.title}
@@ -182,7 +172,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           </HStack>
         ))}
         {count === 0 ? (
-          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>Free day! ✓</Text>
+          <Text modifiers={[font({ size: 10 }), opacity(0.7)]}>Free day</Text>
         ) : null}
       </VStack>
     );
@@ -194,11 +184,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
     const sCls   = p.classes.slice(0, 2);
     return (
       <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-        {packIcon ? (
-          <Text modifiers={[font({ size: 140 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: -42, leading: -36 })]}>
-            {packIcon}
-          </Text>
-        ) : null}
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -261,7 +246,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         ) : null}
 
         {sTasks.length === 0 && sCls.length === 0 ? (
-          <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free day! 🎉</Text>
+          <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free day</Text>
         ) : null}
         </VStack>
       </ZStack>
@@ -275,11 +260,6 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   return (
     <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
-      {packIcon ? (
-        <Text modifiers={[font({ size: large ? 220 : 180 }), foregroundStyle(iconColor), opacity(iconOpacity), padding({ top: large ? -55 : -45, leading: large ? -50 : -42 })]}>
-          {packIcon}
-        </Text>
-      ) : null}
       <VStack
         alignment="leading"
         modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -315,7 +295,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           </HStack>
 
           {colTask.length === 0 ? (
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done! 🎉</Text>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done</Text>
           ) : (
             <VStack spacing={dense ? 3 : 5} alignment="leading">
               {colTask.map((t) => (
@@ -359,7 +339,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           </HStack>
 
           {colCls.length === 0 ? (
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free! 🎉</Text>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>No classes</Text>
           ) : (
             <VStack spacing={dense ? 2 : 6} alignment="leading">
               {colCls.map((c, i) => (

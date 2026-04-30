@@ -21,7 +21,7 @@ import { useQuiz } from '@/src/context/QuizContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
-import { attendanceOccurrenceKey, getAnsweredOccurrenceSet, recordAttendanceEvent, type AttendanceStatus } from '@/src/attendanceRecording';
+import { featherForLegacyCircleEmoji, featherForReactionRow } from '@/src/lib/featherGlyphUi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function getInitials(name?: string) {
@@ -64,22 +64,18 @@ function formatDisplayName(name?: string | null) {
     .join(' ');
 }
 
-type ReactionPreview = { lead: string; text: string };
-
-function reactionPreviewLines(reaction: QuickReaction, isBump: boolean): ReactionPreview {
-  if (isBump) return { lead: '💥', text: 'Bumped you!' };
+function reactionSubtitle(reaction: QuickReaction, isBump: boolean): string {
+  if (isBump) return 'Bumped you!';
   if (reaction.reaction_type === '📋') {
-    return { lead: '📋', text: reaction.message || 'Shared a task with you!' };
+    return reaction.message || 'Shared a task with you!';
   }
   if (reaction.reaction_type === '🎮') {
-    return { lead: '🎮', text: reaction.message || 'Invited you to a quiz!' };
+    return reaction.message || 'Invited you to a quiz!';
   }
   if (reaction.message) {
-    const lead = reaction.reaction_type?.trim() || '';
-    return { lead, text: reaction.message };
+    return reaction.message;
   }
-  const emoji = reaction.reaction_type?.trim() || '✨';
-  return { lead: emoji, text: 'Sent you' };
+  return 'Sent you a reaction';
 }
 
 function parseQuizInviteCode(message?: string | null): string | null {
@@ -1227,9 +1223,19 @@ export default function NotificationsScreen() {
                   <Text style={[styles.notifName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
                     {formatDisplayName(inv.inviter_profile?.name)}
                   </Text>
-                  <Text style={[styles.notifMessage, { color: theme.textSecondary }]} numberOfLines={2}>
-                    Invited you to join {inv.circle ? `${inv.circle.emoji} ${inv.circle.name}` : 'a circle'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <Text style={[styles.notifMessage, { color: theme.textSecondary }]}>Invited you to join</Text>
+                    {inv.circle ? (
+                      <>
+                        <Feather name={featherForLegacyCircleEmoji(inv.circle.emoji)} size={16} color={theme.primary} />
+                        <Text style={[styles.notifMessage, { color: theme.text, fontWeight: '700' }]} numberOfLines={1}>
+                          {inv.circle.name}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={[styles.notifMessage, { color: theme.textSecondary }]}>a circle</Text>
+                    )}
+                  </View>
                   <View style={styles.shareActions}>
                     <Pressable
                       style={[styles.shareAcceptBtn, { backgroundColor: '#10b981' }]}
@@ -1343,7 +1349,8 @@ export default function NotificationsScreen() {
         ) : (
           reactions.map((reaction) => {
             const isBump = reaction.reaction_type === 'bump';
-            const { lead, text } = reactionPreviewLines(reaction, isBump);
+            const text = reactionSubtitle(reaction, isBump);
+            const leadIcon = featherForReactionRow(isBump, reaction.reaction_type);
             const isRead = reaction.read;
             const nameColor = isRead ? theme.textSecondary : theme.text;
             const subColor = isRead ? theme.tabIconDefault : theme.textSecondary;
@@ -1413,11 +1420,9 @@ export default function NotificationsScreen() {
                     </Text>
                   </View>
                   <View style={styles.notifMessageRow}>
-                    <View style={styles.notifLeadSlot}>
-                      {lead ? (
-                        <Text style={[styles.notifLeadEmoji, isRead && styles.readMutedEmoji]}>{lead}</Text>
-                      ) : null}
-                    </View>
+                  <View style={styles.notifLeadSlot}>
+                    <Feather name={leadIcon} size={18} color={isRead ? theme.tabIconDefault : theme.primary} />
+                  </View>
                     <Text
                       style={[styles.notifMessage, { color: subColor }]}
                       numberOfLines={3}

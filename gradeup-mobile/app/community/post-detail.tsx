@@ -18,10 +18,10 @@ import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 
-const TYPE_BADGE: Record<PostType, { label: string; emoji: string; color: string }> = {
-  event: { label: 'Event', emoji: '📅', color: '#3b82f6' },
-  service: { label: 'Service', emoji: '🔧', color: '#f59e0b' },
-  memo: { label: 'Memo', emoji: '📋', color: '#8b5cf6' },
+const TYPE_BADGE: Record<PostType, { label: string; icon: 'calendar' | 'tool' | 'clipboard'; color: string }> = {
+  event: { label: 'Event', icon: 'calendar', color: '#3b82f6' },
+  service: { label: 'Service', icon: 'tool', color: '#f59e0b' },
+  memo: { label: 'Memo', icon: 'clipboard', color: '#8b5cf6' },
 };
 
 function formatDate(dateStr: string): string {
@@ -134,12 +134,12 @@ export default function PostDetailScreen() {
         {/* Badge + Status */}
         <View style={styles.badgeRow}>
           <View style={[styles.typeBadge, { backgroundColor: badge.color + '18' }]}>
-            <Text style={{ fontSize: 13 }}>{badge.emoji}</Text>
+            <Feather name={badge.icon} size={14} color={badge.color} />
             <Text style={[styles.typeBadgeText, { color: badge.color }]}>{badge.label}</Text>
           </View>
           {post.pinned && (
             <View style={[styles.typeBadge, { backgroundColor: theme.primary + '15' }]}>
-              <Text style={{ fontSize: 11 }}>📌</Text>
+              <Feather name="bookmark" size={12} color={theme.primary} />
               <Text style={[styles.typeBadgeText, { color: theme.primary }]}>Pinned</Text>
             </View>
           )}

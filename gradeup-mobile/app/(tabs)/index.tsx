@@ -477,7 +477,7 @@ function createDashboardStyles(
       left: 0,
       right: 0,
       alignItems: 'center',
-      paddingTop: 52,
+      paddingTop: 12,
       zIndex: 20,
     },
     refreshRingOuter: {
@@ -1396,9 +1396,9 @@ export default function Dashboard() {
           <RefreshControl
             refreshing={refreshingHome}
             onRefresh={onRefreshHome}
-            tintColor={refreshSpinnerColor}
-            colors={[refreshSpinnerColor]}
-            progressBackgroundColor={Platform.OS === 'android' ? refreshGlassBg : undefined}
+            tintColor="transparent"
+            colors={['transparent']}
+            progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
             progressViewOffset={0}
           />
         }
