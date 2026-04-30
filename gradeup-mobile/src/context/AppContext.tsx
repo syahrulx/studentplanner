@@ -26,6 +26,8 @@ import {
   setTheme as persistTheme,
   getThemePack,
   setThemePack as persistThemePack,
+  getSpiderBlueAccents,
+  setSpiderBlueAccents as persistSpiderBlueAccents,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
   setCompletedStudyKeys as persistCompletedStudies,
@@ -147,6 +149,8 @@ type AppState = {
   setTheme: (theme: ThemeId) => void;
   themePack: ThemePackId;
   setThemePack: (pack: ThemePackId) => void;
+  spiderBlueAccents: boolean;
+  setSpiderBlueAccents: (enabled: boolean) => void;
   language: AppLanguage;
   setLanguage: (lang: AppLanguage) => void;
   loghat: AppLoghat | null;
@@ -273,6 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
+  const [spiderBlueAccents, setSpiderBlueAccentsState] = useState(true);
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
   const defaultRevision: RevisionSettings = {
@@ -531,6 +536,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     getTheme().then(setThemeState);
     getThemePack().then(setThemePackState);
+    getSpiderBlueAccents().then(setSpiderBlueAccentsState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
     getSubjectColors().then(setSubjectColorsState);
@@ -1031,6 +1037,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setThemePack = useCallback((next: ThemePackId) => {
     setThemePackState(next);
     persistThemePack(next);
+  }, []);
+
+  const setSpiderBlueAccents = useCallback((enabled: boolean) => {
+    setSpiderBlueAccentsState(enabled);
+    persistSpiderBlueAccents(enabled);
   }, []);
 
   const setLanguage = useCallback((lang: AppLanguage) => {
@@ -1810,6 +1821,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTheme,
     themePack,
     setThemePack,
+    spiderBlueAccents,
+    setSpiderBlueAccents,
     language,
     setLanguage,
     loghat,

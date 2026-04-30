@@ -80,7 +80,7 @@ const THEME_PREVIEWS: ThemePreview[] = [
 export default function InAppThemesScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
-  const { user, setThemePack } = useApp();
+  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents } = useApp();
   const isCatApplied = themePack === 'cat';
   const isMonoApplied = themePack === 'mono';
   const isSpiderApplied = themePack === 'spider';
@@ -344,7 +344,7 @@ export default function InAppThemesScreen() {
                 </Text>
               ) : item.id === 'spider' ? (
                 <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
-                  Applies the dark charcoal + deep red Spider palette everywhere; optional motion accents can hook in later.
+                  Applies the Spider palette everywhere. Turn blue accents OFF for the classic black + deep red look.
                 </Text>
               ) : item.id === 'purple' ? (
                 <Text style={[styles.catFeatureNote, { color: theme.textSecondary }]}>
@@ -380,6 +380,41 @@ export default function InAppThemesScreen() {
                     style={[styles.resetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
                   >
                     <Text style={[styles.resetBtnText, { color: theme.text }]}>Preview Mono Theme</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {item.id === 'spider' ? (
+                <View
+                  style={[
+                    styles.spiderToggleWrap,
+                    { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                  ]}
+                >
+                  <Pressable
+                    onPress={() => setSpiderBlueAccents(true)}
+                    style={[
+                      styles.spiderToggleSegment,
+                      {
+                        backgroundColor: spiderBlueAccents ? '#0d1b3f' : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.spiderToggleText, { color: spiderBlueAccents ? '#dbeafe' : theme.textSecondary }]}>
+                      ON
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setSpiderBlueAccents(false)}
+                    style={[
+                      styles.spiderToggleSegment,
+                      {
+                        backgroundColor: !spiderBlueAccents ? '#2b0a0d' : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.spiderToggleText, { color: !spiderBlueAccents ? '#fecaca' : theme.textSecondary }]}>
+                      OFF
+                    </Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -843,6 +878,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
     flexDirection: 'row',
     gap: 8,
+  },
+  spiderToggleWrap: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    padding: 2,
+    gap: 2,
+  },
+  spiderToggleSegment: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spiderToggleText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   catFeatureNote: {
     marginTop: -2,

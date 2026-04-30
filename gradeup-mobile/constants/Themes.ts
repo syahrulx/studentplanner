@@ -315,8 +315,8 @@ export const SPIDER_THEME_OVERRIDE: ThemePalette = {
   textSecondary: '#a1a1aa',
   textInverse: '#fafafa',
   border: '#1e3a8a',       // Spider-Man suit blue — all component borders
-  tabIconDefault: '#4a6fbd',
-  tabIconSelected: '#fca5a5',
+  tabIconDefault: '#a1a1aa',
+  tabIconSelected: '#ffffff',
   success: '#22c55e',
   warning: '#eab308',
   danger: '#dc2626',
@@ -324,3 +324,34 @@ export const SPIDER_THEME_OVERRIDE: ThemePalette = {
   focusCardText: '#dbeafe',
   shortcutColors: ['#991b1b', '#b91c1c', '#7f1d1d'],
 };
+
+/** Classic Spider variant: black + deep red only (no blue accents). */
+export const SPIDER_THEME_CLASSIC_OVERRIDE: ThemePalette = {
+  id: 'dark',
+  name: 'Spider Theme (Classic)',
+  background: '#050508',
+  backgroundSecondary: '#08080d',
+  card: '#0c0c12',
+  cardBorder: '#3a0d11',
+  primary: '#b91c1c',
+  secondary: '#dc2626',
+  accent: '#991b1b',
+  accent2: '#7f1d1d',
+  accent3: '#450a0a',
+  text: '#f4f4f5',
+  textSecondary: '#a1a1aa',
+  textInverse: '#fafafa',
+  border: '#3a0d11',
+  tabIconDefault: '#a1a1aa',
+  tabIconSelected: '#ffffff',
+  success: '#22c55e',
+  warning: '#eab308',
+  danger: '#dc2626',
+  focusCard: '#12070a',
+  focusCardText: '#fee2e2',
+  shortcutColors: ['#991b1b', '#b91c1c', '#7f1d1d'],
+};
+
+export function resolveSpiderTheme(useBlueAccents: boolean): ThemePalette {
+  return useBlueAccents ? SPIDER_THEME_OVERRIDE : SPIDER_THEME_CLASSIC_OVERRIDE;
+}
