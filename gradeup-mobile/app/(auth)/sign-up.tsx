@@ -33,6 +33,23 @@ const authRedirect = (path: string) =>
     path,
   });
 
+/**
+ * HTTPS landing page that bridges email links to the `rencana://` deep link.
+ *
+ * Why we don't pass `rencana://login` directly to Supabase:
+ * Supabase's verify endpoint redirects Safari to the `redirect_to` URL after
+ * confirming the email. iOS Safari refuses to open `rencana://` from that
+ * second redirect ("Safari cannot open the page because the address is invalid"),
+ * even though the verification itself succeeded server-side. Routing through an
+ * HTTPS page works around this — the page then opens the deep link via JS.
+ *
+ * The host can be overridden at build time via EXPO_PUBLIC_AUTH_BRIDGE_BASE.
+ */
+const AUTH_BRIDGE_BASE =
+  (process.env.EXPO_PUBLIC_AUTH_BRIDGE_BASE as string | undefined) ||
+  'https://aizztech.com';
+const EMAIL_VERIFY_REDIRECT = `${AUTH_BRIDGE_BASE}/auth/login`;
+
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignUp() {
@@ -203,7 +220,14 @@ export default function SignUp() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
-        options: { data: { full_name: trimmedName, university: university.name } },
+        options: {
+          data: { full_name: trimmedName, university: university.name },
+          // After the user clicks the confirm link in their inbox, Supabase
+          // verifies the token and then redirects the browser to this URL.
+          // It MUST be HTTPS so iOS Safari accepts it; the landing page itself
+          // then bounces the user back into the app via `rencana://login`.
+          emailRedirectTo: EMAIL_VERIFY_REDIRECT,
+        },
       });
       if (signUpError) {
         let msg = signUpError.message;

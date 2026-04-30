@@ -89,3 +89,47 @@ another host.)
 Until AASA and `assetlinks` are live and a **new** app build is installed,
 `https` links will open the **web page**; that page will try
 `rencana://` and show **Open in Rencana** plus store links.
+
+## Email verification redirect (`auth/login/`)
+
+When a new user signs up with email + password, Supabase emails them a
+confirmation link of the form:
+
+```
+https://<project>.supabase.co/auth/v1/verify?token=…&type=signup&redirect_to=<URL>
+```
+
+Passing `rencana://login` as `redirect_to` causes iOS Safari to fail with
+**"Safari cannot open the page because the address is invalid"** — the email
+*is* still verified server-side, but the user is left stranded in Safari.
+
+To fix this, the app passes `emailRedirectTo: https://aizztech.com/auth/login`
+when calling `supabase.auth.signUp(...)`. Supabase then redirects Safari to
+that HTTPS landing page, which:
+
+1. Reads any auth tokens from `?…` and `#…`
+2. Builds `rencana://login?<same params>`
+3. Auto-launches the deep link, with **Open in Rencana** as a fallback button
+
+### Publish the page
+
+Copy the folder `auth/login/` (contains `index.html`) to the **root** of
+your `aizztech.com` site so this URL serves the file:
+
+```
+https://aizztech.com/auth/login        ← canonical
+https://aizztech.com/auth/login/       ← also works
+```
+
+### Whitelist the URL in Supabase
+
+1. Open the Supabase Dashboard → **Authentication** → **URL Configuration**
+2. Under **Redirect URLs**, add (one per line):
+   - `https://aizztech.com/auth/login`
+   - `https://aizztech.com/auth/login/`
+   - `rencana://login` *(keep this — used by native deep links)*
+3. Save. Supabase only redirects to URLs that exactly match this allowlist.
+
+If you host on a different domain, set `EXPO_PUBLIC_AUTH_BRIDGE_BASE` in
+`gradeup-mobile/app.config.js` (or `eas.json` env) to override the base URL,
+and update the Supabase allowlist accordingly.
