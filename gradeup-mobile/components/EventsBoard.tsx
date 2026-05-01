@@ -14,6 +14,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
@@ -108,6 +109,20 @@ export default function EventsBoard() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<PostType | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
+  const [showIntroModal, setShowIntroModal] = useState(false);
+
+  useEffect(() => {
+    async function checkIntro() {
+      try {
+        const seen = await AsyncStorage.getItem('has_seen_events_intro');
+        if (!seen) {
+          setShowIntroModal(true);
+          await AsyncStorage.setItem('has_seen_events_intro', '1');
+        }
+      } catch (e) {}
+    }
+    checkIntro();
+  }, []);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
 
@@ -754,6 +769,55 @@ export default function EventsBoard() {
       <Modal visible={pickerVisible && !showFilterModal} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
         {renderPickerContent()}
       </Modal>
+
+      {/* Intro Modal */}
+      <Modal
+        visible={showIntroModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowIntroModal(false)}
+      >
+        <View style={styles.introOverlay}>
+          <View style={[styles.introModal, { backgroundColor: theme.card, shadowColor: dark ? '#000' : '#888' }]}>
+            <View style={[styles.introIconWrap, { backgroundColor: theme.primary + '15' }]}>
+              <Feather name="calendar" size={32} color={theme.primary} />
+            </View>
+            <Text style={[styles.introTitle, { color: theme.text }]}>Welcome to Events!</Text>
+            <Text style={[styles.introDesc, { color: theme.textSecondary }]}>
+              Discover what's happening around your campus and get involved.
+            </Text>
+            
+            <View style={styles.introList}>
+              <View style={styles.introListItem}>
+                <Feather name="map-pin" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={styles.introListTextWrap}>
+                  <Text style={[styles.introListTitle, { color: theme.text }]}>Local Campus Events</Text>
+                  <Text style={[styles.introListDesc, { color: theme.textSecondary }]}>Find activities, seminars, and club gatherings specific to your university.</Text>
+                </View>
+              </View>
+              <View style={styles.introListItem}>
+                <Feather name="file-text" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={styles.introListTextWrap}>
+                  <Text style={[styles.introListTitle, { color: theme.text }]}>Important Memos</Text>
+                  <Text style={[styles.introListDesc, { color: theme.textSecondary }]}>Stay updated with official announcements and memos from student organizations.</Text>
+                </View>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => setShowIntroModal(false)}
+              style={({ pressed }) => [
+                styles.introBtn,
+                { backgroundColor: theme.primary },
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <Text style={styles.introBtnText}>Get Started</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1075,4 +1139,77 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   sheetItemText: { fontSize: 16 },
+  
+  // Intro Modal
+  introOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  introModal: {
+    width: '100%',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  introIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  introTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  introDesc: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  introList: {
+    width: '100%',
+    gap: 16,
+    marginBottom: 28,
+  },
+  introListItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  introListTextWrap: {
+    flex: 1,
+  },
+  introListTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  introListDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  introBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  introBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
