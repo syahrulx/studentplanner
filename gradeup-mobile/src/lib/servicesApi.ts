@@ -171,8 +171,14 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (universityId) query = query.eq('university_id', universityId);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
-  if (scope === 'mine' && user) query = query.eq('author_id', user.id);
-  if (scope === 'taken' && user) query = query.eq('claimed_by', user.id);
+  if (scope === 'mine' && user) {
+    query = query.eq('author_id', user.id);
+  } else if (scope === 'taken' && user) {
+    query = query.eq('claimed_by', user.id);
+  } else if (scope === 'all' && !status) {
+    // Hide completed and cancelled from the general browse feed unless specifically filtering for them
+    query = query.in('service_status', ['open', 'claimed', 'submitted']);
+  }
 
   const { data, error } = await query;
   if (error) throw error;
