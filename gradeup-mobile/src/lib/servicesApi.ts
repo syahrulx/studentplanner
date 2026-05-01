@@ -113,6 +113,7 @@ export interface ServiceFilters {
   status?: ServiceStatus | null;
   category?: string | null;
   universityId?: string | null;
+  campus?: string | null;
   search?: string | null;
   scope?: 'all' | 'mine' | 'taken';
   orderBy?: 'newest' | 'price_asc' | 'price_desc' | 'deadline_asc';
@@ -144,7 +145,7 @@ export function statusMeta(status: ServiceStatus) {
 // ─── List ──────────────────────────────────────────────────────────────────
 
 export async function fetchServices(filters: ServiceFilters = {}): Promise<ServicePost[]> {
-  const { kind, status, category, universityId, search, scope = 'all', limit = 60 } = filters;
+  const { kind, status, category, universityId, campus, search, scope = 'all', limit = 60 } = filters;
 
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -169,6 +170,7 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (status) query = query.eq('service_status', status);
   if (category) query = query.eq('service_category', category);
   if (universityId) query = query.eq('university_id', universityId);
+  if (campus) query = query.eq('campus', campus);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
   if (scope === 'mine' && user) {
@@ -688,6 +690,7 @@ export function getDeadlineStatus(s: ServicePost): { label: string; urgent: bool
   if (diff < 0) {
     const overdue = Math.abs(diff);
     const hours = Math.floor(overdue / (1000 * 60 * 60));
+    if (hours === 0) return { label: 'Overdue by < 1h', urgent: true };
     if (hours < 24) return { label: `Overdue by ${hours}h`, urgent: true };
     return { label: `Overdue by ${Math.floor(hours / 24)}d`, urgent: true };
   }

@@ -83,6 +83,7 @@ export default function ServicesBoard() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [orderBy, setOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
+  const [locationScope, setLocationScope] = useState<'all' | 'university' | 'campus'>('all');
 
   const [items, setItems] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +117,8 @@ export default function ServicesBoard() {
         status,
         search: debouncedSearch || null,
         orderBy,
+        universityId: locationScope === 'university' || locationScope === 'campus' ? user.universityId : undefined,
+        campus: locationScope === 'campus' ? user.campus : undefined,
       });
       // Hide cancelled in Browse unless explicitly filtered
       const filtered = scope === 'all' && !status
@@ -125,7 +128,7 @@ export default function ServicesBoard() {
     } catch (e) {
       console.error('[ServicesBoard] fetch error:', e);
     }
-  }, [scope, kind, category, status, debouncedSearch, orderBy]);
+  }, [scope, kind, category, status, debouncedSearch, orderBy, locationScope, user?.universityId, user?.campus]);
 
   // Refetches both on focus AND when filters/search change while focused
   // (useFocusEffect re-runs when its callback identity changes while in focus).
@@ -192,6 +195,37 @@ export default function ServicesBoard() {
         { text: 'Price: Low to High', onPress: () => setOrderBy('price_asc') },
         { text: 'Price: High to Low', onPress: () => setOrderBy('price_desc') },
         { text: 'Deadline: Ending Soonest', onPress: () => setOrderBy('deadline_asc') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const handleLocationOptions = () => {
+    const options = ['Cancel', 'Everywhere', 'My University', 'My Campus'];
+    const mapping: Record<number, 'all' | 'university' | 'campus'> = {
+      1: 'all',
+      2: 'university',
+      3: 'campus',
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+          title: 'Filter by Location',
+        },
+        (buttonIndex) => {
+          if (buttonIndex !== 0) {
+            setLocationScope(mapping[buttonIndex]);
+          }
+        }
+      );
+    } else {
+      Alert.alert('Location', 'Show services from:', [
+        { text: 'Everywhere', onPress: () => setLocationScope('all') },
+        { text: 'My University', onPress: () => setLocationScope('university') },
+        { text: 'My Campus', onPress: () => setLocationScope('campus') },
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
@@ -274,6 +308,22 @@ export default function ServicesBoard() {
               {orderBy === 'newest' ? 'Sort' : 
                orderBy === 'price_asc' ? 'Low to High' :
                orderBy === 'price_desc' ? 'High to Low' : 'Ending Soon'}
+            </Text>
+          </Pressable>
+
+          {/* Location Button */}
+          <Pressable
+            onPress={handleLocationOptions}
+            style={[
+              styles.pill,
+              { backgroundColor: theme.card, borderColor: theme.border, marginRight: 4 },
+              locationScope !== 'all' && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
+            ]}
+          >
+            <Feather name="map-pin" size={14} color={locationScope !== 'all' ? theme.primary : theme.textSecondary} />
+            <Text style={[styles.pillText, { color: locationScope !== 'all' ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
+              {locationScope === 'all' ? 'Everywhere' : 
+               locationScope === 'university' ? 'My Uni' : 'My Campus'}
             </Text>
           </Pressable>
 
@@ -436,7 +486,6 @@ export default function ServicesBoard() {
               </View>
 
               <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                <Text style={{ fontWeight: '900', fontSize: 10, marginRight: 2 }}>RM</Text>
                 <Text style={[styles.metaChipText, { color: theme.text }]}>
                   {formatPrice(item)}
                 </Text>

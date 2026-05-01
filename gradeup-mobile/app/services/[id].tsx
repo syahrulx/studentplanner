@@ -83,6 +83,7 @@ export default function ServiceDetailScreen() {
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryImages, setDeliveryImages] = useState<string[]>([]);
   const [deliverySubmitting, setDeliverySubmitting] = useState(false);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -653,8 +654,7 @@ export default function ServiceDetailScreen() {
               <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
             </View>
             <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>
-              <Text style={[styles.metaChipText, { color: theme.primary, fontWeight: '900' }]}>RM</Text>
-              <Text style={[styles.metaChipText, { color: theme.primary }]}>
+              <Text style={[styles.metaChipText, { color: theme.primary, fontWeight: '600' }]}>
                 {(isClaimed || isCompleted || isSubmitted) ? formatAgreedPrice(service) : formatPrice(service)}
               </Text>
             </View>
@@ -671,7 +671,7 @@ export default function ServiceDetailScreen() {
               <View style={styles.priceDivider} />
             )}
             {service.location && (
-              <View style={{ flex: 1 }}>
+              <View>
                 <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>LOCATION</Text>
                 <Text style={[styles.priceDeadline, { color: theme.text }]} numberOfLines={1}>{service.location}</Text>
               </View>
@@ -747,8 +747,8 @@ export default function ServiceDetailScreen() {
         </View>
 
         {/* Deadline warning badge */}
-        {deadlineStatus && (isClaimed || isSubmitted) && (
-          <View style={[styles.section, { marginTop: 0 }]}>
+        {deadlineStatus && isClaimed && (
+          <View style={[styles.section, { marginTop: 12 }]}>
             <View style={[styles.card, { 
               backgroundColor: deadlineStatus.urgent ? '#FF453A15' : theme.card, 
               borderColor: deadlineStatus.urgent ? '#FF453A40' : theme.border,
@@ -777,8 +777,8 @@ export default function ServiceDetailScreen() {
         )}
 
         {/* Revision tracker (when no deadline) */}
-        {!deadlineStatus && service.revision_count > 0 && (isClaimed || isSubmitted) && (
-          <View style={[styles.section, { marginTop: 0 }]}>
+        {!deadlineStatus && service.revision_count > 0 && isClaimed && (
+          <View style={[styles.section, { marginTop: 12 }]}>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, flexDirection: 'row', alignItems: 'center', paddingVertical: 12 }]}>
               <Feather name="refresh-cw" size={14} color={theme.textSecondary} />
               <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14, marginLeft: 8 }}>
@@ -808,7 +808,7 @@ export default function ServiceDetailScreen() {
                   {service.delivery_attachments.map((url: string, idx: number) => (
                     <Pressable 
                       key={idx} 
-                      onPress={() => Linking.openURL(url)}
+                      onPress={() => setFullscreenImage(url)}
                       style={{ marginHorizontal: 4 }}
                     >
                       <Image 
@@ -1316,6 +1316,19 @@ export default function ServiceDetailScreen() {
             </Pressable>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Fullscreen Image Modal */}
+      <Modal visible={!!fullscreenImage} transparent animationType="fade" onRequestClose={() => setFullscreenImage(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setFullscreenImage(null)} />
+          {fullscreenImage && (
+            <Image source={{ uri: fullscreenImage }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
+          )}
+          <Pressable onPress={() => setFullscreenImage(null)} style={{ position: 'absolute', top: Math.max(insets.top, 20) + 10, right: 20, zIndex: 10, padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 }}>
+            <Feather name="x" size={24} color="#fff" />
+          </Pressable>
+        </View>
       </Modal>
     </View>
   );
