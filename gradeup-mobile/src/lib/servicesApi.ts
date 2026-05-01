@@ -777,3 +777,18 @@ export async function markServiceMessagesRead(serviceId: string): Promise<void> 
     console.error('Failed to mark messages read', error);
   }
 }
+
+export async function fetchUnreadChatCount(serviceId: string, userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('service_chat_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('service_id', serviceId)
+    .is('read_at', null)
+    .neq('sender_id', userId);
+  
+  if (error) {
+    console.error('fetchUnreadChatCount error:', error);
+    return 0;
+  }
+  return count || 0;
+}
