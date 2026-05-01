@@ -413,9 +413,14 @@ export default function ServicesBoard() {
             )}
 
             <View style={styles.titleRow}>
-              <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={2}>
+              <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]} numberOfLines={2}>
                 {item.title}
               </Text>
+              {(item.unread_chat_count ?? 0) > 0 && (
+                <View style={styles.cardUnreadBadge}>
+                  <Text style={styles.cardUnreadBadgeText}>{item.unread_chat_count}</Text>
+                </View>
+              )}
             </View>
 
             {item.body ? (
@@ -732,8 +737,21 @@ const styles = StyleSheet.create({
   cardBody: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   metaTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  cardTitle: { flex: 1, fontSize: 17, fontWeight: '700', letterSpacing: -0.3, lineHeight: 22 },
-  cardSubtitle: { fontSize: 13, fontWeight: '400', lineHeight: 18, marginTop: 4 },
+  cardTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.4, marginBottom: 4 },
+  cardSubtitle: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  
+  cardUnreadBadge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    paddingHorizontal: 6,
+    marginTop: 2,
+  },
+  cardUnreadBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   metaChip: {

@@ -80,6 +80,9 @@ export interface ServicePost {
   author_reviews?: number;
   claimer_rating?: number | null;
   claimer_reviews?: number;
+  
+  // local only
+  unread_chat_count?: number;
 }
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
@@ -175,21 +178,43 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (error) throw error;
 
   const rows = (data ?? []) as ServicePost[];
-  return enrichWithProfiles(rows);
+  return enrichWithProfiles(rows, user?.id);
 }
 
-async function enrichWithProfiles(rows: ServicePost[]): Promise<ServicePost[]> {
+async function enrichWithProfiles(rows: ServicePost[], currentUserId?: string): Promise<ServicePost[]> {
+  if (!rows.length) return rows;
   const ids = new Set<string>();
   for (const r of rows) {
     if (r.author_id) ids.add(r.author_id);
     if (r.claimed_by) ids.add(r.claimed_by);
   }
-  if (!ids.size) return rows;
 
-  const { data: profs } = await supabase
-    .from('profiles')
-    .select('id, name, avatar_url, university, whatsapp_number, average_rating, total_reviews')
-    .in('id', Array.from(ids));
+  // 1. Fetch profiles
+  const profilesPromise = ids.size > 0 
+    ? supabase
+        .from('profiles')
+        .select('id, name, avatar_url, university, whatsapp_number, average_rating, total_reviews')
+        .in('id', Array.from(ids))
+    : Promise.resolve({ data: [] });
+
+  // 2. Fetch unread counts for these services (only if logged in)
+  const serviceIds = rows.map(r => r.id);
+  const unreadPromise = currentUserId
+    ? supabase
+        .from('service_chat_messages')
+        .select('service_id')
+        .in('service_id', serviceIds)
+        .is('read_at', null)
+        .neq('sender_id', currentUserId)
+    : Promise.resolve({ data: [] });
+
+  const [{ data: profs }, { data: unreadMsgs }] = await Promise.all([profilesPromise, unreadPromise]);
+
+  // Map unread counts
+  const unreadCounts = new Map<string, number>();
+  for (const m of (unreadMsgs || [])) {
+    unreadCounts.set(m.service_id, (unreadCounts.get(m.service_id) || 0) + 1);
+  }
 
   const map = new Map((profs ?? []).map((p: any) => [p.id, p]));
   for (const r of rows) {
@@ -209,6 +234,8 @@ async function enrichWithProfiles(rows: ServicePost[]): Promise<ServicePost[]> {
       r.claimer_rating = c?.average_rating ?? null;
       r.claimer_reviews = c?.total_reviews ?? 0;
     }
+    
+    r.unread_chat_count = unreadCounts.get(r.id) || 0;
   }
   return rows;
 }
@@ -225,7 +252,8 @@ export async function fetchService(id: string): Promise<ServicePost | null> {
 
   if (error || !data) return null;
 
-  const enriched = await enrichWithProfiles([data as ServicePost]);
+  const { data: { user } } = await supabase.auth.getUser();
+  const enriched = await enrichWithProfiles([data as ServicePost], user?.id);
   return enriched[0] || null;
 }
 
