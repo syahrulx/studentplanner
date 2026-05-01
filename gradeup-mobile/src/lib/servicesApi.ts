@@ -374,7 +374,7 @@ export async function submitService(
   const { error } = await supabase.rpc('submit_service', {
     p_service_id: id,
     p_delivery_note: opts?.note || null,
-    p_delivery_attachments: JSON.stringify(attachmentUrls),
+    p_delivery_attachments: attachmentUrls,
   });
   if (error) throw error;
 }

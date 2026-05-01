@@ -127,6 +127,15 @@ export default function ServiceDetailScreen() {
   const isCompleted = service.service_status === 'completed';
   const isCancelled = service.service_status === 'cancelled';
 
+  let attachments: string[] = [];
+  try {
+    if (typeof service.delivery_attachments === 'string') {
+      attachments = JSON.parse(service.delivery_attachments);
+    } else if (Array.isArray(service.delivery_attachments)) {
+      attachments = service.delivery_attachments;
+    }
+  } catch (e) {}
+
   const myReview = reviews.find((r) => r.reviewer_id === userId);
   const canReview = isCompleted && (role === 'requester' || role === 'taker') && !myReview;
 
@@ -579,7 +588,7 @@ export default function ServiceDetailScreen() {
           <Feather name="chevron-left" size={20} color={theme.text} />
         </Pressable>
         <Text style={[styles.navTitle, { color: theme.text }]} numberOfLines={1}>
-          {cat.emoji} {cat.label}
+          {cat.label}
         </Text>
         <View style={{ width: 36, alignItems: 'flex-end' }}>
           {(isOpen || isClaimed || isSubmitted) ? (
@@ -595,56 +604,39 @@ export default function ServiceDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
-        {/* Hero */}
-        {service.image_url ? (
-          <View style={styles.heroWrap}>
-            <Image source={{ uri: service.image_url }} style={styles.heroImg} resizeMode="cover" />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.55)']}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-            <View style={styles.heroChips}>
-              <View style={[styles.chipFilled, { backgroundColor: theme.card + 'E8' }]}>
-                <Feather
-                  name={service.service_kind === 'offer' ? 'gift' : 'help-circle'}
-                  size={11}
-                  color={theme.text}
-                />
-                <Text style={[styles.chipText, { color: theme.text }]}>
-                  {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
-                </Text>
-              </View>
-              <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
-                <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
-              </View>
-            </View>
-          </View>
-        ) : (
-          <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '14' }]}>
-            <Feather name={cat.icon as any} size={52} color={cat.tint} />
-            <View style={styles.heroChipsAlt}>
-              <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.background + 'CC' }]}>
-                <Feather name={service.service_kind === 'offer' ? 'gift' : 'help-circle'} size={11} color={theme.text} />
-                <Text style={[styles.chipText, { color: theme.text }]}>
-                  {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
-                </Text>
-              </View>
-              <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: sm.tint, marginRight: 2 }} />
-                <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
         {/* Title + meta block */}
-        <View style={[styles.section, { marginTop: 20 }]}>
+        <View style={[styles.section, { marginTop: 24 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+            <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.card }]}>
+              <Feather name={service.service_kind === 'offer' ? 'gift' : 'help-circle'} size={11} color={theme.text} />
+              <Text style={[styles.chipText, { color: theme.text }]}>
+                {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
+              </Text>
+            </View>
+            <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: sm.tint, marginRight: 2 }} />
+              <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
+            </View>
+          </View>
           <Text style={[styles.title, { color: theme.text }]}>{service.title}</Text>
           {service.body ? (
             <Text style={[styles.body, { color: theme.textSecondary }]}>{service.body}</Text>
           ) : null}
         </View>
+
+        {/* Request Attachment */}
+        {service.image_url ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>ATTACHMENT</Text>
+            <Pressable onPress={() => setFullscreenImage(service.image_url)}>
+              <Image 
+                source={{ uri: service.image_url }} 
+                style={{ width: '100%', height: 200, borderRadius: 12, backgroundColor: theme.border }} 
+                resizeMode="cover" 
+              />
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Quick info chips */}
         <View style={styles.section}>
@@ -794,18 +786,18 @@ export default function ServiceDetailScreen() {
         )}
 
         {/* Delivery submission display */}
-        {(isSubmitted || isCompleted) && (service.delivery_note || (Array.isArray(service.delivery_attachments) && service.delivery_attachments.length > 0)) && (
+        {(isSubmitted || isCompleted) && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>DELIVERY</Text>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
               {service.delivery_note ? (
-                <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22, marginBottom: service.delivery_attachments?.length ? 12 : 0 }}>
+                <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22, marginBottom: attachments.length ? 12 : 0, padding: 16 }}>
                   {service.delivery_note}
                 </Text>
               ) : null}
-              {Array.isArray(service.delivery_attachments) && service.delivery_attachments.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-                  {service.delivery_attachments.map((url: string, idx: number) => (
+              {attachments.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, padding: 16, paddingTop: service.delivery_note ? 0 : 16 }}>
+                  {attachments.map((url: string, idx: number) => (
                     <Pressable 
                       key={idx} 
                       onPress={() => setFullscreenImage(url)}
@@ -819,6 +811,11 @@ export default function ServiceDetailScreen() {
                     </Pressable>
                   ))}
                 </ScrollView>
+              )}
+              {!service.delivery_note && attachments.length === 0 && (
+                <Text style={{ color: theme.textSecondary, fontSize: 14, padding: 16, fontStyle: 'italic', opacity: 0.7 }}>
+                  No note or attachments provided.
+                </Text>
               )}
             </View>
           </View>
