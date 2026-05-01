@@ -14,7 +14,12 @@ WebBrowser.maybeCompleteAuthSession();
 import { useCallback, useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { LogBox } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+LogBox.ignoreLogs([
+  'Sending `onAnimatedValueUpdate` with no listeners registered.',
+]);
 
 import { AppProvider } from '@/src/context/AppContext';
 import { CommunityProvider } from '@/src/context/CommunityContext';
@@ -158,6 +163,18 @@ function RootLayoutNav() {
           break;
         case 'study_complete':
           nav(() => router.push('/study-timer' as any));
+          break;
+        case 'service_offer_new':
+        case 'service_offer_accepted':
+        case 'service_claimed':
+        case 'service_completed':
+          if (data.serviceId) nav(() => router.push(`/services/${data.serviceId}` as any));
+          break;
+        case 'service_chat_message':
+          if (data.serviceId) {
+            // Push to chat screen for this service
+            nav(() => router.push(`/services/chat/${data.serviceId}` as any));
+          }
           break;
         case 'attendance_checkin': {
           // Banner tap should open the in-app notification manager where the user can answer

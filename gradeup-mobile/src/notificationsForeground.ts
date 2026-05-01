@@ -16,7 +16,6 @@ Notifications.setNotificationHandler({
       const popupOn = await getAttendanceCheckinPopupEnabled().catch(() => true);
       if (!popupOn) {
         return {
-          shouldShowAlert: false,
           shouldPlaySound: false,
           shouldSetBadge: false,
           shouldShowBanner: false,
@@ -28,7 +27,6 @@ Notifications.setNotificationHandler({
     }
 
     return {
-      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
       shouldShowBanner: true,

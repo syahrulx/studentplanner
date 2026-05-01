@@ -63,6 +63,7 @@ export default function ServiceDetailScreen() {
   const [service, setService] = useState<ServicePost | null>(null);
   const [reviews, setReviews] = useState<ServiceReview[]>([]);
   const [offers, setOffers] = useState<ServiceOffer[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
 
@@ -86,14 +87,16 @@ export default function ServiceDetailScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [s, r, o] = await Promise.all([
+      const [s, r, o, u] = await Promise.all([
         servicesApi.fetchService(id),
         servicesApi.fetchReviewsForService(id),
         servicesApi.fetchOffersForService(id),
+        userId ? servicesApi.fetchUnreadChatCount(id, userId) : Promise.resolve(0),
       ]);
       setService(s);
       setReviews(r);
       setOffers(o);
+      setUnreadCount(u);
     } catch (e) {
       console.error('[ServiceDetail] load error:', e);
     }
@@ -791,7 +794,7 @@ export default function ServiceDetailScreen() {
         )}
 
         {/* Delivery submission display */}
-        {(isSubmitted || isCompleted) && (service.delivery_note || (service.delivery_attachments && service.delivery_attachments.length > 0)) && (
+        {(isSubmitted || isCompleted) && (service.delivery_note || (Array.isArray(service.delivery_attachments) && service.delivery_attachments.length > 0)) && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>DELIVERY</Text>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -800,7 +803,7 @@ export default function ServiceDetailScreen() {
                   {service.delivery_note}
                 </Text>
               ) : null}
-              {service.delivery_attachments && service.delivery_attachments.length > 0 && (
+              {Array.isArray(service.delivery_attachments) && service.delivery_attachments.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
                   {service.delivery_attachments.map((url: string, idx: number) => (
                     <Pressable 
@@ -863,6 +866,11 @@ export default function ServiceDetailScreen() {
                 >
                   <Feather name="message-circle" size={14} color="#fff" />
                   <Text style={styles.chatChipText}>Chat</Text>
+                  {unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+                    </View>
+                  )}
                 </Pressable>
               )}
             </View>
@@ -900,6 +908,11 @@ export default function ServiceDetailScreen() {
                     >
                       <Feather name="message-circle" size={14} color="#fff" />
                       <Text style={styles.chatChipText}>Chat</Text>
+                      {unreadCount > 0 && (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+                        </View>
+                      )}
                     </Pressable>
                   )}
                 </View>
@@ -1491,6 +1504,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   chatChipText: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: -0.1 },
+  unreadBadge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+    paddingHorizontal: 4,
+  },
+  unreadBadgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 
   reviewRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12 },
   reviewerName: { fontSize: 14, fontWeight: '600' },

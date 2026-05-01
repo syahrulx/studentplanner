@@ -545,7 +545,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingLeft: 4,
   },
-  sectionHeaderInset: { paddingHorizontal: 20 },
+  sectionHeaderInset: { paddingLeft: 24, paddingRight: 20 },
   card: {
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
