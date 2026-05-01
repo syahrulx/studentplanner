@@ -245,3 +245,24 @@ export function IconShield({ className }: Props) {
     </svg>
   );
 }
+
+export function IconBriefcase({ className }: Props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4 8.5h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-10Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M4 12.5h16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.8" />
+    </svg>
+  );
+}

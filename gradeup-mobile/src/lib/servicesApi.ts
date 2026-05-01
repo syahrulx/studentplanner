@@ -4,7 +4,7 @@ import { uploadPostImage } from './eventsApi';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type ServiceKind = 'request' | 'offer';
-export type ServiceStatus = 'open' | 'claimed' | 'completed' | 'cancelled';
+export type ServiceStatus = 'open' | 'claimed' | 'submitted' | 'completed' | 'cancelled';
 export type PriceType = 'free' | 'fixed' | 'negotiable';
 
 export interface ServiceCategory {
@@ -56,9 +56,17 @@ export interface ServicePost {
   service_status: ServiceStatus;
   claimed_by: string | null;
   claimed_at: string | null;
+  submitted_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  cancel_requested_by: string | null;
   deadline_at: string | null;
+
+  // delivery & revision tracking
+  delivery_note: string | null;
+  delivery_attachments: string[];
+  max_revisions: number;
+  revision_count: number;
 
   // joined
   author_name?: string;
@@ -68,6 +76,10 @@ export interface ServicePost {
   claimer_name?: string;
   claimer_avatar?: string | null;
   claimer_whatsapp?: string | null;
+  author_rating?: number | null;
+  author_reviews?: number;
+  claimer_rating?: number | null;
+  claimer_reviews?: number;
 }
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
@@ -89,6 +101,8 @@ export interface ServiceOffer {
   offerer_name?: string;
   offerer_avatar?: string | null;
   offerer_whatsapp?: string | null;
+  offerer_rating?: number | null;
+  offerer_reviews?: number;
 }
 
 export interface ServiceFilters {
@@ -98,6 +112,7 @@ export interface ServiceFilters {
   universityId?: string | null;
   search?: string | null;
   scope?: 'all' | 'mine' | 'taken';
+  orderBy?: 'newest' | 'price_asc' | 'price_desc' | 'deadline_asc';
   limit?: number;
 }
 
@@ -112,10 +127,11 @@ export function formatPrice(p: Pick<ServicePost, 'price_type' | 'price_amount' |
 }
 
 const STATUS_META: Record<ServiceStatus, { label: string; tint: string; bg: string }> = {
-  open:      { label: 'Open',      tint: '#30D158', bg: '#30D15822' },
-  claimed:   { label: 'In progress', tint: '#FF9F0A', bg: '#FF9F0A22' },
-  completed: { label: 'Completed', tint: '#0A84FF', bg: '#0A84FF22' },
-  cancelled: { label: 'Cancelled', tint: '#8E8E93', bg: '#8E8E9322' },
+  open:      { label: 'Open',        tint: '#30D158', bg: '#30D15822' },
+  claimed:   { label: 'In Progress', tint: '#FF9F0A', bg: '#FF9F0A22' },
+  submitted: { label: 'Pending Review', tint: '#BF5AF2', bg: '#BF5AF222' },
+  completed: { label: 'Completed',   tint: '#0A84FF', bg: '#0A84FF22' },
+  cancelled: { label: 'Cancelled',   tint: '#8E8E93', bg: '#8E8E9322' },
 };
 
 export function statusMeta(status: ServiceStatus) {
@@ -133,9 +149,18 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
     .from('community_posts')
     .select('*')
     .eq('post_type', 'service')
-    .order('pinned', { ascending: false })
-    .order('created_at', { ascending: false })
     .limit(limit);
+
+  if (filters.orderBy === 'price_asc') {
+    query = query.order('price_amount', { ascending: true, nullsFirst: false });
+  } else if (filters.orderBy === 'price_desc') {
+    query = query.order('price_amount', { ascending: false, nullsFirst: false });
+  } else if (filters.orderBy === 'deadline_asc') {
+    query = query.order('deadline_at', { ascending: true, nullsFirst: false });
+  } else {
+    // default newest
+    query = query.order('pinned', { ascending: false }).order('created_at', { ascending: false });
+  }
 
   if (kind) query = query.eq('service_kind', kind);
   if (status) query = query.eq('service_status', status);
@@ -163,22 +188,26 @@ async function enrichWithProfiles(rows: ServicePost[]): Promise<ServicePost[]> {
 
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, avatar_url, university, whatsapp_number')
+    .select('id, name, avatar_url, university, whatsapp_number, average_rating, total_reviews')
     .in('id', Array.from(ids));
 
   const map = new Map((profs ?? []).map((p: any) => [p.id, p]));
   for (const r of rows) {
     const a = map.get(r.author_id);
-    r.author_name = a?.name || 'Unknown';
+    r.author_name = a?.name || 'Student';
     r.author_avatar = a?.avatar_url || null;
     r.author_university = a?.university || null;
     r.author_whatsapp = a?.whatsapp_number || null;
+    r.author_rating = a?.average_rating ?? null;
+    r.author_reviews = a?.total_reviews ?? 0;
 
     if (r.claimed_by) {
       const c = map.get(r.claimed_by);
-      r.claimer_name = c?.name || 'Unknown';
+      r.claimer_name = c?.name || 'Student';
       r.claimer_avatar = c?.avatar_url || null;
       r.claimer_whatsapp = c?.whatsapp_number || null;
+      r.claimer_rating = c?.average_rating ?? null;
+      r.claimer_reviews = c?.total_reviews ?? 0;
     }
   }
   return rows;
@@ -291,6 +320,61 @@ export async function cancelService(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// ─── Two-Step Completion ───────────────────────────────────────────────────
+
+export async function submitService(
+  id: string,
+  opts?: { note?: string; attachmentUris?: string[] }
+): Promise<void> {
+  let attachmentUrls: string[] = [];
+
+  // Upload attachments if provided
+  if (opts?.attachmentUris?.length) {
+    attachmentUrls = await Promise.all(
+      opts.attachmentUris.map((uri) => uploadDeliveryAttachment(uri))
+    );
+  }
+
+  const { error } = await supabase.rpc('submit_service', {
+    p_service_id: id,
+    p_delivery_note: opts?.note || null,
+    p_delivery_attachments: JSON.stringify(attachmentUrls),
+  });
+  if (error) throw error;
+}
+
+export async function approveService(id: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_service', { p_service_id: id });
+  if (error) throw error;
+}
+
+export async function rejectService(id: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('reject_service', { p_service_id: id, p_reason: reason });
+  if (error) throw error;
+}
+
+// ─── Cancellations & Dropping ──────────────────────────────────────────────
+
+export async function quitService(id: string): Promise<void> {
+  const { error } = await supabase.rpc('quit_service', { p_service_id: id });
+  if (error) throw error;
+}
+
+export async function requestCancelService(id: string): Promise<void> {
+  const { error } = await supabase.rpc('request_cancel_service', { p_service_id: id });
+  if (error) throw error;
+}
+
+export async function acceptCancelService(id: string): Promise<void> {
+  const { error } = await supabase.rpc('accept_cancel_service', { p_service_id: id });
+  if (error) throw error;
+}
+
+export async function reportService(id: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('report_service', { p_service_id: id, p_reason: reason });
+  if (error) throw error;
+}
+
 // ─── Reviews ───────────────────────────────────────────────────────────────
 
 export interface ServiceReview {
@@ -334,7 +418,7 @@ export async function fetchReviewsForService(serviceId: string): Promise<Service
   const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
   for (const r of rows) {
     const p = pm.get(r.reviewer_id);
-    r.reviewer_name = p?.name || 'Unknown';
+    r.reviewer_name = p?.name || 'Student';
     r.reviewer_avatar = p?.avatar_url || null;
   }
   return rows;
@@ -394,14 +478,16 @@ export async function fetchOffersForService(serviceId: string): Promise<ServiceO
   const offererIds = [...new Set(rows.map((r) => r.offerer_id))];
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, avatar_url, whatsapp_number')
+    .select('id, name, avatar_url, whatsapp_number, average_rating, total_reviews')
     .in('id', offererIds);
   const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
-  for (const r of rows) {
-    const p = pm.get(r.offerer_id);
-    r.offerer_name = p?.name || 'Unknown';
-    r.offerer_avatar = p?.avatar_url || null;
-    r.offerer_whatsapp = p?.whatsapp_number || null;
+  for (const o of rows) {
+    const p = pm.get(o.offerer_id);
+    o.offerer_name = p?.name || 'Student';
+    o.offerer_avatar = p?.avatar_url || null;
+    o.offerer_whatsapp = p?.whatsapp_number || null;
+    o.offerer_rating = p?.average_rating ?? null;
+    o.offerer_reviews = p?.total_reviews ?? 0;
   }
   return rows;
 }
@@ -528,6 +614,57 @@ export function formatAgreedPrice(s: ServicePost): string {
   return formatPrice(s);
 }
 
+// ─── Delivery Attachments ──────────────────────────────────────────────────
+
+/** Upload a delivery attachment image to the storage bucket. */
+export async function uploadDeliveryAttachment(uri: string): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+  const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  const response = await fetch(uri);
+  const blob = await response.blob();
+
+  const { error } = await supabase.storage
+    .from('delivery-attachments')
+    .upload(fileName, blob, {
+      contentType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+      upsert: false,
+    });
+  if (error) throw error;
+
+  const { data: urlData } = supabase.storage
+    .from('delivery-attachments')
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+}
+
+// ─── Deadline helpers ──────────────────────────────────────────────────────
+
+/** Returns a human-readable deadline status string, or null if no deadline. */
+export function getDeadlineStatus(s: ServicePost): { label: string; urgent: boolean } | null {
+  if (!s.deadline_at) return null;
+  const now = new Date();
+  const deadline = new Date(s.deadline_at);
+  const diff = deadline.getTime() - now.getTime();
+
+  if (diff < 0) {
+    const overdue = Math.abs(diff);
+    const hours = Math.floor(overdue / (1000 * 60 * 60));
+    if (hours < 24) return { label: `Overdue by ${hours}h`, urgent: true };
+    return { label: `Overdue by ${Math.floor(hours / 24)}d`, urgent: true };
+  }
+
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  if (hours < 1) return { label: `Due in ${Math.floor(diff / (1000 * 60))}m`, urgent: true };
+  if (hours < 24) return { label: `Due in ${hours}h`, urgent: true };
+  if (hours < 48) return { label: 'Due tomorrow', urgent: false };
+  return { label: `Due in ${Math.floor(hours / 24)} days`, urgent: false };
+}
+
 // ─── Service Chat ──────────────────────────────────────────────────────────
 
 export interface ServiceMessage {
@@ -536,6 +673,7 @@ export interface ServiceMessage {
   sender_id: string;
   content: string;
   created_at: string;
+  read_at: string | null;
   // joined fields
   sender_name?: string;
   sender_avatar?: string | null;
@@ -566,7 +704,7 @@ export async function fetchServiceMessages(serviceId: string): Promise<ServiceMe
   const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
   for (const r of rows) {
     const p = pm.get(r.sender_id);
-    r.sender_name = p?.name || 'Unknown';
+    r.sender_name = p?.name || 'Student';
     r.sender_avatar = p?.avatar_url || null;
   }
   
@@ -603,4 +741,11 @@ export async function sendServiceMessage(serviceId: string, content: string): Pr
   }
   
   return msg;
+}
+
+export async function markServiceMessagesRead(serviceId: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_service_messages_read', { p_service_id: serviceId });
+  if (error) {
+    console.error('Failed to mark messages read', error);
+  }
 }

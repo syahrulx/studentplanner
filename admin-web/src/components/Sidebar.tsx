@@ -8,6 +8,7 @@ import {
   IconFileText,
   IconGrid,
   IconBell,
+  IconBriefcase,
   IconMapPin,
   IconSchool,
   IconSettings,
@@ -33,6 +34,7 @@ const nav: NavItem[] = [
   
   { header: 'Community' },
   { to: '/events', label: 'Events', Icon: IconClipboard },
+  { to: '/services', label: 'Services', Icon: IconBriefcase },
   { to: '/authorities', label: 'Authorities', Icon: IconShield },
   { to: '/campuses', label: 'Campuses', Icon: IconMapPin },
   { to: '/organizations', label: 'Organizations', Icon: IconUsers },

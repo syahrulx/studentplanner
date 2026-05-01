@@ -17,6 +17,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,7 +31,9 @@ import {
   formatAgreedPrice,
   statusMeta,
   getViewerRole,
+  getDeadlineStatus,
 } from '@/src/lib/servicesApi';
+import type { ServicePost, ServiceReview, ServiceOffer } from '@/src/lib/servicesApi';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDateLong(iso: string) {
@@ -74,6 +77,12 @@ export default function ServiceDetailScreen() {
   const [offerMessage, setOfferMessage] = useState('');
   const [offerSubmitting, setOfferSubmitting] = useState(false);
 
+  // Delivery submission state
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryNote, setDeliveryNote] = useState('');
+  const [deliveryImages, setDeliveryImages] = useState<string[]>([]);
+  const [deliverySubmitting, setDeliverySubmitting] = useState(false);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
@@ -110,6 +119,7 @@ export default function ServiceDetailScreen() {
   const sm = statusMeta(service.service_status);
   const isOpen = service.service_status === 'open';
   const isClaimed = service.service_status === 'claimed';
+  const isSubmitted = service.service_status === 'submitted';
   const isCompleted = service.service_status === 'completed';
   const isCancelled = service.service_status === 'cancelled';
 
@@ -246,13 +256,95 @@ export default function ServiceDetailScreen() {
       ]
     );
 
-  const onComplete = () =>
+  const clientLabel = service.service_kind === 'offer' ? 'client' : 'requester';
+
+  const onSubmitWork = () => {
+    setDeliveryNote('');
+    setDeliveryImages([]);
+    setDeliveryOpen(true);
+  };
+
+  const pickDeliveryImage = async () => {
+    if (deliveryImages.length >= 3) {
+      Alert.alert('Limit reached', 'You can attach up to 3 images.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
+    }
+  };
+
+  const handleDeliverySubmit = async () => {
+    setDeliverySubmitting(true);
+    try {
+      await servicesApi.submitService(service.id, {
+        note: deliveryNote.trim() || undefined,
+        attachmentUris: deliveryImages.length > 0 ? deliveryImages : undefined,
+      });
+      setDeliveryOpen(false);
+      Alert.alert('Done', 'Work submitted for review.');
+      await load();
+    } catch (e: any) {
+      Alert.alert('Submit failed', e.message || 'Something went wrong');
+    } finally {
+      setDeliverySubmitting(false);
+    }
+  };
+
+  const onApproveWork = () =>
     Alert.alert(
-      'Mark as completed?',
-      'Confirm this service was delivered. You can leave a rating after.',
+      'Approve Work?',
+      'Confirm the service was delivered to your satisfaction. You can leave a rating afterwards.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: () => wrap('Complete', () => servicesApi.completeService(service.id), 'Service completed.') },
+        { text: 'Approve', onPress: () => wrap('Approve Work', () => servicesApi.approveService(service.id), 'Service completed.') },
+      ]
+    );
+
+  const onRejectWork = () => {
+    Alert.prompt(
+      'Reject Work?',
+      `Tell the provider why their submission needs revision.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reject', style: 'destructive', onPress: (reason?: string) => wrap('Reject Work', () => servicesApi.rejectService(service.id, reason || 'Requires revision')) },
+      ],
+      'plain-text'
+    );
+  };
+
+  const onQuit = () =>
+    Alert.alert(
+      'Drop this task?',
+      'This will reopen the task for others and notify the requester.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Drop Task', style: 'destructive', onPress: () => wrap('Drop Task', () => servicesApi.quitService(service.id)) },
+      ]
+    );
+
+  const onRequestCancel = () =>
+    Alert.alert(
+      'Request Cancellation?',
+      'Since the task is in progress, the other party must agree to cancel it.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Request Cancel', style: 'destructive', onPress: () => wrap('Request Cancel', () => servicesApi.requestCancelService(service.id)) },
+      ]
+    );
+
+  const onAcceptCancel = () =>
+    Alert.alert(
+      'Accept Cancellation?',
+      'The service will be permanently cancelled.',
+      [
+        { text: 'Reject Request', style: 'cancel' },
+        { text: 'Accept', style: 'destructive', onPress: () => wrap('Accept Cancel', () => servicesApi.acceptCancelService(service.id)) },
       ]
     );
 
@@ -268,27 +360,91 @@ export default function ServiceDetailScreen() {
 
   const onEdit = () => router.push({ pathname: '/services/new', params: { editId: service.id } } as any);
 
-  const showRequesterMenu = () => {
+  const onReport = () => {
+    Alert.prompt(
+      'Report Service',
+      'Please tell us why this service is inappropriate or violates our guidelines.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Report', 
+          style: 'destructive', 
+          onPress: (reason?: string) => {
+            if (!reason?.trim()) return Alert.alert('Error', 'Reason is required.');
+            wrap('Report Service', () => servicesApi.reportService(service.id, reason), 'Service reported.');
+          } 
+        },
+      ],
+      'plain-text'
+    );
+  };
+
+  const showMenu = () => {
     if (!service) return;
-    const canEdit = isOpen;
-    const canCancel = isOpen || isClaimed;
+    // Derive client/provider: for requests author=client, for offers claimer=client
+    const menuIsClient = (service.service_kind === 'request' && role === 'requester') ||
+                         (service.service_kind === 'offer' && role === 'taker');
+    const menuIsProvider = (service.service_kind === 'request' && role === 'taker') ||
+                           (service.service_kind === 'offer' && role === 'requester');
+
+    const canEdit = isOpen && role === 'requester';
+    const canCancelDirectly = isOpen && role === 'requester';
+    const canRequestCancel = (isClaimed || isSubmitted) && !service.cancel_requested_by && (role === 'requester' || role === 'taker');
+    const isCancelRequestedByOther = service.cancel_requested_by && service.cancel_requested_by !== userId;
+    
+    const canUnclaim = isClaimed && role === 'taker' && service.accepted_amount == null;
+    const canQuit = (isClaimed || isSubmitted) && menuIsProvider;
+    const canRejectWork = isSubmitted && menuIsClient;
+
     const options: string[] = ['Cancel'];
     const actions: (() => void)[] = [() => {}];
     if (canEdit) {
       options.push('Edit service');
       actions.push(onEdit);
     }
-    if (canCancel) {
+    if (canRejectWork) {
+      options.push('Reject submitted work');
+      actions.push(onRejectWork);
+    }
+    if (canQuit) {
+      options.push('Drop task');
+      actions.push(onQuit);
+    } else if (canUnclaim) {
+      options.push('Release claim');
+      actions.push(onUnclaim);
+    }
+    
+    if (isCancelRequestedByOther) {
+      options.push('Accept mutual cancellation');
+      actions.push(onAcceptCancel);
+    } else if (canRequestCancel) {
+      options.push('Request mutual cancellation');
+      actions.push(onRequestCancel);
+    } else if (canCancelDirectly) {
       options.push('Cancel service');
       actions.push(onCancel);
     }
+    
+    // Anyone can report unless they are the author
+    if (role !== 'requester') {
+      options.push('Report service');
+      actions.push(onReport);
+    }
+
+    // Determine destructive indices based on options added
+    const destructiveIndices: number[] = [];
+    options.forEach((opt, idx) => {
+      if (['Reject submitted work', 'Drop task', 'Release claim', 'Cancel service', 'Report service'].includes(opt)) {
+        destructiveIndices.push(idx);
+      }
+    });
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options,
           cancelButtonIndex: 0,
-          destructiveButtonIndex: canCancel ? options.length - 1 : undefined,
+          destructiveButtonIndex: destructiveIndices.length > 0 ? destructiveIndices : undefined,
         },
         (idx) => actions[idx]?.()
       );
@@ -298,7 +454,7 @@ export default function ServiceDetailScreen() {
         undefined,
         options.map((label, i) => ({
           text: label,
-          style: i === 0 ? 'cancel' : i === options.length - 1 && canCancel ? 'destructive' : 'default',
+          style: i === 0 ? 'cancel' : destructiveIndices.includes(i) ? 'destructive' : 'default',
           onPress: actions[i],
         })) as any
       );
@@ -363,14 +519,29 @@ export default function ServiceDetailScreen() {
         color: theme.primary,
       };
     }
-    if (role === 'taker' && isClaimed) {
-      return { label: 'Release claim', icon: 'rotate-ccw', onPress: onUnclaim, color: '#FF453A', secondary: true };
+    const isClient = (service.service_kind === 'request' && role === 'requester') ||
+                     (service.service_kind === 'offer' && role === 'taker');
+    const isProvider = !isClient && role !== 'observer';
+
+    if (isClient && isSubmitted) {
+      return { label: 'Approve Work', icon: 'check-circle', onPress: onApproveWork, color: '#30D158' };
     }
-    if (role === 'requester' && isClaimed) {
-      return { label: 'Mark as completed', icon: 'check-circle', onPress: onComplete, color: '#30D158' };
+    if (isProvider && isClaimed) {
+      return { label: 'Submit Work', icon: 'upload', onPress: onSubmitWork, color: theme.primary };
+    }
+    // Accept Cancel CTA — show to the OTHER party when cancellation is requested
+    const isCancelRequestedByOther = service.cancel_requested_by && service.cancel_requested_by !== userId;
+    if (isCancelRequestedByOther && (role === 'requester' || role === 'taker')) {
+      return { label: 'Accept Cancellation', icon: 'x-circle', onPress: onAcceptCancel, color: '#FF453A' };
+    }
+    // Review nudge — prompt to review after completion
+    if (isCompleted && canReview) {
+      return { label: 'Leave a Review', icon: 'star', onPress: () => setReviewOpen(true), color: '#FFB800' };
     }
     return null;
   })();
+
+  const deadlineStatus = getDeadlineStatus(service);
 
   // Status banner — when there's no actionable CTA, give the user context.
   const statusBanner: { label: string; icon: string; tint: string } | null = (() => {
@@ -380,8 +551,14 @@ export default function ServiceDetailScreen() {
     }
     if (isCompleted) return { label: 'This service is completed', icon: 'check-circle', tint: '#0A84FF' };
     if (isCancelled) return { label: 'This service was cancelled', icon: 'x-circle', tint: '#8E8E93' };
-    if (role === 'observer' && isClaimed) {
+    if (role === 'observer' && (isClaimed || isSubmitted)) {
       return { label: 'Already taken by someone else', icon: 'lock', tint: '#8E8E93' };
+    }
+    if (service.cancel_requested_by) {
+      if (service.cancel_requested_by === userId) return { label: 'Waiting for cancellation approval', icon: 'clock', tint: '#FF9F0A' };
+    }
+    if (isSubmitted && role !== 'observer') {
+      return { label: 'Work submitted — pending review', icon: 'search', tint: theme.primary };
     }
     return null;
   })();
@@ -389,19 +566,27 @@ export default function ServiceDetailScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       {/* Nav */}
-      <View style={[styles.nav, { borderBottomColor: theme.border, paddingTop: Math.max(insets.top, 12) + 4 }]}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Feather name="chevron-left" size={26} color={theme.text} />
+      <View style={[styles.nav, { paddingTop: Math.max(insets.top, 12) + 4, backgroundColor: theme.background }]}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          style={[styles.navBack, { backgroundColor: theme.card, borderColor: theme.border }]}
+        >
+          <Feather name="chevron-left" size={20} color={theme.text} />
         </Pressable>
         <Text style={[styles.navTitle, { color: theme.text }]} numberOfLines={1}>
-          Service
+          {cat.emoji} {cat.label}
         </Text>
-        <View style={{ width: 26, alignItems: 'flex-end' }}>
-          {role === 'requester' && (isOpen || isClaimed) && (
-            <Pressable onPress={showRequesterMenu} hitSlop={10}>
-              <Feather name="more-horizontal" size={22} color={theme.text} />
+        <View style={{ width: 36, alignItems: 'flex-end' }}>
+          {(isOpen || isClaimed || isSubmitted) ? (
+            <Pressable
+              onPress={showMenu}
+              hitSlop={10}
+              style={[styles.navBack, { backgroundColor: theme.card, borderColor: theme.border }]}
+            >
+              <Feather name="more-horizontal" size={18} color={theme.text} />
             </Pressable>
-          )}
+          ) : <View style={{ width: 36 }} />}
         </View>
       </View>
 
@@ -432,59 +617,56 @@ export default function ServiceDetailScreen() {
             </View>
           </View>
         ) : (
-          <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '14' }]}>
-            <Text style={{ fontSize: 56 }}>{cat.emoji}</Text>
+          <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '12' }]}>
+            <View style={[styles.heroEmojiWrap, { backgroundColor: cat.tint + '20' }]}>
+              <Text style={{ fontSize: 52 }}>{cat.emoji}</Text>
+            </View>
             <View style={styles.heroChipsAlt}>
-              <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.card }]}>
-                <Feather
-                  name={service.service_kind === 'offer' ? 'gift' : 'help-circle'}
-                  size={11}
-                  color={theme.text}
-                />
+              <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.background + 'CC' }]}>
+                <Feather name={service.service_kind === 'offer' ? 'gift' : 'help-circle'} size={11} color={theme.text} />
                 <Text style={[styles.chipText, { color: theme.text }]}>
                   {service.service_kind === 'offer' ? 'Offering' : 'Requesting'}
                 </Text>
               </View>
               <View style={[styles.chipFilled, { backgroundColor: sm.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: sm.tint }]}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: sm.tint, marginRight: 2 }} />
                 <Text style={[styles.chipText, { color: sm.tint }]}>{sm.label}</Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Title block */}
-        <View style={styles.section}>
+        {/* Title + meta block */}
+        <View style={[styles.section, { marginTop: 20 }]}>
           <Text style={[styles.title, { color: theme.text }]}>{service.title}</Text>
           {service.body ? (
             <Text style={[styles.body, { color: theme.textSecondary }]}>{service.body}</Text>
           ) : null}
-        </View>
 
-        {/* Quick info chips */}
-        <View style={styles.section}>
-          <View style={styles.metaRow}>
-            <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
-              <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
-              <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
-            </View>
-            <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>
-              <Text style={[styles.metaChipText, { color: theme.primary, fontWeight: '900' }]}>RM</Text>
-              <Text style={[styles.metaChipText, { color: theme.primary }]}>
-                {(isClaimed || isCompleted) ? formatAgreedPrice(service) : formatPrice(service)}
+          {/* Price hero */}
+          <View style={[styles.priceHero, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View>
+              <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>PRICE</Text>
+              <Text style={[styles.priceValue, { color: theme.primary }]}>
+                {(isClaimed || isCompleted || isSubmitted) ? formatAgreedPrice(service) : formatPrice(service)}
               </Text>
             </View>
             {service.deadline_at && (
-              <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                <Feather name="clock" size={11} color={theme.text} />
-                <Text style={[styles.metaChipText, { color: theme.text }]}>
-                  By {formatDateLong(service.deadline_at)}
-                </Text>
+              <View style={styles.priceDivider} />
+            )}
+            {service.deadline_at && (
+              <View>
+                <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>DEADLINE</Text>
+                <Text style={[styles.priceDeadline, { color: theme.text }]}>{formatDateLong(service.deadline_at)}</Text>
               </View>
             )}
             {service.location && (
-              <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                <Feather name="map-pin" size={11} color={theme.text} />
-                <Text style={[styles.metaChipText, { color: theme.text }]}>{service.location}</Text>
+              <View style={styles.priceDivider} />
+            )}
+            {service.location && (
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>LOCATION</Text>
+                <Text style={[styles.priceDeadline, { color: theme.text }]} numberOfLines={1}>{service.location}</Text>
               </View>
             )}
           </View>
@@ -502,7 +684,7 @@ export default function ServiceDetailScreen() {
               textColor={theme.text}
               metaColor={theme.textSecondary}
             />
-            {(service.claimed_at || isClaimed || isCompleted) && (
+            {(service.claimed_at || isClaimed || isSubmitted || isCompleted) && (
               <>
                 <View style={[styles.timelineSep, { backgroundColor: theme.border }]} />
                 <TimelineRow
@@ -510,6 +692,19 @@ export default function ServiceDetailScreen() {
                   label={service.claimer_name ? `${service.claimer_name} took this` : 'Taken'}
                   meta={service.claimed_at ? timeAgo(service.claimed_at) : ''}
                   tint="#FF9F0A"
+                  textColor={theme.text}
+                  metaColor={theme.textSecondary}
+                />
+              </>
+            )}
+            {(service.submitted_at || isSubmitted || isCompleted) && (
+              <>
+                <View style={[styles.timelineSep, { backgroundColor: theme.border }]} />
+                <TimelineRow
+                  icon="upload"
+                  label="Work Submitted"
+                  meta={service.submitted_at ? timeAgo(service.submitted_at) : ''}
+                  tint={theme.primary}
                   textColor={theme.text}
                   metaColor={theme.textSecondary}
                 />
@@ -544,63 +739,163 @@ export default function ServiceDetailScreen() {
           </View>
         </View>
 
+        {/* Deadline warning badge */}
+        {deadlineStatus && (isClaimed || isSubmitted) && (
+          <View style={[styles.section, { marginTop: 0 }]}>
+            <View style={[styles.card, { 
+              backgroundColor: deadlineStatus.urgent ? '#FF453A15' : theme.card, 
+              borderColor: deadlineStatus.urgent ? '#FF453A40' : theme.border,
+              flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+            }]}>
+              <Feather 
+                name={deadlineStatus.urgent ? 'alert-triangle' : 'clock'} 
+                size={16} 
+                color={deadlineStatus.urgent ? '#FF453A' : '#FF9F0A'} 
+              />
+              <Text style={{ 
+                color: deadlineStatus.urgent ? '#FF453A' : theme.text, 
+                fontWeight: '600', fontSize: 14, marginLeft: 8 
+              }}>
+                {deadlineStatus.label}
+              </Text>
+              {service.revision_count > 0 && (
+                <View style={{ marginLeft: 'auto', backgroundColor: theme.backgroundSecondary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                  <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                    Revision {service.revision_count}/{service.max_revisions}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Revision tracker (when no deadline) */}
+        {!deadlineStatus && service.revision_count > 0 && (isClaimed || isSubmitted) && (
+          <View style={[styles.section, { marginTop: 0 }]}>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, flexDirection: 'row', alignItems: 'center', paddingVertical: 12 }]}>
+              <Feather name="refresh-cw" size={14} color={theme.textSecondary} />
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14, marginLeft: 8 }}>
+                Revision {service.revision_count} of {service.max_revisions}
+              </Text>
+              {service.revision_count >= service.max_revisions && (
+                <View style={{ marginLeft: 'auto', backgroundColor: '#FF453A20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 }}>
+                  <Text style={{ color: '#FF453A', fontSize: 11, fontWeight: '700' }}>LIMIT REACHED</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Delivery submission display */}
+        {(isSubmitted || isCompleted) && (service.delivery_note || (service.delivery_attachments && service.delivery_attachments.length > 0)) && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>DELIVERY</Text>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              {service.delivery_note ? (
+                <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22, marginBottom: service.delivery_attachments?.length ? 12 : 0 }}>
+                  {service.delivery_note}
+                </Text>
+              ) : null}
+              {service.delivery_attachments && service.delivery_attachments.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
+                  {service.delivery_attachments.map((url: string, idx: number) => (
+                    <Pressable 
+                      key={idx} 
+                      onPress={() => Linking.openURL(url)}
+                      style={{ marginHorizontal: 4 }}
+                    >
+                      <Image 
+                        source={{ uri: url }} 
+                        style={{ width: 120, height: 90, borderRadius: 10 }} 
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* People */}
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>PEOPLE</Text>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.personRow}>
-              <Avatar name={service.author_name} avatarUrl={service.author_avatar || undefined} size={40} />
+              <Avatar name={service.author_name} avatarUrl={service.author_avatar || undefined} size={44} />
               <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[styles.personName, { color: theme.text }]}>
-                  {service.author_id === userId ? 'You' : service.author_name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.personName, { color: theme.text }]}>
+                    {service.author_id === userId ? 'You' : service.author_name}
+                  </Text>
+                  {service.author_id === userId && (
+                    <View style={[styles.youBadge, { backgroundColor: theme.primary + '20' }]}>
+                      <Text style={[styles.youBadgeText, { color: theme.primary }]}>You</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.personRole, { color: theme.textSecondary }]}>
-                  {service.service_kind === 'offer' ? 'Provider' : 'Requester'}
-                  {service.author_university ? `  ·  ${service.author_university.toUpperCase()}` : ''}
+                  {service.service_kind === 'offer' ? 'Service Provider' : 'Client'}
                 </Text>
+                {(service.author_rating || service.author_university) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    {service.author_rating ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Feather name="star" size={11} color="#FFB800" />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: theme.text }}>{service.author_rating.toFixed(1)}</Text>
+                        <Text style={{ fontSize: 11, color: theme.textSecondary }}>({service.author_reviews})</Text>
+                      </View>
+                    ) : null}
+                    {service.author_university ? (
+                      <Text style={{ fontSize: 11, color: theme.textSecondary }}>{service.author_university.toUpperCase()}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
-              {/* Chat with the requester (only if I'm the taker and a chat is in progress). */}
-              {role === 'taker' && (isClaimed || isCompleted) && service.author_id !== userId && (
+              {role === 'taker' && (isClaimed || isSubmitted || isCompleted) && service.author_id !== userId && (
                 <Pressable
                   onPress={openChat}
-                  style={({ pressed }) => [
-                    styles.waChip,
-                    { backgroundColor: theme.primary },
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  accessibilityLabel="Message the requester"
+                  style={({ pressed }) => [styles.chatChip, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
                 >
                   <Feather name="message-circle" size={14} color="#fff" />
-                  <Text style={styles.waChipText}>Message</Text>
+                  <Text style={styles.chatChipText}>Chat</Text>
                 </Pressable>
               )}
             </View>
             {service.claimed_by && (
               <>
-                <View style={[styles.timelineSep, { backgroundColor: theme.border, marginLeft: 16 + 40 + 12 }]} />
+                <View style={[styles.timelineSep, { backgroundColor: theme.border, marginLeft: 16 + 44 + 12 }]} />
                 <View style={styles.personRow}>
-                  <Avatar name={service.claimer_name} avatarUrl={service.claimer_avatar || undefined} size={40} />
+                  <Avatar name={service.claimer_name} avatarUrl={service.claimer_avatar || undefined} size={44} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.personName, { color: theme.text }]}>
-                      {service.claimed_by === userId ? 'You' : service.claimer_name}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.personName, { color: theme.text }]}>
+                        {service.claimed_by === userId ? 'You' : service.claimer_name}
+                      </Text>
+                      {service.claimed_by === userId && (
+                        <View style={[styles.youBadge, { backgroundColor: theme.primary + '20' }]}>
+                          <Text style={[styles.youBadgeText, { color: theme.primary }]}>You</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={[styles.personRole, { color: theme.textSecondary }]}>
-                      {service.service_kind === 'offer' ? 'Receiver' : 'Provider'}
+                      {service.service_kind === 'offer' ? 'Client' : 'Service Provider'}
                     </Text>
+                    {service.claimer_rating ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 }}>
+                        <Feather name="star" size={11} color="#FFB800" />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: theme.text }}>{service.claimer_rating.toFixed(1)}</Text>
+                        <Text style={{ fontSize: 11, color: theme.textSecondary }}>({service.claimer_reviews})</Text>
+                      </View>
+                    ) : null}
                   </View>
-                  {/* Chat with the taker (only if I'm the requester). */}
-                  {role === 'requester' && (isClaimed || isCompleted) && service.claimed_by !== userId && (
+                  {role === 'requester' && (isClaimed || isSubmitted || isCompleted) && service.claimed_by !== userId && (
                     <Pressable
                       onPress={openChat}
-                      style={({ pressed }) => [
-                        styles.waChip,
-                        { backgroundColor: theme.primary },
-                        pressed && { opacity: 0.85 },
-                      ]}
-                      accessibilityLabel="Message the taker"
+                      style={({ pressed }) => [styles.chatChip, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
                     >
                       <Feather name="message-circle" size={14} color="#fff" />
-                      <Text style={styles.waChipText}>Message</Text>
+                      <Text style={styles.chatChipText}>Chat</Text>
                     </Pressable>
                   )}
                 </View>
@@ -646,6 +941,7 @@ export default function ServiceDetailScreen() {
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text style={[styles.offerName, { color: theme.text }]}>
                             {isMine ? 'You' : o.offerer_name || 'Someone'}
+                            {o.offerer_rating ? <Text style={{fontWeight: 'normal', fontSize: 13, color: theme.textSecondary}}>  ·  ⭐ {o.offerer_rating} ({o.offerer_reviews})</Text> : null}
                           </Text>
                           <Text style={[styles.offerAmount, { color: theme.primary }]}>{amountLabel}</Text>
                           {o.message ? (
@@ -764,27 +1060,27 @@ export default function ServiceDetailScreen() {
         )}
       </ScrollView>
 
-      {/* Sticky CTA / status banner */}
+      {/* Sticky CTA */}
       {cta ? (
-        <View style={[styles.ctaWrap, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
+        <View style={[styles.ctaWrap, { borderTopColor: theme.border, backgroundColor: theme.background + 'F5', paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
           <Pressable
             onPress={cta.onPress}
             disabled={acting}
             style={({ pressed }) => [
               styles.ctaBtn,
               cta.secondary
-                ? { backgroundColor: 'transparent', borderColor: cta.color, borderWidth: 1.5 }
+                ? { backgroundColor: 'transparent', borderColor: cta.color, borderWidth: 2 }
                 : { backgroundColor: cta.color },
-              pressed && { opacity: 0.85 },
+              pressed && { opacity: 0.88 },
               acting && { opacity: 0.5 },
             ]}
           >
             {acting ? (
-              <ActivityIndicator size="small" color={cta.secondary ? cta.color : theme.textInverse} />
+              <ActivityIndicator size="small" color={cta.secondary ? cta.color : '#fff'} />
             ) : (
               <>
-                <Feather name={cta.icon as any} size={17} color={cta.secondary ? cta.color : theme.textInverse} />
-                <Text style={[styles.ctaText, { color: cta.secondary ? cta.color : theme.textInverse }]}>
+                <Feather name={cta.icon as any} size={18} color={cta.secondary ? cta.color : '#fff'} />
+                <Text style={[styles.ctaText, { color: cta.secondary ? cta.color : '#fff' }]}>
                   {cta.label}
                 </Text>
               </>
@@ -792,9 +1088,9 @@ export default function ServiceDetailScreen() {
           </Pressable>
         </View>
       ) : statusBanner ? (
-        <View style={[styles.ctaWrap, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
-          <View style={[styles.statusBanner, { backgroundColor: statusBanner.tint + '14', borderColor: statusBanner.tint + '33' }]}>
-            <Feather name={statusBanner.icon as any} size={16} color={statusBanner.tint} />
+        <View style={[styles.ctaWrap, { borderTopColor: theme.border, backgroundColor: theme.background + 'F5', paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
+          <View style={[styles.statusBanner, { backgroundColor: statusBanner.tint + '12', borderColor: statusBanner.tint + '30' }]}>
+            <Feather name={statusBanner.icon as any} size={15} color={statusBanner.tint} />
             <Text style={[styles.statusBannerText, { color: statusBanner.tint }]}>
               {statusBanner.label}
             </Text>
@@ -925,6 +1221,85 @@ export default function ServiceDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Delivery submission modal */}
+      <Modal visible={deliveryOpen} transparent animationType="slide" onRequestClose={() => setDeliveryOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setDeliveryOpen(false)}>
+          <Pressable
+            style={[styles.sheet, { backgroundColor: theme.card }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.grabber} />
+            <Text style={[styles.sheetTitle, { color: theme.text }]}>Submit Work</Text>
+            <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
+              Add a note and attach proof of your work (photos, screenshots).{'\n'}
+              The {clientLabel} will review and approve.
+            </Text>
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>DELIVERY NOTE</Text>
+            <TextInput
+              style={[styles.reviewInput, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border }]}
+              placeholder="Describe what you've delivered..."
+              placeholderTextColor={theme.textSecondary}
+              value={deliveryNote}
+              onChangeText={setDeliveryNote}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
+              ATTACHMENTS ({deliveryImages.length}/3)
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              {deliveryImages.map((uri, idx) => (
+                <View key={idx} style={{ marginRight: 8, position: 'relative' }}>
+                  <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: 10 }} />
+                  <Pressable
+                    onPress={() => setDeliveryImages((prev) => prev.filter((_, i) => i !== idx))}
+                    style={{
+                      position: 'absolute', top: -6, right: -6,
+                      width: 22, height: 22, borderRadius: 11,
+                      backgroundColor: '#FF453A', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="x" size={12} color="#fff" />
+                  </Pressable>
+                </View>
+              ))}
+              {deliveryImages.length < 3 && (
+                <Pressable
+                  onPress={pickDeliveryImage}
+                  style={{
+                    width: 80, height: 80, borderRadius: 10,
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: theme.border,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="plus" size={24} color={theme.textSecondary} />
+                  <Text style={{ color: theme.textSecondary, fontSize: 10, marginTop: 4 }}>Add</Text>
+                </Pressable>
+              )}
+            </ScrollView>
+
+            <Pressable
+              onPress={handleDeliverySubmit}
+              disabled={deliverySubmitting}
+              style={({ pressed }) => [
+                styles.reviewSubmit,
+                { backgroundColor: theme.primary },
+                pressed && { opacity: 0.85 },
+                deliverySubmitting && { opacity: 0.5 },
+              ]}
+            >
+              {deliverySubmitting ? (
+                <ActivityIndicator size="small" color={theme.textInverse} />
+              ) : (
+                <Text style={[styles.reviewSubmitText, { color: theme.textInverse }]}>Submit for Review</Text>
+              )}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -964,21 +1339,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
+    paddingBottom: 10,
     paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  navTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
+  navBack: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  navTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.3, flex: 1, textAlign: 'center', marginHorizontal: 8 },
 
   // Hero
-  heroWrap: { width: '100%', height: 240, position: 'relative' },
+  heroWrap: { width: '100%', height: 260, position: 'relative' },
   heroImg: { width: '100%', height: '100%' },
   heroPlaceholder: {
     width: '100%',
-    height: 200,
+    height: 180,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+  },
+  heroEmojiWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroChips: {
     position: 'absolute',
@@ -1015,30 +1404,40 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
 
-  section: { paddingHorizontal: 20, marginTop: 22 },
+  section: { paddingHorizontal: 20, marginTop: 24 },
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.7,
-    marginBottom: 8,
-    paddingLeft: 4,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    paddingLeft: 2,
   },
-  title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, lineHeight: 30 },
-  body: { fontSize: 15, lineHeight: 22, marginTop: 10 },
+  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, lineHeight: 32 },
+  body: { fontSize: 15, lineHeight: 23, marginTop: 10, opacity: 0.75 },
 
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  metaChip: {
+  // Price hero card
+  priceHero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    gap: 0,
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  metaChipText: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1 },
+  priceDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 32,
+    backgroundColor: 'rgba(120,120,128,0.2)',
+    marginHorizontal: 16,
+  },
+  priceLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  priceValue: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+  priceDeadline: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
 
   card: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
@@ -1047,28 +1446,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
   },
   timelineIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   timelineLabel: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
-  timelineMeta: { fontSize: 12, marginTop: 1 },
-  timelineSep: { height: StyleSheet.hairlineWidth, marginLeft: 16 + 30 + 12 },
+  timelineMeta: { fontSize: 12, marginTop: 2, opacity: 0.7 },
+  timelineSep: { height: StyleSheet.hairlineWidth, marginLeft: 16 + 32 + 12 },
 
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
-  personName: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
-  personRole: { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  personName: { fontSize: 15, fontWeight: '700', letterSpacing: -0.3 },
+  personRole: { fontSize: 12, fontWeight: '500', marginTop: 2, opacity: 0.65 },
+
+  // "You" badge
+  youBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  youBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+
+  // Chat chip
+  chatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  chatChipText: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: -0.1 },
 
   reviewRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12 },
   reviewerName: { fontSize: 14, fontWeight: '600' },
@@ -1090,7 +1508,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   ctaBtn: {
@@ -1098,18 +1516,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 15,
-    borderRadius: 14,
+    paddingVertical: 16,
+    borderRadius: 16,
   },
-  ctaText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  ctaText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
   statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 13,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
   statusBannerText: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },

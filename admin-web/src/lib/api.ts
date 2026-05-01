@@ -1288,6 +1288,243 @@ export async function deleteCommunityPost(id: string): Promise<void> {
   if (error) throw toError(error);
 }
 
+// ─── Service Marketplace Admin ────────────────────────────────────────────
+
+export type AdminServiceRow = {
+  id: string;
+  author_id: string;
+  title: string;
+  body: string | null;
+  image_url: string | null;
+  university_id: string | null;
+  campus: string | null;
+  location: string | null;
+  service_kind: 'request' | 'offer';
+  service_category: string | null;
+  price_type: 'free' | 'fixed' | 'negotiable';
+  price_amount: number | null;
+  accepted_amount: number | null;
+  currency: string | null;
+  service_status: 'open' | 'claimed' | 'submitted' | 'completed' | 'cancelled';
+  claimed_by: string | null;
+  claimed_at: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancel_requested_by: string | null;
+  deadline_at: string | null;
+  delivery_note: string | null;
+  delivery_attachments: string[];
+  max_revisions: number;
+  revision_count: number;
+  created_at: string;
+  updated_at: string;
+  // enriched
+  author_name?: string;
+  claimer_name?: string;
+  report_count?: number;
+  offer_count?: number;
+};
+
+export type AdminServiceReportRow = {
+  id: string;
+  service_id: string;
+  reporter_id: string;
+  reason: string;
+  created_at: string;
+  reporter_name?: string;
+};
+
+export type AdminServiceStats = {
+  total: number;
+  open: number;
+  claimed: number;
+  submitted: number;
+  completed: number;
+  cancelled: number;
+  reported: number;
+  total_offers: number;
+  total_reviews: number;
+};
+
+export async function listAdminServices(opts?: {
+  status?: string;
+  kind?: string;
+  category?: string;
+  limit?: number;
+}): Promise<AdminServiceRow[]> {
+  const lim = Math.max(1, Math.min(500, opts?.limit ?? 200));
+  let q = supabase
+    .from('community_posts')
+    .select('*')
+    .eq('post_type', 'service')
+    .order('updated_at', { ascending: false })
+    .limit(lim);
+
+  if (opts?.status && opts.status !== 'all') q = q.eq('service_status', opts.status);
+  if (opts?.kind && opts.kind !== 'all') q = q.eq('service_kind', opts.kind);
+  if (opts?.category && opts.category !== 'all') q = q.eq('service_category', opts.category);
+
+  const { data, error } = await q;
+  if (error) throw toError(error);
+
+  const services = (data ?? []) as AdminServiceRow[];
+
+  // Enrich with profiles
+  const allIds = [...new Set([
+    ...services.map((s) => s.author_id),
+    ...services.map((s) => s.claimed_by).filter(Boolean) as string[],
+  ])];
+
+  if (allIds.length) {
+    const { data: profs } = await supabase.from('profiles').select('id,name').in('id', allIds);
+    const pmap = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    for (const s of services) {
+      s.author_name = pmap.get(s.author_id)?.name || 'Unknown';
+      s.claimer_name = s.claimed_by ? (pmap.get(s.claimed_by)?.name || 'Unknown') : undefined;
+    }
+  }
+
+  // Enrich with report counts
+  const serviceIds = services.map((s) => s.id);
+  if (serviceIds.length) {
+    const { data: reports } = await supabase
+      .from('service_reports')
+      .select('service_id')
+      .in('service_id', serviceIds);
+    const rmap = new Map<string, number>();
+    for (const r of (reports ?? [])) {
+      rmap.set(r.service_id, (rmap.get(r.service_id) || 0) + 1);
+    }
+    for (const s of services) {
+      s.report_count = rmap.get(s.id) || 0;
+    }
+
+    // Offer counts
+    const { data: offers } = await supabase
+      .from('service_offers')
+      .select('service_id')
+      .in('service_id', serviceIds);
+    const omap = new Map<string, number>();
+    for (const o of (offers ?? [])) {
+      omap.set(o.service_id, (omap.get(o.service_id) || 0) + 1);
+    }
+    for (const s of services) {
+      s.offer_count = omap.get(s.id) || 0;
+    }
+  }
+
+  return services;
+}
+
+export async function fetchAdminServiceStats(): Promise<AdminServiceStats> {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .select('service_status')
+    .eq('post_type', 'service');
+  if (error) throw toError(error);
+
+  const rows = (data ?? []) as { service_status: string }[];
+  const stats: AdminServiceStats = {
+    total: rows.length,
+    open: 0, claimed: 0, submitted: 0, completed: 0, cancelled: 0,
+    reported: 0, total_offers: 0, total_reviews: 0,
+  };
+  for (const r of rows) {
+    const s = r.service_status as keyof Pick<AdminServiceStats, 'open' | 'claimed' | 'submitted' | 'completed' | 'cancelled'>;
+    if (s in stats) stats[s]++;
+  }
+
+  // Count reports
+  const { count: reportCount } = await supabase.from('service_reports').select('id', { count: 'exact', head: true });
+  stats.reported = reportCount ?? 0;
+
+  // Count offers
+  const { count: offerCount } = await supabase.from('service_offers').select('id', { count: 'exact', head: true });
+  stats.total_offers = offerCount ?? 0;
+
+  // Count reviews
+  const { count: reviewCount } = await supabase.from('service_reviews').select('id', { count: 'exact', head: true });
+  stats.total_reviews = reviewCount ?? 0;
+
+  return stats;
+}
+
+export async function listAdminServiceReports(serviceId: string): Promise<AdminServiceReportRow[]> {
+  const { data, error } = await supabase
+    .from('service_reports')
+    .select('*')
+    .eq('service_id', serviceId)
+    .order('created_at', { ascending: false });
+  if (error) throw toError(error);
+
+  const reports = (data ?? []) as AdminServiceReportRow[];
+  const ids = [...new Set(reports.map((r) => r.reporter_id))];
+  if (ids.length) {
+    const { data: profs } = await supabase.from('profiles').select('id,name').in('id', ids);
+    const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
+    for (const r of reports) {
+      r.reporter_name = pm.get(r.reporter_id)?.name || 'Unknown';
+    }
+  }
+  return reports;
+}
+
+/** Admin force-cancel a service (bypasses state machine via service_role). */
+export async function adminForceCancelService(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('community_posts')
+    .update({
+      service_status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw toError(error);
+}
+
+/** Admin force-complete a service. */
+export async function adminForceCompleteService(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('community_posts')
+    .update({
+      service_status: 'completed',
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw toError(error);
+}
+
+/** Admin force-reopen a service (clear claim). */
+export async function adminForceReopenService(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('community_posts')
+    .update({
+      service_status: 'open',
+      claimed_by: null,
+      claimed_at: null,
+      submitted_at: null,
+      accepted_amount: null,
+      cancel_requested_by: null,
+      delivery_note: null,
+      delivery_attachments: '[]',
+      revision_count: 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw toError(error);
+}
+
+/** Admin clear all reports for a service. */
+export async function adminClearReports(serviceId: string): Promise<void> {
+  const { error } = await supabase
+    .from('service_reports')
+    .delete()
+    .eq('service_id', serviceId);
+  if (error) throw toError(error);
+}
+
 // ─── Authority Requests ──────────────────────────────────────────────────
 
 export type AdminAuthorityRequestRow = {

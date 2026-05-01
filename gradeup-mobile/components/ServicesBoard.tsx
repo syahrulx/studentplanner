@@ -10,6 +10,9 @@ import {
   RefreshControl,
   ScrollView,
   TextInput,
+  Platform,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -76,6 +79,7 @@ export default function ServicesBoard() {
   const [status] = useState<ServiceStatus | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [orderBy, setOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
 
   const [items, setItems] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +99,7 @@ export default function ServicesBoard() {
         category,
         status,
         search: debouncedSearch || null,
+        orderBy,
       });
       // Hide cancelled in Browse unless explicitly filtered
       const filtered = scope === 'all' && !status
@@ -104,7 +109,7 @@ export default function ServicesBoard() {
     } catch (e) {
       console.error('[ServicesBoard] fetch error:', e);
     }
-  }, [scope, kind, category, status, debouncedSearch]);
+  }, [scope, kind, category, status, debouncedSearch, orderBy]);
 
   // Refetches both on focus AND when filters/search change while focused
   // (useFocusEffect re-runs when its callback identity changes while in focus).
@@ -135,13 +140,47 @@ export default function ServicesBoard() {
       ])
         .then(([mine, taken]) => {
           setMineCount(mine.filter((s) => s.service_status !== 'completed' && s.service_status !== 'cancelled').length);
-          setTakenCount(taken.filter((s) => s.service_status === 'claimed').length);
+          setTakenCount(taken.filter((s) => s.service_status === 'claimed' || s.service_status === 'submitted').length);
         })
         .catch(() => {});
     }, [userId])
   );
 
   // ─── Renderers ────────────────────────────────────────────────────────────
+
+  const handleSortOptions = () => {
+    const options = ['Cancel', 'Newest (Default)', 'Price: Low to High', 'Price: High to Low', 'Deadline: Ending Soonest'];
+    const mapping: Record<number, 'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'> = {
+      1: 'newest',
+      2: 'price_asc',
+      3: 'price_desc',
+      4: 'deadline_asc',
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+          title: 'Sort Services',
+        },
+        (buttonIndex) => {
+          if (buttonIndex !== 0) {
+            setOrderBy(mapping[buttonIndex]);
+          }
+        }
+      );
+    } else {
+      Alert.alert('Sort Services', 'Choose a sorting option:', [
+        { text: 'Newest (Default)', onPress: () => setOrderBy('newest') },
+        { text: 'Price: Low to High', onPress: () => setOrderBy('price_asc') },
+        { text: 'Price: High to Low', onPress: () => setOrderBy('price_desc') },
+        { text: 'Deadline: Ending Soonest', onPress: () => setOrderBy('deadline_asc') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
   const renderHeader = () => (
     <View style={styles.headerWrap}>
       {/* Search */}
@@ -205,6 +244,25 @@ export default function ServicesBoard() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.pillsRow}
         >
+          {/* Sort Button */}
+          <Pressable
+            onPress={handleSortOptions}
+            style={[
+              styles.pill,
+              { backgroundColor: theme.card, borderColor: theme.border, marginRight: 4 },
+              orderBy !== 'newest' && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
+            ]}
+          >
+            <Feather name="bar-chart-2" size={14} color={orderBy !== 'newest' ? theme.primary : theme.textSecondary} style={{ transform: [{ rotate: '90deg' }] }} />
+            <Text style={[styles.pillText, { color: orderBy !== 'newest' ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
+              {orderBy === 'newest' ? 'Sort' : 
+               orderBy === 'price_asc' ? 'Low to High' :
+               orderBy === 'price_desc' ? 'High to Low' : 'Ending Soon'}
+            </Text>
+          </Pressable>
+
+          <View style={[styles.pillDivider, { backgroundColor: theme.border }]} />
+
           {KIND_FILTERS.map((k) => {
             const active = kind === k.id;
             return (

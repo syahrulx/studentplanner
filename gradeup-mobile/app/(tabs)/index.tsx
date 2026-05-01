@@ -23,6 +23,7 @@ import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/da
 import { useTranslations } from '@/src/i18n';
 import { getNotificationPrefs } from '@/src/storage';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
+import { supabase } from '@/src/lib/supabase';
 import {
   peakWeekFromTaskCounts,
   resolveDisplayTeachingWeeks,
@@ -834,6 +835,24 @@ export default function Dashboard() {
     userId: communityUserId,
     refreshAll: refreshCommunityAll,
   } = useCommunity();
+
+  const [unreadInboxCount, setUnreadInboxCount] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      supabase
+        .from('in_app_notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false)
+        .then(({ count }) => {
+          if (count !== null) setUnreadInboxCount(count);
+        })
+        .catch(() => {});
+    }, [user])
+  );
+
   const theme = useTheme();
   const themeId = useThemeId();
   const themePack = useThemePack();
@@ -1470,14 +1489,14 @@ export default function Dashboard() {
           </Pressable>
           <View style={styles.headerRight}>
             <Pressable
-              onPress={() => router.push('/community/notifications' as any)}
+              onPress={() => router.push('/inbox' as any)}
               style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
             >
               <Feather name="bell" size={22} color={headerOnPrimary} />
-              {communityBadgeCount > 0 && (
+              {(communityBadgeCount + unreadInboxCount) > 0 && (
                 <View style={[styles.notifBadge, { borderColor: headerPrimary, borderWidth: 1 }]}>
                   <Text style={styles.notifBadgeText}>
-                    {communityBadgeCount > 99 ? '99+' : communityBadgeCount}
+                    {(communityBadgeCount + unreadInboxCount) > 99 ? '99+' : (communityBadgeCount + unreadInboxCount)}
                   </Text>
                 </View>
               )}

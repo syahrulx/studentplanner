@@ -17,6 +17,7 @@ import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { BroadcastRoute } from './routes/BroadcastRoute';
+import { ServicesRoute } from './routes/ServicesRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="circles" element={<CirclesRoute />} />
             <Route path="events" element={<EventsRoute />} />
             <Route path="authorities" element={<AuthorityRoute />} />
+            <Route path="services" element={<ServicesRoute />} />
             <Route path="campuses" element={<CampusesRoute />} />
             <Route path="organizations" element={<OrganizationsRoute />} />
             <Route path="broadcast" element={<BroadcastRoute />} />

@@ -34,15 +34,20 @@ const KIND_OPTIONS: { id: ServiceKind; title: string; subtitle: string; icon: st
   { id: 'offer',   title: 'Offer a service', subtitle: 'Help others, set your terms', icon: 'gift',        tint: '#30D158' },
 ];
 
-const PRICE_OPTIONS: { id: PriceType; label: string; sub: string }[] = [
-  { id: 'free',       label: 'Free',       sub: 'No payment expected' },
-  { id: 'fixed',      label: 'Fixed',      sub: 'Set a price' },
-  { id: 'negotiable', label: 'Negotiable', sub: 'Discuss with taker' },
-];
+
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDate(d: Date) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+function formatDateTime(d: Date) {
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  h = h ? h : 12;
+  const min = m < 10 ? '0' + m : m;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()} · ${h}:${min} ${ampm}`;
 }
 
 export default function NewServiceScreen() {
@@ -61,11 +66,13 @@ export default function NewServiceScreen() {
   const [body, setBody] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
-  const [priceType, setPriceType] = useState<PriceType>('negotiable');
+  const [priceType, setPriceType] = useState<PriceType>('fixed');
   const [priceAmount, setPriceAmount] = useState('');
   const [location, setLocation] = useState('');
   const [deadline, setDeadline] = useState<Date | null>(null);
+  const [deadlineType, setDeadlineType] = useState<'asap' | 'later'>('asap');
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -83,10 +90,15 @@ export default function NewServiceScreen() {
         setTitle(s.title);
         setBody(s.body || '');
         setExistingImageUrl(s.image_url);
-        setPriceType(s.price_type || 'negotiable');
+        setPriceType('fixed'); // Force fixed price
         if (s.price_amount != null) setPriceAmount(String(s.price_amount));
         setLocation(s.location || '');
-        if (s.deadline_at) setDeadline(new Date(s.deadline_at));
+        if (s.deadline_at) {
+          setDeadline(new Date(s.deadline_at));
+          setDeadlineType('later');
+        } else {
+          setDeadlineType('asap');
+        }
       }
       setLoading(false);
     });
@@ -130,7 +142,7 @@ export default function NewServiceScreen() {
           price_amount: priceType === 'fixed' ? Number(priceAmount) : null,
           currency: 'MYR',
           location: location.trim() || null,
-          deadline_at: deadline ? deadline.toISOString() : null,
+          deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : null,
         });
       } else {
         await servicesApi.createService({
@@ -143,7 +155,7 @@ export default function NewServiceScreen() {
           price_amount: priceType === 'fixed' ? Number(priceAmount) : undefined,
           currency: 'MYR',
           location: location.trim() || undefined,
-          deadline_at: deadline ? deadline.toISOString() : undefined,
+          deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
           university_id: userUni || undefined,
           campus: userCampus || undefined,
         });
@@ -373,46 +385,18 @@ export default function NewServiceScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>PRICE</Text>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            {PRICE_OPTIONS.map((p, i) => {
-              const active = priceType === p.id;
-              return (
-                <React.Fragment key={p.id}>
-                  {i > 0 && <View style={[styles.separator, { backgroundColor: theme.border }]} />}
-                  <Pressable
-                    onPress={() => setPriceType(p.id)}
-                    style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowLabel, { color: theme.text }]}>{p.label}</Text>
-                      <Text style={[styles.rowSub, { color: theme.textSecondary }]}>{p.sub}</Text>
-                    </View>
-                    {active ? (
-                      <Feather name="check-circle" size={18} color={activeKind.tint} />
-                    ) : (
-                      <View style={[styles.radio, { borderColor: theme.border }]} />
-                    )}
-                  </Pressable>
-                </React.Fragment>
-              );
-            })}
-
-            {priceType === 'fixed' && (
-              <>
-                <View style={[styles.separator, { backgroundColor: theme.border }]} />
-                <View style={styles.row}>
-                  <Text style={[styles.rowLabel, { color: theme.text }]}>Amount (MYR)</Text>
-                  <TextInput
-                    style={[styles.amountInput, { color: theme.text }]}
-                    placeholder="0.00"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="decimal-pad"
-                    value={priceAmount}
-                    onChangeText={setPriceAmount}
-                    textAlign="right"
-                  />
-                </View>
-              </>
-            )}
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Amount (MYR)</Text>
+              <TextInput
+                style={[styles.amountInput, { color: theme.text }]}
+                placeholder="0.00"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="decimal-pad"
+                value={priceAmount}
+                onChangeText={setPriceAmount}
+                textAlign="right"
+              />
+            </View>
           </View>
         </View>
 
@@ -435,51 +419,88 @@ export default function NewServiceScreen() {
 
             <View style={[styles.separator, { backgroundColor: theme.border }]} />
 
-            <Pressable
-              onPress={() => setShowDeadlinePicker((v) => !v)}
-              style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-            >
+            <View style={styles.row}>
               <Feather name="clock" size={16} color={activeCat.tint} style={{ marginRight: 12 }} />
-              <Text style={[styles.rowLabel, { color: theme.text }]}>Deadline</Text>
-              <Text style={[styles.rowValue, { color: deadline ? theme.text : theme.textSecondary }]}>
-                {deadline ? formatDate(deadline) : 'No deadline'}
-              </Text>
-              <Feather
-                name={showDeadlinePicker ? 'chevron-up' : 'chevron-down'}
-                size={15}
-                color={theme.textSecondary}
-              />
-            </Pressable>
-
-            {Platform.OS === 'ios' && showDeadlinePicker && (
-              <View style={[styles.inlinePicker, { borderTopColor: theme.border }]}>
-                <DateTimePicker
-                  value={deadline || new Date()}
-                  mode="date"
-                  display="inline"
-                  minimumDate={new Date()}
-                  themeVariant={dark ? 'dark' : 'light'}
-                  accentColor={activeKind.tint}
-                  onChange={(_, d) => { if (d) setDeadline(d); }}
-                />
-                {deadline && (
-                  <Pressable onPress={() => { setDeadline(null); setShowDeadlinePicker(false); }} style={styles.clearBtn}>
-                    <Text style={[styles.clearBtnText, { color: theme.danger }]}>Clear deadline</Text>
-                  </Pressable>
-                )}
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Timing</Text>
+              <View style={styles.segmented}>
+                <Pressable
+                  onPress={() => setDeadlineType('asap')}
+                  style={[styles.segmentBtn, deadlineType === 'asap' && { backgroundColor: theme.text, borderColor: theme.text }]}
+                >
+                  <Text style={[styles.segmentText, deadlineType === 'asap' && { color: theme.background }]}>ASAP</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { setDeadlineType('later'); if (!deadline) setDeadline(new Date()); }}
+                  style={[styles.segmentBtn, deadlineType === 'later' && { backgroundColor: theme.text, borderColor: theme.text }]}
+                >
+                  <Text style={[styles.segmentText, deadlineType === 'later' && { color: theme.background }]}>Set Time</Text>
+                </Pressable>
               </View>
-            )}
-            {Platform.OS === 'android' && showDeadlinePicker && (
-              <DateTimePicker
-                value={deadline || new Date()}
-                mode="date"
-                display="default"
-                minimumDate={new Date()}
-                onChange={(e, d) => {
-                  setShowDeadlinePicker(false);
-                  if (e.type === 'set' && d) setDeadline(d);
-                }}
-              />
+            </View>
+
+            {deadlineType === 'later' && (
+              <>
+                <View style={[styles.separator, { backgroundColor: theme.border }]} />
+                <Pressable
+                  onPress={() => setShowDeadlinePicker((v) => !v)}
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={[styles.rowLabel, { color: theme.text, marginLeft: 28 }]}>Date & Time</Text>
+                  <Text style={[styles.rowValue, { color: theme.text }]}>
+                    {deadline ? formatDateTime(deadline) : 'Not set'}
+                  </Text>
+                  <Feather
+                    name={showDeadlinePicker ? 'chevron-up' : 'chevron-down'}
+                    size={15}
+                    color={theme.textSecondary}
+                  />
+                </Pressable>
+
+                {Platform.OS === 'ios' && showDeadlinePicker && (
+                  <View style={[styles.inlinePicker, { borderTopColor: theme.border }]}>
+                    <DateTimePicker
+                      value={deadline || new Date()}
+                      mode="datetime"
+                      display="spinner"
+                      minimumDate={new Date()}
+                      themeVariant={dark ? 'dark' : 'light'}
+                      accentColor={activeKind.tint}
+                      onChange={(_, d) => { if (d) setDeadline(d); }}
+                    />
+                  </View>
+                )}
+                {Platform.OS === 'android' && showDeadlinePicker && (
+                  <DateTimePicker
+                    value={deadline || new Date()}
+                    mode="date"
+                    display="default"
+                    minimumDate={new Date()}
+                    onChange={(e, d) => {
+                      setShowDeadlinePicker(false);
+                      if (e.type === 'set' && d) {
+                        setDeadline(d);
+                        setShowTimePicker(true);
+                      }
+                    }}
+                  />
+                )}
+                {Platform.OS === 'android' && showTimePicker && (
+                  <DateTimePicker
+                    value={deadline || new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={(e, d) => {
+                      setShowTimePicker(false);
+                      if (e.type === 'set' && d) {
+                        const newD = deadline || new Date();
+                        newD.setHours(d.getHours());
+                        newD.setMinutes(d.getMinutes());
+                        setDeadline(new Date(newD));
+                      }
+                    }}
+                  />
+                )}
+              </>
             )}
           </View>
         </View>
@@ -582,6 +603,21 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 14,
     minHeight: 90,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  segmentBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   heroWrap: { borderRadius: 16, overflow: 'hidden', height: 180, position: 'relative' },

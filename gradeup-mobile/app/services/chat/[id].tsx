@@ -38,20 +38,30 @@ export default function ServiceChatScreen() {
   }, [id]);
 
   useEffect(() => {
-    loadData().finally(() => setLoading(false));
+    loadData().finally(() => {
+      setLoading(false);
+      servicesApi.markServiceMessagesRead(id as string);
+    });
     
     // Simple polling for new messages every 3 seconds
     const interval = setInterval(() => {
       servicesApi.fetchServiceMessages(id as string).then(msgs => {
         setMessages(prev => {
-          // Only update if there's a difference in length to avoid constant re-renders
-          if (msgs.length !== prev.length) {
-            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+          // We check length or if read_at status has changed for our messages
+          const changed = msgs.length !== prev.length || 
+                          msgs.some((m, i) => prev[i] && m.read_at !== prev[i].read_at);
+          
+          if (changed) {
+            // Only scroll to end if length actually changed
+            if (msgs.length !== prev.length) {
+              setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+            }
             return msgs;
           }
           return prev;
         });
       });
+      servicesApi.markServiceMessagesRead(id as string);
     }, 3000);
     
     return () => clearInterval(interval);
@@ -143,6 +153,21 @@ export default function ServiceChatScreen() {
           ) : null}
 
           {messages.map((m) => {
+            const isSystem = m.content.startsWith('___SYSTEM_MSG___:');
+            const content = isSystem ? m.content.replace('___SYSTEM_MSG___:', '') : m.content;
+
+            if (isSystem) {
+              return (
+                <View key={m.id} style={{ alignItems: 'center', marginVertical: 8 }}>
+                  <View style={{ backgroundColor: theme.card, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border }}>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary, fontWeight: '600', textAlign: 'center' }}>
+                      {content}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }
+
             const isMe = m.sender_id === user?.id;
             return (
               <View key={m.id} style={[s.bubbleWrap, isMe && s.bubbleRight]}>
@@ -160,43 +185,59 @@ export default function ServiceChatScreen() {
                       { color: isMe ? theme.textInverse : theme.text },
                     ]}
                   >
-                    {m.content}
+                    {content}
                   </Text>
                 </View>
-                <Text style={[s.timeText, { color: theme.textSecondary, alignSelf: isMe ? 'flex-end' : 'flex-start' }]}>
-                  {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: isMe ? 'flex-end' : 'flex-start', gap: 4 }}>
+                  <Text style={[s.timeText, { color: theme.textSecondary }]}>
+                    {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                  {isMe && (
+                    <Text style={{ fontSize: 10, color: m.read_at ? theme.primary : theme.textSecondary, marginTop: 4, fontWeight: m.read_at ? '700' : '500' }}>
+                      · {m.read_at ? 'Read' : 'Delivered'}
+                    </Text>
+                  )}
+                </View>
               </View>
             );
           })}
         </ScrollView>
 
-        <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <TextInput
-            style={[s.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
-            value={chatInput}
-            onChangeText={setChatInput}
-            placeholder="Type a message..."
-            placeholderTextColor={theme.textSecondary}
-            multiline
-            textAlignVertical="center"
-          />
-          <Pressable
-            style={[
-              s.sendBtn,
-              { backgroundColor: theme.primary },
-              (!chatInput.trim() || sending) && { opacity: 0.5 },
-            ]}
-            onPress={handleSend}
-            disabled={!chatInput.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color={theme.textInverse} />
-            ) : (
-              <Feather name="send" size={18} color={theme.textInverse} />
-            )}
-          </Pressable>
-        </View>
+        {service && (service.service_status === 'completed' || service.service_status === 'cancelled') ? (
+          <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16), justifyContent: 'center' }]}>
+            <Feather name={service.service_status === 'completed' ? 'check-circle' : 'x-circle'} size={14} color={theme.textSecondary} />
+            <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '500', marginLeft: 6 }}>
+              {service.service_status === 'completed' ? 'This service has been completed.' : 'This service was cancelled.'}
+            </Text>
+          </View>
+        ) : (
+          <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <TextInput
+              style={[s.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
+              value={chatInput}
+              onChangeText={setChatInput}
+              placeholder="Type a message..."
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              textAlignVertical="center"
+            />
+            <Pressable
+              style={[
+                s.sendBtn,
+                { backgroundColor: theme.primary },
+                (!chatInput.trim() || sending) && { opacity: 0.5 },
+              ]}
+              onPress={handleSend}
+              disabled={!chatInput.trim() || sending}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color={theme.textInverse} />
+              ) : (
+                <Feather name="send" size={18} color={theme.textInverse} />
+              )}
+            </Pressable>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </View>
   );
