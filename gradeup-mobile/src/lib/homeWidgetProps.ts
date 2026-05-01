@@ -49,6 +49,7 @@ export type HomeWidgetProps = {
   signedIn: boolean;
   tasks: HomeWidgetTaskRow[];
   classes: HomeWidgetClassRow[];
+  spiderWebImageUri?: string;
   theme: HomeWidgetTheme;
 };
 
@@ -100,6 +101,7 @@ export function buildHomeWidgetProps(input: {
   themeId: ThemeId;
   themePack?: string;
   spiderBlueAccents?: boolean;
+  spiderWebImageUri?: string;
   todayISO?: string;
   maxTasks?: number;
   maxClasses?: number;
@@ -116,6 +118,7 @@ export function buildHomeWidgetProps(input: {
       signedIn: false,
       tasks: [],
       classes: [],
+      spiderWebImageUri: input.spiderWebImageUri,
       theme,
     };
   }
@@ -173,6 +176,7 @@ export function buildHomeWidgetProps(input: {
     signedIn: true,
     tasks,
     classes,
+    spiderWebImageUri: input.spiderWebImageUri,
     theme,
   };
 }

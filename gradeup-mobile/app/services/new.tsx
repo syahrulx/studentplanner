@@ -298,7 +298,7 @@ export default function NewServiceScreen() {
                       : { backgroundColor: theme.card, borderColor: theme.border },
                   ]}
                 >
-                  <Text style={{ fontSize: 14 }}>{c.emoji}</Text>
+                  <Feather name={c.icon as any} size={14} color={active ? c.tint : theme.textSecondary} />
                   <Text
                     style={[
                       styles.catText,

@@ -347,7 +347,11 @@ export default function QuizGameplay() {
           <Text style={[s.opponentLabel, { color: theme.textSecondary }]}>{opponentMaxQ}/{questions.length}</Text>
           {opponentFlash !== '' && (
             <View style={[s.opponentFlash, { backgroundColor: opponentFlash === 'correct' ? '#10b981' : '#ef4444' }]}>
-              <Text style={s.opponentFlashText}>{opponentFlash === 'correct' ? '✓' : '✗'}</Text>
+              <Feather
+                name={opponentFlash === 'correct' ? 'check' : 'x'}
+                size={18}
+                color="#fff"
+              />
             </View>
           )}
         </View>
@@ -484,8 +488,7 @@ const s = StyleSheet.create({
   opponentTrack: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
   opponentFill: { height: '100%', borderRadius: 3 },
   opponentLabel: { fontSize: 11, fontWeight: '700' },
-  opponentFlash: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  opponentFlashText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  opponentFlash: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   badge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },

@@ -178,9 +178,8 @@ export default function StudyTimerScreen() {
         <Text style={[styles.headerTitle, { color: theme.text }]}>Focus Timer</Text>
         {completedSessions > 0 && (
           <View style={[styles.sessionBadge, { backgroundColor: accentColor + '22' }]}>
-            <Text style={[styles.sessionBadgeText, { color: accentColor }]}>
-              🍅 ×{completedSessions}
-            </Text>
+            <Feather name="check-circle" size={14} color={accentColor} />
+            <Text style={[styles.sessionBadgeText, { color: accentColor }]}>×{completedSessions}</Text>
           </View>
         )}
       </View>
@@ -404,6 +403,9 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4, marginRight: 4 },
   headerTitle: { fontSize: 20, fontWeight: '800', flex: 1 },
   sessionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -412,10 +414,16 @@ const styles = StyleSheet.create({
 
   content: { paddingHorizontal: 24, paddingBottom: 40, alignItems: 'center' },
 
+  phaseLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 28,
+  },
   phaseLabel: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 28,
     textAlign: 'center',
   },
 

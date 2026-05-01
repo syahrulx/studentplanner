@@ -1,4 +1,5 @@
 import React from 'react';
+import Feather from '@expo/vector-icons/Feather';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -113,7 +114,9 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                     color: focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor,
                     size: 24,
                   })}
-                  {focused && isCatTheme ? <Text style={styles.catHomePaw}>🐾</Text> : null}
+                  {focused && isCatTheme ? (
+                    <Feather name="heart" size={10} color={focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor} style={styles.catHomeAccent} />
+                  ) : null}
                 </View>
                 <Text style={[styles.label, { color }]} numberOfLines={1}>
                   {(options.tabBarLabel as string) ?? options.title ?? route.name}
@@ -262,11 +265,10 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 999,
   },
-  catHomePaw: {
+  catHomeAccent: {
     position: 'absolute',
     right: -1,
     top: -2,
-    fontSize: 10,
     opacity: 0.95,
   },
   pressed: {

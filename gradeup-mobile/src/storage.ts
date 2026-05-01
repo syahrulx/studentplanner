@@ -419,6 +419,14 @@ export interface NotificationPrefs {
   studyTimerEnabled: boolean;
   classroomSyncEnabled: boolean;
   sharedTasksEnabled: boolean;
+  /**
+   * When true (default), the 5-minutes-before-class attendance check-in shows a
+   * banner / sound / popup. When false, the notification is still scheduled and
+   * delivered silently (no banner, no sound) — it remains visible inside the
+   * in-app Notification Manager and the OS notification center, so the user can
+   * still record their attendance from there. Only the popup is suppressed.
+   */
+  attendanceCheckinPopup: boolean;
   weeklySummaryEnabled: boolean;
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
@@ -432,6 +440,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   studyTimerEnabled: true,
   classroomSyncEnabled: true,
   sharedTasksEnabled: true,
+  attendanceCheckinPopup: true,
   weeklySummaryEnabled: false,
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
@@ -453,6 +462,10 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           typeof parsed.taskOverdueEnabled === 'boolean'
             ? parsed.taskOverdueEnabled
             : DEFAULT_NOTIFICATION_PREFS.taskOverdueEnabled,
+        attendanceCheckinPopup:
+          typeof parsed.attendanceCheckinPopup === 'boolean'
+            ? parsed.attendanceCheckinPopup
+            : DEFAULT_NOTIFICATION_PREFS.attendanceCheckinPopup,
         todaysFocusPref:
           parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
             ? parsed.todaysFocusPref
@@ -467,6 +480,24 @@ export async function setNotificationPrefs(prefs: NotificationPrefs): Promise<vo
   try {
     await AsyncStorage.setItem(KEY_NOTIFICATION_PREFS, JSON.stringify(prefs));
   } catch {}
+}
+
+/**
+ * Lightweight reader used by the global notification handler to decide whether
+ * the 5-min-before-class popup should appear in the foreground. We deliberately
+ * read the persisted blob directly so this stays a tiny synchronous-feeling
+ * lookup that works even before the app's React tree has mounted.
+ */
+export async function getAttendanceCheckinPopupEnabled(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_NOTIFICATION_PREFS);
+    if (!raw) return DEFAULT_NOTIFICATION_PREFS.attendanceCheckinPopup;
+    const parsed = JSON.parse(raw) as Partial<NotificationPrefs>;
+    if (typeof parsed.attendanceCheckinPopup === 'boolean') {
+      return parsed.attendanceCheckinPopup;
+    }
+  } catch {}
+  return DEFAULT_NOTIFICATION_PREFS.attendanceCheckinPopup;
 }
 
 // ---------- Timetable / week preferences ----------

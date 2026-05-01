@@ -211,7 +211,7 @@ export default function SubjectChat() {
             createdAt: new Date().toISOString()
           });
         } catch (e: any) {
-          setMessages(prev => [...prev, { role: 'ai', text: '⚠️ Network error or timeout. Please try again.' }]);
+          setMessages(prev => [...prev, { role: 'ai', text: 'Network error or timeout. Please try again.' }]);
         } finally {
           setIsProcessing(false);
           scrollToBottom();

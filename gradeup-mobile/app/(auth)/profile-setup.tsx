@@ -24,11 +24,11 @@ const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
 const skippedKeyFor = (uid: string) => `${PROFILE_SETUP_SKIPPED_KEY_PREFIX}${uid}`;
 
 const ACADEMIC_LEVELS = [
-  { key: 'foundation', label: 'Foundation / Pre-U', icon: '📚' },
-  { key: 'diploma', label: 'Diploma', icon: '📋' },
-  { key: 'degree', label: 'Degree', icon: '🎓' },
-  { key: 'masters', label: "Master's", icon: '🏅' },
-  { key: 'phd', label: 'PhD', icon: '🔬' },
+  { key: 'foundation', label: 'Foundation / Pre-U', icon: 'book-open' as const },
+  { key: 'diploma', label: 'Diploma', icon: 'file-text' as const },
+  { key: 'degree', label: 'Degree', icon: 'award' as const },
+  { key: 'masters', label: "Master's", icon: 'layers' as const },
+  { key: 'phd', label: 'PhD', icon: 'activity' as const },
 ] as const;
 
 export default function ProfileSetup() {
@@ -189,7 +189,7 @@ export default function ProfileSetup() {
                 onPress={() => setAcademicLevel(sel ? '' : level.key)}
                 disabled={saving}
               >
-                <Text style={styles.levelIcon}>{level.icon}</Text>
+                <Feather name={level.icon} size={16} color={sel ? '#fff' : '#64748b'} />
                 <Text style={[styles.levelLabel, sel && styles.levelLabelSel]}>{level.label}</Text>
               </Pressable>
             );
@@ -332,7 +332,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   levelChipSel: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
-  levelIcon: { fontSize: 14 },
   levelLabel: { fontSize: 13, fontWeight: '500', color: '#475569' },
   levelLabelSel: { color: '#fff', fontWeight: '600' },
 

@@ -617,10 +617,8 @@ export default function ServiceDetailScreen() {
             </View>
           </View>
         ) : (
-          <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '12' }]}>
-            <View style={[styles.heroEmojiWrap, { backgroundColor: cat.tint + '20' }]}>
-              <Text style={{ fontSize: 52 }}>{cat.emoji}</Text>
-            </View>
+          <View style={[styles.heroPlaceholder, { backgroundColor: cat.tint + '14' }]}>
+            <Feather name={cat.icon as any} size={52} color={cat.tint} />
             <View style={styles.heroChipsAlt}>
               <View style={[styles.chipPlain, { borderColor: theme.border, backgroundColor: theme.background + 'CC' }]}>
                 <Feather name={service.service_kind === 'offer' ? 'gift' : 'help-circle'} size={11} color={theme.text} />
@@ -642,12 +640,18 @@ export default function ServiceDetailScreen() {
           {service.body ? (
             <Text style={[styles.body, { color: theme.textSecondary }]}>{service.body}</Text>
           ) : null}
+        </View>
 
-          {/* Price hero */}
-          <View style={[styles.priceHero, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View>
-              <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>PRICE</Text>
-              <Text style={[styles.priceValue, { color: theme.primary }]}>
+        {/* Quick info chips */}
+        <View style={styles.section}>
+          <View style={styles.metaRow}>
+            <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
+              <Feather name={cat.icon as any} size={13} color={cat.tint} />
+              <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
+            </View>
+            <View style={[styles.metaChip, { backgroundColor: theme.primary + '14', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.primary + '33' }]}>
+              <Text style={[styles.metaChipText, { color: theme.primary, fontWeight: '900' }]}>RM</Text>
+              <Text style={[styles.metaChipText, { color: theme.primary }]}>
                 {(isClaimed || isCompleted || isSubmitted) ? formatAgreedPrice(service) : formatPrice(service)}
               </Text>
             </View>
@@ -1645,4 +1649,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   waChipText: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: -0.1 },
+  
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  metaChipText: { fontSize: 12, fontWeight: '700', letterSpacing: -0.1 },
 });

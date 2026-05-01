@@ -8,8 +8,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
-
-const CIRCLE_EMOJIS = ['👥', '📚', '🏫', '🎓', '💼', '🎵', '⚽', '🎮', '🏠', '🌟', '🔬', '🎪'];
+import { CIRCLE_ICON_CHOICES, featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 
 export default function CirclesScreen() {
   const theme = useTheme();
@@ -200,16 +199,16 @@ export default function CirclesScreen() {
             onChangeText={setNewName}
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiRow}>
-            {CIRCLE_EMOJIS.map((e) => (
+            {CIRCLE_ICON_CHOICES.map(({ emoji, icon }) => (
               <Pressable
-                key={e}
+                key={emoji}
                 style={[
                   styles.emojiItem,
-                  selectedEmoji === e && { backgroundColor: theme.primary + '20', borderColor: theme.primary },
+                  selectedEmoji === emoji && { backgroundColor: theme.primary + '20', borderColor: theme.primary },
                 ]}
-                onPress={() => setSelectedEmoji(e)}
+                onPress={() => setSelectedEmoji(emoji)}
               >
-                <Text style={styles.emojiText}>{e}</Text>
+                <Feather name={icon} size={22} color={theme.primary} />
               </Pressable>
             ))}
           </ScrollView>
@@ -241,7 +240,9 @@ export default function CirclesScreen() {
         circles.map((circle) => (
           <View key={circle.id} style={[styles.circleCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.circleHeader}>
-              <Text style={styles.circleEmoji}>{circle.emoji}</Text>
+            <View style={[styles.circleGlyphWrap, { backgroundColor: theme.primary + '12', borderColor: theme.border }]}>
+              <Feather name={featherForLegacyCircleEmoji(circle.emoji)} size={22} color={theme.primary} />
+            </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.circleName, { color: theme.text }]}>{circle.name}</Text>
                 <Text style={[styles.circleMeta, { color: theme.textSecondary }]}>
@@ -370,12 +371,19 @@ const styles = StyleSheet.create({
   emojiRow: { marginBottom: 14 },
   emojiItem: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent', marginRight: 8 },
   emojiText: { fontSize: 22 },
+  circleGlyphWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
   createBtn: { paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
   createBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   circleCard: { borderRadius: 16, borderWidth: 1, padding: 18, marginBottom: 12 },
   circleHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  circleEmoji: { fontSize: 28 },
   circleName: { fontSize: 17, fontWeight: '700' },
   circleMeta: { fontSize: 13, marginTop: 2 },
   circleActions: { flexDirection: 'row', gap: 10, marginBottom: 12 },

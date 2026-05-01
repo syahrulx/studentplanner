@@ -278,7 +278,7 @@ export default function Login() {
 
         {/* ── Card ── */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Welcome back 👋</Text>
+          <Text style={styles.cardTitle}>Welcome back</Text>
           <Text style={styles.cardSubtitle}>Sign in to continue your journey</Text>
 
           {/* Email */}

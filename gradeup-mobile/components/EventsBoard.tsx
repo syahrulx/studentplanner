@@ -20,12 +20,14 @@ import Feather from '@expo/vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 
-import { useTheme } from '@/hooks/useTheme';
+import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 import { Avatar } from '@/components/Avatar';
+import { CatLottie } from '@/components/CatLottie';
+import { SpiderLottie } from '@/components/SpiderLottie';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -35,15 +37,17 @@ const TYPE_PILLS: { label: string; value: PostType | null; icon: string }[] = [
   { label: 'Memos', value: 'memo', icon: 'file-text' },
 ];
 
-const TYPE_META: Record<PostType, { label: string; icon: string; tint: string }> = {
+const TYPE_META: Record<PostType | 'other', { label: string; icon: string; tint: string }> = {
   event: { label: 'Event', icon: 'calendar', tint: '#0A84FF' },
   service: { label: 'Service', icon: 'tool', tint: '#FF9F0A' },
   memo: { label: 'Memo', icon: 'file-text', tint: '#BF5AF2' },
+  other: { label: 'Other', icon: 'grid', tint: '#8E8E93' },
 };
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const EVENTS_REFRESH_MIN_MS = 1200;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +96,10 @@ export default function EventsBoard() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const CARD_WIDTH = (width - 32 - 12) / 2; // 32 for padding (16*2), 12 for gap
+  const themePack = useThemePack();
+  const isCatTheme = themePack === 'cat';
+  const isDarkMinimal = useDarkMinimalThemePack();
+  const isSpiderTheme = themePack === 'spider';
   const { user } = useApp();
   const dark = isDarkTheme(theme.id);
 
@@ -205,9 +213,17 @@ export default function EventsBoard() {
   );
 
   const handleRefresh = useCallback(async () => {
+    const startedAt = Date.now();
     setRefreshing(true);
-    await loadPosts();
-    setRefreshing(false);
+    try {
+      await loadPosts();
+    } finally {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < EVENTS_REFRESH_MIN_MS) {
+        await new Promise((resolve) => setTimeout(resolve, EVENTS_REFRESH_MIN_MS - elapsed));
+      }
+      setRefreshing(false);
+    }
   }, [loadPosts]);
 
   // ─── Active filter chips (advanced) ───────────────────────────────────────
@@ -458,7 +474,18 @@ export default function EventsBoard() {
         <View style={{ flex: 1 }}>
           {Header}
           <View style={styles.center}>
-            <ActivityIndicator size="small" color={theme.textSecondary} />
+            {isCatTheme || isDarkMinimal ? (
+              isSpiderTheme ? (
+                <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+              ) : (
+                <CatLottie
+                  variant={isCatTheme ? 'loading' : 'monoLoading'}
+                  style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+                />
+              )
+            ) : (
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            )}
           </View>
         </View>
       ) : (
@@ -472,15 +499,35 @@ export default function EventsBoard() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={Header}
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical
+          overScrollMode="always"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={theme.textSecondary}
+              tintColor="transparent"
+              colors={['transparent']}
+              progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
             />
           }
           ListEmptyComponent={Empty}
         />
+      )}
+      {refreshing && (
+        <View pointerEvents="none" style={styles.refreshOverlay}>
+          {isCatTheme || isDarkMinimal ? (
+            isSpiderTheme ? (
+              <SpiderLottie variant="loading" style={styles.spiderRefreshLottie} />
+            ) : (
+              <CatLottie
+                variant={isCatTheme ? 'loading' : 'monoLoading'}
+                style={!isCatTheme && isDarkMinimal ? styles.monoRefreshLottie : styles.catRefreshLottie}
+              />
+            )
+          ) : (
+            <ActivityIndicator size="small" color={theme.primary} />
+          )}
+        </View>
       )}
 
       {/* ─── Filter Modal (iOS-style sheet) ─── */}
@@ -716,6 +763,40 @@ export default function EventsBoard() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  refreshOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    zIndex: 40,
+  },
+  catLoadingLottie: {
+    width: 84,
+    height: 58,
+  },
+  monoLoadingLottie: {
+    width: 122,
+    height: 88,
+  },
+  spiderLoadingLottie: {
+    width: 124,
+    height: 94,
+  },
+  catRefreshLottie: {
+    width: 74,
+    height: 52,
+  },
+  monoRefreshLottie: {
+    width: 106,
+    height: 78,
+  },
+  spiderRefreshLottie: {
+    width: 104,
+    height: 78,
+  },
 
   // Header
   header: {
@@ -902,7 +983,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   authorName: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
-  authorMeta: { fontSize: 11, fontWeight: '500', marginTop: 1 },
 
   // Empty
   emptyState: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },

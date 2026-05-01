@@ -618,7 +618,7 @@ export default function TaskDetails() {
             />
           ) : (
             <Text style={[s.notesBody, { color: localNotes ? theme.text : theme.textSecondary }]}>
-              {localNotes || 'Tap ✏ to add notes…'}
+              {localNotes || 'Tap to add notes…'}
             </Text>
           )}
         </View>

@@ -33,6 +33,7 @@ import {
   scheduleWeeklySummary,
   cancelWeeklySummary,
 } from '@/src/notificationManager';
+import { rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
 import {
   openPrivacyPolicy,
   openTermsOfUse,
@@ -82,12 +83,21 @@ export default function Settings() {
     setTasks,
     clearSemesterData,
     tasks,
+    timetable,
     autoDeletePastTasks,
     setAutoDeletePastTasks,
   } = useApp();
   const theme = useTheme();
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
+  const switchTrackOff = isMonoTheme ? '#262626' : theme.border;
+  const switchTrackOn = isMonoTheme ? '#525252' : theme.primary;
+  const switchThumb = isMonoTheme ? '#ffffff' : undefined;
+  const monoIconBg = '#1f1f1f';
+  const monoIconFg = '#f5f5f5';
+  const themedIconBg = (color: string) => (isMonoTheme ? monoIconBg : color);
+  const themedIconFg = (color: string) => (isMonoTheme ? monoIconFg : color);
   const T = useTranslations(language);
 
   const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
@@ -128,6 +138,16 @@ export default function Settings() {
         ) {
           rescheduleAllTaskNotifications(tasks).catch(() => {});
         }
+        if ('attendanceCheckinPopup' in patch) {
+          // Cancel + reschedule so existing pending notifications pick up the
+          // new silent / loud presentation. The user's class events themselves
+          // are unchanged — only the visual delivery flips.
+          void supabase.auth.getSession().then(({ data: { session } }) => {
+            const uid = session?.user?.id;
+            if (!uid) return;
+            rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
+          });
+        }
         if (
           'weeklySummaryEnabled' in patch ||
           'weeklySummaryDay' in patch ||
@@ -142,7 +162,7 @@ export default function Settings() {
         return next;
       });
     },
-    [tasks],
+    [tasks, timetable],
   );
 
   const {
@@ -448,8 +468,8 @@ export default function Settings() {
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/in-app-themes' as any)}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
-              <Feather name="award" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f59e0b') }]}>
+              <Feather name="award" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>Premium Themes</Text>
@@ -464,16 +484,16 @@ export default function Settings() {
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/week-start-preference' as any)}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#0ea5e9' }]}>
-              <Feather name="calendar" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+              <Feather name="calendar" size={18} color={themedIconFg('#fff')} />
             </View>
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('weekStartPref')}</Text>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={styles.dividerList} />
           <View style={styles.menuRow}>
-            <View style={[styles.iconBox, { backgroundColor: '#f97316' }]}>
-              <Feather name="clock" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f97316') }]}>
+              <Feather name="clock" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{T('autoDeletePastTasks')}</Text>
@@ -484,8 +504,9 @@ export default function Settings() {
             <Switch
               value={autoDeletePastTasks}
               onValueChange={handleAutoDeletePastTasksToggle}
-              trackColor={{ false: theme.border, true: theme.accent3 }}
-              thumbColor={autoDeletePastTasks ? theme.primary : theme.textSecondary}
+              trackColor={{ false: switchTrackOff, true: isMonoTheme ? '#525252' : theme.accent3 }}
+              thumbColor={isMonoTheme ? '#ffffff' : autoDeletePastTasks ? theme.primary : theme.textSecondary}
+              ios_backgroundColor={switchTrackOff}
             />
           </View>
         </View>
@@ -496,8 +517,8 @@ export default function Settings() {
             {/* Card 1: simple on/off alerts (iOS Settings–style rows) */}
             <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
               <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#3b82f6' }]}>
-                  <Feather name="bell" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#3b82f6') }]}>
+                  <Feather name="bell" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Task Reminders</Text>
@@ -510,7 +531,9 @@ export default function Settings() {
                 <Switch
                   value={notifPrefs.tasksEnabled}
                   onValueChange={(v) => updateNotifPref({ tasksEnabled: v })}
-                  trackColor={{ false: theme.border, true: theme.primary }}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
                 />
               </View>
 
@@ -571,7 +594,9 @@ export default function Settings() {
                     <Switch
                       value={notifPrefs.taskOverdueEnabled}
                       onValueChange={(v) => updateNotifPref({ taskOverdueEnabled: v })}
-                      trackColor={{ false: theme.border, true: theme.primary }}
+                      trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                      thumbColor={switchThumb}
+                      ios_backgroundColor={switchTrackOff}
                     />
                   </View>
                 </View>
@@ -580,8 +605,8 @@ export default function Settings() {
               <View style={styles.dividerList} />
 
               <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#10b981' }]}>
-                  <Feather name="clock" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#10b981') }]}>
+                  <Feather name="clock" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Study Timer</Text>
@@ -592,15 +617,17 @@ export default function Settings() {
                 <Switch
                   value={notifPrefs.studyTimerEnabled}
                   onValueChange={(v) => updateNotifPref({ studyTimerEnabled: v })}
-                  trackColor={{ false: theme.border, true: theme.primary }}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
                 />
               </View>
 
               <View style={styles.dividerList} />
 
               <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#4285f4' }]}>
-                  <Feather name="download-cloud" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#4285f4') }]}>
+                  <Feather name="download-cloud" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Classroom Sync</Text>
@@ -611,15 +638,17 @@ export default function Settings() {
                 <Switch
                   value={notifPrefs.classroomSyncEnabled}
                   onValueChange={(v) => updateNotifPref({ classroomSyncEnabled: v })}
-                  trackColor={{ false: theme.border, true: theme.primary }}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
                 />
               </View>
 
               <View style={styles.dividerList} />
 
               <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#f59e0b' }]}>
-                  <Feather name="users" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f59e0b') }]}>
+                  <Feather name="users" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Shared Tasks</Text>
@@ -630,7 +659,32 @@ export default function Settings() {
                 <Switch
                   value={notifPrefs.sharedTasksEnabled}
                   onValueChange={(v) => updateNotifPref({ sharedTasksEnabled: v })}
-                  trackColor={{ false: theme.border, true: theme.primary }}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
+                />
+              </View>
+
+              <View style={styles.dividerList} />
+
+              <View style={styles.menuRow}>
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ef4444') }]}>
+                  <Feather name="check-square" size={18} color={themedIconFg('#fff')} />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>Class Check-in Popup</Text>
+                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {notifPrefs.attendanceCheckinPopup
+                      ? 'Banner 5 minutes before class — turn off to stay quiet.'
+                      : 'Silent — still appears in the in-app Notification Manager.'}
+                  </Text>
+                </View>
+                <Switch
+                  value={notifPrefs.attendanceCheckinPopup}
+                  onValueChange={(v) => updateNotifPref({ attendanceCheckinPopup: v })}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
                 />
               </View>
             </View>
@@ -638,8 +692,8 @@ export default function Settings() {
             {/* Card 2: weekly digest (schedule isolated, Apple-like second group) */}
             <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
               <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
-                  <Feather name="bar-chart-2" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
+                  <Feather name="bar-chart-2" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Weekly Summary</Text>
@@ -657,7 +711,9 @@ export default function Settings() {
                 <Switch
                   value={notifPrefs.weeklySummaryEnabled}
                   onValueChange={(v) => updateNotifPref({ weeklySummaryEnabled: v })}
-                  trackColor={{ false: theme.border, true: theme.primary }}
+                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                  thumbColor={switchThumb}
+                  ios_backgroundColor={switchTrackOff}
                 />
               </View>
 
@@ -735,8 +791,8 @@ export default function Settings() {
                 style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
                 onPress={() => setFocusPrefExpanded(!focusPrefExpanded)}
               >
-                <View style={[styles.iconBox, { backgroundColor: '#f43f5e' }]}>
-                  <Feather name="target" size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f43f5e') }]}>
+                  <Feather name="target" size={18} color={themedIconFg('#fff')} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={[styles.menuLabel, { color: theme.text }]}>Today's Focus</Text>
@@ -797,8 +853,8 @@ export default function Settings() {
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/academic-calendar' as any)}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#e0e7ff' }]}>
-              <ThemeIcon name="calendar" size={18} color="#4f46e5" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#e0e7ff') }]}>
+              <ThemeIcon name="calendar" size={18} color={themedIconFg('#4f46e5')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
@@ -813,8 +869,8 @@ export default function Settings() {
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/upload-sow' as any)}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
-              <Feather name="trending-up" size={18} color="#d97706" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fef3c7') }]}>
+              <Feather name="trending-up" size={18} color={themedIconFg('#d97706')} />
             </View>
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -840,8 +896,8 @@ export default function Settings() {
                     onPress={item.onPress}
                     disabled={item.disabled}
                   >
-                    <View style={[styles.iconBox, { backgroundColor: item.color }]}>
-                      <ThemeIcon name={item.icon} size={18} color="#fff" />
+                    <View style={[styles.iconBox, { backgroundColor: themedIconBg(item.color) }]}>
+                      <ThemeIcon name={item.icon} size={18} color={themedIconFg('#fff')} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
@@ -875,8 +931,8 @@ export default function Settings() {
                 style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
                 onPress={item.onPress}
               >
-                <View style={[styles.iconBox, { backgroundColor: item.color }]}>
-                  <ThemeIcon name={item.icon} size={18} color="#fff" />
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg(item.color) }]}>
+                  <ThemeIcon name={item.icon} size={18} color={themedIconFg('#fff')} />
                 </View>
                 <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
                 <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -892,8 +948,8 @@ export default function Settings() {
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={handleLogout}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#64748b' }]}>
-              <Feather name="log-out" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
+              <Feather name="log-out" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{T('logOut')}</Text>
@@ -911,8 +967,8 @@ export default function Settings() {
             accessibilityRole="link"
             accessibilityLabel="Open Privacy Policy"
           >
-            <View style={[styles.iconBox, { backgroundColor: '#0ea5e9' }]}>
-              <Feather name="shield" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+              <Feather name="shield" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>Privacy Policy</Text>
@@ -929,8 +985,8 @@ export default function Settings() {
             accessibilityRole="button"
             accessibilityLabel="Open Terms of Use"
           >
-            <View style={[styles.iconBox, { backgroundColor: '#64748b' }]}>
-              <Feather name="file-text" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
+              <Feather name="file-text" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>Terms of Use (EULA)</Text>
@@ -947,8 +1003,8 @@ export default function Settings() {
             accessibilityRole="button"
             accessibilityLabel="Open Community Guidelines"
           >
-            <View style={[styles.iconBox, { backgroundColor: '#8b5cf6' }]}>
-              <Feather name="users" size={18} color="#fff" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
+              <Feather name="users" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>Community Guidelines</Text>
@@ -971,8 +1027,8 @@ export default function Settings() {
             onPress={openClearDataStep1}
             disabled={clearDataBusy}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#fecaca' }]}>
-              <Feather name="trash-2" size={18} color="#dc2626" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fecaca') }]}>
+              <Feather name="trash-2" size={18} color={themedIconFg('#dc2626')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('clearData')}</Text>
@@ -990,8 +1046,8 @@ export default function Settings() {
             onPress={openDeleteAccountStep1}
             disabled={deleteAccountBusy}
           >
-            <View style={[styles.iconBox, { backgroundColor: '#fecaca' }]}>
-              <Feather name="user-x" size={18} color="#b91c1c" />
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fecaca') }]}>
+              <Feather name="user-x" size={18} color={themedIconFg('#b91c1c')} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('deleteAccount')}</Text>
