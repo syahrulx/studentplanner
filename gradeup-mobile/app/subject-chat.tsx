@@ -115,14 +115,15 @@ export default function SubjectChat() {
     // Sort by updatedAt so chronological order is generally preserved
     subjectNotes.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
     
-    let fullText = '';
-    for (const note of subjectNotes) {
-      const dateStr = note.updatedAt ? new Date(note.updatedAt).toLocaleDateString() : 'Unknown Date';
-      fullText += `\n--- Note Title: ${note.title || 'Untitled'} | Tag: ${note.tag} | Date: ${dateStr} ---\n`;
-      if (note.content) fullText += `${note.content}\n`;
-      if (note.extractedText) fullText += `${note.extractedText}\n`;
-    }
-    setNotesContext(fullText.slice(0, MAX_CONTEXT_LENGTH).trim());
+    const systemInstruction = `IMPORTANT: You are the student's AI Subject Tutor for ${subjectId}. 
+Your knowledge is STRICTLY LIMITED to the notes and PDFs provided below. 
+1. ONLY answer questions using the information found in the notes.
+2. If the answer is NOT in the notes, do not use your general knowledge. Instead, politely say: "I'm sorry, I couldn't find information about that in your notes for this subject. I can only answer questions based on your uploaded materials."
+3. Stay focused on helping the student study their specific curriculum.
+
+STUDENT NOTES CONTENT:
+`;
+    setNotesContext(systemInstruction + fullText.slice(0, MAX_CONTEXT_LENGTH - systemInstruction.length).trim());
   }, [notes, subjectId, user.subscriptionPlan]);
 
   const scrollToBottom = () => {
