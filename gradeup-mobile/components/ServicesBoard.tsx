@@ -740,6 +740,8 @@ export default function ServicesBoard() {
       >
         <Feather name="plus" size={22} color={theme.textInverse} />
       </Pressable>
+
+      {renderPickerModal()}
     </View>
   );
 }
