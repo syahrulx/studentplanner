@@ -73,7 +73,7 @@ function createStyles(theme: ThemePalette) {
     folderChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
     folderChipAdd: { backgroundColor: `${theme.primary}10`, borderColor: `${theme.primary}22` },
     folderChipText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
-    folderChipTextActive: { color: '#ffffff' },
+    folderChipTextActive: { color: theme.textInverse },
 
     listContent: { paddingHorizontal: 20, paddingBottom: 100 },
     listEmpty: { flexGrow: 1 },
@@ -127,7 +127,7 @@ function createStyles(theme: ThemePalette) {
     newFolderBtnGhost: { paddingHorizontal: 12, paddingVertical: 10 },
     newFolderBtnGhostText: { fontSize: 15, fontWeight: '700', color: theme.textSecondary },
     newFolderBtnPrimary: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: theme.primary },
-    newFolderBtnPrimaryText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
+    newFolderBtnPrimaryText: { fontSize: 15, fontWeight: '800', color: theme.textInverse },
 
     flashcardEntry: {
       marginHorizontal: 20, marginBottom: 14, borderRadius: 18,
@@ -167,13 +167,13 @@ function createStyles(theme: ThemePalette) {
       position: 'absolute',
       bottom: 30,
       right: 20,
-      backgroundColor: '#8b5cf6',
+      backgroundColor: theme.primary,
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 18,
       paddingVertical: 16,
       borderRadius: 999,
-      shadowColor: '#8b5cf6',
+      shadowColor: theme.primary,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.35,
       shadowRadius: 10,
@@ -181,7 +181,7 @@ function createStyles(theme: ThemePalette) {
       gap: 10,
     },
     fabText: {
-      color: '#fff',
+      color: theme.textInverse,
       fontSize: 15,
       fontWeight: '700',
     },
@@ -195,7 +195,7 @@ function createStyles(theme: ThemePalette) {
     fabBadgeText: {
       fontSize: 10,
       fontWeight: '800',
-      color: '#fff',
+      color: theme.textInverse,
     },
   });
 }
@@ -476,7 +476,7 @@ export default function NotesList() {
                   { text: 'Cancel', style: 'cancel' },
                 ])}
               >
-                <Feather name="folder" size={12} color={selectedFolder === f ? '#fff' : theme.textSecondary} />
+                <Feather name="folder" size={12} color={selectedFolder === f ? theme.textInverse : theme.textSecondary} />
                 <Text style={[styles.folderChipText, selectedFolder === f && styles.folderChipTextActive]} numberOfLines={1}>{f}</Text>
               </Pressable>
             ))}
@@ -496,7 +496,7 @@ export default function NotesList() {
         onPress={() => router.push({ pathname: '/flashcard-pick' as any, params: subjectId ? { subjectId } : {} })}
       >
         <View style={styles.flashcardEntryIcon}>
-          <Feather name="layers" size={20} color="#fff" />
+          <Feather name="layers" size={20} color={theme.textInverse} />
         </View>
         <View style={styles.flashcardEntryBody}>
           <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
@@ -633,7 +633,7 @@ export default function NotesList() {
           router.push({ pathname: '/subject-chat' as any, params: { subjectId } });
         }}
       >
-        <Feather name="message-circle" size={20} color="#fff" />
+        <Feather name="message-circle" size={20} color={theme.textInverse} />
         <Text style={styles.fabText}>Ask AI</Text>
         {!isAtLeastPlus(user.subscriptionPlan) && (
           <View style={styles.fabBadge}>

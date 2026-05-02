@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
+import { LocationUniCampusBlock } from '@/components/LocationUniCampusBlock';
 import * as servicesApi from '@/src/lib/servicesApi';
+import * as eventsApi from '@/src/lib/eventsApi';
 import {
   SERVICE_CATEGORIES,
   type ServiceKind,
@@ -69,6 +71,9 @@ export default function NewServiceScreen() {
   const [priceType, setPriceType] = useState<PriceType>('fixed');
   const [priceAmount, setPriceAmount] = useState('');
   const [location, setLocation] = useState('');
+  const [formUniversityId, setFormUniversityId] = useState<string | null>(null);
+  const [formCampusId, setFormCampusId] = useState<string | null>(null);
+  const [campusNameResolved, setCampusNameResolved] = useState<string | null>(null);
   const [deadline, setDeadline] = useState<Date | null>(null);
   const [deadlineType, setDeadlineType] = useState<'asap' | 'later'>('asap');
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
@@ -77,12 +82,21 @@ export default function NewServiceScreen() {
   const [loading, setLoading] = useState(false);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
-  const userCampus = (user as any)?.campus || null;
+  const didInitUniversity = useRef(false);
+
+  useEffect(() => {
+    if (editId || didInitUniversity.current) return;
+    if (userUni) {
+      setFormUniversityId(userUni);
+      didInitUniversity.current = true;
+    }
+  }, [editId, userUni]);
 
   // Load for edit
   useEffect(() => {
     if (!editId) return;
     setLoading(true);
+    didInitUniversity.current = true;
     servicesApi.fetchService(editId).then((s) => {
       if (s) {
         setKind(s.service_kind || 'request');
@@ -93,6 +107,29 @@ export default function NewServiceScreen() {
         setPriceType('fixed'); // Force fixed price
         if (s.price_amount != null) setPriceAmount(String(s.price_amount));
         setLocation(s.location || '');
+        setFormUniversityId(s.university_id);
+        if (s.university_id) {
+          eventsApi.fetchCampuses(s.university_id).then((camps) => {
+            if (s.campus) {
+              const m = camps.find(
+                (c) => c.name.trim().toLowerCase() === s.campus!.trim().toLowerCase()
+              );
+              if (m) {
+                setFormCampusId(m.id);
+                setCampusNameResolved(m.name);
+              } else {
+                setFormCampusId(null);
+                setCampusNameResolved(s.campus);
+              }
+            } else {
+              setFormCampusId(null);
+              setCampusNameResolved(null);
+            }
+          });
+        } else {
+          setFormCampusId(null);
+          setCampusNameResolved(null);
+        }
         if (s.deadline_at) {
           setDeadline(new Date(s.deadline_at));
           setDeadlineType('later');
@@ -144,6 +181,8 @@ export default function NewServiceScreen() {
             currency: 'MYR',
             location: location.trim() || null,
             deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : null,
+            university_id: formUniversityId || null,
+            campus: campusNameResolved || null,
           });
         } else {
           await servicesApi.createService({
@@ -157,8 +196,8 @@ export default function NewServiceScreen() {
             currency: 'MYR',
             location: location.trim() || undefined,
             deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
-            university_id: userUni || undefined,
-            campus: userCampus || undefined,
+            university_id: formUniversityId || undefined,
+            campus: campusNameResolved || undefined,
           });
         }
         router.back();
@@ -419,16 +458,18 @@ export default function NewServiceScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>WHERE & WHEN</Text>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={styles.row}>
-              <Feather name="map-pin" size={16} color={activeCat.tint} style={{ marginRight: 12 }} />
-              <Text style={[styles.rowLabel, { color: theme.text }]}>Location</Text>
-              <TextInput
-                style={[styles.amountInput, { color: theme.text }]}
-                placeholder="Optional"
-                placeholderTextColor={theme.textSecondary}
-                value={location}
-                onChangeText={setLocation}
-                textAlign="right"
+            <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 }}>
+              <LocationUniCampusBlock
+                universityId={formUniversityId}
+                campusId={formCampusId}
+                locationDetail={location}
+                onUniversityIdChange={setFormUniversityId}
+                onCampusIdChange={(id, name) => {
+                  setFormCampusId(id);
+                  setCampusNameResolved(name);
+                }}
+                onLocationDetailChange={setLocation}
+                accentColor={activeCat.tint}
               />
             </View>
 

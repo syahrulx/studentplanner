@@ -148,6 +148,13 @@ export default function EventsBoard() {
   const [pickerTitle, setPickerTitle] = useState('');
   const [pickerOnSelect, setPickerOnSelect] = useState<(id: string) => void>(() => () => {});
 
+  const [uniSearchQuery, setUniSearchQuery] = useState('');
+  const [campusSearchQuery, setCampusSearchQuery] = useState('');
+  /** When false and a university is selected, search + list are hidden so other filters stay visible. */
+  const [uniPickerExpanded, setUniPickerExpanded] = useState(true);
+  /** When false, campus search + list are hidden after a campus is chosen (or compact "Any campus" row). */
+  const [campusPickerExpanded, setCampusPickerExpanded] = useState(false);
+
   const activeUni = filterUniversity !== null ? filterUniversity : userUni;
   const hasAdvancedFilter = filterUniversity !== null || !!filterCampusId || !!filterOrgId || !!filterDate;
 
@@ -172,6 +179,37 @@ export default function EventsBoard() {
       setOrganizations([]);
     }
   }, [currentUniToFetch]);
+
+  useEffect(() => {
+    setCampusSearchQuery('');
+    setCampusPickerExpanded(false);
+  }, [tempUni]);
+
+  const filteredUniversitiesList = useMemo(() => {
+    const q = uniSearchQuery.trim().toLowerCase();
+    let list = universities;
+    if (q) {
+      list = universities.filter(
+        (u) => u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)
+      );
+    } else if (userUni && showFilterModal) {
+      list = [...universities].sort((a, b) => {
+        if (a.id === userUni) return -1;
+        if (b.id === userUni) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    return list;
+  }, [universities, uniSearchQuery, userUni, showFilterModal]);
+
+  const filteredCampusesList = useMemo(() => {
+    const q = campusSearchQuery.trim().toLowerCase();
+    if (!campuses.length) return [];
+    if (!q) return [...campuses].sort((a, b) => a.name.localeCompare(b.name));
+    return campuses.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+    );
+  }, [campuses, campusSearchQuery]);
 
   const renderPickerContent = () => (
     <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
@@ -312,10 +350,15 @@ export default function EventsBoard() {
         <View style={[styles.headerActions, { backgroundColor: theme.background }]}>
           <Pressable
             onPress={() => {
-              setTempUni(filterUniversity !== null ? filterUniversity : userUni || null);
+              setUniSearchQuery('');
+              setCampusSearchQuery('');
+              const nextUni = filterUniversity !== null ? filterUniversity : userUni || null;
+              setTempUni(nextUni);
               setTempCampusId(filterCampusId);
               setTempOrgId(filterOrgId);
               setTempDate(filterDate);
+              setUniPickerExpanded(!nextUni);
+              setCampusPickerExpanded(false);
               setShowFilterModal(true);
             }}
             style={({ pressed }) => [
@@ -570,13 +613,23 @@ export default function EventsBoard() {
                   setTempCampusId(null);
                   setTempOrgId(null);
                   setTempDate(null);
+                  setUniSearchQuery('');
+                  setCampusSearchQuery('');
+                  setUniPickerExpanded(true);
+                  setCampusPickerExpanded(false);
                 }}
                 hitSlop={10}
               >
                 <Text
                   style={[
                     styles.sheetReset,
-                    { color: theme.primary, opacity: tempUni || tempCampusId || tempOrgId || tempDate ? 1 : 0.3 },
+                    {
+                      color: theme.primary,
+                      opacity:
+                        tempUni || tempCampusId || tempOrgId || tempDate || uniSearchQuery || campusSearchQuery
+                          ? 1
+                          : 0.3,
+                    },
                   ]}
                 >
                   Reset
@@ -590,61 +643,270 @@ export default function EventsBoard() {
               keyboardShouldPersistTaps="handled"
             >
               <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>UNIVERSITY</Text>
-              <Pressable
-                style={[
-                  styles.inputRow,
-                  { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
-                ]}
-                onPress={() => {
-                  setPickerTitle('Select University');
-                  setPickerData([{ id: '', name: 'Any University' }, ...universities]);
-                  setPickerOnSelect(() => (id: string) => {
-                    setTempUni(id || null);
-                    setTempCampusId(null);
-                    setTempOrgId(null);
-                  });
-                  setPickerVisible(true);
-                }}
-              >
-                <Feather name="award" size={16} color={theme.textSecondary} />
-                <Text style={[styles.input, { color: tempUni ? theme.text : theme.textSecondary }]}>
-                  {tempUni ? universities.find(u => u.id === tempUni)?.name || tempUni.toUpperCase() : 'Any University'}
-                </Text>
-                {tempUni ? (
-                  <Pressable onPress={() => { setTempUni(null); setTempCampusId(null); setTempOrgId(null); }} hitSlop={6}>
-                    <Feather name="x-circle" size={16} color={theme.textSecondary} />
+              <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>
+                Defaults to your university; type to search or pick from the list.
+              </Text>
+              {tempUni && !uniPickerExpanded ? (
+                <View
+                  style={[
+                    styles.filterCollapsedRow,
+                    { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                  ]}
+                >
+                  <Feather name="award" size={16} color={theme.primary} />
+                  <Text style={[styles.filterCollapsedTitle, { color: theme.text }]} numberOfLines={2}>
+                    {universities.find((u) => u.id === tempUni)?.name || tempUni.toUpperCase()}
+                  </Text>
+                  <Pressable onPress={() => setUniPickerExpanded(true)} hitSlop={8}>
+                    <Text style={[styles.filterChangeLink, { color: theme.primary }]}>Change</Text>
                   </Pressable>
-                ) : null}
-              </Pressable>
-
-              {tempUni && (
-                <>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CAMPUS</Text>
                   <Pressable
+                    onPress={() => {
+                      setTempUni(null);
+                      setTempCampusId(null);
+                      setTempOrgId(null);
+                      setUniPickerExpanded(true);
+                    }}
+                    hitSlop={6}
+                  >
+                    <Feather name="x-circle" size={18} color={theme.textSecondary} />
+                  </Pressable>
+                </View>
+              ) : null}
+              {(!tempUni || uniPickerExpanded) && (
+                <>
+                  {tempUni && uniPickerExpanded ? (
+                    <Pressable
+                      onPress={() => {
+                        setUniPickerExpanded(false);
+                        setUniSearchQuery('');
+                      }}
+                      hitSlop={8}
+                      style={styles.filterDoneRow}
+                    >
+                      <Text style={[styles.filterDoneLink, { color: theme.primary }]}>Done</Text>
+                    </Pressable>
+                  ) : null}
+                  <View
                     style={[
                       styles.inputRow,
                       { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
                     ]}
-                    onPress={() => {
-                      setPickerTitle('Select Campus');
-                      setPickerData([{ id: '', name: 'Any Campus' }, ...campuses]);
-                      setPickerOnSelect(() => (id: string) => {
-                        setTempCampusId(id || null);
-                        setTempOrgId(null);
-                      });
-                      setPickerVisible(true);
-                    }}
                   >
-                    <Feather name="map-pin" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.input, { color: tempCampusId ? theme.text : theme.textSecondary }]}>
-                      {tempCampusId ? campuses.find(c => c.id === tempCampusId)?.name : 'Any Campus'}
-                    </Text>
-                    {tempCampusId ? (
-                      <Pressable onPress={() => { setTempCampusId(null); setTempOrgId(null); }} hitSlop={6}>
+                    <Feather name="search" size={16} color={theme.textSecondary} />
+                    <TextInput
+                      style={[styles.input, { color: theme.text }]}
+                      placeholder="Search universities…"
+                      placeholderTextColor={theme.textSecondary}
+                      value={uniSearchQuery}
+                      onChangeText={setUniSearchQuery}
+                      autoCorrect={false}
+                      autoCapitalize="none"
+                    />
+                    {uniSearchQuery ? (
+                      <Pressable onPress={() => setUniSearchQuery('')} hitSlop={6}>
                         <Feather name="x-circle" size={16} color={theme.textSecondary} />
                       </Pressable>
                     ) : null}
-                  </Pressable>
+                  </View>
+                  <View
+                    style={[
+                      styles.searchListWrap,
+                      { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Pressable
+                      style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                      onPress={() => {
+                        setTempUni(null);
+                        setTempCampusId(null);
+                        setTempOrgId(null);
+                        setUniSearchQuery('');
+                        setUniPickerExpanded(true);
+                      }}
+                    >
+                      <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
+                      {!tempUni ? (
+                        <Feather name="check" size={18} color={theme.primary} />
+                      ) : null}
+                    </Pressable>
+                    <ScrollView
+                      style={styles.searchListScroll}
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {filteredUniversitiesList.length === 0 ? (
+                        <Text style={[styles.searchEmptyHint, { color: theme.textSecondary }]}>
+                          No universities match your search.
+                        </Text>
+                      ) : (
+                        filteredUniversitiesList.map((item) => {
+                          const sel = tempUni === item.id;
+                          return (
+                            <Pressable
+                              key={item.id}
+                              style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                              onPress={() => {
+                                setTempUni(item.id);
+                                setTempCampusId(null);
+                                setTempOrgId(null);
+                                setUniSearchQuery('');
+                                setUniPickerExpanded(false);
+                              }}
+                            >
+                              <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
+                                {item.name}
+                              </Text>
+                              {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
+                </>
+              )}
+
+              {tempUni && (
+                <>
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CAMPUS</Text>
+                  <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>
+                    Optional. Tap to search campuses for this university.
+                  </Text>
+                  {tempCampusId && !campusPickerExpanded ? (
+                    <View
+                      style={[
+                        styles.filterCollapsedRow,
+                        { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                    >
+                      <Feather name="map-pin" size={16} color={theme.primary} />
+                      <Text style={[styles.filterCollapsedTitle, { color: theme.text }]} numberOfLines={2}>
+                        {campuses.find((c) => c.id === tempCampusId)?.name ?? 'Campus'}
+                      </Text>
+                      <Pressable onPress={() => setCampusPickerExpanded(true)} hitSlop={8}>
+                        <Text style={[styles.filterChangeLink, { color: theme.primary }]}>Change</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          setTempCampusId(null);
+                          setTempOrgId(null);
+                        }}
+                        hitSlop={6}
+                      >
+                        <Feather name="x-circle" size={18} color={theme.textSecondary} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {!tempCampusId && !campusPickerExpanded ? (
+                    <Pressable
+                      style={[
+                        styles.filterCompactTapRow,
+                        { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                      onPress={() => setCampusPickerExpanded(true)}
+                    >
+                      <Feather name="map-pin" size={16} color={theme.textSecondary} />
+                      <View style={styles.filterCompactTapTextCol}>
+                        <Text style={[styles.filterCompactTapText, { color: theme.text }]}>Any campus</Text>
+                        <Text style={[styles.filterCompactTapHint, { color: theme.textSecondary }]}>
+                          Tap to search campuses
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={18} color={theme.textSecondary} />
+                    </Pressable>
+                  ) : null}
+                  {campusPickerExpanded && (
+                    <>
+                      <Pressable
+                        onPress={() => {
+                          setCampusPickerExpanded(false);
+                          setCampusSearchQuery('');
+                        }}
+                        hitSlop={8}
+                        style={styles.filterDoneRow}
+                      >
+                        <Text style={[styles.filterDoneLink, { color: theme.primary }]}>Done</Text>
+                      </Pressable>
+                      <View
+                        style={[
+                          styles.inputRow,
+                          { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                        ]}
+                      >
+                        <Feather name="search" size={16} color={theme.textSecondary} />
+                        <TextInput
+                          style={[styles.input, { color: theme.text }]}
+                          placeholder="Search campuses…"
+                          placeholderTextColor={theme.textSecondary}
+                          value={campusSearchQuery}
+                          onChangeText={setCampusSearchQuery}
+                          autoCorrect={false}
+                          autoCapitalize="none"
+                        />
+                        {campusSearchQuery ? (
+                          <Pressable onPress={() => setCampusSearchQuery('')} hitSlop={6}>
+                            <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                      <View
+                        style={[
+                          styles.searchListWrap,
+                          { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                        ]}
+                      >
+                        <Pressable
+                          style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                          onPress={() => {
+                            setTempCampusId(null);
+                            setTempOrgId(null);
+                            setCampusSearchQuery('');
+                            setCampusPickerExpanded(false);
+                          }}
+                        >
+                          <Text style={[styles.searchHitText, { color: theme.text }]}>Any campus</Text>
+                          {!tempCampusId ? (
+                            <Feather name="check" size={18} color={theme.primary} />
+                          ) : null}
+                        </Pressable>
+                        <ScrollView
+                          style={styles.searchListScroll}
+                          nestedScrollEnabled
+                          keyboardShouldPersistTaps="handled"
+                        >
+                          {filteredCampusesList.length === 0 ? (
+                            <Text style={[styles.searchEmptyHint, { color: theme.textSecondary }]}>
+                              {campusSearchQuery.trim()
+                                ? 'No campuses match your search.'
+                                : 'No campuses loaded for this university.'}
+                            </Text>
+                          ) : (
+                            filteredCampusesList.map((item) => {
+                              const sel = tempCampusId === item.id;
+                              return (
+                                <Pressable
+                                  key={item.id}
+                                  style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                                  onPress={() => {
+                                    setTempCampusId(item.id);
+                                    setTempOrgId(null);
+                                    setCampusSearchQuery('');
+                                    setCampusPickerExpanded(false);
+                                  }}
+                                >
+                                  <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
+                                    {item.name}
+                                  </Text>
+                                  {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                                </Pressable>
+                              );
+                            })
+                          )}
+                        </ScrollView>
+                      </View>
+                    </>
+                  )}
 
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>ORGANIZATION / CLUB</Text>
                   <Pressable
@@ -750,6 +1012,8 @@ export default function EventsBoard() {
                 setFilterCampusId(tempCampusId || null);
                 setFilterOrgId(tempOrgId || null);
                 setFilterDate(tempDate);
+                setUniSearchQuery('');
+                setCampusSearchQuery('');
                 setShowFilterModal(false);
                 setShowDatePicker(false);
               }}
@@ -1108,6 +1372,70 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingLeft: 4,
   },
+  fieldHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+    marginTop: -4,
+    marginBottom: 10,
+    paddingLeft: 4,
+  },
+  searchListWrap: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  searchListScroll: { maxHeight: 220 },
+  searchHitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  searchHitText: { flex: 1, fontSize: 15, fontWeight: '500' },
+  searchEmptyHint: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  filterCollapsedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 4,
+  },
+  filterCollapsedTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    minWidth: 0,
+  },
+  filterChangeLink: { fontSize: 14, fontWeight: '700' },
+  filterDoneRow: { alignSelf: 'flex-end', marginBottom: 6, paddingVertical: 4 },
+  filterDoneLink: { fontSize: 14, fontWeight: '700' },
+  filterCompactTapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 4,
+  },
+  filterCompactTapTextCol: { flex: 1, minWidth: 0 },
+  filterCompactTapText: { fontSize: 15, fontWeight: '600' },
+  filterCompactTapHint: { fontSize: 12, fontWeight: '500', marginTop: 2 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -13,6 +13,7 @@ import {
   TextInput,
   ActionSheetIOS,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,6 +27,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { Avatar } from '@/components/Avatar';
 import * as servicesApi from '@/src/lib/servicesApi';
+import * as eventsApi from '@/src/lib/eventsApi';
 import {
   getCategory,
   formatPrice,
@@ -40,6 +42,26 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 function formatDateLong(iso: string) {
   const d = new Date(iso);
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+const REPORT_SERVICE_HELP_COPY =
+  'Use reports for serious issues: scams, harassment, illegal requests, hate speech, impersonation, or spam. ' +
+  'Include enough detail for moderators to understand the problem.\n\n' +
+  'Reports are visible to administrators, who can remove this service from the marketplace if it violates our rules. ' +
+  'False or abusive reports may be penalized.';
+
+/** Shown in the form; first line of submitted `reason` text for admins. */
+const SERVICE_REPORT_TYPES = [
+  { id: 'harassment', label: 'Harassment or abuse' },
+  { id: 'scam', label: 'Scam or fraud' },
+  { id: 'illegal', label: 'Illegal content or requests' },
+  { id: 'spam', label: 'Spam or misleading listing' },
+  { id: 'impersonation', label: 'Impersonation' },
+  { id: 'other', label: 'Something else' },
+] as const;
+
+function formatServiceReportReason(typeLabel: string, details: string): string {
+  return `Report type: ${typeLabel}\n\nWhat happened:\n${details}`;
 }
 
 function timeAgo(iso: string): string {
@@ -86,6 +108,11 @@ export default function ServiceDetailScreen() {
   const [deliverySubmitting, setDeliverySubmitting] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTypeId, setReportTypeId] = useState<(typeof SERVICE_REPORT_TYPES)[number]['id'] | null>(null);
+  const [reportBody, setReportBody] = useState('');
+  const [universityLabel, setUniversityLabel] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
@@ -110,6 +137,22 @@ export default function ServiceDetailScreen() {
       load().finally(() => setLoading(false));
     }, [load])
   );
+
+  useEffect(() => {
+    if (!service?.university_id) {
+      setUniversityLabel(null);
+      return;
+    }
+    let cancelled = false;
+    eventsApi.fetchUniversities().then((list) => {
+      if (cancelled) return;
+      const u = list.find((x) => x.id === service.university_id);
+      setUniversityLabel(u?.name ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [service?.university_id]);
 
   if (loading || !service) {
     return (
@@ -425,22 +468,39 @@ export default function ServiceDetailScreen() {
   const onEdit = () => router.push({ pathname: '/services/new', params: { editId: service.id } } as any);
 
   const onReport = () => {
-    Alert.prompt(
-      'Report Service',
-      'Please tell us why this service is inappropriate or violates our guidelines.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Report', 
-          style: 'destructive', 
-          onPress: (reason?: string) => {
-            if (!reason?.trim()) return Alert.alert('Error', 'Reason is required.');
-            wrap('Report Service', () => servicesApi.reportService(service.id, reason), 'Service reported.');
-          } 
-        },
-      ],
-      'plain-text'
-    );
+    setReportTypeId(null);
+    setReportBody('');
+    setReportOpen(true);
+  };
+
+  const submitReport = async () => {
+    if (!reportTypeId) {
+      Alert.alert('Report type', 'Choose what kind of issue this is so we can route it correctly.');
+      return;
+    }
+    const details = reportBody.trim();
+    if (!details) {
+      Alert.alert('Details required', 'Please describe what happened so moderators can review your report.');
+      return;
+    }
+    const typeLabel = SERVICE_REPORT_TYPES.find((t) => t.id === reportTypeId)?.label ?? reportTypeId;
+    const reason = formatServiceReportReason(typeLabel, details);
+    setActing(true);
+    try {
+      await servicesApi.reportService(service.id, reason);
+      setReportOpen(false);
+      setReportTypeId(null);
+      setReportBody('');
+      Alert.alert(
+        'Thank you',
+        'We’ve received your report — thank you for helping keep the community safe. Our team will review it. You may not get a personal reply, but we take every report seriously.'
+      );
+      await load();
+    } catch (e: any) {
+      Alert.alert('Report failed', e.message || 'Something went wrong');
+    } finally {
+      setActing(false);
+    }
   };
 
   const showMenu = () => {
@@ -503,25 +563,28 @@ export default function ServiceDetailScreen() {
       }
     });
 
+    const menuExplainer =
+      'Need to flag this listing? Choose “Report service” — you’ll pick a report type and describe what happened. ' +
+      'Reports go to our team; we may remove services that break community rules (scams, harassment, illegal content, spam). ' +
+      'False reports can affect your account.';
+
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options,
           cancelButtonIndex: 0,
           destructiveButtonIndex: destructiveIndices.length > 0 ? destructiveIndices : undefined,
+          title: 'Manage service',
+          message: menuExplainer,
         },
         (idx) => actions[idx]?.()
       );
     } else {
-      Alert.alert(
-        'Manage service',
-        undefined,
-        options.map((label, i) => ({
-          text: label,
-          style: i === 0 ? 'cancel' : destructiveIndices.includes(i) ? 'destructive' : 'default',
-          onPress: actions[i],
-        })) as any
-      );
+      Alert.alert('Manage service', menuExplainer, options.map((label, i) => ({
+        text: label,
+        style: i === 0 ? 'cancel' : destructiveIndices.includes(i) ? 'destructive' : 'default',
+        onPress: actions[i],
+      })) as any);
     }
   };
 
@@ -710,17 +773,34 @@ export default function ServiceDetailScreen() {
                 <Text style={[styles.priceDeadline, { color: theme.text }]}>{formatDateLong(service.deadline_at)}</Text>
               </View>
             )}
-            {service.location && (
-              <View style={styles.priceDivider} />
-            )}
-            {service.location && (
-              <View>
-                <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>LOCATION</Text>
-                <Text style={[styles.priceDeadline, { color: theme.text }]} numberOfLines={1}>{service.location}</Text>
-              </View>
-            )}
           </View>
         </View>
+
+        {(service.university_id || service.campus || service.location) ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>WHERE</Text>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.whereBlock, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.whereKey, { color: theme.textSecondary }]}>University</Text>
+                <Text style={[styles.whereVal, { color: theme.text }]} numberOfLines={3}>
+                  {universityLabel || service.university_id || '—'}
+                </Text>
+              </View>
+              <View style={[styles.whereBlock, { borderBottomColor: theme.border }]}>
+                <Text style={[styles.whereKey, { color: theme.textSecondary }]}>Campus</Text>
+                <Text style={[styles.whereVal, { color: theme.text }]} numberOfLines={3}>
+                  {service.campus || '—'}
+                </Text>
+              </View>
+              <View style={styles.whereBlockLast}>
+                <Text style={[styles.whereKey, { color: theme.textSecondary }]}>Specific place</Text>
+                <Text style={[styles.whereVal, { color: theme.text }]} numberOfLines={4}>
+                  {service.location || '—'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {/* Status timeline */}
         <View style={styles.section}>
@@ -1163,6 +1243,101 @@ export default function ServiceDetailScreen() {
         </View>
       ) : null}
 
+      {/* Report service modal (all platforms — includes guidance text; Android has no Alert.prompt) */}
+      <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => !acting && setReportOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => !acting && setReportOpen(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+            <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.grabber} />
+              <Text style={[styles.sheetTitle, { color: theme.text }]}>Report this service</Text>
+              <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
+                Reports help keep the marketplace safe. Moderators review each submission and can remove listings that violate our guidelines.
+              </Text>
+              <ScrollView
+                style={styles.reportScroll}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                <Text style={[styles.reportLabel, { color: theme.text, marginTop: 4 }]}>What are you reporting?</Text>
+                <View style={styles.reportTypeWrap}>
+                  {SERVICE_REPORT_TYPES.map((t) => {
+                    const selected = reportTypeId === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => !acting && setReportTypeId(t.id)}
+                        style={({ pressed }) => [
+                          styles.reportTypeChip,
+                          {
+                            borderColor: selected ? theme.primary : theme.border,
+                            backgroundColor: selected ? theme.primary : theme.backgroundSecondary,
+                          },
+                          pressed && !acting && { opacity: 0.85 },
+                          acting && { opacity: 0.6 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.reportTypeChipText,
+                            { color: selected ? theme.textInverse : theme.text },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {t.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.reportLabel, { color: theme.text, marginTop: 4 }]}>Describe what happened</Text>
+                <Text style={[styles.reportFieldHint, { color: theme.textSecondary }]}>
+                  Required — type details here so moderators can review.
+                </Text>
+                <TextInput
+                  style={[styles.reviewInput, styles.reportDetailsInput, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border }]}
+                  placeholder="e.g. asks for payment outside the app, abusive language, misleading description…"
+                  placeholderTextColor={theme.textSecondary}
+                  value={reportBody}
+                  onChangeText={setReportBody}
+                  multiline
+                  textAlignVertical="top"
+                  editable={!acting}
+                />
+                <Text style={[styles.reportExplain, { color: theme.textSecondary, marginTop: 12 }]}>{REPORT_SERVICE_HELP_COPY}</Text>
+              </ScrollView>
+              <View style={styles.reportActions}>
+                <Pressable
+                  onPress={() => !acting && setReportOpen(false)}
+                  style={({ pressed }) => [
+                    styles.reportBtnGhost,
+                    { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={[styles.reportBtnGhostText, { color: theme.text }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={submitReport}
+                  disabled={acting}
+                  style={({ pressed }) => [
+                    styles.reportBtnPrimary,
+                    { backgroundColor: theme.primary },
+                    pressed && { opacity: 0.85 },
+                    acting && { opacity: 0.55 },
+                  ]}
+                >
+                  {acting ? (
+                    <ActivityIndicator size="small" color={theme.textInverse} />
+                  ) : (
+                    <Text style={[styles.reportBtnPrimaryText, { color: theme.textInverse }]}>Submit report</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
       {/* Review modal */}
       <Modal visible={reviewOpen} transparent animationType="slide" onRequestClose={() => setReviewOpen(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setReviewOpen(false)}>
@@ -1519,6 +1694,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
+  whereBlock: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  whereBlockLast: { paddingHorizontal: 16, paddingVertical: 12 },
+  whereKey: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6 },
+  whereVal: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, lineHeight: 21 },
 
   timelineRow: {
     flexDirection: 'row',
@@ -1666,6 +1849,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reviewSubmitText: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+
+  reportScroll: { maxHeight: 400, marginTop: 8 },
+  reportFieldHint: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
+  reportDetailsInput: { minHeight: 110 },
+  reportTypeWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    marginBottom: 12,
+    marginHorizontal: -4,
+  },
+  reportTypeChip: {
+    margin: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '100%',
+  },
+  reportTypeChipText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.2 },
+  reportExplain: { fontSize: 14, lineHeight: 21, marginBottom: 14 },
+  reportLabel: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  reportActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 16,
+  },
+  reportBtnGhost: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportBtnGhostText: { fontSize: 15, fontWeight: '700' },
+  reportBtnPrimary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportBtnPrimaryText: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
 
   // Offer modal field
   fieldLabel: {

@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { CatLottie } from '@/components/CatLottie';
+import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 
 const PAD = 20;
 
@@ -85,8 +86,24 @@ export default function InAppThemesScreen() {
   const isMonoApplied = themePack === 'mono';
   const isSpiderApplied = themePack === 'spider';
   const isPurpleApplied = themePack === 'purple';
-  const isFreePlan = (user.subscriptionPlan ?? 'free') === 'free';
+  /** Custom theme packs (Cat, Mono, Spider, Aurora) require Plus or Pro to apply. */
+  const canApplyThemePacks = isAtLeastPlus(user.subscriptionPlan);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
+
+  const applyThemePack = (pack: 'cat' | 'mono' | 'spider' | 'purple') => {
+    if (!canApplyThemePacks) {
+      Alert.alert(
+        'Plus or Pro required',
+        'In-app theme packs are available on Plus and Pro. Upgrade to apply Cat, Mono, Spider, or Aurora Purple across the app.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
+        ]
+      );
+      return;
+    }
+    setThemePack(pack);
+  };
   const selectedTheme = useMemo(
     () => THEME_PREVIEWS.find((x) => x.id === selectedThemeId) ?? null,
     [selectedThemeId],
@@ -231,13 +248,13 @@ export default function InAppThemesScreen() {
           </Pressable>
         </View>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          {isFreePlan
-            ? 'Preview only for now. All custom theme packs are locked on free plan.'
-            : 'Preview available. Design packs are unlocked for your plan.'}
+          {!canApplyThemePacks
+            ? 'Preview any theme below. Applying a pack requires Plus or Pro.'
+            : 'Preview available. You can apply design packs with your Plus or Pro plan.'}
         </Text>
 
         <View style={[styles.lockBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Feather name={isFreePlan ? 'lock' : 'unlock'} size={16} color={theme.textSecondary} />
+          <Feather name={!canApplyThemePacks ? 'lock' : 'unlock'} size={16} color={theme.textSecondary} />
           <Text style={[styles.lockBannerText, { color: theme.textSecondary }]}>
             {isCatApplied
               ? 'Cat theme is active now'
@@ -247,9 +264,9 @@ export default function InAppThemesScreen() {
               ? 'Spider theme is active now'
               : isPurpleApplied
               ? 'Aurora Purple theme is active now'
-              : isFreePlan
-              ? 'Free user mode: theme designs are locked'
-              : 'Pro/Plus mode: theme previews are visible'}
+              : !canApplyThemePacks
+              ? 'Plus or Pro required to apply theme packs (preview is open)'
+              : 'Plus/Pro: theme packs can be applied'}
           </Text>
         </View>
 
@@ -354,8 +371,12 @@ export default function InAppThemesScreen() {
               {item.id === 'cat' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('cat')}
-                    style={[styles.applyBtn, { backgroundColor: '#8d5a3b' }]}
+                    onPress={() => applyThemePack('cat')}
+                    style={[
+                      styles.applyBtn,
+                      { backgroundColor: '#8d5a3b' },
+                      !canApplyThemePacks && { opacity: 0.55 },
+                    ]}
                   >
                     <Text style={styles.applyBtnText}>Apply Cat Theme</Text>
                   </Pressable>
@@ -370,8 +391,12 @@ export default function InAppThemesScreen() {
               {item.id === 'sakura' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('mono')}
-                    style={[styles.applyBtn, { backgroundColor: '#000000', borderWidth: 1, borderColor: '#2a2a2a' }]}
+                    onPress={() => applyThemePack('mono')}
+                    style={[
+                      styles.applyBtn,
+                      { backgroundColor: '#000000', borderWidth: 1, borderColor: '#2a2a2a' },
+                      !canApplyThemePacks && { opacity: 0.55 },
+                    ]}
                   >
                     <Text style={styles.applyBtnText}>Apply Mono Theme</Text>
                   </Pressable>
@@ -388,10 +413,24 @@ export default function InAppThemesScreen() {
                   style={[
                     styles.spiderToggleWrap,
                     { borderColor: theme.border, backgroundColor: theme.backgroundSecondary },
+                    !canApplyThemePacks && { opacity: 0.55 },
                   ]}
                 >
                   <Pressable
-                    onPress={() => setSpiderBlueAccents(true)}
+                    onPress={() => {
+                      if (!canApplyThemePacks) {
+                        Alert.alert(
+                          'Plus or Pro required',
+                          'Spider accent options are available when you can apply the Spider theme (Plus or Pro).',
+                          [
+                            { text: 'OK', style: 'cancel' },
+                            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
+                          ]
+                        );
+                        return;
+                      }
+                      setSpiderBlueAccents(true);
+                    }}
                     style={[
                       styles.spiderToggleSegment,
                       {
@@ -404,7 +443,20 @@ export default function InAppThemesScreen() {
                     </Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => setSpiderBlueAccents(false)}
+                    onPress={() => {
+                      if (!canApplyThemePacks) {
+                        Alert.alert(
+                          'Plus or Pro required',
+                          'Spider accent options are available when you can apply the Spider theme (Plus or Pro).',
+                          [
+                            { text: 'OK', style: 'cancel' },
+                            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
+                          ]
+                        );
+                        return;
+                      }
+                      setSpiderBlueAccents(false);
+                    }}
                     style={[
                       styles.spiderToggleSegment,
                       {
@@ -421,10 +473,11 @@ export default function InAppThemesScreen() {
               {item.id === 'spider' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('spider')}
+                    onPress={() => applyThemePack('spider')}
                     style={[
                       styles.applyBtn,
                       { backgroundColor: '#7f1d1d', borderWidth: 1, borderColor: '#b91c1c' },
+                      !canApplyThemePacks && { opacity: 0.55 },
                     ]}
                   >
                     <Text style={styles.applyBtnText}>Apply Spider Theme</Text>
@@ -440,10 +493,11 @@ export default function InAppThemesScreen() {
               {item.id === 'purple' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('purple')}
+                    onPress={() => applyThemePack('purple')}
                     style={[
                       styles.applyBtn,
                       { backgroundColor: '#4d3b85', borderWidth: 1, borderColor: '#b794f4' },
+                      !canApplyThemePacks && { opacity: 0.55 },
                     ]}
                   >
                     <Text style={styles.applyBtnText}>Apply Purple Theme</Text>
@@ -465,10 +519,12 @@ export default function InAppThemesScreen() {
                   Preview Home & Timetable
                 </Text>
               </Pressable>
-              {isFreePlan ? (
-                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>Theme apply is locked for free users</Text>
+              {!canApplyThemePacks ? (
+                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>
+                  Applying themes requires Plus or Pro — previews stay available.
+                </Text>
               ) : (
-                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>You can preview this theme design style</Text>
+                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>You can apply this theme with your plan.</Text>
               )}
             </View>
           </View>
@@ -782,8 +838,8 @@ export default function InAppThemesScreen() {
             </View>
 
             <Text style={[styles.modalNote, { color: theme.textSecondary }]}>
-              {isFreePlan
-                ? 'Preview only. Applying this theme is currently locked on free plan.'
+              {!canApplyThemePacks
+                ? 'Preview only. Applying this theme requires a Plus or Pro subscription.'
                 : 'Design preview mode enabled. Full implementation can include custom icons and backgrounds.'}
             </Text>
           </View>
