@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "node": "22.13.0",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -17,6 +18,7 @@
       }
     },
     "preview": {
+      "node": "22.13.0",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
@@ -28,6 +30,7 @@
       }
     },
     "production": {
+      "node": "22.13.0",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
