@@ -28,6 +28,8 @@ import {
   setThemePack as persistThemePack,
   getSpiderBlueAccents,
   setSpiderBlueAccents as persistSpiderBlueAccents,
+  getThemePreviewExpiry,
+  setThemePreviewExpiry as persistThemePreviewExpiry,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
   setCompletedStudyKeys as persistCompletedStudies,
@@ -149,6 +151,8 @@ type AppState = {
   setTheme: (theme: ThemeId) => void;
   themePack: ThemePackId;
   setThemePack: (pack: ThemePackId) => void;
+  themePreviewExpiry: number | null;
+  setThemePreviewExpiry: (timestamp: number | null) => void;
   spiderBlueAccents: boolean;
   setSpiderBlueAccents: (enabled: boolean) => void;
   language: AppLanguage;
@@ -277,6 +281,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
+  const [themePreviewExpiry, setThemePreviewExpiryState] = useState<number | null>(null);
   const [spiderBlueAccents, setSpiderBlueAccentsState] = useState(true);
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
@@ -535,7 +540,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     getTheme().then(setThemeState);
-    getThemePack().then(setThemePackState);
+    Promise.all([getThemePack(), getThemePreviewExpiry()]).then(([pack, expiry]) => {
+      // Check if preview expired
+      if (pack !== 'none' && expiry !== null && Date.now() > expiry) {
+        setThemePackState('none');
+        persistThemePack('none');
+        setThemePreviewExpiryState(null);
+        persistThemePreviewExpiry(null);
+      } else {
+        setThemePackState(pack);
+        setThemePreviewExpiryState(expiry);
+      }
+    });
     getSpiderBlueAccents().then(setSpiderBlueAccentsState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
     getPinnedTaskIds().then(setPinnedTaskIds);
@@ -1034,9 +1050,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     persistTheme(next);
   }, []);
 
-  const setThemePack = useCallback((next: ThemePackId) => {
-    setThemePackState(next);
-    persistThemePack(next);
+  const setThemePack = useCallback((pack: ThemePackId) => {
+    setThemePackState(pack);
+    void persistThemePack(pack);
+  }, []);
+
+  const setThemePreviewExpiry = useCallback((timestamp: number | null) => {
+    setThemePreviewExpiryState(timestamp);
+    void persistThemePreviewExpiry(timestamp);
   }, []);
 
   const setSpiderBlueAccents = useCallback((enabled: boolean) => {
@@ -1821,6 +1842,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTheme,
     themePack,
     setThemePack,
+    themePreviewExpiry,
+    setThemePreviewExpiry,
     spiderBlueAccents,
     setSpiderBlueAccents,
     language,

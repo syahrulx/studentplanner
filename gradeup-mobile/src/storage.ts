@@ -112,6 +112,29 @@ export async function setSpiderBlueAccents(enabled: boolean): Promise<void> {
   } catch {}
 }
 
+const KEY_THEME_PREVIEW_EXPIRY = 'themePreviewExpiry';
+
+export async function getThemePreviewExpiry(): Promise<number | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_THEME_PREVIEW_EXPIRY);
+    if (raw) {
+      const parsed = parseInt(raw, 10);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export async function setThemePreviewExpiry(timestamp: number | null): Promise<void> {
+  try {
+    if (timestamp === null) {
+      await AsyncStorage.removeItem(KEY_THEME_PREVIEW_EXPIRY);
+    } else {
+      await AsyncStorage.setItem(KEY_THEME_PREVIEW_EXPIRY, timestamp.toString());
+    }
+  } catch {}
+}
+
 export type AppLanguage = 'en';
 export type AppLoghat = 'negeriSembilan' | 'kelantan' | 'kedah' | 'melaka';
 

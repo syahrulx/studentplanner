@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
@@ -80,7 +80,7 @@ const THEME_PREVIEWS: ThemePreview[] = [
 export default function InAppThemesScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
-  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents } = useApp();
+  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry } = useApp();
   const isCatApplied = themePack === 'cat';
   const isMonoApplied = themePack === 'mono';
   const isSpiderApplied = themePack === 'spider';
@@ -208,6 +208,34 @@ export default function InAppThemesScreen() {
     );
   };
 
+  const handleApplyThemePack = (pack: 'cat' | 'mono' | 'spider' | 'purple') => {
+    if (isFreePlan) {
+      Alert.alert(
+        'Premium Theme Trial',
+        'Would you like to start a 1-week free trial for this premium theme?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Start Free Trial', 
+            style: 'default',
+            onPress: () => {
+              setThemePack(pack);
+              setThemePreviewExpiry(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+            }
+          }
+        ]
+      );
+    } else {
+      setThemePack(pack);
+      setThemePreviewExpiry(null);
+    }
+  };
+
+  const handleResetTheme = () => {
+    setThemePack('none');
+    setThemePreviewExpiry(null);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.headerRow}>
@@ -224,7 +252,7 @@ export default function InAppThemesScreen() {
         <View style={styles.titleRow}>
           <Text style={[styles.title, { color: theme.text }]}>In App Themes</Text>
           <Pressable
-            onPress={() => setThemePack('none')}
+            onPress={handleResetTheme}
             style={[styles.topResetBtn, { borderColor: theme.border, backgroundColor: theme.backgroundSecondary }]}
           >
             <Text style={[styles.topResetBtnText, { color: theme.text }]}>Reset to Default</Text>
@@ -232,8 +260,8 @@ export default function InAppThemesScreen() {
         </View>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           {isFreePlan
-            ? 'Preview only for now. All custom theme packs are locked on free plan.'
-            : 'Preview available. Design packs are unlocked for your plan.'}
+            ? 'Start your 1-week free trial of our premium design packs.'
+            : 'Premium design packs are unlocked for your plan.'}
         </Text>
 
         <View style={[styles.lockBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -248,8 +276,8 @@ export default function InAppThemesScreen() {
               : isPurpleApplied
               ? 'Aurora Purple theme is active now'
               : isFreePlan
-              ? 'Free user mode: theme designs are locked'
-              : 'Pro/Plus mode: theme previews are visible'}
+              ? 'Free user mode: 1-week trial available'
+              : 'Pro/Plus mode: themes are fully unlocked'}
           </Text>
         </View>
 
@@ -354,7 +382,7 @@ export default function InAppThemesScreen() {
               {item.id === 'cat' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('cat')}
+                    onPress={() => handleApplyThemePack('cat')}
                     style={[styles.applyBtn, { backgroundColor: '#8d5a3b' }]}
                   >
                     <Text style={styles.applyBtnText}>Apply Cat Theme</Text>
@@ -370,7 +398,7 @@ export default function InAppThemesScreen() {
               {item.id === 'sakura' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('mono')}
+                    onPress={() => handleApplyThemePack('mono')}
                     style={[styles.applyBtn, { backgroundColor: '#000000', borderWidth: 1, borderColor: '#2a2a2a' }]}
                   >
                     <Text style={styles.applyBtnText}>Apply Mono Theme</Text>
@@ -421,7 +449,7 @@ export default function InAppThemesScreen() {
               {item.id === 'spider' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('spider')}
+                    onPress={() => handleApplyThemePack('spider')}
                     style={[
                       styles.applyBtn,
                       { backgroundColor: '#7f1d1d', borderWidth: 1, borderColor: '#b91c1c' },
@@ -440,7 +468,7 @@ export default function InAppThemesScreen() {
               {item.id === 'purple' ? (
                 <View style={styles.applyActionRow}>
                   <Pressable
-                    onPress={() => setThemePack('purple')}
+                    onPress={() => handleApplyThemePack('purple')}
                     style={[
                       styles.applyBtn,
                       { backgroundColor: '#4d3b85', borderWidth: 1, borderColor: '#b794f4' },
@@ -466,7 +494,7 @@ export default function InAppThemesScreen() {
                 </Text>
               </Pressable>
               {isFreePlan ? (
-                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>Theme apply is locked for free users</Text>
+                <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>Start a 1-week free trial of this theme</Text>
               ) : (
                 <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>You can preview this theme design style</Text>
               )}
@@ -783,8 +811,8 @@ export default function InAppThemesScreen() {
 
             <Text style={[styles.modalNote, { color: theme.textSecondary }]}>
               {isFreePlan
-                ? 'Preview only. Applying this theme is currently locked on free plan.'
-                : 'Design preview mode enabled. Full implementation can include custom icons and backgrounds.'}
+                ? 'Trial mode. You can apply this theme for a free 7-day trial!'
+                : 'Design preview mode enabled. Full implementation includes custom icons and backgrounds.'}
             </Text>
           </View>
         </View>

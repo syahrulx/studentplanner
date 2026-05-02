@@ -119,14 +119,10 @@ export default ({ config }) => {
     },
     ios: {
       ...ios,
-      // Only include associatedDomains for EAS builds to prevent local provisioning profile errors
-      // with free Apple Developer accounts (Personal Teams).
-      ...(process.env.EAS_BUILD ? {
-        associatedDomains: [
-          ...(Array.isArray(ios.associatedDomains) ? ios.associatedDomains : []),
-          `applinks:${inviteHost}`,
-        ],
-      } : {}),
+      associatedDomains: [
+        ...(Array.isArray(ios.associatedDomains) ? ios.associatedDomains : []),
+        `applinks:${inviteHost}`,
+      ],
       infoPlist: {
         ...infoPlist,
         UIBackgroundModes: modes,
