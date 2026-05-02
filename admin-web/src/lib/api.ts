@@ -1324,6 +1324,7 @@ export type AdminServiceRow = {
   claimer_name?: string;
   report_count?: number;
   offer_count?: number;
+  university_name?: string;
 };
 
 export type AdminServiceReportRow = {
@@ -1382,6 +1383,17 @@ export async function listAdminServices(opts?: {
     for (const s of services) {
       s.author_name = pmap.get(s.author_id)?.name || 'Unknown';
       s.claimer_name = s.claimed_by ? (pmap.get(s.claimed_by)?.name || 'Unknown') : undefined;
+    }
+  }
+
+  const uniIds = [...new Set(services.map((s) => s.university_id).filter(Boolean))] as string[];
+  if (uniIds.length) {
+    const { data: unis } = await supabase.from('universities').select('id,name').in('id', uniIds);
+    const umap = new Map((unis ?? []).map((u: any) => [u.id, u.name as string]));
+    for (const s of services) {
+      if (s.university_id) {
+        s.university_name = umap.get(s.university_id) || s.university_id;
+      }
     }
   }
 

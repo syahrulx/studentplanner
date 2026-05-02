@@ -229,7 +229,22 @@ export async function createPost(input: CreatePostInput): Promise<CommunityPost>
 
 export async function updatePost(
   postId: string,
-  updates: Partial<Pick<CommunityPost, 'title' | 'body' | 'event_date' | 'event_time' | 'location' | 'expires_at' | 'status'>>
+  updates: Partial<
+    Pick<
+      CommunityPost,
+      | 'title'
+      | 'body'
+      | 'event_date'
+      | 'event_time'
+      | 'location'
+      | 'expires_at'
+      | 'status'
+      | 'university_id'
+      | 'campus'
+      | 'campus_id'
+      | 'image_url'
+    >
+  >
 ): Promise<void> {
   const { error } = await supabase
     .from('community_posts')

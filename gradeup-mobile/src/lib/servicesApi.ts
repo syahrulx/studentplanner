@@ -457,7 +457,7 @@ export async function updateService(
   id: string,
   patch: Partial<Pick<ServicePost,
     'title' | 'body' | 'image_url' | 'service_category' | 'price_type' | 'price_amount' |
-    'currency' | 'location' | 'deadline_at' | 'service_kind'
+    'currency' | 'location' | 'deadline_at' | 'service_kind' | 'university_id' | 'campus'
   >>
 ): Promise<void> {
   const { error } = await supabase

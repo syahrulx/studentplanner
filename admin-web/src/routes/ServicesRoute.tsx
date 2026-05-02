@@ -57,6 +57,8 @@ export function ServicesRoute() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
   const [catFilter, setCatFilter] = useState('all');
+  /** Narrow list to services that have at least one user report (moderation queue). */
+  const [reportFilter, setReportFilter] = useState<'all' | 'reported'>('all');
 
   // Detail modal
   const [selected, setSelected] = useState<AdminServiceRow | null>(null);
@@ -93,11 +95,15 @@ export function ServicesRoute() {
   };
 
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return items;
-    return items.filter((s) =>
+    let rows = items;
+    if (reportFilter === 'reported') {
+      rows = rows.filter((s) => (s.report_count ?? 0) > 0);
+    }
+    if (!searchQuery.trim()) return rows;
+    return rows.filter((s) =>
       matchesAdminSearch(searchQuery, s.id, s.title, s.body || '', s.author_name || '', s.claimer_name || ''),
     );
-  }, [items, searchQuery]);
+  }, [items, searchQuery, reportFilter]);
 
   const handleAction = async (action: string, id: string) => {
     const labels: Record<string, string> = {
@@ -134,7 +140,7 @@ export function ServicesRoute() {
       <MotionSection>
         <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Service Marketplace</div>
         <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Monitor, moderate, and manage all services across campuses.
+          Monitor, moderate, and manage all services across campuses. Filter by <strong className="text-slate-700 dark:text-slate-200">Reports: Reported only</strong> to review user-flagged listings — open a row for report reasons, then <strong className="text-slate-700 dark:text-slate-200">Delete service</strong> or clear reports.
         </div>
       </MotionSection>
 
@@ -227,6 +233,14 @@ export function ServicesRoute() {
                 <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
                   className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c === 'all' ? 'All categories' : c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Reports</div>
+                <select value={reportFilter} onChange={(e) => setReportFilter(e.target.value as 'all' | 'reported')}
+                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                  <option value="all">All services</option>
+                  <option value="reported">Reported only (has flags)</option>
                 </select>
               </label>
             </div>
@@ -354,6 +368,27 @@ export function ServicesRoute() {
               </div>
             </div>
 
+            {/* Location (university, campus, specific place) */}
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Location</div>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex gap-2">
+                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">University</dt>
+                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">
+                    {selected.university_name || selected.university_id || '—'}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">Campus</dt>
+                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">{selected.campus || '—'}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">Specific place</dt>
+                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">{selected.location || '—'}</dd>
+                </div>
+              </dl>
+            </div>
+
             {/* Delivery */}
             {selected.delivery_note && (
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/40 dark:bg-blue-950/30">
@@ -365,8 +400,11 @@ export function ServicesRoute() {
             {/* Reports */}
             <div className="mt-4">
               <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Reports ({reports.length})
+                User reports ({reports.length})
               </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Each row is a student submission. Use <span className="font-semibold text-slate-700 dark:text-slate-300">Delete service</span> below to permanently remove this listing from the marketplace when moderation confirms a violation.
+              </p>
               {loadingReports ? (
                 <div className="mt-2 text-sm text-slate-400">Loading…</div>
               ) : reports.length === 0 ? (

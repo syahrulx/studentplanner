@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
+import { LocationUniCampusBlock } from '@/components/LocationUniCampusBlock';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { PostType } from '@/src/lib/eventsApi';
 
@@ -58,24 +59,53 @@ export default function CreatePostScreen() {
   const [eventDate, setEventDate] = useState<Date | null>(null);
   const [eventTime, setEventTime] = useState('');
   const [location, setLocation] = useState('');
+  const [formUniversityId, setFormUniversityId] = useState<string | null>(null);
+  const [formCampusId, setFormCampusId] = useState<string | null>(null);
+  const [campusNameResolved, setCampusNameResolved] = useState<string | null>(null);
   const [hasExpiry, setHasExpiry] = useState(false);
   const [expiresAt, setExpiresAt] = useState<Date>(new Date(Date.now() + 7 * 86400000));
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [authorityRequest, setAuthorityRequest] = useState<eventsApi.AuthorityRequest | null>(null);
+  const [authorityLoaded, setAuthorityLoaded] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const locationDefaultsApplied = useRef(false);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
   const isAuthority = authorityRequest?.status === 'approved';
 
   useEffect(() => {
-    eventsApi.getMyAuthorityRequest().then(setAuthorityRequest);
+    eventsApi.getMyAuthorityRequest().then((r) => {
+      setAuthorityRequest(r);
+      setAuthorityLoaded(true);
+    });
   }, []);
+
+  useEffect(() => {
+    if (isEditing || !authorityLoaded || locationDefaultsApplied.current) return;
+    if (isAuthority && authorityRequest?.university_id) {
+      setFormUniversityId(authorityRequest.university_id);
+      if (authorityRequest.campus_id) {
+        setFormCampusId(authorityRequest.campus_id);
+        eventsApi.fetchCampuses(authorityRequest.university_id).then((camps) => {
+          const c = camps.find((x) => x.id === authorityRequest!.campus_id);
+          if (c) setCampusNameResolved(c.name);
+        });
+      }
+      locationDefaultsApplied.current = true;
+      return;
+    }
+    if (userUni) {
+      setFormUniversityId(userUni);
+      locationDefaultsApplied.current = true;
+    }
+  }, [isEditing, authorityLoaded, isAuthority, authorityRequest, userUni]);
 
   useEffect(() => {
     if (!editId) return;
     setLoadingEdit(true);
+    locationDefaultsApplied.current = true;
     eventsApi.fetchPost(editId).then((post) => {
       if (post) {
         setPostType(post.post_type);
@@ -84,6 +114,9 @@ export default function CreatePostScreen() {
         setExistingImageUrl(post.image_url);
         setEventTime(post.event_time || '');
         setLocation(post.location || '');
+        setFormUniversityId(post.university_id);
+        setFormCampusId(post.campus_id);
+        setCampusNameResolved(post.campus);
         if (post.event_date) setEventDate(new Date(post.event_date + 'T00:00:00'));
         if (post.expires_at) {
           setHasExpiry(true);
@@ -124,6 +157,9 @@ export default function CreatePostScreen() {
           image_url,
           event_date: eventDate ? eventDate.toISOString().split('T')[0] : null,
           event_time: eventTime.trim() || null,
+          university_id: formUniversityId,
+          campus_id: formCampusId,
+          campus: campusNameResolved,
           location: location.trim() || null,
           expires_at: hasExpiry ? expiresAt.toISOString() : null,
         });
@@ -133,8 +169,9 @@ export default function CreatePostScreen() {
           title: title.trim(),
           body: body.trim() || undefined,
           image_uri: imageUri || undefined,
-          university_id: authorityRequest?.university_id || userUni || undefined,
-          campus_id: authorityRequest?.campus_id || undefined,
+          university_id: formUniversityId || authorityRequest?.university_id || userUni || undefined,
+          campus_id: formCampusId || undefined,
+          campus: campusNameResolved || undefined,
           organization_id: authorityRequest?.organization_id || undefined,
           event_date: eventDate ? eventDate.toISOString().split('T')[0] : undefined,
           event_time: eventTime.trim() || undefined,
@@ -436,17 +473,19 @@ export default function CreatePostScreen() {
 
             <View style={[styles.separator, { backgroundColor: theme.border }]} />
 
-            {/* Location */}
-            <View style={styles.detailRow}>
-              <Feather name="map-pin" size={16} color={activeTint} style={styles.detailIcon} />
-              <Text style={[styles.detailLabel, { color: theme.text }]}>Location</Text>
-              <TextInput
-                style={[styles.detailInput, { color: theme.text }]}
-                placeholder="Optional"
-                placeholderTextColor={theme.textSecondary}
-                value={location}
-                onChangeText={setLocation}
-                textAlign="right"
+            <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+              <LocationUniCampusBlock
+                universityId={formUniversityId}
+                campusId={formCampusId}
+                locationDetail={location}
+                onUniversityIdChange={setFormUniversityId}
+                onCampusIdChange={(id, name) => {
+                  setFormCampusId(id);
+                  setCampusNameResolved(name);
+                }}
+                onLocationDetailChange={setLocation}
+                lockedUniversityId={isAuthority ? authorityRequest?.university_id ?? null : null}
+                accentColor={activeTint}
               />
             </View>
           </View>

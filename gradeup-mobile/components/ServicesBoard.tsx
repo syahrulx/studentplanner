@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,6 @@ import {
   RefreshControl,
   ScrollView,
   TextInput,
-  Platform,
-  ActionSheetIOS,
-  Alert,
   Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -52,6 +49,16 @@ const KIND_FILTERS: { id: ServiceKind | null; label: string }[] = [
   { id: 'offer',   label: 'Offers' },
 ];
 
+const SORT_FILTER_OPTIONS: {
+  id: 'newest' | 'price_asc' | 'price_desc' | 'deadline_asc';
+  label: string;
+}[] = [
+  { id: 'newest', label: 'Newest (default)' },
+  { id: 'price_asc', label: 'Price: Low to High' },
+  { id: 'price_desc', label: 'Price: High to Low' },
+  { id: 'deadline_asc', label: 'Deadline: Ending soonest' },
+];
+
 // ─── Utils ──────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
@@ -74,6 +81,8 @@ export default function ServicesBoard() {
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const userId = user?.id || null;
+  const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
+  const userCampusName = ((user as any)?.campus ?? '').trim() || null;
   // Match GlassTabBar height: 8 (top padding) + 64 (bar) + bottom inset (≥12).
   const tabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
 
@@ -87,17 +96,25 @@ export default function ServicesBoard() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [orderBy, setOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
 
-  // Location filter state
+  // Location filter state (aligned with Events: default uni = profile; campus optional id → name for API)
   const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
-  const [filterCampus, setFilterCampus] = useState<string | null>(null);
+  const [filterCampusId, setFilterCampusId] = useState<string | null>(null);
   const [universities, setUniversities] = useState<eventsApi.University[]>([]);
   const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
 
-  // Picker modal state
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [pickerData, setPickerData] = useState<{ id: string; name: string }[]>([]);
-  const [pickerTitle, setPickerTitle] = useState('');
-  const [pickerOnSelect, setPickerOnSelect] = useState<(id: string) => void>(() => () => {});
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [tempOrderBy, setTempOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
+  const [tempKind, setTempKind] = useState<ServiceKind | null>(null);
+  const [tempCategory, setTempCategory] = useState<string | null>(null);
+  const [tempFilterUniversity, setTempFilterUniversity] = useState<string | null>(null);
+  const [tempFilterCampusId, setTempFilterCampusId] = useState<string | null>(null);
+  const [uniSearchQuery, setUniSearchQuery] = useState('');
+  const [campusSearchQuery, setCampusSearchQuery] = useState('');
+  const [uniPickerExpanded, setUniPickerExpanded] = useState(true);
+  const [campusPickerExpanded, setCampusPickerExpanded] = useState(false);
+
+  /** Once true, we do not auto-set campus from profile again (user may have cleared). */
+  const campusProfileBootstrapDone = useRef(false);
 
   const [items, setItems] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +139,78 @@ export default function ServicesBoard() {
     checkIntro();
   }, []);
 
+  useEffect(() => {
+    eventsApi.fetchUniversities().then(setUniversities);
+  }, []);
+
+  const activeUni = filterUniversity !== null ? filterUniversity : userUni;
+
+  const currentUniToFetch = showFilterModal ? tempFilterUniversity : activeUni;
+
+  useEffect(() => {
+    if (currentUniToFetch) {
+      eventsApi.fetchCampuses(currentUniToFetch).then(setCampuses);
+    } else {
+      setCampuses([]);
+    }
+  }, [currentUniToFetch]);
+
+  useEffect(() => {
+    setCampusSearchQuery('');
+    setCampusPickerExpanded(false);
+  }, [tempFilterUniversity]);
+
+  /** Default campus filter from profile (same uni + name match), once. */
+  useEffect(() => {
+    if (campusProfileBootstrapDone.current || !userUni || !userCampusName) return;
+    let cancelled = false;
+    eventsApi.fetchCampuses(userUni).then((camps) => {
+      if (cancelled) return;
+      campusProfileBootstrapDone.current = true;
+      const m = camps.find((c) => c.name.trim().toLowerCase() === userCampusName.toLowerCase());
+      if (m) setFilterCampusId(m.id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userUni, userCampusName]);
+
+  useEffect(() => {
+    if (!filterCampusId || !campuses.length) return;
+    if (!campuses.some((c) => c.id === filterCampusId)) setFilterCampusId(null);
+  }, [activeUni, campuses, filterCampusId]);
+
+  const filteredUniversitiesList = useMemo(() => {
+    const q = uniSearchQuery.trim().toLowerCase();
+    let list = universities;
+    if (q) {
+      list = universities.filter(
+        (u) => u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)
+      );
+    } else if (userUni && showFilterModal) {
+      list = [...universities].sort((a, b) => {
+        if (a.id === userUni) return -1;
+        if (b.id === userUni) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    return list;
+  }, [universities, uniSearchQuery, userUni, showFilterModal]);
+
+  const filteredCampusesList = useMemo(() => {
+    const q = campusSearchQuery.trim().toLowerCase();
+    if (!campuses.length) return [];
+    if (!q) return [...campuses].sort((a, b) => a.name.localeCompare(b.name));
+    return campuses.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+    );
+  }, [campuses, campusSearchQuery]);
+
+  const campusNameForQuery = useMemo(() => {
+    if (!filterCampusId) return undefined;
+    return campuses.find((c) => c.id === filterCampusId)?.name;
+  }, [filterCampusId, campuses]);
+
   const load = useCallback(async () => {
     try {
       const data = await servicesApi.fetchServices({
@@ -131,10 +220,9 @@ export default function ServicesBoard() {
         status,
         search: debouncedSearch || null,
         orderBy,
-        universityId: filterUniversity || undefined,
-        campus: filterCampus || undefined,
+        universityId: scope === 'all' ? (activeUni || undefined) : undefined,
+        campus: scope === 'all' ? campusNameForQuery : undefined,
       });
-      // Hide cancelled in Browse unless explicitly filtered
       const filtered = scope === 'all' && !status
         ? data.filter((s) => s.service_status !== 'cancelled')
         : data;
@@ -142,12 +230,8 @@ export default function ServicesBoard() {
     } catch (e) {
       console.error('[ServicesBoard] fetch error:', e);
     }
-  }, [scope, kind, category, status, debouncedSearch, orderBy, filterUniversity, filterCampus]);
+  }, [scope, kind, category, status, debouncedSearch, orderBy, activeUni, campusNameForQuery]);
 
-  // Refetches both on focus AND when filters/search change while focused
-  // (useFocusEffect re-runs when its callback identity changes while in focus).
-  // We only flip `loading` to true on the very first load to avoid flashing
-  // the spinner every time the user changes a filter.
   useFocusEffect(
     useCallback(() => {
       load().finally(() => setLoading(false));
@@ -174,20 +258,6 @@ export default function ServicesBoard() {
       setShowVerificationModal(true);
     }
   }, []);
-
-  useEffect(() => {
-    eventsApi.fetchUniversities().then(setUniversities);
-  }, []);
-
-  useEffect(() => {
-    if (filterUniversity) {
-      eventsApi.fetchCampuses(filterUniversity).then(setCampuses);
-    } else {
-      setCampuses([]);
-      setFilterCampus(null);
-    }
-  }, [filterUniversity]);
-
   // ─── Counts for scope tabs ────────────────────────────────────────────────
   const [mineCount, setMineCount] = useState<number | null>(null);
   const [takenCount, setTakenCount] = useState<number | null>(null);
@@ -207,137 +277,102 @@ export default function ServicesBoard() {
     }, [userId])
   );
 
-  // ─── Renderers ────────────────────────────────────────────────────────────
+  // ─── Browse filters (grouped sheet + chips, same pattern as Events) ───────
 
-  const handleSortOptions = () => {
-    const options = ['Cancel', 'Newest (Default)', 'Price: Low to High', 'Price: High to Low', 'Deadline: Ending Soonest'];
-    const mapping: Record<number, 'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'> = {
-      1: 'newest',
-      2: 'price_asc',
-      3: 'price_desc',
-      4: 'deadline_asc',
-    };
+  const hasActiveBrowseFilters = useMemo(
+    () =>
+      orderBy !== 'newest' ||
+      kind !== null ||
+      category !== null ||
+      filterUniversity !== null ||
+      filterCampusId !== null,
+    [orderBy, kind, category, filterUniversity, filterCampusId]
+  );
 
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: 0,
-          title: 'Sort Services',
-        },
-        (buttonIndex) => {
-          if (buttonIndex !== 0) {
-            setOrderBy(mapping[buttonIndex]);
-          }
-        }
-      );
-    } else {
-      Alert.alert('Sort Services', 'Choose a sorting option:', [
-        { text: 'Newest (Default)', onPress: () => setOrderBy('newest') },
-        { text: 'Price: Low to High', onPress: () => setOrderBy('price_asc') },
-        { text: 'Price: High to Low', onPress: () => setOrderBy('price_desc') },
-        { text: 'Deadline: Ending Soonest', onPress: () => setOrderBy('deadline_asc') },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+  const activeBrowseChips = useMemo(() => {
+    const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (orderBy !== 'newest') {
+      const sortLabel =
+        orderBy === 'price_asc'
+          ? 'Sort: Low → High'
+          : orderBy === 'price_desc'
+            ? 'Sort: High → Low'
+            : orderBy === 'deadline_asc'
+              ? 'Sort: Ending soon'
+              : 'Sort';
+      chips.push({ key: 'sort', label: sortLabel, onClear: () => setOrderBy('newest') });
     }
-  };
-
-  const handleLocationOptions = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Everywhere', 'Select University', 'Select Campus'],
-          cancelButtonIndex: 0,
-          title: 'Filter by Location',
+    if (filterCampusId) {
+      const cn = campuses.find((c) => c.id === filterCampusId)?.name ?? 'Campus';
+      chips.push({
+        key: 'campus',
+        label: cn,
+        onClear: () => {
+          setFilterCampusId(null);
+          campusProfileBootstrapDone.current = true;
         },
-        (buttonIndex) => {
-          if (buttonIndex === 1) {
-            setFilterUniversity(null);
-            setFilterCampus(null);
-          } else if (buttonIndex === 2) {
-            setPickerTitle('Select University');
-            setPickerData([{ id: '', name: 'Everywhere' }, ...universities.map(u => ({ id: u.id, name: u.name.toUpperCase() }))]);
-            setPickerOnSelect(() => (id: string) => {
-              setFilterUniversity(id || null);
-              setFilterCampus(null);
-            });
-            setPickerVisible(true);
-          } else if (buttonIndex === 3) {
-            if (!filterUniversity) {
-               // Default to user's university if they try to select campus without picking a uni first
-               if ((user as any)?.university_id || (user as any)?.universityId) {
-                 const uid = (user as any)?.university_id || (user as any)?.universityId;
-                 setFilterUniversity(uid);
-                 eventsApi.fetchCampuses(uid).then(camps => {
-                   setPickerTitle('Select Campus');
-                   setPickerData([{ id: '', name: 'Any Campus' }, ...camps.map(c => ({ id: c.name, name: c.name }))]);
-                   setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
-                   setPickerVisible(true);
-                 });
-                 return;
-               } else {
-                 Alert.alert('Select University First', 'Please select a university before filtering by campus.');
-                 return;
-               }
-            }
-            setPickerTitle('Select Campus');
-            setPickerData([{ id: '', name: 'Any Campus' }, ...campuses.map(c => ({ id: c.name, name: c.name }))]);
-            setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
-            setPickerVisible(true);
-          }
-        }
-      );
-    } else {
-      Alert.alert('Location', 'Filter by:', [
-        { text: 'Everywhere', onPress: () => { setFilterUniversity(null); setFilterCampus(null); } },
-        { text: 'Select University', onPress: () => {
-            setPickerTitle('Select University');
-            setPickerData([{ id: '', name: 'Everywhere' }, ...universities.map(u => ({ id: u.id, name: u.name.toUpperCase() }))]);
-            setPickerOnSelect(() => (id: string) => {
-              setFilterUniversity(id || null);
-              setFilterCampus(null);
-            });
-            setPickerVisible(true);
-        }},
-        { text: 'Select Campus', onPress: () => {
-            if (!filterUniversity) return Alert.alert('Select University First', 'Please select a university before filtering by campus.');
-            setPickerTitle('Select Campus');
-            setPickerData([{ id: '', name: 'Any Campus' }, ...campuses.map(c => ({ id: c.name, name: c.name }))]);
-            setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
-            setPickerVisible(true);
-        }},
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+      });
+    } else if (filterUniversity !== null) {
+      chips.push({
+        key: 'uni',
+        label: universities.find((u) => u.id === filterUniversity)?.name?.toUpperCase() ?? filterUniversity.toUpperCase(),
+        onClear: () => {
+          setFilterUniversity(null);
+          setFilterCampusId(null);
+        },
+      });
     }
-  };
+    if (kind !== null) {
+      const kl = KIND_FILTERS.find((k) => k.id === kind)?.label ?? '';
+      chips.push({ key: 'kind', label: kl, onClear: () => setKind(null) });
+    }
+    if (category) {
+      const cat = SERVICE_CATEGORIES.find((c) => c.id === category);
+      chips.push({
+        key: 'cat',
+        label: cat?.label ?? category,
+        onClear: () => setCategory(null),
+      });
+    }
+    return chips;
+  }, [orderBy, filterUniversity, filterCampusId, kind, category, campuses, universities]);
 
-  const renderPickerModal = () => (
-    <Modal visible={pickerVisible} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
-      <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
-        <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={e => e.stopPropagation()}>
-          <View style={styles.grabber} />
-          <View style={styles.sheetHeader}>
-            <Text style={[styles.sheetTitle, { color: theme.text }]}>{pickerTitle}</Text>
-          </View>
-          <FlatList
-            data={pickerData}
-            keyExtractor={(item, index) => item.id || index.toString()}
-            style={{ maxHeight: 400 }}
-            renderItem={({ item }) => (
-              <Pressable
-                style={[styles.sheetItem, { borderBottomColor: theme.border }]}
-                onPress={() => {
-                  pickerOnSelect(item.id);
-                  setPickerVisible(false);
-                }}
-              >
-                <Text style={[styles.sheetItemText, { color: theme.text }]}>{item.name}</Text>
-              </Pressable>
-            )}
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
+  const openServicesFilterModal = useCallback(() => {
+    setTempOrderBy(orderBy);
+    setTempKind(kind);
+    setTempCategory(category);
+    const nextUni = filterUniversity !== null ? filterUniversity : userUni || null;
+    setTempFilterUniversity(nextUni);
+    setTempFilterCampusId(filterCampusId);
+    setUniSearchQuery('');
+    setCampusSearchQuery('');
+    setUniPickerExpanded(!nextUni);
+    setCampusPickerExpanded(false);
+    setShowFilterModal(true);
+  }, [orderBy, kind, category, filterUniversity, filterCampusId, userUni]);
+
+  const resetTempFilters = useCallback(() => {
+    setTempOrderBy('newest');
+    setTempKind(null);
+    setTempCategory(null);
+    setTempFilterUniversity(null);
+    setTempFilterCampusId(null);
+    setUniSearchQuery('');
+    setCampusSearchQuery('');
+    setUniPickerExpanded(true);
+    setCampusPickerExpanded(false);
+  }, []);
+
+  const tempHasActiveSettings = useMemo(
+    () =>
+      tempOrderBy !== 'newest' ||
+      tempKind !== null ||
+      tempCategory !== null ||
+      tempFilterUniversity !== null ||
+      tempFilterCampusId !== null ||
+      !!uniSearchQuery.trim() ||
+      !!campusSearchQuery.trim(),
+    [tempOrderBy, tempKind, tempCategory, tempFilterUniversity, tempFilterCampusId, uniSearchQuery, campusSearchQuery]
   );
 
   const renderHeader = () => (
@@ -361,155 +396,98 @@ export default function ServicesBoard() {
           ) : null}
         </View>
 
-        {/* Scope tabs (Browse / My Requests / My Tasks) */}
-        <View style={[styles.scopeBar, { backgroundColor: theme.backgroundSecondary }]}>
-          {SCOPE_TABS.map((s) => {
-            const active = scope === s.id;
-            const count = s.id === 'mine' ? mineCount : s.id === 'taken' ? takenCount : null;
-            return (
-              <Pressable
-                key={s.id}
-                onPress={() => setScope(s.id)}
-                style={[
-                  styles.scopeTab,
-                  active && { backgroundColor: theme.card },
-                ]}
-              >
-                <Text
+        {/* Scope tabs + filter control (Browse: sliders on the right, same row as tabs) */}
+        <View style={styles.scopeRow}>
+          <View style={[styles.scopeBar, { backgroundColor: theme.backgroundSecondary, flex: 1 }]}>
+            {SCOPE_TABS.map((s) => {
+              const active = scope === s.id;
+              const count = s.id === 'mine' ? mineCount : s.id === 'taken' ? takenCount : null;
+              return (
+                <Pressable
+                  key={s.id}
+                  onPress={() => setScope(s.id)}
                   style={[
-                    styles.scopeText,
-                    { color: active ? theme.text : theme.textSecondary },
+                    styles.scopeTab,
+                    active && { backgroundColor: theme.card },
                   ]}
                 >
-                  {s.label}
-                </Text>
-                {count != null && count > 0 && (
-                  <View style={[styles.scopeBadge, { backgroundColor: active ? theme.text : theme.textSecondary }]}>
-                    <Text style={[styles.scopeBadgeText, { color: theme.background }]}>
-                      {count}
-                    </Text>
-                  </View>
+                  <Text
+                    style={[
+                      styles.scopeText,
+                      { color: active ? theme.text : theme.textSecondary },
+                    ]}
+                  >
+                    {s.label}
+                  </Text>
+                  {count != null && count > 0 && (
+                    <View style={[styles.scopeBadge, { backgroundColor: active ? theme.text : theme.textSecondary }]}>
+                      <Text style={[styles.scopeBadgeText, { color: theme.background }]}>
+                        {count}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+          {scope === 'all' && (
+            <View style={[styles.scopeHeaderActions, { backgroundColor: theme.background }]}>
+              <Pressable
+                onPress={openServicesFilterModal}
+                style={({ pressed }) => [
+                  styles.filterIconBtn,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityLabel="Filter and sort services"
+              >
+                <Feather name="sliders" size={18} color={theme.text} />
+                {hasActiveBrowseFilters && (
+                  <View style={[styles.filterIconBtnDot, { backgroundColor: theme.primary }]} />
                 )}
               </Pressable>
-            );
-          })}
+            </View>
+          )}
         </View>
-      </View>
 
-      {/* Edge-to-edge horizontal filter rail (only on Browse) */}
-      {scope === 'all' && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.pillsRow}
-        >
-          {/* Sort Button */}
-          <Pressable
-            onPress={handleSortOptions}
-            style={[
-              styles.pill,
-              { backgroundColor: theme.card, borderColor: theme.border, marginRight: 4 },
-              orderBy !== 'newest' && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
-            ]}
+        {scope === 'all' && activeBrowseChips.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.browseChipsRow}
           >
-            <Feather name="bar-chart-2" size={14} color={orderBy !== 'newest' ? theme.primary : theme.textSecondary} style={{ transform: [{ rotate: '90deg' }] }} />
-            <Text style={[styles.pillText, { color: orderBy !== 'newest' ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
-              {orderBy === 'newest' ? 'Sort' : 
-               orderBy === 'price_asc' ? 'Low to High' :
-               orderBy === 'price_desc' ? 'High to Low' : 'Ending Soon'}
-            </Text>
-          </Pressable>
-
-          {/* Location Button */}
-          <Pressable
-            onPress={handleLocationOptions}
-            style={[
-              styles.pill,
-              { backgroundColor: theme.card, borderColor: theme.border, marginRight: 4 },
-              (filterUniversity || filterCampus) && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
-            ]}
-          >
-            <Feather name="map-pin" size={14} color={(filterUniversity || filterCampus) ? theme.primary : theme.textSecondary} />
-            <Text style={[styles.pillText, { color: (filterUniversity || filterCampus) ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
-              {filterCampus 
-                ? filterCampus 
-                : filterUniversity 
-                  ? filterUniversity.toUpperCase() 
-                  : 'Everywhere'}
-            </Text>
-          </Pressable>
-
-          <View style={[styles.pillDivider, { backgroundColor: theme.border }]} />
-
-          {KIND_FILTERS.map((k) => {
-            const active = kind === k.id;
-            return (
-              <Pressable
-                key={String(k.id)}
-                onPress={() => setKind(k.id)}
+            {activeBrowseChips.map((c) => (
+              <View
+                key={c.key}
                 style={[
-                  styles.pill,
-                  active
-                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
+                  styles.browseActiveChip,
+                  { backgroundColor: theme.primary + '14', borderColor: theme.primary + '33' },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.pillText,
-                    { color: active ? theme.textInverse : theme.textSecondary },
-                  ]}
-                >
-                  {k.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-
-          {/* divider */}
-          <View style={[styles.pillDivider, { backgroundColor: theme.border }]} />
-
-          {/* Categories */}
-          <Pressable
-            onPress={() => setCategory(null)}
-            style={[
-              styles.pill,
-              !category
-                ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                : { backgroundColor: theme.card, borderColor: theme.border },
-            ]}
-          >
-            <Text style={[styles.pillText, { color: !category ? theme.textInverse : theme.textSecondary }]}>
-              All categories
-            </Text>
-          </Pressable>
-          {SERVICE_CATEGORIES.map((c) => {
-            const active = category === c.id;
-            return (
-              <Pressable
-                key={c.id}
-                onPress={() => setCategory(active ? null : c.id)}
-                style={[
-                  styles.pill,
-                  active
-                    ? { backgroundColor: c.tint + '22', borderColor: c.tint }
-                    : { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-              >
-                <Feather name={c.icon as any} size={13} color={active ? c.tint : theme.textSecondary} />
-                <Text
-                  style={[
-                    styles.pillText,
-                    { color: active ? c.tint : theme.textSecondary },
-                  ]}
-                >
+                <Text style={[styles.browseActiveChipText, { color: theme.primary }]} numberOfLines={1}>
                   {c.label}
                 </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      )}
+                <Pressable onPress={c.onClear} hitSlop={8}>
+                  <Feather name="x" size={13} color={theme.primary} />
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              onPress={() => {
+                setOrderBy('newest');
+                setKind(null);
+                setCategory(null);
+                setFilterUniversity(null);
+                setFilterCampusId(null);
+                campusProfileBootstrapDone.current = true;
+              }}
+              style={[styles.browseActiveChip, { backgroundColor: theme.card, borderColor: theme.border }]}
+            >
+              <Text style={[styles.browseActiveChipText, { color: theme.textSecondary }]}>Clear all</Text>
+            </Pressable>
+          </ScrollView>
+        )}
+      </View>
     </View>
   );
 
@@ -758,8 +736,6 @@ export default function ServicesBoard() {
         <Feather name="plus" size={22} color={theme.textInverse} />
       </Pressable>
 
-      {renderPickerModal()}
-
       {/* Student Verification Gate */}
       <StudentVerificationModal
         visible={showVerificationModal}
@@ -769,6 +745,419 @@ export default function ServicesBoard() {
           router.push('/services/new' as any);
         }}
       />
+=======
+      <Modal
+        visible={showFilterModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFilterModal(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowFilterModal(false)}>
+          <Pressable
+            style={[styles.filterSheet, { backgroundColor: theme.card }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.grabber} />
+
+            <View style={styles.filterSheetHeader}>
+              <Pressable
+                onPress={() => setShowFilterModal(false)}
+                hitSlop={10}
+                style={styles.filterSheetHeaderSide}
+              >
+                <Text style={[styles.sheetCancel, { color: theme.textSecondary }]}>Cancel</Text>
+              </Pressable>
+              <Text style={[styles.filterSheetTitle, { color: theme.text }]}>Filters</Text>
+              <Pressable
+                onPress={resetTempFilters}
+                hitSlop={10}
+                style={[styles.filterSheetHeaderSide, { alignItems: 'flex-end' }]}
+                disabled={!tempHasActiveSettings}
+              >
+                <Text
+                  style={[
+                    styles.sheetReset,
+                    { color: theme.primary, opacity: tempHasActiveSettings ? 1 : 0.35 },
+                  ]}
+                >
+                  Reset
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 520 }}
+              contentContainerStyle={{ paddingBottom: 8 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>SORT</Text>
+              {SORT_FILTER_OPTIONS.map((opt) => {
+                const sel = tempOrderBy === opt.id;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    onPress={() => setTempOrderBy(opt.id)}
+                    style={[
+                      styles.filterOptionRow,
+                      {
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: sel ? theme.primary : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.filterOptionLabel, { color: theme.text }]}>{opt.label}</Text>
+                    {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                  </Pressable>
+                );
+              })}
+
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>TYPE</Text>
+              {KIND_FILTERS.map((kf) => {
+                const sel = tempKind === kf.id;
+                return (
+                  <Pressable
+                    key={String(kf.id)}
+                    onPress={() => setTempKind(kf.id)}
+                    style={[
+                      styles.filterOptionRow,
+                      {
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: sel ? theme.primary : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.filterOptionLabel, { color: theme.text }]}>{kf.label}</Text>
+                    {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                  </Pressable>
+                );
+              })}
+
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>UNIVERSITY</Text>
+              <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>
+                Defaults to your university; type to search or pick from the list.
+              </Text>
+              {tempFilterUniversity && !uniPickerExpanded ? (
+                <View
+                  style={[
+                    styles.filterCollapsedRow,
+                    { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                  ]}
+                >
+                  <Feather name="award" size={16} color={theme.primary} />
+                  <Text style={[styles.filterCollapsedTitle, { color: theme.text }]} numberOfLines={2}>
+                    {universities.find((u) => u.id === tempFilterUniversity)?.name ||
+                      tempFilterUniversity.toUpperCase()}
+                  </Text>
+                  <Pressable onPress={() => setUniPickerExpanded(true)} hitSlop={8}>
+                    <Text style={[styles.filterChangeLink, { color: theme.primary }]}>Change</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setTempFilterUniversity(null);
+                      setTempFilterCampusId(null);
+                      setUniPickerExpanded(true);
+                    }}
+                    hitSlop={6}
+                  >
+                    <Feather name="x-circle" size={18} color={theme.textSecondary} />
+                  </Pressable>
+                </View>
+              ) : null}
+              {(!tempFilterUniversity || uniPickerExpanded) && (
+                <>
+                  {tempFilterUniversity && uniPickerExpanded ? (
+                    <Pressable
+                      onPress={() => {
+                        setUniPickerExpanded(false);
+                        setUniSearchQuery('');
+                      }}
+                      hitSlop={8}
+                      style={styles.filterDoneRow}
+                    >
+                      <Text style={[styles.filterDoneLink, { color: theme.primary }]}>Done</Text>
+                    </Pressable>
+                  ) : null}
+                  <View
+                    style={[
+                      styles.inputRow,
+                      { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Feather name="search" size={16} color={theme.textSecondary} />
+                    <TextInput
+                      style={[styles.input, { color: theme.text }]}
+                      placeholder="Search universities…"
+                      placeholderTextColor={theme.textSecondary}
+                      value={uniSearchQuery}
+                      onChangeText={setUniSearchQuery}
+                      autoCorrect={false}
+                      autoCapitalize="none"
+                    />
+                    {uniSearchQuery ? (
+                      <Pressable onPress={() => setUniSearchQuery('')} hitSlop={6}>
+                        <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <View
+                    style={[
+                      styles.searchListWrap,
+                      { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Pressable
+                      style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                      onPress={() => {
+                        setTempFilterUniversity(null);
+                        setTempFilterCampusId(null);
+                        setUniSearchQuery('');
+                        setUniPickerExpanded(true);
+                      }}
+                    >
+                      <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
+                      {!tempFilterUniversity ? (
+                        <Feather name="check" size={18} color={theme.primary} />
+                      ) : null}
+                    </Pressable>
+                    <ScrollView
+                      style={styles.searchListScroll}
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {filteredUniversitiesList.length === 0 ? (
+                        <Text style={[styles.searchEmptyHint, { color: theme.textSecondary }]}>
+                          No universities match your search.
+                        </Text>
+                      ) : (
+                        filteredUniversitiesList.map((item) => {
+                          const sel = tempFilterUniversity === item.id;
+                          return (
+                            <Pressable
+                              key={item.id}
+                              style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                              onPress={() => {
+                                setTempFilterUniversity(item.id);
+                                setTempFilterCampusId(null);
+                                setUniSearchQuery('');
+                                setUniPickerExpanded(false);
+                              }}
+                            >
+                              <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
+                                {item.name}
+                              </Text>
+                              {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
+                </>
+              )}
+
+              {tempFilterUniversity ? (
+                <>
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CAMPUS</Text>
+                  <Text style={[styles.fieldHint, { color: theme.textSecondary }]}>
+                    Optional. Tap to search campuses for this university.
+                  </Text>
+                  {tempFilterCampusId && !campusPickerExpanded ? (
+                    <View
+                      style={[
+                        styles.filterCollapsedRow,
+                        { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                    >
+                      <Feather name="map-pin" size={16} color={theme.primary} />
+                      <Text style={[styles.filterCollapsedTitle, { color: theme.text }]} numberOfLines={2}>
+                        {campuses.find((c) => c.id === tempFilterCampusId)?.name ?? 'Campus'}
+                      </Text>
+                      <Pressable onPress={() => setCampusPickerExpanded(true)} hitSlop={8}>
+                        <Text style={[styles.filterChangeLink, { color: theme.primary }]}>Change</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setTempFilterCampusId(null)} hitSlop={6}>
+                        <Feather name="x-circle" size={18} color={theme.textSecondary} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {!tempFilterCampusId && !campusPickerExpanded ? (
+                    <Pressable
+                      style={[
+                        styles.filterCompactTapRow,
+                        { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                      onPress={() => setCampusPickerExpanded(true)}
+                    >
+                      <Feather name="map-pin" size={16} color={theme.textSecondary} />
+                      <View style={styles.filterCompactTapTextCol}>
+                        <Text style={[styles.filterCompactTapText, { color: theme.text }]}>Any campus</Text>
+                        <Text style={[styles.filterCompactTapHint, { color: theme.textSecondary }]}>
+                          Tap to search campuses
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={18} color={theme.textSecondary} />
+                    </Pressable>
+                  ) : null}
+                  {campusPickerExpanded ? (
+                    <>
+                      <Pressable
+                        onPress={() => {
+                          setCampusPickerExpanded(false);
+                          setCampusSearchQuery('');
+                        }}
+                        hitSlop={8}
+                        style={styles.filterDoneRow}
+                      >
+                        <Text style={[styles.filterDoneLink, { color: theme.primary }]}>Done</Text>
+                      </Pressable>
+                      <View
+                        style={[
+                          styles.inputRow,
+                          { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                        ]}
+                      >
+                        <Feather name="search" size={16} color={theme.textSecondary} />
+                        <TextInput
+                          style={[styles.input, { color: theme.text }]}
+                          placeholder="Search campuses…"
+                          placeholderTextColor={theme.textSecondary}
+                          value={campusSearchQuery}
+                          onChangeText={setCampusSearchQuery}
+                          autoCorrect={false}
+                          autoCapitalize="none"
+                        />
+                        {campusSearchQuery ? (
+                          <Pressable onPress={() => setCampusSearchQuery('')} hitSlop={6}>
+                            <Feather name="x-circle" size={16} color={theme.textSecondary} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                      <View
+                        style={[
+                          styles.searchListWrap,
+                          { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                        ]}
+                      >
+                        <Pressable
+                          style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                          onPress={() => {
+                            setTempFilterCampusId(null);
+                            setCampusSearchQuery('');
+                            setCampusPickerExpanded(false);
+                          }}
+                        >
+                          <Text style={[styles.searchHitText, { color: theme.text }]}>Any campus</Text>
+                          {!tempFilterCampusId ? (
+                            <Feather name="check" size={18} color={theme.primary} />
+                          ) : null}
+                        </Pressable>
+                        <ScrollView
+                          style={styles.searchListScroll}
+                          nestedScrollEnabled
+                          keyboardShouldPersistTaps="handled"
+                        >
+                          {filteredCampusesList.length === 0 ? (
+                            <Text style={[styles.searchEmptyHint, { color: theme.textSecondary }]}>
+                              {campusSearchQuery.trim()
+                                ? 'No campuses match your search.'
+                                : 'No campuses loaded for this university.'}
+                            </Text>
+                          ) : (
+                            filteredCampusesList.map((item) => {
+                              const sel = tempFilterCampusId === item.id;
+                              return (
+                                <Pressable
+                                  key={item.id}
+                                  style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
+                                  onPress={() => {
+                                    setTempFilterCampusId(item.id);
+                                    setCampusSearchQuery('');
+                                    setCampusPickerExpanded(false);
+                                  }}
+                                >
+                                  <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
+                                    {item.name}
+                                  </Text>
+                                  {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                                </Pressable>
+                              );
+                            })
+                          )}
+                        </ScrollView>
+                      </View>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>CATEGORY</Text>
+              <View style={styles.categoryChipWrap}>
+                <Pressable
+                  onPress={() => setTempCategory(null)}
+                  style={[
+                    styles.modalCategoryPill,
+                    !tempCategory
+                      ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                      : { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modalCategoryPillText,
+                      { color: !tempCategory ? theme.textInverse : theme.textSecondary },
+                    ]}
+                  >
+                    All categories
+                  </Text>
+                </Pressable>
+                {SERVICE_CATEGORIES.map((c) => {
+                  const active = tempCategory === c.id;
+                  return (
+                    <Pressable
+                      key={c.id}
+                      onPress={() => setTempCategory(active ? null : c.id)}
+                      style={[
+                        styles.modalCategoryPill,
+                        active
+                          ? { backgroundColor: c.tint + '22', borderColor: c.tint }
+                          : { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                    >
+                      <Feather name={c.icon as any} size={13} color={active ? c.tint : theme.textSecondary} />
+                      <Text
+                        style={[styles.modalCategoryPillText, { color: active ? c.tint : theme.textSecondary }]}
+                      >
+                        {c.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.applyBtn,
+                { backgroundColor: theme.primary },
+                pressed && { opacity: 0.85 },
+              ]}
+              onPress={() => {
+                setOrderBy(tempOrderBy);
+                setKind(tempKind);
+                setCategory(tempCategory);
+                setFilterUniversity(tempFilterUniversity || null);
+                setFilterCampusId(tempFilterCampusId || null);
+                setUniSearchQuery('');
+                setCampusSearchQuery('');
+                setShowFilterModal(false);
+              }}
+            >
+              <Text style={[styles.applyBtnText, { color: theme.textInverse }]}>Apply filters</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+>>>>>>> origin/dev-izwan
     </View>
   );
 }
@@ -799,11 +1188,55 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
+  scopeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  scopeHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 4,
+  },
+  filterIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterIconBtnDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  browseChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 4,
+  },
+  browseActiveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  browseActiveChipText: { fontSize: 12, fontWeight: '600', maxWidth: 200 },
+
   scopeBar: {
     flexDirection: 'row',
     padding: 3,
     borderRadius: 11,
-    marginBottom: 12,
     gap: 2,
   },
   scopeTab: {
@@ -825,29 +1258,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scopeBadgeText: { fontSize: 11, fontWeight: '700' },
-
-  pillsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  pillText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
-  pillDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 18,
-    marginHorizontal: 4,
-  },
 
   // List
   listContent: { paddingHorizontal: 16 },
@@ -1011,8 +1421,151 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingTop: 12,
     paddingBottom: 32,
+    paddingHorizontal: 20,
     maxHeight: '80%',
   },
+  filterSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    maxHeight: '92%',
+  },
+  filterSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  filterSheetHeaderSide: { minWidth: 72 },
+  filterSheetTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
+  pickerOnlyHeader: {
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(150,150,150,0.2)',
+    marginBottom: 4,
+  },
+  sheetCancel: { fontSize: 15, fontWeight: '500' },
+  sheetReset: { fontSize: 15, fontWeight: '600' },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginTop: 18,
+    marginBottom: 8,
+    paddingLeft: 4,
+  },
+  fieldHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+    marginTop: -4,
+    marginBottom: 10,
+    paddingLeft: 4,
+  },
+  searchListWrap: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  searchListScroll: { maxHeight: 220 },
+  searchHitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  searchHitText: { flex: 1, fontSize: 15, fontWeight: '500' },
+  searchEmptyHint: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  filterCollapsedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 4,
+  },
+  filterCollapsedTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    minWidth: 0,
+  },
+  filterChangeLink: { fontSize: 14, fontWeight: '700' },
+  filterDoneRow: { alignSelf: 'flex-end', marginBottom: 6, paddingVertical: 4 },
+  filterDoneLink: { fontSize: 14, fontWeight: '700' },
+  filterCompactTapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 4,
+  },
+  filterCompactTapTextCol: { flex: 1, minWidth: 0 },
+  filterCompactTapText: { fontSize: 15, fontWeight: '600' },
+  filterCompactTapHint: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+  },
+  input: { flex: 1, fontSize: 15, fontWeight: '500', padding: 0 },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+  },
+  filterOptionLabel: { flex: 1, fontSize: 15, fontWeight: '500' },
+  categoryChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  modalCategoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  modalCategoryPillText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
+  applyBtn: {
+    marginTop: 18,
+    paddingVertical: 15,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyBtnText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
   grabber: {
     width: 40,
     height: 5,
