@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, KeyboardAvoidingView, Dimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import Feather from '@expo/vector-icons/Feather';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

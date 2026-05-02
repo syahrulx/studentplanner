@@ -745,7 +745,6 @@ export default function ServicesBoard() {
           router.push('/services/new' as any);
         }}
       />
-=======
       <Modal
         visible={showFilterModal}
         animationType="slide"
@@ -1157,7 +1156,6 @@ export default function ServicesBoard() {
           </Pressable>
         </Pressable>
       </Modal>
->>>>>>> origin/dev-izwan
     </View>
   );
 }
