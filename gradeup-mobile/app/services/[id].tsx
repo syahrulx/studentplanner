@@ -18,6 +18,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -292,6 +293,20 @@ export default function ServiceDetailScreen() {
       Alert.alert('Limit reached', 'You can attach up to 3 images.');
       return;
     }
+
+    const processImage = async (uri: string) => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        if (fileInfo.exists && fileInfo.size && fileInfo.size > 5 * 1024 * 1024) {
+          Alert.alert('File too large', 'Image must be under 5MB.');
+          return;
+        }
+      } catch (e) {
+        console.error('File size check failed', e);
+      }
+      setDeliveryImages((prev) => [...prev, uri]);
+    };
+
     Alert.alert('Attach Proof', 'Choose an image source', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -301,10 +316,10 @@ export default function ServiceDetailScreen() {
           if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
           const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
-            quality: 0.8,
+            quality: 0.5,
           });
           if (!result.canceled && result.assets[0]) {
-            setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
+            await processImage(result.assets[0].uri);
           }
         },
       },
@@ -317,7 +332,7 @@ export default function ServiceDetailScreen() {
             allowsEditing: false,
           });
           if (!result.canceled && result.assets[0]) {
-            setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
+            await processImage(result.assets[0].uri);
           }
         },
       },

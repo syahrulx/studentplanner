@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -100,7 +101,7 @@ export default function ServiceChatScreen() {
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
-          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.5 });
           if (!result.canceled && result.assets[0]) processImage(result.assets[0].uri);
         },
       },
@@ -115,6 +116,16 @@ export default function ServiceChatScreen() {
   };
 
   const processImage = async (uri: string) => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (fileInfo.exists && fileInfo.size && fileInfo.size > 5 * 1024 * 1024) {
+        Alert.alert('File too large', 'Image must be under 5MB.');
+        return;
+      }
+    } catch (e) {
+      console.error('File size check failed', e);
+    }
+
     setSending(true);
     try {
       const uploadedUrl = await uploadPostImage(uri);
