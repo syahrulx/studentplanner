@@ -108,6 +108,16 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
     );
   }
 
+  const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let dl = 'Today';
+  if (p.dateISO) {
+    const d = new Date(p.dateISO + 'T12:00:00');
+    dl = small
+      ? `${dn[d.getDay()].slice(0,3)} ${d.getDate()} ${mn[d.getMonth()]}`
+      : `${dn[d.getDay()]}, ${mn[d.getMonth()]} ${d.getDate()}`;
+  }
+
   // ─── HOME SCREEN (small / medium / large) ───
   return (
     <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
@@ -119,26 +129,24 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
         {/* Header */}
         <HStack spacing={6} alignment="top">
-          <VStack spacing={2} alignment="leading">
+          <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
             </Text>
-          {!denseMedium ? (
             <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
-              {small ? 'Today' : "Today's Schedule"}
+              {dl}
             </Text>
-          ) : null}
-        </VStack>
-        <Spacer />
-        <VStack spacing={0} alignment="trailing">
-          <Text modifiers={[font({ size: small ? 20 : denseMedium ? 20 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
-            {String(p.classes.length)}
-          </Text>
-          {!denseMedium ? (
-            <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>today</Text>
-          ) : null}
-        </VStack>
-      </HStack>
+          </VStack>
+          <Spacer />
+          <VStack spacing={0} alignment="trailing">
+            <Text modifiers={[font({ size: small ? 20 : denseMedium ? 20 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
+              {String(p.classes.length)}
+            </Text>
+            {!denseMedium ? (
+              <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>today</Text>
+            ) : null}
+          </VStack>
+        </HStack>
 
       <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
 
