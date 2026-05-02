@@ -133,9 +133,11 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
             <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
             </Text>
-            <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
-              {dl}
-            </Text>
+            {!small ? (
+              <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
+                {dl}
+              </Text>
+            ) : null}
           </VStack>
           <Spacer />
           <VStack spacing={0} alignment="trailing">
