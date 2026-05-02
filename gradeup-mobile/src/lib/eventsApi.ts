@@ -1,3 +1,5 @@
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -143,7 +145,7 @@ export async function fetchPost(postId: string): Promise<CommunityPost | null> {
   return post;
 }
 
-// ─── Upload Image ───────────────────────────────────────────────────────────
+// ... (types remains the same)
 
 export async function uploadPostImage(uri: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -151,28 +153,34 @@ export async function uploadPostImage(uri: string): Promise<string> {
 
   const fileName = `${user.id}/${Date.now()}.jpg`;
 
-  // React Native: use FormData with file URI object (most reliable method)
-  const formData = new FormData();
-  formData.append('', {
-    uri,
-    name: fileName,
-    type: 'image/jpeg',
-  } as any);
-
-  const { error } = await supabase.storage
-    .from('community-images')
-    .upload(fileName, formData, {
-      contentType: 'multipart/form-data',
-      upsert: false,
+  try {
+    // 1. Read file as base64
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
     });
 
-  if (error) throw error;
+    // 2. Convert to ArrayBuffer
+    const arrayBuffer = decode(base64);
 
-  const { data: urlData } = supabase.storage
-    .from('community-images')
-    .getPublicUrl(fileName);
+    // 3. Upload to Supabase Storage
+    const { error } = await supabase.storage
+      .from('community-images')
+      .upload(fileName, arrayBuffer, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
 
-  return urlData.publicUrl;
+    if (error) throw error;
+
+    const { data: urlData } = supabase.storage
+      .from('community-images')
+      .getPublicUrl(fileName);
+
+    return urlData.publicUrl;
+  } catch (e) {
+    console.error('[eventsApi] uploadPostImage error:', e);
+    throw e;
+  }
 }
 
 // ─── Create Post ────────────────────────────────────────────────────────────

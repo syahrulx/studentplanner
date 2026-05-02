@@ -1,3 +1,5 @@
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import { uploadPostImage } from './eventsApi';
 
@@ -790,7 +792,6 @@ export function formatAgreedPrice(s: ServicePost): string {
 
 // ─── Delivery Attachments ──────────────────────────────────────────────────
 
-/** Upload a delivery attachment image to the storage bucket. */
 export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -798,26 +799,34 @@ export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
   const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  const formData = new FormData();
-  formData.append('', {
-    uri,
-    name: fileName,
-    type: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
-  } as any);
-
-  const { error } = await supabase.storage
-    .from('delivery-attachments')
-    .upload(fileName, formData, {
-      contentType: 'multipart/form-data',
-      upsert: false,
+  try {
+    // 1. Read file as base64
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
     });
-  if (error) throw error;
 
-  const { data: urlData } = supabase.storage
-    .from('delivery-attachments')
-    .getPublicUrl(fileName);
+    // 2. Convert to ArrayBuffer
+    const arrayBuffer = decode(base64);
 
-  return urlData.publicUrl;
+    // 3. Upload to Supabase Storage
+    const { error } = await supabase.storage
+      .from('delivery-attachments')
+      .upload(fileName, arrayBuffer, {
+        contentType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+        upsert: false,
+      });
+
+    if (error) throw error;
+
+    const { data: urlData } = supabase.storage
+      .from('delivery-attachments')
+      .getPublicUrl(fileName);
+
+    return urlData.publicUrl;
+  } catch (e) {
+    console.error('[servicesApi] uploadDeliveryAttachment error:', e);
+    throw e;
+  }
 }
 
 // ─── Deadline helpers ──────────────────────────────────────────────────────

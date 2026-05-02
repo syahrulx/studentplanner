@@ -114,6 +114,7 @@ export default function SubjectChat() {
     const subjectNotes = notes.filter(n => n.subjectId === subjectId);
     // Sort by updatedAt so chronological order is generally preserved
     subjectNotes.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+    const fullText = subjectNotes.map(n => `[Note: ${n.title}]\n${n.content}`).join('\n\n');
     
     const systemInstruction = `IMPORTANT: You are the student's AI Subject Tutor for ${subjectId}. 
 Your knowledge is STRICTLY LIMITED to the notes and PDFs provided below. 
