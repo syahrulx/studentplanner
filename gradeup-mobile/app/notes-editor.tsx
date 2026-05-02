@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, KeyboardAvoidingView, Dimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, KeyboardAvoidingView, Dimensions, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -63,6 +63,8 @@ export default function NotesEditor() {
   const [banner, setBanner] = useState<BannerState>({ kind: 'idle' });
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imagePreviewLoading, setImagePreviewLoading] = useState(false);
   const [saved, setSaved] = useState(true);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const contentRef = useRef<TextInput>(null);
@@ -117,19 +119,57 @@ export default function NotesEditor() {
 
   useEffect(() => {
     let active = true;
-    const loadPdfPreview = async () => {
-      if (!attachmentPath || !isPdfAttachment) { setPdfPreviewUrl(null); return; }
-      setPdfPreviewLoading(true);
+    const loadPreview = async () => {
+      if (!attachmentPath) {
+        setPdfPreviewUrl(null);
+        setImagePreviewUrl(null);
+        return;
+      }
+      
+      const isImage = /\.(jpg|jpeg|png|heic)$/i.test(attachmentFileName || '');
+      
+      if (!isPdfAttachment && !isImage) {
+        setPdfPreviewUrl(null);
+        setImagePreviewUrl(null);
+        return;
+      }
+
+      if (isPdfAttachment) setPdfPreviewLoading(true);
+      else setImagePreviewLoading(true);
+
       try {
         const { url, error } = await getNoteAttachmentUrl(attachmentPath);
         if (!active) return;
-        if (error || !url) { setPdfPreviewUrl(null); return; }
-        setPdfPreviewUrl(url);
-      } finally { if (active) setPdfPreviewLoading(false); }
+        if (error || !url) {
+          setPdfPreviewUrl(null);
+          setImagePreviewUrl(null);
+          return;
+        }
+        
+        if (isPdfAttachment) {
+          setPdfPreviewUrl(url);
+          setImagePreviewUrl(null);
+        } else {
+          setImagePreviewUrl(url);
+          setPdfPreviewUrl(null);
+        }
+      } finally {
+        if (active) {
+          setPdfPreviewLoading(false);
+          setImagePreviewLoading(false);
+        }
+      }
     };
-    loadPdfPreview().catch(() => { if (active) { setPdfPreviewUrl(null); setPdfPreviewLoading(false); } });
+    loadPreview().catch(() => {
+      if (active) {
+        setPdfPreviewUrl(null);
+        setImagePreviewUrl(null);
+        setPdfPreviewLoading(false);
+        setImagePreviewLoading(false);
+      }
+    });
     return () => { active = false; };
-  }, [attachmentPath, isPdfAttachment]);
+  }, [attachmentPath, isPdfAttachment, attachmentFileName]);
 
   const goBack = () => {
     // Save before leaving
@@ -441,16 +481,28 @@ export default function NotesEditor() {
 
             {/* Attachment display */}
             {attachmentFileName && (
-              <Pressable style={[s.attachmentCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={handleOpenAttachment}>
-                <View style={[s.attachmentIcon, { backgroundColor: `${theme.primary}15` }]}>
-                  <Feather name={isPdfAttachment ? 'file-text' : 'image'} size={20} color={theme.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.attachmentName, { color: theme.text }]} numberOfLines={1}>{attachmentFileName}</Text>
-                  <Text style={[s.attachmentHint, { color: theme.textSecondary }]}>Tap to open</Text>
-                </View>
-                <Feather name="external-link" size={14} color={theme.textSecondary} />
-              </Pressable>
+              <View style={s.attachmentSection}>
+                {imagePreviewUrl && (
+                  <View style={[s.imagePreviewWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Image source={{ uri: imagePreviewUrl }} style={s.imagePreview} resizeMode="contain" />
+                  </View>
+                )}
+                {imagePreviewLoading && !imagePreviewUrl && (
+                  <View style={[s.imagePreviewWrap, s.imagePreviewLoadingWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  </View>
+                )}
+                <Pressable style={[s.attachmentCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={handleOpenAttachment}>
+                  <View style={[s.attachmentIcon, { backgroundColor: `${theme.primary}15` }]}>
+                    <Feather name={isPdfAttachment ? 'file-text' : 'image'} size={20} color={theme.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.attachmentName, { color: theme.text }]} numberOfLines={1}>{attachmentFileName}</Text>
+                    <Text style={[s.attachmentHint, { color: theme.textSecondary }]}>Tap to open</Text>
+                  </View>
+                  <Feather name="external-link" size={14} color={theme.textSecondary} />
+                </Pressable>
+              </View>
             )}
           </ScrollView>
 
@@ -566,6 +618,18 @@ const createStyles = (theme: ThemePalette) => StyleSheet.create({
   },
   attachmentName: { fontSize: 14, fontWeight: '600' },
   attachmentHint: { fontSize: 11, fontWeight: '500', marginTop: 2 },
+
+  attachmentSection: { marginTop: 24, marginBottom: 12 },
+  imagePreviewWrap: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  imagePreview: { width: '100%', height: '100%' },
+  imagePreviewLoadingWrap: { alignItems: 'center', justifyContent: 'center' },
 
   // Toolbar
   toolbar: {
