@@ -236,8 +236,10 @@ export default function NotesEditor() {
         await new Promise((r) => setTimeout(r, 650));
         setBanner({ kind: 'done', message: T('noteAttachDone') });
       } catch (e) {
+        console.error('[NotesEditor] processPhoto error:', e);
         setBanner({ kind: 'idle' });
-        Alert.alert('Attachment failed', 'Could not attach the photo.');
+        const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+        Alert.alert('Attachment failed', `Could not attach the photo. ${errorMsg}`);
       } finally {
         if (uploadTicker) clearInterval(uploadTicker);
         attachLoadingRef.current = false;
