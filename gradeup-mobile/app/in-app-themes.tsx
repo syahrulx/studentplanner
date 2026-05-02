@@ -243,28 +243,7 @@ export default function InAppThemesScreen() {
     );
   };
 
-  const handleApplyThemePack = (pack: 'cat' | 'mono' | 'spider' | 'purple') => {
-    if (isFreePlan) {
-      Alert.alert(
-        'Premium Theme Trial',
-        'Would you like to start a 1-week free trial for this premium theme?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Start Free Trial', 
-            style: 'default',
-            onPress: () => {
-              setThemePack(pack);
-              setThemePreviewExpiry(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-            }
-          }
-        ]
-      );
-    } else {
-      setThemePack(pack);
-      setThemePreviewExpiry(null);
-    }
-  };
+
 
   const handleResetTheme = () => {
     setThemePack('none');
