@@ -124,47 +124,62 @@ export default function NewServiceScreen() {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      if (isEditing) {
-        let image_url = existingImageUrl;
-        if (imageUri) {
-          const { uploadPostImage } = await import('@/src/lib/eventsApi');
-          image_url = await uploadPostImage(imageUri);
+    const processSubmit = async () => {
+      setSubmitting(true);
+      try {
+        if (isEditing) {
+          let image_url = existingImageUrl;
+          if (imageUri) {
+            const { uploadPostImage } = await import('@/src/lib/eventsApi');
+            image_url = await uploadPostImage(imageUri);
+          }
+          await servicesApi.updateService(editId!, {
+            title: title.trim(),
+            body: body.trim() || null,
+            image_url,
+            service_kind: kind,
+            service_category: category,
+            price_type: priceType,
+            price_amount: priceType === 'fixed' ? Number(priceAmount) : null,
+            currency: 'MYR',
+            location: location.trim() || null,
+            deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : null,
+          });
+        } else {
+          await servicesApi.createService({
+            kind,
+            title: title.trim(),
+            body: body.trim() || undefined,
+            image_uri: imageUri || undefined,
+            category,
+            price_type: priceType,
+            price_amount: priceType === 'fixed' ? Number(priceAmount) : undefined,
+            currency: 'MYR',
+            location: location.trim() || undefined,
+            deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
+            university_id: userUni || undefined,
+            campus: userCampus || undefined,
+          });
         }
-        await servicesApi.updateService(editId!, {
-          title: title.trim(),
-          body: body.trim() || null,
-          image_url,
-          service_kind: kind,
-          service_category: category,
-          price_type: priceType,
-          price_amount: priceType === 'fixed' ? Number(priceAmount) : null,
-          currency: 'MYR',
-          location: location.trim() || null,
-          deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : null,
-        });
-      } else {
-        await servicesApi.createService({
-          kind,
-          title: title.trim(),
-          body: body.trim() || undefined,
-          image_uri: imageUri || undefined,
-          category,
-          price_type: priceType,
-          price_amount: priceType === 'fixed' ? Number(priceAmount) : undefined,
-          currency: 'MYR',
-          location: location.trim() || undefined,
-          deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
-          university_id: userUni || undefined,
-          campus: userCampus || undefined,
-        });
+        router.back();
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to submit');
+      } finally {
+        setSubmitting(false);
       }
-      router.back();
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to submit');
-    } finally {
-      setSubmitting(false);
+    };
+
+    if (!isEditing) {
+      Alert.alert(
+        'Platform Disclaimer',
+        'GradeUp does not handle payments. All monetary transactions and service fulfillments are solely at your own responsibility.\n\nDo you agree to proceed?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'I Agree', onPress: processSubmit },
+        ]
+      );
+    } else {
+      processSubmit();
     }
   };
 

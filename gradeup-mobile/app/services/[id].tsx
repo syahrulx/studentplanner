@@ -157,9 +157,7 @@ export default function ServiceDetailScreen() {
   const onClaim = () =>
     Alert.alert(
       service.service_kind === 'offer' ? 'Take this offer?' : 'Take this request?',
-      service.service_kind === 'offer'
-        ? `You're agreeing to receive this offer. The provider (${service.author_name}) will be notified.`
-        : `You're agreeing to handle this request. The requester (${service.author_name}) will be notified.`,
+      `Scope: ${service.title}\n\nDisclaimer: GradeUp does not handle payments. All transactions are at your own responsibility. Proceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Take it', onPress: () => wrap('Claim', () => servicesApi.claimService(service.id)) },
@@ -190,34 +188,45 @@ export default function ServiceDetailScreen() {
       Alert.alert('Invalid amount', 'Please enter a valid number.');
       return;
     }
-    setOfferSubmitting(true);
-    try {
-      await servicesApi.makeOffer({
-        service_id: service.id,
-        amount,
-        message: offerMessage.trim() || null,
-      });
-      setOfferOpen(false);
-      setOfferAmount('');
-      setOfferMessage('');
-      await load();
-    } catch (e: any) {
-      Alert.alert('Could not send offer', e.message || 'Something went wrong');
-    } finally {
-      setOfferSubmitting(false);
-    }
+
+    const processSubmit = async () => {
+      setOfferSubmitting(true);
+      try {
+        await servicesApi.makeOffer({
+          service_id: service.id,
+          amount,
+          message: offerMessage.trim() || null,
+        });
+        setOfferOpen(false);
+        setOfferAmount('');
+        setOfferMessage('');
+        await load();
+      } catch (e: any) {
+        Alert.alert('Could not send offer', e.message || 'Something went wrong');
+      } finally {
+        setOfferSubmitting(false);
+      }
+    };
+
+    Alert.alert(
+      'Platform Disclaimer',
+      'GradeUp does not handle payments. All monetary transactions and service fulfillments are at your own responsibility.\n\nDo you agree to proceed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'I Agree', onPress: processSubmit },
+      ]
+    );
   };
 
-  const onAcceptOffer = (offer: ServiceOffer) =>
+  const onAcceptOffer = (offer: ServiceOffer) => {
+    const priceDisplay = offer.amount != null ? `${offer.currency || 'MYR'} ${Number(offer.amount).toLocaleString()}` : 'their proposed terms';
     Alert.alert(
       'Accept this offer?',
-      `You're agreeing to ${offer.offerer_name} at ${
-        offer.amount != null ? `${offer.currency || 'MYR'} ${Number(offer.amount).toLocaleString()}` : 'their proposed terms'
-      }. Other pending offers will be auto-rejected.`,
+      `Scope: ${service.title}\nPrice: ${priceDisplay}\nDate: ${service.deadline_at ? new Date(service.deadline_at).toLocaleDateString() : 'Flexible'}\n\nDisclaimer: GradeUp does not handle payments. Please handle all transactions safely on your own responsibility. Proceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Accept',
+          text: 'Accept & Proceed',
           onPress: () =>
             wrap('Accept offer', async () => {
               await servicesApi.acceptOffer(offer.id);
@@ -225,6 +234,7 @@ export default function ServiceDetailScreen() {
         },
       ]
     );
+  };
 
   const onRejectOffer = (offer: ServiceOffer) =>
     Alert.alert(
@@ -311,8 +321,8 @@ export default function ServiceDetailScreen() {
 
   const onApproveWork = () =>
     Alert.alert(
-      'Approve Work?',
-      'Confirm the service was delivered to your satisfaction. You can leave a rating afterwards.',
+      'Approve & Mark Paid?',
+      'Confirm the service was delivered to your satisfaction and that any necessary payments have been made off-platform. This will mark the service as completed.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Approve', onPress: () => wrap('Approve Work', () => servicesApi.approveService(service.id), 'Service completed.') },
@@ -537,7 +547,7 @@ export default function ServiceDetailScreen() {
     const isProvider = !isClient && role !== 'observer';
 
     if (isClient && isSubmitted) {
-      return { label: 'Approve Work', icon: 'check-circle', onPress: onApproveWork, color: '#30D158' };
+      return { label: 'Approve & Mark Paid', icon: 'check-circle', onPress: onApproveWork, color: '#30D158' };
     }
     if (isProvider && isClaimed) {
       return { label: 'Submit Work', icon: 'upload', onPress: onSubmitWork, color: theme.primary };
