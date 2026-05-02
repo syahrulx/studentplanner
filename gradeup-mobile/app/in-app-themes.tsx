@@ -869,15 +869,11 @@ export default function InAppThemesScreen() {
             </View>
 
             <Text style={[styles.modalNote, { color: theme.textSecondary }]}>
-<<<<<<< HEAD
               {isFreePlan
                 ? 'Trial mode. You can apply this theme for a free 7-day trial!'
-                : 'Design preview mode enabled. Full implementation includes custom icons and backgrounds.'}
-=======
-              {!canApplyThemePacks
+                : !canApplyThemePacks
                 ? 'Preview only. Applying this theme requires a Plus or Pro subscription.'
-                : 'Design preview mode enabled. Full implementation can include custom icons and backgrounds.'}
->>>>>>> origin/dev-izwan
+                : 'Design preview mode enabled. Full implementation includes custom icons and backgrounds.'}
             </Text>
           </View>
         </View>
