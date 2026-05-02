@@ -172,7 +172,7 @@ export default function NewServiceScreen() {
     if (!isEditing) {
       Alert.alert(
         'Platform Disclaimer',
-        'GradeUp does not handle payments. All monetary transactions and service fulfillments are solely at your own responsibility.\n\nDo you agree to proceed?',
+        'Rencana does not handle payments. All monetary transactions and service fulfillments are solely at your own responsibility.\n\nDo you agree to proceed?',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'I Agree', onPress: processSubmit },

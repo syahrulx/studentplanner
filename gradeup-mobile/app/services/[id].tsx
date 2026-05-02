@@ -157,7 +157,7 @@ export default function ServiceDetailScreen() {
   const onClaim = () =>
     Alert.alert(
       service.service_kind === 'offer' ? 'Take this offer?' : 'Take this request?',
-      `Scope: ${service.title}\n\nDisclaimer: GradeUp does not handle payments. All transactions are at your own responsibility. Proceed?`,
+      `Scope: ${service.title}\n\nDisclaimer: Rencana does not handle payments. All transactions are at your own responsibility. Proceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Take it', onPress: () => wrap('Claim', () => servicesApi.claimService(service.id)) },
@@ -210,7 +210,7 @@ export default function ServiceDetailScreen() {
 
     Alert.alert(
       'Platform Disclaimer',
-      'GradeUp does not handle payments. All monetary transactions and service fulfillments are at your own responsibility.\n\nDo you agree to proceed?',
+      'Rencana does not handle payments. All monetary transactions and service fulfillments are at your own responsibility.\n\nDo you agree to proceed?',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'I Agree', onPress: processSubmit },
@@ -222,7 +222,7 @@ export default function ServiceDetailScreen() {
     const priceDisplay = offer.amount != null ? `${offer.currency || 'MYR'} ${Number(offer.amount).toLocaleString()}` : 'their proposed terms';
     Alert.alert(
       'Accept this offer?',
-      `Scope: ${service.title}\nPrice: ${priceDisplay}\nDate: ${service.deadline_at ? new Date(service.deadline_at).toLocaleDateString() : 'Flexible'}\n\nDisclaimer: GradeUp does not handle payments. Please handle all transactions safely on your own responsibility. Proceed?`,
+      `Scope: ${service.title}\nPrice: ${priceDisplay}\nDate: ${service.deadline_at ? new Date(service.deadline_at).toLocaleDateString() : 'Flexible'}\n\nDisclaimer: Rencana does not handle payments. Please handle all transactions safely on your own responsibility. Proceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
