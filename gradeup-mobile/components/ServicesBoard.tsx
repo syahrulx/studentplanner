@@ -33,6 +33,7 @@ import type {
   ServiceStatus,
 } from '@/src/lib/servicesApi';
 import { SERVICE_CATEGORIES, getCategory, formatPrice, statusMeta } from '@/src/lib/servicesApi';
+import * as eventsApi from '@/src/lib/eventsApi';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,18 @@ export default function ServicesBoard() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [orderBy, setOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
-  const [locationScope, setLocationScope] = useState<'all' | 'university' | 'campus'>('all');
+
+  // Location filter state
+  const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
+  const [filterCampus, setFilterCampus] = useState<string | null>(null);
+  const [universities, setUniversities] = useState<eventsApi.University[]>([]);
+  const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
+
+  // Picker modal state
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerData, setPickerData] = useState<{ id: string; name: string }[]>([]);
+  const [pickerTitle, setPickerTitle] = useState('');
+  const [pickerOnSelect, setPickerOnSelect] = useState<(id: string) => void>(() => () => {});
 
   const [items, setItems] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,8 +129,8 @@ export default function ServicesBoard() {
         status,
         search: debouncedSearch || null,
         orderBy,
-        universityId: locationScope === 'university' || locationScope === 'campus' ? user.universityId : undefined,
-        campus: locationScope === 'campus' ? user.campus : undefined,
+        universityId: filterUniversity || undefined,
+        campus: filterCampus || undefined,
       });
       // Hide cancelled in Browse unless explicitly filtered
       const filtered = scope === 'all' && !status
@@ -128,7 +140,7 @@ export default function ServicesBoard() {
     } catch (e) {
       console.error('[ServicesBoard] fetch error:', e);
     }
-  }, [scope, kind, category, status, debouncedSearch, orderBy, locationScope, user?.universityId, user?.campus]);
+  }, [scope, kind, category, status, debouncedSearch, orderBy, filterUniversity, filterCampus]);
 
   // Refetches both on focus AND when filters/search change while focused
   // (useFocusEffect re-runs when its callback identity changes while in focus).
@@ -145,6 +157,19 @@ export default function ServicesBoard() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  useEffect(() => {
+    eventsApi.fetchUniversities().then(setUniversities);
+  }, []);
+
+  useEffect(() => {
+    if (filterUniversity) {
+      eventsApi.fetchCampuses(filterUniversity).then(setCampuses);
+    } else {
+      setCampuses([]);
+      setFilterCampus(null);
+    }
+  }, [filterUniversity]);
 
   // ─── Counts for scope tabs ────────────────────────────────────────────────
   const [mineCount, setMineCount] = useState<number | null>(null);
@@ -201,35 +226,102 @@ export default function ServicesBoard() {
   };
 
   const handleLocationOptions = () => {
-    const options = ['Cancel', 'Everywhere', 'My University', 'My Campus'];
-    const mapping: Record<number, 'all' | 'university' | 'campus'> = {
-      1: 'all',
-      2: 'university',
-      3: 'campus',
-    };
-
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options,
+          options: ['Cancel', 'Everywhere', 'Select University', 'Select Campus'],
           cancelButtonIndex: 0,
           title: 'Filter by Location',
         },
         (buttonIndex) => {
-          if (buttonIndex !== 0) {
-            setLocationScope(mapping[buttonIndex]);
+          if (buttonIndex === 1) {
+            setFilterUniversity(null);
+            setFilterCampus(null);
+          } else if (buttonIndex === 2) {
+            setPickerTitle('Select University');
+            setPickerData([{ id: '', name: 'Everywhere' }, ...universities.map(u => ({ id: u.id, name: u.name.toUpperCase() }))]);
+            setPickerOnSelect(() => (id: string) => {
+              setFilterUniversity(id || null);
+              setFilterCampus(null);
+            });
+            setPickerVisible(true);
+          } else if (buttonIndex === 3) {
+            if (!filterUniversity) {
+               // Default to user's university if they try to select campus without picking a uni first
+               if ((user as any)?.university_id || (user as any)?.universityId) {
+                 const uid = (user as any)?.university_id || (user as any)?.universityId;
+                 setFilterUniversity(uid);
+                 eventsApi.fetchCampuses(uid).then(camps => {
+                   setPickerTitle('Select Campus');
+                   setPickerData([{ id: '', name: 'Any Campus' }, ...camps.map(c => ({ id: c.name, name: c.name }))]);
+                   setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
+                   setPickerVisible(true);
+                 });
+                 return;
+               } else {
+                 Alert.alert('Select University First', 'Please select a university before filtering by campus.');
+                 return;
+               }
+            }
+            setPickerTitle('Select Campus');
+            setPickerData([{ id: '', name: 'Any Campus' }, ...campuses.map(c => ({ id: c.name, name: c.name }))]);
+            setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
+            setPickerVisible(true);
           }
         }
       );
     } else {
-      Alert.alert('Location', 'Show services from:', [
-        { text: 'Everywhere', onPress: () => setLocationScope('all') },
-        { text: 'My University', onPress: () => setLocationScope('university') },
-        { text: 'My Campus', onPress: () => setLocationScope('campus') },
+      Alert.alert('Location', 'Filter by:', [
+        { text: 'Everywhere', onPress: () => { setFilterUniversity(null); setFilterCampus(null); } },
+        { text: 'Select University', onPress: () => {
+            setPickerTitle('Select University');
+            setPickerData([{ id: '', name: 'Everywhere' }, ...universities.map(u => ({ id: u.id, name: u.name.toUpperCase() }))]);
+            setPickerOnSelect(() => (id: string) => {
+              setFilterUniversity(id || null);
+              setFilterCampus(null);
+            });
+            setPickerVisible(true);
+        }},
+        { text: 'Select Campus', onPress: () => {
+            if (!filterUniversity) return Alert.alert('Select University First', 'Please select a university before filtering by campus.');
+            setPickerTitle('Select Campus');
+            setPickerData([{ id: '', name: 'Any Campus' }, ...campuses.map(c => ({ id: c.name, name: c.name }))]);
+            setPickerOnSelect(() => (id: string) => setFilterCampus(id || null));
+            setPickerVisible(true);
+        }},
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
   };
+
+  const renderPickerModal = () => (
+    <Modal visible={pickerVisible} transparent animationType="slide" onRequestClose={() => setPickerVisible(false)}>
+      <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
+        <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={e => e.stopPropagation()}>
+          <View style={styles.grabber} />
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { color: theme.text }]}>{pickerTitle}</Text>
+          </View>
+          <FlatList
+            data={pickerData}
+            keyExtractor={(item, index) => item.id || index.toString()}
+            style={{ maxHeight: 400 }}
+            renderItem={({ item }) => (
+              <Pressable
+                style={[styles.sheetItem, { borderBottomColor: theme.border }]}
+                onPress={() => {
+                  pickerOnSelect(item.id);
+                  setPickerVisible(false);
+                }}
+              >
+                <Text style={[styles.sheetItemText, { color: theme.text }]}>{item.name}</Text>
+              </Pressable>
+            )}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 
   const renderHeader = () => (
     <View style={styles.headerWrap}>
@@ -317,13 +409,16 @@ export default function ServicesBoard() {
             style={[
               styles.pill,
               { backgroundColor: theme.card, borderColor: theme.border, marginRight: 4 },
-              locationScope !== 'all' && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
+              (filterUniversity || filterCampus) && { borderColor: theme.primary, backgroundColor: theme.primary + '10' }
             ]}
           >
-            <Feather name="map-pin" size={14} color={locationScope !== 'all' ? theme.primary : theme.textSecondary} />
-            <Text style={[styles.pillText, { color: locationScope !== 'all' ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
-              {locationScope === 'all' ? 'Everywhere' : 
-               locationScope === 'university' ? 'My Uni' : 'My Campus'}
+            <Feather name="map-pin" size={14} color={(filterUniversity || filterCampus) ? theme.primary : theme.textSecondary} />
+            <Text style={[styles.pillText, { color: (filterUniversity || filterCampus) ? theme.primary : theme.textSecondary, marginLeft: 4 }]}>
+              {filterCampus 
+                ? filterCampus 
+                : filterUniversity 
+                  ? filterUniversity.toUpperCase() 
+                  : 'Everywhere'}
             </Text>
           </Pressable>
 
@@ -864,6 +959,60 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
+  },
+  heroBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: 32,
+    maxHeight: '80%',
+  },
+  grabber: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(150,150,150,0.3)',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(150,150,150,0.2)',
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  sheetItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetItemText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   
   // Intro Modal
