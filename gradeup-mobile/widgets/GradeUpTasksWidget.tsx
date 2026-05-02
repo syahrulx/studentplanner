@@ -153,7 +153,10 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
       {/* Task list */}
       {tasks.length === 0 ? (
-        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up</Text>
+        <HStack>
+          <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up</Text>
+          <Spacer />
+        </HStack>
       ) : (
         <VStack spacing={0} alignment="leading">
           {tasks.map((t, i) => (
@@ -182,6 +185,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
       )}
 
+      <Spacer />
       </VStack>
     </ZStack>
   );

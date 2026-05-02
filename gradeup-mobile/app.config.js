@@ -151,6 +151,14 @@ export default ({ config }) => {
         RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN,
       },
     ],
+    [
+      "expo-build-properties",
+      {
+        "ios": {
+          "deploymentTarget": "16.0"
+        }
+      }
+    ],
   ],
   extra: {
     ...base?.extra,

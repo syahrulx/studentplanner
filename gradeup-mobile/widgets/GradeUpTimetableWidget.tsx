@@ -144,7 +144,10 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
       {/* Class list */}
       {cls.length === 0 ? (
-        <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
+        <HStack>
+          <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
+          <Spacer />
+        </HStack>
       ) : (
         <VStack spacing={0} alignment="leading">
           {cls.map((c, i) => (
@@ -178,6 +181,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
         </VStack>
       )}
 
+      <Spacer />
       </VStack>
     </ZStack>
   );

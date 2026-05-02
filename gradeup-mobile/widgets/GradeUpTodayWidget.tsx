@@ -246,8 +246,12 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         ) : null}
 
         {sTasks.length === 0 && sCls.length === 0 ? (
-          <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free day</Text>
+          <HStack>
+            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free day</Text>
+            <Spacer />
+          </HStack>
         ) : null}
+        <Spacer />
         </VStack>
       </ZStack>
     );
@@ -295,7 +299,10 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           </HStack>
 
           {colTask.length === 0 ? (
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done</Text>
+            <HStack>
+              <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done</Text>
+              <Spacer />
+            </HStack>
           ) : (
             <VStack spacing={dense ? 3 : 5} alignment="leading">
               {colTask.map((t) => (
@@ -339,7 +346,10 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           </HStack>
 
           {colCls.length === 0 ? (
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>No classes</Text>
+            <HStack>
+              <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>No classes</Text>
+              <Spacer />
+            </HStack>
           ) : (
             <VStack spacing={dense ? 2 : 6} alignment="leading">
               {colCls.map((c, i) => (
@@ -364,6 +374,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
 
         </HStack>
+        <Spacer />
       </VStack>
     </ZStack>
   );

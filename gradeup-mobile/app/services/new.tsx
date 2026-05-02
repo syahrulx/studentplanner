@@ -25,6 +25,7 @@ import { useApp } from '@/src/context/AppContext';
 import * as servicesApi from '@/src/lib/servicesApi';
 import {
   SERVICE_CATEGORIES,
+  checkContentModeration,
   type ServiceKind,
   type PriceType,
 } from '@/src/lib/servicesApi';
@@ -121,6 +122,16 @@ export default function NewServiceScreen() {
     }
     if (priceType === 'fixed' && (!priceAmount || isNaN(Number(priceAmount)))) {
       Alert.alert('Required', 'Please enter a valid price amount.');
+      return;
+    }
+
+    // Content moderation: block explicit/prohibited content
+    const bannedWord = checkContentModeration(title, body);
+    if (bannedWord) {
+      Alert.alert(
+        'Content Not Allowed',
+        'Your service request contains content that violates our community guidelines. Explicit, illegal, or prohibited services are not allowed on this platform.',
+      );
       return;
     }
 

@@ -22,7 +22,8 @@
         "com.apple.developer.applesignin": ["Default"],
         "com.apple.security.application-groups": [
           "group.com.aizztech.rencana"
-        ]
+        ],
+        "com.apple.developer.associated-domains": ["applinks:aizztech.com"]
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

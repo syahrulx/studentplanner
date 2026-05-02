@@ -1708,3 +1708,89 @@ export async function deleteOrganization(id: string): Promise<void> {
   const { error } = await supabase.from('organizations').delete().eq('id', id);
   if (error) throw toError(error);
 }
+
+// ─── Student Verification ──────────────────────────────────────────────────
+
+export type AdminVerificationRow = {
+  id: string;
+  user_id: string;
+  student_email: string;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  // joined
+  user_name?: string;
+  user_avatar?: string | null;
+  auth_email?: string;
+};
+
+export async function listVerificationRequests(status?: string): Promise<AdminVerificationRow[]> {
+  let q = supabase
+    .from('student_verification_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (status && status !== 'all') {
+    q = q.eq('status', status);
+  }
+
+  const { data, error } = await q;
+  if (error) throw toError(error);
+
+  const rows = (data ?? []) as AdminVerificationRow[];
+  if (!rows.length) return rows;
+
+  // Enrich with profile info
+  const userIds = [...new Set(rows.map((r) => r.user_id))];
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url')
+    .in('id', userIds);
+
+  const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
+  for (const r of rows) {
+    const p = pm.get(r.user_id);
+    r.user_name = p?.name || 'Unknown';
+    r.user_avatar = p?.avatar_url || null;
+  }
+
+  return rows;
+}
+
+export async function approveVerification(requestId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_approve_verification', {
+    p_request_id: requestId,
+  });
+  if (error) throw toError(error);
+}
+
+export async function rejectVerification(requestId: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_reject_verification', {
+    p_request_id: requestId,
+    p_note: note || null,
+  });
+  if (error) throw toError(error);
+}
+
+export async function getVerificationStats(): Promise<{
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
+}> {
+  const { data, error } = await supabase
+    .from('student_verification_requests')
+    .select('status');
+  if (error) throw toError(error);
+
+  const rows = (data ?? []) as Array<{ status: string }>;
+  const stats = { pending: 0, approved: 0, rejected: 0, total: rows.length };
+  for (const r of rows) {
+    if (r.status === 'pending') stats.pending++;
+    else if (r.status === 'approved') stats.approved++;
+    else if (r.status === 'rejected') stats.rejected++;
+  }
+  return stats;
+}

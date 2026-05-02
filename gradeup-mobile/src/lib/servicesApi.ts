@@ -1,6 +1,138 @@
 import { supabase } from './supabase';
 import { uploadPostImage } from './eventsApi';
 
+// ─── Content Moderation ─────────────────────────────────────────────────────
+
+/** Banned keywords — must stay in sync with the DB trigger `check_service_content`. */
+const BANNED_KEYWORDS: string[] = [
+  'sex', 'sexual', 'escort', 'prostitut', 'hookup', 'hook up',
+  'onlyfans', 'only fans', 'sugar daddy', 'sugar baby', 'sugarbaby',
+  'sugardaddy', 'sugar mommy', 'sugarmommy',
+  'massage happy ending', 'happy ending',
+  'erotic', 'porn', 'xxx', 'nude', 'nudes', 'blowjob', 'handjob',
+  'bdsm', 'fetish', 'dominatrix', 'cam girl', 'camgirl',
+  'booty call', 'bootycall', 'friends with benefits', 'fwb',
+  'one night stand',
+  'drugs', 'weed', 'ganja', 'marijuana', 'cocaine', 'meth',
+  'ketamine', 'ecstasy', 'mdma', 'lsd', 'heroin',
+  'dadah', 'syabu',
+  'gun', 'firearm', 'weapon', 'explosive',
+  'write my exam', 'take my exam', 'sit my exam',
+  'fake degree', 'fake certificate', 'fake diploma',
+  'gambling', 'judi', 'casino', 'sports betting', 'bet365',
+];
+
+/** Returns a banned word if found, or null if the content is clean. */
+export function checkContentModeration(title: string, body?: string | null): string | null {
+  const text = `${title} ${body || ''}`.toLowerCase();
+  for (const word of BANNED_KEYWORDS) {
+    if (text.includes(word)) return word;
+  }
+  return null;
+}
+
+// ─── Student Verification ───────────────────────────────────────────────────
+
+const STUDENT_EMAIL_PATTERNS = [
+  /\.edu$/i,
+  /\.edu\.\w{2}$/i,       // .edu.my, .edu.sg, etc.
+  /@student\./i,
+  /@students\./i,
+  /@sis\./i,
+  /@siswa\./i,
+  /@isiswa\./i,          // UiTM
+  /@graduate\./i,         // UTM
+  /@imail\./i,            // Sunway
+  /@sd\./i,               // Taylor's
+  /@live\./i,             // IIUM, UiTM
+];
+
+/** Check if an email looks like a student/edu email. */
+export function isStudentEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return STUDENT_EMAIL_PATTERNS.some((p) => p.test(email));
+}
+
+export type VerificationStatus = 'verified' | 'pending' | 'rejected' | 'none';
+
+/** Get the current user's student verification status. */
+export async function getStudentVerificationStatus(): Promise<{
+  status: VerificationStatus;
+  studentEmail?: string;
+  adminNote?: string;
+}> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { status: 'none' };
+
+  // 1. Check if email is already a student email → auto-verified
+  if (isStudentEmail(user.email)) {
+    return { status: 'verified' };
+  }
+
+  // 2. Check if profile has student_verified = true
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('student_verified')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profile?.student_verified) {
+    return { status: 'verified' };
+  }
+
+  // 3. Check verification requests table
+  const { data: request } = await supabase
+    .from('student_verification_requests')
+    .select('status, student_email, admin_note')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!request) {
+    return { status: 'none' };
+  }
+
+  if (request.status === 'approved') {
+    // Sync the profile flag (edge case recovery)
+    await supabase.from('profiles').update({ student_verified: true }).eq('id', user.id);
+    return { status: 'verified' };
+  }
+
+  return {
+    status: request.status as VerificationStatus,
+    studentEmail: request.student_email,
+    adminNote: request.admin_note ?? undefined,
+  };
+}
+
+/** Send a 6-digit OTP code to the provided student email via Edge Function. */
+export async function sendStudentVerificationOtp(studentEmail: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const fnUrl = `${(supabase as any).supabaseUrl}/functions/v1/send-student-otp`;
+  const res = await fetch(fnUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': (supabase as any).supabaseKey,
+    },
+    body: JSON.stringify({ student_email: studentEmail.trim().toLowerCase() }),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to send verification code');
+  return json.status || 'sent';
+}
+
+/** Verify the OTP code sent to the student email. */
+export async function verifyStudentOtp(code: string): Promise<{ status: string; message?: string }> {
+  const { data, error } = await supabase.rpc('verify_student_otp', {
+    p_code: code.trim(),
+  });
+  if (error) throw error;
+  return data as any;
+}
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type ServiceKind = 'request' | 'offer';
@@ -285,6 +417,12 @@ export interface CreateServiceInput {
 export async function createService(input: CreateServiceInput): Promise<ServicePost> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  // Content moderation: block explicit/prohibited content
+  const bannedWord = checkContentModeration(input.title, input.body);
+  if (bannedWord) {
+    throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
+  }
 
   let image_url: string | null = null;
   if (input.image_uri) image_url = await uploadPostImage(input.image_uri);

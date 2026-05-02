@@ -32,8 +32,9 @@ import type {
   ServiceKind,
   ServiceStatus,
 } from '@/src/lib/servicesApi';
-import { SERVICE_CATEGORIES, getCategory, formatPrice, statusMeta } from '@/src/lib/servicesApi';
+import { SERVICE_CATEGORIES, getCategory, formatPrice, statusMeta, getStudentVerificationStatus } from '@/src/lib/servicesApi';
 import * as eventsApi from '@/src/lib/eventsApi';
+import StudentVerificationModal from '@/components/StudentVerificationModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export default function ServicesBoard() {
 
   const [scope, setScope] = useState<Scope>('all');
   const [showIntroModal, setShowIntroModal] = useState(false);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [kind, setKind] = useState<ServiceKind | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [status] = useState<ServiceStatus | null>(null);
@@ -157,6 +159,21 @@ export default function ServicesBoard() {
     await load();
     setRefreshing(false);
   }, [load]);
+
+  /** Gate: check student verification before allowing service creation. */
+  const handleNewService = useCallback(async () => {
+    try {
+      const { status: vStatus } = await getStudentVerificationStatus();
+      if (vStatus === 'verified') {
+        router.push('/services/new' as any);
+      } else {
+        setShowVerificationModal(true);
+      }
+    } catch {
+      // On error, fall back to showing the modal
+      setShowVerificationModal(true);
+    }
+  }, []);
 
   useEffect(() => {
     eventsApi.fetchUniversities().then(setUniversities);
@@ -641,7 +658,7 @@ export default function ServicesBoard() {
       </Text>
       {scope !== 'taken' && (
           <Pressable
-            onPress={() => router.push('/services/new' as any)}
+            onPress={() => handleNewService()}
             style={({ pressed }) => [
               styles.emptyCta,
               { backgroundColor: theme.primary },
@@ -731,7 +748,7 @@ export default function ServicesBoard() {
 
       {/* Floating compose */}
       <Pressable
-        onPress={() => router.push('/services/new' as any)}
+        onPress={() => handleNewService()}
         style={({ pressed }) => [
           styles.fab,
           { backgroundColor: theme.primary, bottom: tabBarTotal + 16 },
@@ -742,6 +759,16 @@ export default function ServicesBoard() {
       </Pressable>
 
       {renderPickerModal()}
+
+      {/* Student Verification Gate */}
+      <StudentVerificationModal
+        visible={showVerificationModal}
+        onClose={() => setShowVerificationModal(false)}
+        onVerified={() => {
+          setShowVerificationModal(false);
+          router.push('/services/new' as any);
+        }}
+      />
     </View>
   );
 }

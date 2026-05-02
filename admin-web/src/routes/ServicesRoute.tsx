@@ -8,9 +8,14 @@ import {
   adminForceReopenService,
   adminClearReports,
   deleteCommunityPost,
+  listVerificationRequests,
+  approveVerification,
+  rejectVerification,
+  getVerificationStats,
   type AdminServiceRow,
   type AdminServiceStats,
   type AdminServiceReportRow,
+  type AdminVerificationRow,
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
@@ -44,6 +49,7 @@ function fmtPrice(s: AdminServiceRow) {
 
 export function ServicesRoute() {
   const { searchQuery } = useAdminSearch();
+  const [activeTab, setActiveTab] = useState<'services' | 'verifications'>('services');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [items, setItems] = useState<AdminServiceRow[]>([]);
@@ -131,6 +137,37 @@ export function ServicesRoute() {
           Monitor, moderate, and manage all services across campuses.
         </div>
       </MotionSection>
+
+      {/* Tab Toggle */}
+      <MotionPanel className="mt-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('services')}
+            className={`rounded-2xl px-5 py-2.5 text-sm font-black transition-colors ${
+              activeTab === 'services'
+                ? 'bg-brand-600 text-white shadow-soft'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+            }`}
+          >
+            Services
+          </button>
+          <button
+            onClick={() => setActiveTab('verifications')}
+            className={`rounded-2xl px-5 py-2.5 text-sm font-black transition-colors ${
+              activeTab === 'verifications'
+                ? 'bg-brand-600 text-white shadow-soft'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+            }`}
+          >
+            🎓 Student Verifications
+          </button>
+        </div>
+      </MotionPanel>
+
+      {activeTab === 'verifications' ? (
+        <VerificationsPanel />
+      ) : (
+      <>
 
       {/* Stats grid */}
       {stats && (
@@ -380,6 +417,127 @@ export function ServicesRoute() {
           </div>
         </div>
       )}
-    </div>
+    </>
+  )}
+</div>
+);
+}
+
+// ─── Student Verification Panel ─────────────────────────────────────────────
+
+const VERIFICATION_STATUS_COLORS: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  approved: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  rejected: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+};
+
+function VerificationsPanel() {
+  const [items, setItems] = useState<AdminVerificationRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [stats, setStats] = useState<{ total: number } | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    setErr('');
+    try {
+      // We only care about OTP verified rows now
+      const rows = await listVerificationRequests('approved');
+      const otpRows = rows.filter(r => r.admin_note === 'Verified via OTP');
+      setItems(otpRows);
+      setStats({ total: otpRows.length });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  return (
+    <>
+      {/* Stats */}
+      {stats && (
+        <MotionPanel className="mt-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+              <div className="text-2xl font-black tabular-nums text-emerald-800 dark:text-emerald-200">{stats.total}</div>
+              <div className="mt-0.5 text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-300">OTP Verified</div>
+            </div>
+          </div>
+        </MotionPanel>
+      )}
+
+      {/* Filters + List */}
+      <MotionPanel className="mt-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-end justify-between gap-3">
+            <div className="text-sm font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+              Recent OTP Verifications
+            </div>
+            <button
+              onClick={() => void refresh()}
+              disabled={loading}
+              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
+            >
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+
+          {err && (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
+              {err}
+            </div>
+          )}
+
+          <div className="mt-4 space-y-3">
+            {items.map((v) => (
+              <div
+                key={v.id}
+                className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                      {v.user_name || 'Unknown'}
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Student email: <span className="text-slate-700 dark:text-slate-200">{v.student_email}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-400 font-mono">
+                      {v.user_id}
+                    </div>
+                  </div>
+                  <span className={`rounded-xl px-2.5 py-1 text-xs font-bold ${VERIFICATION_STATUS_COLORS[v.status] || ''}`}>
+                    {v.status}
+                  </span>
+                </div>
+
+                <div className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  ✅ Verified via OTP
+                </div>
+
+                <div className="mt-1 text-xs text-slate-400">
+                  Verified on: {v.reviewed_at ? new Date(v.reviewed_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown'}
+                </div>
+              </div>
+            ))}
+
+            {items.length === 0 && !loading && (
+              <div className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+                No OTP verifications found.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {items.length} verified user{items.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      </MotionPanel>
+    </>
   );
 }
