@@ -99,10 +99,14 @@ export default function ServiceChatScreen() {
       {
         text: 'Take Photo',
         onPress: async () => {
-          const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
-          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.5 });
-          if (!result.canceled && result.assets[0]) processImage(result.assets[0].uri);
+          try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
+            const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.5 });
+            if (!result.canceled && result.assets[0]) processImage(result.assets[0].uri);
+          } catch (e) {
+            Alert.alert('Camera Unavailable', 'The camera is not available on this device or simulator.');
+          }
         },
       },
       {

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, KeyboardAvoidingView, Dimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import Feather from '@expo/vector-icons/Feather';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -189,54 +190,87 @@ export default function NotesEditor() {
 
   const handleAttachFile = async () => {
     if (attachLoadingRef.current) return;
-    attachLoadingRef.current = true;
-    let uploadTicker: ReturnType<typeof setInterval> | null = null;
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: false });
-      if (result.canceled) { setBanner({ kind: 'idle' }); return; }
-      const file = result.assets[0];
-      const name = file.name ?? `attachment-${Date.now()}`;
-      const isPdf = (name || '').toLowerCase().endsWith('.pdf');
-      const fileSize = typeof file.size === 'number' ? file.size : null;
 
-      if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
+    const processPhoto = async (uri: string, name: string, mimeType?: string) => {
+      attachLoadingRef.current = true;
+      let uploadTicker: ReturnType<typeof setInterval> | null = null;
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        if (fileInfo.exists && fileInfo.size && fileInfo.size > 10 * 1024 * 1024) {
+          Alert.alert('File too large', 'Photos must be under 10MB.');
+          return;
+        }
+
+        setBanner({ progress: 12, label: T('noteAttachReading'), kind: 'importing' });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+          setBanner({ kind: 'idle' });
+          Alert.alert('Sign in required', 'Sign in to attach files.');
+          return;
+        }
+
+        setBanner({ progress: 28, label: T('noteAttachUploading'), kind: 'importing' });
+        uploadTicker = setInterval(() => {
+          setBanner((prev) => prev.kind !== 'importing' ? prev : { ...prev, progress: Math.min(prev.progress + 4, 86) });
+        }, 200);
+
+        const noteIdForPath = existing?.id ?? currentNoteId ?? `n${Date.now()}`;
+        const { path, error } = await uploadNoteAttachment(session.user.id, noteIdForPath, uri, name, mimeType);
+        
+        if (uploadTicker) { clearInterval(uploadTicker); uploadTicker = null; }
+        if (error) { setBanner({ kind: 'idle' }); Alert.alert('Upload failed', 'Could not upload.'); return; }
+
+        setBanner({ progress: 92, label: T('noteImportSaving'), kind: 'importing' });
+        setAttachmentPath(path);
+        setAttachmentFileName(name);
+        setExtractedText(undefined);
+        setBanner({ progress: 100, label: T('noteAttachDone'), kind: 'importing' });
+        await new Promise((r) => setTimeout(r, 650));
+        setBanner({ kind: 'done', message: T('noteAttachDone') });
+      } catch (e) {
         setBanner({ kind: 'idle' });
-        Alert.alert('File too large', `This PDF is ${Math.round(fileSize / (1024 * 1024))}MB. Limit is 25MB.`);
-        return;
+        Alert.alert('Attachment failed', 'Could not attach the photo.');
+      } finally {
+        if (uploadTicker) clearInterval(uploadTicker);
+        attachLoadingRef.current = false;
       }
+    };
 
-      setBanner({ progress: 12, label: T('noteAttachReading'), kind: 'importing' });
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        setBanner({ kind: 'idle' });
-        Alert.alert('Sign in required', 'Sign in to attach files.');
-        return;
-      }
-
-      setBanner({ progress: 28, label: T('noteAttachUploading'), kind: 'importing' });
-      uploadTicker = setInterval(() => {
-        setBanner((prev) => prev.kind !== 'importing' ? prev : { ...prev, progress: Math.min(prev.progress + 4, 86) });
-      }, 200);
-
-      const noteIdForPath = existing?.id ?? currentNoteId ?? `n${Date.now()}`;
-      const { path, error } = await uploadNoteAttachment(session.user.id, noteIdForPath, file.uri, name, file.mimeType ?? undefined);
-      if (uploadTicker) { clearInterval(uploadTicker); uploadTicker = null; }
-      if (error) { setBanner({ kind: 'idle' }); Alert.alert('Upload failed', 'Could not upload.'); return; }
-
-      setBanner({ progress: 92, label: T('noteImportSaving'), kind: 'importing' });
-      setAttachmentPath(path);
-      setAttachmentFileName(name);
-      setExtractedText(undefined);
-      setBanner({ progress: 100, label: T('noteAttachDone'), kind: 'importing' });
-      await new Promise((r) => setTimeout(r, 650));
-      setBanner({ kind: 'done', message: T('noteAttachDone') });
-    } catch {
-      setBanner({ kind: 'idle' });
-      Alert.alert('Attachment failed', 'Could not attach the file.');
-    } finally {
-      if (uploadTicker) clearInterval(uploadTicker);
-      attachLoadingRef.current = false;
-    }
+    Alert.alert('Attach Photo', 'Choose an image source', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: ['images'],
+              quality: 0.7,
+            });
+            if (!result.canceled && result.assets[0]) {
+              processPhoto(result.assets[0].uri, result.assets[0].fileName || `camera_${Date.now()}.jpg`, result.assets[0].mimeType);
+            }
+          } catch (e) {
+            Alert.alert('Camera Unavailable', 'The camera is not available on this device or simulator.');
+          }
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+            const name = asset.fileName || `photo-${Date.now()}.jpg`;
+            processPhoto(asset.uri, name, asset.mimeType);
+          }
+        },
+      },
+    ]);
   };
 
   const handleOpenAttachment = async () => {
@@ -399,7 +433,7 @@ export default function NotesEditor() {
             {attachmentFileName && (
               <Pressable style={[s.attachmentCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={handleOpenAttachment}>
                 <View style={[s.attachmentIcon, { backgroundColor: `${theme.primary}15` }]}>
-                  <Feather name={isPdfAttachment ? 'file-text' : 'file'} size={20} color={theme.primary} />
+                  <Feather name={isPdfAttachment ? 'file-text' : 'image'} size={20} color={theme.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.attachmentName, { color: theme.text }]} numberOfLines={1}>{attachmentFileName}</Text>
@@ -434,7 +468,7 @@ export default function NotesEditor() {
               </Pressable>
               <View style={[s.toolDivider, { backgroundColor: theme.border }]} />
               <Pressable onPress={handleAttachFile} style={s.toolBtn} hitSlop={4}>
-                <Feather name="paperclip" size={17} color={theme.primary} />
+                <Feather name="camera" size={17} color={theme.primary} />
               </Pressable>
             </View>
             <Text style={[s.wordCount, { color: theme.textSecondary }]}>

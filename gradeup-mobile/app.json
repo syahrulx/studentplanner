@@ -110,8 +110,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI to read your class schedule and (2) select a profile picture for your community profile. For example, you can pick a screenshot of your university portal timetable and Rencana will automatically fill in your classes, times, and rooms.",
-          "cameraPermission": false,
+          "photosPermission": "Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI schedule generation, (2) select a profile picture, and (3) attach study materials or photos to your notes.",
+          "cameraPermission": "Rencana needs camera access so you can take live photos to attach to your study notes, provide proof of delivery for services, or send images in chat messages.",
           "microphonePermission": false
         }
       ],

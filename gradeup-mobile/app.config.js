@@ -80,13 +80,13 @@ export default ({ config }) => {
   // Centralized here so they always win over any plugin-injected defaults
   // during `expo prebuild` / EAS builds.
   const PHOTO_LIBRARY_USAGE =
-    'Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI to read your class schedule and (2) select a profile picture for your community profile. For example, you can pick a screenshot of your university portal timetable and Rencana will automatically fill in your classes, times, and rooms.';
+    'Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI schedule generation, (2) select a profile picture, and (3) attach study materials or photos to your notes. For example, you can select a photo of a textbook page to keep as a reference in your study notes.';
   const PHOTO_LIBRARY_ADD_USAGE =
     'Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.';
   const LOCATION_WHEN_IN_USE =
     'Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background.';
   const CAMERA_USAGE =
-    'Rencana needs camera access so you can take live photos to attach as proof of delivery for services or send in chat messages.';
+    'Rencana needs camera access so you can take live photos to attach to your study notes, provide proof of delivery for services, or send images in chat messages.';
 
   const baseAndroid = base.android ?? {};
   const existingIntentFilters = Array.isArray(baseAndroid.intentFilters)
