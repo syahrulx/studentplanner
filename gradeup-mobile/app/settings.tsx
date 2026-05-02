@@ -474,7 +474,7 @@ export default function Settings() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>Premium Themes</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                Unlock premium theme packs (locked for free users)
+                Unlock premium theme packs (1-week free trial available)
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
