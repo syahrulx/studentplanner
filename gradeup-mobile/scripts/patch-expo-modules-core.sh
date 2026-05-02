@@ -67,14 +67,36 @@ patch_dynamic_swift_ui_view_type_assume_isolated() {
   if [ ! -f "$file" ]; then
     return
   fi
-  # Idempotent: only when the original two-line if-let form is still present.
-  if grep -q 'ofType: ExpoSwiftUI.ViewWrapper.self),' "$file"; then
-    perl -i -0777 -pe 's/if let provider = appContext\.findView\(withTag: viewTag, ofType: ExpoSwiftUI\.ViewWrapper\.self\),\s*\n\s*let innerView = provider\.getWrappedView\(\) as\? ViewType \{\s*\n\s*return innerView\s*\n\s*\}/if let provider = appContext.findView(withTag: viewTag, ofType: ExpoSwiftUI.ViewWrapper.self) {\n      let innerView = MainActor.assumeIsolated {\n        provider.getWrappedView() as? ViewType\n      }\n      if let innerView = innerView {\n        return innerView\n      }\n    }/s' "$file"
-    echo "  ✅ $(basename "$file") (assumeIsolated getWrappedView)"
+  # 1) Handle getWrappedView with boxing.
+  # Match the original Expo code (two-line if-let) OR the previously partially patched code (MainActor.assumeIsolated without boxing).
+  if grep -q 'provider.getWrappedView() as? ViewType' "$file"; then
+    if grep -q 'let boxed = ExpoConcurrencyUnchecked(value: provider)' "$file"; then
+       : # Already boxed
+    else
+       # If it was already patched with assumeIsolated but no boxing:
+       if grep -q 'let innerView = MainActor.assumeIsolated {' "$file"; then
+         perl -i -0777 -pe 's/if let provider = appContext\.findView\(withTag: viewTag, ofType: ExpoSwiftUI\.ViewWrapper\.self\) \{\n\s*let innerView = MainActor\.assumeIsolated \{\n\s*provider\.getWrappedView\(\) as\? ViewType/if let provider = appContext.findView(withTag: viewTag, ofType: ExpoSwiftUI.ViewWrapper.self) {\n      let boxed = ExpoConcurrencyUnchecked(value: provider)\n      let innerView = MainActor.assumeIsolated {\n        boxed.value.getWrappedView() as? ViewType/g' "$file"
+       else
+         # Original Expo code
+         perl -i -0777 -pe 's/if let provider = appContext\.findView\(withTag: viewTag, ofType: ExpoSwiftUI\.ViewWrapper\.self\),\s*\n\s*let innerView = provider\.getWrappedView\(\) as\? ViewType \{\s*\n\s*return innerView\s*\n\s*\}/if let provider = appContext.findView(withTag: viewTag, ofType: ExpoSwiftUI.ViewWrapper.self) {\n      let boxed = ExpoConcurrencyUnchecked(value: provider)\n      let innerView = MainActor.assumeIsolated {\n        boxed.value.getWrappedView() as? ViewType\n      }\n      if let innerView = innerView {\n        return innerView\n      }\n    }/s' "$file"
+       fi
+       echo "  ✅ $(basename "$file") (assumeIsolated + boxed getWrappedView)"
+    fi
   fi
-  if grep -q '^    return view.getContentView()$' "$file"; then
-    perl -i -pe 's/^    return view\.getContentView\(\)$/    return MainActor.assumeIsolated {\n      view.getContentView()\n    }/' "$file"
-    echo "  ✅ $(basename "$file") (assumeIsolated getContentView in cast)"
+
+  # 2) Handle getContentView with boxing.
+  if grep -q 'view.getContentView()' "$file"; then
+    if grep -q 'let boxed = ExpoConcurrencyUnchecked(value: view)' "$file"; then
+       : # Already boxed
+    else
+       if grep -q 'return MainActor.assumeIsolated {' "$file"; then
+         perl -i -0777 -pe 's/return MainActor\.assumeIsolated \{\n\s*view\.getContentView\(\)/let boxed = ExpoConcurrencyUnchecked(value: view)\n    return MainActor.assumeIsolated {\n      boxed.value.getContentView()/g' "$file"
+       else
+         # Original Expo code
+         perl -i -pe 's/^    return view\.getContentView\(\)$/    let boxed = ExpoConcurrencyUnchecked(value: view)\n    return MainActor.assumeIsolated {\n      boxed.value.getContentView()\n    }/' "$file"
+       fi
+       echo "  ✅ $(basename "$file") (assumeIsolated + boxed getContentView)"
+    fi
   fi
 }
 
@@ -298,6 +320,7 @@ for EMC in "${EMC_CANDIDATES[@]}"; do
   patch_remove_duplicate_mainactor_override "$EMC/Core/Views/SwiftUI/SwiftUIVirtualView.swift"
 
   # 3d) MainActor-isolated getWrappedView / getContentView called from nonisolated Swift 6 contexts.
+  insert_expo_concurrency_unchecked_shim "$EMC/Core/DynamicTypes/DynamicSwiftUIViewType.swift"
   patch_dynamic_swift_ui_view_type_assume_isolated "$EMC/Core/DynamicTypes/DynamicSwiftUIViewType.swift"
   patch_swift_ui_view_definition_unwrapped_assume_isolated "$EMC/Core/Views/SwiftUI/SwiftUIViewDefinition.swift"
   patch_expo_swift_ui_view_mainactor_extension "$EMC/Core/Views/SwiftUI/SwiftUIViewDefinition.swift"
