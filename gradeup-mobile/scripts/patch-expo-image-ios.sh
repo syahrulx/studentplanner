@@ -2,6 +2,13 @@
 # Patches expo-image iOS sources for Swift 6 / Xcode 16.4 (MainActor + sendable). Run after npm install.
 set -e
 
+# These patches are only for iOS (Swift 6 compatibility).
+# Skip on Android/Linux build environments to avoid sed incompatibility.
+if [[ "$OSTYPE" != "darwin"* ]]; then
+  echo "⏭  Skipping expo-image iOS patch (not on macOS)"
+  exit 0
+fi
+
 EXI_CANDIDATES=(
   "node_modules/expo-image/ios"
 )

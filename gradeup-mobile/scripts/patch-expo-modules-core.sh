@@ -5,6 +5,13 @@
 
 set -e
 
+# These patches are only for iOS (Swift 6 compatibility).
+# Skip on Android/Linux build environments to avoid sed incompatibility.
+if [[ "$OSTYPE" != "darwin"* ]]; then
+  echo "⏭  Skipping expo-modules-core patch (not on macOS)"
+  exit 0
+fi
+
 EMC_CANDIDATES=(
   "node_modules/expo/node_modules/expo-modules-core/ios"
   "node_modules/expo-modules-core/ios"
