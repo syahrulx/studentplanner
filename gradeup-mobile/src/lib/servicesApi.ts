@@ -660,13 +660,17 @@ export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
   const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  const response = await fetch(uri);
-  const blob = await response.blob();
+  const formData = new FormData();
+  formData.append('', {
+    uri,
+    name: fileName,
+    type: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+  } as any);
 
   const { error } = await supabase.storage
     .from('delivery-attachments')
-    .upload(fileName, blob, {
-      contentType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+    .upload(fileName, formData, {
+      contentType: 'multipart/form-data',
       upsert: false,
     });
   if (error) throw error;
