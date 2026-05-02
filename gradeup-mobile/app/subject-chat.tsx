@@ -169,7 +169,9 @@ export default function SubjectChat() {
 
           const body: AiGenerateRequest = {
             kind: 'chat',
-            content: notesContext,
+            content: notesContext, // fallback if no embeddings exist yet
+            subject_id: subjectId,
+            question: userText,
             chat_history: apiMessages.slice(-10), // keep the last 10 messages for context
           };
 

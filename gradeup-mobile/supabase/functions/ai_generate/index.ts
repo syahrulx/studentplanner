@@ -16,6 +16,10 @@ interface RequestBody {
   kind: GenerateKind;
   /** Note content or extracted PDF text for flashcard/quiz generation. */
   content?: string;
+  /** For chat RAG: the user's question text. */
+  question?: string;
+  /** For chat RAG: the subject to search embeddings within. */
+  subject_id?: string;
   /** Number of items to generate. */
   count?: number;
   /** Quiz-specific fields. */
@@ -304,11 +308,13 @@ Deno.serve(async (req) => {
     }
 
     const content = (body.content ?? '').trim();
-    if (!content || content.length < 20) {
+
+    // For chat, content is optional (we use RAG). For others, require it.
+    if (kind !== 'chat' && (!content || content.length < 20)) {
       return errorJson('Content is too short for AI generation.', 'BAD_REQUEST');
     }
 
-    // Truncate to prevent abuse (max ~12k chars ≈ 3k tokens)
+    // Truncate to prevent abuse for non-chat (chat uses RAG chunks)
     const MAX_CONTENT = 15_000;
     const truncatedContent = content.slice(0, MAX_CONTENT);
 
@@ -359,13 +365,52 @@ Deno.serve(async (req) => {
       ];
       maxTokens = 2500;
     } else if (kind === 'chat') {
-      const prompts = buildChatPrompt(truncatedContent);
       const history = Array.isArray(body.chat_history) ? body.chat_history : [];
+      const subjectId = body.subject_id ?? '';
+      // The latest user question is the last user message in history
+      const latestUserMsg = [...history].reverse().find(m => m.role === 'user');
+      const question = body.question ?? latestUserMsg?.content ?? '';
+
+      let ragContext = '';
+
+      // Try RAG: embed the question and fetch relevant note chunks
+      if (question && subjectId) {
+        try {
+          const embedRes = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: question, model: 'text-embedding-3-small' }),
+          });
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            const queryEmbedding = embedData.data?.[0]?.embedding;
+            if (queryEmbedding) {
+              const { data: chunks } = await supabaseAdmin.rpc('match_note_embeddings', {
+                query_embedding: queryEmbedding,
+                match_threshold: 0.3,
+                match_count: 6,
+                p_user_id: userId,
+                p_subject_id: subjectId,
+              });
+              if (chunks && chunks.length > 0) {
+                ragContext = chunks.map((c: { content: string }) => c.content).join('\n\n---\n\n');
+              }
+            }
+          }
+        } catch (_ragErr) {
+          // RAG failed silently, fall back to passed content
+        }
+      }
+
+      // Fall back to content passed from client if RAG yielded nothing
+      const contextForPrompt = ragContext || content;
+
+      const prompts = buildChatPrompt(contextForPrompt);
       messages = [
         { role: 'system', content: prompts.system },
         ...history.map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
       ];
-      maxTokens = 1000;
+      maxTokens = 1500;
     } else {
       const quizType = body.quiz_type || 'mcq';
       const difficulty = body.difficulty || 'medium';

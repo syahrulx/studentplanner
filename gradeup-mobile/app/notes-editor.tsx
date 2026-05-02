@@ -157,6 +157,14 @@ export default function NotesEditor() {
     handleSaveNote(note);
     setSaved(true);
     if (showAlert) Alert.alert('Saved', 'Note saved successfully.');
+
+    // Fire-and-forget embedding generation for AI Tutor context
+    const fullContent = [note.content, note.extractedText].filter(Boolean).join('\n\n').trim();
+    if (fullContent.length > 50) {
+      import('@/src/lib/invokeAiGenerate').then(({ invokeAiEmbed }) => {
+        invokeAiEmbed({ noteId: note.id, subjectId: note.subjectId, content: fullContent });
+      }).catch(() => {});
+    }
   }, [title, content, tag, currentNoteId, existing, subjectId, paramFolderId, attachmentPath, attachmentFileName, extractedText]);
 
   const onDeleteNote = () => {

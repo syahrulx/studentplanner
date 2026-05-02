@@ -22,6 +22,10 @@ export interface AiGenerateRequest {
   current_week?: number;
   courses?: { id: string; name: string }[];
   chat_history?: { role: 'user' | 'assistant'; content: string }[];
+  /** RAG: the user's question to embed and search for relevant chunks. */
+  question?: string;
+  /** RAG: the subject ID to scope embedding search. */
+  subject_id?: string;
 }
 
 export type AiGenerateFlashcardsResult = {
@@ -130,5 +134,22 @@ export async function invokeAiGenerate<T = unknown>(
       data: null,
       error: e?.message || 'AI generation request failed. Please try again.',
     };
+  }
+}
+
+export async function invokeAiEmbed(
+  body: { noteId: string; subjectId: string; content: string }
+): Promise<{ success: boolean; chunksProcessed?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('ai_embed', { body });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (data?.error) {
+      return { success: false, error: data.error };
+    }
+    return { success: true, chunksProcessed: data?.chunksProcessed };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'AI embedding failed' };
   }
 }
