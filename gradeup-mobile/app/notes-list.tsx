@@ -6,8 +6,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { ImportProgressBar } from '@/components/ImportProgressBar';
@@ -323,33 +322,28 @@ export default function NotesList() {
     triggerPdfExtraction(noteId, note.attachmentPath, note.title, cleared);
   };
 
-  const handleImportFile = async () => {
+  const handleImportFile = async (type: string | string[] = '*/*') => {
     if (isImportingRef.current) return;
     
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Gallery access is required to import photos.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) return;
-
     isImportingRef.current = true;
     setIsImporting(true);
     let uploadTicker: ReturnType<typeof setInterval> | null = null;
 
     try {
-      const asset = result.assets[0];
-      const fileName = asset.fileName || `photo-${Date.now()}.jpg`;
-      
-      const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-      if (fileInfo.exists && fileInfo.size && fileInfo.size > 10 * 1024 * 1024) {
-        Alert.alert('File too large', 'Photos must be under 10MB.');
+      const result = await DocumentPicker.getDocumentAsync({ type, copyToCacheDirectory: true });
+      if (result.canceled) {
+        return;
+      }
+      const file = result.assets[0];
+      const fileName = file.name ?? `attachment-${Date.now()}`;
+      const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+      const fileSize = typeof file.size === 'number' ? file.size : null;
+
+      if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
+        Alert.alert(
+          'File too large for AI extraction',
+          `This PDF is ${Math.round(fileSize / (1024 * 1024))}MB. AI extraction supports up to 25MB.\n\nPlease compress or split the PDF before importing.`,
+        );
         return;
       }
 
@@ -358,7 +352,7 @@ export default function NotesList() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.id) {
         setImportProgressUi(null);
-        Alert.alert('Sign in required', 'Sign in to import photos into notes.');
+        Alert.alert('Sign in required', 'Sign in to import files into notes.');
         return;
       }
 
@@ -375,9 +369,9 @@ export default function NotesList() {
       const { path, error } = await uploadNoteAttachment(
         session.user.id,
         noteId,
-        asset.uri,
+        file.uri,
         fileName,
-        asset.mimeType ?? undefined,
+        file.mimeType ?? undefined,
       );
       if (uploadTicker) {
         clearInterval(uploadTicker);
@@ -386,7 +380,7 @@ export default function NotesList() {
 
       if (error) {
         setImportProgressUi(null);
-        Alert.alert('Upload failed', 'Could not upload the photo. Please check your connection and try again.');
+        Alert.alert('Upload failed', 'Could not upload the file. Please check your connection and try again.');
         return;
       }
 
@@ -405,12 +399,17 @@ export default function NotesList() {
       };
       handleSaveNote(note);
 
+      if (isPdf && path) {
+        setImportProgressUi({ progress: 95, label: 'Preparing PDF for AI...' });
+        triggerPdfExtraction(noteId, path, fileName, note as any);
+      }
+
       setImportProgressUi({ progress: 100, label: T('noteImportDone') });
       await new Promise((r) => setTimeout(r, 700));
       setImportProgressUi(null);
     } catch (e) {
       setImportProgressUi(null);
-      Alert.alert('Import failed', 'Could not import the photo. Please try again.');
+      Alert.alert('Import failed', 'Could not import the file. Please try again.');
     } finally {
       if (uploadTicker) clearInterval(uploadTicker);
       isImportingRef.current = false;
@@ -420,9 +419,9 @@ export default function NotesList() {
 
   const promptImportFileType = () => {
     if (isImportingRef.current) return;
-    Alert.alert('Import Photo', 'Select a photo from your gallery (under 10MB).', [
-      { text: 'Choose Photo', onPress: () => handleImportFile() },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(T('noteImportAlertTitle'), `${T('noteImportAlertMessage')}\n\nAI extraction limit: PDF up to 25MB.\nFor faster results, use under 10MB when possible.`, [
+      { text: T('noteImportChoosePdf'), onPress: () => setTimeout(() => handleImportFile('application/pdf').catch(() => {}), 400) },
+      { text: T('cancel'), style: 'cancel' },
     ]);
   };
 

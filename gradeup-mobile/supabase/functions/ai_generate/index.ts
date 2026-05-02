@@ -175,11 +175,10 @@ Rules:
 
 function buildChatPrompt(content: string): { system: string } {
   return {
-    system: `You are an AI Subject Tutor for a university student.
-You must answer the student's questions based strictly on the provided study notes below.
-If the answer is not found in the notes, say "I cannot find the answer in your notes."
-Do not invent information. Keep your answers clear, concise, and helpful.
-Do NOT use markdown formatting like bold (**), italics, or hashes. Keep the text plain.
+    system: `You are a brilliant, encouraging university Subject Tutor.
+Use the provided notes as your primary source of truth. If the notes are incomplete, you may supplement with general academic knowledge, but explicitly mention that you are adding outside context.
+Use clear analogies to explain complex topics. Use Socratic questioning when appropriate.
+Format your responses beautifully using Markdown (bullet points, bold text for emphasis).
 
 Provided Notes:
 ${content}`,
@@ -194,6 +193,7 @@ async function callOpenAI(
   apiKey: string,
   messages: { role: string; content: string }[],
   maxTokens: number,
+  model: string = 'gpt-4o-mini'
 ): Promise<{ content: string; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000); // 45s timeout
@@ -207,7 +207,7 @@ async function callOpenAI(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages,
         temperature: 0.7,
         max_tokens: maxTokens,
@@ -377,7 +377,12 @@ Deno.serve(async (req) => {
       maxTokens = 4000;
     }
 
-    const result = await callOpenAI(openAiKey, messages, maxTokens);
+    let targetModel = 'gpt-4o-mini';
+    if (kind === 'chat' && plan === 'pro') {
+      targetModel = 'gpt-4o'; // PRO users get the flagship model for chat
+    }
+
+    const result = await callOpenAI(openAiKey, messages, maxTokens, targetModel);
 
     if (result.error) {
       return errorJson(result.error, 'OPENAI_ERROR');
@@ -388,7 +393,7 @@ Deno.serve(async (req) => {
     logTokenUsage(supabaseAdmin, {
       user_id: userId,
       kind,
-      model: 'gpt-4o-mini',
+      model: targetModel,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
       total_tokens: result.usage?.total_tokens ?? null,

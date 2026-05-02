@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import Markdown from 'react-native-markdown-display';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
@@ -44,7 +45,7 @@ function onPrimaryChipBg(inverseHex: string): string {
   return hexToRgba(inverseHex, 0.14);
 }
 
-const MAX_CONTEXT_LENGTH = 15000;
+const MAX_CONTEXT_LENGTH = 200000;
 
 export default function SubjectChat() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
@@ -111,9 +112,13 @@ export default function SubjectChat() {
       return;
     }
     const subjectNotes = notes.filter(n => n.subjectId === subjectId);
+    // Sort by updatedAt so chronological order is generally preserved
+    subjectNotes.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+    
     let fullText = '';
     for (const note of subjectNotes) {
-      if (note.title) fullText += `\n--- Note: ${note.title} ---\n`;
+      const dateStr = note.updatedAt ? new Date(note.updatedAt).toLocaleDateString() : 'Unknown Date';
+      fullText += `\n--- Note Title: ${note.title || 'Untitled'} | Tag: ${note.tag} | Date: ${dateStr} ---\n`;
       if (note.content) fullText += `${note.content}\n`;
       if (note.extractedText) fullText += `${note.extractedText}\n`;
     }
@@ -263,14 +268,24 @@ export default function SubjectChat() {
                     : [s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border, borderBottomLeftRadius: 6 }],
                 ]}
               >
-                <Text
-                  style={[
-                    s.bubbleText,
-                    { color: m.role === 'user' ? theme.textInverse : theme.text },
-                  ]}
-                >
-                  {m.text}
-                </Text>
+                {m.role === 'ai' ? (
+                  <Markdown
+                    style={{
+                      body: [s.bubbleText, { color: theme.text }],
+                      paragraph: { marginTop: 0, marginBottom: 8 },
+                      code_inline: { backgroundColor: theme.border, paddingHorizontal: 4, borderRadius: 4, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+                      code_block: { backgroundColor: theme.border, padding: 8, borderRadius: 8, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+                      link: { color: theme.primary },
+                      list_item: { marginBottom: 4 },
+                    }}
+                  >
+                    {m.text}
+                  </Markdown>
+                ) : (
+                  <Text style={[s.bubbleText, { color: theme.textInverse }]}>
+                    {m.text}
+                  </Text>
+                )}
               </View>
             </View>
           ))}
