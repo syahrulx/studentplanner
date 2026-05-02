@@ -85,6 +85,8 @@ export default ({ config }) => {
     'Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.';
   const LOCATION_WHEN_IN_USE =
     'Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background.';
+  const CAMERA_USAGE =
+    'Rencana needs camera access so you can take live photos to attach as proof of delivery for services or send in chat messages.';
 
   const baseAndroid = base.android ?? {};
   const existingIntentFilters = Array.isArray(baseAndroid.intentFilters)
@@ -131,6 +133,7 @@ export default ({ config }) => {
         NSPhotoLibraryUsageDescription: PHOTO_LIBRARY_USAGE,
         NSPhotoLibraryAddUsageDescription: PHOTO_LIBRARY_ADD_USAGE,
         NSLocationWhenInUseUsageDescription: LOCATION_WHEN_IN_USE,
+        NSCameraUsageDescription: CAMERA_USAGE,
         // Mapbox iOS SDK reads this at native startup — eliminates race condition
         // where MapView renders before the JS setAccessToken() bridge call completes.
         MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || ("pk.eyJ1Ijoic2hhc2FmZiIsImEiOiJjbW55NDcwMDcwOXN3MnFweWM" + "xODFhajRnIn0.9uMXoqeYEiAJPlc5ZVOWKw"),

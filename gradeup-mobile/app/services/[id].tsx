@@ -292,14 +292,36 @@ export default function ServiceDetailScreen() {
       Alert.alert('Limit reached', 'You can attach up to 3 images.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
-    }
+    Alert.alert('Attach Proof', 'Choose an image source', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) {
+            setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
+          }
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            quality: 0.8,
+            allowsEditing: false,
+          });
+          if (!result.canceled && result.assets[0]) {
+            setDeliveryImages((prev) => [...prev, result.assets[0].uri]);
+          }
+        },
+      },
+    ]);
   };
 
   const handleDeliverySubmit = async () => {

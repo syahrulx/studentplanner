@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal } from 'react-native';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +10,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { Avatar } from '@/components/Avatar';
 import * as servicesApi from '@/src/lib/servicesApi';
+import { uploadPostImage } from '@/src/lib/eventsApi';
 import type { ServicePost, ServiceMessage } from '@/src/lib/servicesApi';
 
 export default function ServiceChatScreen() {
@@ -22,6 +25,7 @@ export default function ServiceChatScreen() {
   const [chatInput, setChatInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -83,6 +87,44 @@ export default function ServiceChatScreen() {
     } catch (e: any) {
       Alert.alert('Could not send message', e.message || 'Network error');
       setChatInput(text); // restore input
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handlePickImage = async () => {
+    Alert.alert('Send Image', 'Choose an image source', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access is required.');
+          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+          if (!result.canceled && result.assets[0]) processImage(result.assets[0].uri);
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
+          if (!result.canceled && result.assets[0]) processImage(result.assets[0].uri);
+        },
+      },
+    ]);
+  };
+
+  const processImage = async (uri: string) => {
+    setSending(true);
+    try {
+      const uploadedUrl = await uploadPostImage(uri);
+      const newMsg = await servicesApi.sendServiceMessage(id as string, `___IMAGE___:${uploadedUrl}`);
+      if (newMsg) {
+        setMessages(prev => [...prev, newMsg]);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    } catch (e: any) {
+      Alert.alert('Upload Failed', e.message || 'Could not send image');
     } finally {
       setSending(false);
     }
@@ -169,6 +211,9 @@ export default function ServiceChatScreen() {
             }
 
             const isMe = m.sender_id === user?.id;
+            const isImage = content.startsWith('___IMAGE___:');
+            const imageUrl = isImage ? content.replace('___IMAGE___:', '') : null;
+
             return (
               <View key={m.id} style={[s.bubbleWrap, isMe && s.bubbleRight]}>
                 <View
@@ -177,16 +222,28 @@ export default function ServiceChatScreen() {
                     isMe
                       ? [s.bubbleUser, { backgroundColor: theme.primary, borderBottomRightRadius: 6 }]
                       : [s.bubbleOther, { backgroundColor: theme.card, borderColor: theme.border, borderBottomLeftRadius: 6 }],
+                    isImage && { paddingHorizontal: 4, paddingVertical: 4, backgroundColor: 'transparent', borderWidth: 0 }
                   ]}
                 >
-                  <Text
-                    style={[
-                      s.bubbleText,
-                      { color: isMe ? theme.textInverse : theme.text },
-                    ]}
-                  >
-                    {content}
-                  </Text>
+                  {isImage && imageUrl ? (
+                    <Pressable onPress={() => setFullscreenImage(imageUrl)}>
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={{ width: 220, height: 220, borderRadius: 16 }}
+                        contentFit="cover"
+                        transition={200}
+                      />
+                    </Pressable>
+                  ) : (
+                    <Text
+                      style={[
+                        s.bubbleText,
+                        { color: isMe ? theme.textInverse : theme.text },
+                      ]}
+                    >
+                      {content}
+                    </Text>
+                  )}
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: isMe ? 'flex-end' : 'flex-start', gap: 4 }}>
                   <Text style={[s.timeText, { color: theme.textSecondary }]}>
@@ -212,11 +269,18 @@ export default function ServiceChatScreen() {
           </View>
         ) : (
           <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <Pressable
+              onPress={handlePickImage}
+              disabled={sending}
+              style={[s.attachBtn, { backgroundColor: theme.backgroundSecondary }]}
+            >
+              <Feather name="plus" size={20} color={theme.textSecondary} />
+            </Pressable>
             <TextInput
               style={[s.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
               value={chatInput}
               onChangeText={setChatInput}
-              placeholder="Type a message..."
+              placeholder="Message..."
               placeholderTextColor={theme.textSecondary}
               multiline
               textAlignVertical="center"
@@ -239,6 +303,21 @@ export default function ServiceChatScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <Modal visible={!!fullscreenImage} transparent animationType="fade" onRequestClose={() => setFullscreenImage(null)}>
+        <View style={s.modalOverlay}>
+          <Pressable style={s.closeFullscreen} onPress={() => setFullscreenImage(null)}>
+            <Feather name="x" size={24} color="#fff" />
+          </Pressable>
+          {fullscreenImage && (
+            <Image
+              source={{ uri: fullscreenImage }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -281,10 +360,17 @@ const s = StyleSheet.create({
     flex: 1,
     borderRadius: 24,
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
     fontSize: 16,
     maxHeight: 120,
+  },
+  attachBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sendBtn: {
     width: 44,
@@ -292,5 +378,18 @@ const s = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeFullscreen: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
   },
 });
