@@ -17,8 +17,12 @@ function rowToTask(row: Record<string, unknown>): Task {
     dueTime: String(row.due_time ?? ''),
     notes: String(row.notes ?? ''),
     isDone: Boolean(row.is_done),
-    deadlineRisk: (row.deadline_risk as Task['deadlineRisk']) ?? 'Medium',
-    suggestedWeek: Number(row.suggested_week ?? 0) || 0,
+    deadlineRisk:
+      row.deadline_risk == null
+        ? undefined
+        : ((row.deadline_risk as Task['deadlineRisk']) ?? 'Medium'),
+    suggestedWeek:
+      row.suggested_week == null ? undefined : Number(row.suggested_week ?? 0) || 0,
     sourceMessage: row.source_message != null ? String(row.source_message) : undefined,
     needsDate,
   };
@@ -55,8 +59,8 @@ export async function upsertTask(
       due_time: task.dueTime,
       notes: task.notes,
       is_done: task.isDone,
-      deadline_risk: task.deadlineRisk,
-      suggested_week: task.suggestedWeek,
+      deadline_risk: task.deadlineRisk ?? null,
+      suggested_week: task.suggestedWeek ?? null,
       source_message: task.sourceMessage ?? null,
     },
     { onConflict: 'id,user_id' }

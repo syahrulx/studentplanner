@@ -87,6 +87,10 @@ export default ({ config }) => {
     'Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background.';
   const CAMERA_USAGE =
     'Rencana needs camera access so you can take live photos to attach to your study notes, provide proof of delivery for services, or send images in chat messages.';
+  const CALENDAR_USAGE =
+    'Rencana reads events from calendars on this device only so you can import deadlines into your planner. For example, if you add “CSC101 Assignment due” in your phone’s Calendar app, you can pull that event into Rencana as a task. We do not change or delete your calendar.';
+  const REMINDERS_USAGE =
+    'Rencana does not use reminders for this feature; this permission may appear because the system bundles calendar access. You can deny reminders if prompted.';
 
   const baseAndroid = base.android ?? {};
   const existingIntentFilters = Array.isArray(baseAndroid.intentFilters)
@@ -130,6 +134,10 @@ export default ({ config }) => {
         NSPhotoLibraryAddUsageDescription: PHOTO_LIBRARY_ADD_USAGE,
         NSLocationWhenInUseUsageDescription: LOCATION_WHEN_IN_USE,
         NSCameraUsageDescription: CAMERA_USAGE,
+        NSCalendarsUsageDescription: CALENDAR_USAGE,
+        NSCalendarsFullAccessUsageDescription: CALENDAR_USAGE,
+        NSRemindersUsageDescription: REMINDERS_USAGE,
+        NSRemindersFullAccessUsageDescription: REMINDERS_USAGE,
 
         // Mapbox iOS SDK reads this at native startup — eliminates race condition
         // where MapView renders before the JS setAccessToken() bridge call completes.
@@ -141,6 +149,13 @@ export default ({ config }) => {
   scheme: base?.scheme ?? 'rencana',
   plugins: [
     ...(base?.plugins ?? []),
+    [
+      'expo-calendar',
+      {
+        calendarPermission: CALENDAR_USAGE,
+        remindersPermission: REMINDERS_USAGE,
+      },
+    ],
     '@react-native-community/datetimepicker',
     [
       '@rnmapbox/maps',

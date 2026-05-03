@@ -575,6 +575,26 @@ const translations = {
     scheduleStudySub: 'Schedule focused revision',
     aiPlanner: 'AI Planner',
     pasteMessageExtract: 'Paste message to extract tasks',
+    importFromCalendar: 'Import from calendar',
+    importFromCalendarSub: 'Copy events from your phone calendar as tasks',
+    importCalendarTitle: 'Import calendar',
+    importCalendarPermissionBody:
+      'Allow calendar access to import events into your planner. Events are copied as tasks with no subject—you can edit them later.',
+    importCalendarGrantAccess: 'Allow access',
+    importCalendarSelectCalendars: 'Calendars',
+    importCalendarDateRange: 'Date range',
+    importCalendarRangeThisWeek: 'This week',
+    importCalendarRangeThisMonth: 'This month',
+    importCalendarRangeSemester: 'This semester',
+    importCalendarPreview: 'Events found',
+    importCalendarImport: 'Import to planner',
+    importCalendarImporting: 'Importing…',
+    importCalendarDone: 'Import complete',
+    importCalendarNoEvents: 'No events in this range.',
+    importCalendarTooMany:
+      'Too many events in this range. Only the first {n} will be imported—narrow the range if needed.',
+    importCalendarLoadError: 'Could not load calendars.',
+    importCalendarNoCalendars: 'No calendars found on this device.',
 
     // Community tab
     communityHeroTitle: 'Community',
@@ -1358,6 +1378,26 @@ const translations = {
     scheduleStudySub: 'Jadualkan sesi fokus',
     aiPlanner: 'Perancang AI',
     pasteMessageExtract: 'Tampal mesej untuk ekstrak tugasan',
+    importFromCalendar: 'Import daripada kalendar',
+    importFromCalendarSub: 'Salin acara daripada kalendar telefon anda sebagai tugasan',
+    importCalendarTitle: 'Import kalendar',
+    importCalendarPermissionBody:
+      'Benarkan akses kalendar untuk mengimport acara ke perancang anda. Acara disalin sebagai tugasan tanpa subjek—anda boleh edit kemudian.',
+    importCalendarGrantAccess: 'Benarkan akses',
+    importCalendarSelectCalendars: 'Kalendar',
+    importCalendarDateRange: 'Julat tarikh',
+    importCalendarRangeThisWeek: 'Minggu ini',
+    importCalendarRangeThisMonth: 'Bulan ini',
+    importCalendarRangeSemester: 'Semester ini',
+    importCalendarPreview: 'Acara dijumpai',
+    importCalendarImport: 'Import ke perancang',
+    importCalendarImporting: 'Mengimport…',
+    importCalendarDone: 'Import selesai',
+    importCalendarNoEvents: 'Tiada acara dalam julat ini.',
+    importCalendarTooMany:
+      'Terlalu banyak acara dalam julat ini. Hanya {n} pertama akan diimport—perketat julat jika perlu.',
+    importCalendarLoadError: 'Tidak dapat memuatkan kalendar.',
+    importCalendarNoCalendars: 'Tiada kalendar dijumpai pada peranti ini.',
 
     // Community tab
     communityHeroTitle: 'Komuniti',

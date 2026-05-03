@@ -168,9 +168,27 @@ export default function TabLayout() {
               <View style={[styles.addMenuIcon, { backgroundColor: '#0891b2' }]}>
                 <ThemeIcon name="sparkles" size={22} color="#fff" />
               </View>
-              <View>
+              <View style={styles.addMenuTextContainer}>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('pasteMessageExtract')}</Text>
+              </View>
+            </Pressable>
+
+            <View style={[styles.addMenuDivider, { backgroundColor: theme.border }]} />
+
+            <Pressable
+              style={({ pressed }) => [styles.addMenuItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => {
+                closeAddMenu();
+                router.push('/import-calendar' as any);
+              }}
+            >
+              <View style={[styles.addMenuIcon, { backgroundColor: '#0d9488' }]}>
+                <Feather name="calendar" size={22} color="#fff" />
+              </View>
+              <View style={styles.addMenuTextContainer}>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('importFromCalendar')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('importFromCalendarSub')}</Text>
               </View>
             </Pressable>
 
@@ -186,7 +204,7 @@ export default function TabLayout() {
               <View style={[styles.addMenuIcon, { backgroundColor: theme.primary }]}>
                 <ThemeIcon name="add" size={24} color={theme.textInverse} />
               </View>
-              <View>
+              <View style={styles.addMenuTextContainer}>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addManually')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('createTaskYourself')}</Text>
               </View>
@@ -204,7 +222,7 @@ export default function TabLayout() {
               <View style={[styles.addMenuIcon, { backgroundColor: '#7c3aed' }]}>
                 <ThemeIcon name="clock" size={22} color="#fff" />
               </View>
-              <View>
+              <View style={styles.addMenuTextContainer}>
                 <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('addStudyTime')}</Text>
                 <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('scheduleStudySub')}</Text>
               </View>
@@ -248,6 +266,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addMenuTextContainer: {
+    flex: 1,
   },
   addMenuTitle: {
     fontSize: 17,

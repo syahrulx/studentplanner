@@ -373,7 +373,7 @@ export function isSelectableClassroomWork(work: GoogleCourseWork, includeMateria
   return Boolean(includeMaterials && work.workType === 'MATERIAL');
 }
 
-function deadlineRisk(dueDateStr: string): Task['deadlineRisk'] {
+function deadlineRisk(dueDateStr: string): NonNullable<Task['deadlineRisk']> {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const due = new Date(dueDateStr + 'T00:00:00');
@@ -466,6 +466,14 @@ async function fetchExistingGcTasks(userId: string): Promise<Task[]> {
     const id = String(r.id);
     const needsDate = Boolean(r.needs_date);
     const dueDate = needsDate ? getTodayISO() : String(r.due_date ?? getTodayISO());
+    // Match taskDb.rowToTask: nullable columns (after migration 063) → omit on Task, not fake Medium/0.
+    // buildTask() still recomputes deadlineRisk/suggestedWeek from Classroom on every sync.
+    const deadlineRisk =
+      r.deadline_risk == null
+        ? undefined
+        : ((r.deadline_risk as Task['deadlineRisk']) ?? 'Medium');
+    const suggestedWeek =
+      r.suggested_week == null ? undefined : Number(r.suggested_week ?? 0) || 0;
     return {
       id,
       title: String(r.title ?? ''),
@@ -475,8 +483,8 @@ async function fetchExistingGcTasks(userId: string): Promise<Task[]> {
       dueTime: String(r.due_time ?? ''),
       notes: String(r.notes ?? ''),
       isDone: Boolean(r.is_done),
-      deadlineRisk: (r.deadline_risk ?? 'Medium') as Task['deadlineRisk'],
-      suggestedWeek: Number(r.suggested_week ?? 0),
+      deadlineRisk,
+      suggestedWeek,
       sourceMessage: r.source_message ? String(r.source_message) : undefined,
       needsDate,
     };

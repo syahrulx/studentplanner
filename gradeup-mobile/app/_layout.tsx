@@ -372,6 +372,10 @@ function ThemeAwareLayout() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen name="classroom-sync" />
+        <Stack.Screen
+          name="import-calendar"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="auto-share-settings" />
         <Stack.Screen name="community" />

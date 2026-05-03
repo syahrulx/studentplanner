@@ -55,8 +55,10 @@ export interface Task {
   dueTime: string;
   notes: string;
   isDone: boolean;
-  deadlineRisk: 'High' | 'Medium' | 'Low';
-  suggestedWeek: number;
+  /** When omitted, stored as NULL (e.g. device calendar import). */
+  deadlineRisk?: 'High' | 'Medium' | 'Low';
+  /** When omitted, stored as NULL (e.g. device calendar import). */
+  suggestedWeek?: number;
   sourceMessage?: string;
   /** True when imported from Google Classroom without a real due date — placeholder is today */
   needsDate?: boolean;

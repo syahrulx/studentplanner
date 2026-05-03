@@ -2,7 +2,7 @@ import { Priority, TaskType, type Task, type UserProfile } from '../types';
 import type { TaskExtractionDTO } from './taskExtraction';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 
-type DeadlineRisk = Task['deadlineRisk'];
+type DeadlineRisk = NonNullable<Task['deadlineRisk']>;
 type FocusReason = 'dueToday' | 'overdue' | 'pinned' | 'tomorrow' | 'upcoming';
 
 function parseISODateStart(isoDate: string): Date {
@@ -15,7 +15,7 @@ function diffDays(fromISO: string, toISO: string): number {
   return Math.floor((to.getTime() - from.getTime()) / 864e5);
 }
 
-function normalizeTime(value: string | undefined): string {
+export function normalizeTime(value: string | undefined): string {
   if (!value) return '23:59';
   const match = value.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return '23:59';
