@@ -130,11 +130,11 @@ export default ({ config }) => {
         NSPhotoLibraryAddUsageDescription: PHOTO_LIBRARY_ADD_USAGE,
         NSLocationWhenInUseUsageDescription: LOCATION_WHEN_IN_USE,
         NSCameraUsageDescription: CAMERA_USAGE,
-        // HACK: Spoof Xcode 26 / SDK 26 to bypass App Store submission blocks on older Mac hardware
-        DTXcode: '2641',
-        DTXcodeBuild: '26F6',
-        DTSDKName: 'iphoneos26.4',
-        DTSDKBuild: '26F6',
+        // HACK: Spoof Xcode version to match latest stable release for App Store submission
+        DTXcode: '1620',
+        DTXcodeBuild: '16C5032a',
+        DTSDKName: 'iphoneos18.2',
+        DTSDKBuild: '22C150',
         // Mapbox iOS SDK reads this at native startup — eliminates race condition
         // where MapView renders before the JS setAccessToken() bridge call completes.
         MBXAccessToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || ("pk.eyJ1Ijoic2hhc2FmZiIsImEiOiJjbW55NDcwMDcwOXN3MnFweWM" + "xODFhajRnIn0.9uMXoqeYEiAJPlc5ZVOWKw"),
