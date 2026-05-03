@@ -21,8 +21,13 @@ import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
-import { SpiderLottie } from '@/components/SpiderLottie';
 import { PlaygroundCatLottie } from '@/components/PlaygroundCatLottie';
+import {
+  ACIDLING_SPRITE_URL,
+  NOIR_WEBLING_SPRITE_URL,
+  PlaygroundCodexPet,
+  type CodexPetAnimationName,
+} from '@/components/PlaygroundCodexPet';
 import { useTranslations } from '@/src/i18n';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
@@ -67,6 +72,7 @@ const DAY_COLUMN_MIN_W = 84;
 /** gridRoot paddingHorizontal 6 + 6 */
 const GRID_OUTER_H_PAD = 12;
 const CAT_PLAYGROUND_SIZE = 120;
+const MONO_PLAYGROUND_SIZE = 56;
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -162,6 +168,8 @@ export default function TimetableScreen() {
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
   const isSpiderTheme = themePack === 'spider';
+  const isCodexPlaygroundPet = themePack === 'mono' || themePack === 'spider';
+  const playgroundPetSize = isCodexPlaygroundPet ? MONO_PLAYGROUND_SIZE : CAT_PLAYGROUND_SIZE;
   const isPurpleTheme = themePack === 'purple';
   const purplePageBg = '#f3efff';
   const isDarkMinimal = useDarkMinimalThemePack();
@@ -280,7 +288,7 @@ export default function TimetableScreen() {
    * Coordinates are derived from current grid geometry.
    */
   const playgroundTargets = useMemo(() => {
-    if (!isCatTheme) return [] as Array<{ x: number; y: number }>;
+    if (!isCatTheme && !isCodexPlaygroundPet) return [] as Array<{ x: number; y: number }>;
     const targets: Array<{ x: number; y: number }> = [];
     daysForWeekGrid.forEach(({ key }, dayIdx) => {
       const items = timetable
@@ -291,11 +299,11 @@ export default function TimetableScreen() {
         const endMin = timeToMinutes(entry.endTime);
         const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
         const slotHeight = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-        const catSize = 120;
-        const catHalf = catSize / 2;
-        const platformX = TIME_GUTTER + dayIdx * dayColumnWidth + dayColumnWidth / 2 - catHalf;
+        const petSize = playgroundPetSize;
+        const petHalf = petSize / 2;
+        const platformX = TIME_GUTTER + dayIdx * dayColumnWidth + dayColumnWidth / 2 - petHalf;
         // Land on the "top surface" of the card, not inside it.
-        const platformY = top - catSize * 0.92;
+        const platformY = top - petSize * 0.92;
         targets.push({
           x: Math.max(TIME_GUTTER - 8, platformX),
           y: Math.max(14, platformY),
@@ -303,7 +311,7 @@ export default function TimetableScreen() {
       });
     });
     return targets;
-  }, [isCatTheme, daysForWeekGrid, timetable, dayColumnWidth]);
+  }, [isCatTheme, isCodexPlaygroundPet, playgroundPetSize, daysForWeekGrid, timetable, dayColumnWidth]);
 
   const catX = useRef(new RNAnimated.Value(TIME_GUTTER + 8)).current;
   const catY = useRef(new RNAnimated.Value(64)).current;
@@ -314,10 +322,12 @@ export default function TimetableScreen() {
   const catLaneY = useRef(64);
   const catHoldUntilMs = useRef(0);
   const [catDragging, setCatDragging] = useState(false);
+  const [codexPetAnim, setCodexPetAnim] = useState<CodexPetAnimationName>('idle');
   const dragStartX = useRef(0);
   const dragStartY = useRef(0);
-  const shouldPlaygroundCat = isCatTheme && viewMode === 'week' && !gridEditMode && playgroundTargets.length > 0;
-  const shouldAutoPlaygroundCat = shouldPlaygroundCat && !catDragging;
+  const shouldPlaygroundPet =
+    (isCatTheme || isCodexPlaygroundPet) && viewMode === 'week' && !gridEditMode && playgroundTargets.length > 0;
+  const shouldAutoPlaygroundPet = shouldPlaygroundPet && !catDragging;
 
   const clamp = useCallback((v: number, min: number, max: number) => Math.max(min, Math.min(max, v)), []);
 
@@ -337,14 +347,15 @@ export default function TimetableScreen() {
   const catPanResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => shouldPlaygroundCat,
-        onStartShouldSetPanResponderCapture: () => shouldPlaygroundCat,
-        onMoveShouldSetPanResponder: () => shouldPlaygroundCat,
-        onMoveShouldSetPanResponderCapture: () => shouldPlaygroundCat,
+        onStartShouldSetPanResponder: () => shouldPlaygroundPet,
+        onStartShouldSetPanResponderCapture: () => shouldPlaygroundPet,
+        onMoveShouldSetPanResponder: () => shouldPlaygroundPet,
+        onMoveShouldSetPanResponderCapture: () => shouldPlaygroundPet,
         onPanResponderTerminationRequest: () => false,
         onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: () => {
           setCatDragging(true);
+          if (isCodexPlaygroundPet) setCodexPetAnim('idle');
           catHop.setValue(0);
           catScale.setValue(1.04);
           dragStartX.current = catXCurrent.current;
@@ -353,8 +364,8 @@ export default function TimetableScreen() {
           catY.stopAnimation();
         },
         onPanResponderMove: (_evt, gestureState) => {
-          const maxX = Math.max(TIME_GUTTER + 8, gridContentWidth - CAT_PLAYGROUND_SIZE - 8);
-          const maxY = Math.max(16, gridBodyHeight - CAT_PLAYGROUND_SIZE - 6);
+          const maxX = Math.max(TIME_GUTTER + 8, gridContentWidth - playgroundPetSize - 8);
+          const maxY = Math.max(16, gridBodyHeight - playgroundPetSize - 6);
           catX.setValue(clamp(dragStartX.current + gestureState.dx, TIME_GUTTER - 8, maxX));
           catY.setValue(clamp(dragStartY.current + gestureState.dy, 14, maxY));
         },
@@ -392,11 +403,23 @@ export default function TimetableScreen() {
           catScale.setValue(1);
         },
       }),
-    [shouldPlaygroundCat, catHop, catScale, catX, catY, clamp, gridContentWidth, gridBodyHeight, playgroundTargets],
+    [
+      shouldPlaygroundPet,
+      isCodexPlaygroundPet,
+      playgroundPetSize,
+      catHop,
+      catScale,
+      catX,
+      catY,
+      clamp,
+      gridContentWidth,
+      gridBodyHeight,
+      playgroundTargets,
+    ],
   );
 
   useEffect(() => {
-    if (!shouldPlaygroundCat || playgroundTargets.length === 0 || catDragging) return;
+    if (!shouldPlaygroundPet || playgroundTargets.length === 0 || catDragging) return;
     const laneHasTargets = playgroundTargets.some((t) => Math.abs(t.y - catLaneY.current) <= 10);
     if (laneHasTargets) return;
     const nearest = playgroundTargets.reduce((best, t) => {
@@ -406,10 +429,10 @@ export default function TimetableScreen() {
     catLaneY.current = nearest.t.y;
     catY.setValue(nearest.t.y);
     catX.setValue(nearest.t.x);
-  }, [shouldPlaygroundCat, playgroundTargets, catDragging, catX, catY]);
+  }, [shouldPlaygroundPet, playgroundTargets, catDragging, catX, catY]);
 
   useEffect(() => {
-    if (!shouldAutoPlaygroundCat) return;
+    if (!shouldAutoPlaygroundPet) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const run = () => {
@@ -428,6 +451,11 @@ export default function TimetableScreen() {
       const target = sameLaneTargets[Math.floor(Math.random() * sameLaneTargets.length)];
       // Stay on current top-lane and walk horizontally only.
       catY.setValue(catLaneY.current);
+      const fromX = catXCurrent.current;
+      const goingRight = target.x >= fromX;
+      if (isCodexPlaygroundPet) {
+        setCodexPetAnim(goingRight ? 'running-right' : 'running-left');
+      }
       RNAnimated.timing(catX, {
         toValue: target.x,
         duration: 2600,
@@ -435,6 +463,7 @@ export default function TimetableScreen() {
         useNativeDriver: true,
       }).start(() => {
         if (cancelled) return;
+        if (isCodexPlaygroundPet) setCodexPetAnim('idle');
         timer = setTimeout(run, 3800 + Math.random() * 2400);
       });
     };
@@ -448,7 +477,22 @@ export default function TimetableScreen() {
       catHop.stopAnimation();
       catScale.stopAnimation();
     };
-  }, [shouldAutoPlaygroundCat, playgroundTargets, catX, catY, catHop, catScale]);
+  }, [shouldAutoPlaygroundPet, isCodexPlaygroundPet, playgroundTargets, catX, catY, catHop, catScale]);
+
+  useEffect(() => {
+    if (!shouldAutoPlaygroundPet || !isCodexPlaygroundPet) return;
+    const hop = () => {
+      setCodexPetAnim('jumping');
+      RNAnimated.sequence([
+        RNAnimated.timing(catHop, { toValue: -18, duration: 160, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        RNAnimated.timing(catHop, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) setCodexPetAnim('idle');
+      });
+    };
+    const id = setInterval(hop, 9000 + Math.random() * 5000);
+    return () => clearInterval(id);
+  }, [shouldAutoPlaygroundPet, isCodexPlaygroundPet, catHop]);
 
   const previewScale = useMemo(() => {
     // Preview box is limited; scale down to fit visually.
@@ -502,7 +546,6 @@ export default function TimetableScreen() {
             <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
           </View>
         ) : null}
-        {isSpiderTheme ? <SpiderLottie variant="net" style={s.spiderNetBg} /> : null}
         {renderHeader(true)}
         <Modal
           visible={showNonUitmIntro}
@@ -1226,11 +1269,12 @@ export default function TimetableScreen() {
                     </View>
                   );
                 })}
-                {shouldPlaygroundCat ? (
+                {shouldPlaygroundPet ? (
                   <RNAnimated.View
                     {...catPanResponder.panHandlers}
                     style={[
                       s.playgroundCatLayer,
+                      isCodexPlaygroundPet ? s.playgroundMonoLayer : null,
                       {
                         transform: [
                           { translateX: catX },
@@ -1240,7 +1284,16 @@ export default function TimetableScreen() {
                       },
                     ]}
                   >
-                    <PlaygroundCatLottie style={s.playgroundCatAsset} />
+                    {isCatTheme ? (
+                      <PlaygroundCatLottie style={s.playgroundCatAsset} />
+                    ) : (
+                      <PlaygroundCodexPet
+                        style={s.playgroundMonoAsset}
+                        spriteUri={isSpiderTheme ? NOIR_WEBLING_SPRITE_URL : ACIDLING_SPRITE_URL}
+                        animation={codexPetAnim}
+                        size={MONO_PLAYGROUND_SIZE}
+                      />
+                    )}
                   </RNAnimated.View>
                 ) : null}
               </View>
@@ -1521,7 +1574,6 @@ export default function TimetableScreen() {
           <Text style={[s.catBgPaw, s.catBgPawB]}>🐾</Text>
         </View>
       ) : null}
-      {isSpiderTheme ? <SpiderLottie variant="net" style={s.spiderNetBg} /> : null}
       {renderHeader(true)}
       {renderTimetableMenu()}
       {renderExportModal()}
@@ -1568,11 +1620,6 @@ const s = StyleSheet.create({
     opacity: 0.94,
     zIndex: 5,
   },
-  spiderNetBg: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.36,
-    zIndex: 0,
-  },
   playgroundCatLayer: {
     position: 'absolute',
     width: 120,
@@ -1582,9 +1629,18 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 3,
   },
+  playgroundMonoLayer: {
+    width: MONO_PLAYGROUND_SIZE,
+    height: MONO_PLAYGROUND_SIZE,
+    borderRadius: MONO_PLAYGROUND_SIZE / 2,
+  },
   playgroundCatAsset: {
     width: 120,
     height: 120,
+  },
+  playgroundMonoAsset: {
+    width: MONO_PLAYGROUND_SIZE,
+    height: MONO_PLAYGROUND_SIZE,
   },
   header: {
     paddingHorizontal: 20,
