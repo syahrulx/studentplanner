@@ -46,10 +46,11 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
     );
   }
 
-  const maxItems = 2;
+  const maxItems = 6;
   const cls = p.classes.slice(0, maxItems);
-  const denseSmall = false;
-  const denseMedium = false;
+  const isDense = cls.length > 2;
+  const denseSmall = small && isDense;
+  const denseMedium = family === 'systemMedium' && isDense;
 
   // ── LOCK SCREEN — no foregroundStyle so iOS auto-tints for visibility ──
   if (family === 'accessoryInline') {
@@ -118,17 +119,18 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
       : `${dn[d.getDay()]}, ${mn[d.getMonth()]} ${d.getDate()}`;
   }
 
-  // ─── HOME SCREEN (small / medium / large) ───
   return (
     <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
       <VStack
         alignment="leading"
-        modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
-        spacing={small ? (denseSmall ? 6 : 8) : denseMedium ? 4 : 10}
+        modifiers={[
+          frame({ maxWidth: 'infinity', maxHeight: 'infinity', alignment: 'topLeading' }),
+          padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })
+        ]}
+        spacing={small ? (denseSmall ? 4 : 8) : denseMedium ? 4 : 10}
       >
-
         {/* Header */}
-        <HStack spacing={6} alignment="top">
+        <HStack spacing={6} alignment="top" modifiers={[frame({ maxWidth: 'infinity' })]}>
           <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
@@ -150,48 +152,131 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
           </VStack>
         </HStack>
 
-      <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
+        <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.2)]} />
 
-      {/* Class list */}
-      {cls.length === 0 ? (
-        <HStack>
-          <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
-          <Spacer />
-        </HStack>
-      ) : (
-        <VStack spacing={0} alignment="leading">
-          {cls.map((c, i) => (
-            <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0} alignment="leading">
-              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? (denseSmall ? 2 : 4) : denseMedium ? 2 : 6 }), foregroundStyle(line), opacity(0.18)]} /> : null}
-              <HStack spacing={small ? (denseSmall ? 4 : 6) : denseMedium ? 6 : 10} alignment="top" modifiers={[padding({ vertical: small ? (denseSmall ? 0 : 1) : denseMedium ? 1 : 3 })]}>
-                <VStack spacing={0} alignment="leading" modifiers={small ? [] : [frame({ width: 46 })]}>
-                  <Text modifiers={[font({ size: small ? (denseSmall ? 9 : 10) : denseMedium ? 12 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
-                    {c.startTime}
-                  </Text>
-                  {!small && !denseMedium ? (
-                    <Text modifiers={[font({ size: denseMedium ? 8 : 9, weight: 'semibold' }), foregroundStyle(muted), lineLimit(1)]}>
-                      {c.endTime}
+        {/* Content Section */}
+        {cls.length === 0 ? (
+          <HStack>
+            <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
+            <Spacer />
+          </HStack>
+        ) : (denseSmall || denseMedium) ? (
+          <HStack spacing={0} alignment="top" modifiers={[frame({ maxWidth: 'infinity' })]}>
+            {/* Left Column */}
+            <VStack spacing={0} alignment="center" modifiers={[frame({ maxWidth: 'infinity', alignment: 'center' })]}>
+              {/* Cell 1 (Index 0) */}
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
+                <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[0].startTime}</Text>
+                <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[0].label}</Text>
+                <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text>
+              </VStack>
+
+              <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+
+              {/* Cell 3 (Index 2) */}
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
+                {cls[2] ? (
+                  <>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[2].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[2].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[2].location || '—'}</Text>
+                  </>
+                ) : <Spacer />}
+              </VStack>
+
+              {cls.length > 4 ? (
+                <>
+                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+                  {/* Cell 5 (Index 4) */}
+                  <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[4].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[4].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[4].location || '—'}</Text>
+                  </VStack>
+                </>
+              ) : null}
+            </VStack>
+
+            {/* Continuous Vertical Divider */}
+            <VStack modifiers={[frame({ width: 1 }), background(line), opacity(0.22), padding({ vertical: 2 })]}>
+              <Spacer />
+            </VStack>
+
+            {/* Right Column */}
+            <VStack spacing={0} alignment="center" modifiers={[frame({ maxWidth: 'infinity', alignment: 'center' })]}>
+              {/* Cell 2 (Index 1) */}
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
+                {cls[1] ? (
+                  <>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[1].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[1].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[1].location || '—'}</Text>
+                  </>
+                ) : <Spacer />}
+              </VStack>
+
+              <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+
+              {/* Cell 4 (Index 3) */}
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
+                {cls[3] ? (
+                  <>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[3].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[3].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[3].location || '—'}</Text>
+                  </>
+                ) : <Spacer />}
+              </VStack>
+
+              {cls.length > 4 ? (
+                <>
+                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+                  {/* Cell 6 (Index 5) */}
+                  <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
+                    {cls[5] ? (
+                      <>
+                        <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[5].startTime}</Text>
+                        <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[5].label}</Text>
+                        <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[5].location || '—'}</Text>
+                      </>
+                    ) : <Spacer />}
+                  </VStack>
+                </>
+              ) : null}
+            </VStack>
+          </HStack>
+        ) : (
+          <VStack spacing={0} alignment="leading">
+            {cls.map((c, i) => (
+              <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0} alignment="leading">
+                {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), foregroundStyle(line), opacity(0.18)]} /> : null}
+                <HStack spacing={small ? 6 : 10} alignment="top" modifiers={[padding({ vertical: small ? 0 : 3 })]}>
+                  <VStack spacing={0} alignment="leading" modifiers={small ? [] : [frame({ width: 46 })]}>
+                    <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                      {c.startTime}
                     </Text>
-                  ) : null}
-                </VStack>
-                <VStack spacing={denseSmall || denseMedium ? 0 : 1} alignment="leading">
-                  <Text modifiers={[font({ size: small ? (denseSmall ? 10 : 11) : denseMedium ? 13 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
-                    {c.label}
-                  </Text>
-                  {!denseMedium ? (
-                    <Text modifiers={[font({ size: small ? (denseSmall ? 7 : 8) : denseMedium ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>
+                    {!small ? (
+                      <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(muted), lineLimit(1)]}>
+                        {c.endTime}
+                      </Text>
+                    ) : null}
+                  </VStack>
+                  <VStack spacing={1} alignment="leading">
+                    <Text modifiers={[font({ size: small ? 11 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                      {c.label}
+                    </Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>
                       {c.location || '—'}
                     </Text>
-                  ) : null}
-                </VStack>
-                <Spacer />
-              </HStack>
-            </VStack>
-          ))}
-        </VStack>
-      )}
+                  </VStack>
+                  <Spacer />
+                </HStack>
+              </VStack>
+            ))}
+          </VStack>
+        )}
 
-      <Spacer />
+        <Spacer />
       </VStack>
     </ZStack>
   );
