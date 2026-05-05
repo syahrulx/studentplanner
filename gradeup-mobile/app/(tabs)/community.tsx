@@ -301,6 +301,8 @@ export default function CommunityMap() {
     myActivity,
     locationPermissionGranted,
     requestLocationPermission,
+    locationConsentGiven,
+    grantLocationConsent,
     loading,
     sendReaction,
     sendBump,
@@ -340,12 +342,6 @@ export default function CommunityMap() {
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
 
-  // Request location on mount
-  useEffect(() => {
-    if (!locationPermissionGranted) {
-      requestLocationPermission();
-    }
-  }, [locationPermissionGranted, requestLocationPermission]);
 
   // Keep studying status automatically updated as time passes!
   useEffect(() => {
@@ -680,6 +676,36 @@ export default function CommunityMap() {
               ))}
 
           </Mapbox.MapView>
+        )}
+
+        {/* ─── First-time location consent (Apple 5.1.2 compliance) ─── */}
+        {!locationConsentGiven && locationVisibility !== 'off' && (
+          <View style={[styles.locationSessionBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.locationSessionBannerContent}>
+              <Feather name="map-pin" size={18} color={theme.primary} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.locationSessionBannerTitle, { color: theme.text }]}>
+                  Show your location on the map?
+                </Text>
+                <Text style={[styles.locationSessionBannerSub, { color: theme.textSecondary }]}>
+                  Your friends will be able to see where you are. You can change who sees you anytime in Settings.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.locationSessionBannerActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.locationSessionBtnPrimary,
+                  { backgroundColor: theme.primary },
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={grantLocationConsent}
+              >
+                <Feather name="check" size={15} color="#fff" />
+                <Text style={styles.locationSessionBtnPrimaryText}>Enable Location</Text>
+              </Pressable>
+            </View>
+          </View>
         )}
 
         {/* Map overlay buttons */}
@@ -1868,6 +1894,56 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   mapOverlayBtnText: { fontSize: 13, fontWeight: '700' },
+
+  // Location session prompt banner (Apple 5.1.2)
+  locationSessionBanner: {
+    position: 'absolute',
+    bottom: 60,
+    left: 16,
+    right: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    zIndex: 12,
+  },
+  locationSessionBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationSessionBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  locationSessionBannerSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  locationSessionBannerActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  locationSessionBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: 12,
+  },
+  locationSessionBtnPrimaryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   // Friend popup
   friendPopup: {

@@ -15,6 +15,8 @@ export interface CommunityPost {
   title: string;
   body: string | null;
   image_url: string | null;
+  /** Up to 3 photos (portrait or landscape). Preferred over image_url for display. */
+  image_urls: string[];
   university_id: string | null;
   campus: string | null;
   campus_id: string | null;
@@ -25,6 +27,7 @@ export interface CommunityPost {
   expires_at: string | null;
   status: PostStatus;
   pinned: boolean;
+  like_count: number;
   created_at: string;
   updated_at: string;
   // Joined
@@ -99,6 +102,14 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
 
   const posts = (data || []) as CommunityPost[];
 
+  // Normalise image_urls: if empty, fall back to legacy image_url
+  for (const post of posts) {
+    if (!Array.isArray(post.image_urls) || post.image_urls.length === 0) {
+      post.image_urls = post.image_url ? [post.image_url] : [];
+    }
+    post.like_count = post.like_count ?? 0;
+  }
+
   // Enrich with author profiles (community_posts.author_id → auth.users, not profiles directly)
   const authorIds = [...new Set(posts.map((p) => p.author_id))];
   if (authorIds.length) {
@@ -130,6 +141,12 @@ export async function fetchPost(postId: string): Promise<CommunityPost | null> {
   if (error || !data) return null;
 
   const post = data as CommunityPost;
+
+  // Normalise image_urls
+  if (!Array.isArray(post.image_urls) || post.image_urls.length === 0) {
+    post.image_urls = post.image_url ? [post.image_url] : [];
+  }
+  post.like_count = post.like_count ?? 0;
 
   // Enrich with author profile
   const { data: prof } = await supabase
@@ -189,7 +206,10 @@ export interface CreatePostInput {
   post_type: PostType;
   title: string;
   body?: string;
-  image_uri?: string; // local URI — will be uploaded
+  /** Up to 3 local image URIs — will be uploaded to Supabase Storage. */
+  image_uris?: string[];
+  /** @deprecated use image_uris */
+  image_uri?: string;
   university_id?: string;
   campus?: string;
   campus_id?: string;
@@ -204,10 +224,19 @@ export async function createPost(input: CreatePostInput): Promise<CommunityPost>
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  let image_url: string | null = null;
-  if (input.image_uri) {
-    image_url = await uploadPostImage(input.image_uri);
+  // Support both new image_uris array and legacy image_uri
+  const urisToUpload: string[] = [
+    ...(input.image_uris ?? []),
+    ...(input.image_uri && !input.image_uris ? [input.image_uri] : []),
+  ].slice(0, 3);
+
+  const uploadedUrls: string[] = [];
+  for (const uri of urisToUpload) {
+    const url = await uploadPostImage(uri);
+    uploadedUrls.push(url);
   }
+
+  const image_url = uploadedUrls[0] ?? null;
 
   const { data, error } = await supabase
     .from('community_posts')
@@ -217,6 +246,7 @@ export async function createPost(input: CreatePostInput): Promise<CommunityPost>
       title: input.title.trim(),
       body: input.body?.trim() || null,
       image_url,
+      image_urls: uploadedUrls,
       university_id: input.university_id || null,
       campus: input.campus || null,
       campus_id: input.campus_id || null,
@@ -251,6 +281,7 @@ export async function updatePost(
       | 'campus'
       | 'campus_id'
       | 'image_url'
+      | 'image_urls'
     >
   >
 ): Promise<void> {
@@ -260,6 +291,57 @@ export async function updatePost(
     .eq('id', postId);
 
   if (error) throw error;
+}
+
+// ─── Likes ───────────────────────────────────────────────────────────────────
+
+export async function likePost(postId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  // Ignore duplicate errors (already liked)
+  await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
+}
+
+export async function unlikePost(postId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
+}
+
+/** Returns a Set of post IDs that the current user has liked. */
+export async function getMyLikes(postIds: string[]): Promise<Set<string>> {
+  if (!postIds.length) return new Set();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new Set();
+  const { data } = await supabase
+    .from('post_likes')
+    .select('post_id')
+    .eq('user_id', user.id)
+    .in('post_id', postIds);
+  return new Set((data ?? []).map((r: any) => r.post_id));
+}
+
+// ─── Share URL ───────────────────────────────────────────────────────────────
+
+const EVENT_SHARE_BASE =
+  (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_INVITE_HTTP_BASE) ||
+  'https://aizztech.com';
+
+/** Generate a shareable deep-link URL for an event post. */
+export function generateEventShareLink(postId: string): string {
+  const base = String(EVENT_SHARE_BASE).replace(/\/$/, '');
+  return `${base}/events/${encodeURIComponent(postId)}`;
+}
+
+// ─── Report Post (Apple UGC compliance) ─────────────────────────────────────
+
+export type ReportReason = 'inappropriate' | 'spam' | 'misleading' | 'harassment' | 'other';
+
+export async function reportPost(postId: string, reason: ReportReason = 'inappropriate'): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  // Ignore duplicate (already reported)
+  await supabase.from('post_reports').insert({ post_id: postId, reporter_id: user.id, reason });
 }
 
 // ─── Delete Post ────────────────────────────────────────────────────────────

@@ -101,6 +101,10 @@ interface CommunityState {
   // Location
   locationPermissionGranted: boolean;
   requestLocationPermission: () => Promise<boolean>;
+  /** Whether the user has given first-time consent to show their location on the map. */
+  locationConsentGiven: boolean;
+  /** Record that the user consented to share their location on the map. */
+  grantLocationConsent: () => Promise<void>;
   myLatitude: number | null;
   myLongitude: number | null;
   locationVisibility: LocationVisibility;
@@ -156,6 +160,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sharedTasksTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<any>(null);
+  // First-time location consent (Apple 5.1.2 compliance).
+  // The user must explicitly agree ONCE to have their location shown on the map.
+  // After that, their visibility settings (friends/circles/off) control everything.
+  const [locationConsentGiven, setLocationConsentGiven] = useState(false);
 
   // Filtered friends based on selected circle
   const filteredFriends = selectedCircleId
@@ -551,14 +559,57 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [tr]);
 
-  // Start foreground location watching — only when visibility is NOT 'off'
+  // ─── First-time location consent (Apple Guideline 5.1.2) ───────────────────
+  // The user must explicitly opt-in ONCE to have their location shared on the
+  // map. After consenting, their visibility settings (friends/circles/off)
+  // control sharing automatically — no repeated prompts.
+  const LOCATION_CONSENT_KEY = 'community_location_consent_v1';
+
+  // Hydrate consent from storage on mount
   useEffect(() => {
-    if (!locationPermissionGranted || !userId || locationVisibility === 'off') {
-      // If visibility just turned off, clean up any active watcher
+    if (!userId) return;
+    import('@react-native-async-storage/async-storage').then(({ default: AsyncStorage }) => {
+      AsyncStorage.getItem(`${LOCATION_CONSENT_KEY}_${userId}`)
+        .then((val) => {
+          if (val === 'true') setLocationConsentGiven(true);
+        })
+        .catch(() => {});
+    });
+  }, [userId]);
+
+  const grantLocationConsent = useCallback(async () => {
+    if (!userId) return;
+
+    // Ensure we have permission first
+    let hasPermission = locationPermissionGranted;
+    if (!hasPermission) {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(tr('commLocationPermissionTitle'), tr('commLocationPermissionBody'));
+        return;
+      }
+      setLocationPermissionGranted(true);
+      hasPermission = true;
+    }
+
+    setLocationConsentGiven(true);
+    // Persist so the user is never asked again
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem(`${LOCATION_CONSENT_KEY}_${userId}`, 'true');
+    } catch {}
+  }, [userId, locationPermissionGranted, tr]);
+
+  // Foreground location watcher — runs when:
+  //  1) User has given first-time consent
+  //  2) Visibility is NOT 'off' (ghost mode)
+  //  3) Location permission is granted
+  useEffect(() => {
+    if (!locationConsentGiven || !locationPermissionGranted || !userId || locationVisibility === 'off') {
+      // Clean up any active watcher
       if (locationWatchRef.current?.remove) {
         locationWatchRef.current.remove();
         locationWatchRef.current = null;
-        console.log('[LOCATION] Foreground watcher stopped (visibility off)');
       }
       return;
     }
@@ -580,7 +631,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         const watcher = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.Balanced,
-            timeInterval: 120000, // 2 minutes (saves Disk IO)
+            timeInterval: 120000, // 2 minutes
             distanceInterval: 100, // 100 meters
           },
           (loc: any) => {
@@ -592,7 +643,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         );
 
         locationWatchRef.current = watcher;
-        console.log('[LOCATION] Foreground watcher started');
       } catch (e) {
         console.warn('Location watch error:', e);
       }
@@ -607,7 +657,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         locationWatchRef.current = null;
       }
     };
-  }, [locationPermissionGranted, userId, locationVisibility]);
+  }, [locationConsentGiven, locationPermissionGranted, userId, locationVisibility]);
 
   // Ghost mode: foreground GPS watch is off, so on cold start `myLatitude` / `myLongitude` may
   // stay null even though we still have a last point in `user_locations` (visibility off, coords kept).
@@ -908,6 +958,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     toggleCircleShareStream,
     locationPermissionGranted,
     requestLocationPermission,
+    locationConsentGiven,
+    grantLocationConsent,
     myLatitude,
     myLongitude,
     locationVisibility,

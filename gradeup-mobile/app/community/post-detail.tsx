@@ -9,6 +9,8 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Share,
+  useWindowDimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -16,12 +18,82 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
+import * as communityApi from '@/src/lib/communityApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 
-const TYPE_BADGE: Record<PostType, { label: string; icon: 'calendar' | 'tool' | 'clipboard'; color: string }> = {
-  event: { label: 'Event', icon: 'calendar', color: '#3b82f6' },
-  service: { label: 'Service', icon: 'tool', color: '#f59e0b' },
-  memo: { label: 'Memo', icon: 'clipboard', color: '#8b5cf6' },
+// ─── Image Carousel ──────────────────────────────────────────────────────────
+
+function ImageCarousel({ images }: { images: string[] }) {
+  const { width } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  if (!images.length) return null;
+
+  if (images.length === 1) {
+    return (
+      <Image
+        source={{ uri: images[0] }}
+        style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return (
+    <View>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+          setActiveIndex(idx);
+        }}
+        scrollEventThrottle={32}
+      >
+        {images.map((uri, i) => (
+          <Image
+            key={i}
+            source={{ uri }}
+            style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
+            resizeMode="cover"
+          />
+        ))}
+      </ScrollView>
+      {/* Dots */}
+      <View style={carouselStyles.dots}>
+        {images.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              carouselStyles.dot,
+              i === activeIndex ? carouselStyles.dotActive : carouselStyles.dotInactive,
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const carouselStyles = StyleSheet.create({
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 8,
+  },
+  dot: { borderRadius: 4 },
+  dotActive: { width: 18, height: 6, borderRadius: 3, backgroundColor: '#0A84FF' },
+  dotInactive: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(150,150,150,0.4)' },
+});
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const TYPE_META: Record<PostType, { label: string; icon: 'calendar' | 'tool' | 'clipboard'; tint: string }> = {
+  event: { label: 'Event', icon: 'calendar', tint: '#3b82f6' },
+  service: { label: 'Service', icon: 'tool', tint: '#f59e0b' },
+  memo: { label: 'Memo', icon: 'clipboard', tint: '#8b5cf6' },
 };
 
 function formatDate(dateStr: string): string {
@@ -29,12 +101,16 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function PostDetailScreen() {
   const theme = useTheme();
   const { user } = useApp();
   const { postId } = useLocalSearchParams<{ postId: string }>();
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
 
   const loadPost = useCallback(async () => {
     if (!postId) return;
@@ -42,6 +118,12 @@ export default function PostDetailScreen() {
     try {
       const data = await eventsApi.fetchPost(postId);
       setPost(data);
+      setLikeCount(data?.like_count ?? 0);
+      // Check if user has liked this post
+      if (data) {
+        const liked = await eventsApi.getMyLikes([data.id]);
+        setIsLiked(liked.has(data.id));
+      }
     } catch (e) {
       console.error('[PostDetail] fetchPost error:', e);
     } finally {
@@ -49,11 +131,77 @@ export default function PostDetailScreen() {
     }
   }, [postId]);
 
-  useEffect(() => {
-    loadPost();
-  }, [loadPost]);
+  useEffect(() => { loadPost(); }, [loadPost]);
 
   const isAuthor = post?.author_id === user?.id;
+
+  // ─── Actions ──────────────────────────────────────────────────────────────
+
+  const handleLike = () => {
+    const willLike = !isLiked;
+    setIsLiked(willLike);
+    setLikeCount((c) => Math.max(0, c + (willLike ? 1 : -1)));
+    if (willLike) {
+      eventsApi.likePost(post!.id).catch(() => {});
+    } else {
+      eventsApi.unlikePost(post!.id).catch(() => {});
+    }
+  };
+
+  const handleShare = async () => {
+    if (!post) return;
+    const url = eventsApi.generateEventShareLink(post.id);
+    const dateStr = post.event_date ? ` · ${formatDate(post.event_date)}` : '';
+    const locStr = post.location ? ` · ${post.location}` : '';
+    try {
+      await Share.share({
+        message: `${post.title}${dateStr}${locStr}\n${url}`,
+        url,
+        title: post.title,
+      });
+    } catch (_) {}
+  };
+
+  const handleReport = () => {
+    if (!post) return;
+    Alert.alert(
+      'Report or Block',
+      'What would you like to do?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report: Inappropriate',
+          onPress: () => {
+            eventsApi.reportPost(post.id, 'inappropriate').catch(() => {});
+            Alert.alert('Reported', 'Thank you. Our team will review this post.');
+          },
+        },
+        {
+          text: 'Report: Spam',
+          onPress: () => {
+            eventsApi.reportPost(post.id, 'spam').catch(() => {});
+            Alert.alert('Reported', 'Thank you for your feedback.');
+          },
+        },
+        {
+          text: 'Report: Misleading',
+          onPress: () => {
+            eventsApi.reportPost(post.id, 'misleading').catch(() => {});
+            Alert.alert('Reported', 'Thank you for your feedback.');
+          },
+        },
+        {
+          text: 'Block User',
+          style: 'destructive',
+          onPress: () => {
+            if (!user?.id || !post.author_id) return;
+            communityApi.blockUserByUserId(user.id, post.author_id).catch(() => {});
+            Alert.alert('User Blocked', 'You will no longer see posts or messages from this user.');
+          },
+        },
+      ]
+    );
+  };
 
   const handleDelete = () => {
     Alert.alert('Delete Post', 'Are you sure you want to delete this post?', [
@@ -82,6 +230,8 @@ export default function PostDetailScreen() {
     }
   };
 
+  // ─── Loading / Empty ───────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: theme.background }]}>
@@ -101,91 +251,149 @@ export default function PostDetailScreen() {
     );
   }
 
-  const badge = TYPE_BADGE[post.post_type];
+  const meta = TYPE_META[post.post_type];
+  const images = post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : [];
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Feather name="arrow-left" size={24} color={theme.text} />
+      {/* ── Top nav bar ── */}
+      <View style={[styles.navBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.navBack}>
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Post</Text>
-        {isAuthor ? (
-          <View style={{ flexDirection: 'row', gap: 16 }}>
-            <Pressable onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post!.id } } as any)} hitSlop={10}>
-              <Feather name="edit-2" size={20} color={theme.primary} />
+        <Text style={[styles.navTitle, { color: theme.text }]}>Post</Text>
+        <View style={styles.navRight}>
+          {isAuthor ? (
+            <>
+              <Pressable
+                onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post.id } } as any)}
+                hitSlop={10}
+              >
+                <Feather name="edit-2" size={20} color={theme.primary} />
+              </Pressable>
+              <Pressable onPress={handleDelete} hitSlop={10} style={{ marginLeft: 16 }}>
+                <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
+              </Pressable>
+            </>
+          ) : (
+            <Pressable onPress={handleReport} hitSlop={10}>
+              <Feather name="more-horizontal" size={22} color={theme.textSecondary} />
             </Pressable>
-            <Pressable onPress={handleDelete} hitSlop={10}>
-              <Feather name="trash-2" size={20} color={theme.danger || '#ef4444'} />
-            </Pressable>
-          </View>
-        ) : (
-          <View style={{ width: 24 }} />
-        )}
+          )}
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Image */}
-        {post.image_url ? (
-          <Image source={{ uri: post.image_url }} style={styles.postImage} resizeMode="cover" />
-        ) : null}
-
-        {/* Badge + Status */}
-        <View style={styles.badgeRow}>
-          <View style={[styles.typeBadge, { backgroundColor: badge.color + '18' }]}>
-            <Feather name={badge.icon} size={14} color={badge.color} />
-            <Text style={[styles.typeBadgeText, { color: badge.color }]}>{badge.label}</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* ── Author header ── */}
+        <View style={styles.authorHeader}>
+          <View style={[styles.authorAvatarWrap, { backgroundColor: meta.tint + '25' }]}>
+            {post.author_avatar ? (
+              <Image source={{ uri: post.author_avatar }} style={styles.authorAvatarImg} />
+            ) : (
+              <Text style={[styles.authorAvatarInitial, { color: meta.tint }]}>
+                {(post.author_name || '?')[0].toUpperCase()}
+              </Text>
+            )}
           </View>
-          {post.pinned && (
-            <View style={[styles.typeBadge, { backgroundColor: theme.primary + '15' }]}>
-              <Feather name="bookmark" size={12} color={theme.primary} />
-              <Text style={[styles.typeBadgeText, { color: theme.primary }]}>Pinned</Text>
-            </View>
-          )}
-          {post.status === 'closed' && (
-            <View style={[styles.typeBadge, { backgroundColor: '#ef444420' }]}>
-              <Text style={[styles.typeBadgeText, { color: '#ef4444' }]}>Closed</Text>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.authorName, { color: theme.text }]}>{post.author_name || 'Author'}</Text>
+            {post.author_university && (
+              <Text style={[styles.authorUni, { color: theme.textSecondary }]}>{post.author_university}</Text>
+            )}
+          </View>
+          <View style={[styles.typeBadge, { backgroundColor: meta.tint + '18' }]}>
+            <Feather name={meta.icon} size={12} color={meta.tint} />
+            <Text style={[styles.typeBadgeText, { color: meta.tint }]}>{meta.label}</Text>
+          </View>
+        </View>
+
+        {/* ── Image carousel ── */}
+        {images.length > 0 ? (
+          <ImageCarousel images={images} />
+        ) : (
+          <View style={[styles.noImagePlaceholder, { backgroundColor: meta.tint + '10' }]}>
+            <Feather name={meta.icon} size={48} color={meta.tint + '50'} />
+          </View>
+        )}
+
+        {/* ── Action bar ── */}
+        <View style={styles.actionBar}>
+          <Pressable onPress={handleLike} style={styles.actionBtn}>
+            <Feather
+              name="heart"
+              size={26}
+              color={isLiked ? '#FF3B30' : theme.textSecondary}
+              style={isLiked ? {} : { opacity: 0.5 }}
+            />
+          </Pressable>
+          <Pressable onPress={handleShare} style={styles.actionBtn}>
+            <Feather name="send" size={24} color={theme.textSecondary} style={{ opacity: 0.5 }} />
+          </Pressable>
+          {post.status !== 'active' && (
+            <View style={[styles.statusBadge, { backgroundColor: '#ef444420', marginLeft: 'auto' as any }]}>
+              <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>
+                {post.status.toUpperCase()}
+              </Text>
             </View>
           )}
         </View>
 
-        {/* Title */}
-        <Text style={[styles.postTitle, { color: theme.text }]}>{post.title}</Text>
+        {/* ── Like count ── */}
+        {likeCount > 0 && (
+          <Text style={[styles.likeCount, { color: theme.text }]}>
+            {likeCount.toLocaleString()} {likeCount === 1 ? 'like' : 'likes'}
+          </Text>
+        )}
 
-        {/* Meta */}
-        <View style={styles.metaSection}>
+        {/* ── Caption / Body ── */}
+        <View style={styles.captionBlock}>
+          {post.pinned && (
+            <View style={[styles.pinnedBadge, { backgroundColor: theme.primary + '15' }]}>
+              <Feather name="bookmark" size={12} color={theme.primary} />
+              <Text style={[styles.pinnedBadgeText, { color: theme.primary }]}>Pinned</Text>
+            </View>
+          )}
+          <Text style={[styles.postTitle, { color: theme.text }]}>{post.title}</Text>
+          {post.body ? (
+            <Text style={[styles.postBody, { color: theme.text }]}>{post.body}</Text>
+          ) : null}
+        </View>
+
+        {/* ── Meta row ── */}
+        <View style={[styles.metaCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           {post.event_date && (
             <View style={styles.metaItem}>
-              <Feather name="calendar" size={14} color={theme.primary} />
+              <Feather name="calendar" size={15} color={meta.tint} />
               <Text style={[styles.metaText, { color: theme.text }]}>
-                {post.event_date}{post.event_time ? ` · ${post.event_time}` : ''}
+                {formatDate(post.event_date)}{post.event_time ? ` at ${post.event_time}` : ''}
               </Text>
             </View>
           )}
           {post.location && (
             <View style={styles.metaItem}>
-              <Feather name="map-pin" size={14} color={theme.primary} />
+              <Feather name="map-pin" size={15} color={meta.tint} />
               <Text style={[styles.metaText, { color: theme.text }]}>{post.location}</Text>
             </View>
           )}
           {post.university_id && (
             <View style={styles.metaItem}>
-              <Feather name="book" size={14} color={theme.primary} />
+              <Feather name="book" size={15} color={meta.tint} />
               <Text style={[styles.metaText, { color: theme.text }]}>
                 {post.university_id.toUpperCase()}{post.campus ? ` — ${post.campus}` : ''}
               </Text>
             </View>
           )}
           <View style={styles.metaItem}>
-            <Feather name="clock" size={14} color={theme.textSecondary} />
+            <Feather name="clock" size={15} color={theme.textSecondary} />
             <Text style={[styles.metaText, { color: theme.textSecondary }]}>
               Posted {formatDate(post.created_at)}
             </Text>
           </View>
           {post.expires_at && (
             <View style={styles.metaItem}>
-              <Feather name="alert-circle" size={14} color="#f59e0b" />
+              <Feather name="alert-circle" size={15} color="#f59e0b" />
               <Text style={[styles.metaText, { color: '#f59e0b' }]}>
                 Expires {formatDate(post.expires_at)}
               </Text>
@@ -193,63 +401,41 @@ export default function PostDetailScreen() {
           )}
         </View>
 
-        {/* Body */}
-        {post.body ? (
-          <Text style={[styles.postBody, { color: theme.text }]}>{post.body}</Text>
-        ) : null}
-
-        {/* Author card */}
-        <View style={[styles.authorCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={[styles.authorAvatar, { backgroundColor: theme.primary }]}>
-            <Text style={styles.authorAvatarText}>
-              {(post.author_name || '?')[0].toUpperCase()}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.authorName, { color: theme.text }]}>{post.author_name}</Text>
-            {post.author_university && (
-              <Text style={[styles.authorUni, { color: theme.textSecondary }]}>
-                {post.author_university}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* Author actions */}
+        {/* ── Author actions (owner only) ── */}
         {isAuthor && post.status === 'active' && (
-          <View style={styles.authorActions}>
+          <View style={styles.ownerActions}>
             <Pressable
               style={({ pressed }) => [
-                styles.actionBtn,
+                styles.ownerBtn,
                 { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' },
                 pressed && { opacity: 0.7 },
               ]}
-              onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post!.id } } as any)}
+              onPress={() => router.push({ pathname: '/community/create-post', params: { editId: post.id } } as any)}
             >
               <Feather name="edit-2" size={15} color={theme.primary} />
-              <Text style={[styles.actionBtnText, { color: theme.primary }]}>Edit</Text>
+              <Text style={[styles.ownerBtnText, { color: theme.primary }]}>Edit</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
-                styles.actionBtn,
+                styles.ownerBtn,
                 { backgroundColor: '#ef444412', borderColor: '#ef444430' },
                 pressed && { opacity: 0.7 },
               ]}
               onPress={handleDelete}
             >
               <Feather name="trash-2" size={15} color="#ef4444" />
-              <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Delete</Text>
+              <Text style={[styles.ownerBtnText, { color: '#ef4444' }]}>Delete</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
-                styles.actionBtn,
+                styles.ownerBtn,
                 { borderColor: theme.border },
                 pressed && { opacity: 0.7 },
               ]}
               onPress={handleClose}
             >
               <Feather name="x-circle" size={15} color={theme.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: theme.textSecondary }]}>Close</Text>
+              <Text style={[styles.ownerBtnText, { color: theme.textSecondary }]}>Close</Text>
             </Pressable>
           </View>
         )}
@@ -258,57 +444,142 @@ export default function PostDetailScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
-  header: {
+
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 60 : 16,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 56 : 16,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 18, fontWeight: '800' },
-  content: { paddingBottom: 60 },
-  postImage: { width: '100%', height: 240 },
-  badgeRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingTop: 16 },
+  navBack: { padding: 4 },
+  navTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+  navRight: { flexDirection: 'row', alignItems: 'center' },
+
+  content: { paddingBottom: 80 },
+
+  // Author header
+  authorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  authorAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authorAvatarImg: { width: 42, height: 42, borderRadius: 21 },
+  authorAvatarInitial: { fontSize: 17, fontWeight: '800' },
+  authorName: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  authorUni: { fontSize: 12, marginTop: 2 },
+
   typeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   typeBadgeText: { fontSize: 12, fontWeight: '700' },
-  postTitle: { fontSize: 24, fontWeight: '900', lineHeight: 30, paddingHorizontal: 20, paddingTop: 14 },
-  metaSection: { paddingHorizontal: 20, paddingTop: 16, gap: 10 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metaText: { fontSize: 14, fontWeight: '500' },
-  postBody: { fontSize: 15, lineHeight: 24, paddingHorizontal: 20, paddingTop: 20 },
-  authorCard: {
+
+  // No-image
+  noImagePlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Action bar
+  actionBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginHorizontal: 20,
-    marginTop: 24,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 2,
   },
-  authorAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  authorAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  authorName: { fontSize: 15, fontWeight: '700' },
-  authorUni: { fontSize: 12, marginTop: 2 },
-  authorActions: {
+  actionBtn: { padding: 6 },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+
+  // Like count
+  likeCount: {
+    fontSize: 14,
+    fontWeight: '800',
+    paddingHorizontal: 16,
+    marginTop: 2,
+  },
+
+  // Caption
+  captionBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  pinnedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  pinnedBadgeText: { fontSize: 12, fontWeight: '700' },
+  postTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 28,
+    letterSpacing: -0.4,
+  },
+  postBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 10,
+    fontWeight: '400',
+  },
+
+  // Meta card
+  metaCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    paddingVertical: 4,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  metaText: { fontSize: 14, fontWeight: '500', flex: 1 },
+
+  // Owner actions
+  ownerActions: {
     flexDirection: 'row',
     gap: 10,
-    marginHorizontal: 20,
-    marginTop: 16,
+    marginHorizontal: 16,
+    marginTop: 20,
   },
-  actionBtn: {
+  ownerBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -318,5 +589,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  actionBtnText: { fontSize: 13, fontWeight: '700' },
+  ownerBtnText: { fontSize: 13, fontWeight: '700' },
 });

@@ -151,6 +151,8 @@ export function EventsRoute() {
                   <th className="px-3 py-2">Type</th>
                   <th className="px-3 py-2">Author</th>
                   <th className="px-3 py-2">University</th>
+                  <th className="px-3 py-2">Photos</th>
+                  <th className="px-3 py-2">Likes</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Date</th>
                   <th className="px-3 py-2 text-right">Actions</th>
@@ -183,6 +185,12 @@ export function EventsRoute() {
                       <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
                         {p.university_id?.toUpperCase() || '—'}
                         {p.campus ? ` / ${p.campus}` : ''}
+                      </td>
+                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {p.image_urls?.length ?? (p.image_url ? 1 : 0)} / 3
+                      </td>
+                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        ♡ {p.like_count ?? 0}
                       </td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${sb}`}>{p.status}</span>
@@ -227,7 +235,7 @@ export function EventsRoute() {
                 })}
                 {filtered.length === 0 && !busy ? (
                   <tr>
-                    <td colSpan={7} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    <td colSpan={9} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
                       No posts found.
                     </td>
                   </tr>

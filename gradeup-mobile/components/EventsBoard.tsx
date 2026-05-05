@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,13 @@ import {
   Platform,
   ScrollView,
   useWindowDimensions,
+  Share,
+  Alert,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+
 import Feather from '@expo/vector-icons/Feather';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,6 +28,7 @@ import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useThem
 import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
+import * as communityApi from '@/src/lib/communityApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 import { Avatar } from '@/components/Avatar';
 import { CatLottie } from '@/components/CatLottie';
@@ -91,12 +95,90 @@ function formatTime(t?: string | null): string | null {
   return `${hh}:${String(Number.isNaN(m) ? 0 : m).padStart(2, '0')} ${period}`;
 }
 
+// ─── Image Carousel Component ────────────────────────────────────────────────
+
+function ImageCarousel({ images }: { images: string[] }) {
+  const { width } = useWindowDimensions();
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  if (images.length === 1) {
+    return (
+      <Image
+        source={{ uri: images[0] }}
+        style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return (
+    <View>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+          setActiveIndex(idx);
+        }}
+        scrollEventThrottle={32}
+      >
+        {images.map((uri, i) => (
+          <Image
+            key={i}
+            source={{ uri }}
+            style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
+            resizeMode="cover"
+          />
+        ))}
+      </ScrollView>
+      {/* Dot indicators */}
+      <View style={carouselStyles.dots}>
+        {images.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              carouselStyles.dot,
+              i === activeIndex ? carouselStyles.dotActive : carouselStyles.dotInactive,
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const carouselStyles = StyleSheet.create({
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+  },
+  dot: {
+    borderRadius: 4,
+  },
+  dotActive: {
+    width: 18,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0A84FF',
+  },
+  dotInactive: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(150,150,150,0.4)',
+  },
+});
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function EventsBoard() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const CARD_WIDTH = (width - 32 - 12) / 2; // 32 for padding (16*2), 12 for gap
+  // CARD_WIDTH removed — now using full-width single-column Instagram layout
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
   const isDarkMinimal = useDarkMinimalThemePack();
@@ -110,6 +192,9 @@ export default function EventsBoard() {
   const [filter, setFilter] = useState<PostType | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
   const [showIntroModal, setShowIntroModal] = useState(false);
+  // Like state
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [likeCounts, setLikeCounts] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     async function checkIntro() {
@@ -248,6 +333,14 @@ export default function EventsBoard() {
         date: filterDate,
       });
       setPosts(data);
+      // Fetch like status for all posts
+      if (data.length) {
+        const ids = data.map((p) => p.id);
+        const liked = await eventsApi.getMyLikes(ids);
+        setLikedPostIds(liked);
+        const counts = new Map(data.map((p) => [p.id, p.like_count ?? 0]));
+        setLikeCounts(counts);
+      }
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
     }
@@ -415,96 +508,190 @@ export default function EventsBoard() {
     </View>
   );
 
-  // ─── Render Event Poster Card ──────────────────────────────────────────────
+  // ─── Instagram-style Post Card ─────────────────────────────────────────────
   const renderCard = useCallback(
-    ({ item }: { item: any }) => {
+    ({ item }: { item: CommunityPost }) => {
       const meta = TYPE_META[item.post_type as keyof typeof TYPE_META] || TYPE_META.other;
       const eventDate = parseEventDate(item.event_date);
       const isOwn = user?.id === item.author_id;
-      const orgName = item.organization_id ? organizations.find(o => o.id === item.organization_id)?.name || 'Organization' : null;
-      const uniName = item.university_id ? item.university_id.toUpperCase() : 'Community';
+      const orgName = item.organization_id
+        ? organizations.find((o) => o.id === item.organization_id)?.name || null
+        : null;
+      const uniLabel = item.university_id ? item.university_id.toUpperCase() : 'Community';
+      const images = item.image_urls?.length ? item.image_urls : item.image_url ? [item.image_url] : [];
+      const isLiked = likedPostIds.has(item.id);
+      const likeCount = likeCounts.get(item.id) ?? item.like_count ?? 0;
+
+      const handleLike = () => {
+        const willLike = !isLiked;
+        setLikedPostIds((prev) => {
+          const next = new Set(prev);
+          willLike ? next.add(item.id) : next.delete(item.id);
+          return next;
+        });
+        setLikeCounts((prev) => {
+          const next = new Map(prev);
+          next.set(item.id, Math.max(0, (prev.get(item.id) ?? 0) + (willLike ? 1 : -1)));
+          return next;
+        });
+        if (willLike) {
+          eventsApi.likePost(item.id).catch(() => {});
+        } else {
+          eventsApi.unlikePost(item.id).catch(() => {});
+        }
+      };
+
+      const handleShare = async () => {
+        const url = eventsApi.generateEventShareLink(item.id);
+        const dateStr = eventDate ? ` · ${eventDate.weekday}, ${eventDate.monthLong} ${eventDate.day}` : '';
+        const locationStr = item.location ? ` · ${item.location}` : '';
+        try {
+          await Share.share({
+            message: `${item.title}${dateStr}${locationStr}\n${url}`,
+            url,
+            title: item.title,
+          });
+        } catch (_) {}
+      };
+
+      const handleReport = () => {
+        Alert.alert(
+          'Report or Block',
+          'What would you like to do?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Report: Inappropriate',
+              onPress: () => { eventsApi.reportPost(item.id, 'inappropriate').catch(() => {}); Alert.alert('Reported', 'Thank you. Our team will review this post.'); },
+            },
+            {
+              text: 'Report: Spam',
+              onPress: () => { eventsApi.reportPost(item.id, 'spam').catch(() => {}); Alert.alert('Reported', 'Thank you for your feedback.'); },
+            },
+            {
+              text: 'Report: Misleading',
+              onPress: () => { eventsApi.reportPost(item.id, 'misleading').catch(() => {}); Alert.alert('Reported', 'Thank you for your feedback.'); },
+            },
+            {
+              text: 'Block User',
+              style: 'destructive',
+              onPress: () => {
+                if (!user?.id || !item.author_id) return;
+                communityApi.blockUserByUserId(user.id, item.author_id).catch(() => {});
+                Alert.alert('User Blocked', 'You will no longer see posts from this user.');
+              },
+            },
+          ]
+        );
+      };
 
       return (
-        <Pressable
-          style={({ pressed }) => [
-            styles.card,
-            {
-              width: CARD_WIDTH,
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              shadowColor: dark ? '#000' : '#0f172a',
-            },
-            pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 },
-          ]}
-          onPress={() => {
-            if (isOwn) {
-              router.push({ pathname: '/community/create-post', params: { editId: item.id } } as any);
-            } else {
-              router.push({ pathname: '/community/post-detail', params: { postId: item.id } } as any);
-            }
-          }}
-        >
-          {/* Poster Image */}
-          {item.image_url ? (
-            <View style={styles.heroWrap}>
-              <Image source={{ uri: item.image_url }} style={styles.heroImage} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.6)']}
-                style={styles.heroOverlay}
-                pointerEvents="none"
-              />
-
-              {/* Top badges */}
-              <View style={styles.heroTopRow} pointerEvents="none">
-                {item.pinned && (
-                  <View style={[styles.heroBadge, { backgroundColor: theme.card + 'E8' }]}>
-                    <Feather name="bookmark" size={10} color={theme.text} />
-                  </View>
-                )}
-                <View style={[styles.heroBadge, { backgroundColor: theme.card + 'E8' }]}>
-                  <Feather name={meta.icon as any} size={10} color={meta.tint} />
-                </View>
-              </View>
-
-              {/* Date Capsule */}
-              {eventDate && (
-                <View style={styles.heroBottomRow} pointerEvents="none">
-                  <View style={[styles.dateCapsule, { backgroundColor: theme.card + 'F0' }]}>
-                    <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>{eventDate.month}</Text>
-                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
-                  </View>
+        <View style={[styles.igCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          {/* ── Author header ── */}
+          <View style={styles.igHeader}>
+            <View style={styles.igAvatarWrap}>
+              {item.author_avatar ? (
+                <Image source={{ uri: item.author_avatar }} style={styles.igAvatar} />
+              ) : (
+                <View style={[styles.igAvatar, styles.igAvatarFallback, { backgroundColor: meta.tint + '30' }]}>
+                  <Text style={[styles.igAvatarInitial, { color: meta.tint }]}>
+                    {(item.author_name || '?')[0].toUpperCase()}
+                  </Text>
                 </View>
               )}
             </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.igAuthorName, { color: theme.text }]} numberOfLines={1}>
+                {item.author_name || 'Author'}
+              </Text>
+              <Text style={[styles.igAuthorSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                {orgName || uniLabel} · {timeAgo(item.created_at)}
+              </Text>
+            </View>
+            {/* Type badge */}
+            <View style={[styles.igTypeBadge, { backgroundColor: meta.tint + '18' }]}>
+              <Feather name={meta.icon as any} size={12} color={meta.tint} />
+              <Text style={[styles.igTypeBadgeText, { color: meta.tint }]}>{meta.label}</Text>
+            </View>
+            {/* 3-dot menu */}
+            <Pressable
+              onPress={() =>
+                isOwn
+                  ? router.push({ pathname: '/community/create-post', params: { editId: item.id } } as any)
+                  : handleReport()
+              }
+              hitSlop={8}
+              style={styles.igMenuBtn}
+            >
+              <Feather name={isOwn ? 'edit-2' : 'more-horizontal'} size={18} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+
+          {/* ── Image carousel ── */}
+          {images.length > 0 ? (
+            <ImageCarousel images={images} />
           ) : (
-            // No Image placeholder (just fill the space nicely)
-            <View style={[styles.heroWrap, { backgroundColor: meta.tint + '15', justifyContent: 'center', alignItems: 'center' }]}>
-              <Feather name={meta.icon as any} size={32} color={meta.tint + '50'} />
-              {eventDate && (
-                <View style={[styles.heroBottomRow, { left: 8, bottom: 8 }]} pointerEvents="none">
-                  <View style={[styles.dateCapsule, { backgroundColor: theme.card }]}>
-                    <Text style={[styles.dateCapsuleMonth, { color: meta.tint }]}>{eventDate.month}</Text>
-                    <Text style={[styles.dateCapsuleDay, { color: theme.text }]}>{eventDate.day}</Text>
-                  </View>
-                </View>
-              )}
+            // No-image placeholder
+            <View style={[styles.igNoImagePlaceholder, { backgroundColor: meta.tint + '10' }]}>
+              <Feather name={meta.icon as any} size={36} color={meta.tint + '60'} />
             </View>
           )}
 
-          {/* Compact Info Body */}
-          <View style={styles.cardBody}>
-            <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-            
-            <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-              {orgName || uniName}
-            </Text>
+          {/* ── Action bar ── */}
+          <View style={styles.igActions}>
+            <Pressable onPress={handleLike} style={styles.igActionBtn}>
+              <Feather
+                name={isLiked ? 'heart' : 'heart'}
+                size={24}
+                color={isLiked ? '#FF3B30' : theme.textSecondary}
+                style={isLiked ? { opacity: 1 } : { opacity: 0.65 }}
+              />
+            </Pressable>
+            <Pressable onPress={handleShare} style={styles.igActionBtn}>
+              <Feather name="send" size={22} color={theme.textSecondary} style={{ opacity: 0.65 }} />
+            </Pressable>
+            {/* Event date badge pushed to right */}
+            {eventDate && (
+              <View style={[styles.igDateBadge, { backgroundColor: meta.tint + '15', borderColor: meta.tint + '30' }]}>
+                <Feather name="calendar" size={11} color={meta.tint} />
+                <Text style={[styles.igDateBadgeText, { color: meta.tint }]}>{eventDate.full}</Text>
+              </View>
+            )}
           </View>
-        </Pressable>
+
+          {/* ── Like count ── */}
+          {likeCount > 0 && (
+            <Text style={[styles.igLikeCount, { color: theme.text }]}>
+              {likeCount.toLocaleString()} {likeCount === 1 ? 'like' : 'likes'}
+            </Text>
+          )}
+
+          {/* ── Caption ── */}
+          <Pressable
+            style={styles.igCaption}
+            onPress={() => router.push({ pathname: '/community/post-detail', params: { postId: item.id } } as any)}
+          >
+            <Text style={[styles.igCaptionTitle, { color: theme.text }]} numberOfLines={2}>
+              {item.pinned && <Text style={{ color: meta.tint }}>📌 </Text>}{item.title}
+            </Text>
+            {item.body ? (
+              <Text style={[styles.igCaptionBody, { color: theme.textSecondary }]} numberOfLines={2}>
+                {item.body}
+              </Text>
+            ) : null}
+            {item.location ? (
+              <View style={styles.igLocationRow}>
+                <Feather name="map-pin" size={11} color={theme.textSecondary} />
+                <Text style={[styles.igLocationText, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {item.location}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
       );
     },
-    [theme, user, dark, campuses, organizations]
+    [theme, user, organizations, likedPostIds, likeCounts]
   );
 
   // ─── Empty State ──────────────────────────────────────────────────────────
@@ -550,8 +737,6 @@ export default function EventsBoard() {
         <FlatList
           data={posts}
           keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 12, paddingHorizontal: 16 }}
           renderItem={renderCard}
           style={{ backgroundColor: theme.background }}
           contentContainerStyle={styles.listContent}
@@ -1200,117 +1385,120 @@ const styles = StyleSheet.create({
   // List
   listContent: { paddingBottom: 120 },
 
-  // Card (Poster format)
-  card: {
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
-    overflow: 'hidden',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+  // Instagram-style card
+  igCard: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 0,
   },
-
-  // Hero (Poster A4 aspect ratio)
-  heroWrap: { width: '100%', aspectRatio: 210 / 297, position: 'relative' },
-  heroImage: { width: '100%', height: '100%' },
-  heroOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  heroTopRow: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
+  igHeader: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  heroBadge: {
+  igAvatarWrap: {},
+  igAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  igAvatarFallback: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
   },
-  heroBottomRow: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    flexDirection: 'row',
+  igAvatarInitial: {
+    fontSize: 15,
+    fontWeight: '800',
   },
-  dateCapsule: {
-    width: 44,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderRadius: 10,
-    alignItems: 'center',
-    paddingVertical: 5,
-    overflow: 'hidden',
+  igAuthorName: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
-  dateCapsuleMonth: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  dateCapsuleDay: { fontSize: 16, fontWeight: '800', color: '#111827', letterSpacing: -0.5, lineHeight: 18 },
-  heroTypeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+  igAuthorSub: {
+    fontSize: 12,
+    marginTop: 1,
   },
-  heroTypeChipText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
-
-  // No-image header
-  cardHeaderNoImage: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  typeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  typeChipText: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
-  cardHeaderBadges: { flexDirection: 'row', gap: 6 },
-  miniChip: {
+  igTypeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 10,
+    marginRight: 8,
   },
-  miniChipText: { fontSize: 10, fontWeight: '700' },
-
-  // Card body
-  cardBody: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 12 },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    lineHeight: 18,
-  },
-  authorMeta: {
+  igTypeBadgeText: {
     fontSize: 11,
-    fontWeight: '600',
-    marginTop: 6,
-    letterSpacing: -0.1,
+    fontWeight: '700',
   },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metaText: { fontSize: 13, fontWeight: '500', flex: 1, letterSpacing: -0.1 },
-
-  hairline: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
-
-  cardFooter: {
+  igMenuBtn: {
+    padding: 4,
+  },
+  igNoImagePlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  igActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 10,
+    paddingTop: 4,
+    paddingBottom: 2,
+    gap: 4,
   },
-  authorName: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
+  igActionBtn: {
+    padding: 6,
+  },
+  igDateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto' as any,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  igDateBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  igLikeCount: {
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 16,
+    marginTop: 2,
+  },
+  igCaption: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 14,
+  },
+  igCaptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 20,
+  },
+  igCaptionBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  igLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  igLocationText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+  },
 
   // Empty
   emptyState: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },

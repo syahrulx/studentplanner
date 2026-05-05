@@ -80,7 +80,7 @@ export default ({ config }) => {
   // Centralized here so they always win over any plugin-injected defaults
   // during `expo prebuild` / EAS builds.
   const PHOTO_LIBRARY_USAGE =
-    'Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI schedule generation, (2) select a profile picture, and (3) attach study materials or photos to your notes. For example, you can select a photo of a textbook page to keep as a reference in your study notes.';
+    'Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI schedule generation, (2) select a profile picture, (3) attach study materials or photos to your notes, and (4) upload up to 3 photos when creating community event posts. For example, you can select a photo of a textbook page to keep as a reference in your study notes, or upload event flyers when posting a campus event.';
   const PHOTO_LIBRARY_ADD_USAGE =
     'Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.';
   const LOCATION_WHEN_IN_USE =

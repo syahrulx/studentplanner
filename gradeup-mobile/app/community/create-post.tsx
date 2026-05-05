@@ -13,7 +13,6 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -54,8 +53,8 @@ export default function CreatePostScreen() {
   const [postType, setPostType] = useState<PostType>('event');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [imageUris, setImageUris] = useState<string[]>([]); // local URIs for newly picked images
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]); // URLs already on server
   const [eventDate, setEventDate] = useState<Date | null>(null);
   const [eventTime, setEventTime] = useState('');
   const [location, setLocation] = useState('');
@@ -71,6 +70,10 @@ export default function CreatePostScreen() {
   const [authorityLoaded, setAuthorityLoaded] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const locationDefaultsApplied = useRef(false);
+
+  // Total images = already uploaded + newly picked (max 3 combined)
+  const totalImages = existingImageUrls.length + imageUris.length;
+  const canAddMore = totalImages < 3;
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
   const isAuthority = authorityRequest?.status === 'approved';
@@ -111,7 +114,9 @@ export default function CreatePostScreen() {
         setPostType(post.post_type);
         setTitle(post.title);
         setBody(post.body || '');
-        setExistingImageUrl(post.image_url);
+        // Prefer multi-image array, fall back to single image_url
+        const existingUrls = post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : [];
+        setExistingImageUrls(existingUrls);
         setEventTime(post.event_time || '');
         setLocation(post.location || '');
         setFormUniversityId(post.university_id);
@@ -128,13 +133,15 @@ export default function CreatePostScreen() {
   }, [editId]);
 
   const pickImage = async () => {
+    if (!canAddMore) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: true,
-      aspect: [210, 297], // A4 ratio
+      quality: 0.85,
+      allowsEditing: false, // allow portrait or landscape freely
     });
-    if (!result.canceled && result.assets[0]) setImageUri(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) {
+      setImageUris((prev) => [...prev, result.assets[0].uri].slice(0, 3));
+    }
   };
 
   const handleSubmit = async () => {
@@ -149,12 +156,18 @@ export default function CreatePostScreen() {
     setSubmitting(true);
     try {
       if (isEditing) {
-        let image_url = existingImageUrl;
-        if (imageUri) image_url = await eventsApi.uploadPostImage(imageUri);
+        // Upload any newly picked images, then merge with kept existing URLs
+        const newlyUploaded: string[] = [];
+        for (const uri of imageUris) {
+          const url = await eventsApi.uploadPostImage(uri);
+          newlyUploaded.push(url);
+        }
+        const finalUrls = [...existingImageUrls, ...newlyUploaded].slice(0, 3);
         await eventsApi.updatePost(editId!, {
           title: title.trim(),
           body: body.trim() || null,
-          image_url,
+          image_url: finalUrls[0] ?? null,
+          image_urls: finalUrls,
           event_date: eventDate ? eventDate.toISOString().split('T')[0] : null,
           event_time: eventTime.trim() || null,
           university_id: formUniversityId,
@@ -168,7 +181,7 @@ export default function CreatePostScreen() {
           post_type: postType,
           title: title.trim(),
           body: body.trim() || undefined,
-          image_uri: imageUri || undefined,
+          image_uris: imageUris.length ? imageUris : undefined,
           university_id: formUniversityId || authorityRequest?.university_id || userUni || undefined,
           campus_id: formCampusId || undefined,
           campus: campusNameResolved || undefined,
@@ -208,9 +221,17 @@ export default function CreatePostScreen() {
     ]);
   };
 
-  const heroUri = imageUri || existingImageUrl;
   const activeMeta = POST_TYPES.find((p) => p.type === postType)!;
   const activeTint = isMonoOnly ? '#f3f4f6' : activeMeta.tint;
+
+  // All image previews: existing server URLs first, then newly picked local URIs
+  const allPreviewImages: { uri: string; isLocal: boolean; idx: number }[] = [
+    ...existingImageUrls.map((uri, idx) => ({ uri, isLocal: false, idx })),
+    ...imageUris.map((uri, idx) => ({ uri, isLocal: true, idx })),
+  ];
+
+  const removeExistingImage = (idx: number) => setExistingImageUrls((prev) => prev.filter((_, i) => i !== idx));
+  const removeNewImage = (idx: number) => setImageUris((prev) => prev.filter((_, i) => i !== idx));
 
   if (loadingEdit) {
     return (
@@ -351,53 +372,61 @@ export default function CreatePostScreen() {
           </View>
         </View>
 
-        {/* ─── Image ─── */}
+        {/* ─── Images (up to 3) ─── */}
         <View style={styles.section}>
-          <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>IMAGE</Text>
-          {heroUri ? (
-            <View style={styles.heroWrap}>
-              <Image source={{ uri: heroUri }} style={styles.heroImg} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.5)']}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <View style={styles.heroActions}>
-                <Pressable
-                  onPress={pickImage}
-                  style={[styles.heroBtn, { backgroundColor: 'rgba(255,255,255,0.9)' }]}
-                >
-                  <Feather name="camera" size={14} color="#1c1c1e" />
-                  <Text style={styles.heroBtnText}>Change</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => { setImageUri(null); setExistingImageUrl(null); }}
-                  style={[styles.heroBtn, { backgroundColor: 'rgba(0,0,0,0.55)' }]}
-                >
-                  <Feather name="trash-2" size={14} color="#fff" />
-                  <Text style={[styles.heroBtnText, { color: '#fff' }]}>Remove</Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : (
+          <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>PHOTOS</Text>
+          <Text style={[styles.imageHint, { color: theme.textSecondary }]}>
+            Up to 3 photos · Portrait or landscape
+          </Text>
+
+          {/* Thumbnail strip */}
+          {allPreviewImages.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.thumbStrip}
+              style={{ marginBottom: 10 }}
+            >
+              {allPreviewImages.map((img) => (
+                <View key={`${img.isLocal ? 'local' : 'remote'}-${img.idx}`} style={styles.thumbWrap}>
+                  <Image source={{ uri: img.uri }} style={styles.thumbImg} resizeMode="cover" />
+                  <Pressable
+                    style={styles.thumbRemoveBtn}
+                    onPress={() => img.isLocal ? removeNewImage(img.idx) : removeExistingImage(img.idx)}
+                    hitSlop={6}
+                  >
+                    <Feather name="x" size={12} color="#fff" />
+                  </Pressable>
+                  {img.idx === 0 && !img.isLocal && existingImageUrls.length > 0 && (
+                    <View style={styles.thumbCoverBadge}>
+                      <Text style={styles.thumbCoverText}>Cover</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Add photo button */}
+          {canAddMore ? (
             <Pressable
               onPress={pickImage}
               style={({ pressed }) => [
-                styles.imagePlaceholder,
+                styles.addPhotoBtn,
                 { backgroundColor: theme.card, borderColor: theme.border },
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <View style={[styles.imagePlaceholderIcon, { backgroundColor: theme.backgroundSecondary }]}>
-                <Feather name="image" size={22} color={theme.textSecondary} />
-              </View>
-              <Text style={[styles.imagePlaceholderText, { color: theme.textSecondary }]}>
-                Add a cover image
-              </Text>
-              <Text style={[styles.imagePlaceholderSub, { color: theme.textSecondary }]}>
-                Optional · A4 Portrait recommended
+              <Feather name="plus" size={18} color={theme.primary} />
+              <Text style={[styles.addPhotoBtnText, { color: theme.primary }]}>
+                {allPreviewImages.length === 0 ? 'Add photo' : `Add photo (${totalImages}/3)`}
               </Text>
             </Pressable>
+          ) : (
+            <View style={[styles.addPhotoBtn, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border, opacity: 0.5 }]}>
+              <Feather name="check" size={16} color={theme.textSecondary} />
+              <Text style={[styles.addPhotoBtnText, { color: theme.textSecondary }]}>3/3 photos added</Text>
+            </View>
           )}
         </View>
 
@@ -652,47 +681,66 @@ const styles = StyleSheet.create({
     minHeight: 90,
   },
 
-  // Image
-  heroWrap: {
-    borderRadius: 16,
+  // Image upload styles
+  imageHint: {
+    fontSize: 12,
+    fontWeight: '400',
+    marginBottom: 10,
+  },
+  thumbStrip: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  thumbWrap: {
+    width: 100,
+    height: 130,
+    borderRadius: 12,
     overflow: 'hidden',
-    aspectRatio: 210 / 297,
     position: 'relative',
   },
-  heroImg: { width: '100%', height: '100%' },
-  heroActions: {
+  thumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbRemoveBtn: {
     position: 'absolute',
-    bottom: 12,
-    right: 12,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  heroBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  heroBtnText: { fontSize: 13, fontWeight: '600', color: '#1c1c1e' },
-  imagePlaceholder: {
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
-    aspectRatio: 210 / 297,
-    borderRadius: 16,
+  },
+  thumbCoverBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  thumbCoverText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  addPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: 8,
   },
-  imagePlaceholderIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  addPhotoBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
-  imagePlaceholderText: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
-  imagePlaceholderSub: { fontSize: 12, fontWeight: '400' },
 
   // Detail rows (Settings-style)
   detailRow: {

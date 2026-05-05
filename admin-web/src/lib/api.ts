@@ -1224,6 +1224,8 @@ export type AdminCommunityPostRow = {
   title: string;
   body: string | null;
   image_url: string | null;
+  image_urls: string[] | null;
+  like_count: number;
   university_id: string | null;
   campus: string | null;
   event_date: string | null;
