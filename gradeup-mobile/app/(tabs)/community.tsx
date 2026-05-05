@@ -680,15 +680,17 @@ export default function CommunityMap() {
 
         {/* ─── First-time location consent (Apple 5.1.2 compliance) ─── */}
         {!locationConsentGiven && locationVisibility !== 'off' && (
-          <View style={[styles.locationSessionBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.locationSessionBanner, { backgroundColor: theme.card, shadowColor: theme.text }]}>
             <View style={styles.locationSessionBannerContent}>
-              <Feather name="map-pin" size={18} color={theme.primary} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
+              <View style={[styles.locationIconWrap, { backgroundColor: theme.primary + '1A' }]}>
+                <Feather name="map-pin" size={24} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 16 }}>
                 <Text style={[styles.locationSessionBannerTitle, { color: theme.text }]}>
                   Check in on the map?
                 </Text>
                 <Text style={[styles.locationSessionBannerSub, { color: theme.textSecondary }]}>
-                  Share your location with friends for this session. You will be checked out when you close the app.
+                  Share your location with friends for this session. You will be automatically checked out when you leave.
                 </Text>
               </View>
             </View>
@@ -697,12 +699,12 @@ export default function CommunityMap() {
                 style={({ pressed }) => [
                   styles.locationSessionBtnPrimary,
                   { backgroundColor: theme.primary },
-                  pressed && { opacity: 0.85 },
+                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
                 ]}
                 onPress={grantLocationConsent}
               >
-                <Feather name="check" size={15} color="#fff" />
-                <Text style={styles.locationSessionBtnPrimaryText}>Check In</Text>
+                <Feather name="navigation" size={16} color="#fff" />
+                <Text style={styles.locationSessionBtnPrimaryText}>Check In Now</Text>
               </Pressable>
             </View>
           </View>
@@ -1898,50 +1900,55 @@ const styles = StyleSheet.create({
   // Location session prompt banner (Apple 5.1.2)
   locationSessionBanner: {
     position: 'absolute',
-    bottom: 60,
+    bottom: Platform.OS === 'ios' ? 80 : 60,
     left: 16,
     right: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    borderRadius: 24,
+    padding: 20,
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
-    zIndex: 12,
+    shadowRadius: 24,
+    elevation: 8,
+    zIndex: 100,
   },
   locationSessionBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 16,
+  },
+  locationIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   locationSessionBannerTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   locationSessionBannerSub: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    marginTop: 2,
-    lineHeight: 16,
+    marginTop: 4,
+    lineHeight: 18,
   },
   locationSessionBannerActions: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
   },
   locationSessionBtnPrimary: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    height: 40,
-    borderRadius: 12,
+    gap: 8,
+    height: 48,
+    borderRadius: 16,
   },
   locationSessionBtnPrimaryText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
 
