@@ -1,6 +1,18 @@
-import * as Calendar from 'expo-calendar';
 import type { Calendar as DeviceCalendar, Event as DeviceEvent } from 'expo-calendar';
 import type { Task } from '../types';
+
+/**
+ * Load expo-calendar only when needed. A static `import 'expo-calendar'` runs as soon as this
+ * file is bundled (e.g. with the import-calendar route) and crashes if the native module is
+ * not present (e.g. wrong binary). Dynamic import defers that until the user actually uses import.
+ */
+type ExpoCalendarModule = typeof import('expo-calendar');
+let calendarModulePromise: Promise<ExpoCalendarModule> | null = null;
+
+function loadExpoCalendar(): Promise<ExpoCalendarModule> {
+  calendarModulePromise ??= import('expo-calendar');
+  return calendarModulePromise;
+}
 import { getTodayISO } from '../utils/date';
 import { normalizeTaskType, normalizeTime } from './taskUtils';
 
@@ -13,6 +25,7 @@ export function stableCalendarTaskId(calendarId: string, eventId: string): strin
 }
 
 export async function ensureCalendarPermission(): Promise<boolean> {
+  const Calendar = await loadExpoCalendar();
   const { status } = await Calendar.getCalendarPermissionsAsync();
   if (status === 'granted') return true;
   const { status: next } = await Calendar.requestCalendarPermissionsAsync();
@@ -21,6 +34,7 @@ export async function ensureCalendarPermission(): Promise<boolean> {
 
 /** Calendars that can hold events; prefer those visible / synced on Android. */
 export async function getEventCalendars(): Promise<DeviceCalendar[]> {
+  const Calendar = await loadExpoCalendar();
   const list = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   return list.filter((c) => {
     if (c.isVisible === false) return false;
@@ -35,6 +49,7 @@ export async function fetchEventsInRange(
   end: Date,
 ): Promise<DeviceEvent[]> {
   if (calendarIds.length === 0) return [];
+  const Calendar = await loadExpoCalendar();
   return Calendar.getEventsAsync(calendarIds, start, end);
 }
 

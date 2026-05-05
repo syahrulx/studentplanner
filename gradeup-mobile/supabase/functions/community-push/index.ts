@@ -76,6 +76,26 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+async function fetchProfilesByIds(
+  admin: ReturnType<typeof createClient>,
+  ids: string[],
+): Promise<{ data: ProfileRow[]; error: string | null }> {
+  const all: ProfileRow[] = [];
+  // Keep each `.in('id', ...)` small so the generated PostgREST URL
+  // does not exceed proxy/http2 limits on large broadcasts.
+  for (const idBatch of chunk(ids, 200)) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select(
+        'id, expo_push_token, community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled',
+      )
+      .in('id', idBatch);
+    if (error) return { data: [], error: error.message };
+    all.push(...((data ?? []) as ProfileRow[]));
+  }
+  return { data: all, error: null };
+}
+
 serve(async (req: Request) => {
   const corsHeaders = buildCorsHeaders(req);
   const json = (s: number, b: unknown) => jsonResp(s, b, corsHeaders);
@@ -100,15 +120,11 @@ serve(async (req: Request) => {
   if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const uniqueIds = Array.from(new Set(ids));
 
-  const { data: profiles, error: profilesErr } = await admin
-    .from('profiles')
-    .select(
-      'id, expo_push_token, community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled',
-    )
-    .in('id', ids);
+  const { data: profiles, error: profilesErr } = await fetchProfilesByIds(admin, uniqueIds);
 
-  if (profilesErr) return json(500, { error: profilesErr.message });
+  if (profilesErr) return json(500, { error: profilesErr });
 
   const tokens = ((profiles ?? []) as ProfileRow[])
     .filter((p: ProfileRow) => typeof p.expo_push_token === 'string' && p.expo_push_token.startsWith('ExponentPushToken['))

@@ -11,6 +11,11 @@ type Json = Record<string, unknown>;
 
 type PdfCandidate = { url: string; context?: string };
 
+function looksLikePdfUrl(url: URL): boolean {
+  const full = `${url.pathname}${url.search}${url.hash}`.toLowerCase();
+  return /\.pdf($|[?#&/])/i.test(full) || full.includes('.pdf');
+}
+
 function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -27,6 +32,108 @@ async function extractPdfTextWithUnpdf(bytes: Uint8Array): Promise<string | null
     return s.length > 0 ? s : null;
   } catch {
     return null;
+  }
+}
+
+async function extractPdfTextWithGemini(
+  bytes: Uint8Array,
+  geminiKey: string,
+): Promise<{ text: string | null; error?: string }> {
+  if (!geminiKey || geminiKey.length < 10) {
+    return { text: null, error: 'GEMINI_API_KEY is missing in admin_data function secrets.' };
+  }
+  if (bytes.byteLength < 100 || bytes.byteLength > 25 * 1024 * 1024) {
+    return { text: null, error: 'PDF size is outside supported OCR range (100B to 25MB).' };
+  }
+  try {
+    const uploadRes = await fetch(
+      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'X-Goog-Upload-Protocol': 'raw',
+          'X-Goog-Upload-Header-Content-Type': 'application/pdf',
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(bytes.byteLength),
+        },
+        body: bytes,
+      },
+    );
+    if (!uploadRes.ok) return { text: null, error: `Gemini upload failed (HTTP ${uploadRes.status}).` };
+    const uploadJson = await uploadRes.json();
+    const geminiFileUri = String(uploadJson?.file?.uri ?? '');
+    const geminiFileName = String(uploadJson?.file?.name ?? '');
+    if (!geminiFileUri) return { text: null, error: 'Gemini upload returned no file URI.' };
+
+    await new Promise((r) => setTimeout(r, 1200));
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    let out = '';
+    let lastErr = '';
+    for (const model of models) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 45_000);
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              signal: controller.signal,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { file_data: { mime_type: 'application/pdf', file_uri: geminiFileUri } },
+                    { text: 'Extract all readable text from this PDF. Return plain text only.' },
+                  ],
+                }],
+                generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+              }),
+            },
+          );
+          clearTimeout(timeout);
+          if (!res.ok) {
+            lastErr = `Gemini extract failed (model ${model}, HTTP ${res.status}).`;
+            if ((res.status === 503 || res.status === 429) && attempt < 3) {
+              await new Promise((r) => setTimeout(r, 2000 * attempt));
+              continue;
+            }
+            break;
+          }
+          const aiJson = await res.json();
+          let text = '';
+          const candidates = aiJson?.candidates;
+          if (Array.isArray(candidates)) {
+            for (const c of candidates) {
+              const parts = c?.content?.parts;
+              if (Array.isArray(parts)) {
+                for (const p of parts) {
+                  if (typeof p?.text === 'string') text += p.text;
+                }
+              }
+            }
+          }
+          out = text.trim();
+          if (out.length > 0) break;
+          lastErr = `Gemini returned empty text (model ${model}).`;
+        } catch {
+          clearTimeout(timeout);
+          lastErr = `Gemini request failed (model ${model}).`;
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 2000 * attempt));
+            continue;
+          }
+        }
+      }
+      if (out.length > 0) break;
+    }
+    if (geminiFileName) {
+      fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiFileName}?key=${geminiKey}`, { method: 'DELETE' })
+        .catch(() => {});
+    }
+    return out.length > 0 ? { text: out } : { text: null, error: lastErr || 'Gemini returned empty text.' };
+  } catch {
+    return { text: null, error: 'Gemini OCR request failed unexpectedly.' };
   }
 }
 
@@ -105,7 +212,7 @@ function extractPdfLikeUrlsFromHtml(html: string, base: URL): PdfCandidate[] {
   return deduped.slice(0, 10);
 }
 
-async function fetchPdfBytes(url: string, timeoutMs = 15_000): Promise<Uint8Array | null> {
+async function fetchPdfBytes(url: string, timeoutMs = 30_000): Promise<Uint8Array | null> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -731,6 +838,7 @@ serve(async (req) => {
     if (action === 'extract_calendar_from_url') {
       const extractUrl = String(payload.extractUrl || '').trim();
       if (!extractUrl) return json(400, { error: 'missing_extractUrl' });
+      const geminiKey = (Deno.env.get('GEMINI_API_KEY') ?? '').trim();
 
       // Validate URL format
       let parsedUrl: URL;
@@ -743,12 +851,22 @@ serve(async (req) => {
         return json(400, { error: 'invalid_url' });
       }
 
-      // Fetch the URL content (HTML or direct PDF)
+      // Fetch the URL content (HTML or direct PDF).
+      // Some hosts serve PDFs with generic content-type headers, so try URL-based
+      // PDF detection first and validate bytes via PDF magic.
       const fetchController = new AbortController();
-      const fetchTimeout = setTimeout(() => fetchController.abort(), 15_000);
+      const fetchTimeout = setTimeout(() => fetchController.abort(), 30_000);
       let htmlText = '';
       let directPdfBytes: Uint8Array | null = null;
       try {
+        if (looksLikePdfUrl(parsedUrl)) {
+          const bytes = await fetchPdfBytes(parsedUrl.toString());
+          if (bytes) {
+            directPdfBytes = bytes;
+          }
+        }
+
+        if (!directPdfBytes) {
         const resp = await fetch(parsedUrl.toString(), {
           signal: fetchController.signal,
           headers: {
@@ -761,7 +879,8 @@ serve(async (req) => {
           return json(400, { error: `Website returned HTTP ${resp.status}. The URL may be incorrect or the server is blocking requests.` });
         }
         const ctype = String(resp.headers.get('content-type') || '').toLowerCase();
-        if (ctype.includes('application/pdf')) {
+        const disposition = String(resp.headers.get('content-disposition') || '').toLowerCase();
+        if (ctype.includes('application/pdf') || disposition.includes('.pdf')) {
           const buf = await resp.arrayBuffer();
           const bytes = new Uint8Array(buf);
           // basic magic: %PDF-
@@ -773,10 +892,11 @@ serve(async (req) => {
         } else {
           htmlText = await resp.text();
         }
+        }
       } catch (fetchErr: unknown) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
         if (msg.includes('abort') || msg.includes('Abort')) {
-          return json(400, { error: 'Website took too long to respond (15s timeout). Try a different URL.' });
+          return json(400, { error: 'Website took too long to respond (30s timeout). Try a different URL.' });
         }
         return json(400, { error: `Could not fetch website: ${msg}` });
       } finally {
@@ -791,9 +911,18 @@ serve(async (req) => {
       let pdfTexts: Array<{ url: string; context?: string; text: string }> = [];
 
       if (directPdfBytes) {
-        const text = (await extractPdfTextWithUnpdf(directPdfBytes)) ?? '';
+        const nativeText = await extractPdfTextWithUnpdf(directPdfBytes);
+        const geminiResult = nativeText ? { text: null as string | null } : await extractPdfTextWithGemini(directPdfBytes, geminiKey);
+        const text = nativeText ?? geminiResult.text ?? '';
         if (text.trim().length < 200) {
-          return json(400, { error: 'Could not extract readable text from the PDF. Try uploading the PDF directly instead.' });
+          return json(400, {
+            error:
+              `Could not extract readable text from the PDF. ${
+                geminiResult.error
+                  ? `OCR fallback detail: ${geminiResult.error}`
+                  : 'This file may be scanned/image-only (no selectable text).'
+              }`,
+          });
         }
         pdfTexts = [{ url: extractUrl, context: 'direct_pdf', text: text.trim().slice(0, 18000) }];
         cleanText = '[PDF content extracted; using PDF as primary source]';
@@ -834,7 +963,9 @@ serve(async (req) => {
         for (const p of pdfLinks) {
           const bytes = await fetchPdfBytes(p.url);
           if (!bytes) continue;
-          const text = (await extractPdfTextWithUnpdf(bytes)) ?? '';
+          const nativeText = await extractPdfTextWithUnpdf(bytes);
+          const geminiResult = nativeText ? { text: null as string | null } : await extractPdfTextWithGemini(bytes, geminiKey);
+          const text = nativeText ?? geminiResult.text ?? '';
           if (text.trim().length < 200) continue;
           pdfTexts.push({ url: p.url, context: p.context, text: text.trim().slice(0, 18000) });
           if (pdfTexts.length >= 3) break;
