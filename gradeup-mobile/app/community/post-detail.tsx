@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
 import Feather from '@expo/vector-icons/Feather';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -101,12 +102,35 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** Query `id` fallback for deep links. */
+function pickIdFromQueryParams(q: Linking.QueryParams | null | undefined): string | undefined {
+  if (!q) return undefined;
+  const raw = q.id || q.postId;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (Array.isArray(raw) && raw[0] != null && String(raw[0]).trim()) return String(raw[0]).trim();
+  return undefined;
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PostDetailScreen() {
   const theme = useTheme();
   const { user } = useApp();
-  const { postId } = useLocalSearchParams<{ postId: string }>();
+  const { postId: postIdParam, id: idParam } = useLocalSearchParams<{ postId: string; id: string }>();
+  
+  // Universal link might come in as ?id=
+  const linkingUrl = Linking.useURL();
+  const idFromLinking = React.useMemo(() => {
+    if (!linkingUrl) return undefined;
+    try {
+      return pickIdFromQueryParams(Linking.parse(linkingUrl).queryParams);
+    } catch {
+      return undefined;
+    }
+  }, [linkingUrl]);
+
+  const postId = postIdParam || idParam || idFromLinking;
+
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLiked, setIsLiked] = useState(false);

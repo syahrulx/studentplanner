@@ -330,7 +330,7 @@ const EVENT_SHARE_BASE =
 /** Generate a shareable deep-link URL for an event post. */
 export function generateEventShareLink(postId: string): string {
   const base = String(EVENT_SHARE_BASE).replace(/\/$/, '');
-  return `${base}/events/${encodeURIComponent(postId)}`;
+  return `${base}/events?id=${encodeURIComponent(postId)}`;
 }
 
 // ─── Report Post (Apple UGC compliance) ─────────────────────────────────────

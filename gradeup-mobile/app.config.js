@@ -116,6 +116,11 @@ export default ({ config }) => {
               host: inviteHost,
               pathPrefix: '/community/add-friend',
             },
+            {
+              scheme: 'https',
+              host: inviteHost,
+              pathPrefix: '/events',
+            },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
