@@ -563,19 +563,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   // The user must explicitly opt-in ONCE to have their location shared on the
   // map. After consenting, their visibility settings (friends/circles/off)
   // control sharing automatically — no repeated prompts.
-  const LOCATION_CONSENT_KEY = 'community_location_consent_v1';
-
-  // Hydrate consent from storage on mount
-  useEffect(() => {
-    if (!userId) return;
-    import('@react-native-async-storage/async-storage').then(({ default: AsyncStorage }) => {
-      AsyncStorage.getItem(`${LOCATION_CONSENT_KEY}_${userId}`)
-        .then((val) => {
-          if (val === 'true') setLocationConsentGiven(true);
-        })
-        .catch(() => {});
-    });
-  }, [userId]);
+  // Removed persistent location consent (Apple Guideline 5.1.2)
+  // The user must explicitly opt-in EACH SESSION to have their location shared
+  // on the map. No automatic check-ins are allowed.
 
   const grantLocationConsent = useCallback(async () => {
     if (!userId) return;
@@ -593,11 +583,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
 
     setLocationConsentGiven(true);
-    // Persist so the user is never asked again
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem(`${LOCATION_CONSENT_KEY}_${userId}`, 'true');
-    } catch {}
   }, [userId, locationPermissionGranted, tr]);
 
   // Foreground location watcher — runs when:

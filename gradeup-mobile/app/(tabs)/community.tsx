@@ -685,10 +685,10 @@ export default function CommunityMap() {
               <Feather name="map-pin" size={18} color={theme.primary} />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={[styles.locationSessionBannerTitle, { color: theme.text }]}>
-                  Show your location on the map?
+                  Check in on the map?
                 </Text>
                 <Text style={[styles.locationSessionBannerSub, { color: theme.textSecondary }]}>
-                  Your friends will be able to see where you are. You can change who sees you anytime in Settings.
+                  Share your location with friends for this session. You will be checked out when you close the app.
                 </Text>
               </View>
             </View>
@@ -702,7 +702,7 @@ export default function CommunityMap() {
                 onPress={grantLocationConsent}
               >
                 <Feather name="check" size={15} color="#fff" />
-                <Text style={styles.locationSessionBtnPrimaryText}>Enable Location</Text>
+                <Text style={styles.locationSessionBtnPrimaryText}>Check In</Text>
               </Pressable>
             </View>
           </View>
