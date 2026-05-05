@@ -180,7 +180,6 @@ export default function PostDetailScreen() {
     try {
       await Share.share({
         message: `${post.title}${dateStr}${locStr}\n${url}`,
-        url,
         title: post.title,
       });
     } catch (_) {}

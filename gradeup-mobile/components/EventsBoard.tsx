@@ -548,7 +548,6 @@ export default function EventsBoard() {
         try {
           await Share.share({
             message: `${item.title}${dateStr}${locationStr}\n${url}`,
-            url,
             title: item.title,
           });
         } catch (_) {}
