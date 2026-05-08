@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
+import { useMemo, useState, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -7,6 +7,9 @@ import { useTranslations } from '@/src/i18n';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
+import { remapClassroomCourse } from '@/src/lib/googleClassroom';
+import * as taskDb from '@/src/lib/taskDb';
+import * as coursesDb from '@/src/lib/coursesDb';
 
 const ACCENT_PALETTE = [
   '#3b82f6', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#ef4444', '#6366f1',
@@ -515,7 +518,7 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function StudyHub() {
-  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse, timetable, setTasks, setCourses: setAppCourses } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const themePack = useThemePack();
@@ -536,6 +539,62 @@ export default function StudyHub() {
   const [deckSortMode, setDeckSortMode] = useState<'cards_desc' | 'cards_asc' | 'title_asc' | 'updated_desc'>('cards_desc');
   const [deckGroupMode, setDeckGroupMode] = useState<'none' | 'subject'>('none');
 
+  // ── Re-link state for gc-course-xxx subjects ──
+  const [relinkTarget, setRelinkTarget] = useState<Course | null>(null);
+  const [relinkSearch, setRelinkSearch] = useState('');
+  const [relinkLoading, setRelinkLoading] = useState(false);
+
+  /** Courses that are imported from Classroom (gc-course-xxx). */
+  const gcCourses = useMemo(() => courses.filter(c => c.id.toLowerCase().startsWith('gc-course-')), [courses]);
+
+  /** Available subjects for re-linking (everything except gc-course-xxx). */
+  const relinkSubjects = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; source: 'timetable' | 'planner' }>();
+    timetable.forEach(t => {
+      const key = t.subjectCode.toUpperCase();
+      if (!map.has(key)) {
+        map.set(key, { id: t.subjectCode, name: t.displayName || t.subjectName, source: 'timetable' });
+      }
+    });
+    courses.filter(c => !c.id.startsWith('gc-course-')).forEach(c => {
+      const key = c.id.toUpperCase();
+      if (!map.has(key)) {
+        map.set(key, { id: c.id, name: c.name, source: 'planner' });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }, [timetable, courses]);
+
+  const handleRelink = useCallback(async (gcCourse: Course, targetSubjectId: string) => {
+    setRelinkLoading(true);
+    try {
+      const { supabase } = await import('@/src/lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) throw new Error('Not signed in');
+
+      const googleCourseId = gcCourse.id.replace('gc-course-', '');
+      const { remappedCount } = await remapClassroomCourse(session.user.id, googleCourseId, targetSubjectId);
+
+      // Refresh tasks and courses
+      const [freshTasks, freshCourses] = await Promise.all([
+        taskDb.getTasks(session.user.id),
+        coursesDb.getCourses(session.user.id),
+      ]);
+      setTasks(freshTasks);
+      setAppCourses(freshCourses);
+
+      setRelinkTarget(null);
+      Alert.alert(
+        'Subject linked',
+        `${remappedCount} task${remappedCount !== 1 ? 's' : ''} moved from "${gcCourse.name}" to ${targetSubjectId}.`,
+      );
+    } catch (e: any) {
+      Alert.alert('Re-link failed', e?.message || 'Please try again.');
+    } finally {
+      setRelinkLoading(false);
+    }
+  }, [setTasks, setAppCourses]);
+
   const tx = (key: string, fallback: string) => ((T as any)(key) as string) || fallback;
 
   const handleSubjectRowPress = (course: Course) => {
@@ -545,21 +604,38 @@ export default function StudyHub() {
       return;
     }
     if (subjectsMode === 'delete') {
-      Alert.alert(
-        tx('deleteSubject', 'Delete subject'),
-        `Delete "${course.id} — ${course.name}"? This will also remove its notes, tasks, and flashcards.`,
-        [
-          { text: tx('cancel', 'Cancel'), style: 'cancel' },
-          {
-            text: tx('deleteSubject', 'Delete'),
-            style: 'destructive',
-            onPress: () => {
-              deleteCourse(course.id);
-              if (courses.length <= 1) setSubjectsMode('idle');
+      // Check if any Classroom course is mapped to this subject
+      (async () => {
+        let mappedCount = 0;
+        try {
+          const { getClassroomPrefs } = await import('@/src/lib/googleClassroom');
+          const prefs = await getClassroomPrefs();
+          if (prefs?.courseMapping) {
+            mappedCount = Object.values(prefs.courseMapping).filter(id => id === course.id).length;
+          }
+        } catch {}
+
+        const baseMsg = `Delete "${course.id} — ${course.name}"? This will also remove its notes, tasks, and flashcards.`;
+        const warningMsg = mappedCount > 0
+          ? `${baseMsg}\n\n⚠️ ${mappedCount} Google Classroom course${mappedCount !== 1 ? 's are' : ' is'} linked to this subject. Tasks from Classroom will create a new separate subject on next auto-sync.`
+          : baseMsg;
+
+        Alert.alert(
+          tx('deleteSubject', 'Delete subject'),
+          warningMsg,
+          [
+            { text: tx('cancel', 'Cancel'), style: 'cancel' },
+            {
+              text: tx('deleteSubject', 'Delete'),
+              style: 'destructive',
+              onPress: () => {
+                deleteCourse(course.id);
+                if (courses.length <= 1) setSubjectsMode('idle');
+              },
             },
-          },
-        ],
-      );
+          ],
+        );
+      })();
       return;
     }
     router.push({ pathname: '/notes-list' as any, params: { subjectId: course.id } });
@@ -1065,7 +1141,14 @@ export default function StudyHub() {
                   <View style={[s.colorDot, { backgroundColor: color }]} />
                 )}
                 <View style={s.rowBody}>
-                  <Text style={s.rowTitle}>{course.id}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={s.rowTitle}>{course.id}</Text>
+                    {course.id.startsWith('gc-course-') && (
+                      <View style={{ backgroundColor: '#4285f420', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: '#4285f4' }}>CLASSROOM</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={s.rowSub} numberOfLines={1}>{course.name}</Text>
                 </View>
                 {subjectsMode === 'idle' ? (
@@ -1201,6 +1284,44 @@ export default function StudyHub() {
               <Feather name="chevron-right" size={16} color={theme.textSecondary} />
             </Pressable>
 
+            {gcCourses.length > 0 && (
+              <>
+                <View style={s.sheetDivider} />
+                <Pressable
+                  style={({ pressed }) => [s.sheetItem, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    setSubjectsMenuOpen(false);
+                    // Show list of gc-course-xxx subjects to pick from
+                    if (gcCourses.length === 1) {
+                      setRelinkTarget(gcCourses[0]);
+                      setRelinkSearch('');
+                    } else {
+                      Alert.alert(
+                        'Re-link Classroom subject',
+                        'Choose which Classroom subject to re-link:',
+                        [
+                          ...gcCourses.map(gc => ({
+                            text: gc.name,
+                            onPress: () => {
+                              setRelinkTarget(gc);
+                              setRelinkSearch('');
+                            },
+                          })),
+                          { text: 'Cancel', style: 'cancel' as const },
+                        ],
+                      );
+                    }
+                  }}
+                >
+                  <View style={[s.sheetItemIcon, { backgroundColor: '#4285f422' }]}>
+                    <Feather name="link" size={16} color="#4285f4" />
+                  </View>
+                  <Text style={[s.sheetItemLabel, { color: '#4285f4' }]}>Re-link Classroom subject</Text>
+                  <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+                </Pressable>
+              </>
+            )}
+
             <Pressable
               style={({ pressed }) => [s.sheetCancel, pressed && { opacity: 0.7 }]}
               onPress={() => setSubjectsMenuOpen(false)}
@@ -1260,6 +1381,122 @@ export default function StudyHub() {
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Re-link Classroom subject picker */}
+      <Modal
+        visible={!!relinkTarget}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !relinkLoading && setRelinkTarget(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            onPress={() => !relinkLoading && setRelinkTarget(null)}
+          />
+          <View style={[s.renameCard, { borderTopLeftRadius: 22, borderTopRightRadius: 22, borderRadius: 0, maxHeight: '70%', paddingTop: 16 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <View>
+                <Text style={s.renameTitle}>Re-link Classroom Subject</Text>
+                <Text style={s.renameSub}>{relinkTarget?.name || ''}</Text>
+              </View>
+              {!relinkLoading && (
+                <Pressable onPress={() => setRelinkTarget(null)} hitSlop={10}>
+                  <Feather name="x" size={22} color={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+
+            {relinkLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <ActivityIndicator size="large" color={theme.primary} />
+                <Text style={[s.renameSub, { marginTop: 12 }]}>Moving tasks...</Text>
+              </View>
+            ) : (
+              <>
+                <View style={[s.renameInput, { flexDirection: 'row', alignItems: 'center', paddingVertical: 0, marginBottom: 8 }]}>
+                  <Feather name="search" size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+                  <TextInput
+                    placeholder="Search subjects..."
+                    placeholderTextColor={theme.textSecondary}
+                    value={relinkSearch}
+                    onChangeText={setRelinkSearch}
+                    style={{ flex: 1, fontSize: 15, color: theme.text, paddingVertical: 12 }}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                  {relinkSubjects
+                    .filter(s => {
+                      if (!relinkSearch.trim()) return true;
+                      const q = relinkSearch.toLowerCase();
+                      return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+                    })
+                    .map(subj => (
+                      <Pressable
+                        key={subj.id}
+                        style={({ pressed }) => [{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 14,
+                          paddingHorizontal: 4,
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: theme.border,
+                          gap: 12,
+                        }, pressed && { opacity: 0.7 }]}
+                        onPress={() => {
+                          if (!relinkTarget) return;
+                          Alert.alert(
+                            'Confirm re-link',
+                            `Move all tasks from "${relinkTarget.name}" to ${subj.id} (${subj.name})?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Move',
+                                onPress: () => handleRelink(relinkTarget, subj.id),
+                              },
+                            ],
+                          );
+                        }}
+                      >
+                        <View style={[{
+                          width: 36, height: 36, borderRadius: 10,
+                          alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: subj.source === 'timetable' ? '#8b5cf620' : '#f59e0b20',
+                        }]}>
+                          <Feather
+                            name={subj.source === 'timetable' ? 'calendar' : 'book'}
+                            size={14}
+                            color={subj.source === 'timetable' ? '#8b5cf6' : '#f59e0b'}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.rowTitle, { fontSize: 15 }]}>{subj.id}</Text>
+                          <Text style={[s.rowSub, { fontSize: 12 }]} numberOfLines={1}>
+                            {subj.name}  •  {subj.source === 'timetable' ? 'Timetable' : 'Planner'}
+                          </Text>
+                        </View>
+                        <Feather name="arrow-right" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    ))}
+
+                  {relinkSubjects.length === 0 && (
+                    <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                      <Feather name="inbox" size={32} color={theme.textSecondary} />
+                      <Text style={[s.renameSub, { textAlign: 'center', marginTop: 12 }]}>
+                        No subjects available. Add subjects from your timetable or planner first.
+                      </Text>
+                    </View>
+                  )}
+                  <View style={{ height: 40 }} />
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
       </Modal>
     </View>
   );

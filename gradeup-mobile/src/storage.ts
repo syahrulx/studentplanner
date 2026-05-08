@@ -363,6 +363,9 @@ export interface ClassroomPrefs {
   dismissedNewTaskIds?: string[];
   /** When true, MATERIAL items import as generic tasks (readings). */
   includeClassroomMaterials?: boolean;
+  /** Maps Google Classroom course ID → app subject ID.
+   *  Missing entries = "Create new" (use gc-course-xxx). */
+  courseMapping?: Record<string, string>;
 }
 
 export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {

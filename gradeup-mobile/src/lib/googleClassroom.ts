@@ -394,6 +394,8 @@ export function buildTask(
   existingTasks: Task[],
   semesterStart?: string,
   includeMaterials?: boolean,
+  /** When provided, task.courseId uses this instead of gc-course-xxx. */
+  mappedCourseId?: string,
 ): Task | null {
   let type = mapWorkType(work.workType);
   if (!type) {
@@ -436,7 +438,7 @@ export function buildTask(
   return {
     id: taskId,
     title: work.title || 'Untitled Classroom Task',
-    courseId: `gc-course-${work.courseId}`,
+    courseId: mappedCourseId || `gc-course-${work.courseId}`,
     type,
     dueDate: dateStr,
     dueTime: timeStr,
@@ -510,6 +512,7 @@ export async function syncSelectedCourses(
 
   const prefsMeta = await getClassroomPrefs();
   const includeMaterials = Boolean(prefsMeta?.includeClassroomMaterials);
+  const courseMapping = prefsMeta?.courseMapping ?? {};
 
   const taskIdFilter = selectedTaskIds ? new Set(selectedTaskIds) : null;
 
@@ -525,20 +528,25 @@ export async function syncSelectedCourses(
     const course = selected[i];
     onProgress?.(course.name, i + 1, selected.length);
 
-    const localCourse: Course = {
-      id: `gc-course-${course.id}`,
-      name: course.name,
-      creditHours: 3,
-      workload: [2, 3, 4, 6, 5, 7, 8, 4, 6, 8, 10, 9, 10, 4],
-    };
-    await coursesDb.addCourse(user.id, localCourse).catch(() => {});
+    const mappedId = courseMapping[course.id];
+
+    // Only create gc-course-xxx if there's no mapping to an existing subject
+    if (!mappedId) {
+      const localCourse: Course = {
+        id: `gc-course-${course.id}`,
+        name: course.name,
+        creditHours: 3,
+        workload: [2, 3, 4, 6, 5, 7, 8, 4, 6, 8, 10, 9, 10, 4],
+      };
+      await coursesDb.addCourse(user.id, localCourse).catch(() => {});
+    }
 
     try {
       const work = await fetchCourseWork(token, course.id);
       for (const w of work) {
         if (taskIdFilter && !taskIdFilter.has(w.id)) continue;
 
-        const task = buildTask(w, course.name, existingTasks, semesterStart, includeMaterials);
+        const task = buildTask(w, course.name, existingTasks, semesterStart, includeMaterials, mappedId);
         if (!task) continue;
 
         const { error } = await upsertTask(user.id, task);
@@ -649,3 +657,39 @@ export async function isClassroomConnected(): Promise<boolean> {
 }
 
 export { getClassroomPrefs };
+
+/**
+ * Re-map an already-imported Google Classroom course to a different app subject.
+ * Updates all tasks under the old gc-course-xxx ID and optionally cleans up
+ * the orphaned course entry.
+ */
+export async function remapClassroomCourse(
+  userId: string,
+  googleCourseId: string,
+  newSubjectId: string,
+): Promise<{ remappedCount: number }> {
+  const oldCourseId = `gc-course-${googleCourseId}`;
+
+  // 1. Update all tasks from this GC course
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({ course_id: newSubjectId })
+    .eq('user_id', userId)
+    .eq('course_id', oldCourseId)
+    .select('id');
+
+  const remappedCount = error ? 0 : (data?.length ?? 0);
+
+  // 2. Delete orphaned gc-course entry
+  await coursesDb.deleteCourse(userId, oldCourseId).catch(() => {});
+
+  // 3. Update prefs mapping
+  const prefs = await getClassroomPrefs();
+  if (prefs) {
+    const mapping = prefs.courseMapping || {};
+    mapping[googleCourseId] = newSubjectId;
+    await setClassroomPrefs({ ...prefs, courseMapping: mapping });
+  }
+
+  return { remappedCount };
+}

@@ -1011,9 +1011,9 @@ export default function Planner() {
 
   const getCardSubject = (item: PlannerItem) => {
     if (item.itemType !== 'task') return item.subjectId;
-    if (item.courseId?.startsWith('gc-course-')) {
+    if (item.courseId?.toLowerCase().startsWith('gc-course-')) {
       const found = courses.find(c => c.id === item.courseId);
-      return found ? found.name.split(' ')[0] : item.courseId.replace('gc-course-', '');
+      return found ? found.name : item.courseId.replace(/^gc-course-/i, '');
     }
     return item.courseId;
   };

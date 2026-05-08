@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -9,6 +9,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { invokeAiGenerate, AiGenerateRequest } from '@/src/lib/invokeAiGenerate';
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { getChatSessions, getChatMessages, createChatSession, createChatMessage, updateChatSessionTimestamp, deleteChatSession } from '@/src/lib/chatDb';
+import { supabase } from '@/src/lib/supabase';
 import type { ChatSession, ChatMessage } from '@/src/types';
 
 type Message = { role: 'ai' | 'user'; text: string };
@@ -46,6 +47,7 @@ function onPrimaryChipBg(inverseHex: string): string {
 }
 
 const MAX_CONTEXT_LENGTH = 200000;
+const DEBUG_MODE = false; // Toggle to true to show debug info in chat
 
 export default function SubjectChat() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
@@ -64,6 +66,19 @@ export default function SubjectChat() {
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [notesContext, setNotesContext] = useState('');
+  /** Ref keeps the latest context available synchronously (no React batching delay). */
+  const notesContextRef = useRef('');
+  const [contextReady, setContextReady] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<{ noteCount: number; contextLen: number; extractedCount: number; titles: string[] }>({ noteCount: 0, contextLen: 0, extractedCount: 0, titles: [] });
+
+  // Warm up the Edge Function on mount to eliminate cold-start delays
+  useEffect(() => {
+    supabase.functions.invoke('ai_generate', {
+      body: { kind: '__ping' },
+      // This will return an error (invalid kind) but it warms the function
+    }).catch(() => {});
+    console.log('[SubjectChat] Edge Function warm-up ping sent');
+  }, []);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -114,7 +129,27 @@ export default function SubjectChat() {
     const subjectNotes = notes.filter(n => n.subjectId === subjectId);
     // Sort by updatedAt so chronological order is generally preserved
     subjectNotes.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
-    const fullText = subjectNotes.map(n => `[Note: ${n.title}]\n${n.content}`).join('\n\n');
+
+    // DEBUG: log note details
+    const extractedNotes = subjectNotes.filter(n => n.extractedText && n.extractedText.trim().length > 0);
+    const noteTitles = subjectNotes.map(n => n.title);
+    console.log(`[SubjectChat DEBUG] subjectId="${subjectId}"`);
+    console.log(`[SubjectChat DEBUG] Total notes in app: ${notes.length}`);
+    console.log(`[SubjectChat DEBUG] Notes matching subjectId: ${subjectNotes.length}`);
+    console.log(`[SubjectChat DEBUG] Notes with extractedText: ${extractedNotes.length}`);
+    subjectNotes.forEach((n, i) => {
+      console.log(`[SubjectChat DEBUG]   Note[${i}]: id=${n.id}, title="${n.title}", subjectId="${n.subjectId}", contentLen=${(n.content || '').length}, extractedTextLen=${(n.extractedText || '').length}, attachmentPath=${n.attachmentPath || 'none'}`);
+    });
+
+    // Build context: include both content and extractedText
+    const fullText = subjectNotes.map(n => {
+      const parts = [`[Note: ${n.title}]`];
+      if (n.content && n.content.trim()) parts.push(n.content);
+      if (n.extractedText && n.extractedText.trim()) parts.push(`[Extracted PDF Text]\n${n.extractedText}`);
+      return parts.join('\n');
+    }).join('\n\n');
+
+    console.log(`[SubjectChat DEBUG] Total context length (before truncation): ${fullText.length}`);
     
     const systemInstruction = `IMPORTANT: You are the student's AI Subject Tutor for ${subjectId}. 
 Your knowledge is STRICTLY LIMITED to the notes and PDFs provided below. 
@@ -124,7 +159,12 @@ Your knowledge is STRICTLY LIMITED to the notes and PDFs provided below.
 
 STUDENT NOTES CONTENT:
 `;
-    setNotesContext(systemInstruction + fullText.slice(0, MAX_CONTEXT_LENGTH - systemInstruction.length).trim());
+    const finalContext = systemInstruction + fullText.slice(0, MAX_CONTEXT_LENGTH - systemInstruction.length).trim();
+    notesContextRef.current = finalContext;
+    setNotesContext(finalContext);
+    setContextReady(true);
+    setDebugInfo({ noteCount: subjectNotes.length, contextLen: finalContext.length, extractedCount: extractedNotes.length, titles: noteTitles });
+    console.log(`[SubjectChat DEBUG] Final notesContext length: ${finalContext.length}`);
   }, [notes, subjectId, user.subscriptionPlan]);
 
   const scrollToBottom = () => {
@@ -153,9 +193,16 @@ STUDENT NOTES CONTENT:
     setIsProcessing(true);
     scrollToBottom();
 
-    if (!notesContext) {
+    // Use the ref (always current) instead of state (may lag behind)
+    const ctx = notesContextRef.current;
+
+    if (!ctx) {
+      console.log('[SubjectChat DEBUG] notesContext is EMPTY — no notes found for this subject');
+      const debugMsg = DEBUG_MODE
+        ? `\n\n---\n🐛 **DEBUG:** notesContext is empty.\nsubjectId = \"${subjectId}\"\nTotal notes in app = ${notes.length}\nNotes matching this subject = ${debugInfo.noteCount}\nCheck that note.subjectId matches exactly.`
+        : '';
       setTimeout(() => {
-        setMessages(prev => [...prev, { role: 'ai', text: "It looks like you don't have any notes for this subject yet. Please add some notes or PDFs so I can help you study!" }]);
+        setMessages(prev => [...prev, { role: 'ai', text: `It looks like you don't have any notes for this subject yet. Please add some notes or PDFs so I can help you study!${debugMsg}` }]);
         setIsProcessing(false);
         scrollToBottom();
       }, 800);
@@ -166,16 +213,29 @@ STUDENT NOTES CONTENT:
       (async () => {
         try {
           const apiMessages = currentMessages
-            .filter(m => m.text && !m.text.includes("It looks like you don't have any notes")) // avoid sending errors back
+            .filter(m => m.text && !m.text.includes("It looks like you don't have any notes") && !m.text.startsWith('🐛')) // avoid sending debug/errors back
             .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })) as { role: 'user'|'assistant', content: string}[];
 
           const body: AiGenerateRequest = {
             kind: 'chat',
-            content: notesContext, // fallback if no embeddings exist yet
+            content: ctx, // use ref value, always current
             subject_id: subjectId,
             question: userText,
             chat_history: apiMessages.slice(-10), // keep the last 10 messages for context
           };
+
+          console.log(`[SubjectChat DEBUG] Sending to ai_generate:`);
+          console.log(`[SubjectChat DEBUG]   kind = chat`);
+          console.log(`[SubjectChat DEBUG]   subject_id = "${subjectId}"`);
+          console.log(`[SubjectChat DEBUG]   question = "${userText.slice(0, 100)}"`);
+          console.log(`[SubjectChat DEBUG]   content length = ${notesContext.length}`);
+          console.log(`[SubjectChat DEBUG]   chat_history count = ${apiMessages.slice(-10).length}`);
+
+          // Inject debug message into chat
+          if (DEBUG_MODE) {
+            setMessages(prev => [...prev, { role: 'ai', text: `🐛 **DEBUG — Request Sent**\n- subject_id: \"${subjectId}\"\n- Notes found: ${debugInfo.noteCount}\n- With extractedText: ${debugInfo.extractedCount}\n- Context length: ${notesContext.length} chars\n- Note titles: ${debugInfo.titles.map(t => `"${t}"`).join(', ') || 'none'}\n- Question: \"${userText.slice(0, 80)}\"\n- Chat history msgs: ${apiMessages.slice(-10).length}` }]);
+            scrollToBottom();
+          }
 
           let activeSessionId = currentSessionId;
           
@@ -203,24 +263,39 @@ STUDENT NOTES CONTENT:
 
           const result = await invokeAiGenerate<{ response: string }>(body);
 
+          console.log(`[SubjectChat DEBUG] ai_generate result:`, JSON.stringify({ hasData: !!result.data, hasError: !!result.error, error: result.error, responsePreview: result.data?.response?.slice(0, 200) }));
+
           let aiText = "I'm sorry, I couldn't generate a response.";
           if (result.error) {
             aiText = `Oops! Something went wrong: ${result.error}`;
+            if (DEBUG_MODE) {
+              aiText += `\n\n---\n🐛 **DEBUG — Error Details**\n\`\`\`\n${result.error}\n\`\`\``;
+            }
           } else if (result.data?.response) {
             aiText = result.data.response;
+            if (DEBUG_MODE) {
+              aiText += `\n\n---\n🐛 _Response received (${result.data.response.length} chars)_`;
+            }
+          } else {
+            if (DEBUG_MODE) {
+              aiText += `\n\n---\n🐛 **DEBUG:** result.data is null/empty, no error returned either.\nRaw: ${JSON.stringify(result).slice(0, 300)}`;
+            }
           }
 
           setMessages(prev => [...prev, { role: 'ai', text: aiText }]);
           
-          // Save AI message
+          // Save AI message (without debug lines)
+          const cleanAiText = result.data?.response || aiText.split('\n---\n')[0];
           await createChatMessage({
             sessionId: activeSessionId,
             role: 'ai',
-            content: aiText,
+            content: cleanAiText,
             createdAt: new Date().toISOString()
           });
         } catch (e: any) {
-          setMessages(prev => [...prev, { role: 'ai', text: 'Network error or timeout. Please try again.' }]);
+          console.error('[SubjectChat DEBUG] handleSend caught error:', e);
+          const errorDetail = DEBUG_MODE ? `\n\n---\n🐛 **DEBUG — Exception**\n\`\`\`\n${e?.message || String(e)}\n${e?.stack?.slice(0, 300) || ''}\n\`\`\`` : '';
+          setMessages(prev => [...prev, { role: 'ai', text: `Network error or timeout. Please try again.${errorDetail}` }]);
         } finally {
           setIsProcessing(false);
           scrollToBottom();
@@ -262,6 +337,18 @@ STUDENT NOTES CONTENT:
           contentContainerStyle={s.messagesContent}
         >
           <Text style={[s.dateIndicator, { color: theme.textSecondary }]}>Today</Text>
+          {DEBUG_MODE && (
+            <View style={{ backgroundColor: hexToRgba(theme.primary, 0.08), borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: hexToRgba(theme.primary, 0.2) }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: theme.primary, letterSpacing: 0.5, marginBottom: 4 }}>🐛 DEBUG PANEL</Text>
+              <Text style={{ fontSize: 12, color: theme.text, lineHeight: 18 }}>
+                subjectId: "{subjectId}"{"\n"}
+                Notes found: {debugInfo.noteCount}{"\n"}
+                With extractedText: {debugInfo.extractedCount}{"\n"}
+                Context length: {debugInfo.contextLen} chars{"\n"}
+                Titles: {debugInfo.titles.length > 0 ? debugInfo.titles.join(', ') : '(none)'}
+              </Text>
+            </View>
+          )}
           {messages.map((m, i) => (
             <View key={i} style={[s.bubbleWrap, m.role === 'user' && s.bubbleRight]}>
               <View

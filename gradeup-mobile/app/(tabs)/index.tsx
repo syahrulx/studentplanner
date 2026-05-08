@@ -1227,9 +1227,9 @@ export default function Dashboard() {
   }, [completedStudyKeys, revisionSettingsList, todayStr, in30Str]);
 
   const formatSubjectName = useCallback((courseId: string) => {
-    if (courseId?.startsWith('gc-course-')) {
+    if (courseId?.toLowerCase().startsWith('gc-course-')) {
       const found = courses.find(c => c.id === courseId);
-      return found ? found.name.split(' ')[0] : courseId.replace('gc-course-', '');
+      return found ? found.name : courseId.replace(/^gc-course-/i, '');
     }
     return courseId;
   }, [courses]);
