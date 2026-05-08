@@ -227,13 +227,20 @@ function resolveWeekReferences(
     (match, numStr) => {
       const weekNum = parseInt(numStr, 10);
       if (isNaN(weekNum) || weekNum < 1 || weekNum > 20) return match;
-      // Calculate end-of-week (Friday) for that semester week
+      
+      // Calculate the same day-of-week in the target week
       const semStart = new Date(semesterStartISO + 'T00:00:00');
       if (isNaN(semStart.getTime())) return match;
       const weekStart = new Date(semStart);
       weekStart.setDate(semStart.getDate() + (weekNum - 1) * 7);
+      
+      // Snap to Friday (day 5) of that week
+      const startDow = weekStart.getDay(); // 0 (Sun) to 6 (Sat)
+      // Math to find the upcoming Friday within the next 6 days:
+      const offsetToFriday = (5 - startDow + 7) % 7;
+      
       const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 4); // Friday
+      weekEnd.setDate(weekStart.getDate() + offsetToFriday);
       const iso = weekEnd.toISOString().slice(0, 10);
       return `${match} (by ${iso})`;
     }
