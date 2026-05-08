@@ -413,9 +413,17 @@ serve(async (req) => {
       if (universityId) {
         const ids = Array.from(new Set(items.map((x: { user_id: string }) => x.user_id)));
         if (ids.length) {
-          const { data: profs, error: pe } = await admin.from('profiles').select('id,university_id').in('id', ids);
-          if (pe) return json(400, { error: pe.message });
-          const map = new Map((profs ?? []).map((p: { id: string; university_id: string | null }) => [p.id, p.university_id]));
+          const map = new Map<string, string | null>();
+          const pinChunk = 100;
+          for (let i = 0; i < ids.length; i += pinChunk) {
+            const slice = ids.slice(i, i + pinChunk);
+            const { data: profs, error: pe } = await admin.from('profiles').select('id,university_id').in('id', slice);
+            if (pe) return json(400, { error: pe.message });
+            for (const p of profs ?? []) {
+              const row = p as { id: string; university_id: string | null };
+              map.set(row.id, row.university_id);
+            }
+          }
           items = items.filter((t: { user_id: string }) => map.get(t.user_id) === universityId);
         }
       }
@@ -444,12 +452,18 @@ serve(async (req) => {
       }
       const userIds = Array.from(counts.keys());
       if (!userIds.length) return json(200, { users: [] });
-      const { data: profs, error: pe } = await admin
-        .from('profiles')
-        .select('id,name,student_id,university_id')
-        .in('id', userIds);
-      if (pe) return json(400, { error: pe.message });
-      const pmap = new Map((profs ?? []).map((p: { id: string }) => [p.id, p]));
+      // Chunk `.in()` — PostgREST returns 400 when the filter exceeds URL/query limits.
+      const pmap = new Map<string, { id: string; name: string | null; student_id: string | null; university_id: string | null }>();
+      const chunkSize = 100;
+      for (let i = 0; i < userIds.length; i += chunkSize) {
+        const chunk = userIds.slice(i, i + chunkSize);
+        const { data: profs, error: pe } = await admin
+          .from('profiles')
+          .select('id,name,student_id,university_id')
+          .in('id', chunk);
+        if (pe) return json(400, { error: pe.message });
+        for (const p of profs ?? []) pmap.set((p as { id: string }).id, p as { id: string; name: string | null; student_id: string | null; university_id: string | null });
+      }
       const users = userIds.map((id) => ({
         user_id: id,
         entry_count: counts.get(id) ?? 0,

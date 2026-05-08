@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -406,6 +406,9 @@ export default function NotificationsScreen() {
   const [circleInvites, setCircleInvites] = useState<CircleInvitation[]>([]);
   const [attendanceNotifs, setAttendanceNotifs] = useState<AttendanceNotifItem[]>([]);
   const [tapAttendance, setTapAttendance] = useState<AttendanceNotifItem | null>(null);
+  /** Latest tap injection — async `loadAttendanceNotifs` must merge against current tap, not closure capture. */
+  const tapAttendanceRef = useRef<AttendanceNotifItem | null>(null);
+  tapAttendanceRef.current = tapAttendance;
   const [loading, setLoading] = useState(true);
   const [respondingIds, setRespondingIds] = useState<Set<string>>(new Set());
   const [respondingInviteIds, setRespondingInviteIds] = useState<Set<string>>(new Set());
@@ -629,25 +632,26 @@ export default function NotificationsScreen() {
       });
       // Only merge the tap-injected card when its occurrence hasn't been answered yet.
       // Otherwise the user would see the card re-appear on refresh right after tapping Present/Absent.
-      const tapKey = tapAttendance
-        ? attendanceOccurrenceKey(tapAttendance.timetableEntryId, tapAttendance.scheduledStartAt)
+      const tap = tapAttendanceRef.current;
+      const tapKey = tap
+        ? attendanceOccurrenceKey(tap.timetableEntryId, tap.scheduledStartAt)
         : null;
       const tapIsAnswered = tapKey ? answered.has(tapKey) : false;
-      if (tapAttendance && tapIsAnswered) {
+      if (tap && tapIsAnswered) {
         setTapAttendance(null);
         void AsyncStorage.removeItem('lastAttendanceTapV1').catch(() => {});
       }
       setAttendanceNotifs(() => {
         const merged =
-          tapAttendance && !tapIsAnswered
-            ? collapseDuplicateAttendanceCopies([...visible, tapAttendance])
+          tap && !tapIsAnswered
+            ? collapseDuplicateAttendanceCopies([...visible, tap])
             : visible;
         return merged;
       });
     } catch {
       setAttendanceNotifs([]);
     }
-  }, [tapAttendance]);
+  }, []);
 
   useEffect(() => {
     loadReactions();

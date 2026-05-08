@@ -94,6 +94,19 @@ export function evaluateUpdateSeverity(
 /** One-shot launch check. Silent-fails (returns `none`) on network errors. */
 export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   const currentVersion = getCurrentAppVersion();
+  // In local development (including simulator/dev client), do not block app usage
+  // with remote update gates. This keeps coding/testing flow unblocked.
+  if (__DEV__) {
+    return {
+      severity: 'none',
+      currentVersion,
+      minVersion: '0.0.0',
+      latestVersion: '0.0.0',
+      storeUrl: '',
+      messageEn: null,
+      messageMs: null,
+    };
+  }
   const cfg = await fetchAppConfig().catch(() => null);
   if (!cfg) {
     return {

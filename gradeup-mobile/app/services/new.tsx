@@ -30,6 +30,7 @@ import {
   checkContentModeration,
   type ServiceKind,
   type PriceType,
+  type ServiceNegotiationMode,
 } from '@/src/lib/servicesApi';
 
 const KIND_OPTIONS: { id: ServiceKind; title: string; subtitle: string; icon: string; tint: string }[] = [
@@ -81,6 +82,8 @@ export default function NewServiceScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
+  /** Standard vs open marketplace (new “offer” posts); locked when editing; ignored for “request” posts (always standard). */
+  const [negotiationMode, setNegotiationMode] = useState<ServiceNegotiationMode>('standard');
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
   const didInitUniversity = useRef(false);
@@ -106,6 +109,7 @@ export default function NewServiceScreen() {
         setBody(s.body || '');
         setExistingImageUrl(s.image_url);
         setPriceType('fixed'); // Force fixed price
+        setNegotiationMode(s.service_negotiation_mode === 'open_service' ? 'open_service' : 'standard');
         if (s.price_amount != null) setPriceAmount(String(s.price_amount));
         setLocation(s.location || '');
         setFormUniversityId(s.university_id);
@@ -209,6 +213,7 @@ export default function NewServiceScreen() {
             deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
             university_id: formUniversityId || undefined,
             campus: campusNameResolved || undefined,
+            negotiation_mode: kind === 'offer' ? negotiationMode : 'standard',
           });
         }
         router.back();
@@ -465,6 +470,84 @@ export default function NewServiceScreen() {
           </View>
         </View>
 
+        {/* Offer posts: choose normal vs open marketplace. Request posts: standard flow only. */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>OFFERS & RESPONSES</Text>
+          {kind === 'offer' && !isEditing ? (
+            <Text style={[styles.negoSectionHint, { color: theme.textSecondary }]}>
+              You’re offering help — pick how others can engage on your listing.
+            </Text>
+          ) : null}
+          <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {isEditing ? (
+              <View style={[styles.row, { alignItems: 'flex-start' }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowLabel, { color: theme.text }]}>Mode (locked)</Text>
+                  <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                    {negotiationMode === 'open_service'
+                      ? 'Open marketplace — multiple listings & feedback; post ends after 7 days.'
+                      : 'Standard — you accept one provider for the job.'}
+                  </Text>
+                </View>
+              </View>
+            ) : kind === 'offer' ? (
+              <>
+                <Pressable
+                  onPress={() => setNegotiationMode('standard')}
+                  style={({ pressed }) => [styles.row, styles.negoRowPad, pressed && { opacity: 0.75 }]}
+                >
+                  <View style={[styles.iconCircle, { backgroundColor: '#0A84FF18' }]}>
+                    <Feather name="check-circle" size={16} color="#0A84FF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowLabel, { color: theme.text }]}>Normal</Text>
+                    <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                      One client when they accept your offer — usual flow.
+                    </Text>
+                  </View>
+                  {negotiationMode === 'standard' ? (
+                    <Feather name="check-circle" size={18} color="#0A84FF" />
+                  ) : (
+                    <View style={[styles.radio, { borderColor: theme.border }]} />
+                  )}
+                </Pressable>
+                <View style={[styles.separator, { backgroundColor: theme.border }]} />
+                <Pressable
+                  onPress={() => setNegotiationMode('open_service')}
+                  style={({ pressed }) => [styles.row, styles.negoRowPad, pressed && { opacity: 0.75 }]}
+                >
+                  <View style={[styles.iconCircle, { backgroundColor: '#30D15818' }]}>
+                    <Feather name="users" size={16} color="#30D158" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowLabel, { color: theme.text }]}>Open marketplace</Text>
+                    <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                      Many students can list rates and leave feedback; post ends after 7 days.
+                    </Text>
+                  </View>
+                  {negotiationMode === 'open_service' ? (
+                    <Feather name="check-circle" size={18} color="#30D158" />
+                  ) : (
+                    <View style={[styles.radio, { borderColor: theme.border }]} />
+                  )}
+                </Pressable>
+              </>
+            ) : (
+              <View style={[styles.row, styles.negoInfoOnly, { alignItems: 'flex-start' }]}>
+                <View style={[styles.iconCircle, { backgroundColor: '#0A84FF18' }]}>
+                  <Feather name="info" size={16} color="#0A84FF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowLabel, { color: theme.text }]}>How offers work</Text>
+                  <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                    People send offers on your request; you accept one to assign the job and chat.
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Location & deadline */}
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>WHERE & WHEN</Text>
@@ -619,6 +702,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 52 },
+  negoSectionHint: { fontSize: 13, lineHeight: 18, marginBottom: 8, paddingHorizontal: 4 },
+  negoRowPad: { alignItems: 'flex-start', paddingVertical: 14 },
+  negoInfoOnly: { paddingVertical: 14 },
 
   row: {
     flexDirection: 'row',

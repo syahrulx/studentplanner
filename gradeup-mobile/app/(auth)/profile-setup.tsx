@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,7 @@ export default function ProfileSetup() {
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universityModalVisible, setUniversityModalVisible] = useState(false);
+  const [universitySearch, setUniversitySearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +61,21 @@ export default function ProfileSetup() {
       .finally(() => { if (!cancelled) setUniversitiesLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!universityModalVisible) setUniversitySearch('');
+  }, [universityModalVisible]);
+
+  const filteredUniversities = useMemo(() => {
+    const q = universitySearch.trim().toLowerCase();
+    if (!q) return universities;
+    return universities.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.shortName.toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q),
+    );
+  }, [universities, universitySearch]);
 
   const handleSave = async () => {
     setError(null);
@@ -236,13 +252,26 @@ export default function ProfileSetup() {
                 <Feather name="x" size={22} color="#0f172a" />
               </Pressable>
             </View>
+            <View style={styles.modalSearchWrap}>
+              <Feather name="search" size={18} color="#94a3b8" style={styles.modalSearchIcon} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search university…"
+                placeholderTextColor="#94a3b8"
+                value={universitySearch}
+                onChangeText={setUniversitySearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+            </View>
             <FlatList
-              data={universities}
-              keyExtractor={(item) => item.name}
+              data={filteredUniversities}
+              keyExtractor={(item) => item.id}
               style={styles.modalList}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
-                const isSel = university?.name === item.name;
+                const isSel = university?.id === item.id;
                 return (
                   <Pressable
                     style={[styles.uniRow, isSel && { backgroundColor: '#f0f9ff', borderColor: '#0f172a' }]}
@@ -255,7 +284,13 @@ export default function ProfileSetup() {
               }}
               ListEmptyComponent={
                 <View style={styles.modalEmpty}>
-                  <Text style={styles.modalEmptyText}>Loading...</Text>
+                  <Text style={styles.modalEmptyText}>
+                    {universitiesLoading
+                      ? 'Loading...'
+                      : universities.length === 0
+                        ? 'No universities available.'
+                        : 'No universities match your search.'}
+                  </Text>
                 </View>
               }
             />
@@ -365,7 +400,21 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%', paddingBottom: 34 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  modalList: { maxHeight: 460, paddingHorizontal: 20, paddingTop: 12 },
+  modalSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+  },
+  modalSearchIcon: { marginRight: 10 },
+  modalSearchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#0f172a' },
+  modalList: { maxHeight: 400, paddingHorizontal: 20, paddingTop: 8 },
   uniRow: {
     flexDirection: 'row',
     alignItems: 'center',

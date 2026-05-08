@@ -2662,7 +2662,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     color: theme.text,
   },
   viewDropdownTextActive: {
-    color: '#ffffff',
+    color: theme.textInverse,
     fontWeight: '700',
   },
 
@@ -2800,7 +2800,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   viewBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 10 },
   viewBtnActive: { backgroundColor: theme.primary },
   viewBtnText: { fontSize: 10, fontWeight: '900', color: theme.textSecondary, letterSpacing: 1.5 },
-  viewBtnTextActive: { color: '#ffffff' },
+  viewBtnTextActive: { color: theme.textInverse },
   addBtn: {
     width: 36,
     height: 36,
@@ -2851,7 +2851,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   timeLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#64748b', // Slate 500
+    color: theme.textSecondary,
   },
   timelineContent: {
     flex: 1,
@@ -2893,7 +2893,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   currentTimePillText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#ffffff',
+    color: theme.textInverse,
   },
   currentTimeLine: {
     flex: 1,
@@ -2936,7 +2936,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  aiCardTitle: { fontSize: 10, fontWeight: '900', color: '#ffffff', letterSpacing: 2 },
+  aiCardTitle: { fontSize: 10, fontWeight: '900', color: theme.textInverse, letterSpacing: 2 },
   aiCardText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 20, fontWeight: '500', marginBottom: 14 },
   aiCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   aiDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ade80' },
@@ -2976,10 +2976,10 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   },
   weekDayToday: { borderWidth: 1.5, borderColor: '#d6e3f3', backgroundColor: 'rgba(248, 251, 255, 0.75)' },
   weekDate: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 3, letterSpacing: -0.2 },
-  weekDateActive: { color: '#ffffff', fontSize: 18 },
+  weekDateActive: { color: theme.textInverse, fontSize: 18 },
   weekDateInactive: { color: '#526277', opacity: 0.62 },
   weekLabel: { fontSize: 10, fontWeight: '700', color: theme.textSecondary },
-  weekLabelActive: { color: '#ffffff', opacity: 0.9 },
+  weekLabelActive: { color: theme.textInverse, opacity: 0.9 },
   weekLabelInactive: { color: '#b6c0cf', opacity: 0.74 },
   weekDayDot: {
     marginTop: 4,
@@ -3022,7 +3022,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   },
   filterChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
   filterChipText: { fontSize: 9, fontWeight: '900', color: theme.textSecondary, letterSpacing: 1 },
-  filterChipTextActive: { color: '#ffffff' },
+  filterChipTextActive: { color: theme.textInverse },
 
   sortRow: {
     flexDirection: 'row',
@@ -3042,7 +3042,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   },
   sortChipActive: { backgroundColor: theme.primary, borderColor: theme.primary },
   sortChipText: { fontSize: 9, fontWeight: '800', color: theme.textSecondary },
-  sortChipTextActive: { color: '#ffffff' },
+  sortChipTextActive: { color: theme.textInverse },
 
   // Task Card
   cardRow: { marginBottom: 12, borderRadius: 28, overflow: 'hidden' },
@@ -3361,7 +3361,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   swipeActionBtn: { width: 100, justifyContent: 'center', alignItems: 'center', borderRadius: 28 },
   swipeActionsLeft: { width: 100, flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'stretch' },
   swipeActionBtnLeft: { width: 100, justifyContent: 'center', alignItems: 'center', borderRadius: 28 },
-  swipeActionText: { fontSize: 12, fontWeight: '800', color: '#ffffff' },
+  swipeActionText: { fontSize: 12, fontWeight: '800', color: theme.textInverse },
 
   // FAB
   aiFab: {
@@ -3402,7 +3402,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chatTitle: { fontSize: 14, fontWeight: '900', color: '#ffffff' },
+  chatTitle: { fontSize: 14, fontWeight: '900', color: theme.textInverse },
   chatSub: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
   chatMessages: { maxHeight: 300, backgroundColor: theme.background },
   chatMessagesContent: { padding: 16, gap: 10 },
@@ -3541,7 +3541,7 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     color: theme.text,
   },
   mCompactDateTextToday: {
-    color: '#ffffff',
+    color: theme.textInverse,
     fontWeight: '700',
   },
   mCompactDateTextSelected: {
@@ -3742,6 +3742,6 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     borderRadius: 14,
     alignItems: 'center',
   },
-  shareAllSendText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+  shareAllSendText: { color: theme.textInverse, fontSize: 16, fontWeight: '800' },
 });
 }

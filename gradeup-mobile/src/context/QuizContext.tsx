@@ -293,7 +293,11 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     let isWinner = false;
     if (isMultiplayer) {
       const opScores = Array.from(opponentProgress.values()).map((o) => o.score);
-      isWinner = opScores.every((s) => myScore >= s);
+      // Empty array: `[].every(...)` is true — without opponent signals, never claim win.
+      if (opScores.length > 0) {
+        const bestOpponent = Math.max(...opScores);
+        isWinner = myScore > bestOpponent;
+      }
     }
 
     await quizApi.finishParticipant({

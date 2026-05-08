@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import {
@@ -97,6 +97,13 @@ export function TimetablesRoute() {
   }, [loadSummaries]);
 
   const openUserTimetable = async (uid: string) => {
+    if (timetableModalUserId === uid) {
+      setTimetableModalUserId(null);
+      setModalEntries([]);
+      setEditor(null);
+      setSlotEditorErr('');
+      return;
+    }
     setTimetableModalUserId(uid);
     setModalBusy(true);
     setEditor(null);
@@ -104,7 +111,9 @@ export function TimetablesRoute() {
       const items = await listTimetableEntries({ userId: uid, limit: 400 });
       setModalEntries(items);
       requestAnimationFrame(() => {
-        document.getElementById('admin-timetable-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document
+          .querySelector<HTMLElement>(`[data-student-timetable-row="${uid}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load timetable');
@@ -285,21 +294,28 @@ export function TimetablesRoute() {
 
       const ids = Array.from(new Set((items ?? []).map((x) => x.user_id))).filter(Boolean);
       if (ids.length) {
-        const { data: profs, error: pe } = await supabase
-          .from('profiles')
-          .select('id,name,student_id,university_id')
-          .in('id', ids);
-        if (!pe && profs) {
+        const PROFILE_CHUNK = 100;
+        const profs: ProfileRow[] = [];
+        for (let i = 0; i < ids.length; i += PROFILE_CHUNK) {
+          const slice = ids.slice(i, i + PROFILE_CHUNK);
+          const { data: chunk, error: pe } = await supabase
+            .from('profiles')
+            .select('id,name,student_id,university_id')
+            .in('id', slice);
+          if (pe) throw pe;
+          if (chunk?.length) profs.push(...(chunk as ProfileRow[]));
+        }
+        if (profs.length) {
           const map: Record<string, ProfileRow> = {};
-          for (const p of profs as ProfileRow[]) map[p.id] = p;
+          for (const p of profs) map[p.id] = p;
           setProfilesByUserId(map);
 
           const universities = Array.from(
-            new Set((profs as ProfileRow[]).map((p) => (p.university_id ?? '').trim()).filter(Boolean)),
+            new Set(profs.map((p) => (p.university_id ?? '').trim()).filter(Boolean)),
           ).sort((a, b) => a.localeCompare(b));
           setUniversityOptions(universities);
 
-          const users = (profs as ProfileRow[])
+          const users = profs
             .slice()
             .sort((a, b) => (a.student_id || '').localeCompare(b.student_id || ''))
             .map((p) => ({
@@ -372,12 +388,83 @@ export function TimetablesRoute() {
         null
       : null;
 
+  const summaryRowForModal: TimetableUserSummaryRow | null =
+    timetableModalUserId != null
+      ? summaries.find((s) => s.user_id === timetableModalUserId) ?? {
+          user_id: timetableModalUserId,
+          entry_count: modalEntries.length,
+          profile: modalProfile,
+        }
+      : null;
+
+  const studentTimetablePanel =
+    timetableModalUserId && summaryRowForModal ? (
+      <div
+        id="admin-timetable-panel"
+        className="rounded-2xl border border-brand-200/60 bg-slate-50/90 p-4 shadow-inner dark:border-brand-900/40 dark:bg-slate-950/70"
+      >
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Timetable</div>
+            <h2 className="text-lg font-black text-slate-900 dark:text-slate-100">
+              {userDisplayName(summaryRowForModal)}
+            </h2>
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              {modalProfile?.student_id?.trim() || '—'} · {modalProfile?.university_id?.trim() || '—'}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void refreshModalEntries()}
+              disabled={modalBusy}
+              className="h-10 rounded-2xl border border-slate-200 px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              {modalBusy ? 'Loading…' : 'Reload grid'}
+            </button>
+            <button
+              type="button"
+              onClick={openNewSlot}
+              className="h-10 rounded-2xl bg-brand-600 px-4 text-xs font-black text-white hover:bg-brand-700"
+            >
+              Add slot
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTimetableModalUserId(null);
+                setModalEntries([]);
+                setSlotEditorErr('');
+                setEditor(null);
+              }}
+              className="h-10 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600"
+            >
+              Close timetable
+            </button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          Click a class block to edit. Overlapping times on the same day are blocked when saving.
+        </p>
+        <div className="mt-4">
+          {modalBusy && modalEntries.length === 0 ? (
+            <div className="py-16 text-center font-semibold text-slate-500">Loading timetable…</div>
+          ) : (
+            <AdminTimetableGrid entries={modalEntries} onSlotClick={openEditorForRow} />
+          )}
+        </div>
+      </div>
+    ) : null;
+
+  const openUserVisibleInStudentList =
+    timetableModalUserId != null && summariesFiltered.some((s) => s.user_id === timetableModalUserId);
+
   return (
     <div>
       <MotionSection>
         <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Timetables</div>
         <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          All students with timetable data are listed first. Click a student to open their week grid below.
+          Click a student row to open their week grid directly under that row. Click again to close.
           {searchQuery.trim() ? (
             <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
               Lists filtered by the top search bar.
@@ -393,7 +480,7 @@ export function TimetablesRoute() {
               <div>
                 <div className="text-sm font-black text-slate-900 dark:text-slate-100">Students</div>
                 <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {summariesBusy ? 'Loading…' : `${summariesFiltered.length} with timetables`} — click a row to view their timetable.
+                  {summariesBusy ? 'Loading…' : `${summariesFiltered.length} with timetables`} — grid opens under the row you click.
                 </div>
               </div>
               <button
@@ -425,35 +512,45 @@ export function TimetablesRoute() {
                     const p = u.profile;
                     const selected = timetableModalUserId === u.user_id;
                     return (
-                      <tr
-                        key={u.user_id}
-                        className={`cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40 ${
-                          selected ? 'bg-brand-500/12 dark:bg-brand-500/20' : ''
-                        }`}
-                        onClick={() => void openUserTimetable(u.user_id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            void openUserTimetable(u.user_id);
-                          }
-                        }}
-                        tabIndex={0}
-                        role="button"
-                        aria-label={`Open timetable for ${userDisplayName(u)}`}
-                        aria-selected={selected}
-                      >
-                        <td className="px-3 py-2">
-                          <span className="font-black text-brand-600 dark:text-brand-400">{userDisplayName(u)}</span>
-                          <div className="text-[10px] font-mono font-semibold text-slate-400">{u.user_id}</div>
-                        </td>
-                        <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
-                          {p?.student_id?.trim() || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p?.university_id?.trim() || '—'}</td>
-                        <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
-                          {u.entry_count}
-                        </td>
-                      </tr>
+                      <Fragment key={u.user_id}>
+                        <tr
+                          data-student-timetable-row={u.user_id}
+                          className={`cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40 ${
+                            selected ? 'bg-brand-500/12 dark:bg-brand-500/20' : ''
+                          }`}
+                          onClick={() => void openUserTimetable(u.user_id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              void openUserTimetable(u.user_id);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-expanded={selected}
+                          aria-label={`Open timetable for ${userDisplayName(u)}`}
+                          aria-selected={selected}
+                        >
+                          <td className="px-3 py-2">
+                            <span className="font-black text-brand-600 dark:text-brand-400">{userDisplayName(u)}</span>
+                            <div className="text-[10px] font-mono font-semibold text-slate-400">{u.user_id}</div>
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
+                            {p?.student_id?.trim() || '—'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p?.university_id?.trim() || '—'}</td>
+                          <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
+                            {u.entry_count}
+                          </td>
+                        </tr>
+                        {selected && studentTimetablePanel ? (
+                          <tr className="border-t border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/40">
+                            <td colSpan={4} className="px-3 py-4">
+                              {studentTimetablePanel}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
                   {summariesFiltered.length === 0 && !summariesBusy ? (
@@ -466,77 +563,18 @@ export function TimetablesRoute() {
                 </tbody>
               </table>
             </div>
+
+            {timetableModalUserId && studentTimetablePanel && !openUserVisibleInStudentList ? (
+              <div className="mt-4 rounded-2xl border border-amber-200/60 bg-amber-50/40 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                <div className="mb-3 text-xs font-semibold text-amber-900 dark:text-amber-100/90">
+                  This student is not in the filtered list above (search or filters). Timetable is shown here instead.
+                </div>
+                {studentTimetablePanel}
+              </div>
+            ) : null}
           </div>
         </MotionPanel>
       </MotionSection>
-
-      {timetableModalUserId ? (
-        <MotionSection delay={0.02} className="mt-6">
-          <MotionPanel>
-            <div
-              id="admin-timetable-panel"
-              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    Timetable
-                  </div>
-                  <h2 className="text-lg font-black text-slate-900 dark:text-slate-100">
-                    {userDisplayName({
-                      user_id: timetableModalUserId,
-                      entry_count: modalEntries.length,
-                      profile: modalProfile ?? null,
-                    })}
-                  </h2>
-                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {modalProfile?.student_id?.trim() || '—'} · {modalProfile?.university_id?.trim() || '—'}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void refreshModalEntries()}
-                    disabled={modalBusy}
-                    className="h-10 rounded-2xl border border-slate-200 px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {modalBusy ? 'Loading…' : 'Reload grid'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openNewSlot}
-                    className="h-10 rounded-2xl bg-brand-600 px-4 text-xs font-black text-white hover:bg-brand-700"
-                  >
-                    Add slot
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTimetableModalUserId(null);
-                      setModalEntries([]);
-                      setSlotEditorErr('');
-                      setEditor(null);
-                    }}
-                    className="h-10 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600"
-                  >
-                    Close timetable
-                  </button>
-                </div>
-              </div>
-              <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Click a class block to edit. Overlapping times on the same day are blocked when saving.
-              </p>
-              <div className="mt-4">
-                {modalBusy && modalEntries.length === 0 ? (
-                  <div className="py-16 text-center font-semibold text-slate-500">Loading timetable…</div>
-                ) : (
-                  <AdminTimetableGrid entries={modalEntries} onSlotClick={openEditorForRow} />
-                )}
-              </div>
-            </div>
-          </MotionPanel>
-        </MotionSection>
-      ) : null}
 
       {editor
         ? createPortal(

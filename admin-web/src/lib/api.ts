@@ -713,21 +713,36 @@ async function aggregateTimetableUserCounts(): Promise<Map<string, number>> {
   return counts;
 }
 
+/** PostgREST rejects oversized `.in(...)` filters (URL/query limits) with HTTP 400 "Bad Request". */
+const PROFILE_ID_IN_CHUNK = 100;
+
+async function fetchProfilesForTimetableSummary(
+  userIds: string[],
+): Promise<Map<string, TimetableUserSummaryRow['profile']>> {
+  const pmap = new Map<string, TimetableUserSummaryRow['profile']>();
+  const uniq = Array.from(new Set(userIds.filter(Boolean)));
+  for (let i = 0; i < uniq.length; i += PROFILE_ID_IN_CHUNK) {
+    const chunk = uniq.slice(i, i + PROFILE_ID_IN_CHUNK);
+    const { data: profs, error } = await supabase
+      .from('profiles')
+      .select('id,name,student_id,university_id')
+      .in('id', chunk);
+    if (error) throw toError(error);
+    for (const p of profs ?? []) pmap.set(p.id, p as TimetableUserSummaryRow['profile']);
+  }
+  return pmap;
+}
+
 export async function listTimetableUsersSummary(): Promise<TimetableUserSummaryRow[]> {
   if (await hasSessionJwt()) {
     const counts = await aggregateTimetableUserCounts();
     const userIds = Array.from(counts.keys());
     if (!userIds.length) return [];
-    const { data: profs, error } = await supabase
-      .from('profiles')
-      .select('id,name,student_id,university_id')
-      .in('id', userIds);
-    if (error) throw toError(error);
-    const pmap = new Map((profs ?? []).map((p) => [p.id, p]));
+    const pmap = await fetchProfilesForTimetableSummary(userIds);
     const users = userIds.map((id) => ({
       user_id: id,
       entry_count: counts.get(id) ?? 0,
-      profile: (pmap.get(id) as TimetableUserSummaryRow['profile']) ?? null,
+      profile: pmap.get(id) ?? null,
     }));
     users.sort((a, b) => b.entry_count - a.entry_count);
     return users;
@@ -755,9 +770,13 @@ export async function listTimetableEntries(opts: { userId?: string; universityId
     if (universityId) {
       const ids = Array.from(new Set(items.map((x) => x.user_id)));
       if (ids.length) {
-        const { data: profs, error: pe } = await supabase.from('profiles').select('id,university_id').in('id', ids);
-        if (pe) throw toError(pe);
-        const map = new Map((profs ?? []).map((p) => [p.id, p.university_id]));
+        const map = new Map<string, string | null>();
+        for (let i = 0; i < ids.length; i += PROFILE_ID_IN_CHUNK) {
+          const chunk = ids.slice(i, i + PROFILE_ID_IN_CHUNK);
+          const { data: profs, error: pe } = await supabase.from('profiles').select('id,university_id').in('id', chunk);
+          if (pe) throw toError(pe);
+          for (const p of profs ?? []) map.set(p.id, p.university_id);
+        }
         items = items.filter((t) => map.get(t.user_id) === universityId);
       }
     }

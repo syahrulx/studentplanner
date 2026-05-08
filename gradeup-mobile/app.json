@@ -31,6 +31,10 @@
           "fetch",
           "remote-notification"
         ],
+        "NSCalendarsUsageDescription": "Rencana reads events from calendars on this device only so you can import deadlines into your planner. For example, if you add \"CSC101 Assignment due\" in your phone's Calendar app, you can pull that event into Rencana as a task. We do not change or delete your calendar.",
+        "NSCalendarsFullAccessUsageDescription": "Rencana reads events from calendars on this device only so you can import deadlines into your planner. For example, if you add \"CSC101 Assignment due\" in your phone's Calendar app, you can pull that event into Rencana as a task. We do not change or delete your calendar.",
+        "NSRemindersUsageDescription": "Rencana does not use reminders for this feature; this permission may appear because the system bundles calendar access. You can deny reminders if prompted.",
+        "NSRemindersFullAccessUsageDescription": "Rencana does not use reminders for this feature; this permission may appear because the system bundles calendar access. You can deny reminders if prompted.",
         "NSPhotoLibraryUsageDescription": "Rencana needs read access to your photo library so you can (1) import a timetable screenshot for AI to read your class schedule and (2) select a profile picture for your community profile. For example, you can pick a screenshot of your university portal timetable and Rencana will automatically fill in your classes, times, and rooms.",
         "NSPhotoLibraryAddUsageDescription": "Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.",
         "NSLocationWhenInUseUsageDescription": "Rencana uses your location only while the app is open to show your pin on the community campus map so friends in your circle can see that you are nearby. For example, if you are studying at the library, your friends see a pin at the library on their map. Your location is never tracked in the background."

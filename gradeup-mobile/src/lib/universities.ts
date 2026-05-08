@@ -193,12 +193,13 @@ function inferShortName(name: string, fallbackId: string): string {
 }
 
 function mergeRemoteUniversities(rows: Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>): UniversityConfig[] {
-  const byId = new Map(UNIVERSITIES.map((u) => [u.id, u]));
+  const byId = new Map<string, UniversityConfig>();
+  const localById = new Map(UNIVERSITIES.map((u) => [u.id, u]));
   for (const row of rows) {
     const id = String(row.id || '').trim();
     const name = String(row.name || '').trim();
     if (!id || !name) continue;
-    const existing = byId.get(id);
+    const existing = localById.get(id);
     const mode = row.login_method === 'api' ? 'api' : 'webview';
     const loginUrl =
       String(row.api_endpoint || '').trim() ||
@@ -290,6 +291,7 @@ export async function getMalaysianUniversities(): Promise<UniversityItem[]> {
     .order('name', { ascending: true });
   if (error || !data) return universitiesCache;
   const rows = (data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>);
+  if (rows.length === 0) return universitiesCache;
   universitiesCache = mergeRemoteUniversities(rows);
   return universitiesCache;
 }

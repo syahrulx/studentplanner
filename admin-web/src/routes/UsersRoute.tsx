@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   deleteUser,
@@ -44,6 +44,71 @@ function formatJoinDate(iso: string | null | undefined): string {
     month: 'short',
     day: '2-digit',
   });
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function UserRowDetailPanel({
+  u,
+  usedThisMonth,
+}: {
+  u: AdminUserRow;
+  usedThisMonth: number;
+}) {
+  const planLimit = MONTHLY_TOKEN_LIMITS[u.subscription_plan] ?? MONTHLY_TOKEN_LIMITS.free;
+  const effectiveLimit = resolveMonthlyLimit(u.subscription_plan, u.ai_token_limit_override);
+  const pct =
+    effectiveLimit > 0 ? Math.min(100, Math.round((usedThisMonth / effectiveLimit) * 100)) : 0;
+
+  const fields: Array<{ label: string; value: string }> = [
+    { label: 'User ID', value: u.id },
+    { label: 'Display name', value: u.name?.trim() || '—' },
+    { label: 'Student ID', value: u.student_id?.trim() || '—' },
+    { label: 'University', value: u.university_id?.trim() || '—' },
+    { label: 'Device', value: u.device_platform ?? '—' },
+    { label: 'Status', value: u.status },
+    { label: 'Plan', value: u.subscription_plan },
+    {
+      label: 'AI limit override',
+      value:
+        u.ai_token_limit_override != null && u.ai_token_limit_override > 0
+          ? `${u.ai_token_limit_override.toLocaleString()} tokens/mo (plan default ${planLimit.toLocaleString()})`
+          : `Plan default (${planLimit.toLocaleString()} tokens/mo)`,
+    },
+    { label: 'Joined', value: formatDateTime(u.created_at) },
+    { label: 'Profile updated', value: formatDateTime(u.updated_at) },
+    {
+      label: 'AI usage (this month, UTC)',
+      value: `${usedThisMonth.toLocaleString()} / ${effectiveLimit.toLocaleString()} (${pct}%)`,
+    },
+  ];
+
+  return (
+    <div className="border-t border-slate-200 bg-slate-50/90 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/50">
+      <div className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        User details
+      </div>
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {fields.map(({ label, value }) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
+            <dd className="mt-0.5 break-all text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 function UsageBar({
@@ -475,6 +540,7 @@ export function UsersRoute() {
   const [usageByUser, setUsageByUser] = useState<Record<string, number>>({});
   const [usageLoading, setUsageLoading] = useState(false);
   const [tokenDialog, setTokenDialog] = useState<TokenDialogState | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const hasMounted = useRef(false);
 
   const loadUsage = async (users: AdminUserRow[]) => {
@@ -720,15 +786,44 @@ export function UsersRoute() {
                             ? 'green'
                             : 'amber';
                       const used = usageByUser[u.id] ?? 0;
+                      const expanded = expandedUserId === u.id;
                       return (
+                        <Fragment key={u.id}>
                         <tr
-                          key={u.id}
-                          className="bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedUserId((prev) => (prev === u.id ? null : u.id))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setExpandedUserId((prev) => (prev === u.id ? null : u.id));
+                            }
+                          }}
+                          className="cursor-pointer bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
                         >
                           <td className="px-4 py-3">
-                            <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</div>
-                            <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                              {u.id.slice(0, 8)}
+                            <div className="flex items-start gap-2">
+                              <span
+                                className={`mt-0.5 inline-flex shrink-0 text-slate-400 transition-transform dark:text-slate-500 ${expanded ? 'rotate-90' : ''}`}
+                                aria-hidden
+                              >
+                                <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
+                                  <path
+                                    d="M4.5 2.5L8 6l-3.5 3.5"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </span>
+                              <div>
+                                <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</div>
+                                <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                  {u.id.slice(0, 8)}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -752,7 +847,7 @@ export function UsersRoute() {
                           <td className="px-4 py-3">
                             <UsageBar used={used} plan={u.subscription_plan} override={u.ai_token_limit_override} />
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <ActionsMenu
                               items={[
                                 {
@@ -815,6 +910,14 @@ export function UsersRoute() {
                             />
                           </td>
                         </tr>
+                        {expanded ? (
+                          <tr className="bg-slate-50/50 dark:bg-slate-950/30">
+                            <td colSpan={8} className="p-0">
+                              <UserRowDetailPanel u={u} usedThisMonth={used} />
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
                       );
                     })}
                     {rows.length === 0 && !busy ? (

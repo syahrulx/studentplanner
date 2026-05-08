@@ -47,27 +47,77 @@ export default function ResultsPage() {
   const totalAnswerTime = myAnswers.reduce((sum, a) => sum + a.timeMs, 0);
   const avgTimeMs = myAnswers.length > 0 ? totalAnswerTime / myAnswers.length : 0;
 
+  /** Refetch until every participant has finished so scores aren’t stale (each player used to look like #1). */
   useEffect(() => {
+    const sid = sessionId || currentSession?.id;
+    if (!sid) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let attempt = 0;
+
     const loadResults = async () => {
-      const sid = sessionId || currentSession?.id;
-      if (!sid) { setLoading(false); return; }
       try {
         const parts = await quizApi.getSessionParticipants(sid);
-        setParticipants(parts.sort((a, b) => (b.score || 0) - (a.score || 0)));
-      } catch {}
-      setLoading(false);
+        if (cancelled) return;
+        const sorted = [...parts].sort((a, b) => (b.score || 0) - (a.score || 0));
+        setParticipants(sorted);
+
+        const multi = currentSession?.mode === 'multiplayer';
+        const everyoneDone = parts.length < 2 || parts.every((p) => p.finished);
+        attempt += 1;
+        if (multi && !everyoneDone && attempt < 30) {
+          setTimeout(loadResults, 400);
+        } else {
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
     };
+
     loadResults();
-  }, [sessionId, currentSession]);
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, currentSession?.id, currentSession?.mode]);
 
-  const myRank = useMemo(() => {
-    if (!isMultiplayer || participants.length === 0) return 1;
-    // Match by user_id for correctness — name matching is fragile
+  const maxParticipantScore = useMemo(() => {
+    if (participants.length === 0) return 0;
+    return Math.max(...participants.map((p) => p.score ?? 0));
+  }, [participants]);
+
+  const numAtTopScore = useMemo(
+    () => participants.filter((p) => (p.score ?? 0) === maxParticipantScore).length,
+    [participants, maxParticipantScore],
+  );
+
+  const myParticipantScore = useMemo(() => {
     const me = participants.find((p) => p.user_id === user.id);
-    return me ? participants.indexOf(me) + 1 : 1;
-  }, [participants, isMultiplayer, user.id]);
+    return me?.score ?? 0;
+  }, [participants, user.id]);
 
-  const isWinner = isMultiplayer && myRank === 1;
+  const resultsReady =
+    !isMultiplayer ||
+    participants.length < 2 ||
+    participants.every((p) => p.finished);
+
+  const isTie =
+    isMultiplayer &&
+    resultsReady &&
+    participants.length >= 2 &&
+    numAtTopScore > 1 &&
+    myParticipantScore === maxParticipantScore;
+
+  const isWinner =
+    isMultiplayer &&
+    resultsReady &&
+    !loading &&
+    participants.length >= 2 &&
+    myParticipantScore === maxParticipantScore &&
+    numAtTopScore === 1;
 
   const handlePlayAgain = () => {
     leaveQuiz();
@@ -170,12 +220,43 @@ export default function ResultsPage() {
       showsVerticalScrollIndicator={false}
     >
       {/* Result Header */}
-      <View style={[styles.heroCard, { backgroundColor: isWinner ? '#f59e0b' : theme.primary }]}>
-        {isWinner && <Feather name="award" size={48} color="#fff" style={{ marginBottom: 12 }} />}
-        {!isWinner && <ThemeIcon name="checkCircle" size={48} color="#fff" />}
+      <View
+        style={[
+          styles.heroCard,
+          {
+            backgroundColor:
+              loading && isMultiplayer
+                ? theme.primary
+                : isWinner
+                  ? '#f59e0b'
+                  : isTie
+                    ? '#6366f1'
+                    : theme.primary,
+          },
+        ]}
+      >
+        {loading && isMultiplayer ? (
+          <ActivityIndicator size="large" color="#fff" style={{ marginBottom: 12 }} />
+        ) : (
+          <>
+            {isWinner && <Feather name="award" size={48} color="#fff" style={{ marginBottom: 12 }} />}
+            {isTie && !isWinner && (
+              <Feather name="shuffle" size={48} color="#fff" style={{ marginBottom: 12 }} />
+            )}
+            {!isWinner && !isTie && <ThemeIcon name="checkCircle" size={48} color="#fff" />}
+          </>
+        )}
 
         <Text style={styles.heroTitle}>
-          {isMultiplayer ? (isWinner ? 'You Won!' : 'Game Over') : T('quizComplete')}
+          {loading && isMultiplayer
+            ? 'Finalizing results…'
+            : isMultiplayer
+              ? isWinner
+                ? 'You Won!'
+                : isTie
+                  ? "It's a tie!"
+                  : 'Game Over'
+              : T('quizComplete')}
         </Text>
         <Text style={styles.heroScore}>{correctCount ?? '--'} / {totalNum}</Text>
         <Text style={styles.heroSub}>{accuracy !== null ? `${accuracy}% accuracy • ` : ''}{scoreNum} points</Text>

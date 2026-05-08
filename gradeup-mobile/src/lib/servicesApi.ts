@@ -141,6 +141,9 @@ export type ServiceKind = 'request' | 'offer';
 export type ServiceStatus = 'open' | 'claimed' | 'submitted' | 'completed' | 'cancelled';
 export type PriceType = 'free' | 'fixed' | 'negotiable';
 
+/** Set by the author when creating the post. open_service → reusable listing offers + 7-day window. */
+export type ServiceNegotiationMode = 'standard' | 'open_service';
+
 export interface ServiceCategory {
   id: string;
   label: string;
@@ -196,6 +199,11 @@ export interface ServicePost {
   cancel_requested_by: string | null;
   deadline_at: string | null;
 
+  /** Author chose at create time (default standard). */
+  service_negotiation_mode?: ServiceNegotiationMode | null;
+  /** When mode is open_service, post stops accepting activity after this instant (typically +7 days). */
+  open_service_expires_at?: string | null;
+
   // delivery & revision tracking
   delivery_note: string | null;
   delivery_attachments: string[];
@@ -223,6 +231,9 @@ export interface ServicePost {
 
 export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
 
+/** exclusive = one acceptance can win the job. open_listing = reusable; track uses instead of accept. */
+export type OfferKind = 'exclusive' | 'open_listing';
+
 export interface ServiceOffer {
   id: string;
   service_id: string;
@@ -233,6 +244,8 @@ export interface ServiceOffer {
   status: OfferStatus;
   created_at: string;
   updated_at: string;
+  /** DB column; default exclusive when missing (older migrations). */
+  offer_kind?: OfferKind;
 
   // joined
   offerer_name?: string;
@@ -240,6 +253,31 @@ export interface ServiceOffer {
   offerer_whatsapp?: string | null;
   offerer_rating?: number | null;
   offerer_reviews?: number;
+
+  /** Populated for open_listing offers after fetch (usage rows). */
+  feedback_up_count?: number;
+  feedback_down_count?: number;
+  /** Current viewer’s vote on this offer row, if any. */
+  my_feedback?: 'up' | 'down' | null;
+  /** Students who left positive feedback (open listings); max ~12 for UI. */
+  feedback_preview?: OfferFeedbackFace[];
+  /** Unread open-listing DM messages for the current viewer (offer DM thread). */
+  offer_dm_unread?: number;
+}
+
+export interface OfferFeedbackFace {
+  user_id: string;
+  name: string;
+  avatar_url: string | null;
+}
+
+/** Aggregate thumbs on open listing rows under this service. */
+export interface OpenListingFeedbackSummary {
+  thumbsUp: number;
+  thumbsDown: number;
+  /** Distinct users who left at least one thumbs-up on some listing row. */
+  positiveContributors: number;
+  preview: OfferFeedbackFace[];
 }
 
 export interface ServiceFilters {
@@ -385,6 +423,9 @@ async function enrichWithProfiles(rows: ServicePost[], currentUserId?: string): 
 // ─── Detail ────────────────────────────────────────────────────────────────
 
 export async function fetchService(id: string): Promise<ServicePost | null> {
+  const syncRes = await supabase.rpc('sync_open_service_expiry', { p_service_id: id });
+  void syncRes.error;
+
   const { data, error } = await supabase
     .from('community_posts')
     .select('*')
@@ -414,6 +455,8 @@ export interface CreateServiceInput {
   deadline_at?: string;
   university_id?: string;
   campus?: string;
+  /** Author-only: standard job vs open marketplace (7-day window). */
+  negotiation_mode?: ServiceNegotiationMode;
 }
 
 export async function createService(input: CreateServiceInput): Promise<ServicePost> {
@@ -428,6 +471,12 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
 
   let image_url: string | null = null;
   if (input.image_uri) image_url = await uploadPostImage(input.image_uri);
+
+  const mode: ServiceNegotiationMode = input.negotiation_mode ?? 'standard';
+  const openUntil =
+    mode === 'open_service'
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
 
   const { data, error } = await supabase
     .from('community_posts')
@@ -447,6 +496,8 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
       currency: input.currency || 'MYR',
       service_status: 'open',
       deadline_at: input.deadline_at || null,
+      service_negotiation_mode: mode,
+      open_service_expires_at: openUntil,
     })
     .select()
     .single();
@@ -636,7 +687,10 @@ export function getViewerRole(s: ServicePost, viewerId?: string | null): ViewerR
 // ─── Offer RPCs ────────────────────────────────────────────────────────────
 
 /** Fetch all offers for a service (pending first, then by amount/created). */
-export async function fetchOffersForService(serviceId: string): Promise<ServiceOffer[]> {
+export async function fetchOffersForService(serviceId: string): Promise<{
+  offers: ServiceOffer[];
+  openListingFeedbackSummary: OpenListingFeedbackSummary | null;
+}> {
   const { data, error } = await supabase
     .from('service_offers')
     .select('*')
@@ -645,11 +699,11 @@ export async function fetchOffersForService(serviceId: string): Promise<ServiceO
     .order('amount', { ascending: true })
     .order('created_at', { ascending: false });
   // PGRST205: table not in schema (migration not applied on this project yet)
-  if (error?.code === 'PGRST205') return [];
+  if (error?.code === 'PGRST205') return { offers: [], openListingFeedbackSummary: null };
   if (error) throw error;
 
   const rows = (data ?? []) as ServiceOffer[];
-  if (!rows.length) return rows;
+  if (!rows.length) return { offers: [], openListingFeedbackSummary: null };
 
   const offererIds = [...new Set(rows.map((r) => r.offerer_id))];
   const { data: profs } = await supabase
@@ -665,7 +719,130 @@ export async function fetchOffersForService(serviceId: string): Promise<ServiceO
     o.offerer_rating = p?.average_rating ?? null;
     o.offerer_reviews = p?.total_reviews ?? 0;
   }
-  return rows;
+
+  const listingIds = rows
+    .filter((r) => (r.offer_kind ?? 'exclusive') === 'open_listing')
+    .map((r) => r.id);
+
+  let openListingFeedbackSummary: OpenListingFeedbackSummary | null = null;
+
+  if (listingIds.length > 0) {
+    const { data: sessionUser } = await supabase.auth.getUser();
+    const uid = sessionUser?.user?.id ?? null;
+    const { data: usageRows, error: usageErr } = await supabase
+      .from('service_offer_usages')
+      .select('offer_id, user_id, worked')
+      .in('offer_id', listingIds);
+    if (!usageErr && usageRows) {
+      type UsageRow = { offer_id: string; user_id: string; worked?: boolean | null };
+      const upMap = new Map<string, number>();
+      const downMap = new Map<string, number>();
+      const usersByOfferPositive = new Map<string, string[]>();
+      const mineByOffer = new Map<string, 'up' | 'down'>();
+
+      let thumbsUp = 0;
+      let thumbsDown = 0;
+      for (const u of usageRows as UsageRow[]) {
+        const worked = u.worked !== false;
+        if (worked) {
+          thumbsUp++;
+          upMap.set(u.offer_id, (upMap.get(u.offer_id) ?? 0) + 1);
+          const arr = usersByOfferPositive.get(u.offer_id) ?? [];
+          if (!arr.includes(u.user_id)) arr.push(u.user_id);
+          usersByOfferPositive.set(u.offer_id, arr);
+        } else {
+          thumbsDown++;
+          downMap.set(u.offer_id, (downMap.get(u.offer_id) ?? 0) + 1);
+        }
+        if (uid && u.user_id === uid) {
+          mineByOffer.set(u.offer_id, worked ? 'up' : 'down');
+        }
+      }
+
+      const distinctPositiveOrder: string[] = [];
+      const seenPos = new Set<string>();
+      for (const u of usageRows as UsageRow[]) {
+        if (u.worked === false) continue;
+        if (!seenPos.has(u.user_id)) {
+          seenPos.add(u.user_id);
+          distinctPositiveOrder.push(u.user_id);
+        }
+      }
+
+      let faceMap = new Map<string, OfferFeedbackFace>();
+      if (distinctPositiveOrder.length > 0) {
+        const { data: fbProfs } = await supabase
+          .from('profiles')
+          .select('id, name, avatar_url')
+          .in('id', distinctPositiveOrder);
+        faceMap = new Map(
+          (fbProfs ?? []).map((p: { id: string; name: string | null; avatar_url: string | null }) => [
+            p.id,
+            {
+              user_id: p.id,
+              name: p.name?.trim() || 'Student',
+              avatar_url: p.avatar_url ?? null,
+            } as OfferFeedbackFace,
+          ])
+        );
+      }
+
+      openListingFeedbackSummary = {
+        thumbsUp,
+        thumbsDown,
+        positiveContributors: distinctPositiveOrder.length,
+        preview: distinctPositiveOrder
+          .slice(0, 12)
+          .map((id) => faceMap.get(id))
+          .filter((x): x is OfferFeedbackFace => x != null),
+      };
+
+      for (const o of rows) {
+        if ((o.offer_kind ?? 'exclusive') === 'open_listing') {
+          o.feedback_up_count = upMap.get(o.id) ?? 0;
+          o.feedback_down_count = downMap.get(o.id) ?? 0;
+          o.my_feedback = uid ? mineByOffer.get(o.id) ?? null : null;
+          const ids = usersByOfferPositive.get(o.id) ?? [];
+          o.feedback_preview = ids
+            .slice(0, 12)
+            .map((id) => faceMap.get(id))
+            .filter((x): x is OfferFeedbackFace => x != null);
+        }
+      }
+    }
+
+    if (uid) {
+      const { data: threads } = await supabase
+        .from('service_offer_dm_threads')
+        .select('id, offer_id')
+        .in('offer_id', listingIds);
+      if (threads?.length) {
+        const offerByThread = new Map(
+          (threads as { id: string; offer_id: string }[]).map((t) => [t.id, t.offer_id])
+        );
+        const threadIds = [...offerByThread.keys()];
+        const { data: unreadMsgs } = await supabase
+          .from('service_offer_dm_messages')
+          .select('thread_id')
+          .in('thread_id', threadIds)
+          .is('read_at', null)
+          .neq('sender_id', uid);
+        const countByOffer = new Map<string, number>();
+        for (const m of unreadMsgs ?? []) {
+          const tid = (m as { thread_id: string }).thread_id;
+          const oid = offerByThread.get(tid);
+          if (oid) countByOffer.set(oid, (countByOffer.get(oid) ?? 0) + 1);
+        }
+        for (const o of rows) {
+          if ((o.offer_kind ?? 'exclusive') === 'open_listing') {
+            o.offer_dm_unread = countByOffer.get(o.id) ?? 0;
+          }
+        }
+      }
+    }
+  }
+
+  return { offers: rows, openListingFeedbackSummary };
 }
 
 /** Returns the current viewer's pending offer on a service, if any. */
@@ -696,6 +873,61 @@ export async function makeOffer(input: {
   });
   if (error) throw error;
   return data as ServiceOffer;
+}
+
+/** Record thumbs up/down for an open listing offer (one vote per user; can change). */
+export async function recordOfferUse(
+  offerId: string,
+  worked: boolean
+): Promise<{
+  positive_count: number;
+  negative_count: number;
+  newly_recorded: boolean;
+}> {
+  const { data, error } = await supabase.rpc('record_service_offer_use', {
+    p_offer_id: offerId,
+    p_worked: worked,
+  });
+  if (error) throw error;
+  const d = data as {
+    positive_count?: number;
+    negative_count?: number;
+    newly_recorded?: boolean;
+  };
+  return {
+    positive_count: Number(d.positive_count ?? 0),
+    negative_count: Number(d.negative_count ?? 0),
+    newly_recorded: !!d.newly_recorded,
+  };
+}
+
+/** Usage counts and current viewer vote for one open-listing offer. */
+export async function fetchOfferFeedbackSnapshot(offerId: string): Promise<{
+  up: number;
+  down: number;
+  mine: 'up' | 'down' | null;
+}> {
+  const { data: sessionUser } = await supabase.auth.getUser();
+  const uid = sessionUser?.user?.id ?? null;
+
+  const { data: rows, error } = await supabase
+    .from('service_offer_usages')
+    .select('user_id, worked')
+    .eq('offer_id', offerId);
+  if (error?.code === 'PGRST205') return { up: 0, down: 0, mine: null };
+  if (error) throw error;
+
+  let up = 0;
+  let down = 0;
+  let mine: 'up' | 'down' | null = null;
+  for (const r of rows ?? []) {
+    const row = r as { user_id: string; worked?: boolean | null };
+    const worked = row.worked !== false;
+    if (worked) up++;
+    else down++;
+    if (uid && row.user_id === uid) mine = worked ? 'up' : 'down';
+  }
+  return { up, down, mine };
 }
 
 export async function withdrawOffer(offerId: string): Promise<void> {
@@ -951,4 +1183,94 @@ export async function fetchUnreadChatCount(serviceId: string, userId: string): P
     return 0;
   }
   return count || 0;
+}
+
+// ─── Open listing 1:1 DM (author ↔ offer row) ─────────────────────────────
+
+export interface OfferDmMessage {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  read_at: string | null;
+  sender_name?: string;
+  sender_avatar?: string | null;
+}
+
+export async function ensureOpenOfferDmThread(offerId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('ensure_open_offer_dm_thread', {
+    p_offer_id: offerId,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function fetchOfferDmMessages(threadId: string): Promise<OfferDmMessage[]> {
+  const { data, error } = await supabase
+    .from('service_offer_dm_messages')
+    .select('*')
+    .eq('thread_id', threadId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Failed to fetch offer DM messages', error);
+    return [];
+  }
+
+  const rows = (data ?? []) as OfferDmMessage[];
+  if (!rows.length) return rows;
+
+  const senderIds = [...new Set(rows.map((r) => r.sender_id))];
+  const { data: profs } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url')
+    .in('id', senderIds);
+
+  const pm = new Map((profs ?? []).map((p: any) => [p.id, p]));
+  for (const r of rows) {
+    const p = pm.get(r.sender_id);
+    r.sender_name = p?.name || 'Student';
+    r.sender_avatar = p?.avatar_url || null;
+  }
+
+  return rows;
+}
+
+export async function sendOfferDmMessage(threadId: string, content: string): Promise<OfferDmMessage | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('service_offer_dm_messages')
+    .insert({
+      thread_id: threadId,
+      sender_id: user.id,
+      content: content.trim(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const msg = data as OfferDmMessage;
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('name, avatar_url')
+    .eq('id', user.id)
+    .single();
+
+  if (prof) {
+    msg.sender_name = prof.name;
+    msg.sender_avatar = prof.avatar_url;
+  }
+
+  return msg;
+}
+
+export async function markOfferDmMessagesRead(threadId: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_offer_dm_messages_read', { p_thread_id: threadId });
+  if (error) {
+    console.error('Failed to mark offer DM read', error);
+  }
 }

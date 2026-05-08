@@ -12,6 +12,7 @@ import {
   TextInput,
   Platform,
   ScrollView,
+  Switch,
   useWindowDimensions,
   Share,
   Alert,
@@ -31,8 +32,19 @@ import * as eventsApi from '@/src/lib/eventsApi';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
 import { Avatar } from '@/components/Avatar';
+import BrowseCampusDefaultModal from '@/components/BrowseCampusDefaultModal';
 import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
+import {
+  BROWSE_ALL_CAMPUSES,
+  getBrowseCampusPreference,
+  setBrowseCampusPreference,
+} from '@/src/lib/browseCampusPreference';
+import {
+  releaseBrowseCampusModal,
+  tryAcquireBrowseCampusModal,
+} from '@/src/lib/browseCampusModalLock';
+import { waitForBrowseCampusPrefSettled } from '@/src/lib/waitForBrowseCampusPref';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -210,6 +222,8 @@ export default function EventsBoard() {
   }, []);
 
   const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
+  const userId = user?.id ?? null;
+  const userCampusName = ((user as any)?.campus ?? '').trim() || null;
 
   // Advanced filters
   const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
@@ -239,9 +253,15 @@ export default function EventsBoard() {
   const [uniPickerExpanded, setUniPickerExpanded] = useState(true);
   /** When false, campus search + list are hidden after a campus is chosen (or compact "Any campus" row). */
   const [campusPickerExpanded, setCampusPickerExpanded] = useState(false);
+  const [tempSaveCampusAsBrowseDefault, setTempSaveCampusAsBrowseDefault] = useState(true);
+
+  const [browseCampusReady, setBrowseCampusReady] = useState(false);
+  const [showCampusDefaultModal, setShowCampusDefaultModal] = useState(false);
+  const [defaultModalCampuses, setDefaultModalCampuses] = useState<eventsApi.Campus[]>([]);
+  const holdsCampusModalLockRef = useRef(false);
+  const [profileBrowseCampusSaved, setProfileBrowseCampusSaved] = useState<string | null>(null);
 
   const activeUni = filterUniversity !== null ? filterUniversity : userUni;
-  const hasAdvancedFilter = filterUniversity !== null || !!filterCampusId || !!filterOrgId || !!filterDate;
 
   useEffect(() => {
     eventsApi.fetchUniversities().then(setUniversities);
@@ -270,6 +290,78 @@ export default function EventsBoard() {
     setCampusPickerExpanded(false);
   }, [tempUni]);
 
+  useEffect(() => {
+    if (!showFilterModal || !userUni) return;
+    setTempSaveCampusAsBrowseDefault(tempUni === userUni);
+  }, [showFilterModal, tempUni, userUni]);
+
+  /** Default campus: saved preference or one-time picker when the profile university has campuses. */
+  useEffect(() => {
+    if (!userUni || !userId) {
+      setProfileBrowseCampusSaved(null);
+      setBrowseCampusReady(true);
+      return;
+    }
+    setBrowseCampusReady(false);
+    setProfileBrowseCampusSaved(null);
+    holdsCampusModalLockRef.current = false;
+    let cancelled = false;
+    (async () => {
+      const camps = await eventsApi.fetchCampuses(userUni);
+      if (cancelled) return;
+      if (camps.length === 0) {
+        setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+        setBrowseCampusReady(true);
+        return;
+      }
+      const pref = await getBrowseCampusPreference(userId, userUni);
+      if (cancelled) return;
+      if (pref === BROWSE_ALL_CAMPUSES) {
+        setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+        setFilterCampusId(null);
+        setBrowseCampusReady(true);
+        return;
+      }
+      if (pref && camps.some((c) => c.id === pref)) {
+        setProfileBrowseCampusSaved(pref);
+        setFilterCampusId(pref);
+        setBrowseCampusReady(true);
+        return;
+      }
+      if (!tryAcquireBrowseCampusModal(userId, userUni)) {
+        const settled = await waitForBrowseCampusPrefSettled(userId, userUni, camps, () => cancelled);
+        if (cancelled) return;
+        if (settled.kind === 'all') {
+          setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+          setFilterCampusId(null);
+        } else if (settled.kind === 'campus') {
+          setProfileBrowseCampusSaved(settled.id);
+          setFilterCampusId(settled.id);
+        } else {
+          setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+          setFilterCampusId(null);
+        }
+        setBrowseCampusReady(true);
+        return;
+      }
+      holdsCampusModalLockRef.current = true;
+      setDefaultModalCampuses(camps);
+      setShowCampusDefaultModal(true);
+    })();
+    return () => {
+      cancelled = true;
+      if (holdsCampusModalLockRef.current && userId && userUni) {
+        releaseBrowseCampusModal(userId, userUni);
+        holdsCampusModalLockRef.current = false;
+      }
+    };
+  }, [userId, userUni]);
+
+  useEffect(() => {
+    if (!filterCampusId || !campuses.length) return;
+    if (!campuses.some((c) => c.id === filterCampusId)) setFilterCampusId(null);
+  }, [activeUni, campuses, filterCampusId]);
+
   const filteredUniversitiesList = useMemo(() => {
     const q = uniSearchQuery.trim().toLowerCase();
     let list = universities;
@@ -295,6 +387,44 @@ export default function EventsBoard() {
       (c) => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
     );
   }, [campuses, campusSearchQuery]);
+
+  const suggestedCampusIdForModal = useMemo(() => {
+    if (!userCampusName || !defaultModalCampuses.length) return null;
+    const m = defaultModalCampuses.find(
+      (c) => c.name.trim().toLowerCase() === userCampusName.toLowerCase()
+    );
+    return m?.id ?? null;
+  }, [userCampusName, defaultModalCampuses]);
+
+  const profileUniLabel =
+    universities.find((u) => u.id === userUni)?.name ?? userUni?.toUpperCase() ?? 'your university';
+
+  const persistBrowseCampusForUni = useCallback(
+    async (universityId: string | null | undefined, campusId: string | null) => {
+      if (!userId || !universityId) return;
+      const value = campusId ?? BROWSE_ALL_CAMPUSES;
+      await setBrowseCampusPreference(userId, universityId, value);
+      if (universityId === userUni) setProfileBrowseCampusSaved(value);
+    },
+    [userId, userUni]
+  );
+
+  const campusShowsAsExplicitBrowseFilter = useMemo(() => {
+    if (!filterCampusId) return false;
+    if (filterUniversity !== null) return true;
+    if (!userUni || profileBrowseCampusSaved === null) return true;
+    if (profileBrowseCampusSaved === BROWSE_ALL_CAMPUSES) return true;
+    return filterCampusId !== profileBrowseCampusSaved;
+  }, [filterCampusId, filterUniversity, userUni, profileBrowseCampusSaved]);
+
+  const hasAdvancedFilter = useMemo(
+    () =>
+      filterUniversity !== null ||
+      campusShowsAsExplicitBrowseFilter ||
+      !!filterOrgId ||
+      !!filterDate,
+    [filterUniversity, campusShowsAsExplicitBrowseFilter, filterOrgId, filterDate]
+  );
 
   const renderPickerContent = () => (
     <Pressable style={styles.modalOverlay} onPress={() => setPickerVisible(false)}>
@@ -324,6 +454,9 @@ export default function EventsBoard() {
   );
 
   const loadPosts = useCallback(async () => {
+    if (userUni && userId && !browseCampusReady) {
+      return;
+    }
     try {
       const data = await eventsApi.fetchPosts({
         postType: filter,
@@ -344,7 +477,7 @@ export default function EventsBoard() {
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
     }
-  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate]);
+  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate, userUni, userId, browseCampusReady]);
 
   const loadAuthority = useCallback(async () => {
     const status = await eventsApi.getMyAuthorityStatus();
@@ -354,11 +487,18 @@ export default function EventsBoard() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([loadPosts(), loadAuthority()]).finally(() => setLoading(false));
-    }, [loadPosts, loadAuthority])
+      Promise.all([loadPosts(), loadAuthority()]).finally(() => {
+        if (userUni && userId && !browseCampusReady) {
+          setLoading(true);
+        } else {
+          setLoading(false);
+        }
+      });
+    }, [loadPosts, loadAuthority, userUni, userId, browseCampusReady])
   );
 
   const handleRefresh = useCallback(async () => {
+    if (userUni && userId && !browseCampusReady) return;
     const startedAt = Date.now();
     setRefreshing(true);
     try {
@@ -370,7 +510,7 @@ export default function EventsBoard() {
       }
       setRefreshing(false);
     }
-  }, [loadPosts]);
+  }, [loadPosts, userUni, userId, browseCampusReady]);
 
   // ─── Active filter chips (advanced) ───────────────────────────────────────
   const activeChips = useMemo(() => {
@@ -382,9 +522,16 @@ export default function EventsBoard() {
         onClear: () => setFilterUniversity(null),
       });
     }
-    if (filterCampusId) {
+    if (filterCampusId && campusShowsAsExplicitBrowseFilter) {
       const cName = campuses.find(c => c.id === filterCampusId)?.name || 'Campus';
-      chips.push({ key: 'campus', label: cName, onClear: () => setFilterCampusId(null) });
+      chips.push({
+        key: 'campus',
+        label: cName,
+        onClear: () => {
+          setFilterCampusId(null);
+          void persistBrowseCampusForUni(filterUniversity ?? userUni, null);
+        },
+      });
     }
     if (filterOrgId) {
       const oName = organizations.find(o => o.id === filterOrgId)?.name || 'Organization';
@@ -399,7 +546,17 @@ export default function EventsBoard() {
       });
     }
     return chips;
-  }, [filterUniversity, filterCampusId, filterOrgId, filterDate, campuses, organizations]);
+  }, [
+    filterUniversity,
+    filterCampusId,
+    filterOrgId,
+    filterDate,
+    campuses,
+    organizations,
+    userUni,
+    persistBrowseCampusForUni,
+    campusShowsAsExplicitBrowseFilter,
+  ]);
 
   // ─── Header: scrollable pills + pinned action buttons ────────────────────
   const Header = (
@@ -452,6 +609,7 @@ export default function EventsBoard() {
               setTempDate(filterDate);
               setUniPickerExpanded(!nextUni);
               setCampusPickerExpanded(false);
+              setTempSaveCampusAsBrowseDefault(!!userUni && !!nextUni && nextUni === userUni);
               setShowFilterModal(true);
             }}
             style={({ pressed }) => [
@@ -498,6 +656,7 @@ export default function EventsBoard() {
               setFilterCampusId(null);
               setFilterOrgId(null);
               setFilterDate(null);
+              if (userUni) void persistBrowseCampusForUni(userUni, null);
             }}
             style={[styles.activeChip, { backgroundColor: theme.card, borderColor: theme.border }]}
           >
@@ -1092,6 +1251,31 @@ export default function EventsBoard() {
                     </>
                   )}
 
+                  {userUni && tempUni === userUni ? (
+                    <View
+                      style={[
+                        styles.saveDefaultCampusRow,
+                        { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+                      ]}
+                    >
+                      <View style={styles.saveDefaultCampusTextCol}>
+                        <Text style={[styles.saveDefaultCampusTitle, { color: theme.text }]}>
+                          Save as default campus
+                        </Text>
+                        <Text style={[styles.saveDefaultCampusHint, { color: theme.textSecondary }]}>
+                          Next time you open Events & Services, browse starts here (turn off to filter only this
+                          time).
+                        </Text>
+                      </View>
+                      <Switch
+                        value={tempSaveCampusAsBrowseDefault}
+                        onValueChange={setTempSaveCampusAsBrowseDefault}
+                        trackColor={{ false: theme.border, true: theme.primary + '55' }}
+                        thumbColor={tempSaveCampusAsBrowseDefault ? theme.primary : theme.textSecondary}
+                      />
+                    </View>
+                  ) : null}
+
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>ORGANIZATION / CLUB</Text>
                   <Pressable
                     style={[
@@ -1200,6 +1384,15 @@ export default function EventsBoard() {
                 setCampusSearchQuery('');
                 setShowFilterModal(false);
                 setShowDatePicker(false);
+                const appliedUni = tempUni ?? userUni;
+                if (
+                  tempSaveCampusAsBrowseDefault &&
+                  appliedUni &&
+                  userId &&
+                  tempUni === userUni
+                ) {
+                  void persistBrowseCampusForUni(appliedUni, tempCampusId || null);
+                }
               }}
             >
               <Text style={[styles.applyBtnText, { color: theme.textInverse }]}>Apply Filters</Text>
@@ -1265,6 +1458,33 @@ export default function EventsBoard() {
           </View>
         </View>
       </Modal>
+
+      <BrowseCampusDefaultModal
+        visible={showCampusDefaultModal && !!userUni}
+        universityLabel={profileUniLabel}
+        campuses={defaultModalCampuses}
+        suggestedCampusId={suggestedCampusIdForModal}
+        onPickCampus={async (campusId) => {
+          if (!userId || !userUni) return;
+          await setBrowseCampusPreference(userId, userUni, campusId);
+          setProfileBrowseCampusSaved(campusId);
+          setFilterCampusId(campusId);
+          setShowCampusDefaultModal(false);
+          setBrowseCampusReady(true);
+          holdsCampusModalLockRef.current = false;
+          releaseBrowseCampusModal(userId, userUni);
+        }}
+        onPickAllCampuses={async () => {
+          if (!userId || !userUni) return;
+          await setBrowseCampusPreference(userId, userUni, BROWSE_ALL_CAMPUSES);
+          setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+          setFilterCampusId(null);
+          setShowCampusDefaultModal(false);
+          setBrowseCampusReady(true);
+          holdsCampusModalLockRef.current = false;
+          releaseBrowseCampusModal(userId, userUni);
+        }}
+      />
 
     </View>
   );
@@ -1623,6 +1843,20 @@ const styles = StyleSheet.create({
   filterCompactTapTextCol: { flex: 1, minWidth: 0 },
   filterCompactTapText: { fontSize: 15, fontWeight: '600' },
   filterCompactTapHint: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  saveDefaultCampusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  saveDefaultCampusTextCol: { flex: 1, minWidth: 0 },
+  saveDefaultCampusTitle: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+  saveDefaultCampusHint: { fontSize: 12, fontWeight: '500', marginTop: 4, lineHeight: 16 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

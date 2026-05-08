@@ -348,6 +348,22 @@ export default function AIQuizBuilder() {
         </View>
       </View>
 
+      <Pressable
+        style={[styles.joinBanner, { backgroundColor: theme.card, borderColor: theme.border }]}
+        onPress={() => router.push('/quiz-join-by-code' as any)}
+      >
+        <View style={[styles.joinBannerIcon, { backgroundColor: theme.primary + '18' }]}>
+          <Feather name="hash" size={18} color={theme.primary} />
+        </View>
+        <View style={styles.joinBannerText}>
+          <Text style={[styles.joinBannerTitle, { color: theme.text }]}>Join with invite code</Text>
+          <Text style={[styles.joinBannerSub, { color: theme.textSecondary }]}>
+            Have a code from a friend? Join their lobby—no need to generate a quiz here.
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+      </Pressable>
+
       {/* 1. Subject */}
       <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Subject</Text>
       <View style={[styles.groupBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -565,6 +581,27 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
   headerSub: { fontSize: 12, fontWeight: '500', marginTop: 1 },
   aiIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+
+  joinBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+  },
+  joinBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinBannerText: { flex: 1, minWidth: 0 },
+  joinBannerTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  joinBannerSub: { fontSize: 12, fontWeight: '500', marginTop: 3, lineHeight: 16 },
 
   // Group label — matches iOS Settings style
   groupLabel: {
