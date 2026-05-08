@@ -783,6 +783,7 @@ export default function Planner() {
               todayISO,
               currentWeek: user.currentWeek,
               userId: user.id,
+              semesterStartISO: academicCalendar?.startDate,
             });
 
             if (extractedTasks.length === 0) {

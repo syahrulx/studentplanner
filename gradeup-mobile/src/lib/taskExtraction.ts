@@ -35,6 +35,8 @@ export interface ExtractTasksArgs {
   todayISO: string;
   currentWeek: number;
   userId?: string;
+  /** Semester start date — used to resolve 'Week N' references to concrete dates. */
+  semesterStartISO?: string;
 }
 
 export interface ExtractTasksResult {
@@ -207,6 +209,37 @@ function toDtos(raw: any, args: ExtractTasksArgs): TaskExtractionDTO[] {
   return tasks;
 }
 
+/**
+ * Pre-resolve "Week N" / "wk 8" / "minggu 8" references to a concrete ISO date
+ * using the semester start date. This prevents the AI from expanding a single
+ * week reference into 7 separate daily dates.
+ */
+function resolveWeekReferences(
+  message: string,
+  currentWeek: number,
+  semesterStartISO: string | undefined,
+): string {
+  if (!semesterStartISO) return message; // no calendar — leave for AI
+
+  // Match: "week 8", "Week8", "wk 8", "wk8", "minggu 8" (BM support)
+  return message.replace(
+    /\b(?:week|wk|minggu)\s*(\d{1,2})\b/gi,
+    (match, numStr) => {
+      const weekNum = parseInt(numStr, 10);
+      if (isNaN(weekNum) || weekNum < 1 || weekNum > 20) return match;
+      // Calculate end-of-week (Friday) for that semester week
+      const semStart = new Date(semesterStartISO + 'T00:00:00');
+      if (isNaN(semStart.getTime())) return match;
+      const weekStart = new Date(semStart);
+      weekStart.setDate(semStart.getDate() + (weekNum - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 4); // Friday
+      const iso = weekEnd.toISOString().slice(0, 10);
+      return `${match} (by ${iso})`;
+    }
+  );
+}
+
 function buildPrompt(args: ExtractTasksArgs): string {
   const courseList = args.courses.map((c) => `${c.id} = ${c.name}`).join('\\n');
   return [
@@ -218,6 +251,10 @@ function buildPrompt(args: ExtractTasksArgs): string {
     'enough context, TBA, "last week of semester", or otherwise unknown, set "due_date" to null and',
     '"needs_date" to true. NEVER invent or guess a date.',
     '',
+    'IMPORTANT WEEK RULE: "Week N" means a SINGLE task due at end of that week — return ONE due_date,',
+    'do NOT expand into 5-7 separate daily dates. Only use "due_dates" array when a task genuinely',
+    'recurs on different specific dates (e.g. lab sessions on Mon, Wed, Fri).',
+    '',
     'JSON schema:',
     '{',
     '  \"tasks\": [',
@@ -225,8 +262,8 @@ function buildPrompt(args: ExtractTasksArgs): string {
     '      \"title\": string,',
     '      \"course_id\": string,  // use one of the known course codes when possible',
     '      \"type\": \"Assignment\" | \"Quiz\" | \"Project\" | \"Lab\" | \"Test\",',
-    '      \"due_dates\"?: [\"YYYY-MM-DD\", ...] | null,  // use when the SAME task has multiple dates',
-    '      \"due_date\": \"YYYY-MM-DD\" | null,  // single date (omit when due_dates is used)',
+    '      \"due_dates\"?: [\"YYYY-MM-DD\", ...] | null,  // ONLY for genuinely recurring sessions',
+    '      \"due_date\": \"YYYY-MM-DD\" | null,  // single date (default for most tasks)',
     '      \"due_time\": \"HH:MM\" (24h),',
     '      \"needs_date\": boolean,  // true when due_date is null',
     '      \"priority\": \"High\" | \"Medium\" | \"Low\",',
@@ -257,7 +294,13 @@ export async function extractTasksFromMessage(args: ExtractTasksArgs): Promise<E
   }
 
   let rawText = '';
-  const prompt = buildPrompt(args);
+  // Pre-resolve "Week N" references to concrete dates before the AI sees them
+  const resolvedMessage = resolveWeekReferences(
+    args.message,
+    args.currentWeek,
+    args.semesterStartISO,
+  );
+  const prompt = buildPrompt({ ...args, message: resolvedMessage });
   try {
     const { data, error } = await invokeAiGenerate<AiGenerateTaskExtractResult>({
       kind: 'task_extract',

@@ -169,7 +169,8 @@ Return VALID JSON ONLY with this exact shape:
 Rules:
 - Extract only real assessment/actionable tasks.
 - If date is unclear/TBA/vague, set due_date to null and needs_date true.
-- If the SAME task has multiple dates (e.g. multiple sessions/deadlines), return all dates in "due_dates" (and omit "due_date").
+- "Week N" references mean a SINGLE task due at end of that week — return ONE due_date, do NOT expand into 5-7 separate daily dates.
+- Only use "due_dates" array when a task genuinely recurs on different specific dates (e.g. lab sessions Mon, Wed, Fri). Never for a single "Week N" deadline.
 - Never invent concrete dates.
 - Prefer provided course codes when available in input.
 - No markdown, no prose, JSON only.`,
