@@ -34,7 +34,7 @@ type Step = 'authenticating' | 'loading_work' | 'selecting' | 'syncing' | 'done'
 
 export default function ClassroomSync() {
   const theme = useTheme();
-  const { user, setTasks, setCourses: setAppCourses } = useApp();
+  const { user, setTasks, setCourses: setAppCourses, courses: appCourses, timetable } = useApp();
 
   const [step, setStep] = useState<Step>('authenticating');
   const [courses, setCourses] = useState<CourseWithWork[]>([]);
@@ -49,6 +49,37 @@ export default function ClassroomSync() {
   const tokenRef = useRef<string | null>(null);
   /** The Google email being used for Classroom (shown to Android users). */
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
+  /** Maps Google Classroom course ID → app subject ID for linking. */
+  const [courseMapping, setCourseMapping] = useState<Record<string, string>>({});
+  /** Currently open subject picker modal target */
+  const [pickerTarget, setPickerTarget] = useState<string | null>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
+
+  /** Build unified list of available subjects (timetable + planner courses, no gc-course-xxx). */
+  const availableSubjects = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; source: 'timetable' | 'planner' }>();
+    // From timetable (unique by subjectCode)
+    timetable.forEach(t => {
+      const key = t.subjectCode.toUpperCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          id: t.subjectCode,
+          name: t.displayName || t.subjectName,
+          source: 'timetable',
+        });
+      }
+    });
+    // From existing courses (exclude gc-course-xxx)
+    appCourses
+      .filter(c => !c.id.startsWith('gc-course-'))
+      .forEach(c => {
+        const key = c.id.toUpperCase();
+        if (!map.has(key)) {
+          map.set(key, { id: c.id, name: c.name, source: 'planner' });
+        }
+      });
+    return Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }, [timetable, appCourses]);
 
   const { request, response, promptAsync, redirectUri, clientId, notConfigured } =
     useClassroomAuth();
@@ -331,6 +362,7 @@ export default function ClassroomSync() {
         autoSync: true,
         lastSyncAt: null,
         includeClassroomMaterials: includeMaterials,
+        courseMapping: Object.keys(courseMapping).length > 0 ? courseMapping : undefined,
       });
 
       const result = await syncSelectedCourses(
@@ -460,7 +492,7 @@ export default function ClassroomSync() {
   }
 
   // Selection state
-  return (
+  const mainContent = (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -565,6 +597,34 @@ export default function ClassroomSync() {
                     color={theme.textSecondary}
                   />
                 </Pressable>
+
+                {/* ── Subject Mapping Picker ── */}
+                {isCourseSelected && (
+                  <Pressable
+                    style={[styles.mappingRow, { borderTopColor: theme.border }]}
+                    onPress={() => {
+                      setPickerTarget(course.id);
+                      setPickerSearch('');
+                    }}
+                  >
+                    <Feather name="link" size={14} color={theme.textSecondary} style={{ marginRight: 8 }} />
+                    <Text style={[styles.mappingLabel, { color: theme.textSecondary }]}>Link to:</Text>
+                    <View style={[styles.mappingValue, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                      <Text
+                        style={[
+                          styles.mappingValueText,
+                          { color: courseMapping[course.id] ? theme.text : theme.textSecondary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {courseMapping[course.id]
+                          ? `${courseMapping[course.id]} — ${availableSubjects.find(s => s.id === courseMapping[course.id])?.name || 'Subject'}`
+                          : '＋ Create new subject'}
+                      </Text>
+                      <Feather name="chevron-down" size={14} color={theme.textSecondary} />
+                    </View>
+                  </Pressable>
+                )}
 
                 {/* Coursework list */}
                 {isExpanded && (
@@ -672,6 +732,121 @@ export default function ClassroomSync() {
         </View>
       )}
     </View>
+  );
+
+  // ── Subject Picker Modal ──
+  const pickerModal = pickerTarget ? (
+    <View style={styles.pickerOverlay}>
+      <Pressable style={styles.pickerBackdrop} onPress={() => setPickerTarget(null)} />
+      <View style={[styles.pickerSheet, { backgroundColor: theme.card }]}>
+        <View style={styles.pickerHeader}>
+          <Text style={[styles.pickerTitle, { color: theme.text }]}>Link to Subject</Text>
+          <Pressable onPress={() => setPickerTarget(null)} hitSlop={10}>
+            <Feather name="x" size={22} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={[styles.pickerSearchWrap, { backgroundColor: theme.background, borderColor: theme.border }]}>
+          <Feather name="search" size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search subjects..."
+            placeholderTextColor={theme.textSecondary}
+            value={pickerSearch}
+            onChangeText={setPickerSearch}
+            style={[styles.pickerSearchInput, { color: theme.text }]}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+        </View>
+
+        <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
+          {/* Create new option */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.pickerItem,
+              { borderBottomColor: theme.border },
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => {
+              setCourseMapping(prev => {
+                const next = { ...prev };
+                delete next[pickerTarget];
+                return next;
+              });
+              setPickerTarget(null);
+            }}
+          >
+            <View style={[styles.pickerItemIcon, { backgroundColor: '#3b82f620' }]}>
+              <Feather name="plus" size={16} color="#3b82f6" />
+            </View>
+            <View style={styles.pickerItemBody}>
+              <Text style={[styles.pickerItemTitle, { color: '#3b82f6' }]}>Create new subject</Text>
+              <Text style={[styles.pickerItemSub, { color: theme.textSecondary }]}>Import as separate Classroom subject</Text>
+            </View>
+            {!courseMapping[pickerTarget] && (
+              <Feather name="check" size={18} color="#3b82f6" />
+            )}
+          </Pressable>
+
+          {/* Available subjects */}
+          {availableSubjects
+            .filter(s => {
+              if (!pickerSearch.trim()) return true;
+              const q = pickerSearch.toLowerCase();
+              return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+            })
+            .map(subj => {
+              const isSelected = courseMapping[pickerTarget] === subj.id;
+              return (
+                <Pressable
+                  key={subj.id}
+                  style={({ pressed }) => [
+                    styles.pickerItem,
+                    { borderBottomColor: theme.border },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  onPress={() => {
+                    setCourseMapping(prev => ({ ...prev, [pickerTarget]: subj.id }));
+                    setPickerTarget(null);
+                  }}
+                >
+                  <View style={[styles.pickerItemIcon, { backgroundColor: subj.source === 'timetable' ? '#8b5cf620' : '#f59e0b20' }]}>
+                    <Feather
+                      name={subj.source === 'timetable' ? 'calendar' : 'book'}
+                      size={14}
+                      color={subj.source === 'timetable' ? '#8b5cf6' : '#f59e0b'}
+                    />
+                  </View>
+                  <View style={styles.pickerItemBody}>
+                    <Text style={[styles.pickerItemTitle, { color: theme.text }]}>{subj.id}</Text>
+                    <Text style={[styles.pickerItemSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {subj.name}  •  {subj.source === 'timetable' ? 'Timetable' : 'Planner'}
+                    </Text>
+                  </View>
+                  {isSelected && <Feather name="check" size={18} color="#34a853" />}
+                </Pressable>
+              );
+            })}
+
+          {availableSubjects.length === 0 && (
+            <View style={styles.pickerEmpty}>
+              <Feather name="inbox" size={32} color={theme.textSecondary} />
+              <Text style={[styles.pickerEmptyText, { color: theme.textSecondary }]}>
+                No subjects yet. Add subjects from your timetable or planner first.
+              </Text>
+            </View>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </View>
+  ) : null;
+
+  return (
+    <>
+      {mainContent}
+      {pickerModal}
+    </>
   );
 }
 
@@ -810,4 +985,125 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   importText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // ── Subject Mapping ──
+  mappingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  mappingLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  mappingValue: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  mappingValueText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 6,
+  },
+
+  // ── Subject Picker Modal ──
+  pickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    justifyContent: 'flex-end',
+  },
+  pickerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  pickerSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    maxHeight: '70%',
+    paddingTop: 16,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  pickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  pickerSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    padding: 0,
+  },
+  pickerList: {
+    paddingHorizontal: 16,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  pickerItemIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerItemBody: {
+    flex: 1,
+  },
+  pickerItemTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  pickerItemSub: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  pickerEmpty: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  pickerEmptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

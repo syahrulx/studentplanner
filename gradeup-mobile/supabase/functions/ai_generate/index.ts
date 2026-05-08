@@ -169,7 +169,8 @@ Return VALID JSON ONLY with this exact shape:
 Rules:
 - Extract only real assessment/actionable tasks.
 - If date is unclear/TBA/vague, set due_date to null and needs_date true.
-- If the SAME task has multiple dates (e.g. multiple sessions/deadlines), return all dates in "due_dates" (and omit "due_date").
+- "Week N" references mean a SINGLE task due at end of that week — return ONE due_date, do NOT expand into 5-7 separate daily dates.
+- Only use "due_dates" array when a task genuinely recurs on different specific dates (e.g. lab sessions Mon, Wed, Fri). Never for a single "Week N" deadline.
 - Never invent concrete dates.
 - Prefer provided course codes when available in input.
 - No markdown, no prose, JSON only.`,
@@ -177,15 +178,26 @@ Rules:
   };
 }
 
-function buildChatPrompt(content: string): { system: string } {
+function buildChatPrompt(fullNotes: string, ragHighlights?: string): { system: string } {
+  // Always include full notes. If RAG found relevant chunks, prepend them
+  // as highlighted sections so the model prioritises them but still has
+  // access to everything.
+  let notesBlock = '';
+  if (ragHighlights) {
+    notesBlock = `=== MOST RELEVANT SECTIONS (search result) ===\n${ragHighlights}\n\n=== ALL NOTES (complete reference) ===\n${fullNotes}`;
+  } else {
+    notesBlock = fullNotes;
+  }
+
   return {
     system: `You are a brilliant, encouraging university Subject Tutor.
-Use the provided notes as your primary source of truth. If the notes are incomplete, you may supplement with general academic knowledge, but explicitly mention that you are adding outside context.
+Use the provided notes as your primary source of truth. Search through ALL the notes carefully before answering.
+If the notes are incomplete, you may supplement with general academic knowledge, but explicitly mention that you are adding outside context.
 Use clear analogies to explain complex topics. Use Socratic questioning when appropriate.
 Format your responses beautifully using Markdown (bullet points, bold text for emphasis).
 
 Provided Notes:
-${content}`,
+${notesBlock}`,
   };
 }
 
@@ -200,7 +212,7 @@ async function callOpenAI(
   model: string = 'gpt-4o-mini'
 ): Promise<{ content: string; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45_000); // 45s timeout
+  const timeout = setTimeout(() => controller.abort(), 60_000); // 60s timeout (was 45s, increased for large note contexts)
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -232,7 +244,7 @@ async function callOpenAI(
   } catch (err: any) {
     clearTimeout(timeout);
     if (err?.name === 'AbortError') {
-      return { content: '', usage: null, error: 'AI generation timed out after 45 seconds. Please try again.' };
+      return { content: '', usage: null, error: 'AI generation timed out after 60 seconds. Please try again.' };
     }
     return { content: '', usage: null, error: err?.message || 'OpenAI request failed' };
   }
@@ -376,40 +388,54 @@ Deno.serve(async (req) => {
       // Try RAG: embed the question and fetch relevant note chunks
       if (question && subjectId) {
         try {
+          const ragController = new AbortController();
+          const ragTimeout = setTimeout(() => ragController.abort(), 8_000); // 8s timeout for RAG
           const embedRes = await fetch('https://api.openai.com/v1/embeddings', {
             method: 'POST',
+            signal: ragController.signal,
             headers: { 'Authorization': `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ input: question, model: 'text-embedding-3-small' }),
           });
+          clearTimeout(ragTimeout);
           if (embedRes.ok) {
             const embedData = await embedRes.json();
             const queryEmbedding = embedData.data?.[0]?.embedding;
             if (queryEmbedding) {
-              const { data: chunks } = await supabaseAdmin.rpc('match_note_embeddings', {
+              const { data: chunks, error: rpcError } = await supabaseAdmin.rpc('match_note_embeddings', {
                 query_embedding: queryEmbedding,
                 match_threshold: 0.3,
                 match_count: 6,
                 p_user_id: userId,
                 p_subject_id: subjectId,
               });
+              if (rpcError) {
+                console.error('[ai_generate] RAG RPC error:', rpcError.message);
+              }
               if (chunks && chunks.length > 0) {
                 ragContext = chunks.map((c: { content: string }) => c.content).join('\n\n---\n\n');
+                console.log(`[ai_generate] RAG found ${chunks.length} chunks for subject=${subjectId}`);
+              } else {
+                console.log(`[ai_generate] RAG returned 0 chunks for subject=${subjectId}`);
               }
             }
+          } else {
+            console.error(`[ai_generate] RAG embedding API returned HTTP ${embedRes.status}`);
           }
-        } catch (_ragErr) {
-          // RAG failed silently, fall back to passed content
+        } catch (_ragErr: any) {
+          console.error(`[ai_generate] RAG failed: ${_ragErr?.message || _ragErr}. Using full notes only.`);
         }
       }
 
-      // Fall back to content passed from client if RAG yielded nothing
-      const contextForPrompt = ragContext || content;
-
-      const prompts = buildChatPrompt(contextForPrompt);
+      // ALWAYS use the full client content as the base context.
+      // RAG chunks are used as supplementary highlights, NOT a replacement.
+      // This prevents the "can't find on first try" bug where RAG returned
+      // irrelevant chunks and the full notes were discarded.
+      const prompts = buildChatPrompt(content, ragContext || undefined);
       messages = [
         { role: 'system', content: prompts.system },
         ...history.map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
       ];
+      console.log(`[ai_generate] Chat context: fullNotes=${content.length} chars, ragHighlights=${ragContext.length} chars`);
       maxTokens = 1500;
     } else {
       const quizType = body.quiz_type || 'mcq';

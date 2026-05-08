@@ -86,55 +86,81 @@ export async function invokeAiGenerate<T = unknown>(
     return { data: null, error: 'No valid session. Please sign in again.' };
   }
 
-  try {
-    // Let supabase-js forward apikey + user session automatically.
-    let { data, error } = await supabase.functions.invoke('ai_generate', { body });
+  // Retry config: up to 2 attempts (1 original + 1 retry) for transient failures
+  const MAX_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 1500;
 
-    // Session may be stale/expired. Refresh once and retry on 401.
-    const status = (error as any)?.context?.status;
-    if (error && status === 401) {
-      await supabase.auth.refreshSession().catch(() => {});
-      if (!(await hasSession())) {
-        return { data: null, error: 'Session expired. Please sign in again.' };
-      }
-      const retried = await supabase.functions.invoke('ai_generate', { body });
-      data = retried.data;
-      error = retried.error;
-    }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // Let supabase-js forward apikey + user session automatically.
+      let { data, error } = await supabase.functions.invoke('ai_generate', { body });
 
-    if (error) {
-      // supabase-js wraps non-2xx responses
-      const ctx = (error as any).context;
-      const statusText = ctx ? `[HTTP ${ctx.status || 'unknown'} - ${ctx.statusText || 'unknown'}]` : '';
-      const message =
-        typeof error === 'object' && 'message' in error
-          ? `${(error as { message: string }).message} ${statusText}`
-          : `${String(error)} ${statusText}`;
-      if (ctx?.status === 401) {
-        return {
-          data: null,
-          error:
-            `${message}\nLikely auth mismatch. Please sign out/in and restart the app.`,
-        };
+      // Session may be stale/expired. Refresh once and retry on 401.
+      const status = (error as any)?.context?.status;
+      if (error && status === 401) {
+        await supabase.auth.refreshSession().catch(() => {});
+        if (!(await hasSession())) {
+          return { data: null, error: 'Session expired. Please sign in again.' };
+        }
+        const retried = await supabase.functions.invoke('ai_generate', { body });
+        data = retried.data;
+        error = retried.error;
       }
+
+      if (error) {
+        // supabase-js wraps non-2xx responses
+        const ctx = (error as any).context;
+        const httpStatus = ctx?.status;
+        const statusText = ctx ? `[HTTP ${httpStatus || 'unknown'} - ${ctx.statusText || 'unknown'}]` : '';
+        const message =
+          typeof error === 'object' && 'message' in error
+            ? `${(error as { message: string }).message} ${statusText}`
+            : `${String(error)} ${statusText}`;
+
+        if (ctx?.status === 401) {
+          return {
+            data: null,
+            error:
+              `${message}\nLikely auth mismatch. Please sign out/in and restart the app.`,
+          };
+        }
+
+        // Retry on transient errors (5xx, timeout, network issues)
+        const isTransient = httpStatus >= 500 || !httpStatus || /timeout|abort|network|fetch/i.test(message);
+        if (isTransient && attempt < MAX_ATTEMPTS) {
+          console.log(`[invokeAiGenerate] Attempt ${attempt} failed (transient): ${message}. Retrying in ${RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+
+        return { data: null, error: message };
+      }
+
+      // Edge Function returns { error: { message, code } } on failure
+      if (data?.error?.message) {
+        if (isMonthlyLimitError(data.error)) {
+          showMonthlyLimitAlert();
+        }
+        return { data: null, error: data.error.message };
+      }
+
+      return { data: data as T };
+    } catch (e: any) {
+      const message = e?.message || 'AI generation request failed. Please try again.';
+
+      // Retry on transient exceptions (network errors, timeouts)
+      if (attempt < MAX_ATTEMPTS && /timeout|abort|network|fetch|ECONNRESET/i.test(message)) {
+        console.log(`[invokeAiGenerate] Attempt ${attempt} exception (transient): ${message}. Retrying in ${RETRY_DELAY_MS}ms...`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+
       return { data: null, error: message };
     }
-
-    // Edge Function returns { error: { message, code } } on failure
-    if (data?.error?.message) {
-      if (isMonthlyLimitError(data.error)) {
-        showMonthlyLimitAlert();
-      }
-      return { data: null, error: data.error.message };
-    }
-
-    return { data: data as T };
-  } catch (e: any) {
-    return {
-      data: null,
-      error: e?.message || 'AI generation request failed. Please try again.',
-    };
   }
+
+  // Should not reach here, but safety fallback
+  return { data: null, error: 'AI generation failed after retries.' };
 }
 
 export async function invokeAiEmbed(
