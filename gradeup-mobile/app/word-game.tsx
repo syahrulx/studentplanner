@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Image,
+  View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Image, Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -50,6 +52,7 @@ export default function WordGameHub() {
 
   const [tab, setTab] = useState<ActiveTab>('puzzles');
   const [progress, setProgress] = useState<ConnectionsProgress | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // Rankings state (reused from old leaderboard)
   const [rankTab, setRankTab] = useState<'friends' | 'global'>('friends');
@@ -58,8 +61,22 @@ export default function WordGameHub() {
   const [loadingRank, setLoadingRank] = useState(false);
 
   useEffect(() => {
+    // Show tutorial on first ever visit
+    AsyncStorage.getItem('@connections_tutorial_seen').then((v) => {
+      if (!v) setShowTutorial(true);
+    });
+  }, []);
+
+  // Reload progress every time user returns to this screen
+  const reloadProgress = useCallback(() => {
     loadProgress().then(setProgress);
   }, []);
+  useFocusEffect(reloadProgress);
+
+  const dismissTutorial = () => {
+    setShowTutorial(false);
+    AsyncStorage.setItem('@connections_tutorial_seen', '1');
+  };
 
   const friendIds = friends.map((f) => f.id);
 
@@ -81,6 +98,12 @@ export default function WordGameHub() {
 
   const totalScore = progress ? getTotalScore(progress) : 0;
   const completedCount = progress?.results.length ?? 0;
+
+  // Progressive unlock: show completed + next unlocked + 1 locked preview
+  const nextUnlocked = completedCount + 1;
+  const visiblePuzzles = useMemo(() => {
+    return puzzles.filter((p) => p.id <= nextUnlocked + 1);
+  }, [puzzles, nextUnlocked]);
 
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
@@ -136,10 +159,31 @@ export default function WordGameHub() {
       <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
         {tab === 'puzzles' ? (
           /* ─── Puzzles List ─── */
-          <View style={s.puzzlesList}>
-            {puzzles.map((p) => {
+          <View style={s.puzzlesList}
+          >
+            {/* Current / Play Now card */}
+            {nextUnlocked <= puzzles.length && (
+              <Pressable
+                onPress={() => router.push({ pathname: '/connections-game', params: { id: String(nextUnlocked) } } as any)}
+                style={({ pressed }) => [
+                  s.currentCard,
+                  { backgroundColor: theme.primary },
+                  pressed && { opacity: 0.9 },
+                ]}
+              >
+                <View style={s.currentCardLeft}>
+                  <Text style={s.currentCardTitle}>Puzzle #{nextUnlocked}</Text>
+                  <Text style={s.currentCardSub}>Tap to play!</Text>
+                </View>
+                <View style={s.currentPlayBtn}>
+                  <Feather name="play" size={22} color={theme.primary} />
+                </View>
+              </Pressable>
+            )}
+
+            {/* Completed puzzles */}
+            {visiblePuzzles.filter((p) => p.id < nextUnlocked).reverse().map((p) => {
               const best = progress ? getBestResult(progress, p.id) : undefined;
-              const isCompleted = !!best;
               return (
                 <Pressable
                   key={p.id}
@@ -148,15 +192,13 @@ export default function WordGameHub() {
                     s.puzzleCard,
                     {
                       backgroundColor: theme.card,
-                      borderColor: isCompleted ? '#22c55e' : theme.border,
+                      borderColor: '#22c55e',
                     },
                     pressed && { opacity: 0.85 },
                   ]}
                 >
-                  <View style={[s.puzzleNum, { backgroundColor: isCompleted ? '#22c55e20' : theme.backgroundSecondary }]}>
-                    <Text style={[s.puzzleNumText, { color: isCompleted ? '#22c55e' : theme.textSecondary }]}>
-                      {isCompleted ? '✓' : `#${p.id}`}
-                    </Text>
+                  <View style={[s.puzzleNum, { backgroundColor: '#22c55e20' }]}>
+                    <Text style={[s.puzzleNumText, { color: '#22c55e' }]}>✓</Text>
                   </View>
                   <View style={s.puzzleInfo}>
                     <Text style={[s.puzzleTitle, { color: theme.text }]}>Puzzle #{p.id}</Text>
@@ -164,17 +206,28 @@ export default function WordGameHub() {
                       {p.groups.map((g) => g.label).join(' · ')}
                     </Text>
                   </View>
-                  {isCompleted ? (
+                  {best ? (
                     <View style={s.puzzleScore}>
                       <Text style={[s.puzzleScoreText, { color: '#22c55e' }]}>{best.score}</Text>
                       <Text style={[s.puzzleScoreUnit, { color: theme.textSecondary }]}>pts</Text>
                     </View>
-                  ) : (
-                    <Feather name="play-circle" size={24} color={theme.primary} />
-                  )}
+                  ) : null}
                 </Pressable>
               );
             })}
+
+            {/* Locked preview (next one after current) */}
+            {nextUnlocked + 1 <= puzzles.length && (
+              <View style={[s.puzzleCard, { backgroundColor: theme.card, borderColor: theme.border, opacity: 0.5 }]}>
+                <View style={[s.puzzleNum, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Feather name="lock" size={16} color={theme.textSecondary} />
+                </View>
+                <View style={s.puzzleInfo}>
+                  <Text style={[s.puzzleTitle, { color: theme.textSecondary }]}>Puzzle #{nextUnlocked + 1}</Text>
+                  <Text style={[s.puzzleSub, { color: theme.textSecondary }]}>Complete Puzzle #{nextUnlocked} to unlock</Text>
+                </View>
+              </View>
+            )}
           </View>
         ) : (
           /* ─── Rankings Tab (reused from old leaderboard) ─── */
@@ -282,6 +335,49 @@ export default function WordGameHub() {
         )}
         <View style={{ height: 48 }} />
       </ScrollView>
+
+      {/* ─── Tutorial Modal ─── */}
+      <Modal visible={showTutorial} transparent animationType="fade">
+        <View style={s.tutorialOverlay}>
+          <View style={[s.tutorialCard, { backgroundColor: theme.card }]}>
+            <Text style={[s.tutorialTitle, { color: theme.text }]}>🧩 How to Play</Text>
+            <Text style={[s.tutorialHeading, { color: theme.primary }]}>Connections</Text>
+
+            <View style={s.tutorialRules}>
+              <Text style={[s.tutorialRule, { color: theme.text }]}>
+                {'1.  You see 16 words on the board.'}
+              </Text>
+              <Text style={[s.tutorialRule, { color: theme.text }]}>
+                {'2.  Find 4 groups of 4 words that share a hidden connection.'}
+              </Text>
+              <Text style={[s.tutorialRule, { color: theme.text }]}>
+                {'3.  Select 4 words and tap Submit to guess.'}
+              </Text>
+              <Text style={[s.tutorialRule, { color: theme.text }]}>
+                {'4.  You get 4 mistakes before game over.'}
+              </Text>
+            </View>
+
+            <View style={s.tutorialColors}>
+              <View style={[s.tutorialColorDot, { backgroundColor: '#fbbf24' }]} />
+              <Text style={[s.tutorialColorLabel, { color: theme.textSecondary }]}>Easy</Text>
+              <View style={[s.tutorialColorDot, { backgroundColor: '#34d399' }]} />
+              <Text style={[s.tutorialColorLabel, { color: theme.textSecondary }]}>Medium</Text>
+              <View style={[s.tutorialColorDot, { backgroundColor: '#60a5fa' }]} />
+              <Text style={[s.tutorialColorLabel, { color: theme.textSecondary }]}>Hard</Text>
+              <View style={[s.tutorialColorDot, { backgroundColor: '#a78bfa' }]} />
+              <Text style={[s.tutorialColorLabel, { color: theme.textSecondary }]}>Tricky</Text>
+            </View>
+
+            <Pressable
+              onPress={dismissTutorial}
+              style={[s.tutorialBtn, { backgroundColor: theme.primary }]}
+            >
+              <Text style={s.tutorialBtnText}>Got it, let's play! 🎮</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -350,4 +446,40 @@ const s = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: '700' },
   rowSub: { fontSize: 11, fontWeight: '500', marginTop: 2 },
   rowXP: { fontSize: 15, fontWeight: '800' },
+
+  // Current play card
+  currentCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 20, borderRadius: 18, marginBottom: 6,
+  },
+  currentCardLeft: {},
+  currentCardTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
+  currentCardSub: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  currentPlayBtn: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Tutorial
+  tutorialOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28,
+  },
+  tutorialCard: {
+    width: '100%', borderRadius: 24, padding: 28, alignItems: 'center',
+  },
+  tutorialTitle: { fontSize: 26, fontWeight: '900' },
+  tutorialHeading: { fontSize: 16, fontWeight: '700', marginTop: 4 },
+  tutorialRules: { marginTop: 20, gap: 12, alignSelf: 'stretch' },
+  tutorialRule: { fontSize: 15, fontWeight: '500', lineHeight: 22 },
+  tutorialColors: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 20, flexWrap: 'wrap', justifyContent: 'center',
+  },
+  tutorialColorDot: { width: 14, height: 14, borderRadius: 7 },
+  tutorialColorLabel: { fontSize: 12, fontWeight: '600', marginRight: 8 },
+  tutorialBtn: {
+    marginTop: 24, paddingHorizontal: 32, paddingVertical: 16, borderRadius: 16,
+  },
+  tutorialBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 });
