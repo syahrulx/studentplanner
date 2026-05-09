@@ -1,10 +1,14 @@
 /**
  * Connections-style word game puzzles.
- * Each puzzle has 4 groups of 4 words. The player must find which words belong together.
- * Difficulty: yellow (easiest) → green → blue → purple (hardest).
- *
- * All puzzles use general knowledge words — no course-specific jargon.
+ * Difficulty tiers:
+ *   Levels  1–20 : Easy   — straightforward categories
+ *   Levels 21–40 : Medium — slight wordplay in purple
+ *   Levels 41–60 : Hard   — double meanings, red herrings
+ *   Levels 61–80 : Very Hard — tricky wordplay, misleading groups
+ *   Levels 81–100: Expert — abstract, very sneaky connections
  */
+import { PUZZLES_21_60 } from './puzzles21to60';
+import { PUZZLES_61_100 } from './puzzles61to100';
 
 export interface ConnectionsGroup {
   label: string;
@@ -17,7 +21,7 @@ export interface ConnectionsPuzzle {
   groups: [ConnectionsGroup, ConnectionsGroup, ConnectionsGroup, ConnectionsGroup];
 }
 
-const PUZZLES: ConnectionsPuzzle[] = [
+const PUZZLES_1_20: ConnectionsPuzzle[] = [
   {
     id: 1,
     groups: [
@@ -200,14 +204,21 @@ const PUZZLES: ConnectionsPuzzle[] = [
   },
 ];
 
+// Merge all 100 puzzles
+const ALL_PUZZLES: ConnectionsPuzzle[] = [
+  ...PUZZLES_1_20,
+  ...PUZZLES_21_60,
+  ...PUZZLES_61_100,
+];
+
 export function getPuzzle(id: number): ConnectionsPuzzle | undefined {
-  return PUZZLES.find((p) => p.id === id);
+  return ALL_PUZZLES.find((p) => p.id === id);
 }
 
 export function getTotalPuzzles(): number {
-  return PUZZLES.length;
+  return ALL_PUZZLES.length;
 }
 
 export function getAllPuzzles(): ConnectionsPuzzle[] {
-  return PUZZLES;
+  return ALL_PUZZLES;
 }
