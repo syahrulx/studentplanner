@@ -238,7 +238,7 @@ export interface ServicePost {
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
 
-export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'submitted' | 'completed';
 
 /** exclusive = one acceptance can win the job. open_listing = reusable; track uses instead of accept. */
 export type OfferKind = 'exclusive' | 'open_listing';
@@ -255,6 +255,11 @@ export interface ServiceOffer {
   updated_at: string;
   /** DB column; default exclusive when missing (older migrations). */
   offer_kind?: OfferKind;
+
+  // Multi-Order Delivery Fields
+  delivery_note?: string | null;
+  delivery_attachments?: string[] | null;
+  completed_at?: string | null;
 
   // joined
   offerer_name?: string;
@@ -354,10 +359,38 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (campus) query = query.eq('campus', campus);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
-  if (scope === 'mine' && user) {
-    query = query.eq('author_id', user.id);
-  } else if (scope === 'taken' && user) {
-    query = query.eq('claimed_by', user.id);
+  if ((scope === 'mine' || scope === 'taken') && user) {
+    // Find all services where the user has an active offer (for micro-contracts)
+    const { data: offerData } = await supabase
+      .from('service_offers')
+      .select('service_id')
+      .eq('offerer_id', user.id)
+      .neq('status', 'rejected')
+      .neq('status', 'withdrawn');
+    
+    const offerServiceIds = Array.from(new Set(offerData?.map(o => o.service_id) || []));
+    
+    let orStr = '';
+    if (scope === 'mine') {
+      // My Requests (User is Buyer):
+      // - Authored a 'request'
+      // - Claimed an 'offer' (exclusive buyer)
+      // - Placed an active offer on an 'offer'
+      orStr = `and(service_kind.eq.request,author_id.eq.${user.id}),and(service_kind.eq.offer,claimed_by.eq.${user.id})`;
+      if (offerServiceIds.length > 0) {
+        orStr += `,and(service_kind.eq.offer,id.in.(${offerServiceIds.join(',')}))`;
+      }
+    } else if (scope === 'taken') {
+      // My Tasks (User is Freelancer):
+      // - Authored an 'offer'
+      // - Claimed a 'request' (exclusive freelancer)
+      // - Placed an active offer on a 'request'
+      orStr = `and(service_kind.eq.offer,author_id.eq.${user.id}),and(service_kind.eq.request,claimed_by.eq.${user.id})`;
+      if (offerServiceIds.length > 0) {
+        orStr += `,and(service_kind.eq.request,id.in.(${offerServiceIds.join(',')}))`;
+      }
+    }
+    query = query.or(orStr);
   } else if (scope === 'all' && !status) {
     // Hide completed and cancelled from the general browse feed unless specifically filtering for them
     query = query.in('service_status', ['open', 'claimed', 'submitted']);
@@ -482,6 +515,10 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
     throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
   }
 
+  if (input.price_type === 'free' && input.negotiation_mode === 'open_service') {
+    throw new Error('Open marketplace listings cannot be marked as "Free". Please use standard negotiation mode or set a price.');
+  }
+
   if (input.price_type === 'fixed' && (input.price_amount == null || input.price_amount < 0)) {
     throw new Error('Fixed price services require a valid positive amount.');
   }
@@ -593,6 +630,17 @@ export async function deleteService(id: string): Promise<void> {
 // ─── State transitions (RPCs) ──────────────────────────────────────────────
 
 export async function claimService(id: string): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_negotiation_mode')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_negotiation_mode === 'open_service') {
+    throw new Error('Open marketplace listings cannot be exclusively claimed. Please submit an offer or use the contact button instead.');
+  }
+
   const { error } = await supabase.rpc('claim_service', { p_service_id: id });
   if (error) throw error;
 }
@@ -994,6 +1042,50 @@ export async function makeOffer(input: {
   });
   if (error) throw error;
   return data as ServiceOffer;
+}
+
+// ─── Multi-Order Micro-Contracts (Open Listings) ──────────────────────────
+
+export async function submitOfferDelivery(
+  offerId: string,
+  opts?: { note?: string; attachmentUris?: string[] }
+): Promise<void> {
+  const hasNote = !!opts?.note?.trim();
+  const hasAttachments = !!opts?.attachmentUris?.length;
+
+  if (!hasNote && !hasAttachments) {
+    throw new Error('You must provide either a delivery note or an attachment as proof of completion.');
+  }
+
+  if (opts?.note) {
+    const bannedWord = checkContentModeration('', opts.note);
+    if (bannedWord) {
+      throw new Error('Delivery note contains prohibited language.');
+    }
+  }
+
+  let attachmentUrls: string[] = [];
+
+  // Upload attachments if provided
+  if (opts?.attachmentUris?.length) {
+    attachmentUrls = await Promise.all(
+      opts.attachmentUris.map((uri) => uploadDeliveryAttachment(uri))
+    );
+  }
+
+  const { error } = await supabase.rpc('submit_service_offer_delivery', {
+    p_offer_id: offerId,
+    p_delivery_note: opts?.note || null,
+    p_delivery_attachments: attachmentUrls,
+  });
+  if (error) throw error;
+}
+
+export async function approveOfferDelivery(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_service_offer_delivery', {
+    p_offer_id: offerId,
+  });
+  if (error) throw error;
 }
 
 /** Record thumbs up/down for an open listing offer (one vote per user; can change). */
