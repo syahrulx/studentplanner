@@ -1088,6 +1088,15 @@ export async function approveOfferDelivery(offerId: string): Promise<void> {
   if (error) throw error;
 }
 
+
+
+export async function cancelServiceOffer(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_service_offer', {
+    p_offer_id: offerId,
+  });
+  if (error) throw error;
+}
+
 /** Record thumbs up/down for an open listing offer (one vote per user; can change). */
 export async function recordOfferUse(
   offerId: string,

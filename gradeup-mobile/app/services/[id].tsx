@@ -574,6 +574,19 @@ export default function ServiceDetailScreen() {
     );
   };
 
+
+
+  const handleCancelOffer = async (offerId: string) => {
+    Alert.alert(
+      'Cancel Order?',
+      'Are you sure you want to cancel this order? This action cannot be undone.',
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes, Cancel', style: 'destructive', onPress: () => wrap('Cancel Order', () => servicesApi.cancelServiceOffer(offerId), 'Order cancelled.') },
+      ]
+    );
+  };
+
   const onApproveWork = () =>
     Alert.alert(
       'Approve Delivery?',
@@ -1420,6 +1433,7 @@ export default function ServiceDetailScreen() {
                       const canAcceptOffer = o.status === 'pending' && amIAuthor;
                       const canSubmitWork = o.status === 'accepted' && ((isServiceOffer && amIAuthor) || (isServiceRequest && amIOfferer));
                       const canApproveWork = o.status === 'submitted' && ((isServiceOffer && amIOfferer) || (isServiceRequest && amIAuthor));
+                      const canCancelOffer = (o.status === 'accepted' || o.status === 'submitted') && (amIAuthor || amIOfferer);
 
                       return (
                         <React.Fragment key={o.id}>
@@ -1590,6 +1604,19 @@ export default function ServiceDetailScreen() {
                                 >
                                   <Feather name="check-circle" size={14} color="#fff" />
                                   <Text style={[styles.offerBtnSolidText, { color: '#fff' }]}>Approve Delivery</Text>
+                                </Pressable>
+                              )}
+
+
+
+                              {canCancelOffer && (
+                                <Pressable
+                                  onPress={() => handleCancelOffer(o.id)}
+                                  disabled={acting}
+                                  style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                                >
+                                  <Feather name="x-circle" size={14} color={theme.danger} />
+                                  <Text style={[styles.offerBtnGhostText, { color: theme.danger }]}>Cancel Order</Text>
                                 </Pressable>
                               )}
                             </View>
