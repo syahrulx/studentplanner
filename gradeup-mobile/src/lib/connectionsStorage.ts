@@ -68,6 +68,10 @@ export async function saveResult(result: PuzzleResult): Promise<ConnectionsProgr
   return progress;
 }
 
+export async function resetProgress(): Promise<void> {
+  await AsyncStorage.removeItem(KEY);
+}
+
 export function calculateScore(mistakes: number, timeMs: number): number {
   const base = mistakes === 0 ? 250 : Math.max(50, 250 - mistakes * 50);
   const timeBonus = Math.max(0, 50 - Math.floor(timeMs / 2000));
@@ -88,22 +92,35 @@ export function getTotalScore(progress: ConnectionsProgress): number {
 
 /** Upsert the user's score for a puzzle to Supabase (keeps the best). */
 export async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
+  console.log('[sync] Starting sync for puzzle', result.puzzleId);
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user?.id) return;
+  if (!session?.user?.id) {
+    console.log('[sync] No user session found');
+    return;
+  }
 
   const userId = session.user.id;
+  console.log('[sync] User ID:', userId);
 
   // Upsert: only overwrite if the new score is higher
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await supabase
     .from('word_game_scores')
     .select('score')
     .eq('user_id', userId)
     .eq('puzzle_id', result.puzzleId)
     .maybeSingle();
 
-  if (existing && existing.score >= result.score) return;
+  if (existingErr) {
+    console.error('Error fetching existing score:', existingErr.message);
+  }
 
-  await supabase
+  if (existing && existing.score >= result.score) {
+    console.log('[sync] Existing score is higher, skipping upsert');
+    return;
+  }
+
+  console.log('[sync] Upserting score...', result.score);
+  const { data: upsertData, error: upsertErr } = await supabase
     .from('word_game_scores')
     .upsert(
       {
@@ -115,15 +132,14 @@ export async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,puzzle_id' },
-    );
-}
+    )
+    .select();
 
-/** Syncs all locally saved scores to Supabase (useful for retroactively adding scores). */
-export async function syncAllLocalScoresToSupabase(): Promise<void> {
-  const progress = await loadProgress();
-  if (!progress.results.length) return;
-  // Fire and forget all syncs
-  Promise.allSettled(progress.results.map(syncScoreToSupabase));
+  if (upsertErr) {
+    console.error('[sync] Error upserting score:', upsertErr.message);
+  } else {
+    console.log('[sync] Upsert successful!', upsertData);
+  }
 }
 
 /** Leaderboard entry shape */
@@ -153,7 +169,14 @@ export async function getGameLeaderboard(
   }
 
   const { data: scores, error } = await query;
-  if (error || !scores) return [];
+  if (error) {
+    console.error('[leaderboard] Error fetching scores:', error.message);
+    return [];
+  }
+  
+  console.log(`[leaderboard] Fetched ${scores?.length || 0} scores for scope ${scope}`);
+
+  if (!scores || scores.length === 0) return [];
 
   // Aggregate per user
   const userMap = new Map<string, { total_score: number; puzzles_solved: number }>();

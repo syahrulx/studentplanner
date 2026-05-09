@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-// =============================================================================
+import { checkContentModeration } from './servicesApi';// =============================================================================
 // TYPES
 // =============================================================================
 
@@ -626,6 +625,11 @@ export async function searchUsers(userId: string, query: string): Promise<Friend
 
 /** Create a new circle */
 export async function createCircle(userId: string, name: string, emoji: string = '👥'): Promise<Circle> {
+  const bannedWord = checkContentModeration(name, '');
+  if (bannedWord) {
+    throw new Error('Circle name contains prohibited language.');
+  }
+
   const { data, error } = await supabase
     .from('circles')
     .insert({ name, emoji, created_by: userId })
@@ -1324,6 +1328,11 @@ export async function createSharedGoal(params: {
 }): Promise<SharedGoal | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return null;
+
+  const bannedWord = checkContentModeration(params.title, '');
+  if (bannedWord) {
+    throw new Error('Goal title contains prohibited language.');
+  }
 
   const { data, error } = await supabase
     .from('shared_goals')

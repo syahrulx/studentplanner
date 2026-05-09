@@ -27,8 +27,17 @@ const BANNED_KEYWORDS: string[] = [
 /** Returns a banned word if found, or null if the content is clean. */
 export function checkContentModeration(title: string, body?: string | null): string | null {
   const text = `${title} ${body || ''}`.toLowerCase();
+  
+  // Use word boundaries for short substrings to prevent false positives (e.g., blocking "Middlesex" or "Sussex")
+  const exactMatchWords = ['sex', 'xxx', 'fwb', 'lsd', 'meth', 'weed', 'gun', 'porn', 'nude'];
+  
   for (const word of BANNED_KEYWORDS) {
-    if (text.includes(word)) return word;
+    if (exactMatchWords.includes(word)) {
+      const regex = new RegExp(`\\b${word}\\b`, 'i');
+      if (regex.test(text)) return word;
+    } else {
+      if (text.includes(word)) return word;
+    }
   }
   return null;
 }
@@ -469,6 +478,17 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
     throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
   }
 
+  if (input.price_type === 'fixed' && (input.price_amount == null || input.price_amount < 0)) {
+    throw new Error('Fixed price services require a valid positive amount.');
+  }
+
+  if (input.deadline_at) {
+    const deadline = new Date(input.deadline_at);
+    if (deadline.getTime() < Date.now()) {
+      throw new Error('Service deadline cannot be set in the past.');
+    }
+  }
+
   let image_url: string | null = null;
   if (input.image_uri) image_url = await uploadPostImage(input.image_uri);
 
@@ -513,6 +533,25 @@ export async function updateService(
     'currency' | 'location' | 'deadline_at' | 'service_kind' | 'university_id' | 'campus'
   >>
 ): Promise<void> {
+  // Prevent bypassing moderation via edits
+  if (patch.title !== undefined || patch.body !== undefined) {
+    const bannedWord = checkContentModeration(patch.title || '', patch.body || '');
+    if (bannedWord) {
+      throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
+    }
+  }
+
+  if (patch.price_type === 'fixed' && patch.price_amount != null && patch.price_amount < 0) {
+    throw new Error('Price amount cannot be negative.');
+  }
+
+  if (patch.deadline_at) {
+    const deadline = new Date(patch.deadline_at);
+    if (deadline.getTime() < Date.now()) {
+      throw new Error('Service deadline cannot be updated to a past date.');
+    }
+  }
+
   const { error } = await supabase
     .from('community_posts')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -553,6 +592,20 @@ export async function submitService(
   id: string,
   opts?: { note?: string; attachmentUris?: string[] }
 ): Promise<void> {
+  const hasNote = !!opts?.note?.trim();
+  const hasAttachments = !!opts?.attachmentUris?.length;
+
+  if (!hasNote && !hasAttachments) {
+    throw new Error('You must provide either a delivery note or an attachment as proof of completion.');
+  }
+
+  if (opts?.note) {
+    const bannedWord = checkContentModeration('', opts.note);
+    if (bannedWord) {
+      throw new Error('Delivery note contains prohibited language.');
+    }
+  }
+
   let attachmentUrls: string[] = [];
 
   // Upload attachments if provided
@@ -659,6 +712,21 @@ export async function submitReview(input: {
 }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  if (input.reviewee_id === user.id) {
+    throw new Error('You cannot leave a review for yourself.');
+  }
+
+  if (input.rating < 1 || input.rating > 5) {
+    throw new Error('Rating must be between 1 and 5 stars.');
+  }
+
+  if (input.comment) {
+    const bannedWord = checkContentModeration('', input.comment);
+    if (bannedWord) {
+      throw new Error('Your review contains prohibited language and violates community guidelines.');
+    }
+  }
 
   const { error } = await supabase.from('service_reviews').upsert(
     {
@@ -866,6 +934,16 @@ export async function makeOffer(input: {
   amount: number | null;
   message?: string | null;
 }): Promise<ServiceOffer> {
+  if (input.message) {
+    const bannedWord = checkContentModeration('', input.message);
+    if (bannedWord) {
+      throw new Error('Your offer message contains prohibited language.');
+    }
+  }
+  if (input.amount !== null && input.amount < 0) {
+    throw new Error('Offer amount cannot be negative.');
+  }
+
   const { data, error } = await supabase.rpc('make_service_offer', {
     p_service_id: input.service_id,
     p_amount: input.amount,
@@ -1028,7 +1106,10 @@ export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+  let ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+  if (!['jpg', 'jpeg', 'png'].includes(ext)) {
+    ext = 'jpg';
+  }
   const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   try {
@@ -1135,12 +1216,24 @@ export async function sendServiceMessage(serviceId: string, content: string): Pr
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
   
+  const trimmedContent = content?.trim() || '';
+  if (!trimmedContent) {
+    throw new Error('Cannot send an empty message.');
+  }
+
+  if (trimmedContent) {
+    const bannedWord = checkContentModeration('', trimmedContent);
+    if (bannedWord) {
+      throw new Error('Message contains prohibited language.');
+    }
+  }
+  
   const { data, error } = await supabase
     .from('service_chat_messages')
     .insert({
       service_id: serviceId,
       sender_id: user.id,
-      content: content.trim()
+      content: trimmedContent
     })
     .select()
     .single();

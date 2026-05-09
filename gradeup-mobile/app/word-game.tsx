@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,7 +17,7 @@ import {
   getBestResult,
   getTotalScore,
   getGameLeaderboard,
-  syncAllLocalScoresToSupabase,
+  resetProgress,
   type ConnectionsProgress,
   type PuzzleResult,
   type GameLeaderboardEntry,
@@ -81,8 +82,6 @@ export default function WordGameHub() {
     AsyncStorage.getItem('@connections_tutorial_seen').then((v) => {
       if (!v) setShowTutorial(true);
     });
-    // Retroactively sync any old local scores to the new leaderboard
-    syncAllLocalScoresToSupabase();
   }, []);
 
   // Reload progress every time user returns to this screen
@@ -116,6 +115,11 @@ export default function WordGameHub() {
     }
   }, [tab, rankView, loadRankings]);
 
+  const handleReset = async () => {
+    await resetProgress();
+    setProgress(null);
+  };
+
   const totalScore = progress ? getTotalScore(progress) : 0;
   const completedCount = progress?.results.length ?? 0;
 
@@ -128,76 +132,74 @@ export default function WordGameHub() {
   return (
     <View style={[s.root, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 8, backgroundColor: theme.primary }]}>
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+      <View style={[s.header, { paddingTop: insets.top + 8, backgroundColor: theme.background }]}>
+        <Pressable onPress={() => router.back()} style={[s.backBtn, { backgroundColor: theme.card }]}>
+          <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
         <View style={s.headerCenter}>
-          <Text style={s.headerTitle}>🧩 Word Games</Text>
-          <Text style={s.headerSub}>Connections · Rankings</Text>
+          <Text style={[s.headerTitle, { color: theme.text }]}>Connections</Text>
         </View>
       </View>
 
-      {/* Stats Banner */}
-      <View style={[s.statsBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={s.statItem}>
-          <Text style={[s.statVal, { color: theme.primary }]}>{completedCount}</Text>
-          <Text style={[s.statLabel, { color: theme.textSecondary }]}>Solved</Text>
-        </View>
-        <View style={[s.statDivider, { backgroundColor: theme.border }]} />
-        <View style={s.statItem}>
-          <Text style={[s.statVal, { color: theme.primary }]}>{totalScore}</Text>
-          <Text style={[s.statLabel, { color: theme.textSecondary }]}>Total Pts</Text>
-        </View>
-        <View style={[s.statDivider, { backgroundColor: theme.border }]} />
-        <View style={s.statItem}>
-          <Text style={[s.statVal, { color: theme.primary }]}>🔥 {progress?.currentStreak ?? 0}</Text>
-          <Text style={[s.statLabel, { color: theme.textSecondary }]}>Streak</Text>
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View style={[s.tabs, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-        {(['puzzles', 'rankings'] as ActiveTab[]).map((t) => (
-          <Pressable
-            key={t}
-            style={[s.tab, tab === t && { backgroundColor: theme.card, borderColor: theme.primary }]}
-            onPress={() => setTab(t)}
-          >
-            <Feather
-              name={t === 'puzzles' ? 'grid' : 'award'}
-              size={14}
-              color={tab === t ? theme.primary : theme.textSecondary}
-            />
-            <Text style={[s.tabText, { color: tab === t ? theme.text : theme.textSecondary }]}>
-              {t === 'puzzles' ? 'Puzzles' : 'Rankings'}
-            </Text>
-          </Pressable>
-        ))}
+      {/* Tabs (iOS Segmented Control Style) */}
+      <View style={[s.tabs, { backgroundColor: theme.border }]}>
+        {(['puzzles', 'rankings'] as ActiveTab[]).map((t) => {
+          const isActive = tab === t;
+          return (
+            <Pressable
+              key={t}
+              style={[
+                s.tab,
+                isActive && [s.tabActive, { backgroundColor: theme.card }]
+              ]}
+              onPress={() => setTab(t)}
+            >
+              <Text style={[s.tabText, { color: isActive ? theme.text : theme.textSecondary }]}>
+                {t === 'puzzles' ? 'Puzzles' : 'Rankings'}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
         {tab === 'puzzles' ? (
-          /* ─── Puzzles List ─── */
-          <View style={s.puzzlesList}
-          >
-            {/* Current / Play Now card */}
+          <View style={s.puzzlesList}>
+            {/* Quick Stats for Puzzles Tab */}
+            <View style={[s.statsBanner, { backgroundColor: theme.card, marginTop: 0, marginBottom: 8 }]}>
+              <View style={s.statItem}>
+                <Text style={[s.statVal, { color: theme.text }]}>{completedCount}</Text>
+                <Text style={[s.statLabel, { color: theme.textSecondary }]}>Solved</Text>
+              </View>
+              <View style={[s.statDivider, { backgroundColor: theme.border }]} />
+              <View style={s.statItem}>
+                <Text style={[s.statVal, { color: theme.text }]}>{totalScore}</Text>
+                <Text style={[s.statLabel, { color: theme.textSecondary }]}>Total Pts</Text>
+              </View>
+              <View style={[s.statDivider, { backgroundColor: theme.border }]} />
+              <View style={s.statItem}>
+                <Text style={[s.statVal, { color: theme.text }]}>🔥 {progress?.currentStreak ?? 0}</Text>
+                <Text style={[s.statLabel, { color: theme.textSecondary }]}>Streak</Text>
+              </View>
+            </View>
             {nextUnlocked <= puzzles.length && (
               <Pressable
                 onPress={() => router.push({ pathname: '/connections-game', params: { id: String(nextUnlocked) } } as any)}
-                style={({ pressed }) => [
-                  s.currentCard,
-                  { backgroundColor: theme.primary },
-                  pressed && { opacity: 0.9 },
-                ]}
               >
-                <View style={s.currentCardLeft}>
-                  <Text style={s.currentCardTitle}>Puzzle #{nextUnlocked}</Text>
-                  <Text style={s.currentCardSub}>Tap to play!</Text>
-                </View>
-                <View style={s.currentPlayBtn}>
-                  <Feather name="play" size={22} color={theme.primary} />
-                </View>
+                <LinearGradient
+                  colors={[theme.primary, theme.primary + 'CC']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[s.currentCard, { shadowColor: theme.primary }]}
+                >
+                  <View style={s.currentCardLeft}>
+                    <Text style={s.currentCardTitle}>Puzzle #{nextUnlocked}</Text>
+                    <Text style={s.currentCardSub}>Tap to play!</Text>
+                  </View>
+                  <View style={s.currentPlayBtn}>
+                    <Feather name="play" size={24} color={theme.primary} style={{ marginLeft: 3 }} />
+                  </View>
+                </LinearGradient>
               </Pressable>
             )}
 
@@ -212,7 +214,7 @@ export default function WordGameHub() {
                     s.puzzleCard,
                     {
                       backgroundColor: theme.card,
-                      borderColor: '#22c55e',
+                      shadowColor: '#000',
                     },
                     pressed && { opacity: 0.85 },
                   ]}
@@ -238,7 +240,7 @@ export default function WordGameHub() {
 
             {/* Locked preview (next one after current) */}
             {nextUnlocked + 1 <= puzzles.length && (
-              <View style={[s.puzzleCard, { backgroundColor: theme.card, borderColor: theme.border, opacity: 0.5 }]}>
+              <View style={[s.puzzleCard, { backgroundColor: theme.card, opacity: 0.5 }]}>
                 <View style={[s.puzzleNum, { backgroundColor: theme.backgroundSecondary }]}>
                   <Feather name="lock" size={16} color={theme.textSecondary} />
                 </View>
@@ -252,113 +254,117 @@ export default function WordGameHub() {
         ) : (
           /* ─── Rankings Tab ─── */
           <View style={s.rankingsWrap}>
-            <View style={[s.rankTabs, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
-              {(['stats', 'friends', 'global'] as const).map((rt) => (
-                <Pressable
-                  key={rt}
-                  style={[s.subTab, rankView === rt && { backgroundColor: theme.card, borderColor: theme.primary }]}
-                  onPress={() => setRankView(rt)}
-                >
-                  <Feather
-                    name={rt === 'stats' ? 'bar-chart-2' : rt === 'friends' ? 'users' : 'globe'}
-                    size={14}
-                    color={rankView === rt ? theme.primary : theme.textSecondary}
-                  />
-                  <Text style={[s.subTabText, { color: rankView === rt ? theme.text : theme.textSecondary }]}>
-                    {rt === 'stats' ? 'My Stats' : rt === 'friends' ? 'Friends' : 'Global'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+              <View style={[s.rankTabs, { backgroundColor: theme.border }]}>
+                {(['stats', 'friends', 'global'] as RankView[]).map((r) => {
+                  const isActive = rankView === r;
+                  return (
+                    <Pressable
+                      key={r}
+                      style={[
+                        s.subTab,
+                        isActive && [s.subTabActive, { backgroundColor: theme.card }]
+                      ]}
+                      onPress={() => setRankView(r)}
+                    >
+                      {r === 'stats' && <Feather name="bar-chart-2" size={14} color={isActive ? theme.text : theme.textSecondary} />}
+                      {r === 'friends' && <Feather name="users" size={14} color={isActive ? theme.text : theme.textSecondary} />}
+                      {r === 'global' && <Feather name="globe" size={14} color={isActive ? theme.text : theme.textSecondary} />}
+                      <Text style={[s.subTabText, { color: isActive ? theme.text : theme.textSecondary }]}>
+                        {r === 'stats' ? 'My Stats' : r === 'friends' ? 'Friends' : 'Global'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-            {rankView === 'stats' ? (
-              <>
-                {/* Your Score Card */}
-                <View style={[s.myScoreCard, { backgroundColor: theme.primary }]}>
-                  <Feather name="award" size={28} color="#fff" />
-                  <View style={s.myScoreInfo}>
-                    <Text style={s.myScoreTitle}>Your Total Score</Text>
-                    <Text style={s.myScoreVal}>{totalScore} pts</Text>
-                  </View>
-                  <View style={s.myScoreBadge}>
-                    <Text style={[s.myScoreBadgeText, { color: theme.primary }]}>
-                      {completedCount}/{puzzles.length}
-                    </Text>
-                  </View>
-                </View>
+              {rankView === 'stats' ? (
+                /* Stats View */
+                <>
+                  <LinearGradient
+                    colors={[theme.primary, theme.primary + 'DD']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[s.myScoreCard, { shadowColor: theme.primary }]}
+                  >
+                    <Feather name="award" size={40} color="rgba(255,255,255,0.8)" />
+                    <View style={s.myScoreInfo}>
+                      <Text style={s.myScoreTitle}>Your Total Score</Text>
+                      <Text style={s.myScoreVal}>{totalScore} <Text style={{ fontSize: 16, fontWeight: '700' }}>pts</Text></Text>
+                    </View>
+                    <View style={s.myScoreBadge}>
+                      <Text style={[s.myScoreBadgeText, { color: theme.primary }]}>{completedCount}/100</Text>
+                    </View>
+                  </LinearGradient>
 
-                {/* Stats Row */}
-                <View style={s.statsRow}>
-                  <View style={[s.statBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Text style={[s.statBoxVal, { color: '#22c55e' }]}>
+                  {/* Stats Row */}
+                  <View style={s.statsRow}>
+                    <View style={[s.statBox, { backgroundColor: theme.card, shadowColor: '#000' }]}>
+                      <Text style={[s.statBoxVal, { color: '#22c55e' }]}>
                       {progress?.results.filter((r) => r.mistakes === 0).length ?? 0}
                     </Text>
                     <Text style={[s.statBoxLabel, { color: theme.textSecondary }]}>Perfect 🎯</Text>
-                  </View>
-                  <View style={[s.statBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Text style={[s.statBoxVal, { color: '#f59e0b' }]}>🔥 {progress?.bestStreak ?? 0}</Text>
-                    <Text style={[s.statBoxLabel, { color: theme.textSecondary }]}>Best Streak</Text>
-                  </View>
-                  <View style={[s.statBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Text style={[s.statBoxVal, { color: theme.primary }]}>
+                    </View>
+                    <View style={[s.statBox, { backgroundColor: theme.card, shadowColor: '#000' }]}>
+                      <Text style={[s.statBoxVal, { color: '#f59e0b' }]}>🔥 {progress?.bestStreak ?? 0}</Text>
+                      <Text style={[s.statBoxLabel, { color: theme.textSecondary }]}>Best Streak</Text>
+                    </View>
+                    <View style={[s.statBox, { backgroundColor: theme.card, shadowColor: '#000' }]}>
+                      <Text style={[s.statBoxVal, { color: theme.text }]}>
                       {progress?.results.length
                         ? Math.round(progress.results.reduce((a, r) => a + r.score, 0) / progress.results.length)
                         : 0}
                     </Text>
                     <Text style={[s.statBoxLabel, { color: theme.textSecondary }]}>Avg Score</Text>
+                    </View>
                   </View>
-                </View>
 
-                {/* Per-puzzle results */}
-                <Text style={[s.rankSectionTitle, { color: theme.text }]}>Score Breakdown</Text>
-                {completedCount === 0 ? (
-                  <View style={s.emptyState}>
-                    <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
-                    <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
-                    <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Complete a puzzle to see your stats!</Text>
-                  </View>
-                ) : (
-                  <View style={s.list}>
-                    {(progress?.results ?? []).sort((a, b) => b.score - a.score).map((r) => (
-                      <Pressable
-                        key={r.puzzleId}
-                        onPress={() => router.push({ pathname: '/connections-game', params: { id: String(r.puzzleId) } } as any)}
-                        style={({ pressed }) => [
-                          s.row,
-                          { backgroundColor: theme.card, borderColor: theme.border },
-                          pressed && { opacity: 0.85 },
-                        ]}
-                      >
-                        <View style={[s.rowRankBadge, { backgroundColor: theme.primary + '15' }]}>
-                          <Text style={[s.rowRankText, { color: theme.primary }]}>#{r.puzzleId}</Text>
-                        </View>
-                        <View style={s.rowBody}>
-                          <Text style={[s.rowName, { color: theme.text }]}>Puzzle #{r.puzzleId}</Text>
-                          <Text style={[s.rowSub, { color: theme.textSecondary }]}>
-                            {mistakeEmoji(r.mistakes)} {r.mistakes} mistake{r.mistakes !== 1 ? 's' : ''} · {formatTime(r.timeMs)}
-                          </Text>
-                        </View>
-                        <Text style={[s.rowXP, { color: theme.primary }]}>{r.score} pts</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </>
-            ) : (
-              /* Leaderboard View */
-              <>
-                {loadingRank ? (
-                  <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
-                ) : entries.length === 0 ? (
-                  <View style={s.emptyState}>
-                    <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
-                    <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
-                    <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Play puzzles to rank up!</Text>
-                  </View>
-                ) : (
-                  <>
-                    {/* Podium */}
-                    {entries.length >= 3 && (
+                  <Text style={[s.rankSectionTitle, { color: theme.text }]}>Score Breakdown</Text>
+                  {completedCount === 0 ? (
+                    <View style={s.emptyState}>
+                      <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
+                      <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
+                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Complete a puzzle to see your stats!</Text>
+                    </View>
+                  ) : (
+                    <View style={s.list}>
+                      {(progress?.results ?? []).sort((a, b) => b.score - a.score).map((r) => (
+                        <Pressable
+                          key={r.puzzleId}
+                          onPress={() => router.push({ pathname: '/connections-game', params: { id: String(r.puzzleId) } } as any)}
+                          style={({ pressed }) => [
+                            s.row,
+                            { backgroundColor: theme.card, shadowColor: '#000' },
+                            pressed && { opacity: 0.8 },
+                          ]}
+                        >
+                          <View style={[s.rowRankBadge, { backgroundColor: theme.backgroundSecondary }]}>
+                            <Text style={[s.rowRankText, { color: theme.text }]}>#{r.puzzleId}</Text>
+                          </View>
+                          <View style={s.rowBody}>
+                            <Text style={[s.rowName, { color: theme.text }]}>Puzzle #{r.puzzleId}</Text>
+                            <Text style={[s.rowSub, { color: theme.textSecondary }]}>
+                              {mistakeEmoji(r.mistakes)} {r.mistakes} mistake{r.mistakes !== 1 ? 's' : ''} · {formatTime(r.timeMs)}
+                            </Text>
+                          </View>
+                          <Text style={[s.rowXP, { color: theme.primary }]}>{r.score} pts</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </>
+              ) : (
+                /* Leaderboard View */
+                <>
+                  {loadingRank ? (
+                    <ActivityIndicator color={theme.primary} style={{ marginTop: 40 }} />
+                  ) : entries.length === 0 ? (
+                    <View style={s.emptyState}>
+                      <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
+                      <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
+                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Play puzzles to rank up!</Text>
+                    </View>
+                  ) : (
+                    <>
                       <View style={s.podium}>
                         {[1, 0, 2].map((idx) => {
                           const entry = entries[idx];
@@ -379,37 +385,23 @@ export default function WordGameHub() {
                           );
                         })}
                       </View>
-                    )}
 
-                    {/* List */}
-                    <View style={s.list}>
-                      {entries.slice(3).map((entry, idx) => {
-                        const rank = idx + 4;
-                        const isMe = entry.user_id === userId;
-                        return (
-                          <View
-                            key={entry.user_id}
-                            style={[
-                              s.lbRow,
-                              {
-                                backgroundColor: isMe ? theme.primary + '10' : theme.card,
-                                borderColor: isMe ? theme.primary : theme.border,
-                              },
-                            ]}
-                          >
-                            <Text style={[s.lbRowRank, { color: theme.textSecondary }]}>{rank}</Text>
-                            <Avatar name={entry.name} avatarUrl={entry.avatar_url} size={36} />
-                            <View style={s.rowBody}>
-                              <Text style={[s.rowName, { color: theme.text }]} numberOfLines={1}>
-                                {isMe ? `${entry.name} (You)` : entry.name}
-                              </Text>
-                              <Text style={[s.rowSub, { color: theme.textSecondary }]}>{entry.puzzles_solved} solved</Text>
+                      <View style={s.list}>
+                        {entries.slice(3).map((entry, idx) => {
+                          const isMe = entry.user_id === userId;
+                          return (
+                            <View key={entry.user_id} style={[s.lbRow, { backgroundColor: isMe ? theme.primary + '11' : theme.card }]}>
+                              <Text style={[s.lbRowRank, { color: theme.textSecondary }]}>{idx + 4}</Text>
+                              <Avatar name={entry.name} avatarUrl={entry.avatar_url} size={36} />
+                              <View style={s.rowBody}>
+                                <Text style={[s.rowName, { color: theme.text }]} numberOfLines={1}>{entry.name}</Text>
+                                <Text style={[s.rowSub, { color: theme.textSecondary }]}>{entry.puzzles_solved} solved</Text>
+                              </View>
+                              <Text style={[s.lbRowXP, { color: isMe ? theme.primary : theme.text }]}>{entry.total_score} pts</Text>
                             </View>
-                            <Text style={[s.lbRowXP, { color: isMe ? theme.primary : theme.text }]}>{entry.total_score} pts</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
+                          );
+                        })}
+                      </View>
                   </>
                 )}
               </>
@@ -467,100 +459,117 @@ export default function WordGameHub() {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
-  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
-  headerSub: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16, gap: 12 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  headerCenter: { flex: 1, alignItems: 'center', marginRight: 40 }, // Balance the back button
+  headerTitle: { fontSize: 20, fontWeight: '800' },
+  headerSub: { fontSize: 13, fontWeight: '500', marginTop: 2 },
 
   statsBanner: {
-    flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 20,
-    borderWidth: 1, padding: 20, alignItems: 'center', justifyContent: 'space-around',
+    flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 24,
+    padding: 20, alignItems: 'center', justifyContent: 'space-around',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
   statItem: { alignItems: 'center' },
-  statVal: { fontSize: 22, fontWeight: '900' },
+  statVal: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
   statLabel: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   statDivider: { width: 1, height: 32 },
 
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 20, padding: 4, borderRadius: 20, borderWidth: 1 },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
-  tabText: { fontSize: 13, fontWeight: '700' },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 24, padding: 4, borderRadius: 16 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 12 },
+  tabActive: { shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  tabText: { fontSize: 14, fontWeight: '700' },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 20 },
 
   // Puzzles
-  puzzlesList: { gap: 14 },
+  puzzlesList: { gap: 16 },
   puzzleCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 18, borderWidth: 1.5, gap: 12,
+    flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 24, gap: 14,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  puzzleNum: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  puzzleNumText: { fontSize: 14, fontWeight: '800' },
+  puzzleNum: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  puzzleNumText: { fontSize: 16, fontWeight: '800' },
   puzzleInfo: { flex: 1 },
-  puzzleTitle: { fontSize: 15, fontWeight: '700' },
-  puzzleSub: { fontSize: 11, fontWeight: '500', marginTop: 2 },
+  puzzleTitle: { fontSize: 16, fontWeight: '700' },
+  puzzleSub: { fontSize: 13, fontWeight: '500', marginTop: 4 },
   puzzleScore: { alignItems: 'center' },
-  puzzleScoreText: { fontSize: 18, fontWeight: '900' },
-  puzzleScoreUnit: { fontSize: 10, fontWeight: '600' },
+  puzzleScoreText: { fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
+  puzzleScoreUnit: { fontSize: 11, fontWeight: '700' },
 
   // Rankings
-  rankingsWrap: { gap: 16 },
-  rankTabs: { flexDirection: 'row', padding: 4, borderRadius: 18, borderWidth: 1 },
-  subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: 'transparent', gap: 6 },
+  rankingsWrap: { gap: 20 },
+  rankTabs: { flexDirection: 'row', padding: 4, borderRadius: 14 },
+  subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 10, gap: 6 },
+  subTabActive: { shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
   subTabText: { fontSize: 13, fontWeight: '700' },
+  
   myScoreCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 22, borderRadius: 20, gap: 14,
+    flexDirection: 'row', alignItems: 'center', padding: 24, borderRadius: 24, gap: 16,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 6,
   },
   myScoreInfo: { flex: 1 },
-  myScoreTitle: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.75)' },
-  myScoreVal: { fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 2 },
+  myScoreTitle: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
+  myScoreVal: { fontSize: 32, fontWeight: '900', color: '#fff', marginTop: 4, letterSpacing: -1 },
   myScoreBadge: {
-    backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
+    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
   },
-  myScoreBadgeText: { fontSize: 15, fontWeight: '800' },
-  statsRow: { flexDirection: 'row', gap: 10 },
+  myScoreBadgeText: { fontSize: 16, fontWeight: '800' },
+  
+  statsRow: { flexDirection: 'row', gap: 12 },
   statBox: {
-    flex: 1, alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1,
+    flex: 1, alignItems: 'center', padding: 20, borderRadius: 24,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2,
   },
-  statBoxVal: { fontSize: 18, fontWeight: '900' },
-  statBoxLabel: { fontSize: 11, fontWeight: '600', marginTop: 4 },
-  rankSectionTitle: { fontSize: 16, fontWeight: '800', marginTop: 4 },
+  statBoxVal: { fontSize: 20, fontWeight: '900' },
+  statBoxLabel: { fontSize: 12, fontWeight: '600', marginTop: 6 },
+  rankSectionTitle: { fontSize: 18, fontWeight: '800', marginTop: 8 },
 
-  emptyState: { alignItems: 'center', paddingVertical: 48, gap: 12 },
-  emptyText: { fontSize: 16, fontWeight: '700' },
-  emptyHint: { fontSize: 13 },
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: 16 },
+  emptyText: { fontSize: 18, fontWeight: '700' },
+  emptyHint: { fontSize: 14 },
 
-  podium: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 24, gap: 8, marginTop: 16 },
+  podium: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 32, gap: 12, marginTop: 24 },
   podiumSlot: { flex: 1, alignItems: 'center' },
-  podiumCenter: { marginBottom: 0 },
-  podiumCrown: { borderWidth: 3, borderRadius: 40, padding: 3 },
-  podiumName: { fontSize: 13, fontWeight: '700', marginTop: 6 },
-  podiumXP: { fontSize: 11, fontWeight: '600', marginTop: 2 },
-  podiumBar: { width: '100%', borderRadius: 10, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8, marginTop: 8 },
-  podiumRank: { fontSize: 14, fontWeight: '800' },
+  podiumCenter: { marginBottom: 0, zIndex: 10 },
+  podiumCrown: { borderWidth: 4, borderRadius: 40, padding: 4, backgroundColor: '#fff' },
+  podiumName: { fontSize: 14, fontWeight: '800', marginTop: 10 },
+  podiumXP: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  podiumBar: { width: '100%', borderRadius: 16, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 12, marginTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  podiumRank: { fontSize: 16, fontWeight: '900' },
 
-  list: { gap: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1.5, gap: 12 },
-  lbRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1.5, gap: 12 },
-  lbRowRank: { fontSize: 15, fontWeight: '800', width: 24, textAlign: 'center' },
-  rowRankBadge: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rowRankText: { fontSize: 13, fontWeight: '800' },
+  list: { gap: 12 },
+  row: { 
+    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, gap: 14,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 
+  },
+  lbRow: { 
+    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, gap: 14,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 
+  },
+  lbRowRank: { fontSize: 16, fontWeight: '800', width: 28, textAlign: 'center' },
+  rowRankBadge: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  rowRankText: { fontSize: 14, fontWeight: '800' },
   rowBody: { flex: 1 },
-  rowName: { fontSize: 15, fontWeight: '700' },
-  rowSub: { fontSize: 12, fontWeight: '500', marginTop: 2 },
-  rowXP: { fontSize: 16, fontWeight: '800' },
-  lbRowXP: { fontSize: 15, fontWeight: '800' },
+  rowName: { fontSize: 16, fontWeight: '700' },
+  rowSub: { fontSize: 13, fontWeight: '500', marginTop: 4 },
+  rowXP: { fontSize: 18, fontWeight: '800' },
+  lbRowXP: { fontSize: 16, fontWeight: '800' },
 
   // Current play card
   currentCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 24, borderRadius: 20, marginBottom: 12,
+    padding: 24, borderRadius: 24, marginBottom: 16,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 6,
   },
   currentCardLeft: {},
-  currentCardTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
-  currentCardSub: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  currentCardTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+  currentCardSub: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)', marginTop: 4 },
   currentPlayBtn: {
-    width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff',
+    width: 52, height: 52, borderRadius: 26, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8,
   },
 
   // Tutorial

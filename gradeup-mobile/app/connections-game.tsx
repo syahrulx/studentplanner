@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { getPuzzle, type ConnectionsGroup } from '@/src/data/connectionsPuzzles';
 import { calculateScore, saveResult } from '@/src/lib/connectionsStorage';
-import * as ScreenCapture from 'expo-screen-capture';
 
 const COLOR_MAP = {
   yellow: { bg: '#fef3c7', text: '#92400e', border: '#fbbf24' },
@@ -32,28 +31,6 @@ export default function ConnectionsGame() {
   const puzzle = getPuzzle(puzzleId);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-
-  // Safely prevent screen capture if the native module is available
-  useEffect(() => {
-    let isActive = true;
-    const enable = async () => {
-      try {
-        const available = await ScreenCapture.isAvailableAsync();
-        if (available && isActive) {
-          await ScreenCapture.preventScreenCaptureAsync();
-        }
-      } catch (e) {
-        console.log('Screen capture prevention not supported in this environment');
-      }
-    };
-    enable();
-    return () => {
-      isActive = false;
-      if (ScreenCapture.allowScreenCaptureAsync) {
-        ScreenCapture.allowScreenCaptureAsync().catch(() => {});
-      }
-    };
-  }, []);
 
   const [selected, setSelected] = useState<string[]>([]);
   const [solved, setSolved] = useState<ConnectionsGroup[]>([]);
