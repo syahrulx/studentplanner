@@ -16,6 +16,7 @@ import {
   getBestResult,
   getTotalScore,
   getGameLeaderboard,
+  syncAllLocalScoresToSupabase,
   type ConnectionsProgress,
   type PuzzleResult,
   type GameLeaderboardEntry,
@@ -80,6 +81,8 @@ export default function WordGameHub() {
     AsyncStorage.getItem('@connections_tutorial_seen').then((v) => {
       if (!v) setShowTutorial(true);
     });
+    // Retroactively sync any old local scores to the new leaderboard
+    syncAllLocalScoresToSupabase();
   }, []);
 
   // Reload progress every time user returns to this screen

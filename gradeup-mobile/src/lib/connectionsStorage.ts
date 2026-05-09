@@ -87,7 +87,7 @@ export function getTotalScore(progress: ConnectionsProgress): number {
 // ---------------------------------------------------------------------------
 
 /** Upsert the user's score for a puzzle to Supabase (keeps the best). */
-async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
+export async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user?.id) return;
 
@@ -116,6 +116,14 @@ async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
       },
       { onConflict: 'user_id,puzzle_id' },
     );
+}
+
+/** Syncs all locally saved scores to Supabase (useful for retroactively adding scores). */
+export async function syncAllLocalScoresToSupabase(): Promise<void> {
+  const progress = await loadProgress();
+  if (!progress.results.length) return;
+  // Fire and forget all syncs
+  Promise.allSettled(progress.results.map(syncScoreToSupabase));
 }
 
 /** Leaderboard entry shape */
