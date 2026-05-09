@@ -49,7 +49,9 @@ export default function ConnectionsGame() {
     enable();
     return () => {
       isActive = false;
-      ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+      if (ScreenCapture.allowScreenCaptureAsync) {
+        ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+      }
     };
   }, []);
 
