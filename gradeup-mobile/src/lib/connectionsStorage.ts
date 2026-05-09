@@ -64,8 +64,8 @@ export async function saveResult(result: PuzzleResult): Promise<ConnectionsProgr
 }
 
 export function calculateScore(mistakes: number, timeMs: number): number {
-  const base = mistakes === 0 ? 1000 : Math.max(100, 1000 - mistakes * 200);
-  const timeBonus = Math.max(0, 300 - Math.floor(timeMs / 1000));
+  const base = mistakes === 0 ? 250 : Math.max(50, 250 - mistakes * 50);
+  const timeBonus = Math.max(0, 50 - Math.floor(timeMs / 2000));
   return base + timeBonus;
 }
 
