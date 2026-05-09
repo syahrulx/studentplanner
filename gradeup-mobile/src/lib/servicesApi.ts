@@ -472,6 +472,10 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  if (!input.title.trim()) {
+    throw new Error('Service title is required.');
+  }
+
   // Content moderation: block explicit/prohibited content
   const bannedWord = checkContentModeration(input.title, input.body);
   if (bannedWord) {
@@ -533,6 +537,17 @@ export async function updateService(
     'currency' | 'location' | 'deadline_at' | 'service_kind' | 'university_id' | 'campus'
   >>
 ): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'open') {
+    throw new Error('You cannot edit service details after it has been claimed or completed.');
+  }
+
   // Prevent bypassing moderation via edits
   if (patch.title !== undefined || patch.body !== undefined) {
     const bannedWord = checkContentModeration(patch.title || '', patch.body || '');
@@ -560,6 +575,17 @@ export async function updateService(
 }
 
 export async function deleteService(id: string): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'open' && service.service_status !== 'cancelled') {
+    throw new Error('You cannot delete a service that is already in progress or completed. Please cancel it instead.');
+  }
+
   const { error } = await supabase.from('community_posts').delete().eq('id', id);
   if (error) throw error;
 }
@@ -651,6 +677,9 @@ export async function acceptCancelService(id: string): Promise<void> {
 }
 
 export async function reportService(id: string, reason: string): Promise<void> {
+  if (!reason.trim()) {
+    throw new Error('You must provide a reason for reporting.');
+  }
   const { error } = await supabase.rpc('report_service', { p_service_id: id, p_reason: reason });
   if (error) throw error;
 }
@@ -715,6 +744,20 @@ export async function submitReview(input: {
 
   if (input.reviewee_id === user.id) {
     throw new Error('You cannot leave a review for yourself.');
+  }
+
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status, author_id, claimed_by')
+    .eq('id', input.service_id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'completed') {
+    throw new Error('You can only review a service after it has been completed.');
+  }
+  if (user.id !== service.author_id && user.id !== service.claimed_by) {
+    throw new Error('Only participants can leave a review for this service.');
   }
 
   if (input.rating < 1 || input.rating > 5) {
