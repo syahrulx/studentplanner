@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { getPuzzle, type ConnectionsGroup } from '@/src/data/connectionsPuzzles';
 import { calculateScore, saveResult } from '@/src/lib/connectionsStorage';
+import { usePreventScreenCapture } from 'expo-screen-capture';
 
 const COLOR_MAP = {
   yellow: { bg: '#fef3c7', text: '#92400e', border: '#fbbf24' },
@@ -31,6 +32,7 @@ export default function ConnectionsGame() {
   const puzzle = getPuzzle(puzzleId);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  usePreventScreenCapture();
 
   const [selected, setSelected] = useState<string[]>([]);
   const [solved, setSolved] = useState<ConnectionsGroup[]>([]);
