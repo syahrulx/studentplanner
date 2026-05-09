@@ -1324,7 +1324,20 @@ export default function Dashboard() {
     return null;
   }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName, isDarkMinimal]);
 
-  const formatDateLabel = (dateStr: string) => formatDisplayDate(dateStr);
+  const formatDateLabel = useCallback((dateStr: string) => {
+    const formattedDate = formatDisplayDate(dateStr);
+    const weekNum = teachingWeekNumberForDate(
+      dateStr,
+      academicCalendar,
+      user.startDate,
+      academicCalendar?.totalWeeks ?? 14,
+      user.currentWeek ?? 1
+    );
+    if (weekNum > 0) {
+      return `${formattedDate}  •  W${weekNum}`;
+    }
+    return formattedDate;
+  }, [academicCalendar, user.startDate, user.currentWeek]);
 
   /** iOS tint + Android ring: use on-header contrast (navy-on-navy was invisible). */
   const refreshSpinnerColor = headerOnPrimary;
