@@ -110,6 +110,7 @@ export default function ServicesBoard() {
 
   // Location filter state (aligned with Events: default uni = profile; campus optional id → name for API)
   const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
+  const [explicitAnyUniversity, setExplicitAnyUniversity] = useState(false);
   const [filterCampusId, setFilterCampusId] = useState<string | null>(null);
   const [universities, setUniversities] = useState<eventsApi.University[]>([]);
   const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
@@ -119,6 +120,7 @@ export default function ServicesBoard() {
   const [tempKind, setTempKind] = useState<ServiceKind | null>(null);
   const [tempCategory, setTempCategory] = useState<string | null>(null);
   const [tempFilterUniversity, setTempFilterUniversity] = useState<string | null>(null);
+  const [tempExplicitAnyUniversity, setTempExplicitAnyUniversity] = useState(false);
   const [tempFilterCampusId, setTempFilterCampusId] = useState<string | null>(null);
   const [uniSearchQuery, setUniSearchQuery] = useState('');
   const [campusSearchQuery, setCampusSearchQuery] = useState('');
@@ -162,7 +164,8 @@ export default function ServicesBoard() {
     eventsApi.fetchUniversities().then(setUniversities);
   }, []);
 
-  const activeUni = filterUniversity !== null ? filterUniversity : userUni;
+  const activeUni =
+    explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni);
 
   const currentUniToFetch = showFilterModal ? tempFilterUniversity : activeUni;
 
@@ -305,7 +308,7 @@ export default function ServicesBoard() {
   );
 
   const load = useCallback(async () => {
-    if (scope === 'all' && userUni && userId && !browseCampusReady) {
+    if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) {
       return;
     }
     try {
@@ -336,6 +339,7 @@ export default function ServicesBoard() {
     orderBy,
     activeUni,
     campusNameForQuery,
+    explicitAnyUniversity,
     userUni,
     userId,
     browseCampusReady,
@@ -345,21 +349,21 @@ export default function ServicesBoard() {
     useCallback(() => {
       setLoading(true);
       load().finally(() => {
-        if (scope === 'all' && userUni && userId && !browseCampusReady) {
+        if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) {
           setLoading(true);
         } else {
           setLoading(false);
         }
       });
-    }, [load, scope, userUni, userId, browseCampusReady])
+    }, [load, scope, explicitAnyUniversity, userUni, userId, browseCampusReady])
   );
 
   const onRefresh = useCallback(async () => {
-    if (scope === 'all' && userUni && userId && !browseCampusReady) return;
+    if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) return;
     setRefreshing(true);
     await load();
     setRefreshing(false);
-  }, [load, scope, userUni, userId, browseCampusReady]);
+  }, [load, scope, explicitAnyUniversity, userUni, userId, browseCampusReady]);
 
   /** Gate: check student verification before allowing service creation. */
   const handleNewService = useCallback(async () => {
@@ -410,9 +414,10 @@ export default function ServicesBoard() {
       orderBy !== 'newest' ||
       kind !== null ||
       category !== null ||
+      explicitAnyUniversity ||
       filterUniversity !== null ||
       campusShowsAsExplicitBrowseFilter,
-    [orderBy, kind, category, filterUniversity, campusShowsAsExplicitBrowseFilter]
+    [orderBy, kind, category, explicitAnyUniversity, filterUniversity, campusShowsAsExplicitBrowseFilter]
   );
 
   const activeBrowseChips = useMemo(() => {
@@ -427,6 +432,13 @@ export default function ServicesBoard() {
               ? 'Sort: Ending soon'
               : 'Sort';
       chips.push({ key: 'sort', label: sortLabel, onClear: () => setOrderBy('newest') });
+    }
+    if (explicitAnyUniversity) {
+      chips.push({
+        key: 'any-uni',
+        label: 'Any university',
+        onClear: () => setExplicitAnyUniversity(false),
+      });
     }
     if (filterCampusId && campusShowsAsExplicitBrowseFilter) {
       const cn = campuses.find((c) => c.id === filterCampusId)?.name ?? 'Campus';
@@ -463,6 +475,7 @@ export default function ServicesBoard() {
     return chips;
   }, [
     orderBy,
+    explicitAnyUniversity,
     filterUniversity,
     filterCampusId,
     kind,
@@ -478,8 +491,9 @@ export default function ServicesBoard() {
     setTempOrderBy(orderBy);
     setTempKind(kind);
     setTempCategory(category);
-    const nextUni = filterUniversity !== null ? filterUniversity : userUni || null;
+    const nextUni = explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni || null);
     setTempFilterUniversity(nextUni);
+    setTempExplicitAnyUniversity(explicitAnyUniversity);
     setTempFilterCampusId(filterCampusId);
     setUniSearchQuery('');
     setCampusSearchQuery('');
@@ -487,13 +501,14 @@ export default function ServicesBoard() {
     setCampusPickerExpanded(false);
     setTempSaveCampusAsBrowseDefault(!!userUni && !!nextUni && nextUni === userUni);
     setShowFilterModal(true);
-  }, [orderBy, kind, category, filterUniversity, filterCampusId, userUni]);
+  }, [orderBy, kind, category, filterUniversity, explicitAnyUniversity, filterCampusId, userUni]);
 
   const resetTempFilters = useCallback(() => {
     setTempOrderBy('newest');
     setTempKind(null);
     setTempCategory(null);
     setTempFilterUniversity(null);
+    setTempExplicitAnyUniversity(false);
     setTempFilterCampusId(null);
     setUniSearchQuery('');
     setCampusSearchQuery('');
@@ -615,6 +630,7 @@ export default function ServicesBoard() {
                 setOrderBy('newest');
                 setKind(null);
                 setCategory(null);
+                setExplicitAnyUniversity(false);
                 setFilterUniversity(null);
                 setFilterCampusId(null);
                 if (userUni) void persistBrowseCampusForUni(userUni, null);
@@ -990,6 +1006,7 @@ export default function ServicesBoard() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
+                      setTempExplicitAnyUniversity(true);
                       setTempFilterUniversity(null);
                       setTempFilterCampusId(null);
                       setUniPickerExpanded(true);
@@ -1045,6 +1062,7 @@ export default function ServicesBoard() {
                     <Pressable
                       style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                       onPress={() => {
+                        setTempExplicitAnyUniversity(true);
                         setTempFilterUniversity(null);
                         setTempFilterCampusId(null);
                         setUniSearchQuery('');
@@ -1052,7 +1070,7 @@ export default function ServicesBoard() {
                       }}
                     >
                       <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
-                      {!tempFilterUniversity ? (
+                      {tempExplicitAnyUniversity ? (
                         <Feather name="check" size={18} color={theme.primary} />
                       ) : null}
                     </Pressable>
@@ -1073,6 +1091,7 @@ export default function ServicesBoard() {
                               key={item.id}
                               style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                               onPress={() => {
+                                setTempExplicitAnyUniversity(false);
                                 setTempFilterUniversity(item.id);
                                 setTempFilterCampusId(null);
                                 setUniSearchQuery('');
@@ -1307,6 +1326,7 @@ export default function ServicesBoard() {
                 setOrderBy(tempOrderBy);
                 setKind(tempKind);
                 setCategory(tempCategory);
+                setExplicitAnyUniversity(tempExplicitAnyUniversity);
                 setFilterUniversity(tempFilterUniversity || null);
                 setFilterCampusId(tempFilterCampusId || null);
                 setUniSearchQuery('');

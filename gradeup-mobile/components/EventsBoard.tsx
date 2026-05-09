@@ -227,12 +227,14 @@ export default function EventsBoard() {
 
   // Advanced filters
   const [filterUniversity, setFilterUniversity] = useState<string | null>(null);
+  const [explicitAnyUniversity, setExplicitAnyUniversity] = useState(false);
   const [filterCampusId, setFilterCampusId] = useState<string | null>(null);
   const [filterOrgId, setFilterOrgId] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState<string | null>(null);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [tempUni, setTempUni] = useState<string | null>(null);
+  const [tempExplicitAnyUniversity, setTempExplicitAnyUniversity] = useState(false);
   const [tempCampusId, setTempCampusId] = useState<string | null>(null);
   const [tempOrgId, setTempOrgId] = useState<string | null>(null);
   const [tempDate, setTempDate] = useState<string | null>(null);
@@ -261,7 +263,8 @@ export default function EventsBoard() {
   const holdsCampusModalLockRef = useRef(false);
   const [profileBrowseCampusSaved, setProfileBrowseCampusSaved] = useState<string | null>(null);
 
-  const activeUni = filterUniversity !== null ? filterUniversity : userUni;
+  const activeUni =
+    explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni);
 
   useEffect(() => {
     eventsApi.fetchUniversities().then(setUniversities);
@@ -419,11 +422,12 @@ export default function EventsBoard() {
 
   const hasAdvancedFilter = useMemo(
     () =>
+      explicitAnyUniversity ||
       filterUniversity !== null ||
       campusShowsAsExplicitBrowseFilter ||
       !!filterOrgId ||
       !!filterDate,
-    [filterUniversity, campusShowsAsExplicitBrowseFilter, filterOrgId, filterDate]
+    [explicitAnyUniversity, filterUniversity, campusShowsAsExplicitBrowseFilter, filterOrgId, filterDate]
   );
 
   const renderPickerContent = () => (
@@ -454,7 +458,7 @@ export default function EventsBoard() {
   );
 
   const loadPosts = useCallback(async () => {
-    if (userUni && userId && !browseCampusReady) {
+    if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) {
       return;
     }
     try {
@@ -477,7 +481,7 @@ export default function EventsBoard() {
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
     }
-  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate, userUni, userId, browseCampusReady]);
+  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate, explicitAnyUniversity, userUni, userId, browseCampusReady]);
 
   const loadAuthority = useCallback(async () => {
     const status = await eventsApi.getMyAuthorityStatus();
@@ -488,17 +492,17 @@ export default function EventsBoard() {
     useCallback(() => {
       setLoading(true);
       Promise.all([loadPosts(), loadAuthority()]).finally(() => {
-        if (userUni && userId && !browseCampusReady) {
+        if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) {
           setLoading(true);
         } else {
           setLoading(false);
         }
       });
-    }, [loadPosts, loadAuthority, userUni, userId, browseCampusReady])
+    }, [loadPosts, loadAuthority, explicitAnyUniversity, userUni, userId, browseCampusReady])
   );
 
   const handleRefresh = useCallback(async () => {
-    if (userUni && userId && !browseCampusReady) return;
+    if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) return;
     const startedAt = Date.now();
     setRefreshing(true);
     try {
@@ -510,16 +514,26 @@ export default function EventsBoard() {
       }
       setRefreshing(false);
     }
-  }, [loadPosts, userUni, userId, browseCampusReady]);
+  }, [loadPosts, explicitAnyUniversity, userUni, userId, browseCampusReady]);
 
   // ─── Active filter chips (advanced) ───────────────────────────────────────
   const activeChips = useMemo(() => {
     const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (explicitAnyUniversity) {
+      chips.push({
+        key: 'any-uni',
+        label: 'Any university',
+        onClear: () => setExplicitAnyUniversity(false),
+      });
+    }
     if (filterUniversity !== null) {
       chips.push({
         key: 'uni',
         label: filterUniversity ? filterUniversity.toUpperCase() : 'Any university',
-        onClear: () => setFilterUniversity(null),
+        onClear: () => {
+          setExplicitAnyUniversity(false);
+          setFilterUniversity(null);
+        },
       });
     }
     if (filterCampusId && campusShowsAsExplicitBrowseFilter) {
@@ -547,6 +561,7 @@ export default function EventsBoard() {
     }
     return chips;
   }, [
+    explicitAnyUniversity,
     filterUniversity,
     filterCampusId,
     filterOrgId,
@@ -602,8 +617,9 @@ export default function EventsBoard() {
             onPress={() => {
               setUniSearchQuery('');
               setCampusSearchQuery('');
-              const nextUni = filterUniversity !== null ? filterUniversity : userUni || null;
+              const nextUni = explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni || null);
               setTempUni(nextUni);
+              setTempExplicitAnyUniversity(explicitAnyUniversity);
               setTempCampusId(filterCampusId);
               setTempOrgId(filterOrgId);
               setTempDate(filterDate);
@@ -652,6 +668,7 @@ export default function EventsBoard() {
           ))}
           <Pressable
             onPress={() => {
+              setExplicitAnyUniversity(false);
               setFilterUniversity(null);
               setFilterCampusId(null);
               setFilterOrgId(null);
@@ -952,6 +969,7 @@ export default function EventsBoard() {
               <Text style={[styles.sheetTitle, { color: theme.text }]}>Filters</Text>
               <Pressable
                 onPress={() => {
+                  setTempExplicitAnyUniversity(false);
                   setTempUni(null);
                   setTempCampusId(null);
                   setTempOrgId(null);
@@ -1005,6 +1023,7 @@ export default function EventsBoard() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
+                      setTempExplicitAnyUniversity(true);
                       setTempUni(null);
                       setTempCampusId(null);
                       setTempOrgId(null);
@@ -1061,6 +1080,7 @@ export default function EventsBoard() {
                     <Pressable
                       style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                       onPress={() => {
+                        setTempExplicitAnyUniversity(true);
                         setTempUni(null);
                         setTempCampusId(null);
                         setTempOrgId(null);
@@ -1069,7 +1089,7 @@ export default function EventsBoard() {
                       }}
                     >
                       <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
-                      {!tempUni ? (
+                    {tempExplicitAnyUniversity ? (
                         <Feather name="check" size={18} color={theme.primary} />
                       ) : null}
                     </Pressable>
@@ -1090,6 +1110,7 @@ export default function EventsBoard() {
                               key={item.id}
                               style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                               onPress={() => {
+                                setTempExplicitAnyUniversity(false);
                                 setTempUni(item.id);
                                 setTempCampusId(null);
                                 setTempOrgId(null);
@@ -1376,6 +1397,7 @@ export default function EventsBoard() {
                 pressed && { opacity: 0.85 },
               ]}
               onPress={() => {
+                setExplicitAnyUniversity(tempExplicitAnyUniversity);
                 setFilterUniversity(tempUni || null);
                 setFilterCampusId(tempCampusId || null);
                 setFilterOrgId(tempOrgId || null);
