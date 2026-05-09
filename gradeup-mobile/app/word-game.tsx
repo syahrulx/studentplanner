@@ -384,31 +384,31 @@ export default function WordGameHub() {
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 16, gap: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
+  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
-  headerSub: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  headerSub: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: 4 },
 
   statsBanner: {
-    flexDirection: 'row', marginHorizontal: 16, marginTop: -1, borderRadius: 16,
-    borderWidth: 1, padding: 16, alignItems: 'center', justifyContent: 'space-around',
+    flexDirection: 'row', marginHorizontal: 16, marginTop: 12, borderRadius: 20,
+    borderWidth: 1, padding: 20, alignItems: 'center', justifyContent: 'space-around',
   },
   statItem: { alignItems: 'center' },
-  statVal: { fontSize: 20, fontWeight: '900' },
-  statLabel: { fontSize: 11, fontWeight: '600', marginTop: 2 },
-  statDivider: { width: 1, height: 28 },
+  statVal: { fontSize: 22, fontWeight: '900' },
+  statLabel: { fontSize: 12, fontWeight: '600', marginTop: 4 },
+  statDivider: { width: 1, height: 32 },
 
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 14, padding: 4, borderRadius: 18, borderWidth: 1 },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 20, padding: 4, borderRadius: 20, borderWidth: 1 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
   tabText: { fontSize: 13, fontWeight: '700' },
 
-  scrollContent: { paddingHorizontal: 16, paddingTop: 14 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 20 },
 
   // Puzzles
-  puzzlesList: { gap: 10 },
+  puzzlesList: { gap: 14 },
   puzzleCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1.5, gap: 12,
+    flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 18, borderWidth: 1.5, gap: 12,
   },
   puzzleNum: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   puzzleNumText: { fontSize: 14, fontWeight: '800' },
@@ -450,7 +450,7 @@ const s = StyleSheet.create({
   // Current play card
   currentCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 20, borderRadius: 18, marginBottom: 6,
+    padding: 24, borderRadius: 20, marginBottom: 12,
   },
   currentCardLeft: {},
   currentCardTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
