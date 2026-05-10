@@ -32,10 +32,38 @@ let rescheduleQueue: Promise<void> = Promise.resolve();
 
 function normalizeWeekday(raw: string): WeekdayLabel | null {
   const s = String(raw || '').trim().toLowerCase();
+  // Align with `timetableParsers/uitm` DAY_MAP — portal / CDN sometimes uses Malay labels.
+  const alias: Record<string, WeekdayLabel> = {
+    isnin: 'Monday',
+    mon: 'Monday',
+    monday: 'Monday',
+    selasa: 'Tuesday',
+    tue: 'Tuesday',
+    tues: 'Tuesday',
+    tuesday: 'Tuesday',
+    rabu: 'Wednesday',
+    wed: 'Wednesday',
+    wednesday: 'Wednesday',
+    khamis: 'Thursday',
+    thu: 'Thursday',
+    thur: 'Thursday',
+    thurs: 'Thursday',
+    thursday: 'Thursday',
+    jumaat: 'Friday',
+    jumat: 'Friday',
+    fri: 'Friday',
+    friday: 'Friday',
+    sabtu: 'Saturday',
+    sat: 'Saturday',
+    saturday: 'Saturday',
+    ahad: 'Sunday',
+    sun: 'Sunday',
+    sunday: 'Sunday',
+  };
+  if (alias[s]) return alias[s];
   for (const d of WEEKDAY_LABELS) {
     if (d.toLowerCase() === s) return d;
   }
-  // common abbreviations
   const map: Record<string, WeekdayLabel> = {
     sun: 'Sunday',
     mon: 'Monday',
@@ -51,9 +79,30 @@ function normalizeWeekday(raw: string): WeekdayLabel | null {
   return map[s] ?? null;
 }
 
+/** Same shapes as UiTM `normalizeTime` — student-portal rows often use AM/PM or 0800 without a colon. */
 function parseHHMM(raw: string): { hour: number; minute: number } | null {
-  const s = String(raw || '').trim();
-  const m = /^(\d{1,2})\s*:?\s*(\d{2})$/.exec(s);
+  let t = String(raw || '').trim();
+  if (!t) return null;
+
+  const amPm = t.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (amPm) {
+    let h = parseInt(amPm[1], 10);
+    const minute = parseInt(amPm[2], 10);
+    const p = amPm[3].toLowerCase();
+    if (p === 'pm' && h < 12) h += 12;
+    if (p === 'am' && h === 12) h = 0;
+    if (Number.isFinite(h) && Number.isFinite(minute) && minute >= 0 && minute <= 59 && h >= 0 && h <= 23) {
+      return { hour: h, minute };
+    }
+    return null;
+  }
+
+  t = t.replace(/\s+/g, '').replace('.', ':');
+  if (/^\d{4}$/.test(t)) {
+    t = t.slice(0, 2) + ':' + t.slice(2);
+  }
+
+  const m = /^(\d{1,2})\s*:?\s*(\d{2})$/.exec(t);
   if (!m) return null;
   const hour = Math.max(0, Math.min(23, Number(m[1])));
   const minute = Math.max(0, Math.min(59, Number(m[2])));

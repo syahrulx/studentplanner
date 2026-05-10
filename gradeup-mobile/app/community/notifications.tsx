@@ -22,6 +22,11 @@ import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CircleInvitation, QuickReaction } from '@/src/lib/communityApi';
 import { featherForLegacyCircleEmoji, featherForReactionRow } from '@/src/lib/featherGlyphUi';
+import {
+  attendanceOccurrenceKey,
+  getAnsweredOccurrenceSet,
+  recordAttendanceEvent,
+} from '@/src/attendanceRecording';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function getInitials(name?: string) {
