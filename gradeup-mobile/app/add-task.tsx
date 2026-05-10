@@ -31,6 +31,7 @@ import {
 } from '@/src/lib/communityApi';
 import { upsertTask } from '@/src/lib/taskDb';
 import { TaskType, type Task } from '@/src/types';
+import { fetchTaskCategories, type TaskCategory } from '@/src/lib/taskCategoriesApi';
 import { formatDisplayDate, getTodayISO, getMonthYearLabel, getMonthGrid, toISO } from '@/src/utils/date';
 import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
@@ -73,7 +74,6 @@ function formatPersonDisplayName(raw: string): string {
     .join(' ');
 }
 
-const TASK_TYPES = Object.values(TaskType) as TaskType[];
 
 function Group({ theme, children }: { theme: ThemePalette; children: ReactNode }) {
   return (
@@ -163,7 +163,12 @@ export default function AddTask() {
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   /** True once the user explicitly picks a subject (or "No subject") — prevents the auto-pick effect from reverting "No subject" back to a real course. */
   const [subjectTouched, setSubjectTouched] = useState(false);
-  const [type, setType] = useState<TaskType>(TaskType.Assignment);
+  const [type, setType] = useState<string>(TaskType.Assignment);
+  const [taskCategories, setTaskCategories] = useState<TaskCategory[]>([]);
+
+  useEffect(() => {
+    fetchTaskCategories().then(setTaskCategories);
+  }, []);
   const [dueDateISO, setDueDateISO] = useState<string>(getTodayISO());
   const [dueTime, setDueTime] = useState('23:59');
   const [notes, setNotes] = useState('');
@@ -572,17 +577,17 @@ export default function AddTask() {
           ]}
         >
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentScroll}>
-            {TASK_TYPES.map((t) => {
-              const on = type === t;
+            {taskCategories.map((cat) => {
+              const on = type === cat.name;
               return (
                 <Pressable
-                  key={t}
+                  key={cat.id}
                   style={[
                     styles.segmentCell,
                     on && { backgroundColor: theme.card },
                     on && Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowRadius: 2 } }),
                   ]}
-                  onPress={() => setType(t)}
+                  onPress={() => setType(cat.name)}
                 >
                   <Text
                     style={[
@@ -592,7 +597,7 @@ export default function AddTask() {
                     ]}
                     numberOfLines={1}
                   >
-                    {t}
+                    {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
                   </Text>
                 </Pressable>
               );
