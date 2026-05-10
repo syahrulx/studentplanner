@@ -272,8 +272,7 @@ export default function OfferDmScreen() {
   const otherAvatar = imAuthor ? offererAvatar : service.author_avatar;
 
   const canSendMessages =
-    offerRow.status === 'pending' &&
-    offerRow.offer_kind === 'open_listing' &&
+    ['pending', 'accepted', 'submitted'].includes(offerRow.status) &&
     service.service_status === 'open';
 
   const uid = user?.id ?? null;

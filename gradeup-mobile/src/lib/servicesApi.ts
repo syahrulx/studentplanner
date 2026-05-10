@@ -234,6 +234,7 @@ export interface ServicePost {
   
   // local only
   unread_chat_count?: number;
+  user_offer_status?: OfferStatus | null;
 }
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
@@ -359,16 +360,20 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (campus) query = query.eq('campus', campus);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
+  let userOfferData: any[] | null = null;
   if ((scope === 'mine' || scope === 'taken') && user) {
     // Find all services where the user has an active offer (for micro-contracts)
-    const { data: offerData } = await supabase
+    const { data } = await supabase
       .from('service_offers')
-      .select('service_id')
+      .select('service_id, status')
       .eq('offerer_id', user.id)
       .neq('status', 'rejected')
       .neq('status', 'withdrawn');
     
-    const offerServiceIds = Array.from(new Set(offerData?.map(o => o.service_id) || []));
+    userOfferData = data;
+    
+    const offerServiceIds = Array.from(new Set(userOfferData?.map(o => o.service_id) || []));
+    const offerStatusMap = new Map(userOfferData?.map(o => [o.service_id, o.status]) || []);
     
     let orStr = '';
     if (scope === 'mine') {
@@ -400,6 +405,15 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (error) throw error;
 
   const rows = (data ?? []) as ServicePost[];
+  
+  // Attach user's offer status if available (helps frontend badges)
+  if (userOfferData) {
+    const offerStatusMap = new Map(userOfferData.map(o => [o.service_id, o.status]));
+    rows.forEach(r => {
+      r.user_offer_status = offerStatusMap.get(r.id);
+    });
+  }
+
   return enrichWithProfiles(rows, user?.id);
 }
 
@@ -428,6 +442,7 @@ async function enrichWithProfiles(rows: ServicePost[], currentUserId?: string): 
         .in('service_id', serviceIds)
         .is('read_at', null)
         .neq('sender_id', currentUserId)
+        .not('content', 'like', '___SYSTEM_MSG___%')
     : Promise.resolve({ data: [] });
 
   const [{ data: profs }, { data: unreadMsgs }] = await Promise.all([profilesPromise, unreadPromise]);

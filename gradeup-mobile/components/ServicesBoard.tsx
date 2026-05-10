@@ -391,8 +391,14 @@ export default function ServicesBoard() {
         servicesApi.fetchServices({ scope: 'taken', limit: 200 }),
       ])
         .then(([mine, taken]) => {
-          setMineCount(mine.filter((s) => s.service_status !== 'completed' && s.service_status !== 'cancelled').length);
-          setTakenCount(taken.filter((s) => s.service_status !== 'completed' && s.service_status !== 'cancelled').length);
+          const isActionable = (s: any) => {
+            if (s.user_offer_status) {
+              return s.user_offer_status === 'accepted' || s.user_offer_status === 'submitted';
+            }
+            return s.service_status === 'claimed' || s.service_status === 'submitted';
+          };
+          setMineCount(mine.filter(isActionable).length);
+          setTakenCount(taken.filter(isActionable).length);
         })
         .catch(() => {});
     }, [userId])

@@ -445,7 +445,9 @@ export default function ServiceDetailScreen() {
       presentListingOwnerMenu(offer);
       return;
     }
-    presentListingFeedbackMenu(offer);
+    if (amOfferCreator || amPostAuthor) {
+      presentListingFeedbackMenu(offer);
+    }
   };
 
   /** Opens the in-app chat room once a service is claimed. */
@@ -814,6 +816,13 @@ export default function ServiceDetailScreen() {
           secondary: true,
         };
       }
+      // If they already have an offer that was accepted, submitted, or completed, hide the prompt.
+      // They manage their active order via the listing card buttons.
+      const myActiveOffer = offers.find((o) => o.offerer_id === userId && o.status !== 'rejected' && o.status !== 'cancelled');
+      if (myActiveOffer && myActiveOffer.status !== 'pending') {
+        return null;
+      }
+
       // Fixed price: encourage acceptance at asking price; modal pre-fills it.
       // Negotiable: prompt user to propose an amount.
       return {
@@ -1136,7 +1145,8 @@ export default function ServiceDetailScreen() {
           </View>
         )}
 
-        {/* People */}
+        {/* People — only for exclusive services; open marketplace shows participants in the listings */}
+        {service.service_negotiation_mode !== 'open_service' && (
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>PEOPLE</Text>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -1232,6 +1242,7 @@ export default function ServiceDetailScreen() {
             )}
           </View>
         </View>
+        )}
 
         {/* Offers: exclusive (one winner) + open listings (reusable, usage count) */}
         {(() => {
@@ -1416,7 +1427,7 @@ export default function ServiceDetailScreen() {
                           : 'Open to your terms';
                       /** User who created this open-listing row (their rate on this post). */
                       const isOfferCreator = !!userId && o.offerer_id === userId;
-                      const canListingFeedback = !!userId;
+                      const canListingFeedback = !!userId && (o.offerer_id === userId || service.author_id === userId);
 
                       const isServiceOffer = service.service_kind === 'offer';
                       const isServiceRequest = service.service_kind === 'request';
@@ -1426,7 +1437,7 @@ export default function ServiceDetailScreen() {
                       const canAcceptOffer = o.status === 'pending' && amIAuthor;
                       const canSubmitWork = o.status === 'accepted' && ((isServiceOffer && amIAuthor) || (isServiceRequest && amIOfferer));
                       const canApproveWork = o.status === 'submitted' && ((isServiceOffer && amIOfferer) || (isServiceRequest && amIAuthor));
-                      const canCancelOffer = (o.status === 'accepted' || o.status === 'submitted') && (amIAuthor || amIOfferer);
+                      const canCancelOffer = false; // Disallow cancellation after both parties have accepted
 
                       return (
                         <React.Fragment key={o.id}>
@@ -2435,12 +2446,16 @@ const styles = StyleSheet.create({
   offerMsg: { fontSize: 12, lineHeight: 17, marginTop: 4 },
   offerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 6 },
   offerBtnGhost: {
-    width: 32,
-    height: 32,
+    minWidth: 32,
+    minHeight: 32,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 4,
   },
   offerBtnSolid: {
     flexDirection: 'row',
@@ -2495,10 +2510,11 @@ const styles = StyleSheet.create({
   listingOfferActionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
+    gap: 10,
+    marginTop: 12,
+    width: '100%',
   },
   feedbackSummaryCard: {
     flexDirection: 'row',
