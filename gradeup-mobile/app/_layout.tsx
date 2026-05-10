@@ -166,8 +166,15 @@ function RootLayoutNav() {
           break;
         case 'service_offer_new':
         case 'service_offer_accepted':
+        case 'service_offer_rejected':
         case 'service_claimed':
         case 'service_completed':
+        case 'service_submitted':
+        case 'service_rejected':
+        case 'service_quit':
+        case 'service_cancelled':
+        case 'service_cancel_requested':
+        case 'service_review_received':
           if (data.serviceId) nav(() => router.push(`/services/${data.serviceId}` as any));
           break;
         case 'service_chat_message':

@@ -80,7 +80,9 @@ export default function InboxScreen() {
 
     // Routing logic based on data type
     const t = item.data?.type;
-    if (t?.startsWith('service') || t === 'event_new') {
+    if (t === 'service_chat_message' && item.data?.serviceId) {
+      router.push(`/services/chat/${item.data.serviceId}` as any);
+    } else if (t?.startsWith('service') || t === 'event_new') {
       const postId = item.data?.serviceId || item.data?.eventId;
       if (postId) {
         router.push(`/services/${postId}` as any);
@@ -141,7 +143,22 @@ export default function InboxScreen() {
             >
               <View style={[styles.iconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Feather 
-                  name={item.category === 'friend' ? 'users' : item.category === 'event' ? 'calendar' : 'briefcase'} 
+                  name={
+                    item.category === 'friend' ? 'users' 
+                    : item.category === 'event' ? 'calendar'
+                    : item.data?.type === 'service_chat_message' ? 'message-circle'
+                    : item.data?.type === 'service_offer_new' ? 'tag'
+                    : item.data?.type === 'service_offer_accepted' ? 'check-circle'
+                    : item.data?.type === 'service_offer_rejected' ? 'x-circle'
+                    : item.data?.type === 'service_submitted' ? 'upload-cloud'
+                    : item.data?.type === 'service_completed' ? 'award'
+                    : item.data?.type === 'service_rejected' ? 'rotate-ccw'
+                    : item.data?.type === 'service_quit' ? 'log-out'
+                    : item.data?.type === 'service_cancelled' ? 'slash'
+                    : item.data?.type === 'service_cancel_requested' ? 'alert-triangle'
+                    : item.data?.type === 'service_review_received' ? 'star'
+                    : 'briefcase'
+                  } 
                   size={20} 
                   color={!item.is_read ? theme.primary : theme.textSecondary} 
                 />
