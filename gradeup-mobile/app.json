@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rencana",
     "slug": "gradeup-mobile",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "owner": "syahrulsss",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -14,6 +14,7 @@
       "backgroundColor": "#eaecf1"
     },
     "ios": {
+      "buildNumber": "98",
       "supportsTablet": false,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
@@ -42,6 +43,7 @@
     },
     "android": {
       "googleServicesFile": "./google-services.json",
+      "versionCode": 98,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#ffffff",
@@ -62,6 +64,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/withJvmOpenArgs",
       "expo-dev-client",
       "expo-router",
       [
