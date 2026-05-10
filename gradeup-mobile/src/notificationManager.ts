@@ -32,10 +32,10 @@ export async function ensureNotificationChannels(): Promise<void> {
 
 export async function requestNotificationPermissions(): Promise<boolean> {
   await ensureNotificationChannels();
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  if (existing === 'granted') return true;
-  const { status } = await Notifications.requestPermissionsAsync();
-  return status === 'granted';
+  const existing = await Notifications.getPermissionsAsync();
+  if (existing.granted) return true;
+  const result = await Notifications.requestPermissionsAsync();
+  return result.granted;
 }
 
 // ── Task deadline notifications ───────────────────────────────────────────────

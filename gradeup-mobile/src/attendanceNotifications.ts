@@ -175,7 +175,6 @@ function subjectKeyFromEntry(entry: TimetableEntry): string {
 
 function localNotificationsAllowed(perm: Notifications.NotificationPermissionsStatus): boolean {
   if (perm.granted) return true;
-  if (perm.status === 'granted') return true;
   if (Platform.OS === 'ios' && perm.ios) {
     const s = perm.ios.status;
     return (
@@ -206,10 +205,9 @@ export async function rescheduleAttendanceNotifications(
       const perm = await Notifications.getPermissionsAsync();
       if (!localNotificationsAllowed(perm)) {
         if (__DEV__) {
-          const p = perm as unknown as { status?: string; granted?: boolean };
           console.log(
             '[attendance] skip reschedule: notification permission not granted',
-            { status: p.status, granted: p.granted },
+            { granted: perm.granted },
           );
         }
         return;

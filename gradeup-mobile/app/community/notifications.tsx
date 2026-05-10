@@ -26,6 +26,7 @@ import {
   attendanceOccurrenceKey,
   getAnsweredOccurrenceSet,
   recordAttendanceEvent,
+  type AttendanceStatus,
 } from '@/src/attendanceRecording';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -524,7 +525,7 @@ export default function NotificationsScreen() {
       ]);
 
       const pick = (
-        n: Notifications.Notification | Notifications.ScheduledNotification,
+        n: Notifications.Notification | Notifications.NotificationRequest,
         sourceKind: 'scheduled' | 'presented',
       ): AttendanceNotifItem | null => {
         const hasRequest = n && typeof n === 'object' && 'request' in (n as any);

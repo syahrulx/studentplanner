@@ -29,10 +29,10 @@ export async function ensureRevisionChannel(): Promise<void> {
 
 export async function requestRevisionPermissions(): Promise<boolean> {
   await ensureRevisionChannel();
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  if (existing === 'granted') return true;
-  const { status } = await Notifications.requestPermissionsAsync();
-  return status === 'granted';
+  const existing = await Notifications.getPermissionsAsync();
+  if (existing.granted) return true;
+  const result = await Notifications.requestPermissionsAsync();
+  return result.granted;
 }
 
 export async function cancelAllRevisionNotifications(): Promise<void> {

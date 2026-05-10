@@ -14,8 +14,8 @@ export async function syncExpoPushTokenToProfile(userId: string): Promise<void> 
   const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
 
   try {
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') return;
+    const perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted) return;
 
     const projectId = getExpoProjectId();
     if (!projectId) {
