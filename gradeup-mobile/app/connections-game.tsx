@@ -5,6 +5,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePreventScreenCapture } from 'expo-screen-capture';
 import { useTheme } from '@/hooks/useTheme';
 import { getPuzzle, type ConnectionsGroup } from '@/src/data/connectionsPuzzles';
 import { calculateScore, saveResult } from '@/src/lib/connectionsStorage';
@@ -31,6 +32,7 @@ export default function ConnectionsGame() {
   const puzzle = getPuzzle(puzzleId);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  usePreventScreenCapture();
 
   const [selected, setSelected] = useState<string[]>([]);
   const [solved, setSolved] = useState<ConnectionsGroup[]>([]);
@@ -138,7 +140,7 @@ export default function ConnectionsGame() {
   if (!puzzle) {
     return (
       <View style={[s.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
-        <Text style={[s.errorText, { color: theme.text }]}>Puzzle not found</Text>
+        <Text style={[s.errorText, { color: theme.text }]}>Level not found</Text>
         <Pressable onPress={() => router.back()}>
           <Text style={{ color: theme.primary, marginTop: 16, fontSize: 16 }}>Go back</Text>
         </Pressable>
@@ -156,7 +158,7 @@ export default function ConnectionsGame() {
           <Feather name="arrow-left" size={20} color={theme.text} />
         </Pressable>
         <View style={s.headerCenter}>
-          <Text style={[s.headerTitle, { color: theme.text }]}>Puzzle #{puzzleId}</Text>
+          <Text style={[s.headerTitle, { color: theme.text }]}>Level #{puzzleId}</Text>
           <Text style={[s.headerSub, { color: theme.textSecondary }]}>Find 4 groups of 4 words</Text>
         </View>
         <Pressable onPress={handleShuffle} style={[s.shuffleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -249,7 +251,7 @@ export default function ConnectionsGame() {
                   onPress={() => router.replace({ pathname: '/connections-game', params: { id: String(puzzleId + 1) } } as any)}
                   style={[s.resultBtn, { backgroundColor: theme.primary }]}
                 >
-                  <Text style={[s.resultBtnText, { color: '#fff' }]}>Next Puzzle →</Text>
+                  <Text style={[s.resultBtnText, { color: '#fff' }]}>Next Level →</Text>
                 </Pressable>
               )}
             </View>

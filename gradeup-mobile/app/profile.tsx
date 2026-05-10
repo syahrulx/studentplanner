@@ -77,6 +77,13 @@ export default function Profile() {
   
   const [campusListModalVisible, setCampusListModalVisible] = useState(false);
   const [campuses, setCampuses] = useState<Campus[]>([]);
+  const [campusSearchQuery, setCampusSearchQuery] = useState('');
+
+  const filteredCampuses = React.useMemo(() => {
+    const q = campusSearchQuery.trim().toLowerCase();
+    if (!q) return campuses;
+    return campuses.filter(c => c.name.toLowerCase().includes(q));
+  }, [campuses, campusSearchQuery]);
 
   const subscriptionTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -735,37 +742,61 @@ export default function Profile() {
       <Modal
         visible={campusListModalVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setCampusListModalVisible(false)}
       >
         <KeyboardAvoidingView
-          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}
+          style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setCampusListModalVisible(false)} />
           <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, maxHeight: '80%' }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Select Campus</Text>
             <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>Choose your campus from the list below</Text>
+
+            <TextInput
+              style={[
+                styles.modalInput,
+                { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundSecondary || theme.background, marginTop: 8 }
+              ]}
+              placeholder="Search campus..."
+              placeholderTextColor={theme.textSecondary}
+              value={campusSearchQuery}
+              onChangeText={setCampusSearchQuery}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
             
             <ScrollView style={{ marginVertical: 12, borderTopWidth: 1, borderTopColor: theme.border }}>
-              {campuses.map(c => (
+              {filteredCampuses.map(c => (
                 <Pressable
                   key={c.id}
                   style={({ pressed }) => [
                     { paddingVertical: 16, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
                     pressed && { opacity: 0.7 }
                   ]}
-                  onPress={() => handleSelectCampus(c.name)}
+                  onPress={() => {
+                    setCampusSearchQuery('');
+                    handleSelectCampus(c.name);
+                  }}
                 >
                   <Text style={{ fontSize: 16, color: theme.text }}>{c.name}</Text>
                 </Pressable>
               ))}
+              {filteredCampuses.length === 0 && (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <Text style={{ color: theme.textSecondary }}>No campuses found</Text>
+                </View>
+              )}
             </ScrollView>
             
             <View style={styles.modalButtons}>
               <Pressable
                 style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: theme.border, flex: 1 }]}
-                onPress={() => setCampusListModalVisible(false)}
+                onPress={() => {
+                  setCampusSearchQuery('');
+                  setCampusListModalVisible(false);
+                }}
                 disabled={isUpdating}
               >
                 <Text style={[styles.modalBtnCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>

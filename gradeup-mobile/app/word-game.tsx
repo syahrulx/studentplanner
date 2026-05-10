@@ -155,7 +155,7 @@ export default function WordGameHub() {
               onPress={() => setTab(t)}
             >
               <Text style={[s.tabText, { color: isActive ? theme.text : theme.textSecondary }]}>
-                {t === 'puzzles' ? 'Puzzles' : 'Rankings'}
+                {t === 'puzzles' ? 'Levels' : 'Rankings'}
               </Text>
             </Pressable>
           );
@@ -193,7 +193,7 @@ export default function WordGameHub() {
                   style={[s.currentCard, { shadowColor: theme.primary }]}
                 >
                   <View style={s.currentCardLeft}>
-                    <Text style={s.currentCardTitle}>Puzzle #{nextUnlocked}</Text>
+                    <Text style={s.currentCardTitle}>Level #{nextUnlocked}</Text>
                     <Text style={s.currentCardSub}>Tap to play!</Text>
                   </View>
                   <View style={s.currentPlayBtn}>
@@ -223,7 +223,7 @@ export default function WordGameHub() {
                     <Text style={[s.puzzleNumText, { color: '#22c55e' }]}>✓</Text>
                   </View>
                   <View style={s.puzzleInfo}>
-                    <Text style={[s.puzzleTitle, { color: theme.text }]}>Puzzle #{p.id}</Text>
+                    <Text style={[s.puzzleTitle, { color: theme.text }]}>Level #{p.id}</Text>
                     <Text style={[s.puzzleSub, { color: theme.textSecondary }]}>
                       {p.groups.map((g) => g.label).join(' · ')}
                     </Text>
@@ -245,8 +245,8 @@ export default function WordGameHub() {
                   <Feather name="lock" size={16} color={theme.textSecondary} />
                 </View>
                 <View style={s.puzzleInfo}>
-                  <Text style={[s.puzzleTitle, { color: theme.textSecondary }]}>Puzzle #{nextUnlocked + 1}</Text>
-                  <Text style={[s.puzzleSub, { color: theme.textSecondary }]}>Complete Puzzle #{nextUnlocked} to unlock</Text>
+                  <Text style={[s.puzzleTitle, { color: theme.textSecondary }]}>Level #{nextUnlocked + 1}</Text>
+                  <Text style={[s.puzzleSub, { color: theme.textSecondary }]}>Complete Level #{nextUnlocked} to unlock</Text>
                 </View>
               </View>
             )}
@@ -323,7 +323,7 @@ export default function WordGameHub() {
                     <View style={s.emptyState}>
                       <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
                       <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
-                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Complete a puzzle to see your stats!</Text>
+                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Complete a level to see your stats!</Text>
                     </View>
                   ) : (
                     <View style={s.list}>
@@ -341,7 +341,7 @@ export default function WordGameHub() {
                             <Text style={[s.rowRankText, { color: theme.text }]}>#{r.puzzleId}</Text>
                           </View>
                           <View style={s.rowBody}>
-                            <Text style={[s.rowName, { color: theme.text }]}>Puzzle #{r.puzzleId}</Text>
+                            <Text style={[s.rowName, { color: theme.text }]}>Level #{r.puzzleId}</Text>
                             <Text style={[s.rowSub, { color: theme.textSecondary }]}>
                               {mistakeEmoji(r.mistakes)} {r.mistakes} mistake{r.mistakes !== 1 ? 's' : ''} · {formatTime(r.timeMs)}
                             </Text>
@@ -361,7 +361,7 @@ export default function WordGameHub() {
                     <View style={s.emptyState}>
                       <Feather name="bar-chart-2" size={40} color={theme.textSecondary} />
                       <Text style={[s.emptyText, { color: theme.textSecondary }]}>No scores yet.</Text>
-                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Play puzzles to rank up!</Text>
+                      <Text style={[s.emptyHint, { color: theme.textSecondary }]}>Play levels to rank up!</Text>
                     </View>
                   ) : (
                     <>
