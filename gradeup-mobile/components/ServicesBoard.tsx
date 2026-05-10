@@ -392,7 +392,7 @@ export default function ServicesBoard() {
       ])
         .then(([mine, taken]) => {
           setMineCount(mine.filter((s) => s.service_status !== 'completed' && s.service_status !== 'cancelled').length);
-          setTakenCount(taken.filter((s) => s.service_status === 'claimed' || s.service_status === 'submitted').length);
+          setTakenCount(taken.filter((s) => s.service_status !== 'completed' && s.service_status !== 'cancelled').length);
         })
         .catch(() => {});
     }, [userId])

@@ -20,7 +20,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -110,6 +110,7 @@ export default function ServiceDetailScreen() {
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryImages, setDeliveryImages] = useState<string[]>([]);
   const [deliverySubmitting, setDeliverySubmitting] = useState(false);
+  const [deliveryOfferId, setDeliveryOfferId] = useState<string | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const [reportOpen, setReportOpen] = useState(false);
@@ -540,11 +541,19 @@ export default function ServiceDetailScreen() {
   const handleDeliverySubmit = async () => {
     setDeliverySubmitting(true);
     try {
-      await servicesApi.submitService(service.id, {
-        note: deliveryNote.trim() || undefined,
-        attachmentUris: deliveryImages.length > 0 ? deliveryImages : undefined,
-      });
+      if (deliveryOfferId) {
+        await servicesApi.submitOfferDelivery(deliveryOfferId, {
+          note: deliveryNote.trim() || undefined,
+          attachmentUris: deliveryImages.length > 0 ? deliveryImages : undefined,
+        });
+      } else {
+        await servicesApi.submitService(service.id, {
+          note: deliveryNote.trim() || undefined,
+          attachmentUris: deliveryImages.length > 0 ? deliveryImages : undefined,
+        });
+      }
       setDeliveryOpen(false);
+      setDeliveryOfferId(null);
       Alert.alert('Done', 'Work submitted for review.');
       await load();
     } catch (e: any) {
@@ -554,13 +563,37 @@ export default function ServiceDetailScreen() {
     }
   };
 
-  const onApproveWork = () =>
+  const handleApproveOfferDelivery = async (offerId: string) => {
     Alert.alert(
-      'Approve & Mark Paid?',
-      'Confirm the service was delivered to your satisfaction and that any necessary payments have been made off-platform. This will mark the service as completed.',
+      'Approve Delivery?',
+      'Confirm the service was delivered to your satisfaction. This will mark this order as completed.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Approve', onPress: () => wrap('Approve Work', () => servicesApi.approveService(service.id), 'Service completed.') },
+        { text: 'Approve', onPress: () => wrap('Approve Delivery', () => servicesApi.approveOfferDelivery(offerId), 'Order completed.') },
+      ]
+    );
+  };
+
+
+
+  const handleCancelOffer = async (offerId: string) => {
+    Alert.alert(
+      'Cancel Order?',
+      'Are you sure you want to cancel this order? This action cannot be undone.',
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes, Cancel', style: 'destructive', onPress: () => wrap('Cancel Order', () => servicesApi.cancelServiceOffer(offerId), 'Order cancelled.') },
+      ]
+    );
+  };
+
+  const onApproveWork = () =>
+    Alert.alert(
+      'Approve Delivery?',
+      'Confirm the service was delivered to your satisfaction. This will mark the service as completed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Approve', onPress: () => wrap('Approve Delivery', () => servicesApi.approveService(service.id), 'Service completed.') },
       ]
     );
 
@@ -802,10 +835,10 @@ export default function ServiceDetailScreen() {
     const isProvider = !isClient && role !== 'observer';
 
     if (isClient && isSubmitted) {
-      return { label: 'Approve & Mark Paid', icon: 'check-circle', onPress: onApproveWork, color: '#30D158' };
+      return { label: 'Approve Delivery', icon: 'check-circle', onPress: onApproveWork, color: '#30D158' };
     }
     if (isProvider && isClaimed) {
-      return { label: 'Submit Work', icon: 'upload', onPress: onSubmitWork, color: theme.primary };
+      return { label: 'Deliver Order', icon: 'upload', onPress: onSubmitWork, color: theme.primary };
     }
     // Accept Cancel CTA — show to the OTHER party when cancellation is requested
     const isCancelRequestedByOther = service.cancel_requested_by && service.cancel_requested_by !== userId;
@@ -1075,7 +1108,7 @@ export default function ServiceDetailScreen() {
         )}
 
         {/* Delivery submission display */}
-        {(isSubmitted || isCompleted) && (
+        {(isSubmitted || isCompleted) && (service.author_id === userId || service.claimed_by === userId) && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>DELIVERY</Text>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -1212,7 +1245,7 @@ export default function ServiceDetailScreen() {
           const okind = (o: ServiceOffer) => o.offer_kind ?? 'exclusive';
           const pendingOffers = offers.filter((o) => o.status === 'pending');
           const exclusivePending = pendingOffers.filter((o) => okind(o) === 'exclusive');
-          const listingPending = pendingOffers.filter((o) => okind(o) === 'open_listing');
+          const visibleListings = offers.filter((o) => okind(o) === 'open_listing' && ['pending', 'accepted', 'submitted', 'completed'].includes(o.status));
 
           const myExclusiveOffer = exclusivePending.find((o) => o.offerer_id === userId);
           const showExclusiveRequester = role === 'requester' && isOpen && exclusivePending.length > 0;
@@ -1224,7 +1257,7 @@ export default function ServiceDetailScreen() {
               ? [myExclusiveOffer]
               : [];
 
-          const showListingSection = !!userId && isOpen && listingPending.length > 0;
+          const showListingSection = !!userId && isOpen && visibleListings.length > 0;
 
           if (!showExclusiveSection && !showListingSection) return null;
 
@@ -1332,15 +1365,15 @@ export default function ServiceDetailScreen() {
                 <View style={styles.section}>
                   <View style={styles.offersHeaderRow}>
                     <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginBottom: 0 }]}>
-                      OPEN LISTINGS · {listingPending.length}
+                      OPEN LISTINGS · {visibleListings.length}
                     </Text>
                   </View>
 
                   {openListingFeedbackSummary != null &&
                     !(
                       !!userId &&
-                      listingPending.length > 0 &&
-                      listingPending.every((row) => row.offerer_id === userId)
+                      visibleListings.length > 0 &&
+                      visibleListings.every((row) => row.offerer_id === userId)
                     ) && (
                     <View
                       style={[
@@ -1383,7 +1416,7 @@ export default function ServiceDetailScreen() {
                   )}
 
                   <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    {listingPending.map((o, idx) => {
+                    {visibleListings.map((o, idx) => {
                       const amountLabel =
                         o.amount != null
                           ? `${o.currency || 'MYR'} ${Number(o.amount).toLocaleString()}`
@@ -1391,6 +1424,17 @@ export default function ServiceDetailScreen() {
                       /** User who created this open-listing row (their rate on this post). */
                       const isOfferCreator = !!userId && o.offerer_id === userId;
                       const canListingFeedback = !!userId;
+
+                      const isServiceOffer = service.service_kind === 'offer';
+                      const isServiceRequest = service.service_kind === 'request';
+                      const amIAuthor = service.author_id === userId;
+                      const amIOfferer = o.offerer_id === userId;
+                      
+                      const canAcceptOffer = o.status === 'pending' && amIAuthor;
+                      const canSubmitWork = o.status === 'accepted' && ((isServiceOffer && amIAuthor) || (isServiceRequest && amIOfferer));
+                      const canApproveWork = o.status === 'submitted' && ((isServiceOffer && amIOfferer) || (isServiceRequest && amIAuthor));
+                      const canCancelOffer = (o.status === 'accepted' || o.status === 'submitted') && (amIAuthor || amIOfferer);
+
                       return (
                         <React.Fragment key={o.id}>
                           {idx > 0 && (
@@ -1444,95 +1488,136 @@ export default function ServiceDetailScreen() {
                                     {o.message}
                                   </Text>
                                 ) : null}
+
+                                {o.status === 'accepted' && (
+                                  <View style={{ marginTop: 8, backgroundColor: theme.primary + '15', padding: 6, borderRadius: 6, alignSelf: 'flex-start' }}>
+                                    <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '700' }}>IN PROGRESS</Text>
+                                  </View>
+                                )}
+
+                                {o.status === 'completed' && (
+                                  <View style={{ marginTop: 8, backgroundColor: '#30D15815', padding: 6, borderRadius: 6, alignSelf: 'flex-start' }}>
+                                    <Text style={{ color: '#30D158', fontSize: 11, fontWeight: '700' }}>COMPLETED</Text>
+                                  </View>
+                                )}
+
+                                {(o.status === 'submitted' || o.status === 'completed') && (amIAuthor || amIOfferer) && (
+                                  <View style={{ marginTop: 8, backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, padding: 10, borderRadius: 8 }}>
+                                    <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                                      {o.status === 'completed' ? 'DELIVERED WORK' : 'DELIVERY SUBMITTED'}
+                                    </Text>
+                                    {o.delivery_note ? (
+                                      <Text style={{ color: theme.text, fontSize: 13 }}>{o.delivery_note}</Text>
+                                    ) : null}
+                                    {o.delivery_attachments && o.delivery_attachments.length > 0 && (
+                                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                                        {o.delivery_attachments.map((url, i) => (
+                                          <Pressable key={i} onPress={() => setFullscreenImage(url)} style={{ marginRight: 8 }}>
+                                            <Image source={{ uri: url }} style={{ width: 60, height: 60, borderRadius: 6 }} />
+                                          </Pressable>
+                                        ))}
+                                      </ScrollView>
+                                    )}
+                                  </View>
+                                )}
                               </View>
                             </View>
 
-                            <View style={[styles.offerActions, styles.listingOfferActionsRow]}>
-                              {isOfferCreator ? (
+                            <View style={[styles.offerActions, styles.listingOfferActionsRow, { flexWrap: 'wrap', gap: 8 }]}>
+                              {(service.author_id === userId || o.offerer_id === userId) && (
+                                <View style={styles.listingMsgBtnWrap}>
+                                  <Pressable
+                                    onPress={() => openOfferDm(o.id)}
+                                    style={({ pressed }) => [
+                                      styles.listingMsgBtn,
+                                      { borderColor: theme.primary },
+                                      pressed && { opacity: 0.85 },
+                                    ]}
+                                  >
+                                    <Feather name="message-circle" size={14} color={theme.primary} />
+                                    <Text style={[styles.listingMsgBtnText, { color: theme.primary }]}>Message</Text>
+                                  </Pressable>
+                                  {(o.offer_dm_unread ?? 0) > 0 ? (
+                                    <View style={[styles.offerDmUnreadBadge, { backgroundColor: theme.danger }]}>
+                                      <Text style={styles.offerDmUnreadBadgeText}>
+                                        {(o.offer_dm_unread ?? 0) > 99
+                                          ? '99+'
+                                          : String(o.offer_dm_unread)}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                              )}
+
+                              {isOfferCreator && o.status === 'pending' && (
                                 <>
-                                  <View style={styles.listingMsgBtnWrap}>
-                                    <Pressable
-                                      onPress={() => openOfferDm(o.id)}
-                                      style={({ pressed }) => [
-                                        styles.listingMsgBtn,
-                                        { borderColor: theme.primary },
-                                        pressed && { opacity: 0.85 },
-                                      ]}
-                                    >
-                                      <Feather name="message-circle" size={14} color={theme.primary} />
-                                      <Text style={[styles.listingMsgBtnText, { color: theme.primary }]}>Message</Text>
-                                    </Pressable>
-                                    {(o.offer_dm_unread ?? 0) > 0 ? (
-                                      <View style={[styles.offerDmUnreadBadge, { backgroundColor: theme.danger }]}>
-                                        <Text style={styles.offerDmUnreadBadgeText}>
-                                          {(o.offer_dm_unread ?? 0) > 99
-                                            ? '99+'
-                                            : String(o.offer_dm_unread)}
-                                        </Text>
-                                      </View>
-                                    ) : null}
-                                  </View>
                                   <Pressable
                                     onPress={openOfferModal}
-                                    style={({ pressed }) => [
-                                      styles.offerBtnGhost,
-                                      { borderColor: theme.border },
-                                      pressed && { opacity: 0.7 },
-                                    ]}
+                                    style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                                   >
                                     <Feather name="edit-2" size={14} color={theme.text} />
                                   </Pressable>
                                   <Pressable
                                     onPress={() => onWithdrawOffer(o)}
-                                    style={({ pressed }) => [
-                                      styles.offerBtnGhost,
-                                      { borderColor: theme.border },
-                                      pressed && { opacity: 0.7 },
-                                    ]}
+                                    style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                                   >
                                     <Feather name="trash-2" size={14} color={theme.danger} />
                                   </Pressable>
                                 </>
-                              ) : (
+                              )}
+
+                              {canAcceptOffer && (
                                 <>
-                                  {(service.author_id === userId || o.offerer_id === userId) && (
-                                    <View style={styles.listingMsgBtnWrap}>
-                                      <Pressable
-                                        onPress={() => openOfferDm(o.id)}
-                                        style={({ pressed }) => [
-                                          styles.listingMsgBtn,
-                                          { borderColor: theme.primary },
-                                          pressed && { opacity: 0.85 },
-                                        ]}
-                                      >
-                                        <Feather name="message-circle" size={14} color={theme.primary} />
-                                        <Text style={[styles.listingMsgBtnText, { color: theme.primary }]}>Message</Text>
-                                      </Pressable>
-                                      {(o.offer_dm_unread ?? 0) > 0 ? (
-                                        <View style={[styles.offerDmUnreadBadge, { backgroundColor: theme.danger }]}>
-                                          <Text style={styles.offerDmUnreadBadgeText}>
-                                            {(o.offer_dm_unread ?? 0) > 99
-                                              ? '99+'
-                                              : String(o.offer_dm_unread)}
-                                          </Text>
-                                        </View>
-                                      ) : null}
-                                    </View>
-                                  )}
-                                  {role === 'requester' && (
-                                    <Pressable
-                                      onPress={() => onRejectOffer(o)}
-                                      disabled={acting}
-                                      style={({ pressed }) => [
-                                        styles.offerBtnGhost,
-                                        { borderColor: theme.border },
-                                        pressed && { opacity: 0.7 },
-                                      ]}
-                                    >
-                                      <Feather name="x" size={14} color={theme.textSecondary} />
-                                    </Pressable>
-                                  )}
+                                  <Pressable
+                                    onPress={() => onRejectOffer(o)}
+                                    disabled={acting}
+                                    style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                                  >
+                                    <Feather name="x" size={14} color={theme.textSecondary} />
+                                  </Pressable>
+                                  <Pressable
+                                    onPress={() => onAcceptOffer(o)}
+                                    disabled={acting}
+                                    style={({ pressed }) => [styles.offerBtnSolid, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
+                                  >
+                                    <Feather name="check" size={14} color={theme.textInverse} />
+                                    <Text style={[styles.offerBtnSolidText, { color: theme.textInverse }]}>Accept</Text>
+                                  </Pressable>
                                 </>
+                              )}
+
+                              {canSubmitWork && (
+                                <Pressable
+                                  onPress={() => { setDeliveryOfferId(o.id); setDeliveryOpen(true); }}
+                                  style={({ pressed }) => [styles.offerBtnSolid, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
+                                >
+                                  <Feather name="upload-cloud" size={14} color={theme.textInverse} />
+                                  <Text style={[styles.offerBtnSolidText, { color: theme.textInverse }]}>Deliver Order</Text>
+                                </Pressable>
+                              )}
+
+                              {canApproveWork && (
+                                <Pressable
+                                  onPress={() => handleApproveOfferDelivery(o.id)}
+                                  disabled={acting}
+                                  style={({ pressed }) => [styles.offerBtnSolid, { backgroundColor: '#30D158' }, pressed && { opacity: 0.85 }]}
+                                >
+                                  <Feather name="check-circle" size={14} color="#fff" />
+                                  <Text style={[styles.offerBtnSolidText, { color: '#fff' }]}>Approve Delivery</Text>
+                                </Pressable>
+                              )}
+
+
+
+                              {canCancelOffer && (
+                                <Pressable
+                                  onPress={() => handleCancelOffer(o.id)}
+                                  disabled={acting}
+                                  style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                                >
+                                  <Feather name="x-circle" size={14} color={theme.danger} />
+                                  <Text style={[styles.offerBtnGhostText, { color: theme.danger }]}>Cancel Order</Text>
+                                </Pressable>
                               )}
                             </View>
                           </View>
@@ -1829,6 +1914,8 @@ export default function ServiceDetailScreen() {
                 <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
                   {service.price_type === 'fixed' && service.price_amount != null
                     ? `Asking price is ${service.currency || 'MYR'} ${Number(service.price_amount).toLocaleString()}. Match it or counter.`
+                    : service.service_kind === 'offer'
+                    ? 'Propose what you\u2019re willing to pay.'
                     : 'Propose what you\u2019re willing to do this for.'}
                 </Text>
 
@@ -1855,7 +1942,7 @@ export default function ServiceDetailScreen() {
                 <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>MESSAGE (OPTIONAL)</Text>
                 <TextInput
                   style={[styles.reviewInput, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border }]}
-                  placeholder="e.g. I can do it tonight after class"
+                  placeholder={service.service_kind === 'offer' ? "e.g. I need this done by tonight please" : "e.g. I can do it tonight after class"}
                   placeholderTextColor={theme.textSecondary}
                   value={offerMessage}
                   onChangeText={setOfferMessage}
@@ -1912,9 +1999,9 @@ export default function ServiceDetailScreen() {
                 nestedScrollEnabled
               >
                 <View style={styles.grabber} />
-                <Text style={[styles.sheetTitle, { color: theme.text }]}>Submit Work</Text>
+                <Text style={[styles.sheetTitle, { color: theme.text }]}>Deliver Order</Text>
                 <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
-                  Add a note and attach proof of your work (photos, screenshots).{'\n'}
+                  Add a note and attach proof of your delivery (photos, screenshots).{'\n'}
                   The {clientLabel} will review and approve.
                 </Text>
 

@@ -344,25 +344,22 @@ export default function AIQuizBuilder() {
         </Pressable>
         <View style={styles.headerText}>
           <Text style={[styles.title, { color: theme.text }]}>AI Quiz Builder</Text>
-          <Text style={[styles.headerSub, { color: theme.textSecondary }]}>Powered by AI</Text>
         </View>
+        <Pressable
+          onPress={() => router.push('/quiz-join-by-code' as any)}
+          style={({ pressed }) => [styles.headerPillBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="hash" size={14} color={theme.primary} />
+          <Text style={[styles.headerPillText, { color: theme.text }]}>Join</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/leaderboard' as any)}
+          style={({ pressed }) => [styles.headerPillBtn, { backgroundColor: theme.card, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+        >
+          <Feather name="award" size={14} color="#f59e0b" />
+          <Text style={[styles.headerPillText, { color: theme.text }]}>Rank</Text>
+        </Pressable>
       </View>
-
-      <Pressable
-        style={[styles.joinBanner, { backgroundColor: theme.card, borderColor: theme.border }]}
-        onPress={() => router.push('/quiz-join-by-code' as any)}
-      >
-        <View style={[styles.joinBannerIcon, { backgroundColor: theme.primary + '18' }]}>
-          <Feather name="hash" size={18} color={theme.primary} />
-        </View>
-        <View style={styles.joinBannerText}>
-          <Text style={[styles.joinBannerTitle, { color: theme.text }]}>Join with invite code</Text>
-          <Text style={[styles.joinBannerSub, { color: theme.textSecondary }]}>
-            Have a code from a friend? Join their lobby—no need to generate a quiz here.
-          </Text>
-        </View>
-        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-      </Pressable>
 
       {/* 1. Subject */}
       <Text style={[styles.groupLabel, { color: theme.textSecondary }]}>Subject</Text>
@@ -571,37 +568,21 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: PAD, paddingTop: 60, paddingBottom: 24 },
 
   // Header
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   backBtn: {
     width: 38, height: 38, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
     marginRight: 14, borderWidth: StyleSheet.hairlineWidth,
   },
   headerText: { flex: 1 },
-  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
-  headerSub: { fontSize: 12, fontWeight: '500', marginTop: 1 },
+  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
   aiIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-
-  joinBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
+  headerPillBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, height: 32, borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth, marginLeft: 8,
   },
-  joinBannerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  joinBannerText: { flex: 1, minWidth: 0 },
-  joinBannerTitle: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
-  joinBannerSub: { fontSize: 12, fontWeight: '500', marginTop: 3, lineHeight: 16 },
+  headerPillText: { fontSize: 13, fontWeight: '600' },
 
   // Group label — matches iOS Settings style
   groupLabel: {

@@ -27,8 +27,17 @@ const BANNED_KEYWORDS: string[] = [
 /** Returns a banned word if found, or null if the content is clean. */
 export function checkContentModeration(title: string, body?: string | null): string | null {
   const text = `${title} ${body || ''}`.toLowerCase();
+  
+  // Use word boundaries for short substrings to prevent false positives (e.g., blocking "Middlesex" or "Sussex")
+  const exactMatchWords = ['sex', 'xxx', 'fwb', 'lsd', 'meth', 'weed', 'gun', 'porn', 'nude'];
+  
   for (const word of BANNED_KEYWORDS) {
-    if (text.includes(word)) return word;
+    if (exactMatchWords.includes(word)) {
+      const regex = new RegExp(`\\b${word}\\b`, 'i');
+      if (regex.test(text)) return word;
+    } else {
+      if (text.includes(word)) return word;
+    }
   }
   return null;
 }
@@ -229,7 +238,7 @@ export interface ServicePost {
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
 
-export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'submitted' | 'completed';
 
 /** exclusive = one acceptance can win the job. open_listing = reusable; track uses instead of accept. */
 export type OfferKind = 'exclusive' | 'open_listing';
@@ -246,6 +255,11 @@ export interface ServiceOffer {
   updated_at: string;
   /** DB column; default exclusive when missing (older migrations). */
   offer_kind?: OfferKind;
+
+  // Multi-Order Delivery Fields
+  delivery_note?: string | null;
+  delivery_attachments?: string[] | null;
+  completed_at?: string | null;
 
   // joined
   offerer_name?: string;
@@ -345,10 +359,38 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (campus) query = query.eq('campus', campus);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
-  if (scope === 'mine' && user) {
-    query = query.eq('author_id', user.id);
-  } else if (scope === 'taken' && user) {
-    query = query.eq('claimed_by', user.id);
+  if ((scope === 'mine' || scope === 'taken') && user) {
+    // Find all services where the user has an active offer (for micro-contracts)
+    const { data: offerData } = await supabase
+      .from('service_offers')
+      .select('service_id')
+      .eq('offerer_id', user.id)
+      .neq('status', 'rejected')
+      .neq('status', 'withdrawn');
+    
+    const offerServiceIds = Array.from(new Set(offerData?.map(o => o.service_id) || []));
+    
+    let orStr = '';
+    if (scope === 'mine') {
+      // My Requests (User is Buyer):
+      // - Authored a 'request'
+      // - Claimed an 'offer' (exclusive buyer)
+      // - Placed an active offer on an 'offer'
+      orStr = `and(service_kind.eq.request,author_id.eq.${user.id}),and(service_kind.eq.offer,claimed_by.eq.${user.id})`;
+      if (offerServiceIds.length > 0) {
+        orStr += `,and(service_kind.eq.offer,id.in.(${offerServiceIds.join(',')}))`;
+      }
+    } else if (scope === 'taken') {
+      // My Tasks (User is Freelancer):
+      // - Authored an 'offer'
+      // - Claimed a 'request' (exclusive freelancer)
+      // - Placed an active offer on a 'request'
+      orStr = `and(service_kind.eq.offer,author_id.eq.${user.id}),and(service_kind.eq.request,claimed_by.eq.${user.id})`;
+      if (offerServiceIds.length > 0) {
+        orStr += `,and(service_kind.eq.request,id.in.(${offerServiceIds.join(',')}))`;
+      }
+    }
+    query = query.or(orStr);
   } else if (scope === 'all' && !status) {
     // Hide completed and cancelled from the general browse feed unless specifically filtering for them
     query = query.in('service_status', ['open', 'claimed', 'submitted']);
@@ -463,10 +505,29 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  if (!input.title.trim()) {
+    throw new Error('Service title is required.');
+  }
+
   // Content moderation: block explicit/prohibited content
   const bannedWord = checkContentModeration(input.title, input.body);
   if (bannedWord) {
     throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
+  }
+
+  if (input.price_type === 'free' && input.negotiation_mode === 'open_service') {
+    throw new Error('Open marketplace listings cannot be marked as "Free". Please use standard negotiation mode or set a price.');
+  }
+
+  if (input.price_type === 'fixed' && (input.price_amount == null || input.price_amount < 0)) {
+    throw new Error('Fixed price services require a valid positive amount.');
+  }
+
+  if (input.deadline_at) {
+    const deadline = new Date(input.deadline_at);
+    if (deadline.getTime() < Date.now()) {
+      throw new Error('Service deadline cannot be set in the past.');
+    }
   }
 
   let image_url: string | null = null;
@@ -513,6 +574,36 @@ export async function updateService(
     'currency' | 'location' | 'deadline_at' | 'service_kind' | 'university_id' | 'campus'
   >>
 ): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'open') {
+    throw new Error('You cannot edit service details after it has been claimed or completed.');
+  }
+
+  // Prevent bypassing moderation via edits
+  if (patch.title !== undefined || patch.body !== undefined) {
+    const bannedWord = checkContentModeration(patch.title || '', patch.body || '');
+    if (bannedWord) {
+      throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
+    }
+  }
+
+  if (patch.price_type === 'fixed' && patch.price_amount != null && patch.price_amount < 0) {
+    throw new Error('Price amount cannot be negative.');
+  }
+
+  if (patch.deadline_at) {
+    const deadline = new Date(patch.deadline_at);
+    if (deadline.getTime() < Date.now()) {
+      throw new Error('Service deadline cannot be updated to a past date.');
+    }
+  }
+
   const { error } = await supabase
     .from('community_posts')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -521,6 +612,17 @@ export async function updateService(
 }
 
 export async function deleteService(id: string): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'open' && service.service_status !== 'cancelled') {
+    throw new Error('You cannot delete a service that is already in progress or completed. Please cancel it instead.');
+  }
+
   const { error } = await supabase.from('community_posts').delete().eq('id', id);
   if (error) throw error;
 }
@@ -528,6 +630,17 @@ export async function deleteService(id: string): Promise<void> {
 // ─── State transitions (RPCs) ──────────────────────────────────────────────
 
 export async function claimService(id: string): Promise<void> {
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_negotiation_mode')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_negotiation_mode === 'open_service') {
+    throw new Error('Open marketplace listings cannot be exclusively claimed. Please submit an offer or use the contact button instead.');
+  }
+
   const { error } = await supabase.rpc('claim_service', { p_service_id: id });
   if (error) throw error;
 }
@@ -553,6 +666,20 @@ export async function submitService(
   id: string,
   opts?: { note?: string; attachmentUris?: string[] }
 ): Promise<void> {
+  const hasNote = !!opts?.note?.trim();
+  const hasAttachments = !!opts?.attachmentUris?.length;
+
+  if (!hasNote && !hasAttachments) {
+    throw new Error('You must provide either a delivery note or an attachment as proof of completion.');
+  }
+
+  if (opts?.note) {
+    const bannedWord = checkContentModeration('', opts.note);
+    if (bannedWord) {
+      throw new Error('Delivery note contains prohibited language.');
+    }
+  }
+
   let attachmentUrls: string[] = [];
 
   // Upload attachments if provided
@@ -598,6 +725,9 @@ export async function acceptCancelService(id: string): Promise<void> {
 }
 
 export async function reportService(id: string, reason: string): Promise<void> {
+  if (!reason.trim()) {
+    throw new Error('You must provide a reason for reporting.');
+  }
   const { error } = await supabase.rpc('report_service', { p_service_id: id, p_reason: reason });
   if (error) throw error;
 }
@@ -659,6 +789,35 @@ export async function submitReview(input: {
 }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  if (input.reviewee_id === user.id) {
+    throw new Error('You cannot leave a review for yourself.');
+  }
+
+  const { data: service, error: fetchErr } = await supabase
+    .from('community_posts')
+    .select('service_status, author_id, claimed_by')
+    .eq('id', input.service_id)
+    .single();
+
+  if (fetchErr || !service) throw new Error('Service not found.');
+  if (service.service_status !== 'completed') {
+    throw new Error('You can only review a service after it has been completed.');
+  }
+  if (user.id !== service.author_id && user.id !== service.claimed_by) {
+    throw new Error('Only participants can leave a review for this service.');
+  }
+
+  if (input.rating < 1 || input.rating > 5) {
+    throw new Error('Rating must be between 1 and 5 stars.');
+  }
+
+  if (input.comment) {
+    const bannedWord = checkContentModeration('', input.comment);
+    if (bannedWord) {
+      throw new Error('Your review contains prohibited language and violates community guidelines.');
+    }
+  }
 
   const { error } = await supabase.from('service_reviews').upsert(
     {
@@ -866,6 +1025,16 @@ export async function makeOffer(input: {
   amount: number | null;
   message?: string | null;
 }): Promise<ServiceOffer> {
+  if (input.message) {
+    const bannedWord = checkContentModeration('', input.message);
+    if (bannedWord) {
+      throw new Error('Your offer message contains prohibited language.');
+    }
+  }
+  if (input.amount !== null && input.amount < 0) {
+    throw new Error('Offer amount cannot be negative.');
+  }
+
   const { data, error } = await supabase.rpc('make_service_offer', {
     p_service_id: input.service_id,
     p_amount: input.amount,
@@ -873,6 +1042,59 @@ export async function makeOffer(input: {
   });
   if (error) throw error;
   return data as ServiceOffer;
+}
+
+// ─── Multi-Order Micro-Contracts (Open Listings) ──────────────────────────
+
+export async function submitOfferDelivery(
+  offerId: string,
+  opts?: { note?: string; attachmentUris?: string[] }
+): Promise<void> {
+  const hasNote = !!opts?.note?.trim();
+  const hasAttachments = !!opts?.attachmentUris?.length;
+
+  if (!hasNote && !hasAttachments) {
+    throw new Error('You must provide either a delivery note or an attachment as proof of completion.');
+  }
+
+  if (opts?.note) {
+    const bannedWord = checkContentModeration('', opts.note);
+    if (bannedWord) {
+      throw new Error('Delivery note contains prohibited language.');
+    }
+  }
+
+  let attachmentUrls: string[] = [];
+
+  // Upload attachments if provided
+  if (opts?.attachmentUris?.length) {
+    attachmentUrls = await Promise.all(
+      opts.attachmentUris.map((uri) => uploadDeliveryAttachment(uri))
+    );
+  }
+
+  const { error } = await supabase.rpc('submit_service_offer_delivery', {
+    p_offer_id: offerId,
+    p_delivery_note: opts?.note || null,
+    p_delivery_attachments: attachmentUrls,
+  });
+  if (error) throw error;
+}
+
+export async function approveOfferDelivery(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_service_offer_delivery', {
+    p_offer_id: offerId,
+  });
+  if (error) throw error;
+}
+
+
+
+export async function cancelServiceOffer(offerId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_service_offer', {
+    p_offer_id: offerId,
+  });
+  if (error) throw error;
 }
 
 /** Record thumbs up/down for an open listing offer (one vote per user; can change). */
@@ -1028,7 +1250,10 @@ export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+  let ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+  if (!['jpg', 'jpeg', 'png'].includes(ext)) {
+    ext = 'jpg';
+  }
   const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   try {
@@ -1135,12 +1360,24 @@ export async function sendServiceMessage(serviceId: string, content: string): Pr
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
   
+  const trimmedContent = content?.trim() || '';
+  if (!trimmedContent) {
+    throw new Error('Cannot send an empty message.');
+  }
+
+  if (trimmedContent) {
+    const bannedWord = checkContentModeration('', trimmedContent);
+    if (bannedWord) {
+      throw new Error('Message contains prohibited language.');
+    }
+  }
+  
   const { data, error } = await supabase
     .from('service_chat_messages')
     .insert({
       service_id: serviceId,
       sender_id: user.id,
-      content: content.trim()
+      content: trimmedContent
     })
     .select()
     .single();

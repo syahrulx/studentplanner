@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import * as ImagePicker from 'expo-image-picker';
+import { checkContentModeration } from './servicesApi';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -224,6 +225,11 @@ export async function createPost(input: CreatePostInput): Promise<CommunityPost>
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  const bannedWord = checkContentModeration(input.title, input.body);
+  if (bannedWord) {
+    throw new Error('This post violates our community guidelines. Explicit or prohibited content is not allowed.');
+  }
+
   // Support both new image_uris array and legacy image_uri
   const urisToUpload: string[] = [
     ...(input.image_uris ?? []),
@@ -285,6 +291,13 @@ export async function updatePost(
     >
   >
 ): Promise<void> {
+  if (updates.title !== undefined || updates.body !== undefined) {
+    const bannedWord = checkContentModeration(updates.title || '', updates.body || '');
+    if (bannedWord) {
+      throw new Error('This post violates our community guidelines. Explicit or prohibited content is not allowed.');
+    }
+  }
+
   const { error } = await supabase
     .from('community_posts')
     .update({ ...updates, updated_at: new Date().toISOString() })
