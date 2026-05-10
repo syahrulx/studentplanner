@@ -1585,7 +1585,7 @@ export default function ServiceDetailScreen() {
                                   style={({ pressed }) => [styles.offerBtnSolid, { backgroundColor: theme.primary }, pressed && { opacity: 0.85 }]}
                                 >
                                   <Feather name="upload-cloud" size={14} color={theme.textInverse} />
-                                  <Text style={[styles.offerBtnSolidText, { color: theme.textInverse }]}>Deliver Order</Text>
+                                  <Text style={[styles.offerBtnSolidText, { color: theme.textInverse }]}>Deliver</Text>
                                 </Pressable>
                               )}
 
@@ -1596,7 +1596,7 @@ export default function ServiceDetailScreen() {
                                   style={({ pressed }) => [styles.offerBtnSolid, { backgroundColor: '#30D158' }, pressed && { opacity: 0.85 }]}
                                 >
                                   <Feather name="check-circle" size={14} color="#fff" />
-                                  <Text style={[styles.offerBtnSolidText, { color: '#fff' }]}>Approve Delivery</Text>
+                                  <Text style={[styles.offerBtnSolidText, { color: '#fff' }]}>Approve</Text>
                                 </Pressable>
                               )}
 
@@ -1609,7 +1609,7 @@ export default function ServiceDetailScreen() {
                                   style={({ pressed }) => [styles.offerBtnGhost, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                                 >
                                   <Feather name="x-circle" size={14} color={theme.danger} />
-                                  <Text style={[styles.offerBtnGhostText, { color: theme.danger }]}>Cancel Order</Text>
+                                  <Text style={[styles.offerBtnGhostText, { color: theme.danger }]}>Cancel</Text>
                                 </Pressable>
                               )}
                             </View>
@@ -2495,12 +2495,10 @@ const styles = StyleSheet.create({
   listingOfferActionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     gap: 8,
-    marginLeft: 46,
     marginTop: 10,
-    maxWidth: '100%',
   },
   feedbackSummaryCard: {
     flexDirection: 'row',
