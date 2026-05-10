@@ -142,6 +142,64 @@ export async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
   }
 }
 
+/** Fetch the user's scores from Supabase and merge them into local storage. */
+export async function syncScoresFromSupabase(): Promise<ConnectionsProgress | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return null;
+
+    const { data: remoteScores, error } = await supabase
+      .from('word_game_scores')
+      .select('puzzle_id, score, mistakes, time_ms, updated_at')
+      .eq('user_id', session.user.id);
+
+    if (error || !remoteScores) {
+      console.error('[sync] Error fetching remote scores:', error?.message);
+      return null;
+    }
+
+    if (remoteScores.length === 0) return null;
+
+    const localProgress = await loadProgress();
+    let updated = false;
+
+    for (const remote of remoteScores) {
+      const existingIdx = localProgress.results.findIndex(r => r.puzzleId === remote.puzzle_id);
+      if (existingIdx >= 0) {
+        if (remote.score > localProgress.results[existingIdx].score) {
+          localProgress.results[existingIdx] = {
+            puzzleId: remote.puzzle_id,
+            score: remote.score,
+            mistakes: remote.mistakes,
+            timeMs: remote.time_ms,
+            completedAt: remote.updated_at,
+          };
+          updated = true;
+        }
+      } else {
+        localProgress.results.push({
+          puzzleId: remote.puzzle_id,
+          score: remote.score,
+          mistakes: remote.mistakes,
+          timeMs: remote.time_ms,
+          completedAt: remote.updated_at,
+        });
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      await AsyncStorage.setItem(KEY, JSON.stringify(localProgress));
+      console.log(`[sync] Merged ${remoteScores.length} remote scores into local storage.`);
+    }
+    
+    return localProgress;
+  } catch (err) {
+    console.error('[sync] Sync from Supabase failed', err);
+    return null;
+  }
+}
+
 /** Leaderboard entry shape */
 export interface GameLeaderboardEntry {
   user_id: string;

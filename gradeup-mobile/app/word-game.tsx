@@ -18,6 +18,7 @@ import {
   getTotalScore,
   getGameLeaderboard,
   resetProgress,
+  syncScoresFromSupabase,
   type ConnectionsProgress,
   type PuzzleResult,
   type GameLeaderboardEntry,
@@ -89,6 +90,13 @@ export default function WordGameHub() {
     loadProgress().then(setProgress);
   }, []);
   useFocusEffect(reloadProgress);
+
+  // Sync from Supabase once on mount
+  useEffect(() => {
+    syncScoresFromSupabase().then((newProgress) => {
+      if (newProgress) setProgress(newProgress);
+    });
+  }, []);
 
   const dismissTutorial = () => {
     setShowTutorial(false);
