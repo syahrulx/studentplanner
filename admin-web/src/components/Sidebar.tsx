@@ -39,6 +39,9 @@ const nav: NavItem[] = [
   { to: '/campuses', label: 'Campuses', Icon: IconMapPin },
   { to: '/organizations', label: 'Organizations', Icon: IconUsers },
 
+  { header: 'App Config' },
+  { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
+
   { header: 'System' },
   { to: '/broadcast', label: 'Broadcast', Icon: IconBell },
   { to: '/logs', label: 'Logs', Icon: IconFileText },

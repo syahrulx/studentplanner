@@ -15,6 +15,7 @@ import { CampusesRoute } from './routes/CampusesRoute';
 import { OrganizationsRoute } from './routes/OrganizationsRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
+import { TaskCategoriesRoute } from './routes/TaskCategoriesRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { BroadcastRoute } from './routes/BroadcastRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="organizations" element={<OrganizationsRoute />} />
             <Route path="broadcast" element={<BroadcastRoute />} />
             <Route path="logs" element={<LogsRoute />} />
+            <Route path="task-categories" element={<TaskCategoriesRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
