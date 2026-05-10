@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rencana",
     "slug": "gradeup-mobile",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "owner": "syahrulsss",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -43,7 +43,7 @@
     },
     "android": {
       "googleServicesFile": "./google-services.json",
-      "versionCode": 98,
+      "versionCode": 99,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#ffffff",
@@ -53,6 +53,7 @@
       "config": {},
       "package": "com.aizztech.rencana",
       "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.RECORD_AUDIO"
@@ -138,9 +139,8 @@
         "expo-media-library",
         {
           "photosPermission": "Rencana needs access to your photo library so you can save an exported copy of your generated timetable image.",
-          "savePhotosPermission": "Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use. For example, after tapping Export on the Timetable tab, the rendered weekly schedule is saved to Photos as a PNG or JPEG.",
-          "isAccessMediaLocationEnabled": false,
-          "granularPermissions": []
+          "savePhotosPermission": "Rencana saves a copy of your generated timetable image to your photo library so you can share it with classmates or keep it for offline use.",
+          "isAccessMediaLocationEnabled": false
         }
       ]
     ],
