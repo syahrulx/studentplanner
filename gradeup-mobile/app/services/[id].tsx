@@ -286,13 +286,6 @@ export default function ServiceDetailScreen() {
   };
 
   const onAcceptOffer = (offer: ServiceOffer) => {
-    if ((offer.offer_kind ?? 'exclusive') === 'open_listing') {
-      Alert.alert(
-        'Open listing',
-        'This is a reusable provider listing. After you use their offer, use “It worked for me” to recommend them — that does not assign the job in the app.'
-      );
-      return;
-    }
     const priceDisplay = offer.amount != null ? `${offer.currency || 'MYR'} ${Number(offer.amount).toLocaleString()}` : 'their proposed terms';
     Alert.alert(
       'Accept this offer?',

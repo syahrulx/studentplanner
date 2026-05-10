@@ -34,6 +34,7 @@ import type { SubscriptionPlan } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
 
 export default function Profile() {
   const {
@@ -73,6 +74,9 @@ export default function Profile() {
     'name' | 'studentId' | 'program' | 'campus' | 'faculty' | 'portalSemester' | null
   >(null);
   const [editModalKeyboardType, setEditModalKeyboardType] = useState<'default' | 'number-pad'>('default');
+  
+  const [campusListModalVisible, setCampusListModalVisible] = useState(false);
+  const [campuses, setCampuses] = useState<Campus[]>([]);
 
   const subscriptionTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -207,13 +211,54 @@ export default function Profile() {
     });
   };
 
-  const handleEditCampus = () => {
-    openEditModal({
-      field: 'campus',
-      title: T('editCampus'),
-      message: T('enterCampus'),
-      value: user.campus,
-    });
+  const handleEditCampus = async () => {
+    if (!user.universityId) {
+      openEditModal({
+        field: 'campus',
+        title: T('editCampus'),
+        message: T('enterCampus'),
+        value: user.campus,
+      });
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const fetched = await fetchCampuses(user.universityId);
+      if (!fetched || fetched.length === 0) {
+        setIsUpdating(false);
+        openEditModal({
+          field: 'campus',
+          title: T('editCampus'),
+          message: T('enterCampus'),
+          value: user.campus,
+        });
+        return;
+      }
+      setCampuses(fetched);
+      setCampusListModalVisible(true);
+    } catch (e) {
+      openEditModal({
+        field: 'campus',
+        title: T('editCampus'),
+        message: T('enterCampus'),
+        value: user.campus,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSelectCampus = async (campusName: string) => {
+    setCampusListModalVisible(false);
+    setIsUpdating(true);
+    try {
+      await updateProfile({ campus: campusName });
+    } catch {
+      Alert.alert(T('error'), T('campusUpdateFailed'));
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleEditFaculty = () => {
@@ -680,6 +725,50 @@ export default function Profile() {
                 disabled={isUpdating}
               >
                 <Text style={styles.modalBtnSaveText}>{T('save')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Campus List Modal */}
+      <Modal
+        visible={campusListModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCampusListModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setCampusListModalVisible(false)} />
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Select Campus</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>Choose your campus from the list below</Text>
+            
+            <ScrollView style={{ marginVertical: 12, borderTopWidth: 1, borderTopColor: theme.border }}>
+              {campuses.map(c => (
+                <Pressable
+                  key={c.id}
+                  style={({ pressed }) => [
+                    { paddingVertical: 16, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+                    pressed && { opacity: 0.7 }
+                  ]}
+                  onPress={() => handleSelectCampus(c.name)}
+                >
+                  <Text style={{ fontSize: 16, color: theme.text }}>{c.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: theme.border, flex: 1 }]}
+                onPress={() => setCampusListModalVisible(false)}
+                disabled={isUpdating}
+              >
+                <Text style={[styles.modalBtnCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
               </Pressable>
             </View>
           </View>

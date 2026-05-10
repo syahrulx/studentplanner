@@ -4,6 +4,10 @@
 -- Ensure that offers made on an 'open_service' automatically become 'open_listing'
 -- so that completing one order doesn't close the entire marketplace listing.
 
+-- Drop ALL existing overloads first to prevent ambiguous function calls.
+DROP FUNCTION IF EXISTS public.make_service_offer(uuid, numeric, text, text);
+DROP FUNCTION IF EXISTS public.make_service_offer(uuid, numeric, text);
+
 CREATE OR REPLACE FUNCTION public.make_service_offer(
   p_service_id uuid,
   p_amount numeric,
