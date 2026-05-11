@@ -102,8 +102,6 @@ const translations = {
     important: 'IMPORTANT',
     cards: 'CARDS',
     edit: 'EDIT',
-    done: 'DONE',
-    save: 'SAVE',
     aiSynthesisHub: 'AI SYNTHESIS HUB',
     aiSynthesisDesc: 'Use the "CARDS" button above to automatically generate Active Recall flashcards from these notes.',
     untitledNote: 'Untitled note',
@@ -770,7 +768,6 @@ const translations = {
     stepReview: 'Review',
 
     // Common
-    cancel: 'Cancel',
     delete: 'Delete',
     markDone: 'Mark done',
     undo: 'Undo',
@@ -804,6 +801,30 @@ const translations = {
       "You've used up all your AI tokens for this month on your current plan. Upgrade your plan to keep generating flashcards, quizzes, summaries, and more — or wait until next month when your free tokens reset.",
     aiMonthlyLimitUpgrade: 'Upgrade plan',
     aiMonthlyLimitLater: 'Maybe later',
+
+    // Report a Problem (Settings -> Report)
+    reportSection: 'REPORT',
+    reportIssueTitle: 'Report a Problem',
+    reportIssueDesc: 'Tell us about a bug, complaint, or another user',
+    reportTypeLabel: 'WHAT IS THIS ABOUT?',
+    reportKindBug: 'Bug or crash',
+    reportKindIssue: 'Something not working right',
+    reportKindFaq: 'Question / FAQ',
+    reportKindAppComplaint: 'Complaint about the app',
+    reportKindUserComplaint: 'Report another user',
+    reportKindOther: 'Other',
+    reportTargetLabel: 'WHO ARE YOU REPORTING?',
+    reportTargetPlaceholder: 'Their username, name, or email',
+    reportSubjectLabel: 'SUBJECT',
+    reportSubjectPlaceholder: 'Short summary (e.g. "Timetable not saving")',
+    reportMessageLabel: 'DETAILS',
+    reportMessagePlaceholder: 'Describe what happened, what you expected, and any steps to reproduce.',
+    reportSubmit: 'Send report',
+    reportSubmittedTitle: 'Report sent',
+    reportSubmittedBody: 'Thanks — our team will review it shortly.',
+    reportSubmitError: 'Could not send your report. Please try again.',
+    reportFootnote:
+      'Reports are visible to the Rencana admin team only. Please be respectful and avoid sharing other people\u2019s private information.',
   },
 
   ms: {
@@ -904,8 +925,6 @@ const translations = {
     important: 'PENTING',
     cards: 'KAD',
     edit: 'SUNTING',
-    done: 'SELESAI',
-    save: 'SIMPAN',
     aiSynthesisHub: 'HAB SINTESIS AI',
     aiSynthesisDesc: 'Guna butang "KAD" di atas untuk menjana kad imbas Active Recall secara automatik daripada nota ini.',
     untitledNote: 'Nota tanpa tajuk',
@@ -1573,7 +1592,6 @@ const translations = {
     stepReview: 'Semakan',
 
     // Common
-    cancel: 'Batal',
     delete: 'Padam',
     markDone: 'Tanda selesai',
     undo: 'Buat asal',
@@ -1610,6 +1628,30 @@ const translations = {
       'Anda telah menggunakan semua token AI untuk bulan ini pada pelan semasa anda. Naik taraf pelan untuk terus menjana flashcard, kuiz, ringkasan dan lain-lain — atau tunggu bulan depan apabila token percuma anda diset semula.',
     aiMonthlyLimitUpgrade: 'Naik taraf pelan',
     aiMonthlyLimitLater: 'Nanti sahaja',
+
+    // Laporkan Masalah (Tetapan -> Laporan)
+    reportSection: 'LAPORAN',
+    reportIssueTitle: 'Laporkan Masalah',
+    reportIssueDesc: 'Beritahu kami tentang pepijat, aduan, atau pengguna lain',
+    reportTypeLabel: 'JENIS LAPORAN',
+    reportKindBug: 'Pepijat atau ranap',
+    reportKindIssue: 'Ada yang tidak berfungsi',
+    reportKindFaq: 'Soalan / FAQ',
+    reportKindAppComplaint: 'Aduan tentang aplikasi',
+    reportKindUserComplaint: 'Laporkan pengguna lain',
+    reportKindOther: 'Lain-lain',
+    reportTargetLabel: 'SIAPA YANG ANDA LAPORKAN?',
+    reportTargetPlaceholder: 'Nama pengguna, nama penuh atau e-mel',
+    reportSubjectLabel: 'TAJUK',
+    reportSubjectPlaceholder: 'Ringkasan pendek (cth: "Jadual tidak disimpan")',
+    reportMessageLabel: 'BUTIRAN',
+    reportMessagePlaceholder: 'Terangkan apa yang berlaku, apa yang anda jangkakan, dan langkah-langkah untuk menghasilkannya semula.',
+    reportSubmit: 'Hantar laporan',
+    reportSubmittedTitle: 'Laporan dihantar',
+    reportSubmittedBody: 'Terima kasih — pasukan kami akan menyemak tidak lama lagi.',
+    reportSubmitError: 'Tidak dapat menghantar laporan. Sila cuba lagi.',
+    reportFootnote:
+      'Laporan ini hanya dilihat oleh pasukan admin Rencana. Sila hormati dan elakkan berkongsi maklumat peribadi orang lain.',
   },
 } as const;
 

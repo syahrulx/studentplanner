@@ -959,6 +959,23 @@ export default function Settings() {
           </Pressable>
         </View>
 
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('reportSection')}</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/report-issue' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ef4444') }]}>
+              <Feather name="flag" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('reportIssueTitle')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('reportIssueDesc')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LEGAL</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable

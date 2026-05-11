@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 /**
  * Deletes the currently authenticated user (auth.users + cascaded rows).
  * Requires Authorization: Bearer <access_token>.

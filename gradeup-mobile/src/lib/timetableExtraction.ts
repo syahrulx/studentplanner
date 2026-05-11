@@ -68,9 +68,93 @@ function makeEntryId(index: number): string {
   return `tt-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function timeToMinutes(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+  if (!m) return Number.NaN;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+const DAY_ORDER: Record<DayOfWeek, number> = {
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+  Sunday: 7,
+};
+
+/**
+ * Collapse back-to-back periods of the same subject/lecturer/room on the same
+ * day into a single block. This is what makes PDF/picture-imported timetables
+ * look like the student-ID one (e.g. three BM rows 08:20–09:00, 09:00–09:40,
+ * 09:40–10:20 become one BM block 08:20–10:20).
+ *
+ * Rules:
+ *  - Group by (day, subjectCode, subjectName, lecturer, location, group) — case-insensitive, trimmed.
+ *  - Sort by start time.
+ *  - Merge when the next slot's start <= current slot's end (touching or overlapping).
+ *  - Keep first entry's id.
+ */
+export function mergeConsecutiveTimetableEntries(
+  entries: TimetableEntry[],
+): TimetableEntry[] {
+  const groups = new Map<string, TimetableEntry[]>();
+  for (const e of entries) {
+    const key = [
+      e.day,
+      (e.subjectCode || '').toUpperCase().trim(),
+      (e.subjectName || '').toUpperCase().trim(),
+      (e.lecturer || '').toUpperCase().trim(),
+      (e.location || '').toUpperCase().trim(),
+      (e.group || '').toUpperCase().trim(),
+    ].join('|');
+    const list = groups.get(key);
+    if (list) list.push(e);
+    else groups.set(key, [e]);
+  }
+
+  const merged: TimetableEntry[] = [];
+  for (const list of groups.values()) {
+    list.sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime),
+    );
+    let cur: TimetableEntry | null = null;
+    for (const e of list) {
+      const sMin = timeToMinutes(e.startTime);
+      const eMin = timeToMinutes(e.endTime);
+      if (Number.isNaN(sMin) || Number.isNaN(eMin) || eMin <= sMin) {
+        if (cur) merged.push(cur);
+        cur = null;
+        merged.push(e);
+        continue;
+      }
+      if (!cur) {
+        cur = { ...e };
+        continue;
+      }
+      const curEndMin = timeToMinutes(cur.endTime);
+      if (sMin <= curEndMin) {
+        if (eMin > curEndMin) cur.endTime = e.endTime;
+      } else {
+        merged.push(cur);
+        cur = { ...e };
+      }
+    }
+    if (cur) merged.push(cur);
+  }
+
+  merged.sort((a, b) => {
+    const d = (DAY_ORDER[a.day] ?? 99) - (DAY_ORDER[b.day] ?? 99);
+    if (d !== 0) return d;
+    return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+  });
+  return merged;
+}
+
 /** Map edge-function slot rows to app TimetableEntry (client-side safety net). */
 export function apiSlotsToTimetableEntries(slots: ApiTimetableSlot[]): TimetableEntry[] {
-  const out: TimetableEntry[] = [];
+  const raw: TimetableEntry[] = [];
   let i = 0;
   for (const row of slots) {
     const day = normalizeExtractedDay(row.day);
@@ -82,7 +166,7 @@ export function apiSlotsToTimetableEntries(slots: ApiTimetableSlot[]): Timetable
     const lect = (row.lecturer ?? '-').trim() || '-';
     const loc = (row.location ?? '-').trim() || '-';
     const group = (row.group ?? '').trim().slice(0, 80);
-    out.push({
+    raw.push({
       id: makeEntryId(i++),
       day,
       subjectCode: code,
@@ -94,7 +178,7 @@ export function apiSlotsToTimetableEntries(slots: ApiTimetableSlot[]): Timetable
       ...(group ? { group } : {}),
     });
   }
-  return out;
+  return mergeConsecutiveTimetableEntries(raw);
 }
 
 export function parseExtractTimetableResponse(data: unknown): ApiTimetableSlot[] {

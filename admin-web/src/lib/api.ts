@@ -1827,3 +1827,124 @@ export async function getVerificationStats(): Promise<{
   }
   return stats;
 }
+
+// ---------------------------------------------------------------------------
+// Support Reports (mobile Settings -> Report a Problem)
+//
+// Backed by `public.support_reports`. Note: this is intentionally NOT the
+// same table as `public.user_reports`, which is the App Store UGC
+// user-vs-user moderation table. We expose this in the admin UI as
+// "User Reports" because that's what the admin team calls it.
+// ---------------------------------------------------------------------------
+
+export type UserReportKind =
+  | 'bug'
+  | 'issue'
+  | 'faq'
+  | 'app_complaint'
+  | 'user_complaint'
+  | 'other';
+
+export type UserReportStatus = 'open' | 'in_progress' | 'resolved' | 'dismissed';
+
+export interface AdminUserReportRow {
+  id: string;
+  reporter_id: string | null;
+  reporter_name_snapshot: string | null;
+  reporter_email_snapshot: string | null;
+  kind: UserReportKind;
+  subject: string;
+  message: string;
+  target_user_handle: string | null;
+  target_user_id: string | null;
+  app_version: string | null;
+  platform: string | null;
+  status: UserReportStatus;
+  admin_notes: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+const USER_REPORTS_COLUMNS =
+  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at';
+
+export async function listUserReports(opts: {
+  status?: UserReportStatus | 'all';
+  kind?: UserReportKind | 'all';
+  query?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const limit = Math.max(1, Math.min(500, Number(opts.limit ?? 100)));
+  const offset = Math.max(0, Number(opts.offset ?? 0));
+  const status = opts.status ?? 'all';
+  const kind = opts.kind ?? 'all';
+  const q = (opts.query ?? '').trim();
+
+  if (await hasSessionJwt()) {
+    let query = supabase
+      .from('support_reports')
+      .select(USER_REPORTS_COLUMNS, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (status !== 'all') query = query.eq('status', status);
+    if (kind !== 'all') query = query.eq('kind', kind);
+    if (q) {
+      const safe = q.replace(/[,():*\\%]/g, ' ').trim();
+      if (safe) {
+        query = query.or(
+          [
+            `subject.ilike.%${safe}%`,
+            `message.ilike.%${safe}%`,
+            `reporter_name_snapshot.ilike.%${safe}%`,
+            `reporter_email_snapshot.ilike.%${safe}%`,
+            `target_user_handle.ilike.%${safe}%`,
+          ].join(','),
+        );
+      }
+    }
+    const { data, error, count } = await query;
+    if (error) throw toError(error);
+    return {
+      items: (data ?? []) as AdminUserReportRow[],
+      count: count ?? 0,
+      offset,
+      limit,
+    };
+  }
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'list_support_reports', status, kind, query: q, limit, offset },
+    headers,
+  );
+  return unwrapFunctionData<{
+    items: AdminUserReportRow[];
+    count: number;
+    offset: number;
+    limit: number;
+  }>(data, error);
+}
+
+export async function updateUserReportStatus(
+  id: string,
+  status: UserReportStatus,
+  adminNotes?: string | null,
+) {
+  const headers = await adminInvokeHeaders();
+  const body: Record<string, unknown> = { action: 'update_support_report_status', id, status };
+  if (adminNotes !== undefined) body.admin_notes = adminNotes ?? '';
+  const { data, error } = await invokeEdgeFunction('admin_data', body, headers);
+  return unwrapFunctionData<{ row: AdminUserReportRow }>(data, error);
+}
+
+export async function deleteUserReport(id: string) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'delete_support_report', id },
+    headers,
+  );
+  return unwrapFunctionData<{ ok: boolean }>(data, error);
+}

@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 // Admin-only user management + dashboard overview counts.
 // Auth: JWT (admin_users row) OR Bearer ADMIN_WEB_DEV_SECRET (local dev; set as Edge secret).
 // Deploy: npx supabase functions deploy admin_users

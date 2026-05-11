@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 // Sends an Expo push to a set of user IDs, honoring per-user & per-category opt-out.
 //
 // Auth:

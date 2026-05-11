@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
@@ -618,6 +619,16 @@ Deno.serve(async (req) => {
     const imageModel = (Deno.env.get('OPENAI_TIMETABLE_IMAGE_MODEL') ?? 'gpt-4o').trim();
 
     let modelText = '';
+    // Pending usage — only charged to the user once we confirm the extraction
+    // actually produced usable slots. Failed extractions (invalid JSON, zero
+    // slots, OpenAI rejected the request) MUST NOT consume the monthly cap,
+    // otherwise a user can get locked out after 1–2 unsuccessful tries on a
+    // bad screenshot.
+    let pendingUsage: {
+      kind: 'timetable_extract_text' | 'timetable_extract_pdf' | 'timetable_extract_image';
+      model: string;
+      usage: TtUsage;
+    } | null = null;
     const isPdf = mimeType === 'application/pdf' || isPdfMagic(bytes);
 
     if (isPdf) {
@@ -635,14 +646,7 @@ Deno.serve(async (req) => {
         if (!textRes.ok) {
           return errorBody(`OpenAI error ${textRes.status}: ${textRes.detail}`, 'OPENAI');
         }
-        logTokenUsage(supabaseAdminForLimit, {
-          user_id: userId,
-          kind: 'timetable_extract_text',
-          model: textModel,
-          prompt_tokens: textRes.usage.prompt_tokens || null,
-          completion_tokens: textRes.usage.completion_tokens || null,
-          total_tokens: textRes.usage.total_tokens || null,
-        });
+        pendingUsage = { kind: 'timetable_extract_text', model: textModel, usage: textRes.usage };
         modelText = textRes.text;
       } else {
         const pdfRes = await openAiTimetableFromPdfNative({
@@ -657,14 +661,7 @@ Deno.serve(async (req) => {
             'PDF_READ',
           );
         }
-        logTokenUsage(supabaseAdminForLimit, {
-          user_id: userId,
-          kind: 'timetable_extract_pdf',
-          model: pdfModel,
-          prompt_tokens: pdfRes.usage.prompt_tokens || null,
-          completion_tokens: pdfRes.usage.completion_tokens || null,
-          total_tokens: pdfRes.usage.total_tokens || null,
-        });
+        pendingUsage = { kind: 'timetable_extract_pdf', model: pdfModel, usage: pdfRes.usage };
         modelText = pdfRes.text;
       }
     } else if (
@@ -682,14 +679,7 @@ Deno.serve(async (req) => {
       if (!imgRes.ok) {
         return errorBody(`OpenAI error ${imgRes.status}: ${imgRes.detail}`, 'OPENAI');
       }
-      logTokenUsage(supabaseAdminForLimit, {
-        user_id: userId,
-        kind: 'timetable_extract_image',
-        model: imageModel,
-        prompt_tokens: imgRes.usage.prompt_tokens || null,
-        completion_tokens: imgRes.usage.completion_tokens || null,
-        total_tokens: imgRes.usage.total_tokens || null,
-      });
+      pendingUsage = { kind: 'timetable_extract_image', model: imageModel, usage: imgRes.usage };
       modelText = imgRes.text;
     } else {
       return errorBody(`Unsupported mime_type: ${mimeType}`, 'BAD_REQUEST');
@@ -699,15 +689,30 @@ Deno.serve(async (req) => {
     try {
       parsed = JSON.parse(modelText);
     } catch {
+      // AI returned tokens but the response was unusable; do NOT charge the user.
       return errorBody('AI returned invalid JSON.', 'PARSE');
     }
 
     const slots = normalizeSlots(parsed);
     if (slots.length === 0) {
+      // Extraction completed but produced nothing; do NOT charge the user.
       return errorBody(
         'No class slots could be extracted. Try a clearer image or a text-based PDF export.',
         'EMPTY_EXTRACTION',
       );
+    }
+
+    // Only at this point do we charge the user's monthly cap — we have a real
+    // result we can hand back to the client.
+    if (pendingUsage) {
+      logTokenUsage(supabaseAdminForLimit, {
+        user_id: userId,
+        kind: pendingUsage.kind,
+        model: pendingUsage.model,
+        prompt_tokens: pendingUsage.usage.prompt_tokens || null,
+        completion_tokens: pendingUsage.usage.completion_tokens || null,
+        total_tokens: pendingUsage.usage.total_tokens || null,
+      });
     }
 
     return jsonResponse({ slots });

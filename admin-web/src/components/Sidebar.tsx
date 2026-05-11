@@ -41,6 +41,7 @@ const nav: NavItem[] = [
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
+  { to: '/user-reports', label: 'User Reports', Icon: IconFileText },
 
   { header: 'System' },
   { to: '/broadcast', label: 'Broadcast', Icon: IconBell },
