@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 18.5.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -31,7 +31,6 @@
     },
     "production": {
       "node": "22.13.0",
-      "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://ujxrtuogdialsrzxkcey.supabase.co",
         "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_Kvcj5YfjIVk8cFZLR5ykaw_r46F9Qit",
