@@ -802,6 +802,22 @@ const translations = {
     aiMonthlyLimitUpgrade: 'Upgrade plan',
     aiMonthlyLimitLater: 'Maybe later',
 
+    // Recurring "To Do" tasks (Add Task screen)
+    repeatSection: 'REPEAT',
+    repeatToggle: 'Repeat this to-do',
+    repeatToggleDesc: 'Pick the days it should appear each week',
+    repeatDaysLabel: 'Days',
+    repeatTimeLabel: 'Time',
+    repeatNotifyLabel: 'Remind me each day',
+    repeatNotifyDesc: 'Local notification at the chosen time on each selected day',
+    weekdayMonShort: 'Mon',
+    weekdayTueShort: 'Tue',
+    weekdayWedShort: 'Wed',
+    weekdayThuShort: 'Thu',
+    weekdayFriShort: 'Fri',
+    weekdaySatShort: 'Sat',
+    weekdaySunShort: 'Sun',
+
     // Report a Problem (Settings -> Report)
     reportSection: 'REPORT',
     reportIssueTitle: 'Report a Problem',
@@ -1628,6 +1644,22 @@ const translations = {
       'Anda telah menggunakan semua token AI untuk bulan ini pada pelan semasa anda. Naik taraf pelan untuk terus menjana flashcard, kuiz, ringkasan dan lain-lain — atau tunggu bulan depan apabila token percuma anda diset semula.',
     aiMonthlyLimitUpgrade: 'Naik taraf pelan',
     aiMonthlyLimitLater: 'Nanti sahaja',
+
+    // Tugasan "To Do" berulang (skrin Add Task)
+    repeatSection: 'ULANG',
+    repeatToggle: 'Ulang tugasan ini',
+    repeatToggleDesc: 'Pilih hari ia akan muncul setiap minggu',
+    repeatDaysLabel: 'Hari',
+    repeatTimeLabel: 'Masa',
+    repeatNotifyLabel: 'Ingatkan saya setiap hari',
+    repeatNotifyDesc: 'Pemberitahuan tempatan pada masa yang dipilih untuk setiap hari',
+    weekdayMonShort: 'Isn',
+    weekdayTueShort: 'Sel',
+    weekdayWedShort: 'Rab',
+    weekdayThuShort: 'Kha',
+    weekdayFriShort: 'Jum',
+    weekdaySatShort: 'Sab',
+    weekdaySunShort: 'Ahd',
 
     // Laporkan Masalah (Tetapan -> Laporan)
     reportSection: 'LAPORAN',

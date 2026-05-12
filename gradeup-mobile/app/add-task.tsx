@@ -12,6 +12,7 @@ import {
   FlatList,
   ScrollView,
   Alert,
+  Switch,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
@@ -169,6 +170,35 @@ export default function AddTask() {
   useEffect(() => {
     fetchTaskCategories().then(setTaskCategories);
   }, []);
+
+  // ── Recurring "To Do" tasks ──────────────────────────────────────────────
+  // The Repeat section appears whenever the selected category name starts
+  // with "to do" / "todo" (covers "To Do", "To-Do", "To Do- (better…)",
+  // etc.). We strip all non-letters first so punctuation / spaces don't
+  // matter. When active, the user picks one or more weekdays and there is
+  // no single due date.
+  const normalizedType = type.toLowerCase().replace(/[^a-z]/g, '');
+  const isTodoCategory = normalizedType.startsWith('todo');
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const [repeatDays, setRepeatDays] = useState<number[]>([]); // 0=Sun..6=Sat
+  const [repeatNotify, setRepeatNotify] = useState(true);
+
+  const toggleRepeatDay = (dow: number) => {
+    setRepeatDays((prev) => (prev.includes(dow) ? prev.filter((d) => d !== dow) : [...prev, dow].sort()));
+  };
+
+  // If the user changes away from "To Do", silently switch off recurring so a
+  // half-configured repeat schedule doesn't get accidentally saved on a normal
+  // task (Assignment / Quiz / etc.).
+  useEffect(() => {
+    if (!isTodoCategory && repeatEnabled) {
+      setRepeatEnabled(false);
+      setRepeatDays([]);
+    }
+  }, [isTodoCategory, repeatEnabled]);
+
+  const recurringActive = isTodoCategory && repeatEnabled && repeatDays.length > 0;
+
   const [dueDateISO, setDueDateISO] = useState<string>(getTodayISO());
   const [dueTime, setDueTime] = useState('23:59');
   const [notes, setNotes] = useState('');
@@ -286,6 +316,16 @@ export default function AddTask() {
     setDueDateISO(existingTask.dueDate);
     setDueTime(existingTask.dueTime || '23:59');
     setNotes(existingTask.notes);
+    const days = Array.isArray(existingTask.repeatDays) ? existingTask.repeatDays : [];
+    if (days.length > 0) {
+      setRepeatEnabled(true);
+      setRepeatDays(days);
+      setRepeatNotify(Boolean(existingTask.repeatNotify));
+    } else {
+      setRepeatEnabled(false);
+      setRepeatDays([]);
+      setRepeatNotify(true);
+    }
   }, [existingTask]);
 
   useEffect(() => {
@@ -335,18 +375,21 @@ export default function AddTask() {
         updateTask(existingTask.id, {
           title: title.trim(),
           courseId: courseIdResolved,
-          type,
+          type: type as TaskType,
           notes,
           dueDate: dueDateISO,
           dueTime,
           needsDate: false,
+          // When recurring, repeatDays is the source of truth; otherwise clear it.
+          repeatDays: recurringActive ? repeatDays : [],
+          repeatNotify: recurringActive ? repeatNotify : false,
         });
         if (wantsShare && uid) {
           const merged: Task = {
             ...existingTask,
             title: title.trim(),
             courseId: courseIdResolved,
-            type,
+            type: type as TaskType,
             notes,
             dueDate: dueDateISO,
             dueTime,
@@ -381,7 +424,7 @@ export default function AddTask() {
         id: newId,
         title: title.trim(),
         courseId: courseIdResolved,
-        type,
+        type: type as TaskType,
         dueDate: dueDateISO,
         dueTime,
         notes,
@@ -389,6 +432,8 @@ export default function AddTask() {
         deadlineRisk,
         suggestedWeek,
         sourceMessage: undefined,
+        repeatDays: recurringActive ? repeatDays : undefined,
+        repeatNotify: recurringActive ? repeatNotify : undefined,
       };
 
       if (wantsShare && uid) {
@@ -605,27 +650,123 @@ export default function AddTask() {
           </ScrollView>
         </View>
 
-        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('dueDateLabel')}</Text>
-        <Group theme={theme}>
-          <Row theme={theme} showDivider onPress={() => setShowDateModal(true)}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>{T('dueDateLabel')}</Text>
-              <View style={styles.rowTrail}>
-                <Text style={[styles.rowValue, { color: theme.primary }]}>{formatDisplayDate(dueDateISO)}</Text>
-                <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
-              </View>
-            </View>
-          </Row>
-          <Row theme={theme} onPress={() => setShowTimePicker(true)}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>{T('time')}</Text>
-              <View style={styles.rowTrail}>
-                <Text style={[styles.rowValue, { color: theme.primary }]}>{dueTime}</Text>
-                <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
-              </View>
-            </View>
-          </Row>
-        </Group>
+        {isTodoCategory ? (
+          <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('repeatSection')}</Text>
+            <Group theme={theme}>
+              <Row theme={theme} showDivider={repeatEnabled} onPress={() => setRepeatEnabled((v) => !v)}>
+                <View style={styles.rowBetween}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: theme.text }]}>{T('repeatToggle')}</Text>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                      {T('repeatToggleDesc')}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={repeatEnabled}
+                    onValueChange={setRepeatEnabled}
+                    trackColor={{ false: 'rgba(150,150,150,0.3)', true: theme.accent }}
+                  />
+                </View>
+              </Row>
+              {repeatEnabled ? (
+                <>
+                  <Row theme={theme} showDivider>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowTitle, { color: theme.text, marginBottom: 10 }]}>{T('repeatDaysLabel')}</Text>
+                      <View style={styles.repeatDayRow}>
+                        {[
+                          { dow: 1, key: 'weekdayMonShort' as const },
+                          { dow: 2, key: 'weekdayTueShort' as const },
+                          { dow: 3, key: 'weekdayWedShort' as const },
+                          { dow: 4, key: 'weekdayThuShort' as const },
+                          { dow: 5, key: 'weekdayFriShort' as const },
+                          { dow: 6, key: 'weekdaySatShort' as const },
+                          { dow: 0, key: 'weekdaySunShort' as const },
+                        ].map(({ dow, key }) => {
+                          const on = repeatDays.includes(dow);
+                          return (
+                            <Pressable
+                              key={dow}
+                              onPress={() => toggleRepeatDay(dow)}
+                              style={[
+                                styles.repeatDayChip,
+                                {
+                                  backgroundColor: on ? theme.accent : 'transparent',
+                                  borderColor: on ? theme.accent : (theme.border ?? 'rgba(150,150,150,0.3)'),
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: '700',
+                                  color: on ? (theme.textInverse ?? '#fff') : theme.text,
+                                }}
+                              >
+                                {T(key)}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </Row>
+                  <Row theme={theme} showDivider onPress={() => setShowTimePicker(true)}>
+                    <View style={styles.rowBetween}>
+                      <Text style={[styles.rowTitle, { color: theme.text }]}>{T('repeatTimeLabel')}</Text>
+                      <View style={styles.rowTrail}>
+                        <Text style={[styles.rowValue, { color: theme.primary }]}>{dueTime}</Text>
+                        <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
+                      </View>
+                    </View>
+                  </Row>
+                  <Row theme={theme} onPress={() => setRepeatNotify((v) => !v)}>
+                    <View style={styles.rowBetween}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.rowTitle, { color: theme.text }]}>{T('repeatNotifyLabel')}</Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                          {T('repeatNotifyDesc')}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={repeatNotify}
+                        onValueChange={setRepeatNotify}
+                        trackColor={{ false: 'rgba(150,150,150,0.3)', true: theme.accent }}
+                      />
+                    </View>
+                  </Row>
+                </>
+              ) : null}
+            </Group>
+          </>
+        ) : null}
+
+        {!recurringActive ? (
+          <>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{T('dueDateLabel')}</Text>
+            <Group theme={theme}>
+              <Row theme={theme} showDivider onPress={() => setShowDateModal(true)}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>{T('dueDateLabel')}</Text>
+                  <View style={styles.rowTrail}>
+                    <Text style={[styles.rowValue, { color: theme.primary }]}>{formatDisplayDate(dueDateISO)}</Text>
+                    <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
+                  </View>
+                </View>
+              </Row>
+              <Row theme={theme} onPress={() => setShowTimePicker(true)}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>{T('time')}</Text>
+                  <View style={styles.rowTrail}>
+                    <Text style={[styles.rowValue, { color: theme.primary }]}>{dueTime}</Text>
+                    <Feather name="chevron-right" size={18} color={theme.textSecondary} style={{ opacity: 0.45 }} />
+                  </View>
+                </View>
+              </Row>
+            </Group>
+          </>
+        ) : null}
 
         <>
           {activeAutoShareNames.length > 0 && (
@@ -1196,6 +1337,21 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 17, fontWeight: '400' },
   rowTrail: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   swatch: { width: 24, height: 24, borderRadius: 12 },
+
+  repeatDayRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  repeatDayChip: {
+    minWidth: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   segmentTrack: {
     borderRadius: 10,

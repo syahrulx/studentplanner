@@ -817,6 +817,7 @@ export default function Dashboard() {
     dataReady,
     user,
     tasks,
+    taskCompletionKeys,
     courses,
     academicCalendar,
     revisionSettingsList,
@@ -1167,7 +1168,30 @@ export default function Dashboard() {
   in30Days.setDate(in30Days.getDate() + 30);
   const in30Str = toLocalISO(in30Days);
 
-  const deadlineItems = allTasks
+  // Expand recurring "Repeat" to-dos into one virtual row per scheduled
+  // weekday in the next 30 days so they appear in the Focus deadline list on
+  // each day they fire, not only on their placeholder dueDate.
+  const expandedTasksForFocus = useMemo(() => {
+    const out: typeof allTasks = [];
+    const cursor = new Date(`${todayStr}T12:00:00`);
+    const end = new Date(`${in30Str}T12:00:00`);
+    const recurring = allTasks.filter((t) => Array.isArray(t.repeatDays) && (t.repeatDays?.length ?? 0) > 0);
+    const oneOff = allTasks.filter((t) => !Array.isArray(t.repeatDays) || (t.repeatDays?.length ?? 0) === 0);
+    out.push(...oneOff);
+    for (let d = new Date(cursor); d <= end; d.setDate(d.getDate() + 1)) {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dow = d.getDay();
+      for (const t of recurring) {
+        if ((t.repeatDays ?? []).includes(dow)) {
+          const isDoneForDay = taskCompletionKeys.has(`${t.id}:${iso}`);
+          out.push({ ...t, dueDate: iso, isDone: isDoneForDay });
+        }
+      }
+    }
+    return out;
+  }, [allTasks, todayStr, in30Str, taskCompletionKeys]);
+
+  const deadlineItems = expandedTasksForFocus
     .filter((t) => !t.isDone && t.dueDate >= todayStr && t.dueDate <= in30Str)
     .map((t) => ({
       taskId: t.id,

@@ -73,7 +73,7 @@ function syntheticCourse(id: string): Course {
 
 export default function TaskDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { tasks, courses, toggleTaskDone, deleteTask, updateTask, language } = useApp();
+  const { tasks, courses, toggleTaskDone, taskCompletionKeys, deleteTask, updateTask, language } = useApp();
   const theme = useTheme();
   const themeId = useThemeId();
   const themePack = useThemePack();
@@ -276,15 +276,22 @@ export default function TaskDetails() {
       }
       return;
     }
-    if (task.isDone) {
+    // For recurring tasks, the detail screen toggles TODAY's occurrence —
+    // there is no single "the task is done" state to flip.
+    const isRecurring = Array.isArray(task.repeatDays) && task.repeatDays.length > 0;
+    const todayISOForTask = getTodayISO();
+    const recurringDoneToday = isRecurring && taskCompletionKeys.has(`${task.id}:${todayISOForTask}`);
+    const showAsDone = isRecurring ? recurringDoneToday : task.isDone;
+
+    if (showAsDone) {
       Alert.alert(T('markAsNotDone'), `"${task.title}" ${T('markAsIncomplete')}`, [
         { text: T('cancel'), style: 'cancel' },
-        { text: T('undo'), onPress: () => toggleTaskDone(task.id) },
+        { text: T('undo'), onPress: () => toggleTaskDone(task.id, isRecurring ? todayISOForTask : undefined) },
       ]);
     } else {
       Alert.alert(T('markAsDoneQuestion'), `"${task.title}" ${T('markAsCompleted')}`, [
         { text: T('cancel'), style: 'cancel' },
-        { text: T('markDone'), onPress: () => toggleTaskDone(task.id) },
+        { text: T('markDone'), onPress: () => toggleTaskDone(task.id, isRecurring ? todayISOForTask : undefined) },
       ]);
     }
   };

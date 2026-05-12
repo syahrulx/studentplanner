@@ -59,8 +59,12 @@ export function TaskCategoriesRoute() {
       .select('*')
       .order('sort_order')
       .order('name');
-    if (err) setError(err.message);
-    else setCategories(data ?? []);
+    if (err) {
+      console.error('[admin] task_categories list failed:', err);
+      setError(`Could not load categories: ${err.message}`);
+    } else {
+      setCategories(data ?? []);
+    }
     setLoading(false);
   }, []);
 
@@ -95,17 +99,53 @@ export function TaskCategoriesRoute() {
       is_active: form.is_active,
       sort_order: Number(form.sort_order) || 0,
     };
-    const { error: err } = editId
-      ? await supabase.from('task_categories').update(payload).eq('id', editId)
-      : await supabase.from('task_categories').insert(payload);
+
+    // Use .select().single() so we (a) get the inserted/updated row back and
+    // can splice it into local state without a full refetch, and (b) get a
+    // hard error if RLS silently drops the row (e.g. bypass-mode admin
+    // without a Supabase session — `auth.role()` is 'anon' and the
+    // `task_categories_admin_write` policy denies the insert).
+    const query = editId
+      ? supabase.from('task_categories').update(payload).eq('id', editId).select().single()
+      : supabase.from('task_categories').insert(payload).select().single();
+    const { data, error: err } = await query;
     setSaving(false);
-    if (err) { setError(err.message); return; }
+
+    if (err) {
+      console.error('[admin] task_categories save failed:', err);
+      const friendly =
+        err.code === '23505'
+          ? `A category named "${payload.name}" already exists. Pick a different name.`
+          : err.message?.includes('row-level security')
+            ? 'Permission denied — you must be signed in as an admin to add categories.'
+            : err.message;
+      setError(friendly);
+      return;
+    }
+
+    // Optimistic local update so the new row appears immediately, then
+    // refetch to keep sort_order canonical with the rest of the table.
+    if (data) {
+      if (editId) {
+        setCategories((prev) => prev.map((c) => (c.id === editId ? (data as TaskCategory) : c)));
+      } else {
+        setCategories((prev) => [...prev, data as TaskCategory]);
+      }
+    }
     setModalOpen(false);
     fetchCategories();
   }
 
   async function handleToggleActive(cat: TaskCategory) {
-    await supabase.from('task_categories').update({ is_active: !cat.is_active }).eq('id', cat.id);
+    const { error: err } = await supabase
+      .from('task_categories')
+      .update({ is_active: !cat.is_active })
+      .eq('id', cat.id);
+    if (err) {
+      console.error('[admin] task_categories toggle failed:', err);
+      setError(`Could not change status: ${err.message}`);
+      return;
+    }
     fetchCategories();
   }
 
