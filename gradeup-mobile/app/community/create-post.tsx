@@ -389,7 +389,7 @@ export default function CreatePostScreen() {
             >
               {allPreviewImages.map((img) => (
                 <View key={`${img.isLocal ? 'local' : 'remote'}-${img.idx}`} style={styles.thumbWrap}>
-                  <Image source={{ uri: img.uri }} style={styles.thumbImg} resizeMode="cover" />
+                  <Image source={{ uri: img.uri }} style={styles.thumbImg} resizeMode="contain" />
                   <Pressable
                     style={styles.thumbRemoveBtn}
                     onPress={() => img.isLocal ? removeNewImage(img.idx) : removeExistingImage(img.idx)}
@@ -698,6 +698,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: '#111',
   },
   thumbImg: {
     width: '100%',
