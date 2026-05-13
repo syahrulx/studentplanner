@@ -45,6 +45,7 @@ import {
   tryAcquireBrowseCampusModal,
 } from '@/src/lib/browseCampusModalLock';
 import { waitForBrowseCampusPrefSettled } from '@/src/lib/waitForBrowseCampusPref';
+import { CommunityPostImageCarousel } from '@/components/CommunityPostImageCarousel';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -106,84 +107,6 @@ function formatTime(t?: string | null): string | null {
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${hh}:${String(Number.isNaN(m) ? 0 : m).padStart(2, '0')} ${period}`;
 }
-
-// ─── Image Carousel Component ────────────────────────────────────────────────
-
-function ImageCarousel({ images }: { images: string[] }) {
-  const { width } = useWindowDimensions();
-  const [activeIndex, setActiveIndex] = React.useState(0);
-
-  if (images.length === 1) {
-    return (
-      <Image
-        source={{ uri: images[0] }}
-        style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
-        resizeMode="cover"
-      />
-    );
-  }
-
-  return (
-    <View>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-          setActiveIndex(idx);
-        }}
-        scrollEventThrottle={32}
-      >
-        {images.map((uri, i) => (
-          <Image
-            key={i}
-            source={{ uri }}
-            style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
-            resizeMode="cover"
-          />
-        ))}
-      </ScrollView>
-      {/* Dot indicators */}
-      <View style={carouselStyles.dots}>
-        {images.map((_, i) => (
-          <View
-            key={i}
-            style={[
-              carouselStyles.dot,
-              i === activeIndex ? carouselStyles.dotActive : carouselStyles.dotInactive,
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const carouselStyles = StyleSheet.create({
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 8,
-  },
-  dot: {
-    borderRadius: 4,
-  },
-  dotActive: {
-    width: 18,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#0A84FF',
-  },
-  dotInactive: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(150,150,150,0.4)',
-  },
-});
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -804,7 +727,7 @@ export default function EventsBoard() {
 
           {/* ── Image carousel ── */}
           {images.length > 0 ? (
-            <ImageCarousel images={images} />
+            <CommunityPostImageCarousel images={images} />
           ) : (
             // No-image placeholder
             <View style={[styles.igNoImagePlaceholder, { backgroundColor: meta.tint + '10' }]}>

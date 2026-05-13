@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Platform,
   Share,
-  useWindowDimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -21,73 +20,7 @@ import { useApp } from '@/src/context/AppContext';
 import * as eventsApi from '@/src/lib/eventsApi';
 import * as communityApi from '@/src/lib/communityApi';
 import type { CommunityPost, PostType } from '@/src/lib/eventsApi';
-
-// ─── Image Carousel ──────────────────────────────────────────────────────────
-
-function ImageCarousel({ images }: { images: string[] }) {
-  const { width } = useWindowDimensions();
-  const [activeIndex, setActiveIndex] = React.useState(0);
-
-  if (!images.length) return null;
-
-  if (images.length === 1) {
-    return (
-      <Image
-        source={{ uri: images[0] }}
-        style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
-        resizeMode="cover"
-      />
-    );
-  }
-
-  return (
-    <View>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / width);
-          setActiveIndex(idx);
-        }}
-        scrollEventThrottle={32}
-      >
-        {images.map((uri, i) => (
-          <Image
-            key={i}
-            source={{ uri }}
-            style={{ width, aspectRatio: 1, backgroundColor: '#111' }}
-            resizeMode="cover"
-          />
-        ))}
-      </ScrollView>
-      {/* Dots */}
-      <View style={carouselStyles.dots}>
-        {images.map((_, i) => (
-          <View
-            key={i}
-            style={[
-              carouselStyles.dot,
-              i === activeIndex ? carouselStyles.dotActive : carouselStyles.dotInactive,
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-const carouselStyles = StyleSheet.create({
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-  },
-  dot: { borderRadius: 4 },
-  dotActive: { width: 18, height: 6, borderRadius: 3, backgroundColor: '#0A84FF' },
-  dotInactive: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(150,150,150,0.4)' },
-});
+import { CommunityPostImageCarousel } from '@/components/CommunityPostImageCarousel';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -334,7 +267,7 @@ export default function PostDetailScreen() {
 
         {/* ── Image carousel ── */}
         {images.length > 0 ? (
-          <ImageCarousel images={images} />
+          <CommunityPostImageCarousel images={images} />
         ) : (
           <View style={[styles.noImagePlaceholder, { backgroundColor: meta.tint + '10' }]}>
             <Feather name={meta.icon} size={48} color={meta.tint + '50'} />
