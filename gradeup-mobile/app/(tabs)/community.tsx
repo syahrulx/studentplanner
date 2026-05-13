@@ -879,6 +879,35 @@ export default function CommunityMap() {
               </View>
             )}
 
+            {/* Snap Preview — tappable to open full viewer */}
+            {friendSnaps.has(selectedFriend.id) && (() => {
+              const friendSnap = friendSnaps.get(selectedFriend.id)!;
+              return (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.snapPreviewCard,
+                    { borderColor: theme.border },
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
+                  ]}
+                  onPress={() => {
+                    setSelectedFriend(null);
+                    router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
+                  }}
+                >
+                  <Image
+                    source={{ uri: friendSnap.imageUrl }}
+                    style={styles.snapPreviewImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.snapPreviewOverlay}>
+                    <Feather name="camera" size={14} color="#fff" />
+                    <Text style={styles.snapPreviewLabel}>View Snap</Text>
+                    <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.8)" />
+                  </View>
+                </Pressable>
+              );
+            })()}
+
             {/* Accountability Pacts Tracker */}
             {friendPacts.length > 0 && (
               <View style={[styles.pactsContainer, { backgroundColor: theme.backgroundSecondary || 'rgba(0,51,102,0.03)' }]}>
@@ -2177,6 +2206,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   friendPopupActions: { marginTop: 8 },
+  snapPreviewCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  snapPreviewImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 14,
+  },
+  snapPreviewOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+  },
+  snapPreviewLabel: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   friendPopupProfileLink: {
     fontSize: 13,
     fontWeight: '600',
