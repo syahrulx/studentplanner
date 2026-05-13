@@ -24,6 +24,7 @@ import {
   getEventCalendars,
 } from '@/src/lib/calendarImport';
 import type { Calendar as DeviceCalendar, Event as DeviceEvent } from 'expo-calendar';
+import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 
 type RangePreset = 'week' | 'month' | 'semester';
 
@@ -62,7 +63,7 @@ function parseYMD(s: string): Date | null {
 export default function ImportCalendarScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { language, addTask, academicCalendar } = useApp();
+  const { language, addTask, academicCalendar, user } = useApp();
   const T = useTranslations(language);
 
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
@@ -231,6 +232,37 @@ export default function ImportCalendarScreen() {
       setImporting(false);
     }
   };
+
+  if (!isAtLeastPlus(user?.subscriptionPlan)) {
+    return (
+      <View style={[styles.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+        <View style={styles.headerRow}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <Feather name="arrow-left" size={22} color={theme.text} />
+          </Pressable>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>{T('importCalendarTitle')}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <ScrollView contentContainerStyle={styles.deniedBody}>
+          <Feather name="lock" size={48} color={theme.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+          <Text style={[styles.bodyText, { color: theme.text, textAlign: 'center', fontWeight: 'bold', fontSize: 18 }]}>
+            {(T as any)('importCalendarUpgradeTitle') || 'Plus / Pro Feature'}
+          </Text>
+          <Text style={[styles.bodyText, { color: theme.textSecondary, textAlign: 'center' }]}>
+            {(T as any)('importCalendarUpgradeBody') || 'Importing tasks directly from your device calendar is exclusively available for Plus and Pro users.'}
+          </Text>
+          <Pressable
+            style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 24 }]}
+            onPress={() => router.push('/subscription-plans' as never)}
+          >
+            <Text style={[styles.primaryBtnText, { color: theme.textInverse }]}>
+              {T('aiMonthlyLimitUpgrade') || 'Upgrade'}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (permissionGranted === false && !loadingCals) {
     return (

@@ -87,6 +87,11 @@ export default function SubjectChat() {
   const loadSessions = async () => {
     const s = await getChatSessions(user.id, subjectId);
     setSessions(s);
+    if (user.subscriptionPlan !== 'pro' && s.length > 0) {
+      // Auto-resume the most recent session for Plus users 
+      // so they can continue their single thread without needing the History menu
+      loadSession(s[0]);
+    }
   };
 
   useEffect(() => {
@@ -178,10 +183,21 @@ STUDENT NOTES CONTENT:
     if (!currentSessionId) {
       const maxSessions = user.subscriptionPlan === 'pro' ? 15 : 3;
       if (sessions.length >= maxSessions) {
-        Alert.alert(
-          'Limit Reached',
-          `You have reached the maximum of ${maxSessions} saved conversations for this subject. Please delete an older conversation from History.`,
-        );
+        if (user.subscriptionPlan === 'pro') {
+          Alert.alert(
+            'Limit Reached',
+            `You have reached the maximum of ${maxSessions} saved conversations for this subject. Please delete an older conversation from History.`,
+          );
+        } else {
+          Alert.alert(
+            'Limit Reached',
+            `You've reached your limit of ${maxSessions} new conversations on the Plus plan. Upgrade to Pro to unlock more conversations and access your saved chat history!`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Upgrade to Pro', onPress: () => router.push('/subscription-plans' as any) }
+            ]
+          );
+        }
         return;
       }
     }
@@ -315,18 +331,31 @@ STUDENT NOTES CONTENT:
             <Pressable onPress={() => router.back()} style={s.backBtn}>
               <Feather name="chevron-left" size={28} color={theme.textInverse} />
             </Pressable>
-            <Pressable onPress={() => setShowHistory(true)} style={[s.headerIcon, { backgroundColor: headerIconBg }]}>
-              <Feather name="menu" size={16} color={theme.textInverse} />
+            <Pressable onPress={() => {
+              if (user.subscriptionPlan !== 'pro') {
+                Alert.alert(
+                  'Pro Feature',
+                  'Saved chat history is exclusively available on the Pro plan. Upgrade to Pro to view and manage your past conversations!',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Upgrade to Pro', onPress: () => router.push('/subscription-plans' as any) }
+                  ]
+                );
+              } else {
+                setShowHistory(true);
+              }
+            }} style={[s.headerIcon, { backgroundColor: headerIconBg }]}>
+              <Feather name={user.subscriptionPlan === 'pro' ? "menu" : "lock"} size={16} color={theme.textInverse} />
               <Text style={{color: theme.textInverse, fontSize: 12, fontWeight: '700'}}>Recent</Text>
             </Pressable>
             <View>
               <Text style={[s.headerTitle, { color: theme.textInverse }]}>{subjectId} Tutor</Text>
-              <Text style={[s.headerSub, { color: headerSubColor }]}>PLUS AI TUTOR</Text>
+              <Text style={[s.headerSub, { color: headerSubColor }]}>{user.subscriptionPlan === 'pro' ? 'PRO AI TUTOR' : 'PLUS AI TUTOR'}</Text>
             </View>
           </View>
           <View style={s.headerRight}>
              <View style={s.plusBadge}>
-                <Text style={s.plusBadgeText}>PRO</Text>
+                <Text style={s.plusBadgeText}>{user.subscriptionPlan === 'pro' ? 'PRO' : 'PLUS'}</Text>
              </View>
           </View>
         </View>

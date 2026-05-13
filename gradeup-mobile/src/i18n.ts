@@ -578,6 +578,8 @@ const translations = {
     importFromCalendar: 'Import from calendar',
     importFromCalendarSub: 'Copy events from your phone calendar as tasks',
     importCalendarTitle: 'Import calendar',
+    importCalendarUpgradeTitle: 'Plus / Pro Feature',
+    importCalendarUpgradeBody: 'Importing tasks directly from your device calendar is exclusively available for Plus and Pro users.',
     importCalendarPermissionBody:
       'Allow calendar access to import events into your planner. Events are copied as tasks with no subject—you can edit them later.',
     importCalendarGrantAccess: 'Allow access',
@@ -1381,6 +1383,8 @@ const translations = {
     importFromCalendar: 'Import daripada kalendar',
     importFromCalendarSub: 'Salin acara daripada kalendar telefon anda sebagai tugasan',
     importCalendarTitle: 'Import kalendar',
+    importCalendarUpgradeTitle: 'Ciri Plus / Pro',
+    importCalendarUpgradeBody: 'Mengimport tugasan terus daripada kalendar peranti anda tersedia secara eksklusif untuk pengguna Plus dan Pro.',
     importCalendarPermissionBody:
       'Benarkan akses kalendar untuk mengimport acara ke perancang anda. Acara disalin sebagai tugasan tanpa subjek—anda boleh edit kemudian.',
     importCalendarGrantAccess: 'Benarkan akses',
