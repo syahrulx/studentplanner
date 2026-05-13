@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 /**
  * Supabase Edge Function: fetch_timetable
  *

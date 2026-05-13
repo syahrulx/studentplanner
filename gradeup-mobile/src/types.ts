@@ -50,7 +50,13 @@ export interface Task {
   id: string;
   title: string;
   courseId: string;
-  type: TaskType;
+  /**
+   * Category name. The legacy `TaskType` enum is kept for default values
+   * (Assignment, Quiz, …) but admin-defined categories from
+   * `public.task_categories` can also flow through here, so we accept any
+   * string at the type level.
+   */
+  type: string;
   dueDate: string;
   dueTime: string;
   notes: string;
@@ -62,6 +68,13 @@ export interface Task {
   sourceMessage?: string;
   /** True when imported from Google Classroom without a real due date — placeholder is today */
   needsDate?: boolean;
+  /**
+   * When non-empty, this is a recurring "To Do" task. Numbers are Postgres
+   * DOW (0=Sun..6=Sat). dueDate is then used only as a placeholder.
+   */
+  repeatDays?: number[];
+  /** If true, schedule a local notification at dueTime on each repeat day. */
+  repeatNotify?: boolean;
 }
 
 /** Academic level for SOW/calendar (diploma, bachelor, etc.) */

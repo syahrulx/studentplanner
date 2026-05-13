@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 // Edge Function: send-student-otp
 // Generates a 6-digit OTP, stores it in the DB, and emails it to the student.
 //

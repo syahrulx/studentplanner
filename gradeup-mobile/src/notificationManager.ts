@@ -48,6 +48,11 @@ function taskOverdueNotifId(taskId: string): string {
   return `task-${taskId}-overdue`;
 }
 
+/** ID for one weekday-recurring notification on a specific weekday (0..6). */
+function taskRepeatNotifId(taskId: string, dow: number): string {
+  return `task-${taskId}-repeat-${dow}`;
+}
+
 export async function cancelTaskNotifications(taskId: string): Promise<void> {
   const all = await Notifications.getAllScheduledNotificationsAsync();
   const prefix = `task-${taskId}-`;
@@ -57,9 +62,46 @@ export async function cancelTaskNotifications(taskId: string): Promise<void> {
 
 export async function scheduleTaskNotifications(task: Task, prefs?: NotificationPrefs): Promise<void> {
   const p = prefs ?? (await getNotificationPrefs());
-  if (!p.tasksEnabled || task.isDone || task.needsDate) return;
+  if (!p.tasksEnabled || task.needsDate) return;
 
   await cancelTaskNotifications(task.id);
+
+  // ── Recurring "Repeat" to-dos ──────────────────────────────────────────
+  // No single due date — we schedule a weekly-repeating notification on each
+  // selected weekday at the task's due time. The user opts into these via
+  // the Repeat section's "Remind me each day" toggle.
+  const repeatDays = Array.isArray(task.repeatDays) ? task.repeatDays : [];
+  if (repeatDays.length > 0) {
+    if (!task.repeatNotify) return;
+    const [hhStr, mmStr] = (task.dueTime || '09:00').split(':');
+    const hour = Math.min(23, Math.max(0, Number(hhStr) || 9));
+    const minute = Math.min(59, Math.max(0, Number(mmStr) || 0));
+    for (const dow of repeatDays) {
+      if (!Number.isInteger(dow) || dow < 0 || dow > 6) continue;
+      // expo-notifications uses 1..7 with Sunday = 1.
+      const expoWeekday = ((dow + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7);
+      await Notifications.scheduleNotificationAsync({
+        identifier: taskRepeatNotifId(task.id, dow),
+        content: {
+          title: task.title,
+          body: task.courseId ? `${task.courseId} · ${task.type}` : String(task.type ?? ''),
+          sound: true,
+          data: { type: 'task_repeat', taskId: task.id, dow },
+          ...(Platform.OS === 'android' ? { channelId: CHANNEL_TASKS } : {}),
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: expoWeekday,
+          hour,
+          minute,
+          ...(Platform.OS === 'android' ? { channelId: CHANNEL_TASKS } : {}),
+        },
+      });
+    }
+    return;
+  }
+
+  if (task.isDone) return;
 
   const [y, m, d] = task.dueDate.split('-').map(Number);
   if (!y || !m || !d) return;
@@ -130,7 +172,15 @@ export async function rescheduleAllTaskNotifications(tasks: Task[]): Promise<voi
 
   if (!prefs.tasksEnabled) return;
 
-  const active = tasks.filter((t) => !t.isDone && !t.needsDate);
+  const active = tasks.filter((t) => {
+    if (t.needsDate) return false;
+    // Recurring tasks aren't gated by `isDone` — that flag is irrelevant for
+    // them. The recurring branch inside `scheduleTaskNotifications` handles
+    // the `repeatNotify` opt-out instead.
+    const isRecurring = Array.isArray(t.repeatDays) && t.repeatDays.length > 0;
+    if (isRecurring) return true;
+    return !t.isDone;
+  });
   for (const task of active) {
     await scheduleTaskNotifications(task, prefs);
   }

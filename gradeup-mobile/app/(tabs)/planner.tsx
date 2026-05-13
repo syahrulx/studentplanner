@@ -7,6 +7,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType } from '@/src/types';
+import { taskOccursOn, expandTasksForDate, expandTasksForRange, isRecurringTask } from '@/src/lib/recurringTasks';
 import Feather from '@expo/vector-icons/Feather';
 import {
   formatDisplayDate,
@@ -205,6 +206,7 @@ export default function Planner() {
   const {
     tasks,
     toggleTaskDone,
+    taskCompletionKeys,
     addTask,
     courses,
     deleteTask,
@@ -463,8 +465,8 @@ export default function Planner() {
     d.setDate(d.getDate() + 7);
     setActiveDate(toLocalISO(d));
   };
-  const hasTaskOnDay = (dateISO: string) => tasks.some((t) => t.dueDate === dateISO);
-  const getTaskCountOnDay = (dateISO: string) => tasks.filter((t) => t.dueDate === dateISO).length;
+  const hasTaskOnDay = (dateISO: string) => tasks.some((t) => taskOccursOn(t, dateISO));
+  const getTaskCountOnDay = (dateISO: string) => tasks.reduce((n, t) => (taskOccursOn(t, dateISO) ? n + 1 : n), 0);
   const monthGridCells = useMemo(() => getMonthGrid(activeYear, activeMonth), [activeYear, activeMonth]);
 
   const goToPrevMonth = () => {
@@ -489,9 +491,10 @@ export default function Planner() {
   
   const goToToday = () => setActiveDate(todayISO);
 
-  // Count total items (tasks + study sessions) on a given date
+  // Count total items (tasks + study sessions) on a given date. Recurring tasks
+  // count once per scheduled weekday.
   const getItemCountOnDay = (dateISO: string) => {
-    const taskCount = tasks.filter((t) => t.dueDate === dateISO).length;
+    const taskCount = tasks.reduce((n, t) => (taskOccursOn(t, dateISO) ? n + 1 : n), 0);
     const studyCount = studyItemsForPlanner.filter((s) => s.date === dateISO).length;
     return taskCount + studyCount;
   };
@@ -554,11 +557,28 @@ export default function Planner() {
 
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
-    if (view === 'all' || view === 'month' || view === 'week') {
-      list = [...tasks];
+    if (view === 'all' || view === 'month') {
+      // For lists that span many dates, expand recurring tasks into one
+      // virtual row per occurrence in the next ~60 days so they show on every
+      // scheduled weekday instead of just their placeholder dueDate.
+      const start = new Date(`${todayISO}T12:00:00`);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 60);
+      const endISO = toLocalISO(end);
+      list = expandTasksForRange(tasks, todayISO, endISO);
+    } else if (view === 'week') {
+      // Week view: expand only across the visible week so recurring tasks
+      // show on each of their weekdays in the current week.
+      const base = new Date(`${activeDate}T12:00:00`);
+      const dayOfWeek = base.getDay();
+      const weekStart = new Date(base);
+      weekStart.setDate(base.getDate() - dayOfWeek); // Sun as week start
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      list = expandTasksForRange(tasks, toLocalISO(weekStart), toLocalISO(weekEnd));
     } else {
-      // Day view: show tasks for the selected date only
-      list = tasks.filter((t) => t.dueDate === activeDate);
+      // Day view: only this date's occurrences (recurring + matching one-offs).
+      list = expandTasksForDate(tasks, activeDate);
     }
     if (activeFilter !== 'all') {
       const typeMap: Record<string, string> = {
@@ -573,8 +593,18 @@ export default function Planner() {
         list = list.filter((t) => t.type === targetType);
       }
     }
+    // Recurring tasks: the underlying row's `isDone` is meaningless. Replace
+    // it with the per-day completion state so the planner shows the right
+    // checkbox for each occurrence.
+    list = list.map((t) => {
+      if (isRecurringTask(t)) {
+        const day = t.dueDate.slice(0, 10);
+        return { ...t, isDone: taskCompletionKeys.has(`${t.id}:${day}`) };
+      }
+      return t;
+    });
     return list;
-  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter]);
+  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter, todayISO, taskCompletionKeys]);
 
   const filteredStudyItems = useMemo((): PlannerStudyItem[] => {
     if (view === 'all' || view === 'month' || view === 'week') {
@@ -1056,15 +1086,19 @@ export default function Planner() {
         }
         return;
       }
+      // For recurring tasks the planner row carries the visible occurrence
+      // date in `dueDate` — pass it through so we toggle the right day's
+      // completion record rather than always today's.
+      const occurrenceDate = (item as PlannerTaskItem).dueDate;
       if (item.isDone) {
         Alert.alert(T('markAsNotDone'), `"${item.title}" ${T('markAsIncomplete')}`, [
           { text: T('cancel'), style: 'cancel' },
-          { text: T('undo'), onPress: () => toggleTaskDone(item.id) },
+          { text: T('undo'), onPress: () => toggleTaskDone(item.id, occurrenceDate) },
         ]);
       } else {
         Alert.alert(T('markAsDoneQuestion'), `"${item.title}" ${T('markAsCompleted')}`, [
           { text: T('cancel'), style: 'cancel' },
-          { text: T('markDone'), onPress: () => toggleTaskDone(item.id) },
+          { text: T('markDone'), onPress: () => toggleTaskDone(item.id, occurrenceDate) },
         ]);
       }
     }

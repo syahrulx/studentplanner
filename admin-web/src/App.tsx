@@ -19,6 +19,7 @@ import { TaskCategoriesRoute } from './routes/TaskCategoriesRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { BroadcastRoute } from './routes/BroadcastRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
+import { UserReportsRoute } from './routes/UserReportsRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="broadcast" element={<BroadcastRoute />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="task-categories" element={<TaskCategoriesRoute />} />
+            <Route path="user-reports" element={<UserReportsRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 
 /**

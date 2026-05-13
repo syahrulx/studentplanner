@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { AppState as RNAppState } from 'react-native';
+import { Alert, AppState as RNAppState } from 'react-native';
 import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
@@ -169,9 +169,33 @@ type AppState = {
   addTask: (task: Task, options?: { skipRemote?: boolean }) => void;
   updateTask: (
     taskId: string,
-    updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'courseId' | 'title' | 'type' | 'notes' | 'needsDate'>>,
+    updates: Partial<
+      Pick<
+        Task,
+        | 'dueDate'
+        | 'dueTime'
+        | 'courseId'
+        | 'title'
+        | 'type'
+        | 'notes'
+        | 'needsDate'
+        | 'repeatDays'
+        | 'repeatNotify'
+      >
+    >,
   ) => void;
-  toggleTaskDone: (taskId: string) => void;
+  /**
+   * Toggle the "done" state for a task. For one-off tasks this flips
+   * `task.isDone`. For recurring tasks (`repeatDays` non-empty), it toggles a
+   * per-occurrence record in `task_completions` for `occurrenceDate` (defaults
+   * to today's ISO date). Without `occurrenceDate`, a recurring task is
+   * treated as if you tapped done on today's occurrence.
+   */
+  toggleTaskDone: (taskId: string, occurrenceDate?: string) => void;
+  /** Set of "<taskId>:<YYYY-MM-DD>" keys — one entry per completed recurring-task occurrence. */
+  taskCompletionKeys: Set<string>;
+  /** Returns true if a recurring task is ticked done on `dateISO`, or if a one-off task is done. */
+  isTaskDoneOn: (task: Task, dateISO: string) => boolean;
   deleteTask: (taskId: string) => void;
   pinnedTaskIds: string[];
   pinTask: (taskId: string) => boolean;
@@ -273,6 +297,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksVersion, setTasksVersion] = useState(0);
+  /**
+   * Per-occurrence completion records for recurring tasks. Keys are
+   * "<taskId>:<YYYY-MM-DD>". Populated on auth load and mutated when the user
+   * ticks/un-ticks a recurring task on a specific day.
+   */
+  const [taskCompletionKeys, setTaskCompletionKeys] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
 
@@ -639,6 +669,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setTasks(r2.value);
           rescheduleAllTaskNotifications(r2.value).catch(() => {});
         }
+
+        // Load this user's recurring-task completion history so the planner
+        // can correctly show today's "done" state for repeating to-dos.
+        taskDb
+          .getTaskCompletions(uid)
+          .then((keys) => {
+            if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+            setTaskCompletionKeys(new Set(keys));
+          })
+          .catch((err) => {
+            if (__DEV__) console.warn('[Rencana] failed to load task_completions:', err);
+          });
         if (r3.status === 'fulfilled') {
           const studyList = r3.value;
           setRevisionSettingsList(studyList);
@@ -962,6 +1004,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             };
           });
           setTasks([]);
+          setTaskCompletionKeys(new Set());
           setNotes(initialNotes);
           setFlashcards(initialFlashcards);
           setRevisionSettingsList([]);
@@ -1229,27 +1272,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
     setTasks((prev) => [task, ...prev]);
     scheduleTaskNotifications(task).catch(() => {});
-    if (!options?.skipRemote) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
+    if (options?.skipRemote) return;
+
+    // Persist to Supabase. If it fails (no session, RLS denial, network drop,
+    // schema mismatch, etc.) we MUST surface that — historically we just
+    // console.warn'd, which meant the task lived in memory only and quietly
+    // vanished on the next app launch.
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
-        if (!uid) return;
-        taskDb.upsertTask(uid, task).then(({ error }) => {
-          if (error) {
-            console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
-          } else {
-            syncNewTaskToStreams(task.id, uid).catch(err => {
-              console.warn('[Rencana] Failed to auto-sync task to streams:', err);
-            });
-          }
+        if (!uid) {
+          setTasks((prev) => prev.filter((t) => t.id !== task.id));
+          cancelTaskNotifications(task.id).catch(() => {});
+          Alert.alert(
+            'Task not saved',
+            'You appear to be signed out. Please sign in again and re-add the task so it is saved to your account.',
+          );
+          return;
+        }
+        const { error } = await taskDb.upsertTask(uid, task);
+        if (error) {
+          console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
+          setTasks((prev) => prev.filter((t) => t.id !== task.id));
+          cancelTaskNotifications(task.id).catch(() => {});
+          Alert.alert(
+            'Task not saved',
+            `We could not save this task to your account. Please try again.\n\n(${error.message})`,
+          );
+          return;
+        }
+        syncNewTaskToStreams(task.id, uid).catch((err) => {
+          console.warn('[Rencana] Failed to auto-sync task to streams:', err);
         });
-      });
-    }
+      } catch (e) {
+        console.warn('[Rencana] Unexpected error while saving task:', e);
+        setTasks((prev) => prev.filter((t) => t.id !== task.id));
+        cancelTaskNotifications(task.id).catch(() => {});
+        Alert.alert(
+          'Task not saved',
+          'Something went wrong while saving your task. Please check your connection and try again.',
+        );
+      }
+    })();
   }, []);
 
   const updateTask = useCallback(
     (
       taskId: string,
-      updates: Partial<Pick<Task, 'dueDate' | 'dueTime' | 'courseId' | 'title' | 'type' | 'notes' | 'needsDate'>>,
+      updates: Partial<
+        Pick<
+          Task,
+          | 'dueDate'
+          | 'dueTime'
+          | 'courseId'
+          | 'title'
+          | 'type'
+          | 'notes'
+          | 'needsDate'
+          | 'repeatDays'
+          | 'repeatNotify'
+        >
+      >,
     ) => {
     const id = String(taskId).trim();
     setTasks((prev) => {
@@ -1262,6 +1346,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...(updates.type !== undefined ? { type: updates.type } : {}),
         ...(updates.notes !== undefined ? { notes: String(updates.notes) } : {}),
         ...(updates.needsDate !== undefined ? { needsDate: updates.needsDate } : {}),
+        ...(updates.repeatDays !== undefined
+          ? { repeatDays: Array.isArray(updates.repeatDays) ? updates.repeatDays : [] }
+          : {}),
+        ...(updates.repeatNotify !== undefined ? { repeatNotify: updates.repeatNotify } : {}),
       };
       const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : mergedBase.dueDate;
       const dueDate = (rawDueDate ?? '').trim().slice(0, 10);
@@ -1288,13 +1376,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         suggestedWeek,
       };
       cancelTaskNotifications(updated.id).then(() => scheduleTaskNotifications(updated)).catch(() => {});
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        const uid = session?.user?.id;
-        if (!uid) return;
-        taskDb.upsertTask(uid, updated).then(({ error }) => {
-          if (error) console.warn('[Rencana] Failed to sync task update:', error.message);
-        });
-      });
+      // Snapshot the pre-update task so we can roll back the local state if the
+      // remote write fails — otherwise the edit lives in memory only and is
+      // silently lost on the next app launch.
+      const previousTask = task;
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const uid = session?.user?.id;
+          if (!uid) {
+            setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
+            Alert.alert(
+              'Changes not saved',
+              'You appear to be signed out. Please sign in again to save your changes.',
+            );
+            return;
+          }
+          const { error } = await taskDb.upsertTask(uid, updated);
+          if (error) {
+            console.warn('[Rencana] Failed to sync task update:', error.message);
+            setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
+            Alert.alert(
+              'Changes not saved',
+              `We could not save your changes. Please try again.\n\n(${error.message})`,
+            );
+          }
+        } catch (e) {
+          console.warn('[Rencana] Unexpected error while updating task:', e);
+          setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
+          Alert.alert(
+            'Changes not saved',
+            'Something went wrong while saving your changes. Please check your connection and try again.',
+          );
+        }
+      })();
       // Return a new array with new object refs so React and list consumers see the update
       const next: Task[] = prev.map((t) =>
         String(t.id).trim() === id ? { ...updated } : { ...t }
@@ -1304,8 +1419,80 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [user?.startDate]);
 
-  const toggleTaskDone = useCallback((taskId: string) => {
+  /**
+   * Toggle the done state for a task.
+   *
+   * - One-off task: flips `isDone` on the row.
+   * - Recurring task (repeatDays non-empty): toggles a row in
+   *   `task_completions` for `occurrenceDate` (defaults to today). The task
+   *   row itself is left untouched so every other day still appears.
+   */
+  const toggleTaskDone = useCallback((taskId: string, occurrenceDate?: string) => {
+    // Look up the task we're toggling without committing a state update yet —
+    // we need to know if it's recurring before deciding what to mutate.
+    let captured: Task | undefined;
+    setTasks((cur) => {
+      captured = cur.find((t) => t.id === taskId);
+      return cur;
+    });
+    const task = captured;
+    if (!task) return;
+
+    const isRecurring = Array.isArray(task.repeatDays) && task.repeatDays.length > 0;
+
+    // ── Recurring path: per-occurrence completion record ───────────────────
+    if (isRecurring) {
+      const dateISO = (occurrenceDate ?? getTodayISO()).slice(0, 10);
+      const key = taskDb.makeCompletionKey(taskId, dateISO);
+      const wasDone = taskCompletionKeys.has(key);
+      // Optimistic local update.
+      setTaskCompletionKeys((prev) => {
+        const next = new Set(prev);
+        if (wasDone) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const uid = session?.user?.id;
+          if (!uid) {
+            setTaskCompletionKeys((prev) => {
+              const rb = new Set(prev);
+              if (wasDone) rb.add(key);
+              else rb.delete(key);
+              return rb;
+            });
+            return;
+          }
+          const { error } = wasDone
+            ? await taskDb.unmarkTaskDoneOnDate(uid, taskId, dateISO)
+            : await taskDb.markTaskDoneOnDate(uid, taskId, dateISO);
+          if (error) {
+            console.warn('[Rencana] Failed to sync recurring completion:', error.message);
+            setTaskCompletionKeys((prev) => {
+              const rb = new Set(prev);
+              if (wasDone) rb.add(key);
+              else rb.delete(key);
+              return rb;
+            });
+          }
+        } catch (e) {
+          console.warn('[Rencana] Unexpected error toggling recurring task:', e);
+          setTaskCompletionKeys((prev) => {
+            const rb = new Set(prev);
+            if (wasDone) rb.add(key);
+            else rb.delete(key);
+            return rb;
+          });
+        }
+      })();
+      return;
+    }
+
+    // ── One-off path: unchanged legacy behaviour ───────────────────────────
     setTasks((prev) => {
+      const previous = prev.find((t) => t.id === taskId);
       const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
       const updated = next.find((t) => t.id === taskId);
       if (updated) {
@@ -1314,27 +1501,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } else {
           scheduleTaskNotifications(updated).catch(() => {});
         }
-        supabase.auth.getSession().then(({ data: { session } }) => {
-          const uid = session?.user?.id;
-          if (!uid) return;
-          taskDb.upsertTask(uid, updated).then(({ error }) => {
-            if (error) console.warn('[Rencana] Failed to sync task:', error.message);
-          });
-          // Propagate to shared_tasks where I'm the owner
-          getAcceptedSharedTasks().then(shared => {
-            const mine = shared.filter(s => s.task_id === taskId && s.owner_id === uid);
-            // Owner completion is reflected via the task itself (is_done); no extra update needed.
-            // But if I'm a recipient, toggle recipient_completed
-            const asRecipient = shared.filter(s => s.task_id === taskId && s.recipient_id === uid);
+        (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const uid = session?.user?.id;
+            if (!uid) {
+              if (previous) {
+                setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
+              }
+              return;
+            }
+            const { error } = await taskDb.upsertTask(uid, updated);
+            if (error) {
+              console.warn('[Rencana] Failed to sync task:', error.message);
+              if (previous) {
+                setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
+              }
+              return;
+            }
+            const shared = await getAcceptedSharedTasks();
+            const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
             for (const st of asRecipient) {
               updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
             }
-          }).catch(() => {});
-        });
+          } catch (e) {
+            console.warn('[Rencana] Unexpected error while toggling task:', e);
+            if (previous) {
+              setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
+            }
+          }
+        })();
       }
       return next;
     });
-  }, []);
+  }, [taskCompletionKeys]);
+
+  /**
+   * Helper used by lists to render the right checkbox state for a given
+   * (task, date) pair. Recurring tasks use the per-day completion set;
+   * one-off tasks fall back to `task.isDone`.
+   */
+  const isTaskDoneOn = useCallback(
+    (task: Task, dateISO: string): boolean => {
+      if (Array.isArray(task.repeatDays) && task.repeatDays.length > 0) {
+        return taskCompletionKeys.has(taskDb.makeCompletionKey(task.id, dateISO.slice(0, 10)));
+      }
+      return Boolean(task.isDone);
+    },
+    [taskCompletionKeys],
+  );
 
   const deleteTask = useCallback((taskId: string) => {
     cancelTaskNotifications(taskId).catch(() => {});
@@ -1860,6 +2075,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addTask,
     updateTask,
     toggleTaskDone,
+    taskCompletionKeys,
+    isTaskDoneOn,
     deleteTask,
     pinnedTaskIds,
     pinTask,

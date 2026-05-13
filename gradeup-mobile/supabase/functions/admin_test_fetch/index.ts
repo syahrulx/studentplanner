@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 // Admin-only: proxy a university integration request safely.
 // Deploy: npx supabase functions deploy admin_test_fetch
 // Set secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (provided by Supabase), plus any allowlist config you want.

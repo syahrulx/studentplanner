@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 // Admin CRUD + reads that normally require RLS (universities, logs, timetables, public locations, test fetch).
 // Auth: JWT (admin_users row) OR Bearer ADMIN_WEB_DEV_SECRET (set on the function; never use service role in the browser).
 // Deploy: npx supabase functions deploy admin_data
@@ -1133,6 +1134,92 @@ Rules:
 
       const previewSource = pdfTexts.length > 0 ? pdfTexts[0].text : cleanText;
       return json(200, { extracted: parsed, source_url: extractUrl, text_preview: previewSource.slice(0, 500) });
+    }
+
+    // ── Support reports (Settings -> Report a Problem) ───────────────────────
+    // Mobile users insert their own rows under RLS into public.support_reports;
+    // admins use these actions (service-role) to list + manage them from the
+    // admin web app. Distinct from public.user_reports (App Store UGC).
+    if (action === 'list_support_reports') {
+      const statusFilter = String(payload.status || 'all');
+      const kindFilter = String(payload.kind || 'all');
+      const queryStr = String(payload.query || '').trim();
+      const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
+      const offset = Math.max(0, Number(payload.offset || 0));
+
+      let q = admin
+        .from('support_reports')
+        .select(
+          'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at',
+          { count: 'exact' },
+        )
+        .order('created_at', { ascending: false })
+        .range(offset, offset + lim - 1);
+
+      if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+      if (kindFilter !== 'all') q = q.eq('kind', kindFilter);
+      if (queryStr.length > 0) {
+        // Match against subject / message / reporter snapshot fields.
+        const like = `%${queryStr.replace(/[%_]/g, '\\$&')}%`;
+        q = q.or(
+          [
+            `subject.ilike.${like}`,
+            `message.ilike.${like}`,
+            `reporter_name_snapshot.ilike.${like}`,
+            `reporter_email_snapshot.ilike.${like}`,
+            `target_user_handle.ilike.${like}`,
+          ].join(','),
+        );
+      }
+
+      const { data, error: e, count } = await q;
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [], count: count ?? 0, offset, limit: lim });
+    }
+
+    if (action === 'update_support_report_status') {
+      const id = String(payload.id || '').trim();
+      const newStatus = String(payload.status || '').trim();
+      const notes = payload.admin_notes === null || payload.admin_notes === undefined
+        ? undefined
+        : String(payload.admin_notes);
+      if (!id) return json(400, { error: 'missing_id' });
+      if (!['open', 'in_progress', 'resolved', 'dismissed'].includes(newStatus)) {
+        return json(400, { error: 'invalid_status' });
+      }
+      const patch: Record<string, unknown> = { status: newStatus };
+      if (notes !== undefined) patch.admin_notes = notes.length > 0 ? notes : null;
+      if (newStatus === 'resolved' || newStatus === 'dismissed') {
+        patch.resolved_at = new Date().toISOString();
+      } else {
+        patch.resolved_at = null;
+      }
+      const { data, error: e } = await admin
+        .from('support_reports')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id, new_status: newStatus },
+      });
+      return json(200, { row: data });
+    }
+
+    if (action === 'delete_support_report') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const { error: e } = await admin.from('support_reports').delete().eq('id', id);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id },
+      });
+      return json(200, { ok: true });
     }
 
     return json(400, { error: 'unknown_action' });
