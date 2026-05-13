@@ -207,6 +207,38 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/* ── Study Snap ────────────────────────────────────────── */
+
+export interface StudySnap {
+  id: string;
+  userId: string;
+  imageUrl: string;
+  caption?: string;
+  createdAt: string;
+  expiresAt: string;
+  /** Joined author profile info */
+  authorName?: string;
+  authorAvatar?: string;
+}
+
+export interface SnapStreak {
+  currentStreak: number;
+  longestStreak: number;
+  lastSnapDate: string | null;
+  revivalsUsed: number;
+  revivalMonth: number;
+}
+
+export interface SnapReaction {
+  id: string;
+  snapId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
+  /** Joined reactor profile info */
+  reactorName?: string;
+}
+
 /* ── University & Timetable ─────────────────────────────── */
 
 export type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';

@@ -28,17 +28,6 @@ interface CachedCategories {
 }
 
 export async function fetchTaskCategories(): Promise<TaskCategory[]> {
-  // Serve from cache if still fresh
-  try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
-    if (raw) {
-      const cached: CachedCategories = JSON.parse(raw);
-      if (Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-        return cached.data;
-      }
-    }
-  } catch { /* cache miss is fine */ }
-
   // Fetch from Supabase
   try {
     const { data, error } = await supabase
@@ -52,8 +41,6 @@ export async function fetchTaskCategories(): Promise<TaskCategory[]> {
 
     const categories = data as TaskCategory[];
 
-    // Persist to cache
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ data: categories, fetchedAt: Date.now() }));
     return categories;
   } catch {
     return FALLBACK_CATEGORIES;

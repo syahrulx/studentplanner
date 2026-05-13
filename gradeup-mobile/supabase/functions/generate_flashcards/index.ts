@@ -203,6 +203,7 @@ async function callOpenAI(
   maxTokens: number,
   attempt = 1,
   timeoutMs = 45_000,
+  model = 'gpt-4o-mini',
 ): Promise<{ cards: GeneratedCard[]; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -216,7 +217,7 @@ async function callOpenAI(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -849,10 +850,12 @@ Deno.serve(async (req) => {
     const defaultCount = plan === 'pro' ? 25 : plan === 'plus' ? 15 : 8;
     const maxCards = Math.min(Math.max(1, body.count ?? defaultCount), planMax);
 
-    // ── Generate (Single Call to leverage gpt-4o-mini 128k context) ──
+    // ── Generate ──
+    // Pro users get gpt-4o for higher quality flashcards
+    const flashcardModel = plan === 'pro' ? 'gpt-4o' : 'gpt-4o-mini';
     const prompts = buildFlashcardPrompt(textContent, maxCards);
     const openAiTimeoutMs = source === 'pdf_storage' ? 32_000 : 45_000;
-    const result = await callOpenAI(openAiKey, prompts.system, prompts.user, 1800, 1, openAiTimeoutMs);
+    const result = await callOpenAI(openAiKey, prompts.system, prompts.user, 1800, 1, openAiTimeoutMs, flashcardModel);
 
     let allCards: GeneratedCard[] = [];
     const errors: string[] = [];
@@ -875,7 +878,7 @@ Deno.serve(async (req) => {
       .insert({
         user_id: userId,
         kind: 'flashcard_generation',
-        model: 'gpt-4o-mini',
+        model: flashcardModel,
         prompt_tokens: totalPromptTokens || null,
         completion_tokens: totalCompletionTokens || null,
         total_tokens: (totalPromptTokens + totalCompletionTokens) || null,

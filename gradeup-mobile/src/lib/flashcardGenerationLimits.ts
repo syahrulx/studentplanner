@@ -36,3 +36,31 @@ export function clampFlashcardCountForPlan(count: number, plan?: SubscriptionPla
   const max = maxFlashcardsForPlan(plan);
   return Math.min(Math.max(1, Math.round(count)), max);
 }
+
+// =============================================================================
+// Study Snap Limits
+// =============================================================================
+
+/** Max snaps a user can post per day. Pro = Infinity (no limit). */
+export function maxSnapsPerDay(plan?: SubscriptionPlan | null): number {
+  if (isPro(plan)) return Infinity;
+  if (isAtLeastPlus(plan)) return 3;
+  return 1;
+}
+
+/** Max friend snaps a Free user can view per day (Plus/Pro = unlimited). */
+export const SNAP_VIEW_LIMIT_FREE = 3;
+
+/** Max streak revivals per month, by plan. */
+export function maxStreakRevivals(plan?: SubscriptionPlan | null): number {
+  if (isPro(plan)) return 3;
+  if (isAtLeastPlus(plan)) return 2;
+  return 1;
+}
+
+/** Number of days of snap history visible, by plan. Pro = Infinity. */
+export function snapHistoryDays(plan?: SubscriptionPlan | null): number {
+  if (isPro(plan)) return Infinity;
+  if (isAtLeastPlus(plan)) return 7;
+  return 0; // Free: no history
+}

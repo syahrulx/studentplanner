@@ -5,6 +5,7 @@ import ServicesBoard from '@/components/ServicesBoard';
 import {
   View,
   Text,
+  TextInput,
   Pressable,
   ScrollView,
   RefreshControl,
@@ -139,6 +140,8 @@ function StableMarker({
   listeningSongArtist,
   isSelected,
   isFaded,
+  snapImageUrl,
+  customEmoji,
 }: {
   id: string;
   coordinate: { latitude: number; longitude: number };
@@ -154,6 +157,8 @@ function StableMarker({
   listeningSongArtist?: string;
   isSelected?: boolean;
   isFaded?: boolean;
+  snapImageUrl?: string;
+  customEmoji?: string;
 }) {
   const theme = useTheme();
 
@@ -213,12 +218,23 @@ function StableMarker({
             <View style={[
               styles.statusCloud, isMe && styles.statusCloudMe,
             ]}>
-              <Feather name={statusIcon} size={18} color="#1e293b" />
+              {activityType === 'custom' && customEmoji ? (
+                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
+              ) : (
+                <Feather name={statusIcon} size={18} color="#1e293b" />
+              )}
             </View>
           )}
-          {/* Avatar */}
+          {/* Avatar — swapped with snap photo when available */}
           <View style={styles.avatarRing}>
-            <Avatar name={name} avatarUrl={avatarUrl} size={42} />
+            {snapImageUrl ? (
+              <Image
+                source={{ uri: snapImageUrl }}
+                style={{ width: 42, height: 42, borderRadius: 21 }}
+              />
+            ) : (
+              <Avatar name={name} avatarUrl={avatarUrl} size={42} />
+            )}
           </View>
           <View style={styles.pinTriangle} />
         </View>
@@ -317,6 +333,7 @@ export default function CommunityMap() {
     clearMyActivity,
     locationVisibility,
     setLocationVisibility,
+    friendSnaps,
   } = useCommunity();
 
   // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
@@ -332,7 +349,7 @@ export default function CommunityMap() {
   const insets = useSafeAreaInsets();
   // GlassTabBar: paddingTop(8) + BAR_H(64) + paddingBottom(max(insets.bottom,12))
   const glassTabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
-  const [activeTab, setActiveTab] = useState<'people' | 'places'>('people');
+  // activeTab removed — Places tab replaced by Snap button
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
@@ -647,6 +664,8 @@ export default function CommunityMap() {
                 listeningSongName={myActivity?.song_name}
                 listeningSongArtist={myActivity?.song_artist}
                 isFaded={!!selectedFriend}
+                snapImageUrl={friendSnaps.get(user.id!)?.imageUrl}
+                customEmoji={myActivity?.custom_status_emoji}
               />
             )}
 
@@ -672,6 +691,8 @@ export default function CommunityMap() {
                   listeningSongArtist={friend.music?.artist}
                   isSelected={selectedFriend?.id === friend.id}
                   isFaded={!!selectedFriend && selectedFriend.id !== friend.id}
+                  snapImageUrl={friendSnaps.get(friend.id)?.imageUrl}
+                  customEmoji={friend.activity?.custom_status_emoji}
                 />
               ))}
 
@@ -957,27 +978,24 @@ export default function CommunityMap() {
             <Pressable
               style={({ pressed }) => [
                 styles.tabPill,
-                activeTab === 'places' &&
-                  (isMonoOnly
-                    ? { backgroundColor: '#ffffff' }
-                    : themePack === 'spider'
-                    ? { backgroundColor: theme.primary }
-                    : { backgroundColor: theme.primary + '18' }),
+                isMonoOnly
+                  ? { backgroundColor: '#ffffff' }
+                  : themePack === 'spider'
+                  ? { backgroundColor: theme.primary }
+                  : { backgroundColor: theme.primary + '18' },
                 pressed && { opacity: 0.7 },
               ]}
-              onPress={() => setActiveTab(activeTab === 'places' ? 'people' : 'places')}
+              onPress={() => router.push('/snap-camera' as any)}
             >
               <Feather
-                name="map"
+                name="camera"
                 size={14}
                 color={
-                  activeTab === 'places'
-                    ? isMonoOnly
-                      ? '#000000'
-                      : themePack === 'spider'
-                      ? theme.textInverse
-                      : theme.primary
-                    : theme.textSecondary
+                  isMonoOnly
+                    ? '#000000'
+                    : themePack === 'spider'
+                    ? theme.textInverse
+                    : theme.primary
                 }
               />
               <Text
@@ -985,17 +1003,15 @@ export default function CommunityMap() {
                   styles.tabPillText,
                   {
                     color:
-                      activeTab === 'places'
-                        ? isMonoOnly
-                          ? '#000000'
-                          : themePack === 'spider'
-                          ? theme.textInverse
-                          : theme.primary
-                        : theme.textSecondary,
+                      isMonoOnly
+                        ? '#000000'
+                        : themePack === 'spider'
+                        ? theme.textInverse
+                        : theme.primary,
                   },
                 ]}
               >
-                Places
+                Snap Streak
               </Text>
             </Pressable>
             <Pressable
@@ -1243,6 +1259,8 @@ export default function CommunityMap() {
         clearMyActivity={clearMyActivity}
         refreshMyActivity={refreshMyActivity}
         theme={theme}
+        subscriptionPlan={user.subscriptionPlan}
+        userId={user.id}
       />
       </>
       )}
@@ -1283,6 +1301,8 @@ function StatusPopup({
   clearMyActivity,
   refreshMyActivity,
   theme,
+  subscriptionPlan,
+  userId,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -1292,6 +1312,8 @@ function StatusPopup({
   clearMyActivity: () => Promise<void>;
   refreshMyActivity: () => Promise<void>;
   theme: any;
+  subscriptionPlan?: import('@/src/types').SubscriptionPlan;
+  userId?: string;
 }) {
   const themePack = useThemePack();
   const isDarkMinimal = useDarkMinimalThemePack();
@@ -1300,13 +1322,18 @@ function StatusPopup({
     (myActivity?.activity_type as ActivityType) || 'idle'
   );
   const [saving, setSaving] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const [customEmoji, setCustomEmoji] = useState('✨');
+  const isProUser = subscriptionPlan === 'pro';
 
   // Sync selected type when popup opens
   useEffect(() => {
     if (visible) {
       setSelectedType((myActivity?.activity_type as ActivityType) || 'idle');
+      setCustomText((myActivity?.custom_status_text as string) || '');
+      setCustomEmoji((myActivity?.custom_status_emoji as string) || '✨');
     }
-  }, [visible, myActivity?.activity_type]);
+  }, [visible, myActivity?.activity_type, myActivity?.custom_status_text, myActivity?.custom_status_emoji]);
 
   const currentTypeInfo = ACTIVITY_TYPES.find((a) => a.type === myActivity?.activity_type);
   const hasStatus = myActivity && myActivity.activity_type !== 'idle';
@@ -1315,7 +1342,16 @@ function StatusPopup({
   const handleSave = async () => {
     setSaving(true);
     try {
-      if (selectedType === 'studying') {
+      if (selectedType === 'custom' && isProUser) {
+        await communityApi.updateMyActivity(
+          userId || myActivity?.user_id || '',
+          'custom',
+          customText.trim() || 'Custom Status',
+          undefined,
+          customText.trim() || undefined,
+          customEmoji || undefined,
+        );
+      } else if (selectedType === 'studying') {
         const label = getCurrentTimetableSubjectLabel(timetable) || 'Studying';
         await updateActivity('studying', label, label);
       } else {
@@ -1475,6 +1511,113 @@ function StatusPopup({
                   >
                     {myActivity.song_name}
                   </Text>
+                </View>
+              )}
+            </View>
+            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          </Pressable>
+
+          {/* Custom Status (Pro only) */}
+          <Pressable
+            style={({ pressed }) => [
+              popupStyles.vibeBtn,
+              { backgroundColor: theme.background, borderColor: theme.border },
+              selectedType === 'custom' && {
+                borderColor: isMonoOnly ? '#ffffff' : theme.primary,
+                borderWidth: 1.5,
+              },
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => {
+              if (!isProUser) {
+                Alert.alert(
+                  'Pro Feature',
+                  'Custom status is exclusively available for Pro users.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Upgrade to Pro', onPress: () => {
+                      onClose();
+                      router.push('/subscription-plans' as any);
+                    }},
+                  ],
+                );
+                return;
+              }
+              setSelectedType('custom');
+            }}
+          >
+            <View
+              style={[
+                popupStyles.vibeBtnIcon,
+                {
+                  backgroundColor: isDarkMinimal ? 'rgba(255,255,255,0.12)' : theme.primary + '15',
+                },
+              ]}
+            >
+              {isProUser ? (
+                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
+              ) : (
+                <Feather
+                  name="lock"
+                  size={16}
+                  color={isDarkMinimal ? theme.text : theme.primary}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[popupStyles.vibeBtnTitle, { color: theme.text }]}>
+                  Custom Status
+                </Text>
+                <View style={{
+                  backgroundColor: '#8B5CF6',
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 4,
+                }}>
+                  <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>PRO</Text>
+                </View>
+              </View>
+              {isProUser && selectedType === 'custom' && (
+                <View style={{ marginTop: 6, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    {['✨', '💡', '🎯', '🚀', '🧠', '☕'].map((em) => (
+                      <Pressable
+                        key={em}
+                        onPress={() => setCustomEmoji(em)}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 15,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: customEmoji === em
+                            ? (isDarkMinimal ? 'rgba(255,255,255,0.15)' : theme.primary + '20')
+                            : 'transparent',
+                        }}
+                      >
+                        <Text style={{ fontSize: 16 }}>{em}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <TextInput
+                      style={{ fontSize: 14, color: theme.text, fontWeight: '500' }}
+                      value={customText}
+                      onChangeText={(t: string) => setCustomText(t.slice(0, 100))}
+                      placeholder="What are you up to?"
+                      placeholderTextColor={theme.textSecondary}
+                      maxLength={100}
+                    />
+                  </View>
                 </View>
               )}
             </View>

@@ -32,6 +32,7 @@ import {
 } from '@/src/utils/date';
 import type { SharedTask, Course } from '@/src/types';
 import { TaskType } from '@/src/types';
+import { fetchTaskCategories, type TaskCategory } from '@/src/lib/taskCategoriesApi';
 import { useTranslations } from '@/src/i18n';
 import { getSharedTaskParticipants } from '@/src/lib/communityApi';
 
@@ -41,8 +42,6 @@ const CARD = '#ffffff';
 const BORDER = '#e2e8f0';
 const TEXT_PRIMARY = '#0f172a';
 const TEXT_SECONDARY = '#64748b';
-
-const TASK_TYPES = Object.values(TaskType) as TaskType[];
 
 function getDaysUntilDue(dueDate: string): number {
   const today = new Date();
@@ -128,6 +127,12 @@ export default function TaskDetails() {
 
   const titleRef = useRef<TextInput>(null);
   const notesRef = useRef<TextInput>(null);
+
+  const [taskCategories, setTaskCategories] = useState<TaskCategory[]>([]);
+
+  useEffect(() => {
+    fetchTaskCategories().then(setTaskCategories);
+  }, []);
 
   // Sync local state when task loads or changes
   useEffect(() => {
@@ -778,9 +783,11 @@ export default function TaskDetails() {
             <View style={[s.sheetGrab, { backgroundColor: theme.border, alignSelf: 'center' }]} />
             <Text style={[s.sheetTitle, { color: theme.text, textAlign: 'center', marginBottom: 20 }]}>Task Type</Text>
             <View style={s.typeGrid}>
-              {TASK_TYPES.map((t) => (
+              {taskCategories.map((cat) => {
+                const t = cat.name;
+                return (
                 <Pressable
-                  key={t}
+                  key={cat.id}
                   style={[
                     s.typeBtn,
                     { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
@@ -792,10 +799,13 @@ export default function TaskDetails() {
                     setTypeModalOpen(false);
                   }}
                 >
-                  <Text style={[s.typeBtnText, { color: theme.textSecondary }, localType === t && { color: theme.primary, fontWeight: '700' }]}>{t}</Text>
+                  <Text style={[s.typeBtnText, { color: theme.textSecondary }, localType === t && { color: theme.primary, fontWeight: '700' }]}>
+                    {cat.icon ? `${cat.icon} ${cat.name}` : cat.name}
+                  </Text>
                   {localType === t && <Feather name="check" size={16} color={theme.primary} />}
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
           </View>
         </Pressable>

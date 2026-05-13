@@ -450,8 +450,13 @@ Deno.serve(async (req) => {
     }
 
     let targetModel = 'gpt-4o-mini';
-    if (kind === 'chat' && plan === 'pro') {
-      targetModel = 'gpt-4o'; // PRO users get the flagship model for chat
+    if (plan === 'pro') {
+      // Pro users get flagship models:
+      // - Chat tutor: GPT-5.5 (latest reasoning model)
+      // - Quiz/task: GPT-4o (faster, still premium)
+      targetModel = kind === 'chat' ? 'gpt-5.5' : 'gpt-4o';
+    } else if (kind === 'chat' && plan === 'plus') {
+      targetModel = 'gpt-4o-mini'; // Plus chat stays on mini
     }
 
     const result = await callOpenAI(openAiKey, messages, maxTokens, targetModel);

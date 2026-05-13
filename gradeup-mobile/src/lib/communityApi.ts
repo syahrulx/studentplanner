@@ -101,6 +101,8 @@ export interface UserActivity {
   song_artist?: string;
   song_album_art?: string;
   song_track_id?: string;
+  custom_status_text?: string;
+  custom_status_emoji?: string;
   started_at: string;
   updated_at: string;
 }
@@ -910,7 +912,9 @@ export async function updateMyActivity(
   userId: string,
   activityType: ActivityType,
   detail?: string,
-  courseName?: string
+  courseName?: string,
+  customStatusText?: string,
+  customStatusEmoji?: string,
 ) {
   // Fetch current activity to preserve music fields
   const { data: currentAct } = await supabase
@@ -929,6 +933,8 @@ export async function updateMyActivity(
     song_artist: currentAct?.song_artist || null,
     song_album_art: currentAct?.song_album_art || null,
     song_track_id: currentAct?.song_track_id || null,
+    custom_status_text: customStatusText?.trim().slice(0, 100) || null,
+    custom_status_emoji: customStatusEmoji || null,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
@@ -947,6 +953,8 @@ export async function clearActivity(userId: string) {
     song_artist: null,
     song_album_art: null,
     song_track_id: null,
+    custom_status_text: null,
+    custom_status_emoji: null,
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });

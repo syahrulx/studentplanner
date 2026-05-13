@@ -20,6 +20,8 @@ import type { SharedTask } from '../types';
 import * as spotifyAuth from '../lib/spotifyAuth';
 import { useApp } from './AppContext';
 import { t, type TranslationKey } from '../i18n';
+import * as snapApi from '../lib/snapApi';
+import type { StudySnap, SnapStreak } from '../types';
 
 // When SERVER_COMMUNITY_PUSH_ENABLED is true, remote pushes from Postgres triggers
 // (see supabase/migrations/053_community_push_triggers.sql) handle reaction/friend/
@@ -113,6 +115,13 @@ interface CommunityState {
   /** One-shot refresh of friends, circles, shared tasks, activity, etc. */
   refreshAll: () => Promise<void>;
 
+  // Study Snap
+  /** Map of userId → their latest active snap (for map avatar swap). */
+  friendSnaps: Map<string, StudySnap>;
+  myStreak: SnapStreak | null;
+  refreshFriendSnaps: () => Promise<void>;
+  refreshMyStreak: () => Promise<void>;
+
   // Loading
   loading: boolean;
   userId: string | null;
@@ -160,15 +169,28 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sharedTasksTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<any>(null);
+  // Stable ref that mirrors the friends state — used by refreshFriendSnaps so it
+  // doesn't need friends in its dependency array (which would recreate the callback
+  // on every poll and cascade into a re-render stutter).
+  const friendsRef = useRef<FriendProfile[]>([]);
   // First-time location consent (Apple 5.1.2 compliance).
   // The user must explicitly agree ONCE to have their location shown on the map.
   // After that, their visibility settings (friends/circles/off) control everything.
   const [locationConsentGiven, setLocationConsentGiven] = useState(false);
 
+  // Study Snap
+  const [friendSnaps, setFriendSnaps] = useState<Map<string, StudySnap>>(new Map());
+  const [myStreak, setMyStreak] = useState<SnapStreak | null>(null);
+
   // Filtered friends based on selected circle
   const filteredFriends = selectedCircleId
     ? friendsWithStatus.filter((f) => circleMemberIds.includes(f.id))
     : friendsWithStatus;
+
+  // Keep friendsRef in sync with friends state
+  useEffect(() => {
+    friendsRef.current = friends;
+  }, [friends]);
 
   const communityBadgeCount = useMemo(() => {
     const pendingShares = incomingSharedTasks.filter((s) => s.status === 'pending').length;
@@ -292,6 +314,28 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  const refreshFriendSnaps = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const friendIds = friendsRef.current.map(f => f.id);
+      const allIds = [userId, ...friendIds];
+      const snapMap = await snapApi.getLatestSnapForUsers(allIds);
+      setFriendSnaps(snapMap);
+    } catch (e) {
+      // Ignore — table may not exist yet
+    }
+  }, [userId]); // friendsRef is a stable ref — safe to omit from deps
+
+  const refreshMyStreak = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const streak = await snapApi.getMyStreak(userId);
+      setMyStreak(streak);
+    } catch (e) {
+      // Ignore
+    }
+  }, [userId]);
+
   const toggleShareStream = useCallback(async (friendId: string, enabled: boolean) => {
     if (!userId) return;
     if (!toggleStreamCooldown.attempt(friendId)) return;
@@ -328,6 +372,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshSharedGoals(),
         refreshSharedTasks(),
         refreshShareStreams(),
+        refreshFriendSnaps(),
+        refreshMyStreak(),
       ]);
     } catch (e) {
       // Silently fail
@@ -341,6 +387,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedGoals,
     refreshSharedTasks,
     refreshShareStreams,
+    refreshFriendSnaps,
+    refreshMyStreak,
   ]);
 
   // Initial load + periodic refresh
@@ -362,6 +410,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setMyLatitude(null);
       setMyLongitude(null);
       setLocationVisibilityState('friends');
+      setFriendSnaps(new Map());
+      setMyStreak(null);
       setLoading(false);
       return;
     }
@@ -382,6 +432,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       refreshUnreadCount();
       refreshMyActivity();
       refreshSharedGoals();
+      refreshFriendSnaps();
     }, REFRESH_INTERVAL);
 
     // Separate slower fallback poll for shared tasks (realtime covers most updates)
@@ -405,6 +456,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedGoals,
     refreshSharedTasks,
     refreshShareStreams,
+    refreshFriendSnaps,
+    refreshMyStreak,
   ]);
 
   // ─── Listen for incoming reactions → local push notification ───
@@ -536,6 +589,30 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [userId, refreshRequests, refreshFriends]);
+
+  // ─── Listen for new study snaps → refresh map markers instantly ───
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('study-snap-changes')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'study_snaps',
+        },
+        () => {
+          refreshFriendSnaps();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, refreshFriendSnaps]);
 
   // ─── Listen for incoming shared tasks → local push notification ───
   // (notification is fired from the unified shared-tasks-changes channel below)
@@ -954,6 +1031,10 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       if (vibe) await refreshMyActivity();
     },
     refreshAll,
+    friendSnaps,
+    myStreak,
+    refreshFriendSnaps,
+    refreshMyStreak,
     loading,
     userId,
   };
