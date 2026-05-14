@@ -271,6 +271,9 @@ const translations = {
     facultyHub: 'FACULTY HUB',
     semesterConfig: 'SEMESTER CONFIGURATION',
     academicCalendar: 'Academic Calendar',
+    noUniversityCalendarTitle: 'No university calendar',
+    noUniversityCalendarBody:
+      'There is no academic calendar published for your university in the app yet.\n\nIf you need help, go to Settings → Report a Problem and describe your university and what went wrong.',
     calendarOfferTitle: 'Academic calendar update',
     calendarOfferBody:
       'Your university shared a new official semester calendar. Review the dates and optional links, then apply it to your planner only if you agree.',
@@ -1110,6 +1113,9 @@ const translations = {
     facultyHub: 'HAB FAKULTI',
     semesterConfig: 'KONFIGURASI SEMESTER',
     academicCalendar: 'Kalendar Akademik',
+    noUniversityCalendarTitle: 'Tiada kalendar universiti',
+    noUniversityCalendarBody:
+      'Tiada kalendar akademik untuk universiti anda diterbitkan dalam aplikasi ini buat masa ini.\n\nJika anda perlukan bantuan, pergi ke Tetapan → Laporkan Masalah dan terangkan universiti anda serta masalah yang berlaku.',
     calendarOfferTitle: 'Kemas kini kalendar akademik',
     calendarOfferBody:
       'Universiti anda berkongsi kalendar semester rasmi yang baharu. Semak tarikh dan pautan pilihan, kemudian gunakannya dalam perancang hanya jika anda setuju.',

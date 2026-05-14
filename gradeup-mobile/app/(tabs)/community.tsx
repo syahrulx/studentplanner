@@ -273,6 +273,10 @@ function MapOpenMusicPill({
 // MAIN COMPONENT
 // =============================================================================
 
+import { getTotalUnreadDmCount } from '@/src/lib/dmApi';
+import { supabase } from '@/src/lib/supabase';
+import * as Notifications from 'expo-notifications';
+
 export default function CommunityMap() {
   const theme = useTheme();
   const themePack = useThemePack();
@@ -338,7 +342,78 @@ export default function CommunityMap() {
   const [showStatusPopup, setShowStatusPopup] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const [refreshingCommunity, setRefreshingCommunity] = useState(false);
+  const [unreadDmCount, setUnreadDmCount] = useState(0);
   const cameraRef = useRef<any>(null);
+
+  // Fetch DM unread count
+  useEffect(() => {
+    if (!user.id || (user as any).subscriptionPlan !== 'pro') return;
+    getTotalUnreadDmCount(user.id).then(setUnreadDmCount).catch(() => {});
+  }, [user.id, (user as any).subscriptionPlan]);
+
+  // Realtime DM notification listener
+  useEffect(() => {
+    const myId = user.id;
+    if (!myId || (user as any).subscriptionPlan !== 'pro') return;
+
+    const channel = supabase
+      .channel('dm-notification-badge')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'dm_messages',
+        },
+        async (payload: any) => {
+          const msg = payload.new;
+          if (!msg || msg.sender_id === myId) return;
+
+          // Check if this message is in a conversation belonging to this user
+          const { data: convo } = await supabase
+            .from('dm_conversations')
+            .select('user_a, user_b')
+            .eq('id', msg.conversation_id)
+            .maybeSingle();
+
+          if (!convo) return;
+          if (convo.user_a !== myId && convo.user_b !== myId) return;
+
+          // Update badge
+          setUnreadDmCount((prev) => prev + 1);
+
+          // Send push notification
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('name')
+              .eq('id', msg.sender_id)
+              .maybeSingle();
+            const senderName = profile?.name ?? 'Someone';
+            const body = msg.message_type === 'flashcard_share'
+              ? `${senderName} shared flashcards with you`
+              : msg.message_type === 'quiz_share'
+                ? `${senderName} wants to play a quiz with you`
+                : `${senderName}: ${(msg.content || '').slice(0, 80)}`;
+
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'New Message',
+                body,
+                data: { type: 'dm_message', conversationId: msg.conversation_id },
+                sound: true,
+              },
+              trigger: null,
+            });
+          } catch (e) {
+            if (__DEV__) console.warn('[DM] notification error:', e);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user.id, (user as any).subscriptionPlan]);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
 
@@ -710,20 +785,8 @@ export default function CommunityMap() {
           </View>
         )}
 
-        {/* Map overlay buttons */}
+        {/* Map overlay: center on me + visibility (Set Status lives on your row in the Friends sheet) */}
         <View style={styles.mapOverlay}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.mapOverlayBtn,
-              { backgroundColor: isMonoOnly ? '#ffffff' : theme.card },
-              pressed && { opacity: 0.8 },
-            ]}
-            onPress={() => setShowStatusPopup(true)}
-          >
-            <Feather name="edit-3" size={16} color={isMonoOnly ? '#000000' : theme.primary} />
-            <Text style={[styles.mapOverlayBtnText, { color: isMonoOnly ? '#000000' : theme.primary }]}>Set Status</Text>
-          </Pressable>
-
           <Pressable
             style={({ pressed }) => [
               styles.mapOverlayBtn,
@@ -1008,6 +1071,37 @@ export default function CommunityMap() {
             >
               <Feather name="user-plus" size={14} color={isMonoOnly ? '#000000' : theme.textInverse} />
             </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.addFriendBtn,
+                { backgroundColor: isMonoOnly ? '#ffffff' : theme.card, borderWidth: 1.5, borderColor: isMonoOnly ? '#000000' : theme.primary },
+                pressed && { opacity: 0.8 },
+              ]}
+              onPress={() => {
+                const isPro = (user as any).subscriptionPlan === 'pro';
+                if (isPro) {
+                  router.push('/community/chat-list' as any);
+                } else {
+                  Alert.alert(
+                    'Pro Feature',
+                    'Direct messaging is available exclusively for Pro subscribers. Upgrade to chat with your friends, share flashcards, and quiz together.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
+                    ],
+                  );
+                }
+              }}
+            >
+              <Feather name="message-circle" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
+              {unreadDmCount > 0 && (
+                <View style={styles.dmBadge}>
+                  <Text style={styles.dmBadgeText}>
+                    {unreadDmCount > 9 ? '9+' : String(unreadDmCount)}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
           </View>
         </View>
         {favoriteNames.length > 0 && (
@@ -1036,62 +1130,89 @@ export default function CommunityMap() {
             />
           }
         >
-          {/* Me row - always shown at top */}
-          <Pressable
-            style={({ pressed }) => [
+          {/* Me row — left: zoom to me on map; right: Set Status (opens popup; was unreachable inside one big Pressable) */}
+          <View
+            style={[
               styles.personRow,
               { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
-              pressed && { backgroundColor: theme.background },
             ]}
-            onPress={() => {
-              // Just zoom deeply into own location, don't show the popup
-              if (hasValidMyCoords && cameraRef.current) {
-                cameraRef.current.setCamera({
-                  centerCoordinate: [myLongitude, myLatitude],
-                  zoomLevel: 19,
-                  animationDuration: 1000,
-                });
-              }
-            }}
           >
-            <View style={styles.myAvatarWrap}>
-              <Avatar name={user.name} avatarUrl={user.avatar} size={44} />
-              <View style={[styles.onlineDot, { borderColor: theme.card }]} />
-            </View>
-            <View style={styles.personInfo}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.meRowMainHit,
+                pressed && { backgroundColor: theme.background },
+              ]}
+              onPress={() => {
+                if (hasValidMyCoords && cameraRef.current) {
+                  cameraRef.current.setCamera({
+                    centerCoordinate: [myLongitude, myLatitude],
+                    zoomLevel: 19,
+                    animationDuration: 1000,
+                  });
+                }
+              }}
+            >
+              <View style={styles.myAvatarWrap}>
+                <Avatar name={user.name} avatarUrl={user.avatar} size={44} />
+                <View style={[styles.onlineDot, { borderColor: theme.card }]} />
+              </View>
+              <View style={styles.personInfo}>
+                <Text
+                  style={[styles.personName, { color: theme.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {user.name}{' '}
+                  <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
+                </Text>
+                {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <Feather
+                      name={communityApi.getActivityFeatherIcon(myActivity.activity_type) as any}
+                      size={14}
+                      color={theme.primary}
+                    />
+                    <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                      {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
+                    </Text>
+                  </View>
+                ) : myActivity?.activity_type === 'idle' ? (
+                  <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
+                    Use Set Status to share what you’re doing
+                  </Text>
+                ) : null}
+                {myActivity?.is_playing && myActivity.song_name ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Feather name="music" size={14} color={theme.primary} />
+                    <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                      {myActivity.song_name}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Set status"
+              style={({ pressed }) => [
+                styles.meRowSetStatusBtn,
+                {
+                  backgroundColor: isMonoOnly ? '#ffffff' : theme.card,
+                  borderColor: isMonoOnly ? '#e5e7eb' : theme.border,
+                },
+                pressed && { opacity: 0.85 },
+              ]}
+              onPress={() => setShowStatusPopup(true)}
+            >
+              <Feather name="edit-3" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
               <Text
-                style={[styles.personName, { color: theme.text }]}
+                style={[styles.meRowSetStatusText, { color: isMonoOnly ? '#000000' : theme.primary }]}
                 numberOfLines={1}
-                ellipsizeMode="tail"
               >
-                {user.name}{' '}
-                <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
+                Set Status
               </Text>
-              {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                  <Feather
-                    name={communityApi.getActivityFeatherIcon(myActivity.activity_type) as any}
-                    size={14}
-                    color={theme.primary}
-                  />
-                  <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
-                    {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
-                  </Text>
-                </View>
-              ) : myActivity?.activity_type === 'idle' ? (
-                <Text style={[styles.personStatus, { color: theme.textSecondary }]}>Tap to set your status</Text>
-              ) : null}
-              {myActivity?.is_playing && myActivity.song_name ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Feather name="music" size={14} color={theme.primary} />
-                  <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
-                    {myActivity.song_name}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            <Feather name="edit-3" size={16} color={theme.textSecondary} />
-          </Pressable>
+            </Pressable>
+          </View>
 
           {loading ? (
             isCatTheme || isDarkMinimal ? (
@@ -2248,6 +2369,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dmBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  dmBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+  },
 
   // Friends list
   peopleList: { flex: 1 },
@@ -2281,8 +2419,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 4,
-    gap: 12,
+    gap: 8,
     borderRadius: 12,
+  },
+  meRowMainHit: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minWidth: 0,
+    paddingVertical: 2,
+  },
+  meRowSetStatusBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexShrink: 0,
+  },
+  meRowSetStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 88,
   },
   personInfo: { flex: 1, minWidth: 0 },
   personName: { fontSize: 16, fontWeight: '700' },

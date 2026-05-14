@@ -227,7 +227,7 @@ export default function NewServiceScreen() {
     if (!isEditing) {
       Alert.alert(
         'Platform Disclaimer',
-        'Rencana does not handle payments. All monetary transactions and service fulfillments are solely at your own responsibility.\n\nDo you agree to proceed?',
+        'Rencana serves solely as a platform to assist students in finding opportunities for extra income.\n\nPlease be advised that Rencana does not handle payments, and we assume no liability or responsibility for any monetary transactions, service fulfillments, or any accidents, injuries, or incidents that may occur during the provision of services (including riding, transportation, and running errands).\n\nAll activities are undertaken strictly at your own risk.\n\nDo you agree to proceed?',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'I Agree', onPress: processSubmit },

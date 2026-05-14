@@ -539,15 +539,6 @@ export default function InAppThemesScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              <Pressable
-                onPress={() => setSelectedThemeId(item.id)}
-                style={[styles.lockedButton, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}
-              >
-                <Feather name="eye" size={14} color={theme.textSecondary} />
-                <Text style={[styles.lockedButtonText, { color: theme.textSecondary }]}>
-                  Preview Home & Timetable
-                </Text>
-              </Pressable>
               {isFreePlan ? (
                 <Text style={[styles.lockedNote, { color: theme.textSecondary }]}>Start a 1-week free trial of this theme</Text>
               ) : !canApplyThemePacks ? (
@@ -1324,20 +1315,6 @@ const styles = StyleSheet.create({
   cardDescription: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  lockedButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  lockedButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   lockedNote: {
     fontSize: 12,
