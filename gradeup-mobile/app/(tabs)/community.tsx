@@ -184,6 +184,7 @@ function StableMarker({
   return (
     <MB.MarkerView
       id={id}
+      key={`${id}-${snapImageUrl ? 'snap' : 'avatar'}`}
       coordinate={[coordinate.longitude, coordinate.latitude]}
       anchor={anchor}
       allowOverlap={true}
