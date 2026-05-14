@@ -28,11 +28,7 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
 import { isTaskPastDueNow } from '@/src/utils/date';
-import {
-  rescheduleAllTaskNotifications,
-  scheduleWeeklySummary,
-  cancelWeeklySummary,
-} from '@/src/notificationManager';
+import { rescheduleAllTaskNotifications } from '@/src/notificationManager';
 import { rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
 import {
   openPrivacyPolicy,
@@ -147,17 +143,6 @@ export default function Settings() {
             if (!uid) return;
             rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
           });
-        }
-        if (
-          'weeklySummaryEnabled' in patch ||
-          'weeklySummaryDay' in patch ||
-          'weeklySummaryTime' in patch
-        ) {
-          if (next.weeklySummaryEnabled) {
-            scheduleWeeklySummary(next).catch(() => {});
-          } else {
-            cancelWeeklySummary().catch(() => {});
-          }
         }
         return next;
       });
@@ -403,12 +388,6 @@ export default function Settings() {
       label: T('stressMap'),
       onPress: () => router.push('/stress-map' as any),
       color: '#ec4899',
-    },
-    {
-      icon: 'weeklySummary',
-      label: T('weeklySummary'),
-      onPress: () => router.push('/weekly-summary' as any),
-      color: '#f59e0b',
     },
   ];
 
@@ -689,103 +668,7 @@ export default function Settings() {
               </View>
             </View>
 
-            {/* Card 2: weekly digest (schedule isolated, Apple-like second group) */}
-            <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
-                  <Feather name="bar-chart-2" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Weekly Summary</Text>
-                  {notifPrefs.weeklySummaryEnabled ? (
-                    <Text style={[styles.notifRowFootnote, { color: theme.primary }]} numberOfLines={1}>
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][notifPrefs.weeklySummaryDay]} ·{' '}
-                      {notifPrefs.weeklySummaryTime}
-                    </Text>
-                  ) : (
-                    <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
-                      Planner digest once a week
-                    </Text>
-                  )}
-                </View>
-                <Switch
-                  value={notifPrefs.weeklySummaryEnabled}
-                  onValueChange={(v) => updateNotifPref({ weeklySummaryEnabled: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-
-              {notifPrefs.weeklySummaryEnabled ? (
-                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
-                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Day</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.notifChipScrollContent}
-                  >
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, i) => {
-                      const active = notifPrefs.weeklySummaryDay === i;
-                      return (
-                        <Pressable
-                          key={label}
-                          onPress={() => updateNotifPref({ weeklySummaryDay: i })}
-                          style={[
-                            styles.notifChip,
-                            styles.notifChipCompact,
-                            {
-                              borderColor: active ? theme.primary : theme.border,
-                              backgroundColor: active ? theme.primary + '22' : theme.card,
-                              marginRight: 8,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.notifChipText,
-                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary, marginTop: 14 }]}>Time</Text>
-                  <View style={styles.notifChipWrap}>
-                    {['08:00', '12:00', '17:00', '20:00'].map((t) => {
-                      const active = notifPrefs.weeklySummaryTime === t;
-                      return (
-                        <Pressable
-                          key={t}
-                          onPress={() => updateNotifPref({ weeklySummaryTime: t })}
-                          style={[
-                            styles.notifChip,
-                            {
-                              borderColor: active ? theme.primary : theme.border,
-                              backgroundColor: active ? theme.primary + '22' : theme.card,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.notifChipText,
-                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
-                            ]}
-                          >
-                            {t}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Card 3: Today's Focus Preference */}
+            {/* Card 2: Today's Focus Preference */}
             <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
               <Pressable
                 style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}

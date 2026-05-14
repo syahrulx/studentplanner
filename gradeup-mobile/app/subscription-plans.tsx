@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +20,14 @@ import { getEnabledSubscriptionFeaturesAllTiers } from '@/src/lib/subscriptionFe
 import { subscriptionPlanLabel } from '@/src/lib/profileDisplay';
 import type { SubscriptionPlan } from '@/src/types';
 import { useTheme } from '@/hooks/useTheme';
+
+const PRICING_PAGE_URL = 'https://aizztech.com/rencana/pricing';
+
+function openPricingPage() {
+  void Linking.openURL(PRICING_PAGE_URL).catch(() => {
+    Alert.alert('Could not open link', 'Please visit aizztech.com/rencana/pricing in your browser.');
+  });
+}
 
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
 
@@ -236,17 +245,12 @@ export default function SubscriptionPlansScreen() {
                       <View
                         style={[styles.bullets, { borderTopColor: theme.border }]}
                       >
-                        {lines.slice(0, 6).map((line, idx) => (
+                        {lines.map((line, idx) => (
                           <View key={`${plan}-${idx}`} style={styles.bulletRow}>
                             <Text style={[styles.bulletDot, { color: theme.primary }]}>•</Text>
                             <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{line}</Text>
                           </View>
                         ))}
-                        {lines.length > 6 ? (
-                          <Text style={[styles.moreLines, { color: theme.textSecondary }]}>
-                            + {lines.length - 6} more
-                          </Text>
-                        ) : null}
                       </View>
                     ) : null}
                   </Pressable>
@@ -256,6 +260,20 @@ export default function SubscriptionPlansScreen() {
           )}
 
           <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
+
+          <Pressable
+            onPress={openPricingPage}
+            style={({ pressed }) => [
+              styles.seePlanBtn,
+              { borderColor: theme.primary, backgroundColor: theme.card },
+              pressed && { opacity: 0.85 },
+            ]}
+            accessibilityRole="link"
+            accessibilityLabel="See plan details on the web"
+          >
+            <Feather name="external-link" size={18} color={theme.primary} />
+            <Text style={[styles.seePlanBtnText, { color: theme.primary }]}>See Plan</Text>
+          </Pressable>
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
@@ -352,13 +370,26 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   bulletDot: { fontSize: 14, lineHeight: 20 },
   bulletText: { flex: 1, fontSize: 13, fontWeight: '500', lineHeight: 20 },
-  moreLines: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   footerNote: {
     marginTop: 20,
     fontSize: 12,
     fontWeight: '500',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  seePlanBtn: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 2,
+  },
+  seePlanBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
   },
   bottomSafe: {
     paddingHorizontal: 20,

@@ -306,8 +306,8 @@ export default function AcademicCalendarScreen() {
             });
           } else {
             Alert.alert(
-              'No university calendar',
-              'There is no academic calendar published for your university in the app yet. Ask your administrator to publish one, or try again later.',
+              T('noUniversityCalendarTitle'),
+              T('noUniversityCalendarBody'),
             );
           }
         }
@@ -317,7 +317,7 @@ export default function AcademicCalendarScreen() {
         setCfgBusy(false);
       }
     },
-    [cfgBusy, updateProfile, updateAcademicCalendar, user.academicLevel],
+    [cfgBusy, updateProfile, updateAcademicCalendar, user.academicLevel, T],
   );
 
   const cellW = useMemo(() => {
@@ -408,8 +408,8 @@ export default function AcademicCalendarScreen() {
       } else {
         setSyncStatus('No administrator calendar for this university yet.');
         Alert.alert(
-          'No university calendar',
-          'There is no academic calendar published for your university in the app yet. Ask your administrator to publish one.',
+          T('noUniversityCalendarTitle'),
+          T('noUniversityCalendarBody'),
         );
       }
       setConfigOpen(false);
@@ -431,6 +431,7 @@ export default function AcademicCalendarScreen() {
     updateAcademicCalendar,
     updateProfile,
     user.universityId,
+    T,
   ]);
 
   const monthLabel = useMemo(() => {
