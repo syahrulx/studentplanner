@@ -24,7 +24,7 @@ const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
 
 function tierPriceLabel(plan: SubscriptionPlan): string {
   if (plan === 'free') return 'Free forever';
-  return 'Coming soon';
+  return 'Unlocked via Account';
 }
 
 /** Plus is not self-serve for anyone yet; Pro only for Rencana staff. */
@@ -93,14 +93,14 @@ export default function SubscriptionPlansScreen() {
     if (isTierLocked(plan, staff)) {
       if (plan === 'plus') {
         Alert.alert(
-          'Plus',
-          'Plus is currently rolling out. Your school or institution can assign a plan for you.',
+          'Plus Plan',
+          'This plan is managed via your account settings. If you have an active subscription, your features will automatically unlock in the app.',
         );
         return;
       }
       Alert.alert(
-        'Pro',
-        'Pro is currently unavailable. Full upgrades will be rolling out soon.',
+        'Pro Plan',
+        'Pro features are managed via your Studly account. Visit your account dashboard to manage your subscription.',
       );
       return;
     }
@@ -144,7 +144,7 @@ export default function SubscriptionPlansScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={[styles.title, { color: theme.text }]}>Choose a plan</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Compare Free, Plus, and Pro. Premium tiers stay locked until the full rollout.
+            Compare Free, Plus, and Pro. Plans are managed via your account settings. Features unlock automatically when you upgrade.
           </Text>
 
           {loadingFeatures ? (
