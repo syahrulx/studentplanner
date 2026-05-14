@@ -123,6 +123,28 @@ export default function ChatListScreen() {
     } as any);
   };
 
+  const handleDeleteConvo = (convo: DmConversation) => {
+    Alert.alert(
+      'Delete Conversation',
+      `Are you sure you want to delete this conversation with ${convo.friend?.name || 'this user'}? This will remove all messages for both of you.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dmApi.deleteConversation(convo.id);
+              setConversations((prev) => prev.filter((c) => c.id !== convo.id));
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not delete conversation');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ─── Pro-locked state ───
   if (!isPro) {
     return (
@@ -193,9 +215,21 @@ export default function ChatListScreen() {
             {lastMessagePreview(item, userId!)}
           </Text>
         </View>
-        <Text style={[styles.convoTime, { color: theme.textSecondary }]}>
-          {timeAgo(item.last_message?.created_at || item.last_message_at)}
-        </Text>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <Text style={[styles.convoTime, { color: theme.textSecondary }]}>
+            {timeAgo(item.last_message?.created_at || item.last_message_at)}
+          </Text>
+          <Pressable
+            hitSlop={10}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDeleteConvo(item);
+            }}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <Feather name="trash-2" size={16} color={theme.textSecondary} />
+          </Pressable>
+        </View>
       </Pressable>
     );
   };

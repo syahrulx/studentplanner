@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet, Alert } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -28,6 +28,8 @@ export default function QuizGameplay() {
   const [flashCorrect, setFlashCorrect] = useState(false);
   const [flashWrong, setFlashWrong] = useState(false);
   const [opponentFlash, setOpponentFlash] = useState('');
+  const [waitingForOpponents, setWaitingForOpponents] = useState(false);
+  const [showSkipBtn, setShowSkipBtn] = useState(false);
   const hasRestoredProgressRef = useRef(false);
 
   const scoreRef = useRef(0);
@@ -105,7 +107,18 @@ export default function QuizGameplay() {
   const questionsRef = useRef(questions);
   questionsRef.current = questions;
 
-  const navigateToResults = useCallback(async () => {
+  const forceNavigateToResults = useCallback(() => {
+    router.replace({
+      pathname: '/results-page',
+      params: {
+        sessionId: sessionRef.current?.id || '',
+        score: String(scoreRef.current),
+        total: String(questionsRef.current.length),
+      },
+    } as any);
+  }, []);
+
+  const saveResultsAndWait = useCallback(async () => {
     // Attempt to save results — retry once on failure so XP is not silently lost
     let saved = false;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -115,7 +128,6 @@ export default function QuizGameplay() {
         break;
       } catch (err) {
         if (attempt === 1) {
-          // Last attempt failed — warn the user their score may not be saved
           Alert.alert(
             'Save Failed',
             'Your score could not be saved. Please check your connection.',
@@ -124,15 +136,15 @@ export default function QuizGameplay() {
         }
       }
     }
-    router.replace({
-      pathname: '/results-page',
-      params: {
-        sessionId: sessionRef.current?.id || '',
-        score: String(scoreRef.current),
-        total: String(questionsRef.current.length),
-      },
-    } as any);
-  }, [finishQuiz]);
+
+    if (isMultiplayer) {
+      setWaitingForOpponents(true);
+      // Show skip button after 5 seconds to prevent being stuck if someone drops
+      setTimeout(() => setShowSkipBtn(true), 5000);
+    } else {
+      forceNavigateToResults();
+    }
+  }, [finishQuiz, isMultiplayer, forceNavigateToResults]);
 
   const handleTimerExpired = useCallback(async () => {
     const qi = qIndexRef.current;
@@ -147,12 +159,12 @@ export default function QuizGameplay() {
     setStreak(0);
     setShortAnswer(''); // always clear short-answer input on expiry
     if (isLastRef.current) {
-      navigateToResults();
+      void saveResultsAndWait();
     } else {
       setQIndex((i) => i + 1);
       setSelectedIdx(null);
     }
-  }, [myParticipantId, timerSeconds, submitAnswer, navigateToResults]);
+  }, [myParticipantId, timerSeconds, submitAnswer, saveResultsAndWait]);
 
   // Timer — countdown only, NO side effects inside the updater
   useEffect(() => {
@@ -207,10 +219,20 @@ export default function QuizGameplay() {
     }
   }, [timeLeft, handleTimerExpired]);
 
-  // Monitor opponent progress for flashes — only fire on a newly advanced question index
+  // Monitor opponent progress for flashes and check if all finished
   useEffect(() => {
     const entries = Array.from(opponentProgress.values());
     const latest = entries.sort((a, b) => b.questionIndex - a.questionIndex)[0];
+    
+    // Check if waiting for opponents to finish
+    if (waitingForOpponents && isMultiplayer) {
+      const totalOpponents = (participants.length || 2) - 1;
+      const finishedOpponents = entries.filter(o => o.finished).length;
+      if (finishedOpponents >= totalOpponents && totalOpponents > 0) {
+        forceNavigateToResults();
+      }
+    }
+
     if (!latest) return;
     const prevIndex = lastOpponentQRef.current.get(latest.userId) ?? -1;
     if (latest.questionIndex > prevIndex) {
@@ -218,7 +240,7 @@ export default function QuizGameplay() {
       setOpponentFlash(latest.correct ? 'correct' : 'wrong');
       setTimeout(() => setOpponentFlash(''), 1500);
     }
-  }, [opponentProgress]);
+  }, [opponentProgress, waitingForOpponents, participants.length, isMultiplayer, forceNavigateToResults]);
 
 
   const handleOption = async (idx: number) => {
@@ -254,10 +276,10 @@ export default function QuizGameplay() {
 
     if (isLast) {
       // Update ref immediately (don't wait for setState re-render) so
-      // navigateToResults reads the correct final score
+      // saveResultsAndWait reads the correct final score
       scoreRef.current = newScore;
       setScore(newScore);
-      advanceTimeoutRef.current = setTimeout(() => navigateToResults(), 1000);
+      advanceTimeoutRef.current = setTimeout(() => { void saveResultsAndWait(); }, 1000);
     } else {
       advanceTimeoutRef.current = setTimeout(() => {
         setQIndex((i) => i + 1);
@@ -304,10 +326,9 @@ export default function QuizGameplay() {
     }
 
     if (isLast) {
-      // Update ref immediately so navigateToResults has correct final score
       scoreRef.current = newScore;
       setScore(newScore);
-      advanceTimeoutRef.current = setTimeout(() => navigateToResults(), 1000);
+      advanceTimeoutRef.current = setTimeout(() => { void saveResultsAndWait(); }, 1000);
     } else {
       advanceTimeoutRef.current = setTimeout(() => {
         setQIndex((i) => i + 1);
@@ -325,6 +346,26 @@ export default function QuizGameplay() {
         <Pressable style={[s.backBtn, { backgroundColor: theme.primary }]} onPress={() => router.back()}>
           <Text style={s.backBtnText}>Back</Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  if (waitingForOpponents) {
+    return (
+      <View style={[s.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.primary} style={{ marginBottom: 20 }} />
+        <Text style={{ fontSize: 20, fontWeight: '700', color: theme.text, marginBottom: 8 }}>Waiting for opponents...</Text>
+        <Text style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 30, paddingHorizontal: 20 }}>
+          Your score has been saved. The final results will be shown once everyone finishes.
+        </Text>
+        {showSkipBtn && (
+          <Pressable
+            style={({ pressed }) => [s.backBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.8 }]}
+            onPress={forceNavigateToResults}
+          >
+            <Text style={s.backBtnText}>Skip Waiting</Text>
+          </Pressable>
+        )}
       </View>
     );
   }

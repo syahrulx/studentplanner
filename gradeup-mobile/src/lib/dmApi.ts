@@ -134,6 +134,15 @@ export async function getOrCreateConversation(userId: string, friendId: string):
   return data as DmConversation;
 }
 
+/** Delete a conversation */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const { error } = await supabase
+    .from('dm_conversations')
+    .delete()
+    .eq('id', conversationId);
+  if (error) throw error;
+}
+
 /** List all conversations for a user, enriched with friend profile and last message. */
 export async function getConversations(userId: string): Promise<DmConversation[]> {
   const { data: convos, error } = await supabase
@@ -187,7 +196,12 @@ export async function getConversations(userId: string): Promise<DmConversation[]
     });
   }
 
-  return enriched;
+  // Sort by latest message locally, just in case last_message_at wasn't fully synced
+  return enriched.sort((a, b) => {
+    const timeA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : (a.last_message_at ? new Date(a.last_message_at).getTime() : 0);
+    const timeB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
+    return timeB - timeA;
+  });
 }
 
 // ---------------------------------------------------------------------------
