@@ -23,8 +23,8 @@ import { useTheme } from '@/hooks/useTheme';
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
 
 function tierPriceLabel(plan: SubscriptionPlan): string {
-  if (plan === 'free') return 'Free';
-  return 'Paid · coming soon';
+  if (plan === 'free') return 'Free forever';
+  return 'Coming soon';
 }
 
 /** Plus is not self-serve for anyone yet; Pro only for Rencana staff. */
@@ -94,13 +94,13 @@ export default function SubscriptionPlansScreen() {
       if (plan === 'plus') {
         Alert.alert(
           'Plus',
-          'Plus will unlock when paid subscriptions go live. Your school or Rencana can assign a plan for you.',
+          'Plus is currently rolling out. Your school or institution can assign a plan for you.',
         );
         return;
       }
       Alert.alert(
         'Pro',
-        'Pro is a paid tier. Upgrades will be available here after billing goes live.',
+        'Pro is currently unavailable. Full upgrades will be rolling out soon.',
       );
       return;
     }
@@ -126,9 +126,9 @@ export default function SubscriptionPlansScreen() {
 
   const footerHint = useMemo(() => {
     if (staff) {
-      return 'Staff accounts can switch to Pro for testing. Plus unlocks when billing is ready.';
+      return 'Staff accounts can switch to Pro for testing. Plus is currently rolling out.';
     }
-    return 'Paid upgrades will be available in the app after launch. You can cancel or change later where applicable.';
+    return 'Premium upgrades will be available in the app soon. You can change your plan later where applicable.';
   }, [staff]);
 
   return (
@@ -144,7 +144,7 @@ export default function SubscriptionPlansScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={[styles.title, { color: theme.text }]}>Choose a plan</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Compare Free, Plus, and Pro. Paid tiers stay locked until checkout opens.
+            Compare Free, Plus, and Pro. Premium tiers stay locked until the full rollout.
           </Text>
 
           {loadingFeatures ? (
@@ -224,10 +224,10 @@ export default function SubscriptionPlansScreen() {
                         <Text style={[styles.cardPrice, { color: theme.primary }]}>{tierPriceLabel(plan)}</Text>
                         <Text style={[styles.cardBlurb, { color: theme.textSecondary }]}>
                           {plan === 'free'
-                            ? 'Everything you need to plan classes and stay on track.'
+                            ? 'The core student planner — free for as long as you study.'
                             : plan === 'plus'
-                              ? 'Higher limits and integrations when subscriptions launch.'
-                              : 'Full power for staff testing and future top tier.'}
+                              ? 'Smarter AI, premium themes and calendar import.'
+                              : 'The ultimate study toolkit with our smartest AI and full social power.'}
                         </Text>
                       </View>
                     </View>
