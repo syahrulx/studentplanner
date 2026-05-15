@@ -392,6 +392,7 @@ export default function ServicesBoard() {
       ])
         .then(([mine, taken]) => {
           const isActionable = (s: any) => {
+            if (s.service_status === 'completed' || s.service_status === 'cancelled') return false;
             if (s.user_offer_status) {
               return s.user_offer_status === 'accepted' || s.user_offer_status === 'submitted';
             }

@@ -348,6 +348,7 @@ export default function CommunityMap() {
     locationVisibility,
     setLocationVisibility,
     friendSnaps,
+    friendStreaks,
   } = useCommunity();
 
   // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
@@ -986,8 +987,12 @@ export default function CommunityMap() {
                   </Pressable>
                   <View style={styles.snapPreviewMeta}>
                     <View style={[styles.snapPreviewPill, { backgroundColor: theme.primary + '18' }]}>
-                      <Feather name="zap" size={12} color={theme.primary} />
-                      <Text style={[styles.snapPreviewPillText, { color: theme.primary }]}>Streak snap</Text>
+                      <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
+                      <Text style={[styles.snapPreviewPillText, { color: theme.primary, fontWeight: '800' }]}>
+                        {(friendStreaks.get(selectedFriend.id)?.currentStreak ?? 0) > 0 
+                          ? `${friendStreaks.get(selectedFriend.id)?.currentStreak} DAY STREAK`
+                          : 'DAILY SNAP'}
+                      </Text>
                     </View>
                     <Text style={[styles.snapPreviewTitle, { color: theme.text }]} numberOfLines={1}>
                       Latest from {selectedFriend.name}
@@ -1005,7 +1010,7 @@ export default function CommunityMap() {
                       accessibilityLabel={`Open ${selectedFriend.name}'s snap full screen`}
                       style={({ pressed }) => [
                         styles.snapPreviewFullBtn,
-                        { backgroundColor: theme.background, borderColor: theme.border },
+                        { backgroundColor: theme.card, borderColor: theme.border },
                         pressed && { opacity: 0.72 },
                       ]}
                       onPress={() => {
@@ -1014,6 +1019,7 @@ export default function CommunityMap() {
                       }}
                     >
                       <Feather name="maximize-2" size={14} color={theme.primary} />
+                      <Text style={[styles.snapPreviewFullBtnText, { color: theme.primary }]}>View Full</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -2467,12 +2473,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     bottom: 0,
-    width: 36,
+    paddingHorizontal: 12,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  snapPreviewFullBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   friendPopupProfileLink: {
     fontSize: 13,

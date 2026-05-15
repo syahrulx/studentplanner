@@ -118,6 +118,8 @@ interface CommunityState {
   // Study Snap
   /** Map of userId → their latest active snap (for map avatar swap). */
   friendSnaps: Map<string, StudySnap>;
+  /** Map of userId → their current streak. */
+  friendStreaks: Map<string, SnapStreak>;
   myStreak: SnapStreak | null;
   refreshFriendSnaps: () => Promise<void>;
   refreshMyStreak: () => Promise<void>;
@@ -180,6 +182,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   // Study Snap
   const [friendSnaps, setFriendSnaps] = useState<Map<string, StudySnap>>(new Map());
+  const [friendStreaks, setFriendStreaks] = useState<Map<string, SnapStreak>>(new Map());
   const [myStreak, setMyStreak] = useState<SnapStreak | null>(null);
 
   // Filtered friends based on selected circle
@@ -319,8 +322,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     try {
       const friendIds = friendsRef.current.map(f => f.id);
       const allIds = [userId, ...friendIds];
-      const snapMap = await snapApi.getLatestSnapForUsers(allIds);
+      const [snapMap, streakMap] = await Promise.all([
+        snapApi.getLatestSnapForUsers(allIds),
+        snapApi.getStreaksForUsers(allIds),
+      ]);
       setFriendSnaps(snapMap);
+      setFriendStreaks(streakMap);
     } catch (e) {
       // Ignore — table may not exist yet
     }
@@ -1032,6 +1039,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     },
     refreshAll,
     friendSnaps,
+    friendStreaks,
     myStreak,
     refreshFriendSnaps,
     refreshMyStreak,

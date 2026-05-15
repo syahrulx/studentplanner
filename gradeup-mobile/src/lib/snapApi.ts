@@ -372,6 +372,27 @@ export async function getMyStreak(userId: string): Promise<SnapStreak> {
   return rowToStreak(data);
 }
 
+/** Batch-fetch streaks for multiple users. */
+export async function getStreaksForUsers(userIds: string[]): Promise<Map<string, SnapStreak>> {
+  if (userIds.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from('snap_streaks')
+    .select('*')
+    .in('user_id', userIds);
+
+  if (error) {
+    console.warn('[snapApi] getStreaksForUsers error:', error);
+    return new Map();
+  }
+
+  const result = new Map<string, SnapStreak>();
+  for (const row of data || []) {
+    result.set(String(row.user_id), rowToStreak(row));
+  }
+  return result;
+}
+
 /**
  * Update streak when a snap is posted.
  * Called internally by postSnap().
