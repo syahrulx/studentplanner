@@ -28,8 +28,9 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
 import { isTaskPastDueNow } from '@/src/utils/date';
-import { rescheduleAllTaskNotifications } from '@/src/notificationManager';
-import { rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
+import { cancelAllTaskNotifications, rescheduleAllTaskNotifications } from '@/src/notificationManager';
+import { cancelAllAttendanceNotifications, rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
+import { cancelAllRevisionNotifications } from '@/src/revisionNotifications';
 import {
   openPrivacyPolicy,
   openTermsOfUse,
@@ -222,6 +223,9 @@ export default function Settings() {
               const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
               await disconnectClassroom().catch(() => {});
             } catch {}
+            await cancelAllTaskNotifications().catch(() => {});
+            await cancelAllRevisionNotifications().catch(() => {});
+            await cancelAllAttendanceNotifications().catch(() => {});
             await clearAllProfileSetupSkipFlags();
             await supabase.auth.signOut();
             router.replace('/(auth)/login' as any);
@@ -272,6 +276,9 @@ export default function Settings() {
           const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
           await disconnectClassroom().catch(() => {});
         } catch {}
+        await cancelAllTaskNotifications().catch(() => {});
+        await cancelAllRevisionNotifications().catch(() => {});
+        await cancelAllAttendanceNotifications().catch(() => {});
         await clearAllProfileSetupSkipFlags();
         await supabase.auth.signOut().catch(() => {});
         router.replace('/(auth)/login' as any);

@@ -917,6 +917,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         Alert.alert(tr('commSharedLinkRemoveFailTitle'), tr('commTryAgainShort'));
         return false;
       }
+      const link = acceptedSharedTasks.find((st) => st.id === sharedTaskId);
+      if (link?.task_id) {
+        try {
+          const { cancelTaskNotifications } = require('../notificationManager');
+          await cancelTaskNotifications(link.task_id);
+        } catch {}
+      }
+
       setAcceptedSharedTasks((prev) => prev.filter((st) => st.id !== sharedTaskId));
       setIncomingSharedTasks((prev) => prev.filter((st) => st.id !== sharedTaskId));
       await refreshSharedTasks();

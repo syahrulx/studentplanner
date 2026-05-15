@@ -1157,7 +1157,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await studyTimeDb.deleteStudySetting(uid, id);
     const list = await studyTimeDb.getAllStudySettings(uid);
     setRevisionSettingsList(list);
-    setRevisionState(list.length > 0 ? list[0] : defaultRevision);
+    if (list.length > 0) {
+      setRevisionState(list[0]);
+      if (list[0].enabled) {
+        await scheduleRevisionNotification(list[0]);
+      } else {
+        await cancelAllRevisionNotifications();
+      }
+    } else {
+      setRevisionState(defaultRevision);
+      await cancelAllRevisionNotifications();
+    }
   }, []);
 
   const markStudyDone = useCallback((key: string) => {
@@ -1559,6 +1569,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (next.length !== prev.length) persistPinnedTaskIds(next);
       return next;
     });
+
+    // If it's a Google Classroom task, dismiss it in prefs so auto-sync doesn't re-add it
+    if (taskId.startsWith('gc-')) {
+      const workId = taskId.slice(3);
+      (async () => {
+        try {
+          const { getClassroomPrefs, setClassroomPrefs } = require('../storage');
+          const prefs = await getClassroomPrefs();
+          if (prefs) {
+            const dismissed = prefs.dismissedNewTaskIds || [];
+            if (!dismissed.includes(workId)) {
+              await setClassroomPrefs({
+                ...prefs,
+                dismissedNewTaskIds: [...dismissed, workId],
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('[AppContext] Failed to dismiss deleted GC task:', e);
+        }
+      })();
+    }
+
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;

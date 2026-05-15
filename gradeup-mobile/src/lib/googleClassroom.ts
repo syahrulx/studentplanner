@@ -514,6 +514,7 @@ export async function syncSelectedCourses(
   const includeMaterials = Boolean(prefsMeta?.includeClassroomMaterials);
   const courseMapping = prefsMeta?.courseMapping ?? {};
 
+  const dismissed = new Set(prefsMeta?.dismissedNewTaskIds ?? []);
   const taskIdFilter = selectedTaskIds ? new Set(selectedTaskIds) : null;
 
   const existingTasks = await fetchExistingGcTasks(user.id);
@@ -545,6 +546,7 @@ export async function syncSelectedCourses(
       const work = await fetchCourseWork(token, course.id);
       for (const w of work) {
         if (taskIdFilter && !taskIdFilter.has(w.id)) continue;
+        if (dismissed.has(w.id)) continue;
 
         const task = buildTask(w, course.name, existingTasks, semesterStart, includeMaterials, mappedId);
         if (!task) continue;

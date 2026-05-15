@@ -144,6 +144,7 @@ function StableMarker({
   isFaded,
   snapImageUrl,
   customEmoji,
+  snapStreakCount,
 }: {
   id: string;
   coordinate: { latitude: number; longitude: number };
@@ -161,6 +162,7 @@ function StableMarker({
   isFaded?: boolean;
   snapImageUrl?: string;
   customEmoji?: string;
+  snapStreakCount?: number;
 }) {
   const theme = useTheme();
 
@@ -181,14 +183,29 @@ function StableMarker({
     ? (artistLabel ? `${songLabel} — ${artistLabel}` : songLabel)
     : '';
 
+  // Snap = 1.5× bigger marker (actual dimensions, not CSS transform — Mapbox clips transforms)
+  const hasSnap = !!snapImageUrl;
+  const avatarSize = hasSnap ? 63 : 42;
+  const avatarRadius = avatarSize / 2;
+  const ringPadding = hasSnap ? 3 : 2;
+  const ringBorder = hasSnap ? 4 : 3;
+  const ringRadius = hasSnap ? 36 : 24;
+  const pinLeft = hasSnap ? 12 : 8;
+  const pinRight = hasSnap ? 12 : 8;
+  const pinTop = hasSnap ? 16 : 12;
+  const statusCloudSize = hasSnap ? 22 : 18;
+  const badgeSize = hasSnap ? 24 : 19;
+  const badgeIconSize = hasSnap ? 12 : 10;
+  const streakBadgeSize = hasSnap ? 28 : 22;
+
   if (!Mapbox) return null;
   const MB = Mapbox as any;
   return (
     <MB.MarkerView
-      id={id}
-      key={`${id}-${snapImageUrl ? 'snap' : 'avatar'}`}
+      id={`${id}-${hasSnap ? 's' : 'n'}-${showSong ? 'y' : 'n'}`}
+      key={`${id}-${hasSnap}-${showSong}-v101`}
       coordinate={[coordinate.longitude, coordinate.latitude]}
-      anchor={anchor}
+      anchor={{ x: 0.5, y: 0.77 }} // Fixed anchor for the 180px container
       allowOverlap={true}
       allowOverlapWithPuck={true}
       style={{ zIndex: isSelected ? 999 : isFaded ? 1 : 10 }}
@@ -198,55 +215,91 @@ function StableMarker({
         style={[
           styles.markerWrapper, 
           isFaded && { opacity: 0.2 },
-          isSelected && { transform: [{ scale: 1.12 }] }
+          isSelected && { transform: [{ scale: 1.12 }] },
         ]} 
         hitSlop={10}
         disabled={isFaded}
       >
-        <View style={styles.markerInner}>
-          {/* Song strip */}
-          {showSong && (
+        <View style={{ width: 200, height: 180, alignItems: 'center', overflow: 'visible' }}>
+          
+          {/* Layer 1: The Marker (Avatar + Pin) - Positioned so pin tip is at y=140 */}
+          <View style={{ position: 'absolute', top: 50, alignItems: 'center', zIndex: 1 }}>
+            {/* Status cloud */}
+            {showStatus && (
+              <View style={[
+                styles.statusCloud, isMe && styles.statusCloudMe,
+                hasSnap && { top: 30, left: -28, padding: 8, borderRadius: 20 },
+              ]}>
+                {activityType === 'custom' && customEmoji ? (
+                  <Text style={{ fontSize: hasSnap ? 22 : 16 }}>{customEmoji}</Text>
+                ) : (
+                  <Feather name={statusIcon} size={statusCloudSize} color="#1e293b" />
+                )}
+              </View>
+            )}
+
             <View style={[
-              styles.songStrip,
-              { backgroundColor: theme.card, borderColor: theme.border },
+              styles.avatarRing,
+              { padding: ringPadding, borderRadius: ringRadius, borderWidth: ringBorder },
+              hasSnap && { borderColor: '#ff6b00' },
             ]}>
+              {snapImageUrl ? (
+                <Image
+                  source={{ uri: snapImageUrl }}
+                  style={{ width: avatarSize, height: avatarSize, borderRadius: avatarRadius }}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <Avatar name={name} avatarUrl={avatarUrl} size={avatarSize} />
+              )}
+            </View>
+
+            {snapImageUrl ? (
+              <View style={[
+                styles.snapMarkerBadge,
+                { width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 },
+                hasSnap && { right: -6, bottom: 14 },
+              ]}>
+                <Feather name="camera" size={badgeIconSize} color="#fff" />
+              </View>
+            ) : null}
+
+            <View style={[
+              styles.pinTriangle,
+              hasSnap && {
+                borderLeftWidth: pinLeft,
+                borderRightWidth: pinRight,
+                borderTopWidth: pinTop,
+                marginTop: -5,
+              },
+            ]} />
+          </View>
+
+          {/* Layer 2: The Song Strip - Absolutely positioned to avoid overlap bugs */}
+          {showSong && (
+            <View 
+              style={[
+                styles.songStrip,
+                { 
+                  position: 'absolute',
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                  zIndex: 9999,
+                  // If snap, place way below pin. If normal, place way above avatar.
+                  ...(hasSnap 
+                    ? { top: 145 } 
+                    : { top: 15 }
+                  )
+                }
+              ]}
+            >
               <Feather name="music" size={11} color={theme.primary} />
               <Text style={[styles.songStripText, { color: theme.text }]}>
                 {songDisplayText}
               </Text>
             </View>
           )}
-          {/* Status cloud */}
-          {showStatus && (
-            <View style={[
-              styles.statusCloud, isMe && styles.statusCloudMe,
-            ]}>
-              {activityType === 'custom' && customEmoji ? (
-                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
-              ) : (
-                <Feather name={statusIcon} size={18} color="#1e293b" />
-              )}
-            </View>
-          )}
-          {/* Avatar — swapped with snap photo when available */}
-          <View style={styles.avatarRing}>
-            {snapImageUrl ? (
-              <Image
-                source={{ uri: snapImageUrl }}
-                style={{ width: 42, height: 42, borderRadius: 21 }}
-                contentFit="cover"
-                transition={200}
-              />
-            ) : (
-              <Avatar name={name} avatarUrl={avatarUrl} size={42} />
-            )}
-          </View>
-          {snapImageUrl ? (
-            <View style={styles.snapMarkerBadge}>
-              <Feather name="camera" size={10} color="#fff" />
-            </View>
-          ) : null}
-          <View style={styles.pinTriangle} />
         </View>
       </Pressable>
     </MB.MarkerView>
@@ -349,6 +402,7 @@ export default function CommunityMap() {
     setLocationVisibility,
     friendSnaps,
     friendStreaks,
+    myStreak,
   } = useCommunity();
 
   // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
@@ -368,6 +422,7 @@ export default function CommunityMap() {
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [showMySnap, setShowMySnap] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const [refreshingCommunity, setRefreshingCommunity] = useState(false);
   const [unreadDmCount, setUnreadDmCount] = useState(0);
@@ -740,7 +795,14 @@ export default function CommunityMap() {
                 id="me"
                 coordinate={{ latitude: myLatitude as number, longitude: myLongitude as number }}
                 anchor={{ x: 0.5, y: 1 }}
-                onPress={() => setShowStatusPopup(true)}
+                onPress={() => {
+                  const mySnap = friendSnaps.get(user.id!);
+                  if (mySnap) {
+                    setShowMySnap(true);
+                  } else {
+                    setShowStatusPopup(true);
+                  }
+                }}
                 name={user.name}
                 avatarUrl={user.avatar || (user as any).avatar_url}
                 activityType={myActivity?.activity_type}
@@ -779,6 +841,7 @@ export default function CommunityMap() {
                   isFaded={!!selectedFriend && selectedFriend.id !== friend.id}
                   snapImageUrl={friendSnaps.get(friend.id)?.imageUrl}
                   customEmoji={friend.activity?.custom_status_emoji}
+                  snapStreakCount={friendStreaks.get(friend.id)?.currentStreak ?? 0}
                 />
               ))}
 
@@ -1453,6 +1516,130 @@ export default function CommunityMap() {
           </View>
         ) : null}
       </View>
+
+      {/* ─── MY OWN SNAP PREVIEW ─── */}
+      {showMySnap && friendSnaps.has(user.id!) && (() => {
+        const mySnap = friendSnaps.get(user.id!)!;
+        return (
+          <View style={[styles.friendInfoCard, { backgroundColor: theme.card }]}>
+            <Pressable
+              style={styles.friendInfoCardClose}
+              onPress={() => setShowMySnap(false)}
+              hitSlop={10}
+            >
+              <Feather name="x" size={20} color={theme.textSecondary} />
+            </Pressable>
+            <View style={styles.snapPreviewDock}>
+              <Pressable
+                accessibilityRole="imagebutton"
+                accessibilityLabel="Open your snap"
+                style={({ pressed }) => [
+                  styles.snapPreviewPhone,
+                  { borderColor: theme.border },
+                  pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                ]}
+                onPress={() => {
+                  setShowMySnap(false);
+                  router.push({ pathname: '/snap-viewer', params: { snapId: mySnap.id } } as any);
+                }}
+              >
+                <Image
+                  source={{ uri: mySnap.imageUrl }}
+                  style={styles.snapPreviewImage}
+                  contentFit="cover"
+                  transition={180}
+                />
+                <View style={styles.snapPreviewExpand}>
+                  <Feather name="maximize-2" size={13} color="#fff" />
+                </View>
+                <View style={styles.snapPreviewOverlay}>
+                  <Feather name="camera" size={12} color="#fff" />
+                  <Text style={styles.snapPreviewLabel}>My Snap</Text>
+                </View>
+              </Pressable>
+              <View style={styles.snapPreviewMeta}>
+                <View style={[styles.snapPreviewPill, { backgroundColor: theme.primary + '18' }]}>
+                  <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
+                  <Text style={[styles.snapPreviewPillText, { color: theme.primary, fontWeight: '800' }]}>
+                    {(myStreak?.currentStreak ?? 0) > 0
+                      ? `${myStreak!.currentStreak} DAY STREAK`
+                      : 'MY SNAP'}
+                  </Text>
+                </View>
+                <Text style={[styles.snapPreviewTitle, { color: theme.text }]} numberOfLines={1}>
+                  Your latest snap
+                </Text>
+                <Text style={[styles.snapPreviewTime, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {timeAgo(mySnap.createdAt)}
+                </Text>
+                {mySnap.caption ? (
+                  <Text style={[styles.snapPreviewCaption, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {mySnap.caption}
+                  </Text>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open your snap full screen"
+                    style={({ pressed }) => [
+                      {
+                        position: 'relative',
+                        flex: 1,
+                        paddingHorizontal: 12,
+                        height: 36,
+                        borderRadius: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: StyleSheet.hairlineWidth,
+                        flexDirection: 'row',
+                        gap: 6,
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                    onPress={() => {
+                      setShowMySnap(false);
+                      router.push({ pathname: '/snap-viewer', params: { snapId: mySnap.id } } as any);
+                    }}
+                  >
+                    <Feather name="maximize-2" size={14} color={theme.primary} />
+                    <Text style={[styles.snapPreviewFullBtnText, { color: theme.primary }]}>View Full</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Set your status"
+                    style={({ pressed }) => [
+                      {
+                        position: 'relative',
+                        flex: 1,
+                        paddingHorizontal: 12,
+                        height: 36,
+                        borderRadius: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: StyleSheet.hairlineWidth,
+                        flexDirection: 'row',
+                        gap: 6,
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                    onPress={() => {
+                      setShowMySnap(false);
+                      setShowStatusPopup(true);
+                    }}
+                  >
+                    <Feather name="edit-2" size={14} color={theme.textSecondary} />
+                    <Text style={[styles.snapPreviewFullBtnText, { color: theme.textSecondary }]}>Set Status</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* ─── SET STATUS POPUP ─── */}
       <StatusPopup
@@ -2316,6 +2503,28 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 15,
   },
+  friendInfoCard: {
+    position: 'absolute',
+    bottom: SCREEN_HEIGHT * 0.42 + 16,
+    left: 16,
+    right: 16,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    zIndex: 15,
+  },
+  friendInfoCardClose: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 2,
+  },
+
   friendPopupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2535,10 +2744,10 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     // Glassmorphism effect
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   songStripText: {
     fontSize: 10,
@@ -2550,14 +2759,8 @@ const styles = StyleSheet.create({
     padding: 2,
     backgroundColor: '#fff',
     borderRadius: 24,
-    // Deep layered shadow for 3D depth
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-    zIndex: 2,
     borderWidth: 3,
+    borderColor: '#fff',
   },
   snapMarkerBadge: {
     position: 'absolute',
@@ -2572,6 +2775,24 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#fff',
     zIndex: 4,
+  },
+  streakMarkerBadge: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff6b00',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    zIndex: 5,
+  },
+  streakMarkerBadgeText: {
+    fontSize: 11,
+    lineHeight: 14,
   },
 
 
