@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventsBoard from '@/components/EventsBoard';
 import ServicesBoard from '@/components/ServicesBoard';
+import { Image } from 'expo-image';
 import {
   View,
   Text,
@@ -12,7 +13,6 @@ import {
   StyleSheet,
   Platform,
   Dimensions,
-  Image,
   ActivityIndicator,
   Modal,
   Alert,
@@ -73,6 +73,8 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 const COMMUNITY_REFRESH_MIN_MS = 1200;
+const SNAP_PREVIEW_WIDTH = Math.min(112, Math.max(96, SCREEN_WIDTH * 0.29));
+const SNAP_PREVIEW_HEIGHT = SNAP_PREVIEW_WIDTH * 1.38;
 
 // Mapbox components are imported at the top of the file.
 
@@ -232,11 +234,18 @@ function StableMarker({
               <Image
                 source={{ uri: snapImageUrl }}
                 style={{ width: 42, height: 42, borderRadius: 21 }}
+                contentFit="cover"
+                transition={200}
               />
             ) : (
               <Avatar name={name} avatarUrl={avatarUrl} size={42} />
             )}
           </View>
+          {snapImageUrl ? (
+            <View style={styles.snapMarkerBadge}>
+              <Feather name="camera" size={10} color="#fff" />
+            </View>
+          ) : null}
           <View style={styles.pinTriangle} />
         </View>
       </Pressable>
@@ -732,7 +741,7 @@ export default function CommunityMap() {
                 anchor={{ x: 0.5, y: 1 }}
                 onPress={() => setShowStatusPopup(true)}
                 name={user.name}
-                avatarUrl={user.avatar}
+                avatarUrl={user.avatar || (user as any).avatar_url}
                 activityType={myActivity?.activity_type}
                 isMe={true}
                 isFocusing={myActivity?.activity_type === 'studying'}
@@ -943,32 +952,71 @@ export default function CommunityMap() {
               </View>
             )}
 
-            {/* Snap Preview — tappable to open full viewer */}
+            {/* Snap Preview - compact phone card with full viewer affordance */}
             {friendSnaps.has(selectedFriend.id) && (() => {
               const friendSnap = friendSnaps.get(selectedFriend.id)!;
               return (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.snapPreviewCard,
-                    { borderColor: theme.border },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
-                  ]}
-                  onPress={() => {
-                    setSelectedFriend(null);
-                    router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
-                  }}
-                >
-                  <Image
-                    source={{ uri: friendSnap.imageUrl }}
-                    style={styles.snapPreviewImage}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.snapPreviewOverlay}>
-                    <Feather name="camera" size={14} color="#fff" />
-                    <Text style={styles.snapPreviewLabel}>View Snap</Text>
-                    <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.8)" />
+                <View style={styles.snapPreviewDock}>
+                  <Pressable
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`Open ${selectedFriend.name}'s snap`}
+                    style={({ pressed }) => [
+                      styles.snapPreviewPhone,
+                      { borderColor: theme.border },
+                      pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                    ]}
+                    onPress={() => {
+                      setSelectedFriend(null);
+                      router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: friendSnap.imageUrl }}
+                      style={styles.snapPreviewImage}
+                      contentFit="cover"
+                      transition={180}
+                    />
+                    <View style={styles.snapPreviewExpand}>
+                      <Feather name="maximize-2" size={13} color="#fff" />
+                    </View>
+                    <View style={styles.snapPreviewOverlay}>
+                      <Feather name="camera" size={12} color="#fff" />
+                      <Text style={styles.snapPreviewLabel}>Snap</Text>
+                    </View>
+                  </Pressable>
+                  <View style={styles.snapPreviewMeta}>
+                    <View style={[styles.snapPreviewPill, { backgroundColor: theme.primary + '18' }]}>
+                      <Feather name="zap" size={12} color={theme.primary} />
+                      <Text style={[styles.snapPreviewPillText, { color: theme.primary }]}>Streak snap</Text>
+                    </View>
+                    <Text style={[styles.snapPreviewTitle, { color: theme.text }]} numberOfLines={1}>
+                      Latest from {selectedFriend.name}
+                    </Text>
+                    <Text style={[styles.snapPreviewTime, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {timeAgo(friendSnap.createdAt)}
+                    </Text>
+                    {friendSnap.caption ? (
+                      <Text style={[styles.snapPreviewCaption, { color: theme.textSecondary }]} numberOfLines={2}>
+                        {friendSnap.caption}
+                      </Text>
+                    ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${selectedFriend.name}'s snap full screen`}
+                      style={({ pressed }) => [
+                        styles.snapPreviewFullBtn,
+                        { backgroundColor: theme.background, borderColor: theme.border },
+                        pressed && { opacity: 0.72 },
+                      ]}
+                      onPress={() => {
+                        setSelectedFriend(null);
+                        router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
+                      }}
+                    >
+                      <Feather name="maximize-2" size={14} color={theme.primary} />
+                    </Pressable>
                   </View>
-                </Pressable>
+                </View>
               );
             })()}
 
@@ -2328,36 +2376,103 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   friendPopupActions: { marginTop: 8 },
-  snapPreviewCard: {
+  snapPreviewDock: {
     marginTop: 10,
-    borderRadius: 14,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  snapPreviewPhone: {
+    width: SNAP_PREVIEW_WIDTH,
+    height: SNAP_PREVIEW_HEIGHT,
+    borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
+    backgroundColor: '#0f172a',
   },
   snapPreviewImage: {
     width: '100%',
-    height: 140,
+    height: '100%',
+  },
+  snapPreviewExpand: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
     borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   snapPreviewOverlay: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    left: 8,
+    right: 8,
+    bottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.52)',
   },
   snapPreviewLabel: {
     flex: 1,
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  snapPreviewMeta: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 4,
+    paddingRight: 44,
+  },
+  snapPreviewPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 9,
+  },
+  snapPreviewPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  snapPreviewTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  snapPreviewTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  snapPreviewCaption: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    marginTop: 10,
+  },
+  snapPreviewFullBtn: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   friendPopupProfileLink: {
     fontSize: 13,
@@ -2431,6 +2546,20 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 2,
     borderWidth: 3,
+  },
+  snapMarkerBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: 9,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    zIndex: 4,
   },
 
 

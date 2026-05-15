@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
+import { Image } from 'expo-image';
 
 // Trigger
 export function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUrl?: string; size?: number }) {
@@ -11,6 +12,8 @@ export function Avatar({ name, avatarUrl, size = 44 }: { name?: string; avatarUr
       <Image
         source={{ uri: avatarUrl }}
         style={{ width: size, height: size, borderRadius: size / 2 }}
+        contentFit="cover"
+        transition={200}
       />
     );
   }
