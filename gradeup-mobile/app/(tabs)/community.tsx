@@ -374,6 +374,7 @@ export default function CommunityMap() {
     filteredFriends,
     circles,
     communityBadgeCount,
+    unreadDmCount,
     myLatitude,
     myLongitude,
     myActivity,
@@ -421,78 +422,7 @@ export default function CommunityMap() {
   const [showMySnap, setShowMySnap] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const [refreshingCommunity, setRefreshingCommunity] = useState(false);
-  const [unreadDmCount, setUnreadDmCount] = useState(0);
   const cameraRef = useRef<any>(null);
-
-  // Fetch DM unread count
-  useEffect(() => {
-    if (!user.id || (user as any).subscriptionPlan !== 'pro') return;
-    getTotalUnreadDmCount(user.id).then(setUnreadDmCount).catch(() => {});
-  }, [user.id, (user as any).subscriptionPlan]);
-
-  // Realtime DM notification listener
-  useEffect(() => {
-    const myId = user.id;
-    if (!myId || (user as any).subscriptionPlan !== 'pro') return;
-
-    const channel = supabase
-      .channel('dm-notification-badge')
-      .on(
-        'postgres_changes' as any,
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'dm_messages',
-        },
-        async (payload: any) => {
-          const msg = payload.new;
-          if (!msg || msg.sender_id === myId) return;
-
-          // Check if this message is in a conversation belonging to this user
-          const { data: convo } = await supabase
-            .from('dm_conversations')
-            .select('user_a, user_b')
-            .eq('id', msg.conversation_id)
-            .maybeSingle();
-
-          if (!convo) return;
-          if (convo.user_a !== myId && convo.user_b !== myId) return;
-
-          // Update badge
-          setUnreadDmCount((prev) => prev + 1);
-
-          // Send push notification
-          try {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('name')
-              .eq('id', msg.sender_id)
-              .maybeSingle();
-            const senderName = profile?.name ?? 'Someone';
-            const body = msg.message_type === 'flashcard_share'
-              ? `${senderName} shared flashcards with you`
-              : msg.message_type === 'quiz_share'
-                ? `${senderName} wants to play a quiz with you`
-                : `${senderName}: ${(msg.content || '').slice(0, 80)}`;
-
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: 'New Message',
-                body,
-                data: { type: 'dm_message', conversationId: msg.conversation_id },
-                sound: true,
-              },
-              trigger: null,
-            });
-          } catch (e) {
-            if (__DEV__) console.warn('[DM] notification error:', e);
-          }
-        },
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [user.id, (user as any).subscriptionPlan]);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
 
