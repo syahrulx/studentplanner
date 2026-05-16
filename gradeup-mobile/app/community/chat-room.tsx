@@ -94,7 +94,7 @@ export default function ChatRoomScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { user, notes, flashcards, setNotes, setFlashcards } = useApp();
-  const { userId: communityUserId, refreshFriends, sendReaction } = useCommunity();
+  const { userId: communityUserId, refreshFriends, sendReaction, refreshUnreadDmCount } = useCommunity();
   const { createQuiz } = useQuiz();
   const params = useLocalSearchParams<{
     conversationId: string;
@@ -170,7 +170,9 @@ export default function ChatRoomScreen() {
       setMessages(msgs);
       // Mark as read
       if (userId) {
-        dmApi.markMessagesRead(conversationId, userId).catch(() => {});
+        dmApi.markMessagesRead(conversationId, userId)
+          .then(() => refreshUnreadDmCount())
+          .catch(() => {});
       }
     } catch (e: any) {
       if (__DEV__) console.warn('[ChatRoom] load error:', e);
@@ -194,7 +196,9 @@ export default function ChatRoomScreen() {
       });
       // Mark as read if from friend
       if (msg.sender_id !== userId && userId) {
-        dmApi.markMessagesRead(conversationId, userId).catch(() => {});
+        dmApi.markMessagesRead(conversationId, userId)
+          .then(() => refreshUnreadDmCount())
+          .catch(() => {});
       }
     });
     return unsub;
@@ -431,6 +435,48 @@ export default function ChatRoomScreen() {
         },
       ],
     );
+  };
+
+  // Report user
+  const handleReportChat = () => {
+    setShowMenu(false);
+    Alert.alert(
+      'Report User',
+      'Select a reason for reporting this user. Abusing reports may lead to your own account being restricted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Harassment',
+          onPress: () => submitReport('Harassment'),
+        },
+        {
+          text: 'Inappropriate Content',
+          onPress: () => submitReport('Inappropriate Content'),
+        },
+        {
+          text: 'Spam',
+          onPress: () => submitReport('Spam'),
+        },
+      ]
+    );
+  };
+
+  const submitReport = async (reason: string) => {
+    try {
+      if (communityUserId && friendId) {
+        await communityApi.reportUser({
+          reporterId: communityUserId,
+          reportedUserId: friendId,
+          reason,
+          details: `Reported from chat room. Conversation ID: ${conversationId}`,
+          context: 'other',
+          contextRef: conversationId,
+        });
+        Alert.alert('Report Submitted', 'Thank you for helping keep our community safe. Our team will review this report.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not submit report');
+    }
   };
 
   // Load quizzes when picker opens
@@ -738,6 +784,13 @@ export default function ChatRoomScreen() {
               <Text style={[styles.dropdownItemText, { color: '#ef4444' }]}>Block User</Text>
             </Pressable>
           )}
+          <Pressable
+            style={({ pressed }) => [styles.dropdownItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={handleReportChat}
+          >
+            <Feather name="flag" size={16} color={theme.textSecondary} />
+            <Text style={[styles.dropdownItemText, { color: theme.textSecondary }]}>Report Chat</Text>
+          </Pressable>
         </View>
       )}
 
