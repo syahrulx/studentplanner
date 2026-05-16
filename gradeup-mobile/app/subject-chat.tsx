@@ -497,16 +497,17 @@ STUDENT NOTES CONTENT:
           )}
         </ScrollView>
 
-        <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
-          {/* Image preview */}
-          {pendingImageUri ? (
+        {pendingImageUri ? (
+          <View style={{ backgroundColor: theme.card, borderTopColor: theme.border, borderTopWidth: 1, padding: 16, paddingBottom: 0, flexDirection: 'row' }}>
             <View style={s.imagePreviewWrap}>
               <Image source={{ uri: pendingImageUri }} style={s.imagePreviewThumb} resizeMode="cover" />
-              <Pressable onPress={clearPendingImage} style={[s.imagePreviewRemove, { backgroundColor: theme.text }]}>
+              <Pressable onPress={clearPendingImage} style={[s.imagePreviewRemove, { backgroundColor: theme.text, zIndex: 10 }]}>
                 <Feather name="x" size={12} color={theme.background} />
               </Pressable>
             </View>
-          ) : null}
+          </View>
+        ) : null}
+        <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.card, borderTopWidth: pendingImageUri ? 0 : 1 }]}>
           <Pressable
             onPress={showImagePickerOptions}
             style={[s.attachBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
@@ -646,11 +647,9 @@ const s = StyleSheet.create({
   
   inputRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 32 : 16,
     gap: 10,
-    borderTopWidth: 1,
     alignItems: 'center',
   },
   input: {
@@ -693,19 +692,21 @@ const s = StyleSheet.create({
   },
   imagePreviewWrap: {
     position: 'relative',
+    width: 64,
+    height: 64,
   },
   imagePreviewThumb: {
-    width: 48,
-    height: 48,
+    width: 64,
+    height: 64,
     borderRadius: 12,
   },
   imagePreviewRemove: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
