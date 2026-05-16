@@ -685,8 +685,8 @@ const s = StyleSheet.create({
 
   // Image attachment styles
   bubbleImage: {
-    width: '100%',
-    height: 200,
+    width: 240,
+    height: 240,
     borderRadius: 12,
     marginBottom: 4,
   },
