@@ -269,20 +269,11 @@ export async function markMessagesRead(conversationId: string, userId: string): 
 /** Get total unread DM messages count across all conversations for a user. */
 export async function getTotalUnreadDmCount(userId: string): Promise<number> {
   try {
-    // Get all conversation IDs for this user
-    const { data: convos } = await supabase
-      .from('dm_conversations')
-      .select('id')
-      .or(`user_a.eq.${userId},user_b.eq.${userId}`);
-
-    if (!convos?.length) return 0;
-
-    const convoIds = convos.map((c) => c.id);
-
+    // RLS already restricts select to messages in conversations the user belongs to.
+    // If the user is NOT the sender and it's unread, it's an unread message for them.
     const { count, error } = await supabase
       .from('dm_messages')
       .select('*', { count: 'exact', head: true })
-      .in('conversation_id', convoIds)
       .neq('sender_id', userId)
       .eq('read_by_recipient', false);
 

@@ -591,10 +591,10 @@ export default function CommunityMap() {
             accessibilityLabel="Notifications"
           >
             <Feather name="bell" size={22} color={theme.text} />
-            {communityBadgeCount > 0 ? (
+            {communityBadgeCount - unreadDmCount > 0 ? (
               <View style={[styles.notifBadge, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }]}>
                 <Text style={[styles.notifBadgeText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
-                  {communityBadgeCount > 9 ? '9+' : String(communityBadgeCount)}
+                  {communityBadgeCount - unreadDmCount > 9 ? '9+' : String(communityBadgeCount - unreadDmCount)}
                 </Text>
               </View>
             ) : null}

@@ -201,6 +201,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const communityBadgeCount = useMemo(() => {
     const pendingShares = incomingSharedTasks.filter((s) => s.status === 'pending').length;
+    // Include unreadDmCount back into the global badge so the bottom tab reflects new messages
     return unreadReactionCount + unreadDmCount + pendingShares + incomingRequests.length;
   }, [unreadReactionCount, unreadDmCount, incomingSharedTasks, incomingRequests]);
 
@@ -405,6 +406,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshCircles,
     refreshRequests,
     refreshUnreadCount,
+    refreshUnreadDmCount,
     refreshMyActivity,
     refreshSharedGoals,
     refreshSharedTasks,
@@ -591,16 +593,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           const msg = payload.new;
           if (!msg || msg.sender_id === userId) return;
 
-          // Check if this message is in a conversation belonging to this user
-          const { data: convo } = await supabase
-            .from('dm_conversations')
-            .select('user_a, user_b')
-            .eq('id', msg.conversation_id)
-            .maybeSingle();
-
-          if (!convo) return;
-          if (convo.user_a !== userId && convo.user_b !== userId) return;
-
           // Refresh unread DM count for badge globally
           refreshUnreadDmCount();
 
@@ -631,6 +623,18 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           } catch (e) {
             if (__DEV__) console.warn('[DM] notification error:', e);
           }
+        }
+      )
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'dm_messages',
+        },
+        () => {
+          // Whenever a message is updated (e.g. marked as read), refresh the global count
+          refreshUnreadDmCount();
         }
       )
       .subscribe();

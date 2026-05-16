@@ -21,11 +21,11 @@ import { subscriptionPlanLabel } from '@/src/lib/profileDisplay';
 import type { SubscriptionPlan } from '@/src/types';
 import { useTheme } from '@/hooks/useTheme';
 
-const PRICING_PAGE_URL = 'https://aizztech.com/rencana/pricing';
+const PRICING_PAGE_URL = 'https://www.rencana.com.my/pricing';
 
 function openPricingPage() {
   void Linking.openURL(PRICING_PAGE_URL).catch(() => {
-    Alert.alert('Could not open link', 'Please visit aizztech.com/rencana/pricing in your browser.');
+    Alert.alert('Could not open link', 'Please visit www.rencana.com.my/pricing in your browser.');
   });
 }
 
@@ -100,17 +100,7 @@ export default function SubscriptionPlansScreen() {
 
   const onSelectTier = (plan: SubscriptionPlan) => {
     if (isTierLocked(plan, staff)) {
-      if (plan === 'plus') {
-        Alert.alert(
-          'Plus Plan',
-          'This plan is managed via your account settings. If you have an active subscription, your features will automatically unlock in the app.',
-        );
-        return;
-      }
-      Alert.alert(
-        'Pro Plan',
-        'Pro features are managed via your Studly account. Visit your account dashboard to manage your subscription.',
-      );
+      openPricingPage();
       return;
     }
     setSelected(plan);
