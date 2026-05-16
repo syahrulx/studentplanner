@@ -49,6 +49,13 @@ export async function clearSemesterDataFromDatabase(userId: string): Promise<voi
   await academicCalendarDb.deleteAllCalendarsForUser(userId);
   await studyTimeDb.deleteAllStudyTimesForUser(userId);
 
+  try {
+    const { cancelAllTaskNotifications } = require('../notificationManager');
+    await cancelAllTaskNotifications();
+  } catch (e) {
+    if (__DEV__) console.warn('[Rencana] Semester clear: failed to cancel notifications', e);
+  }
+
   const { error: sowErr } = await supabase.from('sow_imports').delete().eq('user_id', userId);
   if (sowErr) throw new Error(sowErr.message || 'Failed to delete SOW imports');
 

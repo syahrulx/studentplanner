@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import EventsBoard from '@/components/EventsBoard';
 import ServicesBoard from '@/components/ServicesBoard';
+import { Image } from 'expo-image';
 import {
   View,
   Text,
@@ -12,11 +13,11 @@ import {
   StyleSheet,
   Platform,
   Dimensions,
-  Image,
   ActivityIndicator,
   Modal,
   Alert,
   Linking,
+  KeyboardAvoidingView,
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -73,6 +74,8 @@ import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 const COMMUNITY_REFRESH_MIN_MS = 1200;
+const SNAP_PREVIEW_WIDTH = Math.min(112, Math.max(96, SCREEN_WIDTH * 0.29));
+const SNAP_PREVIEW_HEIGHT = SNAP_PREVIEW_WIDTH * 1.38;
 
 // Mapbox components are imported at the top of the file.
 
@@ -141,7 +144,7 @@ function StableMarker({
   isSelected,
   isFaded,
   snapImageUrl,
-  customEmoji,
+  snapStreakCount,
 }: {
   id: string;
   coordinate: { latitude: number; longitude: number };
@@ -158,7 +161,7 @@ function StableMarker({
   isSelected?: boolean;
   isFaded?: boolean;
   snapImageUrl?: string;
-  customEmoji?: string;
+  snapStreakCount?: number;
 }) {
   const theme = useTheme();
 
@@ -179,14 +182,29 @@ function StableMarker({
     ? (artistLabel ? `${songLabel} — ${artistLabel}` : songLabel)
     : '';
 
+  // Snap = 1.5× bigger marker (actual dimensions, not CSS transform — Mapbox clips transforms)
+  const hasSnap = !!snapImageUrl;
+  const avatarSize = hasSnap ? 63 : 42;
+  const avatarRadius = avatarSize / 2;
+  const ringPadding = hasSnap ? 3 : 2;
+  const ringBorder = hasSnap ? 4 : 3;
+  const ringRadius = hasSnap ? 36 : 24;
+  const pinLeft = hasSnap ? 12 : 8;
+  const pinRight = hasSnap ? 12 : 8;
+  const pinTop = hasSnap ? 16 : 12;
+  const statusCloudSize = hasSnap ? 22 : 18;
+  const badgeSize = hasSnap ? 24 : 19;
+  const badgeIconSize = hasSnap ? 12 : 10;
+  const streakBadgeSize = hasSnap ? 28 : 22;
+
   if (!Mapbox) return null;
   const MB = Mapbox as any;
   return (
     <MB.MarkerView
       id={id}
-      key={`${id}-${snapImageUrl ? 'snap' : 'avatar'}`}
+      key={id}
       coordinate={[coordinate.longitude, coordinate.latitude]}
-      anchor={anchor}
+      anchor={{ x: 0.5, y: 0.77 }} // Fixed anchor for the 180px container
       allowOverlap={true}
       allowOverlapWithPuck={true}
       style={{ zIndex: isSelected ? 999 : isFaded ? 1 : 10 }}
@@ -195,49 +213,88 @@ function StableMarker({
         onPress={onPress} 
         style={[
           styles.markerWrapper, 
-          isFaded && { opacity: 0.2 },
-          isSelected && { transform: [{ scale: 1.12 }] }
+          isFaded && { opacity: 0.4 },
+          isSelected && { transform: [{ scale: 1.12 }] },
         ]} 
         hitSlop={10}
         disabled={isFaded}
       >
-        <View style={styles.markerInner}>
-          {/* Song strip */}
-          {showSong && (
+        <View style={{ width: 200, height: 180, alignItems: 'center', overflow: 'visible' }}>
+          
+          {/* Layer 1: The Marker (Avatar + Pin) - Positioned so pin tip is at y=140 */}
+          <View style={{ position: 'absolute', top: 50, alignItems: 'center', zIndex: 1 }}>
+            {/* Status cloud */}
+            {showStatus && (
+              <View style={[
+                styles.statusCloud, isMe && styles.statusCloudMe,
+                hasSnap && { top: 30, left: -28, padding: 8, borderRadius: 20 },
+              ]}>
+                <Feather name={statusIcon} size={statusCloudSize} color="#1e293b" />
+              </View>
+            )}
+
             <View style={[
-              styles.songStrip,
-              { backgroundColor: theme.card, borderColor: theme.border },
+              styles.avatarRing,
+              { padding: ringPadding, borderRadius: ringRadius, borderWidth: ringBorder },
+              hasSnap && { borderColor: '#ff6b00' },
             ]}>
+              {snapImageUrl ? (
+                <Image
+                  source={{ uri: snapImageUrl }}
+                  style={{ width: avatarSize, height: avatarSize, borderRadius: avatarRadius }}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <Avatar name={name} avatarUrl={avatarUrl} size={avatarSize} />
+              )}
+            </View>
+
+            {snapImageUrl ? (
+              <View style={[
+                styles.snapMarkerBadge,
+                { width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2 },
+                hasSnap && { right: -6, bottom: 14 },
+              ]}>
+                <Feather name="camera" size={badgeIconSize} color="#fff" />
+              </View>
+            ) : null}
+
+            <View style={[
+              styles.pinTriangle,
+              hasSnap && {
+                borderLeftWidth: pinLeft,
+                borderRightWidth: pinRight,
+                borderTopWidth: pinTop,
+                marginTop: -5,
+              },
+            ]} />
+          </View>
+
+          {/* Layer 2: The Song Strip - Absolutely positioned to avoid overlap bugs */}
+          {showSong && (
+            <View 
+              style={[
+                styles.songStrip,
+                { 
+                  position: 'absolute',
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                  zIndex: 9999,
+                  // If snap, place way below pin. If normal, place way above avatar.
+                  ...(hasSnap 
+                    ? { top: 145 } 
+                    : { top: 15 }
+                  )
+                }
+              ]}
+            >
               <Feather name="music" size={11} color={theme.primary} />
               <Text style={[styles.songStripText, { color: theme.text }]}>
                 {songDisplayText}
               </Text>
             </View>
           )}
-          {/* Status cloud */}
-          {showStatus && (
-            <View style={[
-              styles.statusCloud, isMe && styles.statusCloudMe,
-            ]}>
-              {activityType === 'custom' && customEmoji ? (
-                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
-              ) : (
-                <Feather name={statusIcon} size={18} color="#1e293b" />
-              )}
-            </View>
-          )}
-          {/* Avatar — swapped with snap photo when available */}
-          <View style={styles.avatarRing}>
-            {snapImageUrl ? (
-              <Image
-                source={{ uri: snapImageUrl }}
-                style={{ width: 42, height: 42, borderRadius: 21 }}
-              />
-            ) : (
-              <Avatar name={name} avatarUrl={avatarUrl} size={42} />
-            )}
-          </View>
-          <View style={styles.pinTriangle} />
         </View>
       </Pressable>
     </MB.MarkerView>
@@ -340,6 +397,9 @@ export default function CommunityMap() {
     locationVisibility,
     setLocationVisibility,
     friendSnaps,
+    friendStreaks,
+    myStreak,
+    userId,
   } = useCommunity();
 
   // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
@@ -359,6 +419,7 @@ export default function CommunityMap() {
   const [showCircleSelector, setShowCircleSelector] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendWithStatus | null>(null);
   const [showStatusPopup, setShowStatusPopup] = useState(false);
+  const [showMySnap, setShowMySnap] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const [refreshingCommunity, setRefreshingCommunity] = useState(false);
   const cameraRef = useRef<any>(null);
@@ -660,9 +721,16 @@ export default function CommunityMap() {
                 id="me"
                 coordinate={{ latitude: myLatitude as number, longitude: myLongitude as number }}
                 anchor={{ x: 0.5, y: 1 }}
-                onPress={() => setShowStatusPopup(true)}
+                onPress={() => {
+                  const mySnap = friendSnaps.get(user.id!);
+                  if (mySnap) {
+                    setShowMySnap(true);
+                  } else {
+                    setShowStatusPopup(true);
+                  }
+                }}
                 name={user.name}
-                avatarUrl={user.avatar}
+                avatarUrl={user.avatar || (user as any).avatar_url}
                 activityType={myActivity?.activity_type}
                 isMe={true}
                 isFocusing={myActivity?.activity_type === 'studying'}
@@ -671,13 +739,12 @@ export default function CommunityMap() {
                 listeningSongArtist={myActivity?.song_artist}
                 isFaded={!!selectedFriend}
                 snapImageUrl={friendSnaps.get(user.id!)?.imageUrl}
-                customEmoji={myActivity?.custom_status_emoji}
               />
             )}
 
             {/* Friend markers */}
-            {visibleFriends
-              .filter((f) => f.location)
+            {userId && visibleFriends
+              .filter((f) => f.location && f.id !== userId)
               .map((friend) => (
                 <StableMarker
                   key={friend.id}
@@ -698,7 +765,7 @@ export default function CommunityMap() {
                   isSelected={selectedFriend?.id === friend.id}
                   isFaded={!!selectedFriend && selectedFriend.id !== friend.id}
                   snapImageUrl={friendSnaps.get(friend.id)?.imageUrl}
-                  customEmoji={friend.activity?.custom_status_emoji}
+                  snapStreakCount={friendStreaks.get(friend.id)?.currentStreak ?? 0}
                 />
               ))}
 
@@ -789,6 +856,7 @@ export default function CommunityMap() {
 
         return (
           <View style={[styles.friendPopup, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {/* Header */}
             <View style={styles.friendPopupHeader}>
               <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={44} />
               <View style={styles.friendPopupIdentity}>
@@ -820,87 +888,132 @@ export default function CommunityMap() {
                   <Text style={[styles.friendPopupProfileLink, { color: theme.primary }]}>View full profile</Text>
                 </Pressable>
               </View>
-              {showMusic ? (
-                albumUri ? (
-                  <Image source={{ uri: albumUri }} style={styles.friendPopupAlbumArt} />
-                ) : (
-                  <View style={[styles.friendPopupAlbumPlaceholder, { borderColor: `${theme.primary}55` }]}>
-                    <Feather name="music" size={22} color="#1DB954" />
-                  </View>
-                )
-              ) : null}
               <Pressable onPress={() => setSelectedFriend(null)} hitSlop={10} style={styles.friendPopupClose}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
               </Pressable>
             </View>
 
-            {showMusic && (
-              <View style={styles.friendVibeCard}>
-                <View style={styles.friendVibeLabelRow}>
-                  <Feather name="music" size={12} color="#1DB954" />
-                  <Text style={styles.friendVibeLabel}>CURRENTLY VIBING TO</Text>
-                </View>
-                <View style={styles.friendVibeMainRow}>
-                  <View style={styles.friendVibeTextCol}>
-                    <Text style={styles.friendVibeTitle} numberOfLines={2}>
-                      {music!.song}
-                    </Text>
-                    {!!music!.artist?.trim() && (
-                      <Text style={styles.friendVibeArtist} numberOfLines={2}>
-                        {music!.artist}
+            {/* ─── Music + Snap: Side-by-side row ─── */}
+            {(showMusic || friendSnaps.has(selectedFriend.id)) && (
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8, height: 150 }}>
+                
+                {/* Music Card (left half) */}
+                {showMusic && (
+                  <View style={{
+                    flex: 1,
+                    borderRadius: 14,
+                    padding: 12,
+                    backgroundColor: 'rgba(12,14,18,0.96)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(29,185,84,0.35)',
+                    justifyContent: 'space-between',
+                  }}>
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                        <Feather name="music" size={10} color="#1DB954" />
+                        <Text style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.6, color: '#1DB954' }}>
+                          NOW PLAYING
+                        </Text>
+                      </View>
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 17 }} numberOfLines={2}>
+                        {music!.song}
                       </Text>
-                    )}
+                      {!!music!.artist?.trim() && (
+                        <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '600', marginTop: 3 }} numberOfLines={1}>
+                          {music!.artist}
+                        </Text>
+                      )}
+                    </View>
+                    {music!.trackId ? (
+                      <View style={{ marginTop: 10 }}>
+                        <MapOpenMusicPill
+                          trackId={music!.trackId}
+                          titleMaxWidth={100}
+                          pillStyle={{ alignSelf: 'stretch', justifyContent: 'center', paddingVertical: 8, borderRadius: 10 }}
+                        />
+                      </View>
+                    ) : null}
                   </View>
-                  <View style={styles.friendVibeBars}>
-                    <View style={[styles.friendVibeBar, { height: 9 }]} />
-                    <View style={[styles.friendVibeBar, { height: 14 }]} />
-                    <View style={[styles.friendVibeBar, { height: 7 }]} />
-                  </View>
-                </View>
-                {music!.trackId ? (
-                  <View style={styles.friendVibePlayerWrap}>
-                    <MapOpenMusicPill
-                      trackId={music!.trackId}
-                      titleMaxWidth={220}
-                      pillStyle={{ alignSelf: 'stretch', justifyContent: 'center' }}
-                    />
-                  </View>
-                ) : (
-                  <Text style={styles.friendVibeNoPreview} numberOfLines={2}>
-                    Music track ID unavailable — open their profile to use Add to Library.
-                  </Text>
                 )}
+
+                {/* Snap Card (right half) */}
+                {friendSnaps.has(selectedFriend.id) && (() => {
+                  const friendSnap = friendSnaps.get(selectedFriend.id)!;
+                  const streakCount = friendStreaks.get(selectedFriend.id)?.currentStreak ?? 0;
+                  return (
+                    <Pressable
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        borderRadius: 14,
+                        overflow: 'hidden',
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        backgroundColor: '#0f172a',
+                        opacity: pressed ? 0.88 : 1,
+                        transform: pressed ? [{ scale: 0.98 }] : [],
+                      })}
+                      onPress={() => {
+                        setSelectedFriend(null);
+                        router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
+                      }}
+                    >
+                      <Image
+                        source={{ uri: friendSnap.imageUrl }}
+                        style={{ width: '100%', height: '100%', position: 'absolute' }}
+                        contentFit="cover"
+                        transition={180}
+                      />
+                      {/* Streak badge top-left */}
+                      <View style={{
+                        position: 'absolute',
+                        top: 8,
+                        left: 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 3,
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                      }}>
+                        <Text style={{ fontSize: 11 }}>🔥</Text>
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+                          {streakCount > 0 ? `${streakCount}` : '1'}
+                        </Text>
+                      </View>
+                      {/* Expand icon top-right */}
+                      <View style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(0,0,0,0.5)',
+                      }}>
+                        <Feather name="maximize-2" size={11} color="#fff" />
+                      </View>
+                      {/* Bottom info */}
+                      <View style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        paddingVertical: 8,
+                        paddingHorizontal: 10,
+                        backgroundColor: 'rgba(0,0,0,0.55)',
+                      }}>
+                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+                          📸 {timeAgo(friendSnap.createdAt)}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })()}
               </View>
             )}
-
-            {/* Snap Preview — tappable to open full viewer */}
-            {friendSnaps.has(selectedFriend.id) && (() => {
-              const friendSnap = friendSnaps.get(selectedFriend.id)!;
-              return (
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.snapPreviewCard,
-                    { borderColor: theme.border },
-                    pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
-                  ]}
-                  onPress={() => {
-                    setSelectedFriend(null);
-                    router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
-                  }}
-                >
-                  <Image
-                    source={{ uri: friendSnap.imageUrl }}
-                    style={styles.snapPreviewImage}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.snapPreviewOverlay}>
-                    <Feather name="camera" size={14} color="#fff" />
-                    <Text style={styles.snapPreviewLabel}>View Snap</Text>
-                    <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.8)" />
-                  </View>
-                </Pressable>
-              );
-            })()}
 
             {/* Accountability Pacts Tracker */}
             {friendPacts.length > 0 && (
@@ -948,6 +1061,7 @@ export default function CommunityMap() {
               </View>
             )}
 
+            {/* Quick Reactions */}
             <View style={styles.friendPopupActions}>
               <Text style={[styles.friendPopupReactionsLabel, { color: theme.textSecondary }]}>Quick reactions</Text>
               <View style={styles.friendPopupReactions}>
@@ -1330,6 +1444,130 @@ export default function CommunityMap() {
         ) : null}
       </View>
 
+      {/* ─── MY OWN SNAP PREVIEW ─── */}
+      {showMySnap && friendSnaps.has(user.id!) && (() => {
+        const mySnap = friendSnaps.get(user.id!)!;
+        return (
+          <View style={[styles.friendInfoCard, { backgroundColor: theme.card }]}>
+            <Pressable
+              style={styles.friendInfoCardClose}
+              onPress={() => setShowMySnap(false)}
+              hitSlop={10}
+            >
+              <Feather name="x" size={20} color={theme.textSecondary} />
+            </Pressable>
+            <View style={styles.snapPreviewDock}>
+              <Pressable
+                accessibilityRole="imagebutton"
+                accessibilityLabel="Open your snap"
+                style={({ pressed }) => [
+                  styles.snapPreviewPhone,
+                  { borderColor: theme.border },
+                  pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                ]}
+                onPress={() => {
+                  setShowMySnap(false);
+                  router.push({ pathname: '/snap-viewer', params: { snapId: mySnap.id } } as any);
+                }}
+              >
+                <Image
+                  source={{ uri: mySnap.imageUrl }}
+                  style={styles.snapPreviewImage}
+                  contentFit="cover"
+                  transition={180}
+                />
+                <View style={styles.snapPreviewExpand}>
+                  <Feather name="maximize-2" size={13} color="#fff" />
+                </View>
+                <View style={styles.snapPreviewOverlay}>
+                  <Feather name="camera" size={12} color="#fff" />
+                  <Text style={styles.snapPreviewLabel}>My Snap</Text>
+                </View>
+              </Pressable>
+              <View style={styles.snapPreviewMeta}>
+                <View style={[styles.snapPreviewPill, { backgroundColor: theme.primary + '18' }]}>
+                  <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
+                  <Text style={[styles.snapPreviewPillText, { color: theme.primary, fontWeight: '800' }]}>
+                    {(myStreak?.currentStreak ?? 0) > 0
+                      ? `${myStreak!.currentStreak} DAY STREAK`
+                      : 'MY SNAP'}
+                  </Text>
+                </View>
+                <Text style={[styles.snapPreviewTitle, { color: theme.text }]} numberOfLines={1}>
+                  Your latest snap
+                </Text>
+                <Text style={[styles.snapPreviewTime, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {timeAgo(mySnap.createdAt)}
+                </Text>
+                {mySnap.caption ? (
+                  <Text style={[styles.snapPreviewCaption, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {mySnap.caption}
+                  </Text>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open your snap full screen"
+                    style={({ pressed }) => [
+                      {
+                        position: 'relative',
+                        flex: 1,
+                        paddingHorizontal: 12,
+                        height: 36,
+                        borderRadius: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: StyleSheet.hairlineWidth,
+                        flexDirection: 'row',
+                        gap: 6,
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                    onPress={() => {
+                      setShowMySnap(false);
+                      router.push({ pathname: '/snap-viewer', params: { snapId: mySnap.id } } as any);
+                    }}
+                  >
+                    <Feather name="maximize-2" size={14} color={theme.primary} />
+                    <Text style={[styles.snapPreviewFullBtnText, { color: theme.primary }]}>View Full</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Set your status"
+                    style={({ pressed }) => [
+                      {
+                        position: 'relative',
+                        flex: 1,
+                        paddingHorizontal: 12,
+                        height: 36,
+                        borderRadius: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: StyleSheet.hairlineWidth,
+                        flexDirection: 'row',
+                        gap: 6,
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                    onPress={() => {
+                      setShowMySnap(false);
+                      setShowStatusPopup(true);
+                    }}
+                  >
+                    <Feather name="edit-2" size={14} color={theme.textSecondary} />
+                    <Text style={[styles.snapPreviewFullBtnText, { color: theme.textSecondary }]}>Set Status</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
       {/* ─── SET STATUS POPUP ─── */}
       <StatusPopup
         visible={showStatusPopup}
@@ -1404,7 +1642,6 @@ function StatusPopup({
   );
   const [saving, setSaving] = useState(false);
   const [customText, setCustomText] = useState('');
-  const [customEmoji, setCustomEmoji] = useState('✨');
   const isProUser = subscriptionPlan === 'pro';
 
   // Sync selected type when popup opens
@@ -1412,9 +1649,8 @@ function StatusPopup({
     if (visible) {
       setSelectedType((myActivity?.activity_type as ActivityType) || 'idle');
       setCustomText((myActivity?.custom_status_text as string) || '');
-      setCustomEmoji((myActivity?.custom_status_emoji as string) || '✨');
     }
-  }, [visible, myActivity?.activity_type, myActivity?.custom_status_text, myActivity?.custom_status_emoji]);
+  }, [visible, myActivity?.activity_type, myActivity?.custom_status_text]);
 
   const currentTypeInfo = ACTIVITY_TYPES.find((a) => a.type === myActivity?.activity_type);
   const hasStatus = myActivity && myActivity.activity_type !== 'idle';
@@ -1430,7 +1666,6 @@ function StatusPopup({
           customText.trim() || 'Custom Status',
           undefined,
           customText.trim() || undefined,
-          customEmoji || undefined,
         );
       } else if (selectedType === 'studying') {
         const label = getCurrentTimetableSubjectLabel(timetable) || 'Studying';
@@ -1465,6 +1700,10 @@ function StatusPopup({
       animationType="slide"
       onRequestClose={onClose}
     >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <Pressable style={popupStyles.overlay} onPress={onClose}>
         <Pressable style={[popupStyles.container, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
@@ -1636,7 +1875,11 @@ function StatusPopup({
               ]}
             >
               {isProUser ? (
-                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
+                <Feather
+                  name="edit-3"
+                  size={16}
+                  color={isDarkMinimal ? theme.text : theme.primary}
+                />
               ) : (
                 <Feather
                   name="lock"
@@ -1661,26 +1904,6 @@ function StatusPopup({
               </View>
               {isProUser && selectedType === 'custom' && (
                 <View style={{ marginTop: 6, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                    {['✨', '💡', '🎯', '🚀', '🧠', '☕'].map((em) => (
-                      <Pressable
-                        key={em}
-                        onPress={() => setCustomEmoji(em)}
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 15,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: customEmoji === em
-                            ? (isDarkMinimal ? 'rgba(255,255,255,0.15)' : theme.primary + '20')
-                            : 'transparent',
-                        }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{em}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
                   <View
                     style={{
                       borderWidth: 1,
@@ -1728,6 +1951,7 @@ function StatusPopup({
           </Pressable>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -2192,6 +2416,28 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 15,
   },
+  friendInfoCard: {
+    position: 'absolute',
+    bottom: SCREEN_HEIGHT * 0.42 + 16,
+    left: 16,
+    right: 16,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    zIndex: 15,
+  },
+  friendInfoCardClose: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 2,
+  },
+
   friendPopupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2258,35 +2504,108 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   friendPopupActions: { marginTop: 8 },
-  snapPreviewCard: {
+  snapPreviewDock: {
     marginTop: 10,
-    borderRadius: 14,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  snapPreviewPhone: {
+    width: SNAP_PREVIEW_WIDTH,
+    height: SNAP_PREVIEW_HEIGHT,
+    borderRadius: 18,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
+    backgroundColor: '#0f172a',
   },
   snapPreviewImage: {
     width: '100%',
-    height: 140,
+    height: '100%',
+  },
+  snapPreviewExpand: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
     borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   snapPreviewOverlay: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    left: 8,
+    right: 8,
+    bottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.52)',
   },
   snapPreviewLabel: {
     flex: 1,
     color: '#fff',
-    fontSize: 13,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  snapPreviewMeta: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 4,
+    paddingRight: 44,
+  },
+  snapPreviewPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 9,
+  },
+  snapPreviewPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  snapPreviewTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  snapPreviewTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  snapPreviewCaption: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    marginTop: 10,
+  },
+  snapPreviewFullBtn: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  snapPreviewFullBtnText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   friendPopupProfileLink: {
@@ -2338,10 +2657,10 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     // Glassmorphism effect
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   songStripText: {
     fontSize: 10,
@@ -2353,14 +2672,40 @@ const styles = StyleSheet.create({
     padding: 2,
     backgroundColor: '#fff',
     borderRadius: 24,
-    // Deep layered shadow for 3D depth
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-    zIndex: 2,
     borderWidth: 3,
+    borderColor: '#fff',
+  },
+  snapMarkerBadge: {
+    position: 'absolute',
+    right: -4,
+    bottom: 9,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    zIndex: 4,
+  },
+  streakMarkerBadge: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff6b00',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    zIndex: 5,
+  },
+  streakMarkerBadgeText: {
+    fontSize: 11,
+    lineHeight: 14,
   },
 
 

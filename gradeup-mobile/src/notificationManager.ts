@@ -60,6 +60,12 @@ export async function cancelTaskNotifications(taskId: string): Promise<void> {
   await Promise.all(mine.map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)));
 }
 
+export async function cancelAllTaskNotifications(): Promise<void> {
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  const mine = all.filter((n) => n.identifier.startsWith('task-'));
+  await Promise.all(mine.map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)));
+}
+
 export async function scheduleTaskNotifications(task: Task, prefs?: NotificationPrefs): Promise<void> {
   const p = prefs ?? (await getNotificationPrefs());
   if (!p.tasksEnabled || task.needsDate) return;
