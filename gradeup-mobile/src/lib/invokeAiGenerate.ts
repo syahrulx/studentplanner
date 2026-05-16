@@ -26,6 +26,8 @@ export interface AiGenerateRequest {
   question?: string;
   /** RAG: the subject ID to scope embedding search. */
   subject_id?: string;
+  /** Base64-encoded image for vision analysis in chat. */
+  image_base64?: string;
 }
 
 export type AiGenerateFlashcardsResult = {

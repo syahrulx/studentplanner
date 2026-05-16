@@ -1,8 +1,10 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Alert, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Markdown from 'react-native-markdown-display';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
@@ -11,8 +13,9 @@ import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { getChatSessions, getChatMessages, createChatSession, createChatMessage, updateChatSessionTimestamp, deleteChatSession } from '@/src/lib/chatDb';
 import { supabase } from '@/src/lib/supabase';
 import type { ChatSession, ChatMessage } from '@/src/types';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 
-type Message = { role: 'ai' | 'user'; text: string };
+type Message = { role: 'ai' | 'user'; text: string; imageUri?: string };
 
 function hexLuminance(hex: string): number | null {
   const raw = hex.replace('#', '').trim();
@@ -71,6 +74,10 @@ export default function SubjectChat() {
   const [contextReady, setContextReady] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ noteCount: number; contextLen: number; extractedCount: number; titles: string[] }>({ noteCount: 0, contextLen: 0, extractedCount: 0, titles: [] });
 
+  // Image attachment state
+  const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
+  const [pendingImageBase64, setPendingImageBase64] = useState<string | null>(null);
+
   // Warm up the Edge Function on mount to eliminate cold-start delays
   useEffect(() => {
     supabase.functions.invoke('ai_generate', {
@@ -127,10 +134,6 @@ export default function SubjectChat() {
 
   // Assemble notes context on mount
   useEffect(() => {
-    if (!isAtLeastPlus(user.subscriptionPlan)) {
-      router.replace('/subscription-plans' as any);
-      return;
-    }
     const subjectNotes = notes.filter(n => n.subjectId === subjectId);
     // Sort by updatedAt so chronological order is generally preserved
     subjectNotes.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
@@ -176,12 +179,75 @@ STUDENT NOTES CONTENT:
     setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
   };
 
+  // ─── Image picker ────────────────────────────────────────────────────────
+  const pickImage = useCallback(async (source: 'library' | 'camera') => {
+    try {
+      const checkAndSetImage = async (uri: string, base64: string | null | undefined) => {
+        let b64 = base64;
+        if (!b64 && uri) {
+          b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        }
+        if (b64 && (b64.length * 0.75) > 10 * 1024 * 1024) {
+          Alert.alert('File Too Large', 'Please select an image smaller than 10MB.');
+          return;
+        }
+        setPendingImageUri(uri);
+        setPendingImageBase64(b64 ?? null);
+      };
+
+      if (source === 'library') {
+        const granted = await ensureImageLibraryAccessForPicker();
+        if (!granted) {
+          Alert.alert('Permission Needed', 'Please grant photo library access to attach images.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.7,
+          base64: true,
+          allowsEditing: false,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        await checkAndSetImage(result.assets[0].uri, result.assets[0].base64);
+      } else {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Needed', 'Please grant camera access to take photos.');
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          quality: 0.7,
+          base64: true,
+          allowsEditing: false,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        await checkAndSetImage(result.assets[0].uri, result.assets[0].base64);
+      }
+    } catch (e: any) {
+      console.error('[SubjectChat] pickImage error:', e);
+    }
+  }, []);
+
+  const showImagePickerOptions = useCallback(() => {
+    Alert.alert('Attach Image', 'Choose a source', [
+      { text: 'Camera', onPress: () => pickImage('camera') },
+      { text: 'Photo Library', onPress: () => pickImage('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [pickImage]);
+
+  const clearPendingImage = useCallback(() => {
+    setPendingImageUri(null);
+    setPendingImageBase64(null);
+  }, []);
+
   const handleSend = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() && !pendingImageBase64) return;
+    const hasImage = !!pendingImageBase64;
     
     // Check limits for new conversation
     if (!currentSessionId) {
-      const maxSessions = user.subscriptionPlan === 'pro' ? 15 : 3;
+      const maxSessions = user.subscriptionPlan === 'pro' ? 15 : user.subscriptionPlan === 'plus' ? 3 : 1;
       if (sessions.length >= maxSessions) {
         if (user.subscriptionPlan === 'pro') {
           Alert.alert(
@@ -189,12 +255,13 @@ STUDENT NOTES CONTENT:
             `You have reached the maximum of ${maxSessions} saved conversations for this subject. Please delete an older conversation from History.`,
           );
         } else {
+          const planName = user.subscriptionPlan === 'plus' ? 'Plus' : 'Free';
           Alert.alert(
             'Limit Reached',
-            `You've reached your limit of ${maxSessions} new conversations on the Plus plan. Upgrade to Pro to unlock more conversations and access your saved chat history!`,
+            `You've reached your limit of ${maxSessions} new conversations on the ${planName} plan. Upgrade to unlock more conversations and access your saved chat history!`,
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Upgrade to Pro', onPress: () => router.push('/subscription-plans' as any) }
+              { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) }
             ]
           );
         }
@@ -203,9 +270,12 @@ STUDENT NOTES CONTENT:
     }
 
     const userText = chatInput;
-    const currentMessages = [...messages, { role: 'user' as const, text: userText }];
+    const imageUri = pendingImageUri;
+    const imageBase64 = pendingImageBase64;
+    const currentMessages = [...messages, { role: 'user' as const, text: userText || '📷 Image attached', imageUri: imageUri ?? undefined }];
     setMessages(currentMessages);
     setChatInput('');
+    clearPendingImage();
     setIsProcessing(true);
     scrollToBottom();
 
@@ -238,6 +308,7 @@ STUDENT NOTES CONTENT:
             subject_id: subjectId,
             question: userText,
             chat_history: apiMessages.slice(-10), // keep the last 10 messages for context
+            ...(imageBase64 ? { image_base64: imageBase64 } : {}),
           };
 
           console.log(`[SubjectChat DEBUG] Sending to ai_generate:`);
@@ -350,12 +421,12 @@ STUDENT NOTES CONTENT:
             </Pressable>
             <View>
               <Text style={[s.headerTitle, { color: theme.textInverse }]}>{subjectId} Tutor</Text>
-              <Text style={[s.headerSub, { color: headerSubColor }]}>{user.subscriptionPlan === 'pro' ? 'PRO AI TUTOR' : 'PLUS AI TUTOR'}</Text>
+              <Text style={[s.headerSub, { color: headerSubColor }]}>{user.subscriptionPlan === 'pro' ? 'PRO AI TUTOR' : user.subscriptionPlan === 'plus' ? 'PLUS AI TUTOR' : 'FREE AI TUTOR'}</Text>
             </View>
           </View>
           <View style={s.headerRight}>
              <View style={s.plusBadge}>
-                <Text style={s.plusBadgeText}>{user.subscriptionPlan === 'pro' ? 'PRO' : 'PLUS'}</Text>
+                <Text style={s.plusBadgeText}>{user.subscriptionPlan === 'pro' ? 'PRO' : user.subscriptionPlan === 'plus' ? 'PLUS' : 'FREE'}</Text>
              </View>
           </View>
         </View>
@@ -388,6 +459,9 @@ STUDENT NOTES CONTENT:
                     : [s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border, borderBottomLeftRadius: 6 }],
                 ]}
               >
+                {m.imageUri ? (
+                  <Image source={{ uri: m.imageUri }} style={s.bubbleImage} resizeMode="cover" />
+                ) : null}
                 {m.role === 'ai' ? (
                   <Markdown
                     style={{
@@ -402,9 +476,11 @@ STUDENT NOTES CONTENT:
                     {m.text}
                   </Markdown>
                 ) : (
-                  <Text style={[s.bubbleText, { color: theme.textInverse }]}>
-                    {m.text}
-                  </Text>
+                  m.text && m.text !== '📷 Image attached' ? (
+                    <Text style={[s.bubbleText, { color: theme.textInverse, marginTop: m.imageUri ? 8 : 0 }]}>
+                      {m.text}
+                    </Text>
+                  ) : null
                 )}
               </View>
             </View>
@@ -422,11 +498,27 @@ STUDENT NOTES CONTENT:
         </ScrollView>
 
         <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
+          {/* Image preview */}
+          {pendingImageUri ? (
+            <View style={s.imagePreviewWrap}>
+              <Image source={{ uri: pendingImageUri }} style={s.imagePreviewThumb} resizeMode="cover" />
+              <Pressable onPress={clearPendingImage} style={[s.imagePreviewRemove, { backgroundColor: theme.text }]}>
+                <Feather name="x" size={12} color={theme.background} />
+              </Pressable>
+            </View>
+          ) : null}
+          <Pressable
+            onPress={showImagePickerOptions}
+            style={[s.attachBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
+            hitSlop={8}
+          >
+            <Feather name="image" size={20} color={theme.primary} />
+          </Pressable>
           <TextInput
             style={[s.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
             value={chatInput}
             onChangeText={setChatInput}
-            placeholder="Ask about your notes..."
+            placeholder={pendingImageUri ? 'Ask about this image...' : 'Ask about your notes...'}
             placeholderTextColor={theme.textSecondary}
             multiline
             textAlignVertical="center"
@@ -435,10 +527,10 @@ STUDENT NOTES CONTENT:
             style={[
               s.sendBtn,
               { backgroundColor: theme.primary },
-              (!chatInput.trim() || isProcessing) && { opacity: 0.5 },
+              ((!chatInput.trim() && !pendingImageBase64) || isProcessing) && { opacity: 0.5 },
             ]}
             onPress={handleSend}
-            disabled={!chatInput.trim() || isProcessing}
+            disabled={(!chatInput.trim() && !pendingImageBase64) || isProcessing}
           >
             <Feather name="arrow-up" size={20} color={theme.textInverse} />
           </Pressable>
@@ -554,9 +646,10 @@ const s = StyleSheet.create({
   
   inputRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-    gap: 12,
+    gap: 10,
     borderTopWidth: 1,
     alignItems: 'center',
   },
@@ -590,4 +683,38 @@ const s = StyleSheet.create({
   historyItemDate: { fontSize: 12, marginTop: 4 },
   deleteBtn: { padding: 8 },
   historyEmpty: { textAlign: 'center', marginTop: 40 },
+
+  // Image attachment styles
+  bubbleImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  imagePreviewWrap: {
+    position: 'relative',
+  },
+  imagePreviewThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+  },
+  imagePreviewRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
 });

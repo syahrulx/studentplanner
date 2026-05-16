@@ -32,6 +32,8 @@ interface RequestBody {
   courses?: { id: string; name: string }[];
   /** Chat history for chat kind. */
   chat_history?: { role: 'user' | 'assistant'; content: string }[];
+  /** Base64-encoded image for vision analysis in chat. */
+  image_base64?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +89,33 @@ async function checkRateLimit(
         : DAILY_LIMIT_FREE;
 
   return { allowed: used < limit, used, limit };
+}
+
+async function checkImageRateLimit(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+  subscriptionPlan: string,
+): Promise<{ allowed: boolean; used: number; limit: number; period: string }> {
+  if (subscriptionPlan === 'pro') {
+    return { allowed: true, used: 0, limit: Infinity, period: 'unlimited' };
+  }
+
+  const limit = subscriptionPlan === 'plus' ? 3 : 1;
+  const days = subscriptionPlan === 'plus' ? 1 : 3;
+  const period = subscriptionPlan === 'plus' ? 'day' : '3 days';
+
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - days);
+
+  const { count, error } = await supabaseAdmin
+    .from('ai_token_usage')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('kind', 'chat_vision')
+    .gte('created_at', since.toISOString());
+
+  const used = error ? 0 : (count ?? 0);
+  return { allowed: used < limit, used, limit, period };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +208,7 @@ Rules:
   };
 }
 
-function buildChatPrompt(fullNotes: string, ragHighlights?: string): { system: string } {
+function buildChatPrompt(fullNotes: string, ragHighlights?: string, hasImage?: boolean): { system: string } {
   // Always include full notes. If RAG found relevant chunks, prepend them
   // as highlighted sections so the model prioritises them but still has
   // access to everything.
@@ -190,12 +219,23 @@ function buildChatPrompt(fullNotes: string, ragHighlights?: string): { system: s
     notesBlock = fullNotes;
   }
 
+  const imageInstructions = hasImage
+    ? `\n\nIMAGE ANALYSIS INSTRUCTIONS:
+The student has attached an image. Analyse it thoroughly:
+- If it's a photo of notes, a textbook, or slides: read and extract ALL text, diagrams, equations, and key concepts visible.
+- If it's a diagram, chart, or graph: describe what it shows and explain the underlying concept in detail.
+- If it's a math equation or formula: solve it step-by-step or explain it.
+- If it's a screenshot of code: analyse it, explain what it does, and point out any issues.
+- Cross-reference what you see in the image with the student's notes when relevant.
+- Be extremely detailed and precise when reading text from images.`
+    : '';
+
   return {
     system: `You are a brilliant, encouraging university Subject Tutor.
 Use the provided notes as your primary source of truth. Search through ALL the notes carefully before answering.
 If the notes are incomplete, you may supplement with general academic knowledge, but explicitly mention that you are adding outside context.
 Use clear analogies to explain complex topics. Use Socratic questioning when appropriate.
-Format your responses beautifully using Markdown (bullet points, bold text for emphasis).
+Format your responses beautifully using Markdown (bullet points, bold text for emphasis).${imageInstructions}
 
 Provided Notes:
 ${notesBlock}`,
@@ -208,12 +248,14 @@ ${notesBlock}`,
 
 async function callOpenAI(
   apiKey: string,
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string | unknown[] }[],
   maxTokens: number,
   model: string = 'gpt-4o-mini'
 ): Promise<{ content: string; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000); // 60s timeout (was 45s, increased for large note contexts)
+  // Vision requests may take longer due to image processing
+  const timeoutMs = 90_000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -245,7 +287,7 @@ async function callOpenAI(
   } catch (err: any) {
     clearTimeout(timeout);
     if (err?.name === 'AbortError') {
-      return { content: '', usage: null, error: 'AI generation timed out after 60 seconds. Please try again.' };
+      return { content: '', usage: null, error: `AI generation timed out after ${timeoutMs / 1000} seconds. Please try again.` };
     }
     return { content: '', usage: null, error: err?.message || 'OpenAI request failed' };
   }
@@ -351,10 +393,6 @@ Deno.serve(async (req) => {
       return errorJson(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
     }
 
-    if (kind === 'chat' && plan !== 'plus' && plan !== 'pro') {
-      return errorJson('AI Subject Tutor is only available on Plus and Pro plans.', 'UPGRADE_REQUIRED');
-    }
-
     // Per-day per-request safety net (counts generations, not tokens).
     const rateCheck = await checkRateLimit(supabaseAdmin, userId, plan);
     if (!rateCheck.allowed) {
@@ -365,8 +403,19 @@ Deno.serve(async (req) => {
     }
 
     // ── Build prompt & call OpenAI ──
-    let messages: { role: string; content: string }[] = [];
+    let messages: { role: string; content: string | unknown[] }[] = [];
     let maxTokens: number;
+    const hasImage = kind === 'chat' && typeof body.image_base64 === 'string' && body.image_base64.length > 100;
+
+    if (hasImage) {
+      const imgCheck = await checkImageRateLimit(supabaseAdmin, userId, plan);
+      if (!imgCheck.allowed) {
+        return errorJson(
+          `Image limit reached (${imgCheck.used}/${imgCheck.limit} per ${imgCheck.period}). Upgrade your plan for more!`,
+          'RATE_LIMIT'
+        );
+      }
+    }
 
     const count = Math.min(Math.max(1, body.count ?? 10), 30); // 1-30 items
 
@@ -431,13 +480,34 @@ Deno.serve(async (req) => {
       // RAG chunks are used as supplementary highlights, NOT a replacement.
       // This prevents the "can't find on first try" bug where RAG returned
       // irrelevant chunks and the full notes were discarded.
-      const prompts = buildChatPrompt(content, ragContext || undefined);
+      const prompts = buildChatPrompt(content, ragContext || undefined, hasImage);
       messages = [
         { role: 'system', content: prompts.system },
-        ...history.map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
+        ...history.slice(0, -1).map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
       ];
-      console.log(`[ai_generate] Chat context: fullNotes=${content.length} chars, ragHighlights=${ragContext.length} chars`);
-      maxTokens = 1500;
+
+      // Build the latest user message — with optional image vision content
+      if (hasImage) {
+        const imageContent: unknown[] = [];
+        if (question) {
+          imageContent.push({ type: 'text', text: question });
+        }
+        imageContent.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${body.image_base64}`,
+            detail: 'high',
+          },
+        });
+        messages.push({ role: 'user', content: imageContent });
+        console.log(`[ai_generate] Vision chat: image=${Math.round(body.image_base64!.length / 1024)}KB, question="${question.slice(0, 80)}"`);
+      } else if (question) {
+        messages.push({ role: 'user', content: question });
+      }
+
+      console.log(`[ai_generate] Chat context: fullNotes=${content.length} chars, ragHighlights=${ragContext.length} chars, hasImage=${hasImage}`);
+      // Vision requests need more tokens for detailed image analysis
+      maxTokens = hasImage ? 2500 : 1500;
     } else {
       const quizType = body.quiz_type || 'mcq';
       const difficulty = body.difficulty || 'medium';
@@ -450,7 +520,10 @@ Deno.serve(async (req) => {
     }
 
     let targetModel = 'gpt-4o-mini';
-    if (plan === 'pro') {
+    if (hasImage) {
+      // Vision requires gpt-4o or higher; gpt-4o-mini has limited vision quality
+      targetModel = plan === 'pro' ? 'gpt-4o' : 'gpt-4o';
+    } else if (plan === 'pro') {
       // Pro users get flagship models:
       // - Chat tutor: GPT-5.5 (latest reasoning model)
       // - Quiz/task: GPT-4o (faster, still premium)
@@ -469,7 +542,7 @@ Deno.serve(async (req) => {
     // spend (not just quiz). Fire-and-forget.
     logTokenUsage(supabaseAdmin, {
       user_id: userId,
-      kind,
+      kind: hasImage ? 'chat_vision' : kind,
       model: targetModel,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
