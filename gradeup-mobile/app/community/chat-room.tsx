@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,17 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  Animated as RNAnimated,
+  Easing,
+  useWindowDimensions,
+  PanResponder,
+  Keyboard,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useQuiz } from '@/src/context/QuizContext';
@@ -28,6 +33,13 @@ import { getSavedQuizzes, type SavedQuizItem } from '@/src/lib/studyApi';
 import { blockUserByUserId, unblockUserByUserId } from '@/src/lib/communityApi';
 import { upsertNote, upsertFlashcard } from '@/src/lib/studyDb';
 import type { Note, Flashcard } from '@/src/types';
+import {
+  ACIDLING_SPRITE_URL,
+  NOIR_WEBLING_SPRITE_URL,
+  DIO_CAT_SPRITE_URL,
+  PlaygroundCodexPet,
+  type CodexPetAnimationName,
+} from '@/components/PlaygroundCodexPet';
 
 /** Generate a unique ID without external deps. */
 function generateId(): string {
@@ -93,6 +105,32 @@ export default function ChatRoomScreen() {
 
   const { conversationId, friendId, friendName, friendAvatar } = params;
   const userId = user.id;
+  const themePack = useThemePack();
+  const { width: winW } = useWindowDimensions();
+
+  const isCatTheme = themePack === 'cat';
+  const isMonoTheme = themePack === 'mono';
+  const isSpiderTheme = themePack === 'spider';
+  const isCodexPet = true; // All premium pets now use the Codex sprite system
+  const hasPet = isCatTheme || isMonoTheme || isSpiderTheme;
+  const PET_SIZE = 48;
+
+  // Track keyboard height so pet moves with the input bar
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKbHeight(e.endCoordinates.height),
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKbHeight(0),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [text, setText] = useState('');
@@ -407,6 +445,151 @@ export default function ChatRoomScreen() {
     flashcards.some((f) => f.noteId === n.id),
   );
 
+  // Animated rotation for the + / × attach button
+  const attachRotate = useRef(new RNAnimated.Value(0)).current;
+  useEffect(() => {
+    RNAnimated.timing(attachRotate, {
+      toValue: showAttach ? 1 : 0,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [showAttach, attachRotate]);
+
+  // ─── Chat Pet Animation ───
+  const petX = useRef(new RNAnimated.Value(20)).current;
+  const petY = useRef(new RNAnimated.Value(0)).current;
+  const petHop = useRef(new RNAnimated.Value(0)).current;
+  const [codexPetAnim, setCodexPetAnim] = useState<CodexPetAnimationName>('idle');
+  const [petDragging, setPetDragging] = useState(false);
+  const petXCurrent = useRef(20);
+  const petYCurrent = useRef(0);
+  const dragStartX = useRef(0);
+  const dragStartY = useRef(0);
+  const petHoldUntilMs = useRef(0);
+
+  // Track current animated values
+  useEffect(() => {
+    if (!hasPet) return;
+    const xId = petX.addListener(({ value }) => { petXCurrent.current = value; });
+    const yId = petY.addListener(({ value }) => { petYCurrent.current = value; });
+    return () => {
+      petX.removeListener(xId);
+      petY.removeListener(yId);
+    };
+  }, [hasPet, petX, petY]);
+
+  const petPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => hasPet,
+        onStartShouldSetPanResponderCapture: () => hasPet,
+        onMoveShouldSetPanResponder: () => hasPet,
+        onMoveShouldSetPanResponderCapture: () => hasPet,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: () => {
+          setPetDragging(true);
+          if (isCodexPet) setCodexPetAnim('idle');
+          petHop.setValue(0);
+          petX.stopAnimation();
+          petY.stopAnimation();
+          dragStartX.current = petXCurrent.current;
+          dragStartY.current = petYCurrent.current;
+        },
+        onPanResponderMove: (_evt, gestureState) => {
+          const maxX = winW - PET_SIZE - 8;
+          const newX = Math.max(0, Math.min(maxX, dragStartX.current + gestureState.dx));
+          const newY = Math.max(-300, Math.min(100, dragStartY.current + gestureState.dy));
+          petX.setValue(newX);
+          petY.setValue(newY);
+        },
+        onPanResponderRelease: () => {
+          // Snap back to baseline Y with a spring
+          RNAnimated.spring(petY, {
+            toValue: 0,
+            friction: 6,
+            tension: 80,
+            useNativeDriver: true,
+          }).start();
+          petHoldUntilMs.current = Date.now() + 4000;
+          setPetDragging(false);
+        },
+        onPanResponderTerminate: () => {
+          RNAnimated.spring(petY, {
+            toValue: 0,
+            friction: 6,
+            tension: 80,
+            useNativeDriver: true,
+          }).start();
+          petHoldUntilMs.current = Date.now() + 4000;
+          setPetDragging(false);
+        },
+      }),
+    [hasPet, isCodexPet, winW, PET_SIZE, petX, petY, petHop],
+  );
+
+  // Pet walks back and forth above the input bar
+  useEffect(() => {
+    if (!hasPet || petDragging) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const maxX = winW - PET_SIZE - 24;
+
+    const walk = () => {
+      if (cancelled) return;
+      const targetX = Math.random() * maxX;
+      const currentX = petXCurrent.current;
+      const goingRight = targetX > currentX;
+
+      if (isCodexPet) {
+        setCodexPetAnim(goingRight ? 'running-right' : 'running-left');
+      }
+
+      RNAnimated.timing(petX, {
+        toValue: targetX,
+        duration: 2000 + Math.random() * 1500,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (cancelled || !finished) return;
+        if (isCodexPet) setCodexPetAnim('idle');
+
+        // Occasionally hop
+        if (Math.random() > 0.5) {
+          if (isCodexPet) setCodexPetAnim('jumping');
+          RNAnimated.sequence([
+            RNAnimated.timing(petHop, {
+              toValue: -14,
+              duration: 180,
+              easing: Easing.out(Easing.quad),
+              useNativeDriver: true,
+            }),
+            RNAnimated.timing(petHop, {
+              toValue: 0,
+              duration: 220,
+              easing: Easing.in(Easing.quad),
+              useNativeDriver: true,
+            }),
+          ]).start(({ finished: f2 }) => {
+            if (f2 && isCodexPet) setCodexPetAnim('idle');
+          });
+        }
+
+        timer = setTimeout(walk, 2500 + Math.random() * 3000);
+      });
+    };
+
+    const waitMs = Math.max(0, petHoldUntilMs.current - Date.now());
+    timer = setTimeout(walk, waitMs + 800);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      petX.stopAnimation();
+      petHop.stopAnimation();
+    };
+  }, [hasPet, petDragging, isCodexPet, winW, PET_SIZE, petX, petHop]);
+
   // ─── Render message bubble ───
   const renderMessage = ({ item, index }: { item: DmMessage; index: number }) => {
     const isMe = item.sender_id === userId;
@@ -437,20 +620,20 @@ export default function ChatRoomScreen() {
             {item.message_type === 'flashcard_share' ? (
               <Pressable
                 onPress={() => handleViewSharedFlashcards(item.id, (item.metadata as any)?.note_title || 'Flashcards')}
-                style={[styles.sharedCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : theme.backgroundSecondary }]}
+                style={[styles.sharedCard, { backgroundColor: isMe ? (theme.textInverse + '22') : theme.backgroundSecondary }]}
               >
                 <View style={styles.sharedCardIcon}>
-                  <Feather name="layers" size={18} color={isMe ? '#fff' : theme.primary} />
+                  <Feather name="layers" size={18} color={isMe ? theme.textInverse : theme.primary} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[styles.sharedCardTitle, { color: isMe ? '#fff' : theme.text }]} numberOfLines={2}>
+                  <Text style={[styles.sharedCardTitle, { color: isMe ? theme.textInverse : theme.text }]} numberOfLines={2}>
                     📇 {(item.metadata as any)?.note_title || item.content.replace(/^📇 Shared flashcard deck: /, '') || 'Flashcards'}
                   </Text>
-                  <Text style={[styles.sharedCardSub, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
+                  <Text style={[styles.sharedCardSub, { color: isMe ? (theme.textInverse + 'b3') : theme.textSecondary }]}>
                     {(item.metadata as any)?.card_count || 0} cards · Tap to review
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={16} color={isMe ? 'rgba(255,255,255,0.6)' : theme.textSecondary} />
+                <Feather name="chevron-right" size={16} color={isMe ? (theme.textInverse + '99') : theme.textSecondary} />
               </Pressable>
             ) : item.message_type === 'quiz_share' ? (
               <Pressable
@@ -475,30 +658,30 @@ export default function ChatRoomScreen() {
                     );
                   }
                 }}
-                style={[styles.sharedCard, { backgroundColor: isMe ? 'rgba(255,255,255,0.15)' : theme.backgroundSecondary }]}
+                style={[styles.sharedCard, { backgroundColor: isMe ? (theme.textInverse + '22') : theme.backgroundSecondary }]}
               >
                 <View style={styles.sharedCardIcon}>
-                  <Feather name="target" size={18} color={isMe ? '#fff' : '#F59E0B'} />
+                  <Feather name="target" size={18} color={isMe ? theme.textInverse : '#F59E0B'} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={[styles.sharedCardTitle, { color: isMe ? '#fff' : theme.text }]} numberOfLines={2}>
+                  <Text style={[styles.sharedCardTitle, { color: isMe ? theme.textInverse : theme.text }]} numberOfLines={2}>
                     🎯 {(item.metadata as any)?.quiz_title || 'Quiz'}
                   </Text>
-                  <Text style={[styles.sharedCardSub, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textSecondary }]}>
+                  <Text style={[styles.sharedCardSub, { color: isMe ? (theme.textInverse + 'b3') : theme.textSecondary }]}>
                     {(item.metadata as any)?.question_count || 0} questions · Tap to join
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={16} color={isMe ? 'rgba(255,255,255,0.6)' : theme.textSecondary} />
+                <Feather name="chevron-right" size={16} color={isMe ? (theme.textInverse + '99') : theme.textSecondary} />
               </Pressable>
             ) : (
-              <Text style={[styles.bubbleText, { color: isMe ? '#fff' : theme.text }]}>
+              <Text style={[styles.bubbleText, { color: isMe ? theme.textInverse : theme.text }]}>
                 {item.content}
               </Text>
             )}
             <Text
               style={[
                 styles.bubbleTime,
-                { color: isMe ? 'rgba(255,255,255,0.55)' : theme.textSecondary },
+                { color: isMe ? (theme.textInverse + '8c') : theme.textSecondary },
               ]}
             >
               {formatTime(item.created_at)}
@@ -619,13 +802,58 @@ export default function ChatRoomScreen() {
         </View>
       )}
 
+      {/* ─── Chat Pet ─── */}
+      {hasPet && (
+        <RNAnimated.View
+          {...petPanResponder.panHandlers}
+          style={{
+            position: 'absolute',
+            bottom: 46 + Math.max(insets.bottom, 12) + (showAttach ? 56 : 0) + (Platform.OS === 'ios' ? kbHeight : 0),
+            left: 0,
+            width: PET_SIZE,
+            height: PET_SIZE,
+            zIndex: 50,
+            transform: [
+              { translateX: petX },
+              { translateY: RNAnimated.add(petHop, petY) },
+            ],
+          }}
+          pointerEvents="box-only"
+        >
+          {isCatTheme ? (
+            <PlaygroundCodexPet
+              spriteUri={DIO_CAT_SPRITE_URL}
+              animation={codexPetAnim}
+              size={PET_SIZE}
+            />
+          ) : (
+            <PlaygroundCodexPet
+              spriteUri={isSpiderTheme ? NOIR_WEBLING_SPRITE_URL : ACIDLING_SPRITE_URL}
+              animation={codexPetAnim}
+              size={PET_SIZE}
+            />
+          )}
+        </RNAnimated.View>
+      )}
+
       {/* Input bar */}
       <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Pressable
           onPress={() => setShowAttach((v) => !v)}
           style={({ pressed }) => [styles.attachBtn, pressed && { opacity: 0.6 }]}
         >
-          <Feather name="plus-circle" size={24} color={showAttach ? theme.primary : theme.textSecondary} />
+          <RNAnimated.View
+            style={{
+              transform: [{
+                rotate: attachRotate.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '45deg'],
+                }),
+              }],
+            }}
+          >
+            <Feather name="plus-circle" size={24} color={showAttach ? theme.primary : theme.textSecondary} />
+          </RNAnimated.View>
         </Pressable>
         <TextInput
           style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundSecondary }]}
@@ -647,9 +875,9 @@ export default function ChatRoomScreen() {
           ]}
         >
           {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={theme.textInverse} />
           ) : (
-            <Feather name="send" size={18} color={text.trim() ? '#fff' : theme.textSecondary} />
+            <Feather name="send" size={18} color={text.trim() ? theme.textInverse : theme.textSecondary} />
           )}
         </Pressable>
       </View>

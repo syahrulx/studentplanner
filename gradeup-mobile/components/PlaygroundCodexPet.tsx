@@ -65,6 +65,9 @@ export const ACIDLING_SPRITE_URL =
 export const NOIR_WEBLING_SPRITE_URL =
   'https://pub-94495283df974cfea5e98d6a9e3fa462.r2.dev/curated/noir-webling/spritesheet.webp';
 
+export const DIO_CAT_SPRITE_URL =
+  'https://pub-94495283df974cfea5e98d6a9e3fa462.r2.dev/pets/dio-9cd915e4fa61/sprite.webp';
+
 type Props = {
   style?: StyleProp<ViewStyle>;
   /** Remote spritesheet URL (webp). */

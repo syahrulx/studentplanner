@@ -22,6 +22,7 @@ import { useApp } from './AppContext';
 import { t, type TranslationKey } from '../i18n';
 import * as snapApi from '../lib/snapApi';
 import type { StudySnap, SnapStreak } from '../types';
+import { getTotalUnreadDmCount } from '../lib/dmApi';
 
 // When SERVER_COMMUNITY_PUSH_ENABLED is true, remote pushes from Postgres triggers
 // (see supabase/migrations/053_community_push_triggers.sql) handle reaction/friend/
@@ -55,7 +56,8 @@ interface CommunityState {
   circles: Circle[];
   incomingRequests: Friendship[];
   unreadReactionCount: number;
-  /** Total items to surface on the Community tab badge (reactions + pending shares + friend requests). */
+  unreadDmCount: number;
+  /** Total items to surface on the Community tab badge (reactions + pending shares + friend requests + DMs). */
   communityBadgeCount: number;
   myActivity: UserActivity | null;
 
@@ -64,6 +66,7 @@ interface CommunityState {
   refreshCircles: () => Promise<void>;
   refreshRequests: () => Promise<void>;
   refreshUnreadCount: () => Promise<void>;
+  refreshUnreadDmCount: () => Promise<void>;
   refreshMyActivity: () => Promise<void>;
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
@@ -145,6 +148,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [circles, setCircles] = useState<Circle[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<Friendship[]>([]);
   const [unreadReactionCount, setUnreadReactionCount] = useState(0);
+  const [unreadDmCount, setUnreadDmCount] = useState(0);
   const [myActivity, setMyActivity] = useState<UserActivity | null>(null);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [myLatitude, setMyLatitude] = useState<number | null>(null);
@@ -194,8 +198,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const communityBadgeCount = useMemo(() => {
     const pendingShares = incomingSharedTasks.filter((s) => s.status === 'pending').length;
-    return unreadReactionCount + pendingShares + incomingRequests.length;
-  }, [unreadReactionCount, incomingSharedTasks, incomingRequests]);
+    return unreadReactionCount + unreadDmCount + pendingShares + incomingRequests.length;
+  }, [unreadReactionCount, unreadDmCount, incomingSharedTasks, incomingRequests]);
 
   // Get current user on mount
   useEffect(() => {
@@ -265,6 +269,16 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     try {
       const count = await communityApi.getUnreadReactionCount(userId).catch(() => 0);
       setUnreadReactionCount(count);
+    } catch (e) {
+      // Tables may not exist yet
+    }
+  }, [userId]);
+
+  const refreshUnreadDmCount = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const count = await getTotalUnreadDmCount(userId).catch(() => 0);
+      setUnreadDmCount(count);
     } catch (e) {
       // Tables may not exist yet
     }
@@ -368,6 +382,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshCircles(),
         refreshRequests(),
         refreshUnreadCount(),
+        refreshUnreadDmCount(),
         refreshMyActivity(),
         refreshSharedGoals(),
         refreshSharedTasks(),
@@ -399,6 +414,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       setCircles([]);
       setIncomingRequests([]);
       setUnreadReactionCount(0);
+      setUnreadDmCount(0);
       setMyActivity(null);
       setSharedGoals([]);
       setIncomingSharedTasks([]);
@@ -550,6 +566,72 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [userId, refreshUnreadCount]);
+
+  // ─── Listen for DM messages → refresh DM unread count ───
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel('global-dm-notification-badge')
+      .on(
+        'postgres_changes' as any,
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'dm_messages',
+        },
+        async (payload: any) => {
+          const msg = payload.new;
+          if (!msg || msg.sender_id === userId) return;
+
+          // Check if this message is in a conversation belonging to this user
+          const { data: convo } = await supabase
+            .from('dm_conversations')
+            .select('user_a, user_b')
+            .eq('id', msg.conversation_id)
+            .maybeSingle();
+
+          if (!convo) return;
+          if (convo.user_a !== userId && convo.user_b !== userId) return;
+
+          // Refresh unread DM count for badge globally
+          refreshUnreadDmCount();
+
+          // Send push notification
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('name')
+              .eq('id', msg.sender_id)
+              .maybeSingle();
+            const senderName = profile?.name ?? 'Someone';
+            const body = msg.message_type === 'flashcard_share'
+              ? `${senderName} shared flashcards with you`
+              : msg.message_type === 'quiz_share'
+                ? `${senderName} wants to play a quiz with you`
+                : `${senderName}: ${(msg.content || '').slice(0, 80)}`;
+
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'New Message',
+                body,
+                data: { type: 'dm_message', conversationId: msg.conversation_id },
+                sound: true,
+                ...(Platform.OS === 'android' ? { channelId: 'community' } : {}),
+              },
+              trigger: null,
+            });
+          } catch (e) {
+            if (__DEV__) console.warn('[DM] notification error:', e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, refreshUnreadDmCount]);
 
   // ─── Listen for friendship changes → refresh friend requests immediately ───
   useEffect(() => {
@@ -986,12 +1068,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     circles,
     incomingRequests,
     unreadReactionCount,
+    unreadDmCount,
     communityBadgeCount,
     myActivity,
     refreshFriends,
     refreshCircles,
     refreshRequests,
     refreshUnreadCount,
+    refreshUnreadDmCount,
     refreshMyActivity,
     updateActivity,
     clearMyActivity,
