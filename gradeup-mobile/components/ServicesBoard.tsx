@@ -1069,15 +1069,19 @@ export default function ServicesBoard() {
                     <Pressable
                       style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                       onPress={() => {
-                        setTempExplicitAnyUniversity(true);
-                        setTempFilterUniversity(null);
-                        setTempFilterCampusId(null);
+                        // Apply immediately
+                        setExplicitAnyUniversity(true);
+                        setFilterUniversity(null);
+                        setFilterCampusId(null);
+                        setOrderBy(tempOrderBy);
+                        setKind(tempKind);
+                        setCategory(tempCategory);
                         setUniSearchQuery('');
-                        setUniPickerExpanded(true);
+                        setShowFilterModal(false);
                       }}
                     >
                       <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
-                      {tempExplicitAnyUniversity ? (
+                      {explicitAnyUniversity ? (
                         <Feather name="check" size={18} color={theme.primary} />
                       ) : null}
                     </Pressable>
@@ -1098,17 +1102,21 @@ export default function ServicesBoard() {
                               key={item.id}
                               style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                               onPress={() => {
-                                setTempExplicitAnyUniversity(false);
-                                setTempFilterUniversity(item.id);
-                                setTempFilterCampusId(null);
+                                // Apply university filter immediately and close modal
+                                setExplicitAnyUniversity(false);
+                                setFilterUniversity(item.id);
+                                setFilterCampusId(null);
+                                setOrderBy(tempOrderBy);
+                                setKind(tempKind);
+                                setCategory(tempCategory);
                                 setUniSearchQuery('');
-                                setUniPickerExpanded(false);
+                                setShowFilterModal(false);
                               }}
                             >
                               <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
                                 {item.name}
                               </Text>
-                              {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                              {filterUniversity === item.id ? <Feather name="check" size={18} color={theme.primary} /> : null}
                             </Pressable>
                           );
                         })
