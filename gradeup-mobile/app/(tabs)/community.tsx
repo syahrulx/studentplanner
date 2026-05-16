@@ -17,6 +17,7 @@ import {
   Modal,
   Alert,
   Linking,
+  KeyboardAvoidingView,
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -143,7 +144,6 @@ function StableMarker({
   isSelected,
   isFaded,
   snapImageUrl,
-  customEmoji,
   snapStreakCount,
 }: {
   id: string;
@@ -161,7 +161,6 @@ function StableMarker({
   isSelected?: boolean;
   isFaded?: boolean;
   snapImageUrl?: string;
-  customEmoji?: string;
   snapStreakCount?: number;
 }) {
   const theme = useTheme();
@@ -202,8 +201,8 @@ function StableMarker({
   const MB = Mapbox as any;
   return (
     <MB.MarkerView
-      id={`${id}-${hasSnap ? 's' : 'n'}-${showSong ? 'y' : 'n'}`}
-      key={`${id}-${hasSnap}-${showSong}-v101`}
+      id={id}
+      key={id}
       coordinate={[coordinate.longitude, coordinate.latitude]}
       anchor={{ x: 0.5, y: 0.77 }} // Fixed anchor for the 180px container
       allowOverlap={true}
@@ -214,7 +213,7 @@ function StableMarker({
         onPress={onPress} 
         style={[
           styles.markerWrapper, 
-          isFaded && { opacity: 0.2 },
+          isFaded && { opacity: 0.4 },
           isSelected && { transform: [{ scale: 1.12 }] },
         ]} 
         hitSlop={10}
@@ -230,11 +229,7 @@ function StableMarker({
                 styles.statusCloud, isMe && styles.statusCloudMe,
                 hasSnap && { top: 30, left: -28, padding: 8, borderRadius: 20 },
               ]}>
-                {activityType === 'custom' && customEmoji ? (
-                  <Text style={{ fontSize: hasSnap ? 22 : 16 }}>{customEmoji}</Text>
-                ) : (
-                  <Feather name={statusIcon} size={statusCloudSize} color="#1e293b" />
-                )}
+                <Feather name={statusIcon} size={statusCloudSize} color="#1e293b" />
               </View>
             )}
 
@@ -403,6 +398,7 @@ export default function CommunityMap() {
     friendSnaps,
     friendStreaks,
     myStreak,
+    userId,
   } = useCommunity();
 
   // Valid pin coords (use null checks + isFinite — 0 is a valid lat/lon; `&&` would hide it)
@@ -813,13 +809,12 @@ export default function CommunityMap() {
                 listeningSongArtist={myActivity?.song_artist}
                 isFaded={!!selectedFriend}
                 snapImageUrl={friendSnaps.get(user.id!)?.imageUrl}
-                customEmoji={myActivity?.custom_status_emoji}
               />
             )}
 
             {/* Friend markers */}
-            {visibleFriends
-              .filter((f) => f.location)
+            {userId && visibleFriends
+              .filter((f) => f.location && f.id !== userId)
               .map((friend) => (
                 <StableMarker
                   key={friend.id}
@@ -840,7 +835,6 @@ export default function CommunityMap() {
                   isSelected={selectedFriend?.id === friend.id}
                   isFaded={!!selectedFriend && selectedFriend.id !== friend.id}
                   snapImageUrl={friendSnaps.get(friend.id)?.imageUrl}
-                  customEmoji={friend.activity?.custom_status_emoji}
                   snapStreakCount={friendStreaks.get(friend.id)?.currentStreak ?? 0}
                 />
               ))}
@@ -932,6 +926,7 @@ export default function CommunityMap() {
 
         return (
           <View style={[styles.friendPopup, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {/* Header */}
             <View style={styles.friendPopupHeader}>
               <Avatar name={selectedFriend.name} avatarUrl={selectedFriend.avatar_url} size={44} />
               <View style={styles.friendPopupIdentity}>
@@ -963,131 +958,132 @@ export default function CommunityMap() {
                   <Text style={[styles.friendPopupProfileLink, { color: theme.primary }]}>View full profile</Text>
                 </Pressable>
               </View>
-              {showMusic ? (
-                albumUri ? (
-                  <Image source={{ uri: albumUri }} style={styles.friendPopupAlbumArt} />
-                ) : (
-                  <View style={[styles.friendPopupAlbumPlaceholder, { borderColor: `${theme.primary}55` }]}>
-                    <Feather name="music" size={22} color="#1DB954" />
-                  </View>
-                )
-              ) : null}
               <Pressable onPress={() => setSelectedFriend(null)} hitSlop={10} style={styles.friendPopupClose}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
               </Pressable>
             </View>
 
-            {showMusic && (
-              <View style={styles.friendVibeCard}>
-                <View style={styles.friendVibeLabelRow}>
-                  <Feather name="music" size={12} color="#1DB954" />
-                  <Text style={styles.friendVibeLabel}>CURRENTLY VIBING TO</Text>
-                </View>
-                <View style={styles.friendVibeMainRow}>
-                  <View style={styles.friendVibeTextCol}>
-                    <Text style={styles.friendVibeTitle} numberOfLines={2}>
-                      {music!.song}
-                    </Text>
-                    {!!music!.artist?.trim() && (
-                      <Text style={styles.friendVibeArtist} numberOfLines={2}>
-                        {music!.artist}
+            {/* ─── Music + Snap: Side-by-side row ─── */}
+            {(showMusic || friendSnaps.has(selectedFriend.id)) && (
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8, height: 150 }}>
+                
+                {/* Music Card (left half) */}
+                {showMusic && (
+                  <View style={{
+                    flex: 1,
+                    borderRadius: 14,
+                    padding: 12,
+                    backgroundColor: 'rgba(12,14,18,0.96)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(29,185,84,0.35)',
+                    justifyContent: 'space-between',
+                  }}>
+                    <View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                        <Feather name="music" size={10} color="#1DB954" />
+                        <Text style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.6, color: '#1DB954' }}>
+                          NOW PLAYING
+                        </Text>
+                      </View>
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 17 }} numberOfLines={2}>
+                        {music!.song}
                       </Text>
-                    )}
-                  </View>
-                  <View style={styles.friendVibeBars}>
-                    <View style={[styles.friendVibeBar, { height: 9 }]} />
-                    <View style={[styles.friendVibeBar, { height: 14 }]} />
-                    <View style={[styles.friendVibeBar, { height: 7 }]} />
-                  </View>
-                </View>
-                {music!.trackId ? (
-                  <View style={styles.friendVibePlayerWrap}>
-                    <MapOpenMusicPill
-                      trackId={music!.trackId}
-                      titleMaxWidth={220}
-                      pillStyle={{ alignSelf: 'stretch', justifyContent: 'center' }}
-                    />
-                  </View>
-                ) : (
-                  <Text style={styles.friendVibeNoPreview} numberOfLines={2}>
-                    Music track ID unavailable — open their profile to use Add to Library.
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {/* Snap Preview - compact phone card with full viewer affordance */}
-            {friendSnaps.has(selectedFriend.id) && (() => {
-              const friendSnap = friendSnaps.get(selectedFriend.id)!;
-              return (
-                <View style={styles.snapPreviewDock}>
-                  <Pressable
-                    accessibilityRole="imagebutton"
-                    accessibilityLabel={`Open ${selectedFriend.name}'s snap`}
-                    style={({ pressed }) => [
-                      styles.snapPreviewPhone,
-                      { borderColor: theme.border },
-                      pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-                    ]}
-                    onPress={() => {
-                      setSelectedFriend(null);
-                      router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
-                    }}
-                  >
-                    <Image
-                      source={{ uri: friendSnap.imageUrl }}
-                      style={styles.snapPreviewImage}
-                      contentFit="cover"
-                      transition={180}
-                    />
-                    <View style={styles.snapPreviewExpand}>
-                      <Feather name="maximize-2" size={13} color="#fff" />
+                      {!!music!.artist?.trim() && (
+                        <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '600', marginTop: 3 }} numberOfLines={1}>
+                          {music!.artist}
+                        </Text>
+                      )}
                     </View>
-                    <View style={styles.snapPreviewOverlay}>
-                      <Feather name="camera" size={12} color="#fff" />
-                      <Text style={styles.snapPreviewLabel}>Snap</Text>
-                    </View>
-                  </Pressable>
-                  <View style={styles.snapPreviewMeta}>
-                    <View style={[styles.snapPreviewPill, { backgroundColor: theme.primary + '18' }]}>
-                      <Text style={{ fontSize: 14, marginRight: 4 }}>🔥</Text>
-                      <Text style={[styles.snapPreviewPillText, { color: theme.primary, fontWeight: '800' }]}>
-                        {(friendStreaks.get(selectedFriend.id)?.currentStreak ?? 0) > 0 
-                          ? `${friendStreaks.get(selectedFriend.id)?.currentStreak} DAY STREAK`
-                          : 'DAILY SNAP'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.snapPreviewTitle, { color: theme.text }]} numberOfLines={1}>
-                      Latest from {selectedFriend.name}
-                    </Text>
-                    <Text style={[styles.snapPreviewTime, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {timeAgo(friendSnap.createdAt)}
-                    </Text>
-                    {friendSnap.caption ? (
-                      <Text style={[styles.snapPreviewCaption, { color: theme.textSecondary }]} numberOfLines={2}>
-                        {friendSnap.caption}
-                      </Text>
+                    {music!.trackId ? (
+                      <View style={{ marginTop: 10 }}>
+                        <MapOpenMusicPill
+                          trackId={music!.trackId}
+                          titleMaxWidth={100}
+                          pillStyle={{ alignSelf: 'stretch', justifyContent: 'center', paddingVertical: 8, borderRadius: 10 }}
+                        />
+                      </View>
                     ) : null}
+                  </View>
+                )}
+
+                {/* Snap Card (right half) */}
+                {friendSnaps.has(selectedFriend.id) && (() => {
+                  const friendSnap = friendSnaps.get(selectedFriend.id)!;
+                  const streakCount = friendStreaks.get(selectedFriend.id)?.currentStreak ?? 0;
+                  return (
                     <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${selectedFriend.name}'s snap full screen`}
-                      style={({ pressed }) => [
-                        styles.snapPreviewFullBtn,
-                        { backgroundColor: theme.card, borderColor: theme.border },
-                        pressed && { opacity: 0.72 },
-                      ]}
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        borderRadius: 14,
+                        overflow: 'hidden',
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        backgroundColor: '#0f172a',
+                        opacity: pressed ? 0.88 : 1,
+                        transform: pressed ? [{ scale: 0.98 }] : [],
+                      })}
                       onPress={() => {
                         setSelectedFriend(null);
                         router.push({ pathname: '/snap-viewer', params: { snapId: friendSnap.id } } as any);
                       }}
                     >
-                      <Feather name="maximize-2" size={14} color={theme.primary} />
-                      <Text style={[styles.snapPreviewFullBtnText, { color: theme.primary }]}>View Full</Text>
+                      <Image
+                        source={{ uri: friendSnap.imageUrl }}
+                        style={{ width: '100%', height: '100%', position: 'absolute' }}
+                        contentFit="cover"
+                        transition={180}
+                      />
+                      {/* Streak badge top-left */}
+                      <View style={{
+                        position: 'absolute',
+                        top: 8,
+                        left: 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 3,
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                      }}>
+                        <Text style={{ fontSize: 11 }}>🔥</Text>
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+                          {streakCount > 0 ? `${streakCount}` : '1'}
+                        </Text>
+                      </View>
+                      {/* Expand icon top-right */}
+                      <View style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(0,0,0,0.5)',
+                      }}>
+                        <Feather name="maximize-2" size={11} color="#fff" />
+                      </View>
+                      {/* Bottom info */}
+                      <View style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        paddingVertical: 8,
+                        paddingHorizontal: 10,
+                        backgroundColor: 'rgba(0,0,0,0.55)',
+                      }}>
+                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+                          📸 {timeAgo(friendSnap.createdAt)}
+                        </Text>
+                      </View>
                     </Pressable>
-                  </View>
-                </View>
-              );
-            })()}
+                  );
+                })()}
+              </View>
+            )}
 
             {/* Accountability Pacts Tracker */}
             {friendPacts.length > 0 && (
@@ -1135,6 +1131,7 @@ export default function CommunityMap() {
               </View>
             )}
 
+            {/* Quick Reactions */}
             <View style={styles.friendPopupActions}>
               <Text style={[styles.friendPopupReactionsLabel, { color: theme.textSecondary }]}>Quick reactions</Text>
               <View style={styles.friendPopupReactions}>
@@ -1715,7 +1712,6 @@ function StatusPopup({
   );
   const [saving, setSaving] = useState(false);
   const [customText, setCustomText] = useState('');
-  const [customEmoji, setCustomEmoji] = useState('✨');
   const isProUser = subscriptionPlan === 'pro';
 
   // Sync selected type when popup opens
@@ -1723,9 +1719,8 @@ function StatusPopup({
     if (visible) {
       setSelectedType((myActivity?.activity_type as ActivityType) || 'idle');
       setCustomText((myActivity?.custom_status_text as string) || '');
-      setCustomEmoji((myActivity?.custom_status_emoji as string) || '✨');
     }
-  }, [visible, myActivity?.activity_type, myActivity?.custom_status_text, myActivity?.custom_status_emoji]);
+  }, [visible, myActivity?.activity_type, myActivity?.custom_status_text]);
 
   const currentTypeInfo = ACTIVITY_TYPES.find((a) => a.type === myActivity?.activity_type);
   const hasStatus = myActivity && myActivity.activity_type !== 'idle';
@@ -1741,7 +1736,6 @@ function StatusPopup({
           customText.trim() || 'Custom Status',
           undefined,
           customText.trim() || undefined,
-          customEmoji || undefined,
         );
       } else if (selectedType === 'studying') {
         const label = getCurrentTimetableSubjectLabel(timetable) || 'Studying';
@@ -1776,6 +1770,10 @@ function StatusPopup({
       animationType="slide"
       onRequestClose={onClose}
     >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <Pressable style={popupStyles.overlay} onPress={onClose}>
         <Pressable style={[popupStyles.container, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
@@ -1947,7 +1945,11 @@ function StatusPopup({
               ]}
             >
               {isProUser ? (
-                <Text style={{ fontSize: 16 }}>{customEmoji}</Text>
+                <Feather
+                  name="edit-3"
+                  size={16}
+                  color={isDarkMinimal ? theme.text : theme.primary}
+                />
               ) : (
                 <Feather
                   name="lock"
@@ -1972,26 +1974,6 @@ function StatusPopup({
               </View>
               {isProUser && selectedType === 'custom' && (
                 <View style={{ marginTop: 6, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                    {['✨', '💡', '🎯', '🚀', '🧠', '☕'].map((em) => (
-                      <Pressable
-                        key={em}
-                        onPress={() => setCustomEmoji(em)}
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 15,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: customEmoji === em
-                            ? (isDarkMinimal ? 'rgba(255,255,255,0.15)' : theme.primary + '20')
-                            : 'transparent',
-                        }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{em}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
                   <View
                     style={{
                       borderWidth: 1,
@@ -2039,6 +2021,7 @@ function StatusPopup({
           </Pressable>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,6 +33,22 @@ export default function SnapCamera() {
   const [loading, setLoading] = useState(true);
   const hasLaunchedCamera = useRef(false);
 
+  // Streak celebration state
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationStreak, setCelebrationStreak] = useState(0);
+  const flashOpacity = useRef(new Animated.Value(0)).current;
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(0.3)).current;
+  const glowOpacity = useRef(new Animated.Value(0)).current;
+  const fireScale = useRef(new Animated.Value(0)).current;
+  const fireTranslateY = useRef(new Animated.Value(-60)).current;
+  const numberTranslateY = useRef(new Animated.Value(80)).current;
+  const numberOpacity = useRef(new Animated.Value(0)).current;
+  const labelOpacity = useRef(new Animated.Value(0)).current;
+  const labelTranslateY = useRef(new Animated.Value(30)).current;
+  const subtitleOpacity = useRef(new Animated.Value(0)).current;
+  const wholeScale = useRef(new Animated.Value(1)).current;
+
   const plan = user.subscriptionPlan;
   const maxSnaps = maxSnapsPerDay(plan);
   const atLimit = snapsToday >= maxSnaps;
@@ -51,12 +69,139 @@ export default function SnapCamera() {
   useEffect(() => {
     if (!loading && !atLimit && !photoUri && !hasLaunchedCamera.current) {
       hasLaunchedCamera.current = true;
-      // Small delay for smooth transition
       setTimeout(() => {
         handleOpenCamera();
       }, 300);
     }
   }, [loading, atLimit, photoUri]);
+
+  const runCelebration = (streakCount: number) => {
+    setCelebrationStreak(streakCount);
+    setShowCelebration(true);
+
+    // Reset
+    flashOpacity.setValue(0);
+    overlayOpacity.setValue(0);
+    glowScale.setValue(0.3);
+    glowOpacity.setValue(0);
+    fireScale.setValue(0);
+    fireTranslateY.setValue(-60);
+    numberTranslateY.setValue(80);
+    numberOpacity.setValue(0);
+    labelOpacity.setValue(0);
+    labelTranslateY.setValue(30);
+    subtitleOpacity.setValue(0);
+    wholeScale.setValue(1);
+
+    // Step 1: Camera flash (0ms) — bright white flash like you just took a photo
+    Animated.sequence([
+      Animated.timing(flashOpacity, { toValue: 1, duration: 80, useNativeDriver: true }),
+      Animated.timing(flashOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start();
+
+    // Step 2: Dark overlay fades in (150ms)
+    Animated.timing(overlayOpacity, {
+      toValue: 1,
+      duration: 350,
+      delay: 150,
+      useNativeDriver: true,
+    }).start();
+
+    // Step 3: Golden glow ring pulses (300ms)
+    Animated.sequence([
+      Animated.delay(300),
+      Animated.parallel([
+        Animated.timing(glowOpacity, { toValue: 0.6, duration: 400, useNativeDriver: true }),
+        Animated.spring(glowScale, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }),
+      ]),
+      // Pulse loop
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowScale, { toValue: 1.15, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(glowScale, { toValue: 0.95, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+        { iterations: 2 }
+      ),
+    ]).start();
+
+    // Step 4: Fire drops in with heavy spring (400ms)
+    Animated.parallel([
+      Animated.spring(fireScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 60,
+        delay: 400,
+        useNativeDriver: true,
+      }),
+      Animated.spring(fireTranslateY, {
+        toValue: 0,
+        friction: 5,
+        tension: 50,
+        delay: 400,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Step 5: Number slides up (700ms)
+    Animated.parallel([
+      Animated.spring(numberTranslateY, {
+        toValue: 0,
+        friction: 6,
+        tension: 80,
+        delay: 700,
+        useNativeDriver: true,
+      }),
+      Animated.timing(numberOpacity, {
+        toValue: 1,
+        duration: 300,
+        delay: 700,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Step 6: "STREAK" label (900ms)
+    Animated.parallel([
+      Animated.spring(labelTranslateY, {
+        toValue: 0,
+        friction: 7,
+        tension: 90,
+        delay: 900,
+        useNativeDriver: true,
+      }),
+      Animated.timing(labelOpacity, {
+        toValue: 1,
+        duration: 250,
+        delay: 900,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Step 7: Subtitle (1200ms)
+    Animated.timing(subtitleOpacity, {
+      toValue: 1,
+      duration: 400,
+      delay: 1200,
+      useNativeDriver: true,
+    }).start();
+
+    // Step 8: Screen pulse (1000ms) — subtle "thump"
+    Animated.sequence([
+      Animated.delay(700),
+      Animated.timing(wholeScale, { toValue: 1.03, duration: 100, useNativeDriver: true }),
+      Animated.spring(wholeScale, { toValue: 1, friction: 3, tension: 100, useNativeDriver: true }),
+    ]).start();
+
+    // Auto-dismiss (2.8s)
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(overlayOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+        Animated.timing(wholeScale, { toValue: 0.85, duration: 350, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+      ]).start(() => {
+        setShowCelebration(false);
+        router.back();
+      });
+    }, 2800);
+  };
 
   const handleOpenCamera = async () => {
     if (atLimit) {
@@ -104,15 +249,17 @@ export default function SnapCamera() {
       const updatedStreak = await getMyStreak(user.id!);
       const streakGrew = updatedStreak.currentStreak > (streak?.currentStreak || 0);
 
-      Alert.alert(
-        streakGrew && updatedStreak.currentStreak > 1
-          ? `🔥 ${updatedStreak.currentStreak}-day streak!`
-          : '📸 Snap posted!',
-        streakGrew && updatedStreak.currentStreak > 1
-          ? 'Your snap is live on the map. Keep it up!'
-          : 'Your moment is now live on the map for 24 hours.',
-      );
-      router.back();
+      if (streakGrew && updatedStreak.currentStreak > 1) {
+        // Show celebration animation instead of boring Alert
+        runCelebration(updatedStreak.currentStreak);
+      } else {
+        // Simple success — no streak animation needed
+        Alert.alert(
+          '📸 Snap posted!',
+          'Your moment is now live on the map for 24 hours.',
+        );
+        router.back();
+      }
     } catch (e: any) {
       console.error('[SnapCamera] post error:', e);
       Alert.alert('Upload failed', 'Something went wrong. Please try again.');
@@ -177,6 +324,112 @@ export default function SnapCamera() {
             )}
           </Pressable>
         </View>
+
+        {/* ─── STREAK CELEBRATION ─── */}
+        {showCelebration && (
+          <>
+            {/* Camera flash */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: '#fff', opacity: flashOpacity, zIndex: 101 },
+              ]}
+            />
+
+            {/* Main overlay */}
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: 'rgba(0,0,0,0.8)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: overlayOpacity,
+                  transform: [{ scale: wholeScale }],
+                  zIndex: 100,
+                },
+              ]}
+            >
+              {/* Glow ring behind fire */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: 200,
+                  height: 200,
+                  borderRadius: 100,
+                  backgroundColor: 'transparent',
+                  borderWidth: 3,
+                  borderColor: '#FF6B00',
+                  opacity: glowOpacity,
+                  transform: [{ scale: glowScale }],
+                  shadowColor: '#FF6B00',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 40,
+                }}
+              />
+
+              {/* Fire emoji — drops in */}
+              <Animated.Text
+                style={{
+                  fontSize: 72,
+                  transform: [
+                    { scale: fireScale },
+                    { translateY: fireTranslateY },
+                  ],
+                }}
+              >
+                🔥
+              </Animated.Text>
+
+              {/* Streak number — slides up */}
+              <Animated.Text
+                style={{
+                  fontSize: 56,
+                  fontWeight: '900',
+                  color: '#FF6B00',
+                  letterSpacing: -2,
+                  marginTop: 8,
+                  opacity: numberOpacity,
+                  transform: [{ translateY: numberTranslateY }],
+                }}
+              >
+                {celebrationStreak}
+              </Animated.Text>
+
+              {/* "DAY STREAK" label — slides up after */}
+              <Animated.Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '800',
+                  color: '#fff',
+                  letterSpacing: 6,
+                  marginTop: 2,
+                  opacity: labelOpacity,
+                  transform: [{ translateY: labelTranslateY }],
+                }}
+              >
+                DAY STREAK
+              </Animated.Text>
+
+              {/* Subtitle */}
+              <Animated.Text
+                style={{
+                  opacity: subtitleOpacity,
+                  marginTop: 24,
+                  fontSize: 15,
+                  fontWeight: '500',
+                  color: 'rgba(255,255,255,0.55)',
+                  textAlign: 'center',
+                  paddingHorizontal: 40,
+                }}
+              >
+                Your snap is live on the map
+              </Animated.Text>
+            </Animated.View>
+          </>
+        )}
       </View>
     );
   }
