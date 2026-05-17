@@ -100,7 +100,7 @@ export default function SubscriptionPlansScreen() {
 
   const onSelectTier = (plan: SubscriptionPlan) => {
     if (isTierLocked(plan, staff)) {
-      openPricingPage();
+      // openPricingPage(); -> Removed to comply with App Store Guidelines
       return;
     }
     setSelected(plan);
@@ -251,19 +251,6 @@ export default function SubscriptionPlansScreen() {
 
           <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
 
-          <Pressable
-            onPress={openPricingPage}
-            style={({ pressed }) => [
-              styles.seePlanBtn,
-              { borderColor: theme.primary, backgroundColor: theme.card },
-              pressed && { opacity: 0.85 },
-            ]}
-            accessibilityRole="link"
-            accessibilityLabel="See plan details on the web"
-          >
-            <Feather name="external-link" size={18} color={theme.primary} />
-            <Text style={[styles.seePlanBtnText, { color: theme.primary }]}>See Plan</Text>
-          </Pressable>
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
