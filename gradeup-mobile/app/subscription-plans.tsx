@@ -127,7 +127,7 @@ export default function SubscriptionPlansScreen() {
     if (staff) {
       return 'Staff accounts can switch to Pro for testing. Plus is currently rolling out.';
     }
-    return 'Premium upgrades will be available in the app soon. You can change your plan later where applicable.';
+    return 'Premium upgrades are managed on the Rencana website. You can change your plan there at any time.';
   }, [staff]);
 
   return (
