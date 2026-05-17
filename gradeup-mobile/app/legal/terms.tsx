@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import LegalScreen from '@/components/LegalScreen';
 import { SUPPORT_EMAIL } from '@/src/constants/legal';
 
@@ -77,7 +78,9 @@ export default function TermsOfUseScreen() {
         {
           heading: '8. Subscriptions and In-App Purchases',
           paragraphs: [
-            'Some features may require a paid subscription. Payments are processed by Apple through your App Store account. Subscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel from your Apple ID → Subscriptions. Refunds are handled by Apple in accordance with their policies.',
+            Platform.OS === 'ios'
+              ? 'Some features may require a paid subscription. Payments are processed by Apple through your App Store account. Subscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel from your Apple ID → Subscriptions. Refunds are handled by Apple in accordance with their policies.'
+              : 'Some features may require a paid subscription. Payments are processed through your Google Play account or via our website. Subscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage or cancel from Google Play → Subscriptions. Refunds are handled in accordance with the applicable store or payment provider policies.',
           ],
         },
         {

@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Linking,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,13 +21,6 @@ import { subscriptionPlanLabel } from '@/src/lib/profileDisplay';
 import type { SubscriptionPlan } from '@/src/types';
 import { useTheme } from '@/hooks/useTheme';
 
-const PRICING_PAGE_URL = 'https://www.rencana.com.my/pricing';
-
-function openPricingPage() {
-  void Linking.openURL(PRICING_PAGE_URL).catch(() => {
-    Alert.alert('Could not open link', 'Please visit www.rencana.com.my/pricing in your browser.');
-  });
-}
 
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
 
@@ -127,7 +120,11 @@ export default function SubscriptionPlansScreen() {
     if (staff) {
       return 'Staff accounts can switch to Pro for testing. Plus is currently rolling out.';
     }
-    return 'Premium upgrades are managed on the Rencana website. You can change your plan there at any time.';
+    // Apple strictly prohibits mentioning external purchase channels (Guideline 3.1.1).
+    // Google is more lenient, so we can mention the website on Android.
+    return Platform.OS === 'ios'
+      ? 'Subscription plans are managed through your account settings. Features unlock automatically.'
+      : 'Premium upgrades are available at rencana.com.my. Your plan syncs automatically with the app.';
   }, [staff]);
 
   return (
