@@ -22,6 +22,7 @@ import {
   removeReaction,
   getViewCountToday,
   incrementViewCount,
+  deleteSnap,
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
 import type { StudySnap, SnapReaction } from '@/src/types';
@@ -58,7 +59,17 @@ export default function SnapViewer() {
   const loadSnap = useCallback(async () => {
     if (!snapId) return;
 
-    // Free tier: check view limit
+    // Fetch the snap first — don't count a "view" until we know it exists.
+    const data = await getSnapById(snapId);
+
+    if (!data) {
+      setSnap(null);
+      setLoading(false);
+      return;
+    }
+
+    // Free tier: check view limit AFTER confirming the snap exists, so a
+    // failed/expired snap doesn't waste one of the user's limited daily views.
     if (!isAtLeastPlus(plan)) {
       const viewCount = await getViewCountToday();
       if (viewCount >= SNAP_VIEW_LIMIT_FREE) {
@@ -69,15 +80,12 @@ export default function SnapViewer() {
       await incrementViewCount();
     }
 
-    const data = await getSnapById(snapId);
     setSnap(data);
 
-    if (data) {
-      const rx = await getSnapReactions(data.id);
-      setReactions(rx);
-      const mine = rx.find(r => r.userId === user.id);
-      setMyReaction(mine?.emoji || null);
-    }
+    const rx = await getSnapReactions(data.id);
+    setReactions(rx);
+    const mine = rx.find(r => r.userId === user.id);
+    setMyReaction(mine?.emoji || null);
 
     setLoading(false);
   }, [snapId, plan, user.id]);
@@ -121,6 +129,32 @@ export default function SnapViewer() {
     } catch (e) {
       console.warn('[SnapViewer] reaction error:', e);
     }
+  };
+
+  const handleDelete = () => {
+    if (!snap) return;
+    Alert.alert(
+      'Delete Snap',
+      'Are you sure you want to delete this snap? It will be removed from the map for everyone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await deleteSnap(snap.id);
+              router.back();
+            } catch (e) {
+              console.warn('[SnapViewer] delete error:', e);
+              Alert.alert('Error', 'Failed to delete snap. Please try again.');
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -197,6 +231,11 @@ export default function SnapViewer() {
             <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
           </View>
         </View>
+        {snap.userId === user.id && (
+          <Pressable onPress={handleDelete} style={s.deleteBtn} hitSlop={12}>
+            <Feather name="trash-2" size={20} color="#ff4444" />
+          </Pressable>
+        )}
       </View>
 
       {/* Bottom overlay: caption + reactions */}
@@ -287,6 +326,7 @@ const s = StyleSheet.create({
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   authorName: { color: '#fff', fontSize: 16, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   timestamp: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '500', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  deleteBtn: { padding: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 20 },
 
   // Bottom overlay
   bottomOverlay: {

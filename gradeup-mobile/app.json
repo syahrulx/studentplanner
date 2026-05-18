@@ -14,17 +14,21 @@
       "backgroundColor": "#eaecf1"
     },
     "ios": {
-      "buildNumber": "100",
+      "buildNumber": "102",
       "supportsTablet": false,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
       "config": {},
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.developer.applesignin": [
+          "Default"
+        ],
         "com.apple.security.application-groups": [
           "group.com.aizztech.rencana"
         ],
-        "com.apple.developer.associated-domains": ["applinks:aizztech.com"]
+        "com.apple.developer.associated-domains": [
+          "applinks:aizztech.com"
+        ]
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -43,7 +47,7 @@
     },
     "android": {
       "googleServicesFile": "./google-services.json",
-      "versionCode": 100,
+      "versionCode": 102,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#ffffff",

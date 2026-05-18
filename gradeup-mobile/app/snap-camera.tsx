@@ -243,11 +243,20 @@ export default function SnapCamera() {
     if (!photoUri || posting) return;
     setPosting(true);
     try {
+      const prevStreak = streak?.currentStreak || 0;
       const imageUrl = await uploadSnapImage(photoUri);
       await postSnap(user.id!, imageUrl);
 
-      const updatedStreak = await getMyStreak(user.id!);
-      const streakGrew = updatedStreak.currentStreak > (streak?.currentStreak || 0);
+      // postSnap() now awaits updateStreakOnPost() synchronously, so the
+      // streak should be up-to-date on the first read. Retry once as a
+      // safety net for rare DB replication lag.
+      let updatedStreak = await getMyStreak(user.id!);
+      if (updatedStreak.currentStreak <= prevStreak) {
+        await new Promise(r => setTimeout(r, 500));
+        updatedStreak = await getMyStreak(user.id!);
+      }
+
+      const streakGrew = updatedStreak.currentStreak > prevStreak;
 
       if (streakGrew && updatedStreak.currentStreak > 1) {
         // Show celebration animation instead of boring Alert

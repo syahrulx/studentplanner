@@ -260,6 +260,31 @@ function StableMarker({
               </View>
             ) : null}
 
+            {/* Streak count badge — top-left of avatar */}
+            {hasSnap && (snapStreakCount ?? 0) > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: -4,
+                left: -4,
+                minWidth: streakBadgeSize,
+                height: streakBadgeSize,
+                borderRadius: streakBadgeSize / 2,
+                backgroundColor: '#FF6B00',
+                borderWidth: 2,
+                borderColor: '#fff',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 4,
+                flexDirection: 'row',
+                gap: 1,
+                zIndex: 10,
+              }}>
+                <Text style={{ fontSize: streakBadgeSize * 0.42, color: '#fff', fontWeight: '900' }}>
+                  🔥{snapStreakCount}
+                </Text>
+              </View>
+            )}
+
             <View style={[
               styles.pinTriangle,
               hasSnap && {
@@ -739,6 +764,7 @@ export default function CommunityMap() {
                 listeningSongArtist={myActivity?.song_artist}
                 isFaded={!!selectedFriend}
                 snapImageUrl={friendSnaps.get(user.id!)?.imageUrl}
+                snapStreakCount={myStreak?.currentStreak ?? 0}
               />
             )}
 

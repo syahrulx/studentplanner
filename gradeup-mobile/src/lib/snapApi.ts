@@ -128,24 +128,28 @@ export async function postSnap(
 
   if (error) throw error;
 
-  // Update streak in background
-  updateStreakOnPost(userId).catch(console.warn);
+  // Update streak synchronously — the caller needs the updated streak
+  // available immediately after postSnap resolves (e.g. for the celebration
+  // animation). Fire-and-forget previously caused a race condition.
+  await updateStreakOnPost(userId);
 
   return rowToSnap(data);
 }
 
-/** Count how many snaps the user has posted today. */
+/** Count how many snaps the user has posted today (local timezone). */
 export async function getMySnapsToday(userId: string): Promise<number> {
-  const today = todayDateStr();
-  const startOfDay = `${today}T00:00:00.000Z`;
-  const endOfDay = `${today}T23:59:59.999Z`;
+  // Build start/end of today in the user's local timezone, then convert to
+  // UTC ISO strings for the Supabase query (created_at is timestamptz).
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
   const { count, error } = await supabase
     .from('study_snaps')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .gte('created_at', startOfDay)
-    .lte('created_at', endOfDay);
+    .gte('created_at', startOfDay.toISOString())
+    .lt('created_at', endOfDay.toISOString());
 
   if (error) {
     console.warn('[snapApi] getMySnapsToday error:', error);
@@ -210,7 +214,7 @@ export async function getMyActiveSnaps(userId: string): Promise<StudySnap[]> {
   return (data || []).map(rowToSnap);
 }
 
-/** Get a single snap by ID with author info. */
+/** Get a single snap by ID with author info. Returns null if expired. */
 export async function getSnapById(snapId: string): Promise<StudySnap | null> {
   const { data, error } = await supabase
     .from('study_snaps')
@@ -221,6 +225,9 @@ export async function getSnapById(snapId: string): Promise<StudySnap | null> {
   if (error || !data) return null;
 
   const snap = rowToSnap(data);
+
+  // Don't return expired snaps — they're no longer live on the map
+  if (new Date(snap.expiresAt) <= new Date()) return null;
 
   const { data: prof } = await supabase
     .from('profiles')
