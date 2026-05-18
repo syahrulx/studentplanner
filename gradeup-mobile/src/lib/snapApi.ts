@@ -31,10 +31,18 @@ function rowToSnap(row: Record<string, unknown>): StudySnap {
 }
 
 function rowToStreak(row: Record<string, unknown>): SnapStreak {
+  const currentStreak = Number(row.current_streak) || 0;
+  const lastSnapDate = row.last_snap_date ? String(row.last_snap_date) : null;
+  
+  let effectiveCurrentStreak = currentStreak;
+  if (lastSnapDate && lastSnapDate !== todayDateStr() && lastSnapDate !== yesterdayDateStr()) {
+    effectiveCurrentStreak = 0;
+  }
+
   return {
-    currentStreak: Number(row.current_streak) || 0,
+    currentStreak: effectiveCurrentStreak,
     longestStreak: Number(row.longest_streak) || 0,
-    lastSnapDate: row.last_snap_date ? String(row.last_snap_date) : null,
+    lastSnapDate,
     revivalsUsed: Number(row.revivals_used) || 0,
     revivalMonth: Number(row.revival_month) || 0,
   };

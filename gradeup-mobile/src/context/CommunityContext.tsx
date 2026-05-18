@@ -334,12 +334,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const refreshFriendSnaps = useCallback(async () => {
     if (!userId) return;
-    // If friends haven't loaded yet, skip — the periodic poll or the next
-    // refreshAll() will pick up snaps once the friends list is available.
-    // Without this guard, we'd query with only the self-ID and miss all
-    // friend snaps on first load.
     const friendIds = friendsRef.current.map(f => f.id);
-    if (friendIds.length === 0) return;
     try {
       const allIds = [userId, ...friendIds];
       const [snapMap, streakMap] = await Promise.all([
@@ -392,8 +387,12 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     try {
       // Phase 1: Load friends first — friendsRef must be populated before
       // refreshFriendSnaps can build the user-ID list it queries.
+      // We chain refreshFriendSnaps directly to refreshFriends so it doesn't
+      // wait for slow tasks (like refreshSharedTasks) to finish.
+      const friendsAndSnapsPromise = refreshFriends().then(() => refreshFriendSnaps());
+
       await Promise.allSettled([
-        refreshFriends(),
+        friendsAndSnapsPromise,
         refreshCircles(),
         refreshRequests(),
         refreshUnreadCount(),
@@ -404,8 +403,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         refreshShareStreams(),
         refreshMyStreak(),
       ]);
-      // Phase 2: Now that friendsRef is up-to-date, fetch snap data.
-      await refreshFriendSnaps();
     } catch (e) {
       // Silently fail
     }

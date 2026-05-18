@@ -48,6 +48,13 @@ function getMapState(themeId: string) {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  interpolate,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { Avatar } from '@/components/Avatar';
 import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
@@ -192,7 +199,7 @@ function StableMarker({
   const pinLeft = hasSnap ? 12 : 8;
   const pinRight = hasSnap ? 12 : 8;
   const pinTop = hasSnap ? 16 : 12;
-  const statusCloudSize = hasSnap ? 22 : 18;
+  const statusCloudSize = hasSnap ? 16 : 14;
   const badgeSize = hasSnap ? 24 : 19;
   const badgeIconSize = hasSnap ? 12 : 10;
   const streakBadgeSize = hasSnap ? 28 : 22;
@@ -227,7 +234,7 @@ function StableMarker({
             {showStatus && (
               <View style={[
                 styles.statusCloud, isMe && styles.statusCloudMe,
-                hasSnap && { top: 30, left: -28, padding: 8, borderRadius: 20 },
+                hasSnap && { top: 30, left: -22, padding: 5, borderRadius: 16 },
               ]}>
                 <Feather name={statusIcon} size={statusCloudSize} color="#1e293b" />
               </View>
@@ -261,7 +268,7 @@ function StableMarker({
             ) : null}
 
             {/* Streak count badge — top-left of avatar */}
-            {hasSnap && (snapStreakCount ?? 0) > 0 && (
+            {(snapStreakCount ?? 0) > 0 && (
               <View style={{
                 position: 'absolute',
                 top: -4,
@@ -395,6 +402,50 @@ export default function CommunityMap() {
   /** Keeps “current class” under Studying in sync as periods change. */
   useWallClockTick(30_000);
   const T = useTranslations(language);
+
+  const pillExpansion = useSharedValue(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      pillExpansion.value = withDelay(
+        300,
+        withTiming(1, { duration: 500 })
+      );
+
+      const collapseId = setTimeout(() => {
+        pillExpansion.value = withTiming(0, { duration: 400 });
+      }, 3500);
+
+      return () => {
+        clearTimeout(collapseId);
+        pillExpansion.value = 0;
+      };
+    }, [])
+  );
+
+  const snapStreakOuterStyle = useAnimatedStyle(() => {
+    const maxWidth = interpolate(pillExpansion.value, [0, 1], [38, 200], 'clamp');
+    return {
+      maxWidth,
+      overflow: 'hidden',
+      borderRadius: 16,
+    };
+  });
+
+  const snapStreakLabelStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(pillExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp');
+    const maxWidth = interpolate(pillExpansion.value, [0, 1], [0, 200], 'clamp');
+    const marginLeft = interpolate(pillExpansion.value, [0, 1], [0, 4], 'clamp');
+    return {
+      opacity,
+      maxWidth,
+      marginLeft,
+      overflow: 'hidden',
+      flexDirection: 'row',
+      alignItems: 'center',
+    };
+  });
+
   const {
     filteredFriends,
     circles,
@@ -1138,18 +1189,20 @@ export default function CommunityMap() {
         <View style={styles.bottomSheetTabs}>
           <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>Friends</Text>
           <View style={styles.bottomSheetActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.tabPill,
-                isMonoOnly
-                  ? { backgroundColor: '#ffffff' }
-                  : themePack === 'spider'
-                  ? { backgroundColor: theme.primary }
-                  : { backgroundColor: theme.primary + '18' },
-                pressed && { opacity: 0.7 },
-              ]}
-              onPress={() => router.push('/snap-camera' as any)}
-            >
+            <Animated.View style={snapStreakOuterStyle}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.tabPill,
+                  isMonoOnly
+                    ? { backgroundColor: '#ffffff' }
+                    : themePack === 'spider'
+                    ? { backgroundColor: theme.primary }
+                    : { backgroundColor: theme.primary + '18' },
+                  pressed && { opacity: 0.7 },
+                  { width: '100%', gap: 0 },
+                ]}
+                onPress={() => router.push('/snap-camera' as any)}
+              >
               <Feather
                 name="camera"
                 size={14}
@@ -1161,22 +1214,26 @@ export default function CommunityMap() {
                     : theme.primary
                 }
               />
-              <Text
-                style={[
-                  styles.tabPillText,
-                  {
-                    color:
-                      isMonoOnly
-                        ? '#000000'
-                        : themePack === 'spider'
-                        ? theme.textInverse
-                        : theme.primary,
-                  },
-                ]}
-              >
-                Snap Streak
-              </Text>
+              <Animated.View style={snapStreakLabelStyle}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.tabPillText,
+                    {
+                      color:
+                        isMonoOnly
+                          ? '#000000'
+                          : themePack === 'spider'
+                          ? theme.textInverse
+                          : theme.primary,
+                    },
+                  ]}
+                >
+                  Snap Streak
+                </Text>
+              </Animated.View>
             </Pressable>
+            </Animated.View>
             <Pressable
               style={({ pressed }) => [
                 styles.addFriendBtn,
@@ -2759,9 +2816,9 @@ const styles = StyleSheet.create({
     top: 15,
     left: -18,
     backgroundColor: '#fff',
-    borderRadius: 18,
-    minWidth: 36,
-    minHeight: 36,
+    borderRadius: 14,
+    minWidth: 28,
+    minHeight: 28,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
