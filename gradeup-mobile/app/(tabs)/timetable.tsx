@@ -172,7 +172,7 @@ export default function TimetableScreen() {
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
   const isSpiderTheme = themePack === 'spider';
-  const isCodexPlaygroundPet = true; // All premium themes now use the Codex pet system
+  const isCodexPlaygroundPet = themePack === 'cat' || themePack === 'mono' || themePack === 'spider'; // All premium themes now use the Codex pet system
   const playgroundPetSize = isCodexPlaygroundPet ? MONO_PLAYGROUND_SIZE : CAT_PLAYGROUND_SIZE;
   const isPurpleTheme = themePack === 'purple';
   const purplePageBg = '#f3efff';

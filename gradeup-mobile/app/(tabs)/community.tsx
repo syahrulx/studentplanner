@@ -797,8 +797,8 @@ export default function CommunityMap() {
                 ]}
                 onPress={grantLocationConsent}
               >
-                <Feather name="navigation" size={16} color="#fff" />
-                <Text style={styles.locationSessionBtnPrimaryText}>Check In Now</Text>
+                <Feather name="navigation" size={16} color={isMonoOnly ? '#000000' : '#ffffff'} />
+                <Text style={[styles.locationSessionBtnPrimaryText, { color: isMonoOnly ? '#000000' : '#ffffff' }]}>Check In Now</Text>
               </Pressable>
             </View>
           </View>
