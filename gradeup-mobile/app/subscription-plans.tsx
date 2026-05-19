@@ -29,6 +29,7 @@ import {
 import type { SubscriptionPlan } from '@/src/types';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { useTheme } from '@/hooks/useTheme';
+import { openPrivacyPolicy, openTermsOfUse } from '@/src/constants/legal';
 
 
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
@@ -405,6 +406,22 @@ export default function SubscriptionPlansScreen() {
             <Text style={[styles.supportBtnText, { color: theme.textSecondary }]}>Need help? Contact Support</Text>
           </Pressable>
 
+          {/* Apple IAP Compliance Disclosures */}
+          <View style={styles.legalDisclosureContainer}>
+            <Text style={[styles.legalDisclosureText, { color: theme.textSecondary }]}>
+              Subscriptions will automatically renew unless canceled at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period. You can manage or cancel your subscription anytime in your iTunes Account Settings.
+            </Text>
+            <View style={styles.legalLinksRow}>
+              <Pressable onPress={() => void openPrivacyPolicy()} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+                <Text style={[styles.legalLinkItem, { color: theme.primary }]}>Privacy Policy</Text>
+              </Pressable>
+              <Text style={{ color: theme.textSecondary, marginHorizontal: 8 }}>•</Text>
+              <Pressable onPress={() => void openTermsOfUse()} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+                <Text style={[styles.legalLinkItem, { color: theme.primary }]}>Terms of Use</Text>
+              </Pressable>
+            </View>
+          </View>
+
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
@@ -559,4 +576,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ctaText: { fontSize: 16, fontWeight: '800' },
+  legalDisclosureContainer: {
+    marginTop: 20,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  legalDisclosureText: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  legalLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  legalLinkItem: {
+    fontSize: 12,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
 });
