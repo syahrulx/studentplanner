@@ -172,14 +172,23 @@ export default function Settings() {
   };
 
   useEffect(() => {
-    getNotificationPrefs().then(setNotifPrefs);
+    getNotificationPrefs().then((p) => {
+      if (!isPremium && p.taskLeadDays.some((d) => d > 0)) {
+        const restricted = { ...p, taskLeadDays: [0] };
+        setNotifPrefs(restricted);
+        setNotificationPrefs(restricted).catch(() => {});
+        rescheduleAllTaskNotifications(tasks).catch(() => {});
+      } else {
+        setNotifPrefs(p);
+      }
+    });
     // Fetch user email for the Android Classroom notice
     if (Platform.OS === 'android') {
       supabase.auth.getUser().then(({ data }) => {
         if (data?.user?.email) setUserEmail(data.user.email);
       });
     }
-  }, []);
+  }, [isPremium, tasks]);
 
   const updateNotifPref = useCallback(
     (patch: Partial<NotificationPrefs>) => {
@@ -644,10 +653,22 @@ export default function Settings() {
                       return allChips.map((d) => {
                         const active = notifPrefs.taskLeadDays.includes(d);
                         const label = d === 0 ? 'Due day' : d === 1 ? '1 day' : `${d} days`;
+                        const isLocked = !isPremium && d > 0;
                         return (
                           <Pressable
                             key={d}
                             onPress={() => {
+                              if (isLocked) {
+                                Alert.alert(
+                                  'Plus / Pro Feature',
+                                  'Advance reminders (1 day and 3 days before) are exclusively available for Plus and Pro users. Free users are notified on the due day.',
+                                  [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
+                                  ]
+                                );
+                                return;
+                              }
                               const next = active
                                 ? notifPrefs.taskLeadDays.filter((x) => x !== d)
                                 : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
@@ -658,17 +679,21 @@ export default function Settings() {
                               {
                                 borderColor: active ? theme.primary : theme.border,
                                 backgroundColor: active ? theme.primary + '22' : theme.card,
+                                opacity: isLocked ? 0.65 : 1,
                               },
                             ]}
                           >
-                            <Text
-                              style={[
-                                styles.notifChipText,
-                                { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
-                              ]}
-                            >
-                              {label}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Text
+                                style={[
+                                  styles.notifChipText,
+                                  { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
+                                ]}
+                              >
+                                {label}
+                              </Text>
+                              {isLocked && <Feather name="lock" size={12} color={theme.textSecondary} />}
+                            </View>
                           </Pressable>
                         );
                       });
