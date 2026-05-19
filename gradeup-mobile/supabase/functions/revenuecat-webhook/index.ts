@@ -89,14 +89,38 @@ Deno.serve(async (req) => {
   const proKeys  = ['Rencana Pro',  'rencana_pro',  'pro'];
   const plusKeys = ['Rencana Plus', 'rencana_plus', 'plus'];
 
-  // Pro takes precedence over Plus
+  // 1. First, check event.entitlement_ids array (most direct and robust for events)
+  const activeIds = new Set(
+    (Array.isArray(event?.entitlement_ids) ? event.entitlement_ids : [])
+      .map((x) => String(x).trim())
+  );
+
   for (const key of proKeys) {
-    const ent = entitlements[key];
-    if (ent) {
-      // null expires_date means lifetime / no expiry — treat as active
-      if (!ent.expires_date || new Date(ent.expires_date) > now) {
-        newPlan = 'pro';
+    if (activeIds.has(key)) {
+      newPlan = 'pro';
+      break;
+    }
+  }
+
+  if (newPlan === 'free') {
+    for (const key of plusKeys) {
+      if (activeIds.has(key)) {
+        newPlan = 'plus';
         break;
+      }
+    }
+  }
+
+  // 2. Second, fallback to checking entitlements objects (with expiry validation)
+  if (newPlan === 'free') {
+    for (const key of proKeys) {
+      const ent = entitlements[key];
+      if (ent) {
+        // null expires_date means lifetime / no expiry — treat as active
+        if (!ent.expires_date || new Date(ent.expires_date) > now) {
+          newPlan = 'pro';
+          break;
+        }
       }
     }
   }
