@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
   // ── Determine new plan from active entitlements ──
   // Entitlement keys match exact IDs in the RevenueCat dashboard.
-  const subscriber = body.subscriber as Record<string, unknown> | undefined;
+  const subscriber = (body.subscriber ?? event?.subscriber) as Record<string, unknown> | undefined;
   const entitlements = (subscriber?.entitlements ?? event?.entitlements ?? {}) as Record<
     string,
     { expires_date?: string | null; purchase_date?: string }
