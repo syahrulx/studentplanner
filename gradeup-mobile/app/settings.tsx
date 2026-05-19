@@ -173,8 +173,10 @@ export default function Settings() {
 
   useEffect(() => {
     getNotificationPrefs().then((p) => {
-      if (!isPremium && p.taskLeadDays.some((d) => d > 0)) {
-        const restricted = { ...p, taskLeadDays: [0] };
+      const hasInvalidLeadDays = p.taskLeadDays.some((d) => d > 0);
+      const hasCustomTime = p.taskReminderTime && p.taskReminderTime !== '09:00';
+      if (!isPremium && (hasInvalidLeadDays || hasCustomTime)) {
+        const restricted = { ...p, taskLeadDays: [0], taskReminderTime: '09:00' };
         setNotifPrefs(restricted);
         setNotificationPrefs(restricted).catch(() => {});
         rescheduleAllTaskNotifications(tasks).catch(() => {});
