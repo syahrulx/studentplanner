@@ -21,6 +21,8 @@ INSERT INTO public.subscription_plan_features (tier, label, enabled, sort_order)
   ('plus', 'Apple & Google Calendar Sync: Seamlessly import external calendars', true, 6),
   ('plus', '2x Study Streak Revivals (2 lives/month to save your streak)', true, 7),
   ('plus', 'Interactive Snaps: Post 3 snaps daily, view unlimited friend snaps, and react with custom emojis', true, 8),
+  ('plus', 'Custom Task Reminders: Choose the exact hour of the day you want to be notified', true, 9),
+  ('plus', 'Custom Lead Time Warnings: Set reminders any number of days before due dates', true, 10),
 
   -- Pro (All Access)
   ('pro', 'Includes all Everyday features', true, 0),
@@ -31,4 +33,5 @@ INSERT INTO public.subscription_plan_features (tier, label, enabled, sort_order)
   ('pro', '3x Study Streak Revivals (3 lives/month to protect your streak)', true, 5),
   ('pro', 'Unlimited Study Snaps with a lifetime history archive', true, 6),
   ('pro', 'Ultimate Custom Presence: Express your study vibe with custom text & emoji statuses', true, 7),
-  ('pro', 'Collaborative Learning: Share AI-generated flashcards directly with friends & study circles', true, 8);
+  ('pro', 'Collaborative Learning: Share AI-generated flashcards directly with friends & study circles', true, 8),
+  ('pro', 'Advanced Custom Reminders: Total freedom over reminder times and lead day alerts', true, 9);
