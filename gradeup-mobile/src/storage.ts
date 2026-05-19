@@ -457,6 +457,7 @@ export interface NotificationPrefs {
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
   todaysFocusPref: 'all' | 'task' | 'study' | 'exam';
+  taskReminderTime?: string;   // "HH:mm" - Plus/Pro custom reminder time
 }
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -471,6 +472,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
   todaysFocusPref: 'all',
+  taskReminderTime: '09:00',
 };
 
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
@@ -496,6 +498,9 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
             ? parsed.todaysFocusPref
             : DEFAULT_NOTIFICATION_PREFS.todaysFocusPref,
+        taskReminderTime: typeof parsed.taskReminderTime === 'string'
+            ? parsed.taskReminderTime
+            : DEFAULT_NOTIFICATION_PREFS.taskReminderTime,
       };
     }
   } catch {}

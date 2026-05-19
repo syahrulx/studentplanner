@@ -112,7 +112,11 @@ export async function scheduleTaskNotifications(task: Task, prefs?: Notification
   const [y, m, d] = task.dueDate.split('-').map(Number);
   if (!y || !m || !d) return;
 
-  const dueBase = new Date(y, m - 1, d, 9, 0, 0, 0);
+  const [hStr, mmStr] = (p.taskReminderTime || '09:00').split(':');
+  const rHour = parseInt(hStr, 10) || 9;
+  const rMin = parseInt(mmStr, 10) || 0;
+
+  const dueBase = new Date(y, m - 1, d, rHour, rMin, 0, 0);
   if (Number.isNaN(dueBase.getTime())) return;
 
   for (const daysBefore of p.taskLeadDays) {
