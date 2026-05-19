@@ -95,6 +95,9 @@ Deno.serve(async (req) => {
       .map((x) => String(x).trim())
   );
 
+  console.log('[revenuecat-webhook] parsed activeIds:', Array.from(activeIds));
+  console.log('[revenuecat-webhook] parsed entitlements from subscriber:', JSON.stringify(entitlements));
+
   for (const key of proKeys) {
     if (activeIds.has(key)) {
       newPlan = 'pro';

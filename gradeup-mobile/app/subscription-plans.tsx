@@ -40,9 +40,31 @@ export default function SubscriptionPlansScreen() {
   const [staff, setStaff] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
   const [features, setFeatures] = useState<Record<SubscriptionPlan, string[]>>({
-    free: [],
-    plus: [],
-    pro: [],
+    free: [
+      'Full student planner with timetable, tasks & notes',
+      'Auto-generated timetable from a photo',
+      'Activity Status & daily Study Snap photo',
+      'Basic AI note & flashcard tools',
+      'Customizable location privacy',
+      'Baik korang subs, kalau tak dapat sambutan nanti kami letak ads dekat app ni :)'
+    ],
+    plus: [
+      'Everything in Free, plus:',
+      'Premium app & widget themes (Cat, Mono, Spider, Aurora Purple)',
+      'Import tasks from Apple & Google Calendar',
+      'Smarter AI with much higher monthly limits',
+      'AI Tutor: 1 persistent chat history per subject',
+      'Study Snap: 3 photos/day & 1-week history'
+    ],
+    pro: [
+      'Everything in Plus, plus:',
+      'Highest monthly AI allowance with our smartest models',
+      'Smarter, more accurate results for notes and schedules',
+      'Pro AI chatbot tutor with expert-level study help',
+      'Study Snap: highest photo allowance & full history archive',
+      'Activity Status: Custom text & emoji statuses',
+      'Share AI-generated flashcards with friends & study circles'
+    ],
   });
   const [loadingFeatures, setLoadingFeatures] = useState(true);
   const [selected, setSelected] = useState<SubscriptionPlan>('free');
