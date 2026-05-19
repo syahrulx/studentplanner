@@ -72,7 +72,6 @@
       "./plugins/withJvmOpenArgs",
       "expo-dev-client",
       "expo-router",
-      "react-native-purchases",
       [
         "expo-notifications",
         {
