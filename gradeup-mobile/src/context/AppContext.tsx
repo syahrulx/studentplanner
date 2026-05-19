@@ -88,6 +88,7 @@ import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
+import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -812,7 +813,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 mystudentEmail: (profile.mystudentEmail ?? '').trim(),
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
-                subscriptionPlan: profile.subscriptionPlan ?? 'free',
+                subscriptionPlan: profile.subscriptionPlan ?? 'free', // Will be overridden by RevenueCat below
               };
             }
           } else if ((authFallbackName || '').trim()) {
@@ -931,6 +932,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // ── Initialize RevenueCat & sync subscription plan from the store ──
+        try {
+          await initPurchases(uid);
+          const rcPlan = await getCurrentPlan();
+          // RevenueCat is the source of truth — override the DB value.
+          // This handles cases where the webhook hasn't fired yet (e.g. offline).
+          if (rcPlan !== 'free') {
+            setUserState((prev) => ({ ...prev, subscriptionPlan: rcPlan }));
+          }
+        } catch (e) {
+          if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
+          // Non-fatal: the user just keeps whatever plan is in the DB.
+        }
+
         // Check for new Google Classroom tasks in the background (no silent import)
         try {
           const { checkForNewTasks } = require('../lib/googleClassroom');
@@ -1013,6 +1028,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setAcademicCalendar(null);
           setTimetable([]);
           cancelAllAttendanceNotifications().catch(() => {});
+          logOutPurchases().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }
@@ -1031,6 +1047,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       removePushTokenListener();
     };
   }, []);
+
+  // RevenueCat: listen for real-time subscription changes (renewal, expiration, upgrade)
+  // and sync it to both local App State and Supabase profile database.
+  useEffect(() => {
+    const unsubscribe = onCustomerInfoUpdate((newPlan) => {
+      setUser((prev) => {
+        if (prev.subscriptionPlan === newPlan) return prev;
+        return { ...prev, subscriptionPlan: newPlan };
+      });
+      // Client-side fallback: sync the new plan state directly to Supabase
+      void updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
+        if (__DEV__) console.warn('[Rencana] Client-side subscription sync to DB failed:', err);
+      });
+    });
+    return unsubscribe;
+  }, [setUser, updateProfile]);
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack };
 

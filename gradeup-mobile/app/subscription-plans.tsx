@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,23 +19,19 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { fetchIsGradeUpAdmin } from '@/src/lib/gradeUpAdmin';
 import { getEnabledSubscriptionFeaturesAllTiers } from '@/src/lib/subscriptionFeatures';
 import { subscriptionPlanLabel } from '@/src/lib/profileDisplay';
+import {
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  isPurchaseCancelled,
+  type PlanOfferings,
+} from '@/src/lib/purchases';
 import type { SubscriptionPlan } from '@/src/types';
+import type { PurchasesPackage } from 'react-native-purchases';
 import { useTheme } from '@/hooks/useTheme';
 
 
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
-
-function tierPriceLabel(plan: SubscriptionPlan): string {
-  if (plan === 'free') return 'Free forever';
-  return 'Unlocked via Account';
-}
-
-/** Plus is not self-serve for anyone yet; Pro only for Rencana staff. */
-function isTierLocked(plan: SubscriptionPlan, staff: boolean): boolean {
-  if (plan === 'free') return false;
-  if (plan === 'plus') return true;
-  return !staff;
-}
 
 export default function SubscriptionPlansScreen() {
   const theme = useTheme();
@@ -49,7 +46,12 @@ export default function SubscriptionPlansScreen() {
   });
   const [loadingFeatures, setLoadingFeatures] = useState(true);
   const [selected, setSelected] = useState<SubscriptionPlan>('free');
-  const [saving, setSaving] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  // RevenueCat offerings (real prices from App Store / Play Store)
+  const [offerings, setOfferings] = useState<PlanOfferings | null>(null);
+  const [loadingOfferings, setLoadingOfferings] = useState(true);
 
   const currentTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -58,6 +60,7 @@ export default function SubscriptionPlansScreen() {
     setSelected(currentTier);
   }, [currentTier]);
 
+  // Load staff status
   useEffect(() => {
     let c = false;
     if (!userId) {
@@ -75,6 +78,7 @@ export default function SubscriptionPlansScreen() {
     };
   }, [userId]);
 
+  // Load feature bullets
   const loadFeatures = useCallback(() => {
     setLoadingFeatures(true);
     getEnabledSubscriptionFeaturesAllTiers()
@@ -87,44 +91,168 @@ export default function SubscriptionPlansScreen() {
     loadFeatures();
   }, [loadFeatures]);
 
-  const dirty = selected !== currentTier;
+  // Load RevenueCat offerings (real prices)
+  useEffect(() => {
+    setLoadingOfferings(true);
+    getOfferings()
+      .then(setOfferings)
+      .catch(() => setOfferings(null))
+      .finally(() => setLoadingOfferings(false));
+  }, []);
+
+  /** Get the PurchasesPackage for a given tier. */
+  const packageForTier = useCallback(
+    (plan: SubscriptionPlan): PurchasesPackage | null => {
+      if (!offerings) return null;
+      if (plan === 'plus') return offerings.plusPackage;
+      if (plan === 'pro') return offerings.proPackage;
+      return null;
+    },
+    [offerings],
+  );
+
+  /** Get the display price string from the store (e.g. "RM 9.90" or "$2.49"). */
+  const priceForTier = useCallback(
+    (plan: SubscriptionPlan): string => {
+      if (plan === 'free') return 'Free forever';
+      if (plan === 'plus') return 'RM 4.99/month';
+      if (plan === 'pro') return 'RM 10.99/month';
+      const pkg = packageForTier(plan);
+      if (!pkg) return 'Loading...';
+      return `${pkg.product.priceString}/month`;
+    },
+    [packageForTier],
+  );
 
   const ctaGradient = useMemo(() => [theme.primary, theme.accent2] as [string, string], [theme.primary, theme.accent2]);
 
   const onSelectTier = (plan: SubscriptionPlan) => {
-    if (isTierLocked(plan, staff)) {
-      // openPricingPage(); -> Removed to comply with App Store Guidelines
-      return;
-    }
     setSelected(plan);
   };
 
-  const onSave = async () => {
-    if (!dirty) {
+  /** Handle the primary CTA — purchase or downgrade. */
+  const onPurchase = async () => {
+    if (selected === currentTier) {
       router.back();
       return;
     }
-    if (isTierLocked(selected, staff)) return;
-    setSaving(true);
+
+    // Staff can still force-set plans via DB (for testing)
+    if (staff) {
+      setPurchasing(true);
+      try {
+        await updateProfile({ subscriptionPlan: selected });
+        router.back();
+      } catch {
+        Alert.alert('Error', 'Could not update your plan.');
+      } finally {
+        setPurchasing(false);
+      }
+      return;
+    }
+
+    // Downgrade to free — they manage this from their phone's Settings
+    if (selected === 'free') {
+      if (Platform.OS === 'ios') {
+        Alert.alert(
+          'Manage Subscription',
+          'To cancel your subscription, go to iPhone Settings → Apple ID → Subscriptions → Rencana.',
+          [
+            { text: 'Open Settings', onPress: () => Linking.openURL('https://apps.apple.com/account/subscriptions') },
+            { text: 'OK', style: 'cancel' },
+          ],
+        );
+      } else {
+        Alert.alert(
+          'Manage Subscription',
+          'To cancel your subscription, go to Google Play Store → Menu → Subscriptions → Rencana.',
+          [
+            { text: 'Open Play Store', onPress: () => Linking.openURL('https://play.google.com/store/account/subscriptions') },
+            { text: 'OK', style: 'cancel' },
+          ],
+        );
+      }
+      return;
+    }
+
+    // Purchase the selected tier
+    const pkg = packageForTier(selected);
+    if (!pkg) {
+      Alert.alert('Error', 'This plan is not available yet. Please try again later.');
+      return;
+    }
+
+    setPurchasing(true);
     try {
-      await updateProfile({ subscriptionPlan: selected });
-      router.back();
-    } catch {
-      Alert.alert('Error', 'Could not update your plan.');
+      const newPlan = await purchasePackage(pkg);
+      // Explicitly write the plan to Supabase to keep admin/backend in sync instantly
+      await updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
+        console.warn('[SubscriptionPlans] Sync to DB failed:', err);
+      });
+      
+      Alert.alert(
+        '🎉 Welcome!',
+        `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
+        [{ text: 'Awesome', onPress: () => router.back() }],
+      );
+    } catch (e: any) {
+      // User cancelled the purchase — not an error
+      if (isPurchaseCancelled(e)) return;
+      console.warn('[SubscriptionPlans] purchase error:', e);
+      Alert.alert('Purchase Failed', e?.message || 'Something went wrong. Please try again.');
     } finally {
-      setSaving(false);
+      setPurchasing(false);
     }
   };
 
+  /** Restore previous purchases (Apple requires this button). */
+  const onRestore = async () => {
+    setRestoring(true);
+    try {
+      const restoredPlan = await restorePurchases();
+      // Explicitly write the restored plan to Supabase
+      await updateProfile({ subscriptionPlan: restoredPlan }).catch((err) => {
+        console.warn('[SubscriptionPlans] Sync to DB failed:', err);
+      });
+
+      if (restoredPlan !== 'free') {
+        Alert.alert(
+          'Purchases Restored',
+          `Your ${subscriptionPlanLabel(restoredPlan)} subscription has been restored!`,
+          [{ text: 'OK', onPress: () => router.back() }],
+        );
+      } else {
+        Alert.alert('No Purchases Found', 'We couldn\'t find any active subscriptions to restore.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not restore purchases. Please try again.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const onContactSupport = () => {
+    const phoneNumber = '601111659435'; 
+    const message = encodeURIComponent('Hi, I have a question about my account and subscription plans.');
+    Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`).catch(() => {
+      Alert.alert('Error', 'Could not open WhatsApp. Make sure it is installed.');
+    });
+  };
+
+  const dirty = selected !== currentTier;
+  const isLoading = loadingFeatures || loadingOfferings;
+
+  const ctaLabel = useMemo(() => {
+    if (!dirty) return 'Done';
+    if (selected === 'free') return 'Manage Subscription';
+    return `Subscribe to ${subscriptionPlanLabel(selected)}`;
+  }, [dirty, selected]);
+
   const footerHint = useMemo(() => {
     if (staff) {
-      return 'Staff accounts can switch to Pro for testing. Plus is currently rolling out.';
+      return 'Staff accounts can switch plans directly for testing.';
     }
-    // Apple strictly prohibits mentioning external purchase channels (Guideline 3.1.1).
-    // Google is more lenient, so we can mention the website on Android.
-    return Platform.OS === 'ios'
-      ? 'Subscription plans are managed through your account settings. Features unlock automatically.'
-      : 'Premium upgrades are available at rencana.com.my. Your plan syncs automatically with the app.';
+    return 'Subscriptions auto-renew monthly. Cancel anytime from your device settings.';
   }, [staff]);
 
   return (
@@ -140,20 +268,19 @@ export default function SubscriptionPlansScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={[styles.title, { color: theme.text }]}>Choose a plan</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Compare Free, Plus, and Pro. Plans are managed via your account settings. Features unlock automatically when you upgrade.
+            Unlock powerful AI, premium themes, and the full study toolkit.
           </Text>
 
-          {loadingFeatures ? (
+          {isLoading ? (
             <ActivityIndicator color={theme.primary} style={{ marginTop: 24 }} />
           ) : (
             <View style={styles.cards}>
               {TIERS.map((plan) => {
-                const locked = isTierLocked(plan, staff);
                 const isSelected = selected === plan;
                 const lines = features[plan] ?? [];
                 const showStaffRibbon = plan === 'pro' && staff;
-                const borderActive = isSelected && !locked;
-                const borderLockedCurrent = isSelected && locked;
+                const isCurrent = currentTier === plan;
+                const price = priceForTier(plan);
 
                 return (
                   <Pressable
@@ -163,20 +290,15 @@ export default function SubscriptionPlansScreen() {
                       styles.card,
                       {
                         backgroundColor: theme.card,
-                        borderColor: borderActive
-                          ? theme.primary
-                          : borderLockedCurrent
-                            ? theme.warning
-                            : theme.cardBorder,
+                        borderColor: isSelected ? theme.primary : theme.cardBorder,
                       },
-                      borderActive && {
+                      isSelected && {
                         shadowColor: theme.primary,
                         shadowOffset: { width: 0, height: 0 },
                         shadowOpacity: 0.35,
                         shadowRadius: 12,
                         elevation: 6,
                       },
-                      locked && { opacity: 0.9 },
                       pressed && { opacity: 0.88 },
                     ]}
                   >
@@ -190,34 +312,29 @@ export default function SubscriptionPlansScreen() {
                       </View>
                     ) : null}
 
+                    {isCurrent ? (
+                      <View style={[styles.currentBadge, { backgroundColor: theme.primary + '20' }]}>
+                        <Text style={[styles.currentBadgeText, { color: theme.primary }]}>Current Plan</Text>
+                      </View>
+                    ) : null}
+
                     <View style={styles.cardTop}>
                       <View
                         style={[
                           styles.radioOuter,
                           { borderColor: theme.textSecondary },
-                          borderActive && { borderColor: theme.primary },
-                          borderLockedCurrent && { borderColor: theme.warning },
+                          isSelected && { borderColor: theme.primary },
                         ]}
                       >
                         {isSelected ? (
-                          <View
-                            style={[
-                              styles.radioInner,
-                              {
-                                backgroundColor: locked ? theme.warning : theme.primary,
-                              },
-                            ]}
-                          />
+                          <View style={[styles.radioInner, { backgroundColor: theme.primary }]} />
                         ) : null}
                       </View>
                       <View style={styles.cardTopText}>
                         <View style={styles.cardTitleRow}>
                           <Text style={[styles.cardTitle, { color: theme.text }]}>{subscriptionPlanLabel(plan)}</Text>
-                          {locked ? (
-                            <Feather name="lock" size={16} color={theme.textSecondary} style={{ marginLeft: 8 }} />
-                          ) : null}
                         </View>
-                        <Text style={[styles.cardPrice, { color: theme.primary }]}>{tierPriceLabel(plan)}</Text>
+                        <Text style={[styles.cardPrice, { color: theme.primary }]}>{price}</Text>
                         <Text style={[styles.cardBlurb, { color: theme.textSecondary }]}>
                           {plan === 'free'
                             ? 'The core student planner — free for as long as you study.'
@@ -234,7 +351,7 @@ export default function SubscriptionPlansScreen() {
                       >
                         {lines.map((line, idx) => (
                           <View key={`${plan}-${idx}`} style={styles.bulletRow}>
-                            <Text style={[styles.bulletDot, { color: theme.primary }]}>•</Text>
+                            <Feather name="check" size={14} color={theme.primary} style={{ marginTop: 2 }} />
                             <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{line}</Text>
                           </View>
                         ))}
@@ -248,21 +365,43 @@ export default function SubscriptionPlansScreen() {
 
           <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
 
+          {/* Restore Purchases — Apple requires this button */}
+          <Pressable
+            onPress={onRestore}
+            disabled={restoring}
+            style={({ pressed }) => [styles.restoreBtn, pressed && { opacity: 0.7 }]}
+          >
+            {restoring ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Text style={[styles.restoreBtnText, { color: theme.primary }]}>Restore Purchases</Text>
+            )}
+          </Pressable>
+
+          <Pressable onPress={onContactSupport} style={({ pressed }) => [styles.supportBtn, pressed && { opacity: 0.7 }]}>
+            <Feather name="message-circle" size={16} color={theme.textSecondary} />
+            <Text style={[styles.supportBtnText, { color: theme.textSecondary }]}>Need help? Contact Support</Text>
+          </Pressable>
+
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
           <Pressable
-            onPress={() => void onSave()}
-            disabled={saving || loadingStaff}
+            onPress={() => void onPurchase()}
+            disabled={purchasing || loadingStaff || isLoading}
             style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
           >
             <LinearGradient
               colors={ctaGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={[styles.cta, (saving || loadingStaff) && { opacity: 0.6 }]}
+              style={[styles.cta, (purchasing || loadingStaff || isLoading) && { opacity: 0.6 }]}
             >
-              <Text style={[styles.ctaText, { color: theme.textInverse }]}>{dirty ? 'Save plan' : 'Done'}</Text>
+              {purchasing ? (
+                <ActivityIndicator size="small" color={theme.textInverse} />
+              ) : (
+                <Text style={[styles.ctaText, { color: theme.textInverse }]}>{ctaLabel}</Text>
+              )}
             </LinearGradient>
           </Pressable>
         </SafeAreaView>
@@ -320,6 +459,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
+  currentBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    zIndex: 2,
+  },
+  currentBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   radioOuter: {
     width: 22,
@@ -342,7 +496,6 @@ const styles = StyleSheet.create({
   cardBlurb: { marginTop: 6, fontSize: 13, fontWeight: '500', lineHeight: 18 },
   bullets: { marginTop: 14, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  bulletDot: { fontSize: 14, lineHeight: 20 },
   bulletText: { flex: 1, fontSize: 13, fontWeight: '500', lineHeight: 20 },
   footerNote: {
     marginTop: 20,
@@ -351,19 +504,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  seePlanBtn: {
-    marginTop: 16,
+  restoreBtn: {
+    marginTop: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  restoreBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  supportBtn: {
+    marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 2,
+    paddingVertical: 12,
   },
-  seePlanBtnText: {
-    fontSize: 16,
-    fontWeight: '800',
+  supportBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   bottomSafe: {
     paddingHorizontal: 20,

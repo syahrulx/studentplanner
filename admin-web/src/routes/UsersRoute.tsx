@@ -8,6 +8,7 @@ import {
   resetUserMonthlyTokens,
   resolveMonthlyLimit,
   setUserStatus,
+  setUserSubscriptionPlan,
   setUserTokenLimit,
   type AdminUserRow,
   type SubscriptionPlan,
@@ -870,6 +871,32 @@ export function UsersRoute() {
                                   variant: 'rose',
                                   onClick: async () => {
                                     await setUserStatus(u.id, 'banned');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: '⭐ Set Plan → Free',
+                                  variant: 'amber',
+                                  divider: true,
+                                  onClick: async () => {
+                                    if (!window.confirm(`Set ${u.name || u.id} to FREE plan?`)) return;
+                                    await setUserSubscriptionPlan(u.id, 'free');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: '⭐ Set Plan → Plus',
+                                  onClick: async () => {
+                                    if (!window.confirm(`Set ${u.name || u.id} to PLUS plan?`)) return;
+                                    await setUserSubscriptionPlan(u.id, 'plus');
+                                    await refresh();
+                                  },
+                                },
+                                {
+                                  label: '⭐ Set Plan → Pro',
+                                  onClick: async () => {
+                                    if (!window.confirm(`Set ${u.name || u.id} to PRO plan?`)) return;
+                                    await setUserSubscriptionPlan(u.id, 'pro');
                                     await refresh();
                                   },
                                 },

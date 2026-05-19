@@ -248,6 +248,9 @@ ${notesBlock}`,
 // OpenAI call
 // ---------------------------------------------------------------------------
 
+// Models that do NOT support the temperature parameter (reasoning models).
+const REASONING_MODELS = ['o1', 'o1-mini', 'o3', 'o3-mini', 'o4-mini', 'gpt-4.1', 'gpt-5', 'gpt-5.5'];
+
 async function callOpenAI(
   apiKey: string,
   messages: { role: string; content: string | unknown[] }[],
@@ -258,6 +261,9 @@ async function callOpenAI(
   // Vision requests may take longer due to image processing
   const timeoutMs = 90_000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Reasoning models only support the default temperature (1); omit the param.
+  const isReasoningModel = REASONING_MODELS.some(m => model.startsWith(m));
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -270,7 +276,7 @@ async function callOpenAI(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.7,
+        ...(isReasoningModel ? {} : { temperature: 0.7 }),
         max_completion_tokens: maxTokens,
       }),
     });
@@ -524,12 +530,12 @@ Deno.serve(async (req) => {
     let targetModel = 'gpt-4o-mini';
     if (hasImage) {
       // Vision requires gpt-4o or higher; gpt-4o-mini has limited vision quality
-      targetModel = plan === 'pro' ? 'gpt-4o' : 'gpt-4o';
+      targetModel = 'gpt-4o';
     } else if (plan === 'pro') {
       // Pro users get flagship models:
-      // - Chat tutor: GPT-5.5 (latest reasoning model)
+      // - Chat tutor: GPT-4.1 (latest flagship, supports reasoning)
       // - Quiz/task: GPT-4o (faster, still premium)
-      targetModel = kind === 'chat' ? 'gpt-5.5' : 'gpt-4o';
+      targetModel = kind === 'chat' ? 'gpt-4.1' : 'gpt-4o';
     } else if (kind === 'chat' && plan === 'plus') {
       targetModel = 'gpt-4o-mini'; // Plus chat stays on mini
     }

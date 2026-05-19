@@ -436,6 +436,56 @@ export default function Settings() {
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/subscription-plans' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#eab308') }]}>
+              <Feather name="zap" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Plus & Pro</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                {user.subscriptionPlan === 'pro'
+                  ? 'Active: Pro tier with highest AI limits.'
+                  : user.subscriptionPlan === 'plus'
+                    ? 'Active: Plus tier with daily study snaps.'
+                    : 'Manage plan, unlock AI limits & custom themes.'}
+              </Text>
+            </View>
+            <View
+              style={{
+                backgroundColor:
+                  user.subscriptionPlan === 'pro'
+                    ? '#eab308'
+                    : user.subscriptionPlan === 'plus'
+                      ? '#3b82f6'
+                      : theme.backgroundSecondary,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 8,
+                marginRight: 8,
+                borderWidth: user.subscriptionPlan === 'free' ? 1 : 0,
+                borderColor: theme.border,
+              }}
+            >
+              <Text
+                style={{
+                  color:
+                    user.subscriptionPlan === 'pro' || user.subscriptionPlan === 'plus'
+                      ? '#fff'
+                      : theme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: '800',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {user.subscriptionPlan || 'FREE'}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setThemePickerOpen(true)}
           >
             <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>

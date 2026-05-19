@@ -1,0 +1,115 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "6B30C466",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6762103809",
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_developerTeamID" : "Z9JR65SA89",
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 800879940.39478898,
+    "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "MYS",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "22099415",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "Rencana Premium",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Rencana Premium",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6770874141",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "Smarter AI, premium themes and calendar import.",
+              "displayName" : "Rencana Plus",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.aizztech.rencana.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Rencana Plus",
+          "subscriptionGroupID" : "22099415",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "10.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6770895236",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "The ultimate study toolkit with our smartest AI.",
+              "displayName" : "Rencana Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.aizztech.rencana.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Rencana Pro ",
+          "subscriptionGroupID" : "22099415",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 5,
+    "minor" : 0
+  }
+}
