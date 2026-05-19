@@ -442,7 +442,7 @@ export default function Settings() {
               <Feather name="zap" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Plus & Pro</Text>
+              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Premium</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                 {user.subscriptionPlan === 'pro'
                   ? 'Active: Pro tier with highest AI limits.'
