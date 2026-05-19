@@ -19,7 +19,7 @@ import type { SubscriptionPlan } from '../types';
 // RevenueCat Public API Keys
 // ---------------------------------------------------------------------------
 const RC_APPLE_KEY  = 'appl_XBBfZrTxsJDKUzQSSwGQTlXjkHa';
-const RC_GOOGLE_KEY = 'test_tvJCsOYTDkXBfkDzlWKmDcOLwJc';
+const RC_GOOGLE_KEY = 'goog_MFXUkzlzKOWEKwydNgYFZIsyaFb';
 
 // ---------------------------------------------------------------------------
 // Entitlement IDs (must match what you create in RevenueCat dashboard)
