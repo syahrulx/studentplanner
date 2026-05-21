@@ -158,6 +158,8 @@ export interface UserProfile {
   timetable?: TimetableEntry[];
   /** Subscription tier; default free when missing from DB */
   subscriptionPlan?: SubscriptionPlan;
+  /** True if the user has ever claimed a premium theme trial */
+  hasUsedThemeTrial?: boolean;
 }
 
 export interface Note {

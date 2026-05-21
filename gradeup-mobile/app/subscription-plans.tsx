@@ -138,11 +138,17 @@ export default function SubscriptionPlansScreen() {
   const priceForTier = useCallback(
     (plan: SubscriptionPlan): string => {
       if (plan === 'free') return 'Free forever';
+      
+      const pkg = packageForTier(plan);
+      if (pkg && pkg.product.priceString) {
+        return `${pkg.product.priceString}/month`;
+      }
+      
+      // Fallbacks if RevenueCat is loading or fails
       if (plan === 'plus') return 'RM 4.99/month';
       if (plan === 'pro') return 'RM 10.99/month';
-      const pkg = packageForTier(plan);
-      if (!pkg) return 'Loading...';
-      return `${pkg.product.priceString}/month`;
+      
+      return 'Loading...';
     },
     [packageForTier],
   );

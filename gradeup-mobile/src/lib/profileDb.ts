@@ -46,7 +46,7 @@ export async function getProfile(userId: string): Promise<{
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial',
     )
     .eq('id', userId)
     .single();
@@ -70,6 +70,7 @@ export async function getProfile(userId: string): Promise<{
     last_sync: string | null;
     portal_teaching_anchored_semester: number | null;
     subscription_plan: string | null;
+    has_used_theme_trial: boolean | null;
   };
   const level = row.academic_level as AcademicLevel | undefined;
   return {
@@ -97,6 +98,7 @@ export async function getProfile(userId: string): Promise<{
         ? Number(row.portal_teaching_anchored_semester)
         : undefined,
     subscriptionPlan: normalizeSubscriptionPlan(row.subscription_plan),
+    hasUsedThemeTrial: row.has_used_theme_trial ?? false,
   };
 }
 
@@ -120,6 +122,7 @@ export async function updateProfile(
     lastSync?: string | null;
     portalTeachingAnchoredSemester?: number | null;
     subscriptionPlan?: SubscriptionPlan;
+    hasUsedThemeTrial?: boolean;
   },
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
@@ -148,6 +151,9 @@ export async function updateProfile(
   }
   if (updates.subscriptionPlan !== undefined) {
     payload.subscription_plan = normalizeSubscriptionPlanUpdate(updates.subscriptionPlan);
+  }
+  if (updates.hasUsedThemeTrial !== undefined) {
+    payload.has_used_theme_trial = updates.hasUsedThemeTrial;
   }
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.from(TABLE).update(payload).eq('id', userId);

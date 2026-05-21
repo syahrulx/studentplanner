@@ -30,6 +30,8 @@ import {
   setSpiderBlueAccents as persistSpiderBlueAccents,
   getThemePreviewExpiry,
   setThemePreviewExpiry as persistThemePreviewExpiry,
+  getHasUsedThemeTrial,
+  setHasUsedThemeTrial as persistHasUsedThemeTrial,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
   setCompletedStudyKeys as persistCompletedStudies,
@@ -154,6 +156,8 @@ type AppState = {
   setThemePack: (pack: ThemePackId) => void;
   themePreviewExpiry: number | null;
   setThemePreviewExpiry: (timestamp: number | null) => void;
+  hasUsedThemeTrial: boolean;
+  setHasUsedThemeTrial: (used: boolean) => void;
   spiderBlueAccents: boolean;
   setSpiderBlueAccents: (enabled: boolean) => void;
   language: AppLanguage;
@@ -313,6 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
   const [themePreviewExpiry, setThemePreviewExpiryState] = useState<number | null>(null);
+  const [hasUsedThemeTrial, setHasUsedThemeTrialState] = useState<boolean>(false);
   const [spiderBlueAccents, setSpiderBlueAccentsState] = useState(true);
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
@@ -571,7 +576,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     getTheme().then(setThemeState);
-    Promise.all([getThemePack(), getThemePreviewExpiry()]).then(([pack, expiry]) => {
+    Promise.all([getThemePack(), getThemePreviewExpiry(), getHasUsedThemeTrial()]).then(([pack, expiry, usedTrial]) => {
+      setHasUsedThemeTrialState(usedTrial);
       // Check if preview expired
       if (pack !== 'none' && expiry !== null && Date.now() > expiry) {
         setThemePackState('none');
@@ -695,6 +701,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
+        if (profile?.hasUsedThemeTrial !== undefined && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+          setHasUsedThemeTrialState(profile.hasUsedThemeTrial);
+          persistHasUsedThemeTrial(profile.hasUsedThemeTrial).catch(() => {});
+        }
         const uniConn = r8.status === 'fulfilled' ? r8.value : null;
 
         let calendar: AcademicCalendar | null | undefined = undefined;
@@ -1127,12 +1137,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setThemePack = useCallback((pack: ThemePackId) => {
     setThemePackState(pack);
-    void persistThemePack(pack);
+    persistThemePack(pack).catch(() => {});
   }, []);
 
   const setThemePreviewExpiry = useCallback((timestamp: number | null) => {
     setThemePreviewExpiryState(timestamp);
     void persistThemePreviewExpiry(timestamp);
+  }, []);
+
+  const setHasUsedThemeTrial = useCallback((used: boolean) => {
+    setHasUsedThemeTrialState(used);
+    persistHasUsedThemeTrial(used).catch(() => {});
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (uid) {
+        profileDb.updateProfile(uid, { hasUsedThemeTrial: used }).catch(() => {});
+      }
+    });
   }, []);
 
   const setSpiderBlueAccents = useCallback((enabled: boolean) => {

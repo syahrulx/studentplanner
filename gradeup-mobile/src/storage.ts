@@ -135,6 +135,26 @@ export async function setThemePreviewExpiry(timestamp: number | null): Promise<v
   } catch {}
 }
 
+const KEY_HAS_USED_THEME_TRIAL = 'hasUsedThemeTrial';
+
+export async function getHasUsedThemeTrial(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_HAS_USED_THEME_TRIAL);
+    return raw === 'true';
+  } catch {}
+  return false;
+}
+
+export async function setHasUsedThemeTrial(used: boolean): Promise<void> {
+  try {
+    if (used) {
+      await AsyncStorage.setItem(KEY_HAS_USED_THEME_TRIAL, 'true');
+    } else {
+      await AsyncStorage.removeItem(KEY_HAS_USED_THEME_TRIAL);
+    }
+  } catch {}
+}
+
 export type AppLanguage = 'en';
 export type AppLoghat = 'negeriSembilan' | 'kelantan' | 'kedah' | 'melaka';
 

@@ -81,7 +81,7 @@ const THEME_PREVIEWS: ThemePreview[] = [
 export default function InAppThemesScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
-  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry } = useApp();
+  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry, hasUsedThemeTrial, setHasUsedThemeTrial } = useApp();
   const isCatApplied = themePack === 'cat';
   const isMonoApplied = themePack === 'mono';
   const isSpiderApplied = themePack === 'spider';
@@ -89,21 +89,45 @@ export default function InAppThemesScreen() {
   /** Custom theme packs (Cat, Mono, Spider, Aurora) require Plus or Pro to apply. */
   const canApplyThemePacks = isAtLeastPlus(user.subscriptionPlan);
   const isFreePlan = user.subscriptionPlan === 'free';
+  const activeTrial = themePreviewExpiry ? Date.now() <= themePreviewExpiry : false;
+  const daysLeft = activeTrial && themePreviewExpiry ? Math.ceil((themePreviewExpiry - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+  const trialText = activeTrial ? ` (Trial: ${daysLeft} day${daysLeft === 1 ? '' : 's'} left)` : '';
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
 
   const handleApplyThemePack = (pack: 'cat' | 'mono' | 'spider' | 'purple') => {
     if (isFreePlan) {
+
+      if (hasUsedThemeTrial && !activeTrial) {
+        Alert.alert(
+          'Trial Expired',
+          'You have already used your 1-week free premium theme trial. Please upgrade to Plus or Pro to apply themes.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
+          ]
+        );
+        return;
+      }
+      
+      const trialTitle = activeTrial ? 'Switch Theme' : 'Premium Theme Trial';
+      const trialMsg = activeTrial 
+        ? 'Your trial is already active. Apply this theme instead?' 
+        : 'Would you like to start a 1-week free trial for this premium theme?';
+
       Alert.alert(
-        'Premium Theme Trial',
-        'Would you like to start a 1-week free trial for this premium theme?',
+        trialTitle,
+        trialMsg,
         [
           { text: 'Cancel', style: 'cancel' },
           { 
-            text: 'Start Free Trial', 
+            text: activeTrial ? 'Apply Theme' : 'Start Free Trial', 
             style: 'default',
             onPress: () => {
               setThemePack(pack);
-              setThemePreviewExpiry(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+              if (!activeTrial) {
+                setThemePreviewExpiry(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+                setHasUsedThemeTrial(true);
+              }
             }
           }
         ]
@@ -247,7 +271,9 @@ export default function InAppThemesScreen() {
 
   const handleResetTheme = () => {
     setThemePack('none');
-    setThemePreviewExpiry(null);
+    // We intentionally DO NOT clear themePreviewExpiry here.
+    // If they cancel their theme during the 7-day trial, the trial timer keeps ticking
+    // in the background. They can re-apply a theme anytime before the 7 days are up.
   };
 
   return (
@@ -284,15 +310,17 @@ export default function InAppThemesScreen() {
           <Feather name={!canApplyThemePacks ? 'lock' : 'unlock'} size={16} color={theme.textSecondary} />
           <Text style={[styles.lockBannerText, { color: theme.textSecondary }]}>
             {isCatApplied
-              ? 'Cat theme is active now'
+              ? `Cat theme is active now${trialText}`
               : isMonoApplied
-              ? 'Mono theme is active now'
+              ? `Mono theme is active now${trialText}`
               : isSpiderApplied
-              ? 'Spider theme is active now'
+              ? `Spider theme is active now${trialText}`
               : isPurpleApplied
-              ? 'Aurora Purple theme is active now'
-              : isFreePlan
+              ? `Aurora Purple theme is active now${trialText}`
+              : isFreePlan && !hasUsedThemeTrial
               ? 'Free user mode: 1-week trial available'
+              : isFreePlan && hasUsedThemeTrial && !activeTrial
+              ? 'Free user mode: Trial expired'
               : !canApplyThemePacks
               ? 'Plus or Pro required to apply theme packs (preview is open)'
               : 'Plus/Pro: theme packs can be applied'}

@@ -224,6 +224,7 @@ export default function Planner() {
     user,
     language,
     academicCalendar,
+    autoDeletePastTasks,
   } = useApp();
   const {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
@@ -558,14 +559,20 @@ export default function Planner() {
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
     if (view === 'all' || view === 'month') {
-      // For lists that span many dates, expand recurring tasks into one
-      // virtual row per occurrence in the next ~60 days so they show on every
-      // scheduled weekday instead of just their placeholder dueDate.
-      const start = new Date(`${todayISO}T12:00:00`);
-      const end = new Date(start);
+      // Expand recurring tasks across the next ~60 days (from today forward).
+      const end = new Date(`${todayISO}T12:00:00`);
       end.setDate(end.getDate() + 60);
       const endISO = toLocalISO(end);
-      list = expandTasksForRange(tasks, todayISO, endISO);
+      const futureAndToday = expandTasksForRange(tasks, todayISO, endISO);
+
+      // Also include past one-off tasks (overdue/done) so they appear in
+      // the list. Recurring tasks are intentionally excluded for past dates
+      // to avoid surfacing every historical occurrence.
+      const pastOneOffs = tasks.filter(
+        (t) => !isRecurringTask(t) && t.dueDate < todayISO,
+      );
+
+      list = [...pastOneOffs, ...futureAndToday];
     } else if (view === 'week') {
       // Week view: expand only across the visible week so recurring tasks
       // show on each of their weekdays in the current week.
@@ -603,8 +610,20 @@ export default function Planner() {
       }
       return t;
     });
+
+    // Only hide past done one-off tasks in day/week views when the user has
+    // explicitly enabled "auto delete past tasks". Without that setting, done
+    // tasks always remain visible so the user can review their history.
+    if (autoDeletePastTasks && (view === 'day' || view === 'week')) {
+      list = list.filter((t) => {
+        if (isRecurringTask(t)) return true; // recurring occurrences always shown
+        if (!t.isDone) return true;          // undone tasks always shown
+        return t.dueDate >= todayISO;        // done tasks only if today or future
+      });
+    }
+
     return list;
-  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter, todayISO, taskCompletionKeys]);
+  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter, todayISO, taskCompletionKeys, autoDeletePastTasks]);
 
   const filteredStudyItems = useMemo((): PlannerStudyItem[] => {
     if (view === 'all' || view === 'month' || view === 'week') {
@@ -1520,7 +1539,8 @@ export default function Planner() {
                                               <Text
                                                 style={[
                                                   s.monthGridTagText,
-                                                  { color: theme.text, fontSize: dynamicFontSize },
+                                                  { color: isDone ? theme.textSecondary : theme.text, fontSize: dynamicFontSize },
+                                                  isDone && { textDecorationLine: 'line-through', opacity: 0.6 },
                                                 ]}
                                                 numberOfLines={dynamicLines}
                                               >
@@ -1996,7 +2016,16 @@ export default function Planner() {
                                         backgroundColor: isDone ? color : 'transparent' 
                                       }} />
                                     </View>
-                                    <Text style={{ fontSize: 9, fontWeight: '800', color: theme.text, lineHeight: 11 }} numberOfLines={2}>
+                                    <Text 
+                                      style={{ 
+                                        fontSize: 9, 
+                                        fontWeight: '800', 
+                                        color: isDone ? theme.textSecondary : theme.text, 
+                                        lineHeight: 11, 
+                                        textDecorationLine: isDone ? 'line-through' : 'none' 
+                                      }} 
+                                      numberOfLines={2}
+                                    >
                                       {title}
                                     </Text>
                                     {boundedHeight > 40 && (
