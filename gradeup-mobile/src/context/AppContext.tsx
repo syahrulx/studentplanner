@@ -2145,6 +2145,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setThemePack,
     themePreviewExpiry,
     setThemePreviewExpiry,
+    hasUsedThemeTrial,
+    setHasUsedThemeTrial,
     spiderBlueAccents,
     setSpiderBlueAccents,
     language,
