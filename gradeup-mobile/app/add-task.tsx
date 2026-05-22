@@ -355,24 +355,60 @@ export default function AddTask() {
   };
 
   const handleSubmit = async () => {
-    if (!title.trim() || (isEditing && !existingTask)) return;
+    console.log('[AddTask Screen] ==========================================');
+    console.log('[AddTask Screen] handleSubmit triggered');
+    console.log('[AddTask Screen] Fields state:', {
+      title,
+      courseId,
+      isNoSubject,
+      type,
+      dueDateISO,
+      dueTime,
+      repeatEnabled,
+      repeatDays,
+      repeatNotify,
+      shareFriendIds,
+      shareCircleIds,
+    });
+
+    if (!title.trim() || (isEditing && !existingTask)) {
+      console.warn('[AddTask Screen] Validation failed:', {
+        emptyTitle: !title.trim(),
+        isEditingAndMissingTask: isEditing && !existingTask,
+      });
+      console.log('[AddTask Screen] ==========================================');
+      return;
+    }
     setIsSaving(true);
     try {
       const wantsShare = shareFriendIds.length > 0 || shareCircleIds.length > 0;
+      console.log('[AddTask Screen] Wants share:', wantsShare);
+
+      console.log('[AddTask Screen] Getting Supabase session...');
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData?.session?.user?.id ?? null;
+      console.log('[AddTask Screen] Supabase UID resolved:', uid);
+
       const deadlineRisk = getDeadlineRiskFromDueDate(dueDateISO);
       const suggestedWeek = getSuggestedWeekForDueDate(dueDateISO, user, academicCalendar?.startDate);
-      /** Preserve explicit "No subject" choice; only fall back to a real course when courseId is truly unset. */
       const courseIdResolved = isNoSubject ? NO_SUBJECT_ID : (courseId || courses[0]?.id || NO_SUBJECT_ID);
 
+      console.log('[AddTask Screen] Resolved variables:', {
+        deadlineRisk,
+        suggestedWeek,
+        courseIdResolved,
+      });
+
       if (wantsShare && !uid) {
+        console.warn('[AddTask Screen] Sharing requested but user is not signed in!');
         Alert.alert('', T('shareSignInHint'));
+        console.log('[AddTask Screen] ==========================================');
         return;
       }
 
       if (existingTask) {
-        updateTask(existingTask.id, {
+        console.log('[AddTask Screen] Editing existing task:', existingTask.id);
+        const updatedFields = {
           title: title.trim(),
           courseId: courseIdResolved,
           type: type as TaskType,
@@ -380,46 +416,59 @@ export default function AddTask() {
           dueDate: dueDateISO,
           dueTime,
           needsDate: false,
-          // When recurring, repeatDays is the source of truth; otherwise clear it.
           repeatDays: recurringActive ? repeatDays : [],
           repeatNotify: recurringActive ? repeatNotify : false,
-        });
+        };
+        console.log('[AddTask Screen] Triggering updateTask with:', updatedFields);
+        updateTask(existingTask.id, updatedFields);
+
         if (wantsShare && uid) {
+          console.log('[AddTask Screen] Sharing existing task to Supabase & peers...');
           const merged: Task = {
             ...existingTask,
-            title: title.trim(),
-            courseId: courseIdResolved,
-            type: type as TaskType,
-            notes,
-            dueDate: dueDateISO,
-            dueTime,
-            needsDate: false,
+            ...updatedFields,
             deadlineRisk,
             suggestedWeek,
           };
+          console.log('[AddTask Screen] Upserting merged task to DB...');
           const { error } = await upsertTask(uid, merged);
           if (error) {
+            console.error('[AddTask Screen] share upsert failed:', error.message);
             Alert.alert('', T('shareSyncFailed'));
             return;
           }
+          console.log('[AddTask Screen] Merged task successfully upserted to DB');
+
           let failCount = 0;
           for (const fid of shareFriendIds) {
+            console.log(`[AddTask Screen] Sharing to friend: ${fid}`);
             const ok = await apiShareTaskWithFriend(existingTask.id, fid, undefined);
-            if (!ok) failCount++;
+            if (!ok) {
+              console.error(`[AddTask Screen] Share to friend ${fid} failed`);
+              failCount++;
+            }
           }
           for (const cid of shareCircleIds) {
+            console.log(`[AddTask Screen] Sharing to circle: ${cid}`);
             const res = await apiShareTaskWithCircle(existingTask.id, cid, undefined);
-            if (res.length === 0) failCount++;
+            if (res.length === 0) {
+              console.error(`[AddTask Screen] Share to circle ${cid} failed`);
+              failCount++;
+            }
           }
+          console.log(`[AddTask Screen] Share completion. Failures: ${failCount}`);
           if (failCount > 0) {
             Alert.alert('', T('sharePartialFail'));
           }
         }
         router.back();
+        console.log('[AddTask Screen] ==========================================');
         return;
       }
 
+      // Create new task
       const newId = createTaskId();
+      console.log('[AddTask Screen] Creating new task. Generated ID:', newId);
       const newTask: Task = {
         id: newId,
         title: title.trim(),
@@ -429,38 +478,58 @@ export default function AddTask() {
         dueTime,
         notes,
         isDone: false,
+        needsDate: false,
         deadlineRisk,
         suggestedWeek,
         sourceMessage: undefined,
         repeatDays: recurringActive ? repeatDays : undefined,
         repeatNotify: recurringActive ? repeatNotify : undefined,
       };
+      console.log('[AddTask Screen] New Task Payload:', newTask);
 
       if (wantsShare && uid) {
+        console.log('[AddTask Screen] Sharing new task. Upserting first...');
         const { error } = await upsertTask(uid, newTask);
         if (error) {
+          console.error('[AddTask Screen] upsertTask for share failed:', error.message);
           Alert.alert('', T('shareSyncFailed'));
           return;
         }
+        console.log('[AddTask Screen] Upsert succeeded. Adding locally (skipRemote=true)...');
         addTask(newTask, { skipRemote: true });
+
         let failCount = 0;
         for (const fid of shareFriendIds) {
+          console.log(`[AddTask Screen] Sharing new task to friend: ${fid}`);
           const ok = await apiShareTaskWithFriend(newId, fid, undefined);
-          if (!ok) failCount++;
+          if (!ok) {
+            console.error(`[AddTask Screen] Share to friend ${fid} failed`);
+            failCount++;
+          }
         }
         for (const cid of shareCircleIds) {
+          console.log(`[AddTask Screen] Sharing new task to circle: ${cid}`);
           const res = await apiShareTaskWithCircle(newId, cid, undefined);
-          if (res.length === 0) failCount++;
+          if (res.length === 0) {
+            console.error(`[AddTask Screen] Share to circle ${cid} failed`);
+            failCount++;
+          }
         }
+        console.log(`[AddTask Screen] Share completion. Failures: ${failCount}`);
         if (failCount > 0) {
           Alert.alert('', T('sharePartialFail'));
         }
       } else {
+        console.log('[AddTask Screen] Submitting new task to AppContext.addTask()...');
         addTask(newTask);
       }
+      console.log('[AddTask Screen] Submit success, routing back...');
       router.back();
+    } catch (err: any) {
+      console.error('[AddTask Screen] Unexpected error in handleSubmit:', err?.message || err);
     } finally {
       setIsSaving(false);
+      console.log('[AddTask Screen] ==========================================');
     }
   };
 

@@ -1333,49 +1333,92 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
+    console.log('[AppContext] ==========================================');
+    console.log('[AppContext] addTask() called with task:', task);
+    console.log('[AppContext] options:', options);
+
+    console.log('[AppContext] Updating local tasks state (prepending task)...');
     setTasks((prev) => [task, ...prev]);
-    scheduleTaskNotifications(task).catch(() => {});
-    if (options?.skipRemote) return;
+
+    console.log('[AppContext] Scheduling task notification...');
+    scheduleTaskNotifications(task)
+      .then(() => console.log(`[AppContext] Notification successfully scheduled for task: ${task.id}`))
+      .catch((err) => console.error(`[AppContext] Failed to schedule notification for task: ${task.id}`, err));
+
+    if (options?.skipRemote) {
+      console.log('[AppContext] skipRemote is true. Exiting without Supabase sync.');
+      console.log('[AppContext] ==========================================');
+      return;
+    }
 
     // Persist to Supabase. If it fails (no session, RLS denial, network drop,
     // schema mismatch, etc.) we MUST surface that — historically we just
     // console.warn'd, which meant the task lived in memory only and quietly
     // vanished on the next app launch.
     (async () => {
+      console.log('[AppContext] Starting async remote sync for task:', task.id);
       try {
+        console.log('[AppContext] Fetching Supabase session...');
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
+        console.log('[AppContext] Resolved Supabase UID:', uid);
+
         if (!uid) {
+          console.error('[AppContext] ❌ Sync failed: No active Supabase user session!');
+          console.log('[AppContext] Rolling back local tasks state...');
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+          console.log('[AppContext] Cancelling scheduled notifications...');
           cancelTaskNotifications(task.id).catch(() => {});
+
           Alert.alert(
             'Task not saved',
             'You appear to be signed out. Please sign in again and re-add the task so it is saved to your account.',
           );
+          console.log('[AppContext] ==========================================');
           return;
         }
+
+        console.log('[AppContext] Invoking taskDb.upsertTask()...');
         const { error } = await taskDb.upsertTask(uid, task);
         if (error) {
-          console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
+          console.error('[AppContext] ❌ Supabase upsertTask failed with error:', error.message);
+          console.log('[AppContext] Rolling back local tasks state...');
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+          console.log('[AppContext] Cancelling scheduled notifications...');
           cancelTaskNotifications(task.id).catch(() => {});
+
           Alert.alert(
             'Task not saved',
             `We could not save this task to your account. Please try again.\n\n(${error.message})`,
           );
+          console.log('[AppContext] ==========================================');
           return;
         }
-        syncNewTaskToStreams(task.id, uid).catch((err) => {
-          console.warn('[Rencana] Failed to auto-sync task to streams:', err);
-        });
+
+        console.log('[AppContext] ✅ Task successfully synced to Supabase database!');
+
+        console.log('[AppContext] Syncing new task to community streams...');
+        syncNewTaskToStreams(task.id, uid)
+          .then(() => console.log('[AppContext] ✅ Task successfully shared to streams'))
+          .catch((err) => {
+            console.warn('[AppContext] ⚠️ Failed to auto-sync task to streams:', err);
+          });
       } catch (e) {
-        console.warn('[Rencana] Unexpected error while saving task:', e);
+        console.error('[AppContext] ❌ Unexpected exception in remote task sync:', e);
+        console.log('[AppContext] Rolling back local tasks state...');
         setTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+        console.log('[AppContext] Cancelling scheduled notifications...');
         cancelTaskNotifications(task.id).catch(() => {});
+
         Alert.alert(
           'Task not saved',
-          'Something went wrong while saving your task. Please check your connection and try again.',
+          'An unexpected error occurred while saving this task. Please try again.',
         );
+      } finally {
+        console.log('[AppContext] ==========================================');
       }
     })();
   }, []);

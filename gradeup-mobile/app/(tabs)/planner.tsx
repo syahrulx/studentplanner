@@ -559,20 +559,23 @@ export default function Planner() {
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
     if (view === 'all' || view === 'month') {
-      // Expand recurring tasks across the next ~60 days (from today forward).
+      // Month and All views:
+      // Include ALL one-off tasks (past, present, future) so they never disappear.
+      const allOneOffs = tasks.filter((t) => !isRecurringTask(t));
+
+      // For recurring tasks, expand them for a 6-month window to prevent infinite occurrences.
+      const start = new Date(`${todayISO}T12:00:00`);
+      start.setDate(start.getDate() - 30);
+      const startISO = toLocalISO(start);
+
       const end = new Date(`${todayISO}T12:00:00`);
-      end.setDate(end.getDate() + 60);
+      end.setDate(end.getDate() + 180); // 6 months forward
       const endISO = toLocalISO(end);
-      const futureAndToday = expandTasksForRange(tasks, todayISO, endISO);
 
-      // Also include past one-off tasks (overdue/done) so they appear in
-      // the list. Recurring tasks are intentionally excluded for past dates
-      // to avoid surfacing every historical occurrence.
-      const pastOneOffs = tasks.filter(
-        (t) => !isRecurringTask(t) && t.dueDate < todayISO,
-      );
+      const recurringTasks = tasks.filter(isRecurringTask);
+      const expandedRecurring = expandTasksForRange(recurringTasks, startISO, endISO);
 
-      list = [...pastOneOffs, ...futureAndToday];
+      list = [...allOneOffs, ...expandedRecurring];
     } else if (view === 'week') {
       // Week view: expand only across the visible week so recurring tasks
       // show on each of their weekdays in the current week.
