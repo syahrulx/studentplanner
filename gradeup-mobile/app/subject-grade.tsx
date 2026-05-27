@@ -71,6 +71,7 @@ export default function SubjectGradeScreen() {
   const [gMin, setGMin] = useState('');
   const [gPoint, setGPoint] = useState('');
   const [editingRowIdx, setEditingRowIdx] = useState<number | null>(null);
+  const [assessError, setAssessError] = useState('');
 
   // ── Load & Save ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -118,25 +119,28 @@ export default function SubjectGradeScreen() {
       setFWeight(rem > 0 ? String(Math.round(rem)) : '');
       setFMax('100'); setFScored('');
     }
+    setAssessError('');
     setAddAssessOpen(true);
   }
 
   function saveAssessment() {
+    setAssessError('');
     const name = fName.trim();
     const weight = parseFloat(fWeight);
     const maxScore = parseFloat(fMax);
     const scored = fScored.trim() ? parseFloat(fScored) : null;
     
-    if (!name) return Alert.alert('Name required');
-    if (!weight || weight <= 0 || weight > 100) return Alert.alert('Weight must be 1–100');
-    if (!maxScore || maxScore <= 0) return Alert.alert('Max score must be > 0');
+    if (!name) return setAssessError('Component name is required.');
+    if (!weight || weight <= 0 || weight > 100) return setAssessError('Weight must be between 1 and 100.');
+    if (!maxScore || maxScore <= 0) return setAssessError('Max score must be greater than 0.');
 
     const next = editAssess 
       ? config.assessments.map(a => a.id === editAssess.id ? { ...a, name, weight, maxScore, scored } : a)
       : [...config.assessments, { id: uid(), name, weight, maxScore, scored }];
       
-    if (validateAssessmentWeights(next).total > 100.01) {
-      return Alert.alert('Weight Exceeded', 'Total carry mark weight cannot exceed 100%.');
+    const validation = validateAssessmentWeights(next);
+    if (validation.total > 100.01) {
+      return setAssessError(`Total carry mark weight cannot exceed 100%. Currently at ${validation.total}%.`);
     }
     
     setAddAssessOpen(false);
@@ -534,6 +538,12 @@ export default function SubjectGradeScreen() {
                   />
                 </View>
               </View>
+
+              {!!assessError && (
+                <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '500', marginTop: 12, marginBottom: 4, paddingHorizontal: 4 }}>
+                  {assessError}
+                </Text>
+              )}
 
               {editAssess && (
                 <Pressable style={ss.dangerBtn} onPress={() => deleteAssessment(editAssess.id)}>
