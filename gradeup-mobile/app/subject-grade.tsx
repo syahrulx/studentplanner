@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet, TextInput,
   Switch, Alert, Modal, Platform, ActivityIndicator,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -18,21 +18,14 @@ import {
 import { getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
-
 function fmt(n: number, dp = 1) { return isNaN(n) ? '0' : n.toFixed(dp); }
 
 function makeDefault(subjectId: string): SubjectGradeConfig {
   return {
-    subjectId,
-    gradingScheme: 'uitm',
-    hasFinalExam: true,
-    carryWeight: 40,
-    finalWeight: 60,
-    assessments: [],
-    finalExamScored: null,
-    finalExamMaxScore: 100,
+    subjectId, gradingScheme: 'uitm', hasFinalExam: true,
+    carryWeight: 40, finalWeight: 60, assessments: [],
+    finalExamScored: null, finalExamMaxScore: 100,
   };
 }
 
@@ -42,44 +35,26 @@ const PRESETS: { key: GradingScheme; label: string; rows: GradeRow[] }[] = [
   { key: 'generic_5', label: 'Generic 5.0 GPA', rows: GENERIC_5_GRADE_TABLE },
 ];
 
-// ─── Reusable group / row components (matching add-task style) ─────────────────
-
-function SectionLabel({ label, color }: { label: string; color: string }) {
-  return (
-    <Text style={[sl.label, { color }]}>{label}</Text>
-  );
-}
-
-const sl = StyleSheet.create({
-  label: {
-    fontSize: 13, fontWeight: '600', letterSpacing: 0.2,
-    marginBottom: 6, marginLeft: 4, marginTop: 22,
-    textTransform: 'uppercase',
-  },
-});
-
-// ─── Main Screen ───────────────────────────────────────────────────────────────
-
 export default function SubjectGradeScreen() {
   const { subjectId: rawParam } = useLocalSearchParams<{ subjectId: string }>();
   const subjectId = typeof rawParam === 'string' ? rawParam : Array.isArray(rawParam) ? rawParam[0] : '';
   const { user, courses } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const dark = theme.background === '#000000' || theme.background.startsWith('#0') || theme.background === '#121212';
-
+  
   const course = useMemo(() => courses.find(c => c.id === subjectId), [courses, subjectId]);
+  const dark = theme.background === '#000000' || theme.background.startsWith('#0') || theme.background === '#121212';
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [config, setConfig] = useState<SubjectGradeConfig>(makeDefault(subjectId));
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  // Custom grade rows (fully editable clone of the chosen scheme)
+  // Custom grade rows
   const [customRows, setCustomRows] = useState<GradeRow[]>([]);
   const [useCustom, setUseCustom] = useState(false);
 
   // Modals
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [schemeSheet, setSchemeSheet] = useState(false);
   const [gradeEditorOpen, setGradeEditorOpen] = useState(false);
   const [addAssessOpen, setAddAssessOpen] = useState(false);
@@ -91,13 +66,13 @@ export default function SubjectGradeScreen() {
   const [fMax, setFMax] = useState('100');
   const [fScored, setFScored] = useState('');
 
-  // Grade editor form (for adding a custom row)
+  // Grade editor form
   const [gLetter, setGLetter] = useState('');
   const [gMin, setGMin] = useState('');
   const [gPoint, setGPoint] = useState('');
   const [editingRowIdx, setEditingRowIdx] = useState<number | null>(null);
 
-  // ── Load ───────────────────────────────────────────────────────────────────
+  // ── Load & Save ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.id || !subjectId) { setLoading(false); return; }
     getSubjectGradeConfig(user.id, subjectId).then(c => {
@@ -108,7 +83,6 @@ export default function SubjectGradeScreen() {
     });
   }, [user?.id, subjectId]);
 
-  // ── Save (auto) ────────────────────────────────────────────────────────────
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function update(partial: Partial<SubjectGradeConfig>) {
     const next = { ...config, ...partial };
@@ -116,40 +90,33 @@ export default function SubjectGradeScreen() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       if (!user?.id) return;
-      setSaving(true);
       await saveSubjectGradeConfig(user.id, next);
-      setSaving(false);
-    }, 600);
+    }, 500);
   }
 
-  // ── Active grade table (preset or custom) ───────────────────────────────────
+  // ── Calculation ─────────────────────────────────────────────────────────────
   const activeRows = useMemo(() => {
     if (useCustom) return [...customRows].sort((a, b) => b.minPercent - a.minPercent);
     return getGradeTable(config.gradingScheme);
   }, [useCustom, customRows, config.gradingScheme]);
 
-  // ── Calculation ─────────────────────────────────────────────────────────────
   const result = useMemo(() => calculateGrade(config), [config]);
   const { total: wTotal, valid: wValid, remaining: wRemaining } = useMemo(
     () => validateAssessmentWeights(config.assessments), [config.assessments]);
 
   const gc = gradeColor(result.grade.letter);
 
-  // ── Assessment helpers ─────────────────────────────────────────────────────
+  // ── Assessment Handlers ────────────────────────────────────────────────────
   function openAddAssess(existing?: GradeAssessment) {
     if (existing) {
-      setEditAssess(existing);
-      setFName(existing.name);
-      setFWeight(String(existing.weight));
-      setFMax(String(existing.maxScore));
+      setEditAssess(existing); setFName(existing.name);
+      setFWeight(String(existing.weight)); setFMax(String(existing.maxScore));
       setFScored(existing.scored !== null ? String(existing.scored) : '');
     } else {
-      setEditAssess(null);
-      setFName('');
+      setEditAssess(null); setFName('');
       const rem = validateAssessmentWeights(config.assessments).remaining;
       setFWeight(rem > 0 ? String(Math.round(rem)) : '');
-      setFMax('100');
-      setFScored('');
+      setFMax('100'); setFScored('');
     }
     setAddAssessOpen(true);
   }
@@ -159,29 +126,26 @@ export default function SubjectGradeScreen() {
     const weight = parseFloat(fWeight);
     const maxScore = parseFloat(fMax);
     const scored = fScored.trim() ? parseFloat(fScored) : null;
+    
     if (!name) return Alert.alert('Name required');
     if (!weight || weight <= 0 || weight > 100) return Alert.alert('Weight must be 1–100');
     if (!maxScore || maxScore <= 0) return Alert.alert('Max score must be > 0');
 
-    let next: GradeAssessment[];
-    if (editAssess) {
-      next = config.assessments.map(a => a.id === editAssess.id
-        ? { ...a, name, weight, maxScore, scored } : a);
-    } else {
-      next = [...config.assessments, { id: uid(), name, weight, maxScore, scored }];
+    const next = editAssess 
+      ? config.assessments.map(a => a.id === editAssess.id ? { ...a, name, weight, maxScore, scored } : a)
+      : [...config.assessments, { id: uid(), name, weight, maxScore, scored }];
+      
+    if (validateAssessmentWeights(next).total > 100.01) {
+      return Alert.alert('Weight Exceeded', 'Total carry mark weight cannot exceed 100%.');
     }
-    const { total } = validateAssessmentWeights(next);
-    if (total > 100.01) return Alert.alert('Weight exceeds 100%', `Total is ${fmt(total)}%. Reduce weight.`);
+    
     setAddAssessOpen(false);
     update({ assessments: next });
   }
 
   function deleteAssessment(id: string) {
-    Alert.alert('Remove', 'Remove this component?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () =>
-        update({ assessments: config.assessments.filter(a => a.id !== id) }) },
-    ]);
+    update({ assessments: config.assessments.filter(a => a.id !== id) });
+    setAddAssessOpen(false);
   }
 
   function scoreChange(id: string, raw: string) {
@@ -189,65 +153,37 @@ export default function SubjectGradeScreen() {
     update({ assessments: config.assessments.map(a => a.id === id ? { ...a, scored: val } : a) });
   }
 
-  // ── Grade scheme helpers ────────────────────────────────────────────────────
+  // ── Custom Grade Handlers ───────────────────────────────────────────────────
   function applyPreset(scheme: GradingScheme) {
-    const rows = getGradeTable(scheme);
-    setCustomRows(rows);
+    setCustomRows(getGradeTable(scheme));
     setUseCustom(false);
     update({ gradingScheme: scheme });
     setSchemeSheet(false);
   }
 
-  function openGradeEditor() {
-    setSchemeSheet(false);
-    setTimeout(() => setGradeEditorOpen(true), 300);
-  }
-
-  function startEditRow(idx: number) {
-    const row = customRows[idx];
-    setEditingRowIdx(idx);
-    setGLetter(row.letter);
-    setGMin(String(row.minPercent));
-    setGPoint(String(row.point));
-  }
-
   function saveGradeRow() {
     if (editingRowIdx === null) return;
-    const letter = gLetter.trim();
-    const min = parseFloat(gMin);
-    const point = parseFloat(gPoint);
-    if (!letter) return Alert.alert('Letter required');
-    if (isNaN(min) || min < 0 || min > 100) return Alert.alert('Min % must be 0–100');
-    if (isNaN(point) || point < 0) return Alert.alert('GPA point must be ≥ 0');
+    const letter = gLetter.trim(), min = parseFloat(gMin), point = parseFloat(gPoint);
+    if (!letter || isNaN(min) || min < 0 || min > 100 || isNaN(point) || point < 0) return Alert.alert('Invalid data');
+    
     const next = [...customRows];
     next[editingRowIdx] = { ...next[editingRowIdx], letter, minPercent: min, point };
-    // Recalculate maxPercent for all rows (sorted descending by minPercent)
-    const sorted = [...next].sort((a, b) => b.minPercent - a.minPercent).map((r, i, arr) => ({
+    const sorted = next.sort((a, b) => b.minPercent - a.minPercent).map((r, i, arr) => ({
       ...r, maxPercent: i === 0 ? 100 : arr[i - 1].minPercent - 1,
     }));
-    setCustomRows(sorted);
-    setUseCustom(true);
-    setEditingRowIdx(null);
-    setGLetter(''); setGMin(''); setGPoint('');
-  }
-
-  function addGradeRow() {
-    setEditingRowIdx(customRows.length);
-    setGLetter('');
-    setGMin('');
-    setGPoint('');
+    
+    setCustomRows(sorted); setUseCustom(true); setEditingRowIdx(null);
   }
 
   function deleteGradeRow(idx: number) {
-    const next = customRows.filter((_, i) => i !== idx);
-    setCustomRows(next);
+    setCustomRows(customRows.filter((_, i) => i !== idx));
     setUseCustom(true);
   }
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[ss.center, { backgroundColor: theme.background }]}>
+      <View style={[ss.center, { backgroundColor: theme.backgroundSecondary }]}>
         <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
@@ -258,791 +194,436 @@ export default function SubjectGradeScreen() {
   const txt = theme.text;
   const sub = theme.textSecondary;
   const pri = theme.primary;
+  const bg = theme.backgroundSecondary;
 
   return (
-    <View style={[ss.root, { backgroundColor: theme.background }]}>
-      {/* ── Navigation Bar ──────────────────────────────────────────────── */}
-      <View style={[ss.navbar, { paddingTop: insets.top + 8, backgroundColor: theme.background, borderBottomColor: border }]}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => [ss.navBtn, pressed && { opacity: 0.6 }]}>
-          <Feather name="chevron-left" size={24} color={pri} />
-          <Text style={[ss.navBack, { color: pri }]}>Back</Text>
+    <View style={[ss.root, { backgroundColor: bg }]}>
+      {/* ── Navigation Bar ── */}
+      <View style={[ss.navbar, { paddingTop: insets.top + 10, backgroundColor: bg }]}>
+        <Pressable onPress={() => router.back()} style={ss.navBtnLeft}>
+          <Feather name="chevron-left" size={28} color={pri} />
+          <Text style={[ss.navBackText, { color: pri }]}>Back</Text>
         </Pressable>
-        <View style={ss.navCenter}>
-          <Text style={[ss.navTitle, { color: txt }]} numberOfLines={1}>{subjectId}</Text>
-          {course && <Text style={[ss.navSub, { color: sub }]} numberOfLines={1}>{course.name}</Text>}
-        </View>
-        <View style={ss.navRight}>
-          {saving
-            ? <ActivityIndicator size="small" color={sub} />
-            : <Text style={[ss.navSaved, { color: sub }]}>Saved</Text>
-          }
-        </View>
+        <Text style={[ss.navTitle, { color: txt }]} numberOfLines={1}>
+          {course?.name || subjectId}
+        </Text>
+        <Pressable onPress={() => setSettingsOpen(true)} style={ss.navBtnRight}>
+          <Feather name="sliders" size={22} color={pri} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={[ss.scroll, { paddingBottom: insets.bottom + 48 }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-
-          {/* ── Grade Hero ─────────────────────────────────────────────── */}
-          <View style={[ss.hero, { backgroundColor: gc + (dark ? '22' : '12'), borderColor: gc + '30' }]}>
-            <View style={ss.heroMain}>
-              <View style={[ss.heroGradeBubble, { backgroundColor: gc }]}>
-                <Text style={ss.heroGradeLetter}>{result.grade.letter}</Text>
-              </View>
-              <View style={ss.heroInfo}>
-                <Text style={[ss.heroScore, { color: txt }]}>{fmt(result.totalScore)}%</Text>
-                <Text style={[ss.heroGPA, { color: sub }]}>{fmt(result.grade.point, 2)} GPA</Text>
-                <View style={[ss.heroBar, { backgroundColor: border }]}>
-                  <View style={[ss.heroBarFill, { width: `${Math.min(result.totalScore, 100)}%` as any, backgroundColor: gc }]} />
-                </View>
-              </View>
-            </View>
-            <View style={[ss.heroChips, { borderTopColor: gc + '22' }]}>
-              <View style={ss.heroChip}>
-                <Text style={[ss.heroChipLabel, { color: sub }]}>Carry ({config.carryWeight}%)</Text>
-                <Text style={[ss.heroChipVal, { color: txt }]}>{fmt(result.carryEarned)} pts</Text>
-              </View>
-              {config.hasFinalExam && (
-                <>
-                  <View style={[ss.heroChipDivider, { backgroundColor: gc + '22' }]} />
-                  <View style={ss.heroChip}>
-                    <Text style={[ss.heroChipLabel, { color: sub }]}>Final ({config.finalWeight}%)</Text>
-                    <Text style={[ss.heroChipVal, { color: txt }]}>{fmt(result.finalContribution)} pts</Text>
-                  </View>
-                </>
-              )}
-            </View>
+        <ScrollView contentContainerStyle={[ss.scroll, { paddingBottom: insets.bottom + 60 }]} keyboardShouldPersistTaps="handled">
+          
+          {/* ── Hero (Clean, Large) ── */}
+          <View style={ss.hero}>
+            <Text style={[ss.heroGrade, { color: gc }]}>{result.grade.letter}</Text>
+            <Text style={[ss.heroScore, { color: sub }]}>
+              {fmt(result.totalScore)}%  •  {fmt(result.grade.point, 2)} GPA
+            </Text>
           </View>
 
-          {/* ── Grading Scheme ─────────────────────────────────────────── */}
-          <SectionLabel label="Grading Scheme" color={sub} />
-          <View style={[ss.group, { backgroundColor: cardBg }]}>
-            <Pressable
-              style={({ pressed }) => [ss.row, pressed && { opacity: 0.7 }]}
-              onPress={() => setSchemeSheet(true)}
-            >
-              <View style={[ss.rowIconWrap, { backgroundColor: pri + '15' }]}>
-                <Feather name="award" size={16} color={pri} />
-              </View>
-              <View style={ss.rowBody}>
-                <Text style={[ss.rowLabel, { color: txt }]}>
-                  {useCustom ? 'Custom' : SCHEME_LABELS[config.gradingScheme]}
-                </Text>
-                <Text style={[ss.rowSub, { color: sub }]}>
-                  {useCustom ? `${customRows.length} grade levels` : 'Tap to change or customise'}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={sub} />
-            </Pressable>
-          </View>
-
-          {/* ── Weight Split ───────────────────────────────────────────── */}
-          <SectionLabel label="Weight Split" color={sub} />
-          <View style={[ss.group, { backgroundColor: cardBg }]}>
-            {/* Has Final Exam */}
-            <View style={[ss.row, ss.rowDivider, { borderBottomColor: border }]}>
-              <View style={[ss.rowIconWrap, { backgroundColor: '#6366f115' }]}>
-                <Feather name="file-text" size={16} color="#6366f1" />
-              </View>
-              <Text style={[ss.rowLabel, { color: txt, flex: 1 }]}>Has Final Exam</Text>
-              <Switch
-                value={config.hasFinalExam}
-                onValueChange={v => update({
-                  hasFinalExam: v,
-                  carryWeight: v ? 40 : 100,
-                  finalWeight: v ? 60 : 0,
-                })}
-                trackColor={{ true: pri, false: border }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            {/* Carry weight stepper */}
-            <View style={[ss.row, config.hasFinalExam ? [ss.rowDivider, { borderBottomColor: border }] : null]}>
-              <View style={[ss.rowIconWrap, { backgroundColor: '#f59e0b15' }]}>
-                <Feather name="percent" size={16} color="#f59e0b" />
-              </View>
-              <Text style={[ss.rowLabel, { color: txt, flex: 1 }]}>Carry Marks</Text>
-              {config.hasFinalExam ? (
-                <View style={ss.stepper}>
-                  <Pressable
-                    style={[ss.stepBtn, { backgroundColor: border }]}
-                    onPress={() => { const w = Math.max(0, config.carryWeight - 5); update({ carryWeight: w, finalWeight: 100 - w }); }}
-                  >
-                    <Feather name="minus" size={14} color={txt} />
-                  </Pressable>
-                  <Text style={[ss.stepVal, { color: txt }]}>{config.carryWeight}%</Text>
-                  <Pressable
-                    style={[ss.stepBtn, { backgroundColor: border }]}
-                    onPress={() => { const w = Math.min(100, config.carryWeight + 5); update({ carryWeight: w, finalWeight: 100 - w }); }}
-                  >
-                    <Feather name="plus" size={14} color={txt} />
-                  </Pressable>
-                </View>
-              ) : (
-                <Text style={[ss.rowVal, { color: sub }]}>100%</Text>
-              )}
-            </View>
-
-            {/* Final weight (derived) */}
-            {config.hasFinalExam && (
-              <View style={ss.row}>
-                <View style={[ss.rowIconWrap, { backgroundColor: '#ec489915' }]}>
-                  <Feather name="book-open" size={16} color="#ec4899" />
-                </View>
-                <Text style={[ss.rowLabel, { color: txt, flex: 1 }]}>Final Exam</Text>
-                <Text style={[ss.rowVal, { color: sub }]}>{config.finalWeight}%</Text>
-              </View>
-            )}
-          </View>
-
-          {/* ── Carry Mark Assessments ─────────────────────────────────── */}
-          <View style={ss.sectionHeaderRow}>
-            <SectionLabel label="Carry Marks" color={sub} />
-            {config.assessments.length > 0 && !wValid && (
-              <Text style={[ss.warnText, { color: '#f59e0b' }]}>
-                {wTotal > 100 ? `Over ${fmt(wTotal - 100)}%` : `${fmt(wRemaining)}% left`}
+          {/* ── Carry Marks ── */}
+          <View style={ss.sectionHeader}>
+            <Text style={[ss.sectionTitle, { color: sub }]}>Carry Marks ({config.carryWeight}%)</Text>
+            {!wValid && config.assessments.length > 0 && (
+              <Text style={[ss.sectionAction, { color: '#f59e0b' }]}>
+                {wTotal > 100 ? `Over by ${fmt(wTotal - 100)}%` : `${fmt(wRemaining)}% remaining`}
               </Text>
             )}
           </View>
-
+          
           <View style={[ss.group, { backgroundColor: cardBg }]}>
             {config.assessments.length === 0 ? (
-              <View style={ss.emptyAssess}>
-                <Feather name="list" size={22} color={sub} />
-                <Text style={[ss.emptyAssessText, { color: sub }]}>No components yet</Text>
-                <Text style={[ss.emptyAssessHint, { color: sub }]}>
-                  Add your tests, assignments, quizzes…
-                </Text>
-              </View>
+              <Text style={[ss.emptyText, { color: sub }]}>No components added yet.</Text>
             ) : (
               config.assessments.map((a, idx) => {
                 const isLast = idx === config.assessments.length - 1;
-                const pct = a.scored !== null && a.maxScore > 0 ? (a.scored / a.maxScore) * 100 : null;
-                const agc = pct !== null ? gradeColor(
-                  activeRows.find(r => pct >= r.minPercent)?.letter ?? 'F'
-                ) : sub;
                 return (
-                  <View
-                    key={a.id}
-                    style={!isLast ? [ss.assessRow, ss.rowDivider, { borderBottomColor: border }] : ss.assessRow}
-                  >
-                    <Pressable
-                      style={ss.assessLeft}
-                      onPress={() => openAddAssess(a)}
-                      onLongPress={() => deleteAssessment(a.id)}
-                    >
-                      <View style={ss.assessNameRow}>
+                  <View key={a.id} style={!isLast && [ss.rowBorder, { borderBottomColor: border }]}>
+                    <Pressable style={ss.assessRow} onPress={() => openAddAssess(a)}>
+                      <View style={ss.assessInfo}>
                         <Text style={[ss.assessName, { color: txt }]} numberOfLines={1}>{a.name}</Text>
-                        <View style={[ss.weightBadge, { backgroundColor: pri + '15' }]}>
-                          <Text style={[ss.weightBadgeText, { color: pri }]}>{a.weight}%</Text>
-                        </View>
+                        <Text style={[ss.assessWeight, { color: sub }]}>Weight: {a.weight}%</Text>
                       </View>
-                      {pct !== null && (
-                        <View style={ss.miniBarWrap}>
-                          <View style={[ss.miniBarBg, { backgroundColor: border }]}>
-                            <View style={[ss.miniBarFill, { width: `${Math.min(pct, 100)}%` as any, backgroundColor: agc }]} />
-                          </View>
-                          <Text style={[ss.miniBarPct, { color: agc }]}>{fmt(pct)}%</Text>
-                        </View>
-                      )}
+                      <View style={ss.scoreInputWrap}>
+                        <TextInput
+                          style={[ss.scoreInput, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
+                          value={a.scored !== null ? String(a.scored) : ''}
+                          onChangeText={v => scoreChange(a.id, v)}
+                          keyboardType="decimal-pad"
+                          placeholder="–"
+                          placeholderTextColor={sub}
+                          returnKeyType="done"
+                        />
+                        <Text style={[ss.scoreDivider, { color: sub }]}>/ {a.maxScore}</Text>
+                      </View>
                     </Pressable>
-                    <View style={ss.scoreCell}>
-                      <TextInput
-                        style={[ss.scoreBox, { color: txt, backgroundColor: dark ? border + '60' : theme.backgroundSecondary, borderColor: border }]}
-                        value={a.scored !== null ? String(a.scored) : ''}
-                        onChangeText={v => scoreChange(a.id, v)}
-                        keyboardType="decimal-pad"
-                        placeholder="–"
-                        placeholderTextColor={border}
-                        returnKeyType="done"
-                      />
-                      <Text style={[ss.scoreSlash, { color: sub }]}>/{a.maxScore}</Text>
-                    </View>
                   </View>
                 );
               })
             )}
-
-            {/* Add row */}
-            <Pressable
-              style={({ pressed }) => [ss.addRow, { borderTopColor: border }, pressed && { opacity: 0.6 }]}
-              onPress={() => openAddAssess()}
-            >
-              <Feather name="plus-circle" size={18} color={pri} />
-              <Text style={[ss.addRowText, { color: pri }]}>Add Component</Text>
+            <Pressable style={[ss.addBtn, config.assessments.length > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: border }]} onPress={() => openAddAssess()}>
+              <Feather name="plus" size={18} color={pri} />
+              <Text style={[ss.addBtnText, { color: pri }]}>Add Component</Text>
             </Pressable>
           </View>
 
-          {/* ── Final Exam Score ──────────────────────────────────────── */}
+          {/* ── Final Exam ── */}
           {config.hasFinalExam && (
             <>
-              <SectionLabel label="Final Exam Score" color={sub} />
+              <View style={ss.sectionHeader}>
+                <Text style={[ss.sectionTitle, { color: sub }]}>Final Exam ({config.finalWeight}%)</Text>
+              </View>
               <View style={[ss.group, { backgroundColor: cardBg }]}>
-                <View style={[ss.row, ss.rowDivider, { borderBottomColor: border }]}>
-                  <View style={[ss.rowIconWrap, { backgroundColor: '#ec489915' }]}>
-                    <Feather name="edit-3" size={16} color="#ec4899" />
+                <View style={ss.assessRow}>
+                  <View style={ss.assessInfo}>
+                    <Text style={[ss.assessName, { color: txt }]}>Final Score</Text>
+                    <Text style={[ss.assessWeight, { color: sub }]}>Overall impact: {config.finalWeight}%</Text>
                   </View>
-                  <Text style={[ss.rowLabel, { color: txt, flex: 1 }]}>Score</Text>
-                  <View style={ss.scoreCell}>
+                  <View style={ss.scoreInputWrap}>
                     <TextInput
-                      style={[ss.scoreBox, ss.scoreBoxLg, { color: txt, backgroundColor: dark ? border + '60' : theme.backgroundSecondary, borderColor: border }]}
+                      style={[ss.scoreInput, ss.scoreInputLg, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
                       value={config.finalExamScored !== null ? String(config.finalExamScored) : ''}
                       onChangeText={v => update({ finalExamScored: v.trim() ? parseFloat(v) : null })}
                       keyboardType="decimal-pad"
                       placeholder="–"
-                      placeholderTextColor={border}
+                      placeholderTextColor={sub}
                       returnKeyType="done"
                     />
-                    <Text style={[ss.scoreSlash, { color: sub }]}>/{config.finalExamMaxScore}</Text>
+                    <Text style={[ss.scoreDivider, { color: sub }]}>/ {config.finalExamMaxScore}</Text>
                   </View>
                 </View>
-                <View style={ss.row}>
-                  <View style={[ss.rowIconWrap, { backgroundColor: '#8b5cf615' }]}>
-                    <Feather name="maximize-2" size={16} color="#8b5cf6" />
+              </View>
+
+              {/* ── Target Analysis ── */}
+              <View style={ss.sectionHeader}>
+                <Text style={[ss.sectionTitle, { color: sub }]}>Final Exam Targets</Text>
+              </View>
+              <View style={[ss.group, { backgroundColor: cardBg }]}>
+                {result.requiredForGrades.slice(0, 6).map((r, idx, arr) => {
+                  const gc2 = gradeColor(r.grade);
+                  const isCurrent = result.grade.letter === r.grade;
+                  return (
+                    <View key={r.grade} style={[ss.targetRow, idx !== arr.length - 1 && [ss.rowBorder, { borderBottomColor: border }], isCurrent && { backgroundColor: gc2 + '0D' }]}>
+                      <Text style={[ss.targetGrade, { color: isCurrent ? gc2 : txt }]}>{r.grade}</Text>
+                      {r.achievable ? (
+                        <Text style={[ss.targetScore, { color: isCurrent ? gc2 : sub }]}>{fmt(r.required)}%</Text>
+                      ) : (
+                        <Text style={[ss.targetScore, { color: '#ef4444' }]}>N/A</Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          Settings Modal (Slide up)
+      ═══════════════════════════════════════════════════════════════════ */}
+      <Modal visible={settingsOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSettingsOpen(false)}>
+        <View style={[ss.modalContainer, { backgroundColor: bg }]}>
+          <View style={[ss.modalNavbar, { backgroundColor: bg }]}>
+             <View style={ss.modalNavBtn} />
+             <Text style={[ss.modalNavTitle, { color: txt }]}>Configuration</Text>
+             <Pressable onPress={() => setSettingsOpen(false)} style={[ss.modalNavBtn, { alignItems: 'flex-end' }]}>
+               <Text style={[ss.modalNavAction, { color: pri }]}>Done</Text>
+             </Pressable>
+          </View>
+          
+          <ScrollView contentContainerStyle={ss.modalScroll}>
+            
+            <View style={ss.sectionHeader}>
+               <Text style={[ss.sectionTitle, { color: sub }]}>Grading Scheme</Text>
+            </View>
+            <View style={[ss.group, { backgroundColor: cardBg }]}>
+              <Pressable style={ss.settingRow} onPress={() => { setSettingsOpen(false); setTimeout(() => setSchemeSheet(true), 100); }}>
+                <Text style={[ss.settingLabel, { color: txt }]}>Scheme</Text>
+                <View style={ss.settingRight}>
+                  <Text style={[ss.settingValue, { color: sub }]}>{useCustom ? 'Custom' : SCHEME_LABELS[config.gradingScheme]}</Text>
+                  <Feather name="chevron-right" size={20} color={sub} />
+                </View>
+              </Pressable>
+            </View>
+
+            <View style={ss.sectionHeader}>
+               <Text style={[ss.sectionTitle, { color: sub }]}>Course Structure</Text>
+            </View>
+            <View style={[ss.group, { backgroundColor: cardBg }]}>
+              <View style={[ss.settingRow, ss.rowBorder, { borderBottomColor: border }]}>
+                <Text style={[ss.settingLabel, { color: txt }]}>Has Final Exam</Text>
+                <Switch
+                  value={config.hasFinalExam}
+                  onValueChange={v => update({ hasFinalExam: v, carryWeight: v ? 40 : 100, finalWeight: v ? 60 : 0 })}
+                  trackColor={{ true: pri, false: border }}
+                />
+              </View>
+              
+              <View style={[ss.settingRow, config.hasFinalExam && ss.rowBorder, config.hasFinalExam && { borderBottomColor: border }]}>
+                <Text style={[ss.settingLabel, { color: txt }]}>Carry Marks Weight</Text>
+                {config.hasFinalExam ? (
+                  <View style={ss.stepper}>
+                    <Pressable style={[ss.stepperBtn, { backgroundColor: border }]} onPress={() => { const w = Math.max(0, config.carryWeight - 5); update({ carryWeight: w, finalWeight: 100 - w }); }}>
+                      <Feather name="minus" size={16} color={txt} />
+                    </Pressable>
+                    <Text style={[ss.stepperVal, { color: txt }]}>{config.carryWeight}%</Text>
+                    <Pressable style={[ss.stepperBtn, { backgroundColor: border }]} onPress={() => { const w = Math.min(100, config.carryWeight + 5); update({ carryWeight: w, finalWeight: 100 - w }); }}>
+                      <Feather name="plus" size={16} color={txt} />
+                    </Pressable>
                   </View>
-                  <Text style={[ss.rowLabel, { color: txt, flex: 1 }]}>Full Marks</Text>
+                ) : (
+                  <Text style={[ss.settingValue, { color: sub }]}>100%</Text>
+                )}
+              </View>
+
+              {config.hasFinalExam && (
+                <View style={[ss.settingRow, ss.rowBorder, { borderBottomColor: border }]}>
+                  <Text style={[ss.settingLabel, { color: txt }]}>Final Exam Weight</Text>
+                  <Text style={[ss.settingValue, { color: sub }]}>{config.finalWeight}%</Text>
+                </View>
+              )}
+
+              {config.hasFinalExam && (
+                <View style={ss.settingRow}>
+                  <Text style={[ss.settingLabel, { color: txt }]}>Final Exam Full Marks</Text>
                   <TextInput
-                    style={[ss.scoreBox, { color: txt, backgroundColor: dark ? border + '60' : theme.backgroundSecondary, borderColor: border }]}
+                    style={[ss.inlineInput, { color: txt, backgroundColor: bg }]}
                     value={String(config.finalExamMaxScore)}
                     onChangeText={v => update({ finalExamMaxScore: parseFloat(v) || 100 })}
                     keyboardType="decimal-pad"
                     returnKeyType="done"
                   />
                 </View>
-              </View>
-            </>
-          )}
+              )}
+            </View>
 
-          {/* ── What do I need? ─────────────────────────────────────── */}
-          {config.hasFinalExam && (
-            <>
-              <SectionLabel label="What do I need in final?" color={sub} />
-              <View style={[ss.group, { backgroundColor: cardBg }]}>
-                {result.requiredForGrades.map((r, idx, arr) => {
-                  const gc2 = gradeColor(r.grade);
-                  const isCurrent = result.grade.letter === r.grade;
-                  return (
-                    <View
-                      key={r.grade}
-                      style={[
-                        ss.needRow,
-                        idx !== arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border },
-                        isCurrent && { backgroundColor: gc2 + '0D' },
-                      ]}
-                    >
-                      <View style={[ss.needGrade, { backgroundColor: gc2 + '18' }]}>
-                        <Text style={[ss.needGradeLetter, { color: gc2 }]}>{r.grade}</Text>
-                      </View>
-                      <Text style={[ss.needGPA, { color: sub }]}>{fmt(r.point, 2)}</Text>
-                      <View style={ss.needRight}>
-                        {r.achievable ? (
-                          <Text style={[ss.needScore, { color: isCurrent ? gc2 : txt }]}>{fmt(r.required)}%</Text>
-                        ) : (
-                          <View style={[ss.notChip, { backgroundColor: '#ef444415' }]}>
-                            <Feather name="x" size={12} color="#ef4444" />
-                            <Text style={ss.notChipText}>Not achievable</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </>
-          )}
-
-          {/* ── Grade Table Preview ──────────────────────────────────── */}
-          <SectionLabel label="Grade Table" color={sub} />
-          <View style={[ss.group, { backgroundColor: cardBg }]}>
-            {activeRows.map((g, idx, arr) => {
-              const isCurrent = result.grade.letter === g.letter;
-              const gc3 = gradeColor(g.letter);
-              return (
-                <View
-                  key={`${g.letter}-${idx}`}
-                  style={[
-                    ss.gradeRow,
-                    idx !== arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border },
-                    isCurrent && { backgroundColor: gc3 + '0F' },
-                  ]}
-                >
-                  <Text style={[ss.gradeRowLetter, { color: gc3, fontWeight: isCurrent ? '800' : '700' }]}>{g.letter}</Text>
-                  <Text style={[ss.gradeRowRange, { color: sub }]}>{g.minPercent}–{g.maxPercent}%</Text>
-                  <Text style={[ss.gradeRowPts, { color: isCurrent ? gc3 : txt, fontWeight: isCurrent ? '800' : '600' }]}>{fmt(g.point, 2)}</Text>
-                  {isCurrent && <Feather name="check" size={14} color={gc3} style={{ marginLeft: 6 }} />}
-                </View>
-              );
-            })}
-          </View>
-
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          Scheme picker bottom sheet
-      ═══════════════════════════════════════════════════════════════════ */}
-      <Modal visible={schemeSheet} transparent animationType="slide" onRequestClose={() => setSchemeSheet(false)}>
-        <View style={ss.sheetOverlay}>
-          <Pressable style={ss.sheetBackdrop} onPress={() => setSchemeSheet(false)} />
-          <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 16 }]}>
-            <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-            <Text style={[ss.sheetTitle, { color: txt }]}>Grading Scheme</Text>
-            <Text style={[ss.sheetHint, { color: sub }]}>Choose a preset or customise your own grade table.</Text>
-
-            {PRESETS.map(p => (
-              <Pressable
-                key={p.key}
-                style={({ pressed }) => [ss.schemeOpt, { borderColor: border }, pressed && { opacity: 0.7 },
-                  config.gradingScheme === p.key && !useCustom && { borderColor: pri, backgroundColor: pri + '0A' }]}
-                onPress={() => applyPreset(p.key)}
-              >
-                <View style={ss.schemeOptLeft}>
-                  <Text style={[ss.schemeOptLabel, { color: txt }]}>{p.label}</Text>
-                  <Text style={[ss.schemeOptSub, { color: sub }]}>
-                    {p.rows.slice(0, 4).map(r => `${r.letter} ${fmt(r.point, 2)}`).join(' · ')} …
-                  </Text>
-                </View>
-                {config.gradingScheme === p.key && !useCustom && (
-                  <Feather name="check-circle" size={18} color={pri} />
-                )}
-              </Pressable>
-            ))}
-
-            <Pressable
-              style={({ pressed }) => [ss.schemeOpt, { borderColor: border }, pressed && { opacity: 0.7 },
-                useCustom && { borderColor: pri, backgroundColor: pri + '0A' }]}
-              onPress={openGradeEditor}
-            >
-              <View style={ss.schemeOptLeft}>
-                <Text style={[ss.schemeOptLabel, { color: txt }]}>Custom</Text>
-                <Text style={[ss.schemeOptSub, { color: sub }]}>
-                  {useCustom ? `${customRows.length} grade levels (editable)` : 'Build your own grade table'}
-                </Text>
-              </View>
-              <Feather name={useCustom ? 'check-circle' : 'edit-2'} size={18} color={useCustom ? pri : sub} />
-            </Pressable>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          Full custom grade editor
+          Scheme Picker Sheet & Editor (Transparent Modals)
       ═══════════════════════════════════════════════════════════════════ */}
-      <Modal visible={gradeEditorOpen} transparent animationType="slide" onRequestClose={() => setGradeEditorOpen(false)}>
-        <View style={ss.sheetOverlay}>
-          <Pressable style={ss.sheetBackdrop} onPress={() => setGradeEditorOpen(false)} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={ss.sheetKAV}>
-            <View style={[ss.sheetLarge, { backgroundColor: cardBg, paddingBottom: insets.bottom + 16 }]}>
-              <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-              <View style={ss.sheetHeaderRow}>
-                <Text style={[ss.sheetTitle, { color: txt }]}>Custom Grade Table</Text>
-                <Pressable
-                  onPress={() => { setUseCustom(true); setGradeEditorOpen(false); }}
-                  style={({ pressed }) => [ss.doneBtn, { backgroundColor: pri }, pressed && { opacity: 0.85 }]}
-                >
-                  <Text style={ss.doneBtnText}>Done</Text>
-                </Pressable>
-              </View>
-              <Text style={[ss.sheetHint, { color: sub }]}>
-                Tap a row to edit. Long-press to delete. Min % is the lowest mark to get that grade.
-              </Text>
+      <Modal visible={schemeSheet} transparent animationType="slide" onRequestClose={() => setSchemeSheet(false)}>
+        <Pressable style={ss.sheetOverlay} onPress={() => setSchemeSheet(false)}>
+          <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 20 }]} onStartShouldSetResponder={() => true}>
+            <View style={[ss.sheetHandle, { backgroundColor: border }]} />
+            <Text style={[ss.sheetTitle, { color: txt }]}>Grading Scheme</Text>
+            
+            {PRESETS.map(p => (
+              <Pressable key={p.key} style={[ss.schemeOpt, { borderBottomColor: border }]} onPress={() => applyPreset(p.key)}>
+                <Text style={[ss.schemeOptLabel, { color: txt }]}>{p.label}</Text>
+                {config.gradingScheme === p.key && !useCustom && <Feather name="check" size={20} color={pri} />}
+              </Pressable>
+            ))}
+            <Pressable style={[ss.schemeOpt, { borderBottomColor: border, borderBottomWidth: 0 }]} onPress={() => { setSchemeSheet(false); setTimeout(() => setGradeEditorOpen(true), 300); }}>
+              <Text style={[ss.schemeOptLabel, { color: txt }]}>Custom Table</Text>
+              {useCustom && <Feather name="check" size={20} color={pri} />}
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
 
-              <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+      <Modal visible={gradeEditorOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setGradeEditorOpen(false)}>
+        <View style={[ss.modalContainer, { backgroundColor: bg }]}>
+          <View style={[ss.modalNavbar, { backgroundColor: bg }]}>
+             <Pressable onPress={() => setGradeEditorOpen(false)} style={ss.modalNavBtn}>
+               <Text style={[ss.modalNavAction, { color: pri }]}>Back</Text>
+             </Pressable>
+             <Text style={[ss.modalNavTitle, { color: txt }]}>Custom Grade Table</Text>
+             <Pressable onPress={() => { setUseCustom(true); setGradeEditorOpen(false); }} style={[ss.modalNavBtn, { alignItems: 'flex-end' }]}>
+               <Text style={[ss.modalNavAction, { color: pri, fontWeight: '700' }]}>Done</Text>
+             </Pressable>
+          </View>
+          
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={ss.modalScroll} keyboardShouldPersistTaps="handled">
+              
+              <Text style={[ss.editorHint, { color: sub }]}>Add, edit, or remove grade levels. The maximum percentage is calculated automatically based on the minimum percentage of the level above it.</Text>
+
+              <View style={[ss.group, { backgroundColor: cardBg }]}>
                 {/* Header */}
-                <View style={[ss.gradeEditorHeader, { borderBottomColor: border }]}>
-                  <Text style={[ss.gradeEditorHeaderCell, { flex: 1, color: sub }]}>Grade</Text>
-                  <Text style={[ss.gradeEditorHeaderCell, { flex: 2, color: sub }]}>Min %</Text>
-                  <Text style={[ss.gradeEditorHeaderCell, { flex: 2, color: sub }]}>GPA Pt</Text>
-                  <View style={{ width: 28 }} />
+                <View style={[ss.editorHeader, { borderBottomColor: border }]}>
+                  <Text style={[ss.editorHeaderCell, { flex: 1, color: sub }]}>Grade</Text>
+                  <Text style={[ss.editorHeaderCell, { flex: 1.5, color: sub }]}>Min %</Text>
+                  <Text style={[ss.editorHeaderCell, { flex: 1.5, color: sub }]}>GPA</Text>
+                  <View style={{ width: 32 }} />
                 </View>
 
                 {[...customRows].sort((a, b) => b.minPercent - a.minPercent).map((row, idx) => {
                   const isEditing = editingRowIdx === idx;
                   return (
-                    <View key={idx} style={[ss.gradeEditorRow, { borderBottomColor: border }]}>
+                    <View key={idx} style={[ss.editorRow, idx !== customRows.length - 1 && [ss.rowBorder, { borderBottomColor: border }]]}>
                       {isEditing ? (
                         <>
-                          <TextInput
-                            style={[ss.gradeEditCell, { flex: 1, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                            value={gLetter} onChangeText={setGLetter}
-                            placeholder="A+" placeholderTextColor={border}
-                            autoFocus returnKeyType="next" autoCapitalize="characters"
-                          />
-                          <TextInput
-                            style={[ss.gradeEditCell, { flex: 2, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                            value={gMin} onChangeText={setGMin}
-                            placeholder="75" placeholderTextColor={border}
-                            keyboardType="decimal-pad" returnKeyType="next"
-                          />
-                          <TextInput
-                            style={[ss.gradeEditCell, { flex: 2, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                            value={gPoint} onChangeText={setGPoint}
-                            placeholder="3.67" placeholderTextColor={border}
-                            keyboardType="decimal-pad" returnKeyType="done"
-                            onSubmitEditing={saveGradeRow}
-                          />
-                          <Pressable onPress={saveGradeRow} style={ss.gradeRowSaveBtn}>
-                            <Feather name="check" size={16} color={pri} />
-                          </Pressable>
+                          <TextInput style={[ss.editorInput, { flex: 1, color: txt, backgroundColor: bg }]} value={gLetter} onChangeText={setGLetter} placeholder="A+" autoFocus autoCapitalize="characters" />
+                          <TextInput style={[ss.editorInput, { flex: 1.5, color: txt, backgroundColor: bg }]} value={gMin} onChangeText={setGMin} placeholder="90" keyboardType="decimal-pad" />
+                          <TextInput style={[ss.editorInput, { flex: 1.5, color: txt, backgroundColor: bg }]} value={gPoint} onChangeText={setGPoint} placeholder="4.0" keyboardType="decimal-pad" onSubmitEditing={saveGradeRow} />
+                          <Pressable onPress={saveGradeRow} style={ss.editorActionBtn}><Feather name="check-circle" size={20} color={pri} /></Pressable>
                         </>
                       ) : (
                         <>
-                          <Pressable style={{ flex: 1 }} onPress={() => startEditRow(idx)} onLongPress={() => deleteGradeRow(idx)}>
-                            <Text style={[ss.gradeEditorCell, { color: gradeColor(row.letter), fontWeight: '700' }]}>{row.letter}</Text>
-                          </Pressable>
-                          <Pressable style={{ flex: 2 }} onPress={() => startEditRow(idx)}>
-                            <Text style={[ss.gradeEditorCell, { color: txt }]}>{row.minPercent}%</Text>
-                          </Pressable>
-                          <Pressable style={{ flex: 2 }} onPress={() => startEditRow(idx)}>
-                            <Text style={[ss.gradeEditorCell, { color: txt }]}>{fmt(row.point, 2)}</Text>
-                          </Pressable>
-                          <Pressable onPress={() => deleteGradeRow(idx)} hitSlop={8}>
-                            <Feather name="trash-2" size={15} color="#ef4444" />
-                          </Pressable>
+                          <Text style={[ss.editorCell, { flex: 1, color: txt, fontWeight: '600' }]} onPress={() => { setEditingRowIdx(idx); setGLetter(row.letter); setGMin(String(row.minPercent)); setGPoint(String(row.point)); }}>{row.letter}</Text>
+                          <Text style={[ss.editorCell, { flex: 1.5, color: txt }]} onPress={() => { setEditingRowIdx(idx); setGLetter(row.letter); setGMin(String(row.minPercent)); setGPoint(String(row.point)); }}>{row.minPercent}%</Text>
+                          <Text style={[ss.editorCell, { flex: 1.5, color: txt }]} onPress={() => { setEditingRowIdx(idx); setGLetter(row.letter); setGMin(String(row.minPercent)); setGPoint(String(row.point)); }}>{fmt(row.point, 2)}</Text>
+                          <Pressable onPress={() => deleteGradeRow(idx)} style={ss.editorActionBtn}><Feather name="trash-2" size={18} color="#ef4444" /></Pressable>
                         </>
                       )}
                     </View>
                   );
                 })}
+              </View>
 
-                {/* Add new grade row */}
-                {editingRowIdx === customRows.length ? (
-                  <View style={[ss.gradeEditorRow, { borderBottomColor: border }]}>
-                    <TextInput
-                      style={[ss.gradeEditCell, { flex: 1, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                      value={gLetter} onChangeText={setGLetter}
-                      placeholder="A+" placeholderTextColor={border}
-                      autoFocus returnKeyType="next" autoCapitalize="characters"
-                    />
-                    <TextInput
-                      style={[ss.gradeEditCell, { flex: 2, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                      value={gMin} onChangeText={setGMin}
-                      placeholder="90" placeholderTextColor={border}
-                      keyboardType="decimal-pad" returnKeyType="next"
-                    />
-                    <TextInput
-                      style={[ss.gradeEditCell, { flex: 2, color: txt, borderColor: pri, backgroundColor: theme.backgroundSecondary }]}
-                      value={gPoint} onChangeText={setGPoint}
-                      placeholder="4.00" placeholderTextColor={border}
-                      keyboardType="decimal-pad" returnKeyType="done"
-                      onSubmitEditing={() => {
-                        const letter = gLetter.trim();
-                        const min = parseFloat(gMin);
-                        const point = parseFloat(gPoint);
-                        if (!letter || isNaN(min) || isNaN(point)) return;
-                        const next = [...customRows, { letter, minPercent: min, maxPercent: 100, point }];
-                        const sorted = [...next].sort((a, b) => b.minPercent - a.minPercent).map((r, i, arr) => ({
-                          ...r, maxPercent: i === 0 ? 100 : arr[i - 1].minPercent - 1,
-                        }));
-                        setCustomRows(sorted);
-                        setUseCustom(true);
-                        setEditingRowIdx(null);
-                        setGLetter(''); setGMin(''); setGPoint('');
-                      }}
-                    />
-                    <Pressable onPress={() => {
-                      const letter = gLetter.trim();
-                      const min = parseFloat(gMin);
-                      const point = parseFloat(gPoint);
-                      if (!letter || isNaN(min) || isNaN(point)) return;
-                      const next = [...customRows, { letter, minPercent: min, maxPercent: 100, point }];
-                      const sorted = [...next].sort((a, b) => b.minPercent - a.minPercent).map((r, i, arr) => ({
-                        ...r, maxPercent: i === 0 ? 100 : arr[i - 1].minPercent - 1,
-                      }));
-                      setCustomRows(sorted);
-                      setUseCustom(true);
-                      setEditingRowIdx(null);
-                      setGLetter(''); setGMin(''); setGPoint('');
-                    }} style={ss.gradeRowSaveBtn}>
-                      <Feather name="check" size={16} color={pri} />
-                    </Pressable>
-                  </View>
-                ) : null}
-              </ScrollView>
-
-              <Pressable
-                style={({ pressed }) => [ss.addGradeRowBtn, { borderColor: pri + '40', backgroundColor: pri + '0A' }, pressed && { opacity: 0.7 }]}
-                onPress={addGradeRow}
-              >
-                <Feather name="plus" size={16} color={pri} />
-                <Text style={[ss.addGradeRowText, { color: pri }]}>Add Grade Level</Text>
+              <Pressable style={[ss.addLevelBtn, { backgroundColor: cardBg }]} onPress={() => { setEditingRowIdx(customRows.length); setGLetter(''); setGMin(''); setGPoint(''); }}>
+                <Text style={[ss.addLevelText, { color: pri }]}>Add New Grade Level</Text>
               </Pressable>
-            </View>
+
+            </ScrollView>
           </KeyboardAvoidingView>
         </View>
       </Modal>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          Add / Edit Assessment Sheet
+          Add/Edit Assessment (Transparent Modal)
       ═══════════════════════════════════════════════════════════════════ */}
       <Modal visible={addAssessOpen} transparent animationType="slide" onRequestClose={() => setAddAssessOpen(false)}>
         <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable style={[ss.sheetOverlay, { justifyContent: 'flex-end' }]} onPress={() => setAddAssessOpen(false)}>
-            <Pressable
-              style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 16 }]}
-              onPress={() => {}}
-            >
+          <Pressable style={ss.sheetOverlay} onPress={() => setAddAssessOpen(false)}>
+            <Pressable style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 20 }]} onPress={() => {}}>
               <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-              <Text style={[ss.sheetTitle, { color: txt }]}>
-                {editAssess ? 'Edit Component' : 'Add Component'}
-              </Text>
-              <Text style={[ss.sheetHint, { color: sub }]}>e.g. Test 1, Assignment 2, Lab Report</Text>
+              <Text style={[ss.sheetTitle, { color: txt, marginBottom: 20 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
 
-              {/* Name */}
-              <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
               <TextInput
-                style={[ss.fieldInput, { color: txt, backgroundColor: theme.backgroundSecondary, borderColor: border }]}
+                style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
                 value={fName} onChangeText={setFName}
-                placeholder="Mid-Semester Test" placeholderTextColor={border}
+                placeholder="Component Name (e.g. Midterm)" placeholderTextColor={sub}
                 autoFocus returnKeyType="next"
               />
-
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
-                  <TextInput
-                    style={[ss.fieldInput, { color: txt, backgroundColor: theme.backgroundSecondary, borderColor: border }]}
-                    value={fWeight} onChangeText={setFWeight}
-                    placeholder="30" placeholderTextColor={border}
-                    keyboardType="decimal-pad" returnKeyType="next"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
-                  <TextInput
-                    style={[ss.fieldInput, { color: txt, backgroundColor: theme.backgroundSecondary, borderColor: border }]}
-                    value={fMax} onChangeText={setFMax}
-                    placeholder="100" placeholderTextColor={border}
-                    keyboardType="decimal-pad" returnKeyType="next"
-                  />
-                </View>
+              <View style={ss.formRow}>
+                <TextInput
+                  style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                  value={fWeight} onChangeText={setFWeight}
+                  placeholder="Weight (%)" placeholderTextColor={sub}
+                  keyboardType="decimal-pad" returnKeyType="next"
+                />
+                <TextInput
+                  style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                  value={fMax} onChangeText={setFMax}
+                  placeholder="Max Score" placeholderTextColor={sub}
+                  keyboardType="decimal-pad" returnKeyType="done"
+                />
               </View>
 
-              <Text style={[ss.fieldLabel, { color: sub }]}>Score <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
-              <TextInput
-                style={[ss.fieldInput, { color: txt, backgroundColor: theme.backgroundSecondary, borderColor: border }]}
-                value={fScored} onChangeText={setFScored}
-                placeholder="Leave blank if not yet available"
-                placeholderTextColor={border}
-                keyboardType="decimal-pad" returnKeyType="done"
-                onSubmitEditing={saveAssessment}
-              />
-
-              <Pressable
-                style={({ pressed }) => [ss.primaryBtn, { backgroundColor: pri }, pressed && { opacity: 0.88 }]}
-                onPress={saveAssessment}
-              >
-                <Text style={ss.primaryBtnText}>{editAssess ? 'Save Changes' : 'Add Component'}</Text>
+              <Pressable style={[ss.primaryBtn, { backgroundColor: pri }]} onPress={saveAssessment}>
+                <Text style={ss.primaryBtnText}>Save</Text>
               </Pressable>
-
+              
               {editAssess && (
-                <Pressable
-                  style={({ pressed }) => [ss.ghostBtn, pressed && { opacity: 0.7 }]}
-                  onPress={() => { setAddAssessOpen(false); deleteAssessment(editAssess.id); }}
-                >
-                  <Text style={ss.ghostBtnDanger}>Remove Component</Text>
+                <Pressable style={ss.dangerBtn} onPress={() => deleteAssessment(editAssess.id)}>
+                  <Text style={ss.dangerBtnText}>Delete Component</Text>
                 </Pressable>
               )}
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
 const ss = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Nav
-  navbar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingBottom: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  navBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingRight: 8 },
-  navBack: { fontSize: 17, fontWeight: '400' },
-  navCenter: { flex: 1, alignItems: 'center' },
-  navTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
-  navSub: { fontSize: 11, fontWeight: '500', marginTop: 1 },
-  navRight: { width: 56, alignItems: 'flex-end' },
-  navSaved: { fontSize: 12, fontWeight: '500' },
+  // Navbar (Main)
+  navbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 10 },
+  navBtnLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  navBackText: { fontSize: 17, fontWeight: '400', marginLeft: -4 },
+  navTitle: { fontSize: 17, fontWeight: '600', flex: 2, textAlign: 'center' },
+  navBtnRight: { flex: 1, alignItems: 'flex-end', paddingVertical: 4, paddingRight: 8 },
 
   scroll: { paddingHorizontal: 16 },
 
-  sectionHeaderRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  warnText: { fontSize: 12, fontWeight: '600', marginBottom: 8 },
-
   // Hero
-  hero: {
-    borderRadius: 20, borderWidth: 1,
-    marginTop: 16, marginBottom: 4,
-    overflow: 'hidden',
-  },
-  heroMain: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 18 },
-  heroGradeBubble: {
-    width: 72, height: 72, borderRadius: 36,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  heroGradeLetter: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-  heroInfo: { flex: 1 },
-  heroScore: { fontSize: 34, fontWeight: '800', letterSpacing: -1, lineHeight: 38 },
-  heroGPA: { fontSize: 14, fontWeight: '600', marginTop: 2, marginBottom: 8 },
-  heroBar: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  heroBarFill: { height: '100%', borderRadius: 3 },
-  heroChips: { flexDirection: 'row', borderTopWidth: 1, paddingVertical: 12, paddingHorizontal: 18 },
-  heroChip: { flex: 1, alignItems: 'center' },
-  heroChipLabel: { fontSize: 11, fontWeight: '600', marginBottom: 3 },
-  heroChipVal: { fontSize: 15, fontWeight: '700' },
-  heroChipDivider: { width: 1, marginHorizontal: 16 },
+  hero: { alignItems: 'center', paddingVertical: 32 },
+  heroGrade: { fontSize: 72, fontWeight: '800', letterSpacing: -2, lineHeight: 80 },
+  heroScore: { fontSize: 16, fontWeight: '500', marginTop: 8 },
 
-  // Group / Row (Apple style)
-  group: {
-    borderRadius: 12, overflow: 'hidden',
-    marginBottom: 4,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
-      android: {},
-    }),
-  },
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },
-  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
-  rowIconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  rowBody: { flex: 1 },
-  rowLabel: { fontSize: 16, fontWeight: '500' },
-  rowSub: { fontSize: 12, fontWeight: '400', marginTop: 1 },
-  rowVal: { fontSize: 16, fontWeight: '600' },
-
-  // Stepper
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepBtn: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  stepVal: { fontSize: 16, fontWeight: '700', minWidth: 42, textAlign: 'center' },
+  // Grouped Lists (iOS Style)
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 28, marginBottom: 8, paddingHorizontal: 12 },
+  sectionTitle: { fontSize: 13, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.4 },
+  sectionAction: { fontSize: 13, fontWeight: '500' },
+  group: { borderRadius: 12, overflow: 'hidden' },
+  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
 
   // Assessments
-  emptyAssess: { alignItems: 'center', paddingVertical: 28, gap: 6 },
-  emptyAssessText: { fontSize: 15, fontWeight: '600' },
-  emptyAssessHint: { fontSize: 13, fontWeight: '400' },
-  assessRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  assessLeft: { flex: 1 },
-  assessNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
-  assessName: { fontSize: 15, fontWeight: '600', flex: 1 },
-  weightBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
-  weightBadgeText: { fontSize: 11, fontWeight: '700' },
-  miniBarWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  miniBarBg: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
-  miniBarFill: { height: '100%', borderRadius: 2 },
-  miniBarPct: { fontSize: 11, fontWeight: '700', minWidth: 34, textAlign: 'right' },
-  addRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  addRowText: { fontSize: 16, fontWeight: '600' },
+  emptyText: { padding: 24, textAlign: 'center', fontSize: 15 },
+  assessRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  assessInfo: { flex: 1 },
+  assessName: { fontSize: 16, fontWeight: '500', marginBottom: 4 },
+  assessWeight: { fontSize: 13, fontWeight: '400' },
+  scoreInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scoreInput: { width: 52, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 8, fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  scoreInputLg: { width: 64 },
+  scoreDivider: { fontSize: 15, fontWeight: '500', width: 40 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, gap: 8 },
+  addBtnText: { fontSize: 16, fontWeight: '500' },
 
-  // Score input
-  scoreCell: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  scoreBox: {
-    width: 56, paddingHorizontal: 8, paddingVertical: 8,
-    borderRadius: 10, borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 15, fontWeight: '600', textAlign: 'center',
-  },
-  scoreBoxLg: { width: 68 },
-  scoreSlash: { fontSize: 13, fontWeight: '500' },
+  // Target Analysis
+  targetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  targetGrade: { fontSize: 16, fontWeight: '700' },
+  targetScore: { fontSize: 16, fontWeight: '500' },
 
-  // What do I need
-  needRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },
-  needGrade: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  needGradeLetter: { fontSize: 15, fontWeight: '800' },
-  needGPA: { fontSize: 13, fontWeight: '500', width: 40 },
-  needRight: { flex: 1, alignItems: 'flex-end' },
-  needScore: { fontSize: 17, fontWeight: '800' },
-  notChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8 },
-  notChipText: { fontSize: 12, fontWeight: '600', color: '#ef4444' },
+  // Modals (Page Sheet)
+  modalContainer: { flex: 1 },
+  modalNavbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, height: 56, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(150,150,150,0.3)' },
+  modalNavBtn: { flex: 1, paddingVertical: 8 },
+  modalNavTitle: { fontSize: 17, fontWeight: '600', textAlign: 'center', flex: 2 },
+  modalNavAction: { fontSize: 17, fontWeight: '500' },
+  modalScroll: { paddingHorizontal: 16, paddingBottom: 64 },
 
-  // Grade table rows
-  gradeRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 11 },
-  gradeRowLetter: { width: 38, fontSize: 15 },
-  gradeRowRange: { flex: 1, fontSize: 13 },
-  gradeRowPts: { fontSize: 15 },
+  // Settings Rows
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, minHeight: 56 },
+  settingLabel: { fontSize: 16, fontWeight: '400' },
+  settingValue: { fontSize: 16, fontWeight: '400' },
+  settingRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepperBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  stepperVal: { fontSize: 16, fontWeight: '500', minWidth: 40, textAlign: 'center' },
+  inlineInput: { width: 64, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8, fontSize: 16, textAlign: 'center' },
 
-  // Bottom sheets
-  sheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheetBackdrop: { ...StyleSheet.absoluteFillObject },
-  sheetKAV: { justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
-  sheetLarge: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
-  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  sheetTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
-  sheetHint: { fontSize: 13, lineHeight: 19, marginBottom: 18 },
+  // Transparent Bottom Sheets
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 12 },
+  sheetHandle: { width: 36, height: 5, borderRadius: 2.5, alignSelf: 'center', marginBottom: 16 },
+  sheetTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  
+  // Scheme Options
+  schemeOpt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  schemeOptLabel: { fontSize: 17, fontWeight: '400' },
 
-  doneBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
-  doneBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  // Editor
+  editorHint: { fontSize: 13, lineHeight: 18, marginTop: 16, marginBottom: 8, paddingHorizontal: 8 },
+  editorHeader: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  editorHeaderCell: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  editorRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
+  editorCell: { fontSize: 16 },
+  editorInput: { paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6, fontSize: 16, marginHorizontal: 2 },
+  editorActionBtn: { width: 32, alignItems: 'center' },
+  addLevelBtn: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 16 },
+  addLevelText: { fontSize: 16, fontWeight: '600' },
 
-  // Scheme options
-  schemeOpt: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 14,
-    marginBottom: 10,
-  },
-  schemeOptLeft: { flex: 1 },
-  schemeOptLabel: { fontSize: 16, fontWeight: '700', marginBottom: 3 },
-  schemeOptSub: { fontSize: 12, fontWeight: '400' },
-
-  // Grade editor
-  gradeEditorHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 4, paddingBottom: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  gradeEditorHeaderCell: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
-  gradeEditorRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  gradeEditorCell: { fontSize: 15, fontWeight: '600', paddingVertical: 4 },
-  gradeEditCell: {
-    borderRadius: 8, borderWidth: 1,
-    paddingHorizontal: 8, paddingVertical: 7,
-    fontSize: 14, fontWeight: '600',
-  },
-  gradeRowSaveBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  addGradeRowBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderRadius: 12, borderStyle: 'dashed',
-    paddingVertical: 13, justifyContent: 'center', marginTop: 14,
-  },
-  addGradeRowText: { fontSize: 15, fontWeight: '700' },
-
-  // Assessment modal fields
-  fieldLabel: {
-    fontSize: 12, fontWeight: '700', textTransform: 'uppercase',
-    letterSpacing: 0.4, marginBottom: 7, marginTop: 14,
-  },
-  fieldInput: {
-    borderRadius: 12, borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 16,
-  },
-
-  // Buttons
-  primaryBtn: {
-    paddingVertical: 15, borderRadius: 14,
-    alignItems: 'center', marginTop: 18,
-  },
-  primaryBtnText: { fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: -0.2 },
-  ghostBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 6 },
-  ghostBtnDanger: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+  // Forms
+  formInput: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 12 },
+  formRow: { flexDirection: 'row', gap: 12 },
+  primaryBtn: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  dangerBtn: { padding: 16, alignItems: 'center', marginTop: 4 },
+  dangerBtnText: { color: '#ef4444', fontSize: 16, fontWeight: '500' },
 });
