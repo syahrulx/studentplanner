@@ -405,6 +405,25 @@ export default function SubjectGradeScreen() {
               )}
             </View>
 
+            <View style={ss.sectionHeader}>
+               <Text style={[ss.sectionTitle, { color: sub }]}>Historic Grade Override</Text>
+            </View>
+            <Text style={[ss.editorHint, { color: sub, marginTop: 4, paddingHorizontal: 16 }]}>For past semesters where you only want to enter the final letter grade without typing all carry marks.</Text>
+            <View style={[ss.group, { backgroundColor: cardBg }]}>
+              <View style={ss.settingRow}>
+                <Text style={[ss.settingLabel, { color: txt }]}>Final Grade Letter</Text>
+                <TextInput
+                  style={[ss.inlineInput, { color: txt, backgroundColor: bg, minWidth: 64 }]}
+                  value={config.overrideGrade || ''}
+                  onChangeText={v => update({ overrideGrade: v.trim().toUpperCase() || undefined })}
+                  placeholder="e.g. A-"
+                  placeholderTextColor={sub}
+                  autoCapitalize="characters"
+                  returnKeyType="done"
+                />
+              </View>
+            </View>
+
           </ScrollView>
         </View>
       </Modal>

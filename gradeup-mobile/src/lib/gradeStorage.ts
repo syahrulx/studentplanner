@@ -27,6 +27,7 @@ function configToRow(userId: string, c: SubjectGradeConfig) {
     assessments:          c.assessments,
     final_exam_scored:    c.finalExamScored,
     final_exam_max_score: c.finalExamMaxScore,
+    override_grade:       c.overrideGrade ?? null,
   };
 }
 
@@ -42,6 +43,7 @@ function rowToConfig(row: Record<string, unknown>): SubjectGradeConfig {
       : [],
     finalExamScored:    row.final_exam_scored != null ? Number(row.final_exam_scored) : null,
     finalExamMaxScore:  Number(row.final_exam_max_score ?? 100),
+    overrideGrade:      row.override_grade != null ? String(row.override_grade) : undefined,
   };
 }
 

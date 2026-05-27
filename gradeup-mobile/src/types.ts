@@ -44,6 +44,7 @@ export interface Course {
   name: string;
   creditHours: number;
   workload: number[];
+  semester_id?: number; // For CGPA tracking (defaults to 1)
 }
 
 export interface Task {
@@ -346,6 +347,9 @@ export interface SubjectGradeConfig {
   /** Final exam score; null = not yet entered. */
   finalExamScored: number | null;
   finalExamMaxScore: number;
+
+  /** Quick override for historical subjects without entering component marks */
+  overrideGrade?: string;
 }
 
 /** A single row from the UiTM (or generic) grade table. */

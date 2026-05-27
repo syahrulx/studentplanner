@@ -850,6 +850,24 @@ export default function StudyHub() {
           <Feather name="chevron-right" size={16} color={theme.textSecondary} />
         </Pressable>
 
+        <Pressable
+          style={({ pressed }) => [
+            s.quickActionWide,
+            { backgroundColor: quickActionWideTint, marginBottom: 28 },
+            pressed && { opacity: 0.85 },
+          ]}
+          onPress={() => router.push('/gpa-dashboard' as any)}
+        >
+          <View style={[s.quickActionIcon, { backgroundColor: `${theme.primary}15` }]}>
+            <Feather name="trending-up" size={18} color={theme.primary} />
+          </View>
+          <View style={s.quickActionWideTextWrap}>
+            <Text style={s.quickActionWideTitle}>Academic Standing</Text>
+            <Text style={s.quickActionWideSub}>Track your GPA and cumulative progress</Text>
+          </View>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
+
         {/* ─── Flashcard Decks ─── */}
         <Text style={s.sectionLabel}>FLASHCARD DECKS</Text>
         {deckItems.length === 0 ? (

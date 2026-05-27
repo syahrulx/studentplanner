@@ -163,7 +163,21 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
     return { grade: g.letter, point: g.point, required: Math.max(0, required), achievable };
   });
 
-  const hasData = assessments.some(a => a.scored !== null) || (hasFinalExam && finalExamScored !== null);
+  const hasData = assessments.some(a => a.scored !== null) || (hasFinalExam && finalExamScored !== null) || !!config.overrideGrade;
+
+  if (config.overrideGrade) {
+    const overrideRow = table.find(r => r.letter === config.overrideGrade) || table[table.length - 1];
+    return {
+      hasData: true,
+      carryEarned: 0,
+      carryPossible: 0,
+      carryPending: 0,
+      finalContribution: 0,
+      totalScore: overrideRow.minPercent,
+      grade: overrideRow,
+      requiredForGrades: [],
+    };
+  }
 
   return {
     hasData,

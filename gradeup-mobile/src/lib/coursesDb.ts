@@ -19,6 +19,7 @@ function rowToCourse(row: Record<string, unknown>): Course {
     name: String(row.name ?? ''),
     creditHours: Number(row.credit_hours ?? 3) || 3,
     workload,
+    semester_id: Number(row.semester_id ?? 1) || 1,
   };
 }
 
@@ -44,6 +45,7 @@ export async function addCourse(
       name: course.name,
       credit_hours: course.creditHours,
       workload: course.workload,
+      semester_id: course.semester_id || 1,
     },
     { onConflict: 'user_id,subject_id' }
   );
@@ -57,6 +59,7 @@ export async function updateCourse(userId: string, course: Course): Promise<void
       name: course.name,
       credit_hours: course.creditHours,
       workload: course.workload,
+      semester_id: course.semester_id || 1,
     })
     .eq('user_id', userId)
     .eq('subject_id', course.id);

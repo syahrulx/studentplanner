@@ -387,6 +387,7 @@ function ThemeAwareLayout() {
         />
         <Stack.Screen name="add-subject" />
         <Stack.Screen name="subject-grade" options={{ headerShown: false }} />
+        <Stack.Screen name="gpa-dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="auto-share-settings" />
         <Stack.Screen name="community" />
         <Stack.Screen name="services" />
