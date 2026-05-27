@@ -242,24 +242,22 @@ export default function SubjectGradeScreen() {
               config.assessments.map((a, idx) => {
                 const isLast = idx === config.assessments.length - 1;
                 return (
-                  <View key={a.id} style={!isLast && [ss.rowBorder, { borderBottomColor: border }]}>
-                    <Pressable style={ss.assessRow} onPress={() => openAddAssess(a)}>
-                      <View style={ss.assessInfo}>
-                        <Text style={[ss.assessName, { color: txt }]} numberOfLines={1}>{a.name}</Text>
-                        <Text style={[ss.assessWeight, { color: sub }]}>Weight: {a.weight}%</Text>
-                      </View>
-                      <View style={ss.scoreInputWrap}>
-                        <TextInput
-                          style={[ss.scoreInput, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
-                          value={a.scored !== null ? String(a.scored) : ''}
-                          onChangeText={v => scoreChange(a.id, v)}
-                          keyboardType="decimal-pad"
-                          placeholder="–"
-                          placeholderTextColor={sub}
-                        />
-                        <Text style={[ss.scoreDivider, { color: sub }]}>/ {a.maxScore}</Text>
-                      </View>
+                  <View key={a.id} style={[ss.assessRow, !isLast && ss.rowBorder, !isLast && { borderBottomColor: border }]}>
+                    <Pressable style={ss.assessInfo} onPress={() => openAddAssess(a)}>
+                      <Text style={[ss.assessName, { color: txt }]} numberOfLines={1}>{a.name}</Text>
+                      <Text style={[ss.assessWeight, { color: sub }]}>Weight: {a.weight}%</Text>
                     </Pressable>
+                    <View style={ss.scoreInputWrap}>
+                      <TextInput
+                        style={[ss.scoreInput, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
+                        value={a.scored !== null ? String(a.scored) : ''}
+                        onChangeText={v => scoreChange(a.id, v)}
+                        keyboardType="decimal-pad"
+                        placeholder="–"
+                        placeholderTextColor={sub}
+                      />
+                      <Text style={[ss.scoreDivider, { color: sub }]}>/ {a.maxScore}</Text>
+                    </View>
                   </View>
                 );
               })
