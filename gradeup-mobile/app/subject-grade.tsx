@@ -490,20 +490,27 @@ export default function SubjectGradeScreen() {
       </Modal>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          Add/Edit Assessment (Transparent Modal)
+          Add/Edit Assessment (Native Page Sheet Modal)
       ═══════════════════════════════════════════════════════════════════ */}
-      {addAssessOpen && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
-          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setAddAssessOpen(false)} />
-          <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]}>
-              <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-              <Text style={[ss.sheetTitle, { color: txt, marginBottom: 24 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
+      <Modal visible={addAssessOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddAssessOpen(false)}>
+        <View style={[ss.modalContainer, { backgroundColor: bg }]}>
+          <View style={[ss.modalNavbar, { backgroundColor: bg }]}>
+             <Pressable onPress={() => setAddAssessOpen(false)} style={ss.modalNavBtn}>
+               <Text style={[ss.modalNavAction, { color: pri }]}>Cancel</Text>
+             </Pressable>
+             <Text style={[ss.modalNavTitle, { color: txt }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
+             <Pressable onPress={saveAssessment} style={[ss.modalNavBtn, { alignItems: 'flex-end' }]}>
+               <Text style={[ss.modalNavAction, { color: pri, fontWeight: '700' }]}>Save</Text>
+             </Pressable>
+          </View>
 
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 24 }} keyboardShouldPersistTaps="handled">
+              
               <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
               <TextInput
-                style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
-                defaultValue={fName} onChangeText={setFName}
+                style={[ss.formInput, { color: txt, backgroundColor: cardBg, borderColor: border }]}
+                value={fName} onChangeText={setFName}
                 placeholder="e.g. Midterm" placeholderTextColor={sub}
                 autoFocus returnKeyType="next"
               />
@@ -511,8 +518,8 @@ export default function SubjectGradeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
                   <TextInput
-                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                    defaultValue={fWeight} onChangeText={setFWeight}
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: cardBg, borderColor: border }]}
+                    value={fWeight} onChangeText={setFWeight}
                     placeholder="20" placeholderTextColor={sub}
                     keyboardType="decimal-pad"
                   />
@@ -520,27 +527,24 @@ export default function SubjectGradeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
                   <TextInput
-                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                    defaultValue={fMax} onChangeText={setFMax}
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: cardBg, borderColor: border }]}
+                    value={fMax} onChangeText={setFMax}
                     placeholder="100" placeholderTextColor={sub}
                     keyboardType="decimal-pad"
                   />
                 </View>
               </View>
 
-              <Pressable style={[ss.primaryBtn, { backgroundColor: pri }]} onPress={saveAssessment}>
-                <Text style={ss.primaryBtnText}>Save</Text>
-              </Pressable>
-              
               {editAssess && (
                 <Pressable style={ss.dangerBtn} onPress={() => deleteAssessment(editAssess.id)}>
                   <Text style={ss.dangerBtnText}>Delete Component</Text>
                 </Pressable>
               )}
-            </View>
+
+            </ScrollView>
           </KeyboardAvoidingView>
         </View>
-      )}
+      </Modal>
 
     </View>
   );
