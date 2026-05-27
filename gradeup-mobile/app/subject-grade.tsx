@@ -308,7 +308,7 @@ export default function SubjectGradeScreen() {
               {/* ── Target Analysis ── */}
               <View style={ss.sectionHeader}>
                 <Text style={[ss.sectionTitle, { color: sub }]}>Final Exam Targets</Text>
-                <Pressable onPress={() => Alert.alert('Final Exam Targets', 'This shows exactly what score you need to get on your upcoming Final Exam to achieve a specific final grade for the whole course.\n\nIf you see a funny message, it means it is mathematically impossible to reach that grade anymore based on your current carry marks.')} hitSlop={10}>
+                <Pressable onPress={() => Alert.alert('Final Exam Targets', 'This shows exactly what score you need to get on your upcoming Final Exam to achieve a specific final grade for the whole course.\n\nIf you see "Impossible", it means it is mathematically impossible to reach that grade anymore based on your current carry marks.')} hitSlop={10}>
                   <Feather name="info" size={16} color={sub} />
                 </Pressable>
               </View>
@@ -324,8 +324,8 @@ export default function SubjectGradeScreen() {
                       ) : r.achievable ? (
                         <Text style={[ss.targetScore, { color: isCurrent ? gc2 : sub }]}>{fmt(r.required)}%</Text>
                       ) : (
-                        <Text style={[ss.targetScore, { color: '#ef4444', fontSize: 14 }]}>
-                          {['Cooked 💀', 'GG bro', 'Next sem 📚', 'In ur dreams ☁️', 'Let it go 🧊', 'RIP 🪦'][idx % 6]}
+                        <Text style={[ss.targetScore, { color: '#ef4444', fontSize: 13, fontWeight: '600' }]}>
+                          Impossible
                         </Text>
                       )}
                     </View>
