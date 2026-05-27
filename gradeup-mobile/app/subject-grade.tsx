@@ -249,7 +249,10 @@ export default function SubjectGradeScreen() {
                   <View key={a.id} style={[ss.assessRow, !isLast && ss.rowBorder, !isLast && { borderBottomColor: border }]}>
                     <Pressable style={ss.assessInfo} onPress={() => openAddAssess(a)}>
                       <Text style={[ss.assessName, { color: txt }]} numberOfLines={1}>{a.name}</Text>
-                      <Text style={[ss.assessWeight, { color: sub }]}>Weight: {a.weight}%</Text>
+                      <Text style={[ss.assessWeight, { color: sub }]}>
+                        Weight: {a.weight}%
+                        {a.scored !== null && a.maxScore > 0 ? `  •  ${fmt((a.scored / a.maxScore) * 100)}%` : ''}
+                      </Text>
                     </Pressable>
                     <View style={ss.scoreInputWrap}>
                       <TextInput
@@ -282,7 +285,10 @@ export default function SubjectGradeScreen() {
                 <View style={ss.assessRow}>
                   <View style={ss.assessInfo}>
                     <Text style={[ss.assessName, { color: txt }]}>Final Score</Text>
-                    <Text style={[ss.assessWeight, { color: sub }]}>Overall impact: {config.finalWeight}%</Text>
+                    <Text style={[ss.assessWeight, { color: sub }]}>
+                      Overall impact: {config.finalWeight}%
+                      {config.finalExamScored !== null && config.finalExamMaxScore > 0 ? `  •  ${fmt((config.finalExamScored / config.finalExamMaxScore) * 100)}%` : ''}
+                    </Text>
                   </View>
                   <View style={ss.scoreInputWrap}>
                     <TextInput
