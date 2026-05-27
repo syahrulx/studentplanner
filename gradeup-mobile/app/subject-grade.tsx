@@ -436,7 +436,7 @@ export default function SubjectGradeScreen() {
                 </Pressable>
               ))}
               <Pressable style={[ss.schemeOpt, { borderBottomColor: border, borderBottomWidth: 0 }]} onPress={() => { setSchemeSheet(false); setTimeout(() => setGradeEditorOpen(true), 300); }}>
-                <Text style={[ss.schemeOptLabel, { color: txt }]}>Custom Table</Text>
+                <Text style={[ss.schemeOptLabel, { color: txt }]}>Custom</Text>
                 {useCustom && <Feather name="check" size={20} color={pri} />}
               </Pressable>
             </View>
