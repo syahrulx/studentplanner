@@ -44,7 +44,6 @@ export interface Course {
   name: string;
   creditHours: number;
   workload: number[];
-  semester_id?: number; // For CGPA tracking (defaults to 1)
 }
 
 export interface Task {
@@ -347,9 +346,6 @@ export interface SubjectGradeConfig {
   /** Final exam score; null = not yet entered. */
   finalExamScored: number | null;
   finalExamMaxScore: number;
-
-  /** Quick override for historical subjects without entering component marks */
-  overrideGrade?: string;
 }
 
 /** A single row from the UiTM (or generic) grade table. */
@@ -367,8 +363,10 @@ export interface GradeResult {
   carryPossible: number;     // max possible carry earned so far
   carryPending: number;      // carry % from components not yet entered
   finalContribution: number; // final exam contribution to total (out of finalWeight)
-  totalScore: number;        // projected total % (0-100)
-  grade: GradeRow;
+  totalScore: number;        // absolute total % earned out of full 100% course weight
+  grade: GradeRow;           // absolute grade based on totalScore
+  currentStandingScore: number; // percentage based ONLY on exams actually seated/scored
+  currentStandingGrade: GradeRow; // relative grade based on currentStandingScore
   /** What score user needs in final exam to reach each grade threshold. */
   requiredForGrades: {
     grade: string;

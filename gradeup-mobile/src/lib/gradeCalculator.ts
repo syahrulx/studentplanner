@@ -139,6 +139,13 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
   const totalScore = carryEarned + finalContribution;
   const grade = percentToGrade(totalScore, gradingScheme);
 
+  let seatedWeight = carryPossible;
+  if (hasFinalExam && finalExamScored !== null && finalExamMaxScore > 0) {
+    seatedWeight += finalWeight;
+  }
+  const currentStandingScore = seatedWeight > 0 ? (totalScore / seatedWeight) * 100 : 0;
+  const currentStandingGrade = percentToGrade(currentStandingScore, gradingScheme);
+
   // "What do I need in the final exam?" for each grade threshold
   const table = getGradeTable(gradingScheme);
   const uniqueThresholds = table.filter((g, i, arr) => i === 0 || g.minPercent !== arr[i - 1].minPercent);
@@ -163,21 +170,7 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
     return { grade: g.letter, point: g.point, required: Math.max(0, required), achievable };
   });
 
-  const hasData = assessments.some(a => a.scored !== null) || (hasFinalExam && finalExamScored !== null) || !!config.overrideGrade;
-
-  if (config.overrideGrade) {
-    const overrideRow = table.find(r => r.letter === config.overrideGrade) || table[table.length - 1];
-    return {
-      hasData: true,
-      carryEarned: 0,
-      carryPossible: 0,
-      carryPending: 0,
-      finalContribution: 0,
-      totalScore: overrideRow.minPercent,
-      grade: overrideRow,
-      requiredForGrades: [],
-    };
-  }
+  const hasData = assessments.some(a => a.scored !== null) || (hasFinalExam && finalExamScored !== null);
 
   return {
     hasData,
@@ -187,6 +180,8 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
     finalContribution,
     totalScore,
     grade,
+    currentStandingScore,
+    currentStandingGrade,
     requiredForGrades,
   };
 }

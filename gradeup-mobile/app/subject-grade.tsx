@@ -104,7 +104,7 @@ export default function SubjectGradeScreen() {
   const { total: wTotal, valid: wValid, remaining: wRemaining } = useMemo(
     () => validateAssessmentWeights(config.assessments), [config.assessments]);
 
-  const gc = gradeColor(result.grade.letter);
+  const gc = gradeColor(result.currentStandingGrade.letter);
 
   // ── Assessment Handlers ────────────────────────────────────────────────────
   function openAddAssess(existing?: GradeAssessment) {
@@ -218,10 +218,10 @@ export default function SubjectGradeScreen() {
           {/* ── Hero (Clean, Large) ── */}
           <View style={ss.hero}>
             <Text style={[ss.heroGrade, { color: result.hasData ? gc : sub }]}>
-              {result.hasData ? result.grade.letter : '–'}
+              {result.hasData ? result.currentStandingGrade.letter : '–'}
             </Text>
             <Text style={[ss.heroScore, { color: sub }]}>
-              {result.hasData ? fmt(result.totalScore) : '–'}%  •  {result.hasData ? fmt(result.grade.point, 2) : '–'} GPA
+              {result.hasData ? fmt(result.currentStandingScore) : '–'}%  •  {result.hasData ? fmt(result.currentStandingGrade.point, 2) : '–'} GPA
             </Text>
           </View>
 
