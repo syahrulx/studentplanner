@@ -321,7 +321,9 @@ export default function SubjectGradeScreen() {
                       ) : r.achievable ? (
                         <Text style={[ss.targetScore, { color: isCurrent ? gc2 : sub }]}>{fmt(r.required)}%</Text>
                       ) : (
-                        <Text style={[ss.targetScore, { color: '#ef4444' }]}>N/A</Text>
+                        <Text style={[ss.targetScore, { color: '#ef4444', fontSize: 14 }]}>
+                          {['Cooked 💀', 'GG bro', 'Next sem 📚', 'In ur dreams ☁️', 'Let it go 🧊', 'RIP 🪦'][idx % 6]}
+                        </Text>
                       )}
                     </View>
                   );
