@@ -256,7 +256,6 @@ export default function SubjectGradeScreen() {
                           keyboardType="decimal-pad"
                           placeholder="–"
                           placeholderTextColor={sub}
-                          returnKeyType="done"
                         />
                         <Text style={[ss.scoreDivider, { color: sub }]}>/ {a.maxScore}</Text>
                       </View>
@@ -291,7 +290,6 @@ export default function SubjectGradeScreen() {
                       keyboardType="decimal-pad"
                       placeholder="–"
                       placeholderTextColor={sub}
-                      returnKeyType="done"
                     />
                     <Text style={[ss.scoreDivider, { color: sub }]}>/ {config.finalExamMaxScore}</Text>
                   </View>
@@ -399,7 +397,6 @@ export default function SubjectGradeScreen() {
                     value={String(config.finalExamMaxScore)}
                     onChangeText={v => update({ finalExamMaxScore: parseFloat(v) || 100 })}
                     keyboardType="decimal-pad"
-                    returnKeyType="done"
                   />
                 </View>
               )}
@@ -515,7 +512,7 @@ export default function SubjectGradeScreen() {
                     style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
                     value={fWeight} onChangeText={setFWeight}
                     placeholder="20" placeholderTextColor={sub}
-                    keyboardType="decimal-pad" returnKeyType="next"
+                    keyboardType="decimal-pad"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -524,7 +521,7 @@ export default function SubjectGradeScreen() {
                     style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
                     value={fMax} onChangeText={setFMax}
                     placeholder="100" placeholderTextColor={sub}
-                    keyboardType="decimal-pad" returnKeyType="done"
+                    keyboardType="decimal-pad"
                   />
                 </View>
               </View>
