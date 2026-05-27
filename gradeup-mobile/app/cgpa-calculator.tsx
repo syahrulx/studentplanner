@@ -66,7 +66,9 @@ export default function CgpaCalculatorScreen() {
       totalCredits += d.credit;
     });
 
-    const currentGpa = totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
+    const truncate2 = (val: number) => (Math.floor(val * 100) / 100).toFixed(2);
+
+    const currentGpa = totalCredits > 0 ? truncate2(totalPoints / totalCredits) : '0.00';
     const currentCredits = totalCredits;
 
     const pastCgpa = parseFloat(pastCgpaStr) || 0;
@@ -77,7 +79,7 @@ export default function CgpaCalculatorScreen() {
       totalCredits += pastCreds;
     }
 
-    const cgpa = totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
+    const cgpa = totalCredits > 0 ? truncate2(totalPoints / totalCredits) : '0.00';
 
     return { activeData, totalPoints, totalCredits, cgpa, currentGpa, currentCredits, pastCreds };
   }, [courses, configs, credits, pastCgpaStr, pastCreditsStr]);
