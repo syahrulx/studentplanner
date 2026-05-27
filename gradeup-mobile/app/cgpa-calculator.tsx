@@ -55,7 +55,7 @@ export default function CgpaCalculatorScreen() {
       if (!config) return { course, credit, hasData: false, point: 0, letter: '-' };
 
       const res = calculateGrade(config);
-      return { course, credit, hasData: res.hasData, point: res.grade.point, letter: res.grade.letter };
+      return { course, credit, hasData: res.hasData, point: res.currentStandingGrade.point, letter: res.currentStandingGrade.letter };
     });
 
     let totalPoints = 0;
@@ -65,6 +65,9 @@ export default function CgpaCalculatorScreen() {
       totalPoints += d.point * d.credit;
       totalCredits += d.credit;
     });
+
+    const currentGpa = totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
+    const currentCredits = totalCredits;
 
     const pastCgpa = parseFloat(pastCgpaStr) || 0;
     const pastCreds = parseInt(pastCreditsStr, 10) || 0;
@@ -76,7 +79,7 @@ export default function CgpaCalculatorScreen() {
 
     const cgpa = totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
 
-    return { activeData, totalPoints, totalCredits, cgpa };
+    return { activeData, totalPoints, totalCredits, cgpa, currentGpa, currentCredits, pastCreds };
   }, [courses, configs, credits, pastCgpaStr, pastCreditsStr]);
 
   if (loading) {
@@ -101,10 +104,19 @@ export default function CgpaCalculatorScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
           <View style={styles.hero}>
-            <Text style={[styles.cgpaValue, { color: theme.text }]}>{results.cgpa}</Text>
+            <Text style={[styles.cgpaValue, { color: theme.text }]}>{results.currentGpa}</Text>
             <Text style={[styles.cgpaLabel, { color: theme.textSecondary }]}>
-              Overall CGPA ({results.totalCredits} credits)
+              Current Semester GPA ({results.currentCredits} credits)
             </Text>
+            
+            {results.pastCreds > 0 && (
+              <View style={[styles.cumulativeBadge, { backgroundColor: theme.primary + '15' }]}>
+                <Text style={[styles.cumulativeValue, { color: theme.primary }]}>{results.cgpa}</Text>
+                <Text style={[styles.cumulativeLabel, { color: theme.primary }]}>
+                  Cumulative CGPA ({results.totalCredits} credits)
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -211,6 +223,15 @@ const styles = StyleSheet.create({
   },
   cgpaValue: { fontSize: 64, fontWeight: '800', letterSpacing: -1 },
   cgpaLabel: { fontSize: 15, fontWeight: '500', marginTop: 4 },
+  cumulativeBadge: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cumulativeValue: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  cumulativeLabel: { fontSize: 12, fontWeight: '600', marginTop: 2, textTransform: 'uppercase' },
   section: {
     borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 24,
   },
