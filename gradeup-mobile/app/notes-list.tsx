@@ -504,6 +504,21 @@ export default function NotesList() {
         <Feather name="chevron-right" size={20} color={theme.textSecondary} />
       </Pressable>
 
+      {/* Grade Calculator shortcut */}
+      <Pressable
+        style={({ pressed }) => [styles.flashcardEntry, { backgroundColor: `${theme.success ?? '#10b981'}12`, borderColor: `${theme.success ?? '#10b981'}22` }, pressed && { opacity: 0.88 }]}
+        onPress={() => router.push({ pathname: '/subject-grade' as any, params: { subjectId } })}
+      >
+        <View style={[styles.flashcardEntryIcon, { backgroundColor: theme.success }]}>
+          <Feather name="bar-chart-2" size={20} color="#fff" />
+        </View>
+        <View style={styles.flashcardEntryBody}>
+          <Text style={styles.flashcardEntryTitle}>Grade Calculator</Text>
+          <Text style={styles.flashcardEntrySub}>Track carry marks & predict final grade</Text>
+        </View>
+        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+      </Pressable>
+
       {/* Notes list */}
       <FlatList
         data={list}

@@ -386,6 +386,7 @@ function ThemeAwareLayout() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen name="add-subject" />
+        <Stack.Screen name="subject-grade" options={{ headerShown: false }} />
         <Stack.Screen name="auto-share-settings" />
         <Stack.Screen name="community" />
         <Stack.Screen name="services" />
