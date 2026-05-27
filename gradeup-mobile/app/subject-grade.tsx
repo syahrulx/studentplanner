@@ -12,7 +12,7 @@ import { useTheme } from '@/hooks/useTheme';
 import type { SubjectGradeConfig, GradeAssessment, GradingScheme, GradeRow } from '@/src/types';
 import {
   calculateGrade, validateAssessmentWeights, gradeColor,
-  UITM_GRADE_TABLE, GENERIC_4_GRADE_TABLE, GENERIC_5_GRADE_TABLE,
+  UITM_GRADE_TABLE,
   SCHEME_LABELS, getGradeTable,
 } from '@/src/lib/gradeCalculator';
 import { getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
@@ -31,8 +31,6 @@ function makeDefault(subjectId: string): SubjectGradeConfig {
 
 const PRESETS: { key: GradingScheme; label: string; rows: GradeRow[] }[] = [
   { key: 'uitm',      label: 'UiTM Malaysia',  rows: UITM_GRADE_TABLE },
-  { key: 'generic_4', label: 'Generic 4.0 GPA', rows: GENERIC_4_GRADE_TABLE },
-  { key: 'generic_5', label: 'Generic 5.0 GPA', rows: GENERIC_5_GRADE_TABLE },
 ];
 
 export default function SubjectGradeScreen() {
