@@ -308,6 +308,9 @@ export default function SubjectGradeScreen() {
               {/* ── Target Analysis ── */}
               <View style={ss.sectionHeader}>
                 <Text style={[ss.sectionTitle, { color: sub }]}>Final Exam Targets</Text>
+                <Pressable onPress={() => Alert.alert('Final Exam Targets', 'This shows exactly what score you need to get on your upcoming Final Exam to achieve a specific final grade for the whole course.\n\nIf you see a funny message, it means it is mathematically impossible to reach that grade anymore based on your current carry marks.')} hitSlop={10}>
+                  <Feather name="info" size={16} color={sub} />
+                </Pressable>
               </View>
               <View style={[ss.group, { backgroundColor: cardBg }]}>
                 {result.requiredForGrades.slice(0, 6).map((r, idx, arr) => {
