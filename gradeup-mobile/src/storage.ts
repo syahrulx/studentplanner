@@ -9,6 +9,25 @@ const KEY_THEME_PACK = 'appThemePack';
 const KEY_SPIDER_BLUE_ACCENTS = 'spiderBlueAccents';
 const KEY_LANGUAGE = 'appLanguage';
 const KEY_LOGHAT = 'appLoghat';
+const KEY_CURRENT_CGPA = 'currentCgpa';
+
+export async function getCurrentCgpa(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(KEY_CURRENT_CGPA);
+  } catch {
+    return null;
+  }
+}
+
+export async function setCurrentCgpa(value: string | null): Promise<void> {
+  try {
+    if (value) {
+      await AsyncStorage.setItem(KEY_CURRENT_CGPA, value);
+    } else {
+      await AsyncStorage.removeItem(KEY_CURRENT_CGPA);
+    }
+  } catch {}
+}
 
 export async function getHasSeenTutorial(): Promise<boolean> {
   try {

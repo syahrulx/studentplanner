@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -828,6 +830,8 @@ export default function Dashboard() {
     pendingClassroomTasks,
     clearPendingClassroomTasks,
     refreshRemoteData,
+    currentCgpa,
+    setCurrentCgpa,
   } = useApp();
   const {
     friendsWithStatus,
@@ -838,6 +842,8 @@ export default function Dashboard() {
   } = useCommunity();
 
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
+  const [cgpaModalVisible, setCgpaModalVisible] = useState(false);
+  const [tempCgpaInput, setTempCgpaInput] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -1588,9 +1594,21 @@ export default function Dashboard() {
               {semesterPhase === 'no_calendar' ? (
                 <Text style={styles.peakAlertSubline}>{T('tapToSetCalendar')}</Text>
               ) : null}
-              <Text style={[styles.peakAlertLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.92)' }]}>
-                {T('semesterPulse')}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.peakAlertLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.92)' }]}>
+                  {currentCgpa ? `CURRENT CGPA: ${currentCgpa}` : T('semesterPulse')}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setTempCgpaInput(currentCgpa || '');
+                    setCgpaModalVisible(true);
+                  }}
+                  hitSlop={15}
+                  style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                >
+                  <Feather name="sliders" size={14} color={isPurpleTheme ? 'rgba(255,255,255,0.7)' : theme.textSecondary} />
+                </Pressable>
+              </View>
             </View>
             <View
               style={[
@@ -1915,6 +1933,42 @@ export default function Dashboard() {
           )}
         </View>
       ) : null}
+
+      <Modal visible={cgpaModalVisible} transparent animationType="fade">
+        <View style={StyleSheet.absoluteFill}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCgpaModalVisible(false)} />
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <View style={{ width: 300, backgroundColor: theme.card, borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 8 }}>
+              <Text style={{ fontSize: 18, fontWeight: '600', color: theme.text, marginBottom: 8 }}>Set Current CGPA</Text>
+              <Text style={{ fontSize: 14, color: theme.textSecondary, marginBottom: 16 }}>Enter your current CGPA to display it on the dashboard instead of "Semester Pulse".</Text>
+              <TextInput
+                style={{ backgroundColor: theme.background, color: theme.text, borderRadius: 8, padding: 12, fontSize: 16, borderWidth: 1, borderColor: theme.border, marginBottom: 16 }}
+                placeholder="e.g. 3.50"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="decimal-pad"
+                value={tempCgpaInput}
+                onChangeText={setTempCgpaInput}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                <Pressable onPress={() => setCgpaModalVisible(false)} style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: theme.textSecondary }}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setCurrentCgpa(tempCgpaInput.trim() || null);
+                    setCgpaModalVisible(false);
+                  }}
+                  style={{ backgroundColor: theme.primary, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }

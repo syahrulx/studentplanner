@@ -51,6 +51,8 @@ import {
   setWeekStartsOn as persistWeekStartsOn,
   getAutoDeletePastTasks,
   setAutoDeletePastTasks as persistAutoDeletePastTasks,
+  getCurrentCgpa,
+  setCurrentCgpa as persistCurrentCgpa,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
@@ -253,6 +255,8 @@ type AppState = {
   refreshRemoteData: () => Promise<void>;
   /** @internal Manually mark data as ready (e.g. after sign-up completes profile save). */
   markDataReady: () => void;
+  currentCgpa: string | null;
+  setCurrentCgpa: (val: string | null) => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -339,6 +343,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
   const [autoDeletePastTasks, setAutoDeletePastTasksState] = useState(false);
+  const [currentCgpa, setCurrentCgpaState] = useState<string | null>(null);
   /** True once remote data loaded (or no session confirmed). Prevents seed-data flash on UI + widgets. */
   const [dataReady, setDataReady] = useState(false);
   const tasksRef = useRef<Task[]>([]);
@@ -598,6 +603,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     getLoghat().then(setLoghatState);
     getWeekStartsOn().then(setWeekStartsOnState);
     getAutoDeletePastTasks().then(setAutoDeletePastTasksState);
+    getCurrentCgpa().then(setCurrentCgpaState);
     getCourses().then((stored) => {
       if (stored && stored.length > 0) setCourses(stored);
     });
@@ -2235,6 +2241,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clearSemesterData,
     refreshRemoteData,
     markDataReady,
+    currentCgpa,
+    setCurrentCgpa: async (val: string | null) => {
+      setCurrentCgpaState(val);
+      await persistCurrentCgpa(val);
+    },
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
