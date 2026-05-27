@@ -850,24 +850,6 @@ export default function StudyHub() {
           <Feather name="chevron-right" size={16} color={theme.textSecondary} />
         </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [
-            s.quickActionWide,
-            { backgroundColor: quickActionWideTint, marginBottom: 28 },
-            pressed && { opacity: 0.85 },
-          ]}
-          onPress={() => router.push('/gpa-dashboard' as any)}
-        >
-          <View style={[s.quickActionIcon, { backgroundColor: `${theme.primary}15` }]}>
-            <Feather name="trending-up" size={18} color={theme.primary} />
-          </View>
-          <View style={s.quickActionWideTextWrap}>
-            <Text style={s.quickActionWideTitle}>Academic Standing</Text>
-            <Text style={s.quickActionWideSub}>Track your GPA and cumulative progress</Text>
-          </View>
-          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
-        </Pressable>
-
         {/* ─── Flashcard Decks ─── */}
         <Text style={s.sectionLabel}>FLASHCARD DECKS</Text>
         {deckItems.length === 0 ? (
@@ -1109,7 +1091,33 @@ export default function StudyHub() {
         {/* ─── Notes by Subject ─── */}
         <View style={s.sectionHeaderRow}>
           <Text style={s.sectionHeaderLabel}>{tx('yourSubjects', 'YOUR SUBJECTS')}</Text>
-          {subjectsMode === 'idle' ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <Pressable
+              style={({ pressed }) => [
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: theme.card,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  gap: 6,
+                  shadowColor: theme.text,
+                  shadowOpacity: 0.08,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowRadius: 8,
+                  elevation: 2,
+                  borderColor: theme.border,
+                  borderWidth: 1,
+                },
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={() => router.push('/cgpa-calculator' as any)}
+            >
+              <Feather name="bar-chart-2" size={14} color={theme.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>Calculate CGPA</Text>
+            </Pressable>
+            {subjectsMode === 'idle' ? (
             <Pressable
               onPress={() => setSubjectsMenuOpen(true)}
               hitSlop={10}
@@ -1123,6 +1131,7 @@ export default function StudyHub() {
               <Text style={[s.sectionDoneText, isDarkMinimal && { color: theme.text }]}>{tx('done', 'Done')}</Text>
             </Pressable>
           )}
+        </View>
         </View>
 
         {subjectsMode !== 'idle' && (
