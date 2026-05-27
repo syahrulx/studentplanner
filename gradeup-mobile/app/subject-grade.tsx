@@ -405,25 +405,6 @@ export default function SubjectGradeScreen() {
               )}
             </View>
 
-            <View style={ss.sectionHeader}>
-               <Text style={[ss.sectionTitle, { color: sub }]}>Historic Grade Override</Text>
-            </View>
-            <Text style={[ss.editorHint, { color: sub, marginTop: 4, paddingHorizontal: 16 }]}>For past semesters where you only want to enter the final letter grade without typing all carry marks.</Text>
-            <View style={[ss.group, { backgroundColor: cardBg }]}>
-              <View style={ss.settingRow}>
-                <Text style={[ss.settingLabel, { color: txt }]}>Final Grade Letter</Text>
-                <TextInput
-                  style={[ss.inlineInput, { color: txt, backgroundColor: bg, minWidth: 64 }]}
-                  value={config.overrideGrade || ''}
-                  onChangeText={v => update({ overrideGrade: v.trim().toUpperCase() || undefined })}
-                  placeholder="e.g. A-"
-                  placeholderTextColor={sub}
-                  autoCapitalize="characters"
-                  returnKeyType="done"
-                />
-              </View>
-            </View>
-
           </ScrollView>
         </View>
       </Modal>
@@ -516,29 +497,36 @@ export default function SubjectGradeScreen() {
       <Modal visible={addAssessOpen} transparent animationType="slide" onRequestClose={() => setAddAssessOpen(false)}>
         <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable style={ss.sheetOverlay} onPress={() => setAddAssessOpen(false)}>
-            <Pressable style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: insets.bottom + 20 }]} onPress={() => {}}>
+            <Pressable style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]} onPress={() => {}}>
               <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-              <Text style={[ss.sheetTitle, { color: txt, marginBottom: 20 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
+              <Text style={[ss.sheetTitle, { color: txt, marginBottom: 24 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
 
+              <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
               <TextInput
                 style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
                 value={fName} onChangeText={setFName}
-                placeholder="Component Name (e.g. Midterm)" placeholderTextColor={sub}
+                placeholder="e.g. Midterm" placeholderTextColor={sub}
                 autoFocus returnKeyType="next"
               />
               <View style={ss.formRow}>
-                <TextInput
-                  style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                  value={fWeight} onChangeText={setFWeight}
-                  placeholder="Weight (%)" placeholderTextColor={sub}
-                  keyboardType="decimal-pad" returnKeyType="next"
-                />
-                <TextInput
-                  style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                  value={fMax} onChangeText={setFMax}
-                  placeholder="Max Score" placeholderTextColor={sub}
-                  keyboardType="decimal-pad" returnKeyType="done"
-                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
+                  <TextInput
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                    value={fWeight} onChangeText={setFWeight}
+                    placeholder="20" placeholderTextColor={sub}
+                    keyboardType="decimal-pad" returnKeyType="next"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
+                  <TextInput
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                    value={fMax} onChangeText={setFMax}
+                    placeholder="100" placeholderTextColor={sub}
+                    keyboardType="decimal-pad" returnKeyType="done"
+                  />
+                </View>
               </View>
 
               <Pressable style={[ss.primaryBtn, { backgroundColor: pri }]} onPress={saveAssessment}>
@@ -643,7 +631,8 @@ const ss = StyleSheet.create({
   addLevelText: { fontSize: 16, fontWeight: '600' },
 
   // Forms
-  formInput: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 12 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: 4, marginBottom: 6 },
+  formInput: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 16 },
   formRow: { flexDirection: 'row', gap: 12 },
   primaryBtn: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
   primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
