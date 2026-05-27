@@ -494,7 +494,7 @@ export default function SubjectGradeScreen() {
       <Modal visible={addAssessOpen} transparent animationType="slide" onRequestClose={() => setAddAssessOpen(false)}>
         <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable style={ss.sheetOverlay} onPress={() => setAddAssessOpen(false)}>
-            <Pressable style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]} onPress={() => {}}>
+            <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]} onStartShouldSetResponder={() => true}>
               <View style={[ss.sheetHandle, { backgroundColor: border }]} />
               <Text style={[ss.sheetTitle, { color: txt, marginBottom: 24 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
 
@@ -535,7 +535,7 @@ export default function SubjectGradeScreen() {
                   <Text style={ss.dangerBtnText}>Delete Component</Text>
                 </Pressable>
               )}
-            </Pressable>
+            </View>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
