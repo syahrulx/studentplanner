@@ -206,8 +206,8 @@ export default function SubjectGradeScreen() {
           <Feather name="chevron-left" size={28} color={pri} />
           <Text style={[ss.navBackText, { color: pri }]}>Back</Text>
         </Pressable>
-        <Text style={[ss.navTitle, { color: txt }]} numberOfLines={1}>
-          {course?.name || subjectId}
+        <Text style={[ss.navTitle, { color: txt, textTransform: 'uppercase' }]} numberOfLines={1}>
+          {subjectId}
         </Text>
         <Pressable onPress={() => setSettingsOpen(true)} style={ss.navBtnRight}>
           <Feather name="sliders" size={22} color={pri} />

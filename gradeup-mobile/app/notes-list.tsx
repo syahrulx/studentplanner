@@ -129,15 +129,15 @@ function createStyles(theme: ThemePalette) {
     newFolderBtnPrimaryText: { fontSize: 15, fontWeight: '800', color: theme.textInverse },
 
     flashcardEntry: {
-      marginHorizontal: 20, marginBottom: 14, borderRadius: 18,
-      paddingVertical: 16, paddingHorizontal: 16, flexDirection: 'row',
-      alignItems: 'center', gap: 14, borderWidth: 1,
-      borderColor: theme.border, backgroundColor: `${theme.primary}12`,
+      flex: 1, borderRadius: 20, padding: 16,
+      borderWidth: 1, borderColor: theme.border,
+      backgroundColor: `${theme.primary}10`,
+      justifyContent: 'space-between'
     },
-    flashcardEntryIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' },
-    flashcardEntryBody: { flex: 1 },
+    flashcardEntryIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+    flashcardEntryBody: { },
     flashcardEntryTitle: { fontSize: 15, fontWeight: '700', color: theme.text },
-    flashcardEntrySub: { fontSize: 11, fontWeight: '500', color: theme.textSecondary, marginTop: 3 },
+    flashcardEntrySub: { fontSize: 12, fontWeight: '500', color: theme.textSecondary, marginTop: 4, lineHeight: 16 },
 
     moveItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
     moveItemText: { fontSize: 15, fontWeight: '600', color: theme.text, flex: 1 },
@@ -489,35 +489,42 @@ export default function NotesList() {
 
 
 
-      {/* Flashcard shortcut */}
-      <Pressable
-        style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
-        onPress={() => router.push({ pathname: '/flashcard-pick' as any, params: subjectId ? { subjectId } : {} })}
-      >
-        <View style={styles.flashcardEntryIcon}>
-          <Feather name="layers" size={20} color={theme.textInverse} />
-        </View>
-        <View style={styles.flashcardEntryBody}>
-          <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
-          <Text style={styles.flashcardEntrySub}>{T('flashcardsBrowseDecksSub')}</Text>
-        </View>
-        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-      </Pressable>
+      {/* Quick Actions Grid */}
+      <View style={{ flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 16 }}>
+        {/* Flashcard shortcut */}
+        <Pressable
+          style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
+          onPress={() => router.push({ pathname: '/flashcard-pick' as any, params: subjectId ? { subjectId } : {} })}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View style={styles.flashcardEntryIcon}>
+              <Feather name="layers" size={20} color={theme.textInverse} />
+            </View>
+            <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
+          </View>
+          <View style={styles.flashcardEntryBody}>
+            <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
+            <Text style={styles.flashcardEntrySub}>{T('flashcardsBrowseDecksSub')}</Text>
+          </View>
+        </Pressable>
 
-      {/* Grade Calculator shortcut */}
-      <Pressable
-        style={({ pressed }) => [styles.flashcardEntry, { backgroundColor: `${theme.success ?? '#10b981'}12`, borderColor: `${theme.success ?? '#10b981'}22` }, pressed && { opacity: 0.88 }]}
-        onPress={() => router.push({ pathname: '/subject-grade' as any, params: { subjectId } })}
-      >
-        <View style={[styles.flashcardEntryIcon, { backgroundColor: theme.success }]}>
-          <Feather name="bar-chart-2" size={20} color="#fff" />
-        </View>
-        <View style={styles.flashcardEntryBody}>
-          <Text style={styles.flashcardEntryTitle}>Grade Calculator</Text>
-          <Text style={styles.flashcardEntrySub}>Track carry marks & predict final grade</Text>
-        </View>
-        <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-      </Pressable>
+        {/* Grade Calculator shortcut */}
+        <Pressable
+          style={({ pressed }) => [styles.flashcardEntry, { backgroundColor: `${theme.success ?? '#10b981'}10`, borderColor: `${theme.success ?? '#10b981'}22` }, pressed && { opacity: 0.88 }]}
+          onPress={() => router.push({ pathname: '/subject-grade' as any, params: { subjectId } })}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View style={[styles.flashcardEntryIcon, { backgroundColor: theme.success }]}>
+              <Feather name="bar-chart-2" size={20} color="#fff" />
+            </View>
+            <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
+          </View>
+          <View style={styles.flashcardEntryBody}>
+            <Text style={styles.flashcardEntryTitle}>Grades</Text>
+            <Text style={styles.flashcardEntrySub}>Track marks & predict final grade</Text>
+          </View>
+        </Pressable>
+      </View>
 
       {/* Notes list */}
       <FlatList

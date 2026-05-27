@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { getAllSubjectGradeConfigs } from '@/src/lib/gradeStorage';
@@ -21,7 +22,9 @@ export default function CgpaCalculatorScreen() {
 
   // Local state for credit hours (to allow immediate UI updates before syncing)
   const [credits, setCredits] = useState<Record<string, number>>({});
-  
+  const [excludedSubjects, setExcludedSubjects] = useState<Record<string, boolean>>({});
+  const [editModalOpen, setEditModalOpen] = useState(false);
+
   // Past semester data
   const [pastCgpaStr, setPastCgpaStr] = useState('');
   const [pastCreditsStr, setPastCreditsStr] = useState('');
@@ -50,18 +53,19 @@ export default function CgpaCalculatorScreen() {
 
   const results = useMemo(() => {
     const activeData = courses.map(course => {
+      const isExcluded = !!excludedSubjects[course.id];
       const config = configs.find(c => c.subjectId === course.id);
       const credit = credits[course.id] || 3;
-      if (!config) return { course, credit, hasData: false, point: 0, letter: '-' };
+      if (isExcluded || !config) return { course, credit, hasData: false, point: 0, letter: '-', isExcluded };
 
       const res = calculateGrade(config);
-      return { course, credit, hasData: res.hasData, point: res.currentStandingGrade.point, letter: res.currentStandingGrade.letter };
+      return { course, credit, hasData: res.hasData, point: res.currentStandingGrade.point, letter: res.currentStandingGrade.letter, isExcluded };
     });
 
     let totalPoints = 0;
     let totalCredits = 0;
 
-    activeData.filter(d => d.hasData).forEach(d => {
+    activeData.filter(d => d.hasData && !d.isExcluded).forEach(d => {
       totalPoints += d.point * d.credit;
       totalCredits += d.credit;
     });
@@ -82,7 +86,7 @@ export default function CgpaCalculatorScreen() {
     const cgpa = totalCredits > 0 ? truncate2(totalPoints / totalCredits) : '0.00';
 
     return { activeData, totalPoints, totalCredits, cgpa, currentGpa, currentCredits, pastCreds };
-  }, [courses, configs, credits, pastCgpaStr, pastCreditsStr]);
+  }, [courses, configs, credits, excludedSubjects, pastCgpaStr, pastCreditsStr]);
 
   if (loading) {
     return (
@@ -98,61 +102,33 @@ export default function CgpaCalculatorScreen() {
         <Pressable onPress={() => router.back()} style={styles.navBtn} hitSlop={10}>
           <Feather name="chevron-down" size={24} color={theme.text} />
         </Pressable>
-        <Text style={[styles.navTitle, { color: theme.text }]}>CGPA Calculator</Text>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Ionicons name="calculator" size={18} color={theme.text} />
+          <Text style={[styles.navTitle, { color: theme.text, flex: 0 }]}>GPA Calculator</Text>
+        </View>
         <View style={styles.navBtn} />
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+
           <View style={styles.hero}>
             <Text style={[styles.cgpaValue, { color: theme.text }]}>{results.currentGpa}</Text>
-            <Text style={[styles.cgpaLabel, { color: theme.textSecondary }]}>
-              Current Semester GPA ({results.currentCredits} credits)
-            </Text>
-            
-            {results.pastCreds > 0 && (
-              <View style={[styles.cumulativeBadge, { backgroundColor: theme.primary + '15' }]}>
-                <Text style={[styles.cumulativeValue, { color: theme.primary }]}>{results.cgpa}</Text>
-                <Text style={[styles.cumulativeLabel, { color: theme.primary }]}>
-                  Cumulative CGPA ({results.totalCredits} credits)
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Past Semester</Text>
-            </View>
-            <View style={styles.pastRow}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Past CGPA</Text>
-                <TextInput
-                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                  keyboardType="decimal-pad"
-                  placeholder="e.g. 3.50"
-                  placeholderTextColor={theme.textSecondary}
-                  value={pastCgpaStr}
-                  onChangeText={setPastCgpaStr}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Total Credits</Text>
-                <TextInput
-                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
-                  keyboardType="number-pad"
-                  placeholder="e.g. 60"
-                  placeholderTextColor={theme.textSecondary}
-                  value={pastCreditsStr}
-                  onChangeText={setPastCreditsStr}
-                />
-              </View>
+            <View style={[styles.heroLabelWrapper, { backgroundColor: theme.primary + '12' }]}>
+              <Text style={[styles.cgpaLabel, { color: theme.primary }]}>
+                Current Semester GPA ({results.currentCredits} credits)
+              </Text>
             </View>
           </View>
 
-          <Text style={[styles.listHeader, { color: theme.textSecondary }]}>CURRENT SUBJECTS</Text>
-          
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 }}>
+            <Text style={[styles.listHeader, { color: theme.textSecondary, marginBottom: 0, marginLeft: 0 }]}>CURRENT SUBJECTS</Text>
+            <Pressable onPress={() => setEditModalOpen(true)} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="edit-2" size={14} color={theme.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary }}>Edit</Text>
+            </Pressable>
+          </View>
+
           <View style={[styles.listCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             {results.activeData.length === 0 ? (
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No subjects found.</Text>
@@ -162,33 +138,44 @@ export default function CgpaCalculatorScreen() {
                 return (
                   <View key={d.course.id} style={[styles.row, !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
                     <View style={styles.rowLeft}>
-                      <Text style={[styles.subjectName, { color: theme.text }]} numberOfLines={1}>
-                        {d.course.name || d.course.id}
+                      <Text style={[styles.subjectName, { color: theme.text, flexShrink: 1, textTransform: 'uppercase' }]} numberOfLines={1}>
+                        {d.course.id}
                       </Text>
-                      {d.hasData ? (
+                      {d.isExcluded ? (
+                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <View style={[styles.gradeChip, { backgroundColor: theme.text + '10' }]}>
+                            <Text style={[styles.gradeChipText, { color: theme.textSecondary, fontWeight: '600' }]}>EXCLUDED</Text>
+                          </View>
+                        </View>
+                      ) : d.hasData ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                           <View style={[styles.gradeChip, { backgroundColor: gradeColor(d.letter) + '20' }]}>
                             <Text style={[styles.gradeChipText, { color: gradeColor(d.letter) }]}>{d.letter}</Text>
                           </View>
-                          <Text style={[styles.pointText, { color: theme.textSecondary }]}>{d.point.toFixed(2)} GP</Text>
+                          <Text style={[styles.pointText, { color: theme.textSecondary }]}>{d.point.toFixed(2)}</Text>
                         </View>
                       ) : (
-                        <Text style={[styles.pointText, { color: theme.textSecondary, marginTop: 4 }]}>No marks recorded</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <View style={[styles.gradeChip, { backgroundColor: theme.text + '10' }]}>
+                            <Text style={[styles.gradeChipText, { color: theme.textSecondary, fontWeight: '600' }]}>N/A</Text>
+                          </View>
+                          <Text style={[styles.pointText, { color: theme.textSecondary }]}>No marks</Text>
+                        </View>
                       )}
                     </View>
                     <View style={styles.rowRight}>
                       <Text style={[styles.creditLabel, { color: theme.textSecondary }]}>Credits</Text>
                       <View style={[styles.stepper, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                        <Pressable 
-                          style={styles.stepperBtn} 
+                        <Pressable
+                          style={styles.stepperBtn}
                           onPress={() => handleUpdateCredit(d.course.id, Math.max(0, d.credit - 1))}
                           hitSlop={10}
                         >
                           <Feather name="minus" size={14} color={theme.text} />
                         </Pressable>
                         <Text style={[styles.stepperVal, { color: theme.text }]}>{d.credit}</Text>
-                        <Pressable 
-                          style={styles.stepperBtn} 
+                        <Pressable
+                          style={styles.stepperBtn}
                           onPress={() => handleUpdateCredit(d.course.id, Math.min(12, d.credit + 1))}
                           hitSlop={10}
                         >
@@ -201,13 +188,94 @@ export default function CgpaCalculatorScreen() {
               })
             )}
           </View>
-          
-          <Text style={[styles.footerNote, { color: theme.textSecondary }]}>
+
+          <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border, marginTop: 24 }]}>
+            <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+              <Feather name="clock" size={16} color={theme.text} />
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Past Semesters (Optional)</Text>
+            </View>
+            <View style={styles.pastRow}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Cumulative CGPA</Text>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  keyboardType="decimal-pad"
+                  placeholder="e.g. 3.50"
+                  placeholderTextColor={theme.textSecondary}
+                  value={pastCgpaStr}
+                  onChangeText={setPastCgpaStr}
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Total Earned Credits</Text>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 60"
+                  placeholderTextColor={theme.textSecondary}
+                  value={pastCreditsStr}
+                  onChangeText={setPastCreditsStr}
+                />
+              </View>
+            </View>
+            <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+              Note: This is the sum of all credits from every past semester combined.
+            </Text>
+            {results.pastCreds > 0 && (
+              <View style={[styles.cumulativeBadge, { backgroundColor: theme.primary + '15', marginTop: 16 }]}>
+                <Text style={[styles.cumulativeValue, { color: theme.primary }]}>{results.cgpa}</Text>
+                <Text style={[styles.cumulativeLabel, { color: theme.primary }]}>
+                  Overall Cumulative CGPA ({results.totalCredits} credits)
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={[styles.footerNote, { color: theme.textSecondary, marginTop: 8 }]}>
             Subjects with no marks are excluded from the calculation.
           </Text>
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={editModalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditModalOpen(false)}>
+        <View style={[styles.root, { backgroundColor: theme.background }]}>
+          <View style={[styles.navbar, { borderBottomColor: theme.border, marginTop: Platform.OS === 'android' ? 16 : 0 }]}>
+            <View style={styles.navBtn} />
+            <Text style={[styles.navTitle, { color: theme.text }]}>Include Subjects</Text>
+            <Pressable onPress={() => setEditModalOpen(false)} style={styles.navBtn} hitSlop={10}>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: theme.primary, textAlign: 'right' }}>Done</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 16 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 14, marginBottom: 16 }}>
+              Untick any subjects you want to completely exclude from the GPA calculation.
+            </Text>
+            <View style={[styles.listCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              {courses.map((course, index) => {
+                const isExcluded = !!excludedSubjects[course.id];
+                const isLast = index === courses.length - 1;
+                return (
+                  <Pressable 
+                    key={course.id}
+                    style={[styles.row, !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}
+                    onPress={() => setExcludedSubjects(prev => ({ ...prev, [course.id]: !isExcluded }))}
+                  >
+                    <View style={{ flex: 1, paddingRight: 16 }}>
+                      <Text style={[styles.subjectName, { color: theme.text, textTransform: 'uppercase' }]} numberOfLines={2}>{course.id}</Text>
+                    </View>
+                    <Feather 
+                      name={!isExcluded ? "check-square" : "square"} 
+                      size={24} 
+                      color={!isExcluded ? theme.primary : theme.border} 
+                    />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -223,8 +291,11 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center', paddingVertical: 32, marginBottom: 16,
   },
-  cgpaValue: { fontSize: 64, fontWeight: '800', letterSpacing: -1 },
-  cgpaLabel: { fontSize: 15, fontWeight: '500', marginTop: 4 },
+  cgpaValue: { fontSize: 72, fontWeight: '900', letterSpacing: -2 },
+  heroLabelWrapper: {
+    marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+  },
+  cgpaLabel: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   cumulativeBadge: {
     marginTop: 16,
     paddingHorizontal: 16,
@@ -244,6 +315,9 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
   textInput: {
     borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, height: 44, fontSize: 16,
+  },
+  helperText: {
+    fontSize: 12, marginTop: 12, fontStyle: 'italic', lineHeight: 16,
   },
   listHeader: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4, letterSpacing: 0.5 },
   listCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
