@@ -217,9 +217,11 @@ export default function SubjectGradeScreen() {
           
           {/* ── Hero (Clean, Large) ── */}
           <View style={ss.hero}>
-            <Text style={[ss.heroGrade, { color: gc }]}>{result.grade.letter}</Text>
+            <Text style={[ss.heroGrade, { color: result.hasData ? gc : sub }]}>
+              {result.hasData ? result.grade.letter : '–'}
+            </Text>
             <Text style={[ss.heroScore, { color: sub }]}>
-              {fmt(result.totalScore)}%  •  {fmt(result.grade.point, 2)} GPA
+              {result.hasData ? fmt(result.totalScore) : '–'}%  •  {result.hasData ? fmt(result.grade.point, 2) : '–'} GPA
             </Text>
           </View>
 
@@ -303,11 +305,13 @@ export default function SubjectGradeScreen() {
               <View style={[ss.group, { backgroundColor: cardBg }]}>
                 {result.requiredForGrades.slice(0, 6).map((r, idx, arr) => {
                   const gc2 = gradeColor(r.grade);
-                  const isCurrent = result.grade.letter === r.grade;
+                  const isCurrent = result.hasData && result.grade.letter === r.grade;
                   return (
                     <View key={r.grade} style={[ss.targetRow, idx !== arr.length - 1 && [ss.rowBorder, { borderBottomColor: border }], isCurrent && { backgroundColor: gc2 + '0D' }]}>
                       <Text style={[ss.targetGrade, { color: isCurrent ? gc2 : txt }]}>{r.grade}</Text>
-                      {r.achievable ? (
+                      {!result.hasData ? (
+                        <Text style={[ss.targetScore, { color: sub }]}>N/A</Text>
+                      ) : r.achievable ? (
                         <Text style={[ss.targetScore, { color: isCurrent ? gc2 : sub }]}>{fmt(r.required)}%</Text>
                       ) : (
                         <Text style={[ss.targetScore, { color: '#ef4444' }]}>N/A</Text>

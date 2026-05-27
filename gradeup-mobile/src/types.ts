@@ -358,6 +358,7 @@ export interface GradeRow {
 
 /** Result of the live grade calculation. */
 export interface GradeResult {
+  hasData: boolean;          // true if at least one score has been entered
   carryEarned: number;       // carry mark contribution to final score (out of carryWeight)
   carryPossible: number;     // max possible carry earned so far
   carryPending: number;      // carry % from components not yet entered

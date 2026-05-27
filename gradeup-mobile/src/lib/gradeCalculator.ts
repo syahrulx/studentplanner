@@ -163,7 +163,10 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
     return { grade: g.letter, point: g.point, required: Math.max(0, required), achievable };
   });
 
+  const hasData = assessments.some(a => a.scored !== null) || (hasFinalExam && finalExamScored !== null);
+
   return {
+    hasData,
     carryEarned,
     carryPossible,
     carryPending,
