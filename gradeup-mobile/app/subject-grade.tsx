@@ -503,7 +503,7 @@ export default function SubjectGradeScreen() {
               <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
               <TextInput
                 style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
-                value={fName} onChangeText={setFName}
+                defaultValue={fName} onChangeText={setFName}
                 placeholder="e.g. Midterm" placeholderTextColor={sub}
                 autoFocus returnKeyType="next"
               />
@@ -512,7 +512,7 @@ export default function SubjectGradeScreen() {
                   <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
                   <TextInput
                     style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                    value={fWeight} onChangeText={setFWeight}
+                    defaultValue={fWeight} onChangeText={setFWeight}
                     placeholder="20" placeholderTextColor={sub}
                     keyboardType="decimal-pad"
                   />
@@ -521,7 +521,7 @@ export default function SubjectGradeScreen() {
                   <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
                   <TextInput
                     style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                    value={fMax} onChangeText={setFMax}
+                    defaultValue={fMax} onChangeText={setFMax}
                     placeholder="100" placeholderTextColor={sub}
                     keyboardType="decimal-pad"
                   />
