@@ -494,53 +494,51 @@ export default function SubjectGradeScreen() {
       ═══════════════════════════════════════════════════════════════════ */}
       {addAssessOpen && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
-          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-            <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setAddAssessOpen(false)} />
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]}>
-                <View style={[ss.sheetHandle, { backgroundColor: border }]} />
-                <Text style={[ss.sheetTitle, { color: txt, marginBottom: 24 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setAddAssessOpen(false)} />
+          <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={[ss.sheet, { backgroundColor: cardBg, paddingBottom: Math.max(insets.bottom + 16, 32) }]}>
+              <View style={[ss.sheetHandle, { backgroundColor: border }]} />
+              <Text style={[ss.sheetTitle, { color: txt, marginBottom: 24 }]}>{editAssess ? 'Edit Component' : 'Add Component'}</Text>
 
-                <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
-                <TextInput
-                  style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
-                  value={fName} onChangeText={setFName}
-                  placeholder="e.g. Midterm" placeholderTextColor={sub}
-                  autoFocus returnKeyType="next"
-                />
-                <View style={ss.formRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
-                    <TextInput
-                      style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                      value={fWeight} onChangeText={setFWeight}
-                      placeholder="20" placeholderTextColor={sub}
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
-                    <TextInput
-                      style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
-                      value={fMax} onChangeText={setFMax}
-                      placeholder="100" placeholderTextColor={sub}
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
+              <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
+              <TextInput
+                style={[ss.formInput, { color: txt, backgroundColor: bg, borderColor: border }]}
+                value={fName} onChangeText={setFName}
+                placeholder="e.g. Midterm" placeholderTextColor={sub}
+                autoFocus returnKeyType="next"
+              />
+              <View style={ss.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.fieldLabel, { color: sub }]}>Weight (%)</Text>
+                  <TextInput
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                    value={fWeight} onChangeText={setFWeight}
+                    placeholder="20" placeholderTextColor={sub}
+                    keyboardType="decimal-pad"
+                  />
                 </View>
-
-                <Pressable style={[ss.primaryBtn, { backgroundColor: pri }]} onPress={saveAssessment}>
-                  <Text style={ss.primaryBtnText}>Save</Text>
-                </Pressable>
-                
-                {editAssess && (
-                  <Pressable style={ss.dangerBtn} onPress={() => deleteAssessment(editAssess.id)}>
-                    <Text style={ss.dangerBtnText}>Delete Component</Text>
-                  </Pressable>
-                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={[ss.fieldLabel, { color: sub }]}>Max Score</Text>
+                  <TextInput
+                    style={[ss.formInput, { flex: 1, color: txt, backgroundColor: bg, borderColor: border }]}
+                    value={fMax} onChangeText={setFMax}
+                    placeholder="100" placeholderTextColor={sub}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
               </View>
-            </KeyboardAvoidingView>
-          </View>
+
+              <Pressable style={[ss.primaryBtn, { backgroundColor: pri }]} onPress={saveAssessment}>
+                <Text style={ss.primaryBtnText}>Save</Text>
+              </Pressable>
+              
+              {editAssess && (
+                <Pressable style={ss.dangerBtn} onPress={() => deleteAssessment(editAssess.id)}>
+                  <Text style={ss.dangerBtnText}>Delete Component</Text>
+                </Pressable>
+              )}
+            </View>
+          </KeyboardAvoidingView>
         </View>
       )}
 
