@@ -86,16 +86,10 @@ export function percentToGrade(percent: number, scheme: GradingScheme): GradeRow
   return table[table.length - 1];
 }
 
-/**
- * Calculate the total weighted carry mark as a percentage of the full carry portion.
- * e.g. If carry weight is 40%, and student earned 60% on carry → returns 0.60
- *
- * Returns [0, 1] — multiply by carryWeight to get final contribution.
- */
 export function calcCarryRatio(assessments: GradeAssessment[]): {
-  ratio: number;        // earned / possible (0–1) for entered assessments
-  possibleWeight: number; // total weight% of entered assessments
-  pendingWeight: number;  // total weight% of not-yet-entered assessments
+  earnedWeighted: number; // absolute score earned towards final grade
+  possibleWeight: number; // absolute weight of entered assessments
+  pendingWeight: number;  // absolute weight of not-yet-entered assessments
 } {
   let earnedWeighted = 0;
   let possibleWeight = 0;
@@ -111,8 +105,7 @@ export function calcCarryRatio(assessments: GradeAssessment[]): {
     }
   }
 
-  const ratio = possibleWeight > 0 ? earnedWeighted / possibleWeight : 0;
-  return { ratio, possibleWeight, pendingWeight };
+  return { earnedWeighted, possibleWeight, pendingWeight };
 }
 
 // ─── Main Calculation ──────────────────────────────────────────────────────────
@@ -121,13 +114,11 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
   const { carryWeight, finalWeight, hasFinalExam, assessments,
           finalExamScored, finalExamMaxScore, gradingScheme } = config;
 
-  const { ratio: carryRatio, possibleWeight, pendingWeight } = calcCarryRatio(assessments);
+  const { earnedWeighted: carryEarned, possibleWeight: carryPossible, pendingWeight: carryPendingInput } = calcCarryRatio(assessments);
 
-  // Carry contribution = carryRatio * (possibleWeight/100) * carryWeight
-  // This gives the actual marks contributed to the final total so far.
-  const carryEarned   = carryRatio * (possibleWeight / 100) * carryWeight;
-  const carryPossible = (possibleWeight / 100) * carryWeight;
-  const carryPending  = (pendingWeight / 100) * carryWeight;
+  // Since component weights are now treated as absolute contributions:
+  // Pending carry marks is the total carry weight minus the possible weight already entered.
+  const carryPending = Math.max(0, carryWeight - carryPossible);
 
   // Final exam contribution
   let finalContribution = 0;
@@ -187,10 +178,10 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
 }
 
 /**
- * Validate that assessment weights sum to 100.
- * Returns the total and whether it is valid.
+ * Validate that assessment weights sum to the target carry weight.
+ * Returns the total, valid status, and remaining weight.
  */
-export function validateAssessmentWeights(assessments: GradeAssessment[]): {
+export function validateAssessmentWeights(assessments: GradeAssessment[], targetTotal: number): {
   total: number;
   valid: boolean;
   remaining: number;
@@ -198,8 +189,8 @@ export function validateAssessmentWeights(assessments: GradeAssessment[]): {
   const total = assessments.reduce((s, a) => s + (a.weight || 0), 0);
   return {
     total: Math.round(total * 100) / 100,
-    valid: Math.abs(total - 100) < 0.01,
-    remaining: Math.round((100 - total) * 100) / 100,
+    valid: Math.abs(total - targetTotal) < 0.01,
+    remaining: Math.max(0, Math.round((targetTotal - total) * 100) / 100),
   };
 }
 

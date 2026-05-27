@@ -103,7 +103,7 @@ export default function SubjectGradeScreen() {
 
   const result = useMemo(() => calculateGrade(config), [config]);
   const { total: wTotal, valid: wValid, remaining: wRemaining } = useMemo(
-    () => validateAssessmentWeights(config.assessments), [config.assessments]);
+    () => validateAssessmentWeights(config.assessments, config.carryWeight), [config.assessments, config.carryWeight]);
 
   const gc = gradeColor(result.currentStandingGrade.letter);
 
@@ -115,7 +115,7 @@ export default function SubjectGradeScreen() {
       setFScored(existing.scored !== null ? String(existing.scored) : '');
     } else {
       setEditAssess(null); setFName('');
-      const rem = validateAssessmentWeights(config.assessments).remaining;
+      const rem = validateAssessmentWeights(config.assessments, config.carryWeight).remaining;
       setFWeight(rem > 0 ? String(Math.round(rem)) : '');
       setFMax('100'); setFScored('');
     }
@@ -131,16 +131,16 @@ export default function SubjectGradeScreen() {
     const scored = fScored.trim() ? parseFloat(fScored) : null;
     
     if (!name) return setAssessError('Component name is required.');
-    if (!weight || weight <= 0 || weight > 100) return setAssessError('Weight must be between 1 and 100.');
+    if (!weight || weight <= 0 || weight > config.carryWeight) return setAssessError(`Weight must be between 1 and ${config.carryWeight}.`);
     if (!maxScore || maxScore <= 0) return setAssessError('Max score must be greater than 0.');
 
     const next = editAssess 
       ? config.assessments.map(a => a.id === editAssess.id ? { ...a, name, weight, maxScore, scored } : a)
       : [...config.assessments, { id: uid(), name, weight, maxScore, scored }];
       
-    const validation = validateAssessmentWeights(next);
-    if (validation.total > 100.01) {
-      return setAssessError(`Total carry mark weight cannot exceed 100%. Currently at ${validation.total}%.`);
+    const validation = validateAssessmentWeights(next, config.carryWeight);
+    if (validation.total > config.carryWeight + 0.01) {
+      return setAssessError(`Total carry marks cannot exceed ${config.carryWeight}%. Currently at ${validation.total}%.`);
     }
     
     setAddAssessOpen(false);
