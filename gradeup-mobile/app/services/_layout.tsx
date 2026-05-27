@@ -12,6 +12,7 @@ export default function ServicesLayout() {
     >
       <Stack.Screen name="new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="[id]" />
+      <Stack.Screen name="fyp-survey-browse" />
     </Stack>
   );
 }

@@ -37,6 +37,7 @@ import {
   statusMeta,
   getViewerRole,
   getDeadlineStatus,
+  recordSurveyResponse,
 } from '@/src/lib/servicesApi';
 import type { ServicePost, ServiceReview, ServiceOffer, OpenListingFeedbackSummary } from '@/src/lib/servicesApi';
 
@@ -117,6 +118,13 @@ export default function ServiceDetailScreen() {
   const [reportTypeId, setReportTypeId] = useState<(typeof SERVICE_REPORT_TYPES)[number]['id'] | null>(null);
   const [reportBody, setReportBody] = useState('');
   const [universityLabel, setUniversityLabel] = useState<string | null>(null);
+
+  // ── FYP Survey state ────────────────────────────────────────────────────
+  /** Modal shown after user returns from the external survey URL */
+  const [surveyConfirmOpen, setSurveyConfirmOpen] = useState(false);
+  /** Screenshot proof image URI picked by respondent */
+  const [surveyProofUri, setSurveyProofUri] = useState<string | null>(null);
+  const [surveySubmitting, setSurveySubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -447,6 +455,69 @@ export default function ServiceDetailScreen() {
     }
     if (amOfferCreator || amPostAuthor) {
       presentListingFeedbackMenu(offer);
+    }
+  };
+
+  /** Opens the external survey URL then shows proof confirmation modal. */
+  const onOpenSurvey = async () => {
+    if (!service.survey_url) return;
+    const supported = await Linking.canOpenURL(service.survey_url);
+    if (!supported) {
+      Alert.alert('Cannot open link', 'The survey URL could not be opened on this device.');
+      return;
+    }
+    await Linking.openURL(service.survey_url);
+    // Show confirmation modal after user returns to app
+    setSurveyProofUri(null);
+    setSurveyConfirmOpen(true);
+  };
+
+  const pickSurveyProof = async () => {
+    Alert.alert('Upload Proof', 'Take or choose a screenshot of your completed survey', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Take Photo',
+        onPress: async () => {
+          try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') return Alert.alert('Permission denied', 'Camera access is required.');
+            const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+            if (!result.canceled && result.assets[0]) setSurveyProofUri(result.assets[0].uri);
+          } catch {
+            Alert.alert('Camera unavailable', 'The camera is not available on this device.');
+          }
+        },
+      },
+      {
+        text: 'Choose from Library',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+          if (!result.canceled && result.assets[0]) setSurveyProofUri(result.assets[0].uri);
+        },
+      },
+    ]);
+  };
+
+  const handleSurveyConfirmSubmit = async () => {
+    if (!service) return;
+    if (!surveyProofUri) {
+      Alert.alert('Screenshot required', 'Please upload a screenshot of your completed survey as proof.');
+      return;
+    }
+    setSurveySubmitting(true);
+    try {
+      await recordSurveyResponse(service.id, surveyProofUri);
+      setSurveyConfirmOpen(false);
+      setSurveyProofUri(null);
+      Alert.alert(
+        'Thank you! 🎉',
+        'Your response has been recorded. You’re helping a fellow student complete their FYP!'
+      );
+      await load();
+    } catch (e: any) {
+      Alert.alert('Could not record response', e.message || 'Something went wrong.');
+    } finally {
+      setSurveySubmitting(false);
     }
   };
 
@@ -795,7 +866,25 @@ export default function ServiceDetailScreen() {
   // so the bottom CTA is reserved for primary forward actions only.
   const myPendingOffer = offers.find((o) => o.offerer_id === userId && o.status === 'pending');
   const isFreeService = service.price_type === 'free';
+  const isSurvey = service.service_category === 'fyp_survey';
+
+  // FYP Survey CTA: override the standard offer/claim flow entirely
+  const surveyCta: { label: string; icon: string; onPress: () => void; color: string } | null = (() => {
+    if (!isSurvey) return null;
+    if (role === 'requester') return null;          // author cannot respond to own survey
+    if (!isOpen) return null;                        // closed / completed surveys: no CTA
+    if (service.user_has_responded) return null;    // already responded
+    return {
+      label: 'Open Survey & Respond',
+      icon: 'external-link',
+      onPress: onOpenSurvey,
+      color: '#FF6B6B',
+    };
+  })();
+
   const cta: { label: string; icon: string; onPress: () => void; color: string; secondary?: boolean } | null = (() => {
+    // Survey posts use surveyCta instead
+    if (isSurvey) return null;
     if (role === 'observer' && isOpen) {
       // Free services: skip negotiation; one-tap claim.
       if (isFreeService) {
@@ -931,6 +1020,99 @@ export default function ServiceDetailScreen() {
             <Text style={[styles.body, { color: theme.textSecondary }]}>{service.body}</Text>
           ) : null}
         </View>
+
+        {/* FYP Survey info card */}
+        {isSurvey && (
+          <View style={[styles.section, { marginTop: 0 }]}>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>SURVEY DETAILS</Text>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, padding: 16, gap: 12 }]}>
+              {/* Progress bar */}
+              <View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={[{ fontSize: 13, fontWeight: '600', color: theme.text }]}>
+                    {service.survey_respond_count ?? 0} / {service.survey_quota ?? 30} respondents
+                  </Text>
+                  <Text style={[{ fontSize: 12, color: theme.textSecondary }]}>
+                    {Math.round(((service.survey_respond_count ?? 0) / (service.survey_quota ?? 30)) * 100)}% filled
+                  </Text>
+                </View>
+                <View style={[{ height: 8, borderRadius: 4, backgroundColor: theme.border, overflow: 'hidden' }]}>
+                  <View style={[{
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: isCompleted ? '#30D158' : '#FF6B6B',
+                    width: `${Math.min(100, Math.round(((service.survey_respond_count ?? 0) / (service.survey_quota ?? 30)) * 100))}%` as any,
+                  }]} />
+                </View>
+              </View>
+
+              {/* Topic */}
+              {service.survey_topic ? (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                  <Feather name="file-text" size={14} color={theme.textSecondary} style={{ marginTop: 2 }} />
+                  <Text style={[{ fontSize: 13, color: theme.textSecondary, flex: 1, lineHeight: 18 }]}>
+                    {service.survey_topic}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Course */}
+              {service.survey_course ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Feather name="book" size={14} color={theme.textSecondary} />
+                  <Text style={[{ fontSize: 13, color: theme.textSecondary }]}>{service.survey_course}</Text>
+                </View>
+              ) : null}
+
+              {/* Already responded badge */}
+              {service.user_has_responded && (
+                <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 4 }]}>
+                  <Feather name="check-circle" size={15} color="#30D158" />
+                  <Text style={[{ fontSize: 13, fontWeight: '600', color: '#30D158' }]}>
+                    You already responded to this survey ✓
+                  </Text>
+                </View>
+              )}
+
+              {/* Author — close early option */}
+              {role === 'requester' && isOpen && (
+                <Pressable
+                  onPress={() =>
+                    Alert.alert(
+                      'Close survey early?',
+                      `You currently have ${service.survey_respond_count ?? 0} responses. Are you sure you want to close it now?`,
+                      [
+                        { text: 'Keep open', style: 'cancel' },
+                        {
+                          text: 'Close survey',
+                          style: 'destructive',
+                          onPress: () => wrap('Close survey', () => servicesApi.closeSurveyEarly(service.id), 'Survey closed.'),
+                        },
+                      ]
+                    )
+                  }
+                  style={({ pressed }) => [{
+                    flexDirection: 'row', alignItems: 'center', gap: 6,
+                    opacity: pressed ? 0.6 : 1, marginTop: 4,
+                  }]}
+                >
+                  <Feather name="x-circle" size={14} color={theme.danger ?? '#FF453A'} />
+                  <Text style={[{ fontSize: 13, color: theme.danger ?? '#FF453A', fontWeight: '600' }]}>Close survey early</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* Proof requirement notice */}
+            {role !== 'requester' && !service.user_has_responded && isOpen && (
+              <View style={[styles.card, { backgroundColor: '#FF6B6B11', borderColor: '#FF6B6B33', borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, marginTop: 10, flexDirection: 'row', gap: 8 }]}>
+                <Feather name="camera" size={14} color="#FF6B6B" style={{ marginTop: 2 }} />
+                <Text style={[{ fontSize: 12, color: theme.textSecondary, flex: 1, lineHeight: 17 }]}>
+                  After opening the survey, you’ll need to upload a screenshot of your completed form as proof before your response is counted.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Request Attachment */}
         {service.image_url ? (
@@ -1723,7 +1905,125 @@ export default function ServiceDetailScreen() {
         </View>
       ) : null}
 
-      {/* Report service modal (all platforms — includes guidance text; Android has no Alert.prompt) */}
+      {/* FYP Survey sticky CTA */}
+      {surveyCta && (
+        <View style={[styles.ctaWrap, { borderTopColor: theme.border, backgroundColor: theme.background + 'F5', paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
+          <Pressable
+            onPress={surveyCta.onPress}
+            disabled={acting}
+            style={({ pressed }) => [
+              styles.ctaBtn,
+              { backgroundColor: surveyCta.color },
+              pressed && { opacity: 0.88 },
+              acting && { opacity: 0.5 },
+            ]}
+          >
+            <Feather name={surveyCta.icon as any} size={18} color="#fff" />
+            <Text style={[styles.ctaText, { color: '#fff' }]}>{surveyCta.label}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* FYP Survey confirmation modal */}
+      <Modal
+        visible={surveyConfirmOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => !surveySubmitting && setSurveyConfirmOpen(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => !surveySubmitting && setSurveyConfirmOpen(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+            <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.grabber} />
+              <Text style={[styles.sheetTitle, { color: theme.text }]}>Did you complete the survey? 📋</Text>
+              <Text style={[styles.sheetSub, { color: theme.textSecondary }]}>
+                Upload a screenshot of your completed survey as proof. This is required to record your response.
+              </Text>
+
+              {/* Screenshot upload button */}
+              <Pressable
+                onPress={pickSurveyProof}
+                disabled={surveySubmitting}
+                style={({ pressed }) => [{
+                  marginTop: 16,
+                  borderRadius: 14,
+                  borderWidth: 2,
+                  borderColor: surveyProofUri ? '#30D158' : '#FF6B6B',
+                  borderStyle: surveyProofUri ? 'solid' : 'dashed',
+                  overflow: 'hidden',
+                  opacity: pressed ? 0.7 : 1,
+                  minHeight: surveyProofUri ? 180 : 110,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: surveyProofUri ? 'transparent' : (theme.backgroundSecondary ?? theme.card),
+                }]}
+              >
+                {surveyProofUri ? (
+                  <Image
+                    source={{ uri: surveyProofUri }}
+                    style={{ width: '100%', height: 180, borderRadius: 12 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <>
+                    <Feather name="camera" size={28} color="#FF6B6B" />
+                    <Text style={[{ fontSize: 14, fontWeight: '600', color: '#FF6B6B', marginTop: 8 }]}>
+                      Upload Screenshot
+                    </Text>
+                    <Text style={[{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }]}>Required proof of completion</Text>
+                  </>
+                )}
+              </Pressable>
+
+              {surveyProofUri && (
+                <Pressable
+                  onPress={pickSurveyProof}
+                  style={({ pressed }) => [{ marginTop: 8, alignSelf: 'center', opacity: pressed ? 0.6 : 1 }]}
+                >
+                  <Text style={[{ fontSize: 13, color: theme.textSecondary, textDecorationLine: 'underline' }]}>Change screenshot</Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                onPress={handleSurveyConfirmSubmit}
+                disabled={surveySubmitting || !surveyProofUri}
+                style={({ pressed }) => [{
+                  marginTop: 20,
+                  borderRadius: 14,
+                  paddingVertical: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: surveyProofUri ? '#30D158' : (theme.border),
+                  opacity: pressed ? 0.85 : surveySubmitting ? 0.5 : 1,
+                  flexDirection: 'row',
+                  gap: 8,
+                }]}
+              >
+                {surveySubmitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Feather name="check" size={18} color={surveyProofUri ? '#fff' : theme.textSecondary} />
+                    <Text style={[{ fontSize: 16, fontWeight: '700', color: surveyProofUri ? '#fff' : theme.textSecondary }]}>
+                      Yes, I completed it!
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={() => setSurveyConfirmOpen(false)}
+                disabled={surveySubmitting}
+                style={({ pressed }) => [{ marginTop: 12, alignSelf: 'center', paddingVertical: 8, opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text style={[{ fontSize: 14, color: theme.textSecondary }]}>Not yet — I'll come back</Text>
+              </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => !acting && setReportOpen(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => !acting && setReportOpen(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>

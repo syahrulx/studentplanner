@@ -32,6 +32,7 @@ import {
   handleAttendanceNotificationResponse,
 } from '@/src/attendanceRecording';
 import UpdatePrompt from '@/src/components/UpdatePrompt';
+import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
 
@@ -273,6 +274,7 @@ function RootLayoutNav() {
         <QuizProvider>
           <ThemeAwareLayout />
           <AppUpdateGate />
+          <WhatsNewPromptModal />
         </QuizProvider>
       </CommunityProvider>
     </AppProvider>

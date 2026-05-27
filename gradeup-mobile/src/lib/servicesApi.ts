@@ -163,14 +163,15 @@ export interface ServiceCategory {
 
 /** Curated category list — shown in compose & filter pills. */
 export const SERVICE_CATEGORIES: ServiceCategory[] = [
-  { id: 'tutoring',  label: 'Tutoring',   emoji: '📚', icon: 'book-open',   tint: '#0A84FF' },
-  { id: 'printing',  label: 'Printing',   emoji: '🖨️', icon: 'printer',     tint: '#5E5CE6' },
-  { id: 'transport', label: 'Transport',  emoji: '🚗', icon: 'navigation', tint: '#30D158' },
-  { id: 'food',      label: 'Food run',   emoji: '🍱', icon: 'shopping-bag', tint: '#FF9F0A' },
-  { id: 'errands',   label: 'Errands',    emoji: '🧺', icon: 'package',     tint: '#FF453A' },
-  { id: 'tech',      label: 'Tech help',  emoji: '💻', icon: 'cpu',         tint: '#64D2FF' },
-  { id: 'design',    label: 'Design',     emoji: '🎨', icon: 'edit-3',      tint: '#BF5AF2' },
-  { id: 'other',     label: 'Other',      emoji: '✨', icon: 'star',        tint: '#8E8E93' },
+  { id: 'tutoring',   label: 'Tutoring',    emoji: '📚', icon: 'book-open',   tint: '#0A84FF' },
+  { id: 'fyp_survey', label: 'FYP Survey',  emoji: '📋', icon: 'clipboard',   tint: '#FF6B6B' },
+  { id: 'printing',   label: 'Printing',    emoji: '🖨️', icon: 'printer',     tint: '#5E5CE6' },
+  { id: 'transport',  label: 'Transport',   emoji: '🚗', icon: 'navigation', tint: '#30D158' },
+  { id: 'food',       label: 'Food run',    emoji: '🍱', icon: 'shopping-bag', tint: '#FF9F0A' },
+  { id: 'errands',    label: 'Errands',     emoji: '🧺', icon: 'package',     tint: '#FF453A' },
+  { id: 'tech',       label: 'Tech help',   emoji: '💻', icon: 'cpu',         tint: '#64D2FF' },
+  { id: 'design',     label: 'Design',      emoji: '🎨', icon: 'edit-3',      tint: '#BF5AF2' },
+  { id: 'other',      label: 'Other',       emoji: '✨', icon: 'star',        tint: '#8E8E93' },
 ];
 
 export function getCategory(id?: string | null): ServiceCategory {
@@ -218,6 +219,22 @@ export interface ServicePost {
   delivery_attachments: string[];
   max_revisions: number;
   revision_count: number;
+
+  // ─── FYP Survey fields ──────────────────────────────────────────────────
+  /** External survey link (Google Forms, Typeform, etc.). Only used when service_category = 'fyp_survey'. */
+  survey_url?: string | null;
+  /** Maximum number of respondents the author wants. Default 30. */
+  survey_quota?: number;
+  /** How many students have already responded (auto-incremented by DB trigger). */
+  survey_respond_count?: number;
+  /** Short description of the survey topic, e.g. "UiTM student mental health". */
+  survey_topic?: string | null;
+  /** Author's course/programme, e.g. "Bachelor of Computer Science". */
+  survey_course?: string | null;
+  /** Fairness queue rank within the same university (1 = needs responses most). Local-only. */
+  queue_position?: number | null;
+  /** Whether the current viewer has already responded. Local-only. */
+  user_has_responded?: boolean;
 
   // joined
   author_name?: string;
@@ -514,6 +531,36 @@ export interface CreateServiceInput {
   campus?: string;
   /** Author-only: standard job vs open marketplace (7-day window). */
   negotiation_mode?: ServiceNegotiationMode;
+  // ─── FYP Survey fields (only used when category = 'fyp_survey') ─────────
+  survey_url?: string;
+  survey_quota?: number;
+  survey_topic?: string;
+  survey_course?: string;
+}
+
+/** Trusted survey platform domains — checked before inserting a fyp_survey post. */
+const ALLOWED_SURVEY_DOMAINS = [
+  'docs.google.com',
+  'forms.gle',
+  'forms.office.com',
+  'typeform.com',
+  'surveymonkey.com',
+  'tally.so',
+  'airtable.com',
+  'jotform.com',
+  'qualtrics.com',
+  'microsoft.com',
+];
+
+/** Returns true if the URL looks like a recognised survey platform link. */
+export function isValidSurveyUrl(url: string): boolean {
+  try {
+    const u = new URL(url.trim());
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    return ALLOWED_SURVEY_DOMAINS.some((d) => u.hostname.endsWith(d));
+  } catch {
+    return false;
+  }
 }
 
 export async function createService(input: CreateServiceInput): Promise<ServicePost> {
@@ -528,6 +575,34 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
   const bannedWord = checkContentModeration(input.title, input.body);
   if (bannedWord) {
     throw new Error('This content violates our community guidelines. Explicit, illegal, or prohibited services are not allowed.');
+  }
+
+  // ── FYP Survey-specific validation ──────────────────────────────────────
+  if (input.category === 'fyp_survey') {
+    if (!input.survey_url?.trim()) {
+      throw new Error('A survey link is required for FYP Survey posts.');
+    }
+    if (!isValidSurveyUrl(input.survey_url)) {
+      throw new Error(
+        'Please provide a valid survey link (Google Forms, Microsoft Forms, Typeform, SurveyMonkey, Tally, Jotform, or Qualtrics).'
+      );
+    }
+    if (input.survey_quota !== undefined && (input.survey_quota < 5 || input.survey_quota > 500)) {
+      throw new Error('Survey quota must be between 5 and 500 respondents.');
+    }
+    // Reciprocity gate: user must have responded to at least 3 other surveys
+    // (unless platform is in bootstrap mode — pool size < SURVEY_BOOTSTRAP_THRESHOLD)
+    const { data: eligibleData } = await supabase.rpc('can_post_survey');
+    if (!eligibleData) {
+      const { data: countData } = await supabase.rpc('get_survey_response_count_for_me');
+      const count = (countData as number) ?? 0;
+      throw new Error(
+        `You need to respond to ${SURVEY_RECIPROCITY_MIN - count} more survey${
+          SURVEY_RECIPROCITY_MIN - count === 1 ? '' : 's'
+        } before you can post your own. ` +
+        `Browse the FYP Surveys tab to help out fellow students first! 🤝`
+      );
+    }
   }
 
   if (input.price_type === 'free' && input.negotiation_mode === 'open_service') {
@@ -567,13 +642,19 @@ export async function createService(input: CreateServiceInput): Promise<ServiceP
       location: input.location?.trim() || null,
       service_kind: input.kind,
       service_category: input.category,
-      price_type: input.price_type,
-      price_amount: input.price_type === 'fixed' ? input.price_amount ?? null : null,
+      // FYP surveys are always free — force free price_type
+      price_type: input.category === 'fyp_survey' ? 'free' : input.price_type,
+      price_amount: input.price_type === 'fixed' && input.category !== 'fyp_survey' ? input.price_amount ?? null : null,
       currency: input.currency || 'MYR',
       service_status: 'open',
       deadline_at: input.deadline_at || null,
       service_negotiation_mode: mode,
       open_service_expires_at: openUntil,
+      // FYP Survey fields
+      survey_url:    input.category === 'fyp_survey' ? input.survey_url?.trim() || null : null,
+      survey_quota:  input.category === 'fyp_survey' ? (input.survey_quota ?? 30) : null,
+      survey_topic:  input.category === 'fyp_survey' ? input.survey_topic?.trim() || null : null,
+      survey_course: input.category === 'fyp_survey' ? input.survey_course?.trim() || null : null,
     })
     .select()
     .single();
@@ -1525,4 +1606,193 @@ export async function markOfferDmMessagesRead(threadId: string): Promise<void> {
   if (error) {
     console.error('Failed to mark offer DM read', error);
   }
+}
+
+// ─── FYP Survey API ──────────────────────────────────────────────────────────
+
+export interface SurveyFilters {
+  universityId?: string | null;
+  campus?: string | null;
+  course?: string | null;
+  search?: string | null;
+  scope?: 'all' | 'mine' | 'responded';
+  limit?: number;
+}
+
+/**
+ * Fetch open FYP surveys sorted by fairness queue (fewest responses first).
+ * Attaches user_has_responded flag for each row.
+ */
+export async function fetchSurveys(filters: SurveyFilters = {}): Promise<ServicePost[]> {
+  const { universityId, campus, course, search, scope = 'all', limit = 60 } = filters;
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let query = supabase
+    .from('community_posts')
+    .select('*')
+    .eq('post_type', 'service')
+    .eq('service_category', 'fyp_survey')
+    .limit(limit);
+
+  if (scope === 'mine') {
+    if (!user) return [];
+    query = query.eq('author_id', user.id);
+  } else if (scope === 'responded') {
+    // Surveys the user has already responded to
+    if (!user) return [];
+    const { data: responses } = await supabase
+      .from('survey_responses')
+      .select('survey_id')
+      .eq('respondent_id', user.id);
+    const ids = (responses ?? []).map((r: any) => r.survey_id);
+    if (!ids.length) return [];
+    query = query.in('id', ids);
+  } else {
+    // Open surveys only in the all-browse tab
+    query = query.eq('service_status', 'open');
+  }
+
+  if (universityId) query = query.eq('university_id', universityId);
+  if (campus)       query = query.eq('campus', campus);
+  if (course?.trim()) query = query.ilike('survey_course', `%${course.trim()}%`);
+  if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
+
+  // Fairness order: fewest responses first, then oldest first
+  query = query
+    .order('survey_respond_count', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const rows = (data ?? []) as ServicePost[];
+
+  // Attach queue_position (local rank within result set)
+  rows.forEach((r, i) => {
+    r.queue_position = i + 1;
+  });
+
+  // Attach user_has_responded
+  if (user && rows.length) {
+    const surveyIds = rows.map((r) => r.id);
+    const { data: myResponses } = await supabase
+      .from('survey_responses')
+      .select('survey_id')
+      .eq('respondent_id', user.id)
+      .in('survey_id', surveyIds);
+    const respondedSet = new Set((myResponses ?? []).map((r: any) => r.survey_id));
+    rows.forEach((r) => {
+      r.user_has_responded = respondedSet.has(r.id);
+    });
+  }
+
+  return enrichWithProfiles(rows, user?.id);
+}
+
+/**
+ * Record the current user as having responded to a survey.
+ * Calls the DB RPC which enforces all anti-gaming checks.
+ * @param surveyId  The community_posts.id of the survey
+ * @param proofUri  REQUIRED local image URI — screenshot of the completed survey
+ */
+export async function recordSurveyResponse(
+  surveyId: string,
+  proofUri: string              // required, not optional
+): Promise<{ status: 'recorded' | 'already_responded' }> {
+  if (!proofUri?.trim()) {
+    throw new Error('A screenshot of your completed survey is required as proof.');
+  }
+
+  // Upload screenshot to Supabase Storage first
+  const proof_url = await uploadDeliveryAttachment(proofUri);
+
+  const { data, error } = await supabase.rpc('record_survey_response', {
+    p_survey_id: surveyId,
+    p_proof_url: proof_url,
+  });
+
+  if (error) throw error;
+  const result = data as { status?: string; error?: string };
+  if (result?.error) throw new Error(result.error);
+  return { status: (result?.status as any) ?? 'recorded' };
+}
+
+/**
+ * Check whether the current user has already responded to a given survey.
+ */
+export async function checkUserResponded(surveyId: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { data } = await supabase
+    .from('survey_responses')
+    .select('id')
+    .eq('survey_id', surveyId)
+    .eq('respondent_id', user.id)
+    .maybeSingle();
+
+  return !!data;
+}
+
+/**
+ * Survey author closes their own survey early (before quota is reached).
+ */
+export async function closeSurveyEarly(surveyId: string): Promise<void> {
+  const { error } = await supabase.rpc('close_survey_early', {
+    p_survey_id: surveyId,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Fetch surveys the current user has already responded to.
+ */
+export async function fetchMyRespondedSurveys(): Promise<ServicePost[]> {
+  return fetchSurveys({ scope: 'responded' });
+}
+
+/** Minimum surveys a user must respond to before they can post their own. */
+export const SURVEY_RECIPROCITY_MIN = 2;
+
+/**
+ * If fewer than this many open surveys exist, the reciprocity gate is disabled
+ * (bootstrap mode). This prevents a chicken-and-egg deadlock at launch.
+ */
+export const SURVEY_BOOTSTRAP_THRESHOLD = 10;
+
+/**
+ * Check if the current user is eligible to post a FYP survey.
+ * Returns:
+ *  - eligible: boolean — whether they can post right now
+ *  - responseCount: number — how many surveys they've responded to
+ *  - needed: number — how many more they need (0 if eligible or bootstrap mode)
+ *  - bootstrapMode: boolean — true when the platform pool is too small to enforce the gate
+ *  - poolSize: number — total open surveys on the platform right now
+ */
+export async function getSurveyPostEligibility(): Promise<{
+  eligible: boolean;
+  responseCount: number;
+  needed: number;
+  bootstrapMode: boolean;
+  poolSize: number;
+}> {
+  const [eligibleRes, countRes, poolRes] = await Promise.all([
+    supabase.rpc('can_post_survey'),
+    supabase.rpc('get_survey_response_count_for_me'),
+    supabase.rpc('get_survey_pool_size'),
+  ]);
+
+  const eligible      = !!eligibleRes.data;
+  const responseCount = (countRes.data as number) ?? 0;
+  const poolSize      = (poolRes.data as number) ?? 0;
+  const bootstrapMode = poolSize < SURVEY_BOOTSTRAP_THRESHOLD;
+
+  return {
+    eligible,
+    responseCount,
+    needed: bootstrapMode ? 0 : Math.max(0, SURVEY_RECIPROCITY_MIN - responseCount),
+    bootstrapMode,
+    poolSize,
+  };
 }

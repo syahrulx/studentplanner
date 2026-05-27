@@ -12,6 +12,7 @@ import {
   TextInput,
   Modal,
   Switch,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -668,106 +669,145 @@ export default function ServicesBoard() {
             pressed && { transform: [{ scale: 0.985 }], opacity: 0.97 },
           ]}
         >
-          {item.image_url ? (
-            <View style={styles.heroWrap}>
-              <Image source={{ uri: item.image_url }} style={styles.heroImg} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.45)']}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <View style={styles.heroTop}>
-                <View style={[styles.kindChip, { backgroundColor: theme.card + 'E8' }]}>
-                  <Feather
-                    name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
-                    size={11}
-                    color={theme.text}
-                  />
-                  <Text style={[styles.kindChipText, { color: theme.text }]}>
-                    {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
-                  </Text>
-                </View>
-                <View style={[styles.statusChip, { backgroundColor: sm.bg, borderColor: sm.tint }]}>
-                  <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
-                </View>
-              </View>
-            </View>
-          ) : null}
-
-          <View style={styles.cardBody}>
-            {!item.image_url && (
+          {item.service_category === 'fyp_survey' ? (
+            <View style={[styles.cardBody, { paddingVertical: 16 }]}>
               <View style={styles.metaTopRow}>
-                <View style={[styles.kindChipPlain, { borderColor: theme.border }]}>
-                  <Feather
-                    name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
-                    size={11}
-                    color={theme.text}
-                  />
-                  <Text style={[styles.kindChipText, { color: theme.text }]}>
-                    {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
-                  </Text>
+                <View style={[styles.kindChipPlain, { backgroundColor: cat.tint + '15', borderWidth: 0, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }]}>
+                  <Feather name="file-text" size={12} color={cat.tint} />
+                  <Text style={[styles.kindChipText, { color: cat.tint, fontSize: 12 }]}>FYP Survey</Text>
                 </View>
                 <View style={[styles.statusChipPlain, { backgroundColor: sm.bg }]}>
                   <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
                 </View>
               </View>
-            )}
 
-            <View style={styles.titleRow}>
-              <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]} numberOfLines={2}>
-                {item.title}
+              <Text style={[styles.cardTitle, { color: theme.text, fontSize: 18, letterSpacing: -0.5, marginBottom: 12, marginTop: 4 }]} numberOfLines={2}>
+                {item.survey_topic || item.title}
               </Text>
-              {(item.unread_chat_count ?? 0) > 0 && (
-                <View style={styles.cardUnreadBadge}>
-                  <Text style={styles.cardUnreadBadgeText}>{item.unread_chat_count}</Text>
-                </View>
-              )}
-            </View>
 
-            {item.body ? (
-              <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]} numberOfLines={2}>
-                {item.body}
-              </Text>
-            ) : null}
-
-            <View style={styles.metaRow}>
-              <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
-                <Feather name={cat.icon as any} size={11} color={cat.tint} />
-                <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
-              </View>
-
-              <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                <Text style={[styles.metaChipText, { color: theme.text }]}>
-                  {formatPrice(item)}
-                </Text>
-              </View>
-
-              {item.location ? (
-                <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                  <Feather name="map-pin" size={10} color={theme.text} />
-                  <Text style={[styles.metaChipText, { color: theme.text }]} numberOfLines={1}>
-                    {item.location}
+              {item.survey_url ? (
+                <View style={[styles.surveyLinkBox, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Feather name="link" size={14} color={theme.textSecondary} />
+                  <Text style={[styles.surveyLinkText, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {item.survey_url.replace(/^https?:\/\//, '')}
                   </Text>
                 </View>
               ) : null}
-            </View>
 
-            <View style={[styles.hairline, { backgroundColor: theme.border }]} />
-
-            <View style={styles.footer}>
-              <Avatar name={item.author_name} avatarUrl={item.author_avatar || undefined} size={26} />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[styles.authorName, { color: theme.text }]} numberOfLines={1}>
-                  {isMine ? 'You' : item.author_name}
-                  {iTook ? '  ·  You took this' : ''}
-                </Text>
-                <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {timeAgo(item.created_at)}
-                </Text>
+              <View style={styles.footer}>
+                <Avatar name={item.author_name} avatarUrl={item.author_avatar || undefined} size={28} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.authorName, { color: theme.textSecondary, fontSize: 14, fontWeight: '500' }]} numberOfLines={1}>
+                    {isMine ? 'You' : item.author_name} • {timeAgo(item.created_at)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.primary, letterSpacing: -0.2 }}>See more</Text>
               </View>
-              <Feather name="chevron-right" size={18} color={theme.textSecondary} />
             </View>
-          </View>
+          ) : (
+            <>
+              {item.image_url ? (
+                <View style={styles.heroWrap}>
+                  <Image source={{ uri: item.image_url }} style={styles.heroImg} resizeMode="cover" />
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.45)']}
+                    style={StyleSheet.absoluteFill}
+                    pointerEvents="none"
+                  />
+                  <View style={styles.heroTop}>
+                    <View style={[styles.kindChip, { backgroundColor: theme.card + 'E8' }]}>
+                      <Feather
+                        name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
+                        size={11}
+                        color={theme.text}
+                      />
+                      <Text style={[styles.kindChipText, { color: theme.text }]}>
+                        {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusChip, { backgroundColor: sm.bg, borderColor: sm.tint }]}>
+                      <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.cardBody}>
+                {!item.image_url && (
+                  <View style={styles.metaTopRow}>
+                    <View style={[styles.kindChipPlain, { borderColor: theme.border }]}>
+                      <Feather
+                        name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
+                        size={11}
+                        color={theme.text}
+                      />
+                      <Text style={[styles.kindChipText, { color: theme.text }]}>
+                        {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusChipPlain, { backgroundColor: sm.bg }]}>
+                      <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.titleRow}>
+                  <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  {(item.unread_chat_count ?? 0) > 0 && (
+                    <View style={styles.cardUnreadBadge}>
+                      <Text style={styles.cardUnreadBadgeText}>{item.unread_chat_count}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {item.body ? (
+                  <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {item.body}
+                  </Text>
+                ) : null}
+
+                <View style={styles.metaRow}>
+                  <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
+                    <Feather name={cat.icon as any} size={11} color={cat.tint} />
+                    <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
+                  </View>
+
+                  <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
+                    <Text style={[styles.metaChipText, { color: theme.text }]}>
+                      {formatPrice(item)}
+                    </Text>
+                  </View>
+
+                  {item.location ? (
+                    <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
+                      <Feather name="map-pin" size={10} color={theme.text} />
+                      <Text style={[styles.metaChipText, { color: theme.text }]} numberOfLines={1}>
+                        {item.location}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={[styles.hairline, { backgroundColor: theme.border }]} />
+
+                <View style={styles.footer}>
+                  <Avatar name={item.author_name} avatarUrl={item.author_avatar || undefined} size={26} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.authorName, { color: theme.text }]} numberOfLines={1}>
+                      {isMine ? 'You' : item.author_name}
+                      {iTook ? '  ·  You took this' : ''}
+                    </Text>
+                    <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {timeAgo(item.created_at)}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                </View>
+              </View>
+            </>
+          )}
         </Pressable>
       );
     },
@@ -1584,6 +1624,21 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'center', paddingTop: 10 },
   authorName: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
   authorMeta: { fontSize: 11, fontWeight: '500', marginTop: 1 },
+
+  surveyLinkBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+    marginBottom: 16,
+  },
+  surveyLinkText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
 
   // Empty
   emptyWrap: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
