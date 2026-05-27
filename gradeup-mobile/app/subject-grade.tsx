@@ -285,10 +285,11 @@ export default function SubjectGradeScreen() {
                 <View style={ss.assessRow}>
                   <View style={ss.assessInfo}>
                     <Text style={[ss.assessName, { color: txt }]}>Final Score</Text>
-                    <Text style={[ss.assessWeight, { color: sub }]}>
-                      Overall impact: {config.finalWeight}%
-                      {config.finalExamScored !== null && config.finalExamMaxScore > 0 ? `  •  ${fmt((config.finalExamScored / config.finalExamMaxScore) * 100)}%` : ''}
-                    </Text>
+                    {config.finalExamScored !== null && config.finalExamMaxScore > 0 && (
+                      <Text style={[ss.assessWeight, { color: sub }]}>
+                        {fmt((config.finalExamScored / config.finalExamMaxScore) * 100)}%
+                      </Text>
+                    )}
                   </View>
                   <View style={ss.scoreInputWrap}>
                     <TextInput
