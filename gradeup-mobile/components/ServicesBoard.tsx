@@ -94,7 +94,7 @@ export default function ServicesBoard() {
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const userId = user?.id || null;
-  const userUni = (user as any)?.university_id || (user as any)?.universityId || null;
+  const userUni = (user as any)?.university_id || (user as any)?.universityId || (user as any)?.university || null;
   const userCampusName = ((user as any)?.campus ?? '').trim() || null;
   // Match GlassTabBar height: 8 (top padding) + 64 (bar) + bottom inset (≥12).
   const tabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
@@ -458,15 +458,23 @@ export default function ServicesBoard() {
           void persistBrowseCampusForUni(filterUniversity ?? userUni, null);
         },
       });
-    } else if (filterUniversity !== null) {
-      chips.push({
-        key: 'uni',
-        label: universities.find((u) => u.id === filterUniversity)?.name?.toUpperCase() ?? filterUniversity.toUpperCase(),
-        onClear: () => {
-          setFilterUniversity(null);
-          setFilterCampusId(null);
-        },
-      });
+    }
+    
+    if (filterUniversity !== null || (!explicitAnyUniversity && userUni)) {
+      const effUni = filterUniversity ?? userUni;
+      if (effUni) {
+        chips.push({
+          key: 'uni',
+          label: universities.find((u) => u.id === effUni)?.name?.toUpperCase() ?? effUni.toUpperCase(),
+          onClear: () => {
+            setFilterUniversity(null);
+            setFilterCampusId(null);
+            if (filterUniversity === null) {
+              setExplicitAnyUniversity(true);
+            }
+          },
+        });
+      }
     }
     if (kind !== null) {
       const kl = KIND_FILTERS.find((k) => k.id === kind)?.label ?? '';

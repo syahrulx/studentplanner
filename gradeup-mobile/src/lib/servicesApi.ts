@@ -373,8 +373,8 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (kind) query = query.eq('service_kind', kind);
   if (status) query = query.eq('service_status', status);
   if (category) query = query.eq('service_category', category);
-  if (universityId) query = query.eq('university_id', universityId);
-  if (campus) query = query.eq('campus', campus);
+  if (universityId) query = query.or(`university_id.eq.${universityId},university_id.is.null`);
+  if (campus) query = query.or(`campus.eq.${campus},campus.is.null`);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
   let userOfferData: any[] | null = null;
@@ -1653,8 +1653,8 @@ export async function fetchSurveys(filters: SurveyFilters = {}): Promise<Service
     query = query.eq('service_status', 'open');
   }
 
-  if (universityId) query = query.eq('university_id', universityId);
-  if (campus)       query = query.eq('campus', campus);
+  if (universityId) query = query.or(`university_id.eq.${universityId},university_id.is.null`);
+  if (campus)       query = query.or(`campus.eq.${campus},campus.is.null`);
   if (course?.trim()) query = query.ilike('survey_course', `%${course.trim()}%`);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 

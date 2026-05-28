@@ -74,6 +74,7 @@ export default function NewServiceScreen() {
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [priceType, setPriceType] = useState<PriceType>('fixed');
   const [priceAmount, setPriceAmount] = useState('');
+  const [locationType, setLocationType] = useState<'specific' | 'open'>('specific');
   const [location, setLocation] = useState('');
   const [formUniversityId, setFormUniversityId] = useState<string | null>(null);
   const [formCampusId, setFormCampusId] = useState<string | null>(null);
@@ -156,6 +157,7 @@ export default function NewServiceScreen() {
         setNegotiationMode(s.service_negotiation_mode === 'open_service' ? 'open_service' : 'standard');
         if (s.price_amount != null) setPriceAmount(String(s.price_amount));
         setLocation(s.location || '');
+        setLocationType(s.university_id ? 'specific' : 'open');
         setFormUniversityId(s.university_id);
         if (s.university_id) {
           eventsApi.fetchCampuses(s.university_id).then((camps) => {
@@ -256,10 +258,10 @@ export default function NewServiceScreen() {
             price_type: priceType,
             price_amount: priceType === 'fixed' ? Number(priceAmount) : null,
             currency: 'MYR',
-            location: location.trim() || null,
+            location: locationType === 'specific' ? (location.trim() || null) : 'Open (Anywhere)',
             deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : null,
-            university_id: formUniversityId || null,
-            campus: campusNameResolved || null,
+            university_id: locationType === 'specific' ? (formUniversityId || null) : null,
+            campus: locationType === 'specific' ? (campusNameResolved || null) : null,
           });
         } else {
           await servicesApi.createService({
@@ -271,10 +273,10 @@ export default function NewServiceScreen() {
             price_type: isSurvey ? 'free' : priceType,
             price_amount: isSurvey ? undefined : (priceType === 'fixed' ? Number(priceAmount) : undefined),
             currency: 'MYR',
-            location: location.trim() || undefined,
+            location: locationType === 'specific' ? (location.trim() || undefined) : 'Open (Anywhere)',
             deadline_at: deadlineType === 'later' && deadline ? deadline.toISOString() : undefined,
-            university_id: formUniversityId || undefined,
-            campus: campusNameResolved || undefined,
+            university_id: locationType === 'specific' ? (formUniversityId || undefined) : undefined,
+            campus: locationType === 'specific' ? (campusNameResolved || undefined) : undefined,
             negotiation_mode: kind === 'offer' ? negotiationMode : 'standard',
             // Survey-specific
             survey_url: isSurvey ? surveyUrl.trim() : undefined,
@@ -645,17 +647,38 @@ export default function NewServiceScreen() {
         {/* Location & deadline */}
         <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Location & timing</Text>
         <View style={[styles.group, { backgroundColor: theme.card }]}>
-          <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
-            <LocationUniCampusBlock
-              universityId={formUniversityId}
-              campusId={formCampusId}
-              locationDetail={location}
-              onUniversityIdChange={setFormUniversityId}
-              onCampusIdChange={(id, name) => { setFormCampusId(id); setCampusNameResolved(name); }}
-              onLocationDetailChange={setLocation}
-              accentColor={activeCat.tint}
-            />
+          <View style={[styles.groupRow, { paddingBottom: locationType === 'specific' ? 8 : 13 }]}>
+            <Feather name="map-pin" size={16} color={activeCat.tint} style={{ marginRight: 12 }} />
+            <Text style={[styles.rowTitle, { color: theme.text, flex: 1 }]}>Location</Text>
+            <View style={styles.segmented}>
+              <Pressable
+                onPress={() => setLocationType('specific')}
+                style={[styles.segmentBtn, { borderColor: theme.border }, locationType === 'specific' && { backgroundColor: theme.text, borderColor: theme.text }]}
+              >
+                <Text style={[styles.segmentText, { color: theme.textSecondary }, locationType === 'specific' && { color: theme.background }]}>Specific</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setLocationType('open')}
+                style={[styles.segmentBtn, { borderColor: theme.border }, locationType === 'open' && { backgroundColor: theme.text, borderColor: theme.text }]}
+              >
+                <Text style={[styles.segmentText, { color: theme.textSecondary }, locationType === 'open' && { color: theme.background }]}>Open</Text>
+              </Pressable>
+            </View>
           </View>
+          
+          {locationType === 'specific' && (
+            <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
+              <LocationUniCampusBlock
+                universityId={formUniversityId}
+                campusId={formCampusId}
+                locationDetail={location}
+                onUniversityIdChange={setFormUniversityId}
+                onCampusIdChange={(id, name) => { setFormCampusId(id); setCampusNameResolved(name); }}
+                onLocationDetailChange={setLocation}
+                accentColor={activeCat.tint}
+              />
+            </View>
+          )}
 
           <View style={[styles.hairline, { backgroundColor: theme.border }]} />
 
