@@ -121,6 +121,15 @@ export default function CgpaCalculatorScreen() {
             </View>
           </View>
 
+          {results.activeData.some(d => !d.hasData && !d.isExcluded) && (
+            <View style={{ backgroundColor: theme.primary + '15', padding: 12, borderRadius: 12, marginBottom: 24, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              <Feather name="info" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+              <Text style={{ flex: 1, color: theme.primary, fontSize: 13, lineHeight: 18, fontWeight: '500' }}>
+                Complete your marks for every subject first to get an accurate GPA!
+              </Text>
+            </View>
+          )}
+
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 }}>
             <Text style={[styles.listHeader, { color: theme.textSecondary, marginBottom: 0, marginLeft: 0 }]}>CURRENT SUBJECTS</Text>
             <Pressable onPress={() => setEditModalOpen(true)} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
