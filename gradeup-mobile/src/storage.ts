@@ -75,7 +75,7 @@ export async function setTheme(theme: ThemeId): Promise<void> {
   } catch {}
 }
 
-export type ThemePackId = 'none' | 'cat' | 'mono' | 'spider' | 'purple';
+export type ThemePackId = 'none' | 'cat' | 'mono' | 'spider' | 'purple' | 'custom';
 
 export async function getThemePack(): Promise<ThemePackId> {
   try {
@@ -95,6 +95,40 @@ export async function setThemePack(pack: ThemePackId): Promise<void> {
       return;
     }
     await AsyncStorage.setItem(KEY_THEME_PACK, pack);
+  } catch {}
+}
+
+const KEY_CUSTOM_THEME_COLORS = '@custom_theme_colors';
+
+export interface CustomThemeColors {
+  primary: string;
+  card: string;
+  background: string;
+  text?: string;
+  textSecondary?: string;
+  textInverse?: string;
+  border?: string;
+  focusCard?: string;
+  focusCardText?: string;
+}
+
+export async function getCustomThemeColors(): Promise<CustomThemeColors | null> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_CUSTOM_THEME_COLORS);
+    if (!raw) return null;
+    return JSON.parse(raw) as CustomThemeColors;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCustomThemeColors(colors: CustomThemeColors | null): Promise<void> {
+  try {
+    if (colors) {
+      await AsyncStorage.setItem(KEY_CUSTOM_THEME_COLORS, JSON.stringify(colors));
+    } else {
+      await AsyncStorage.removeItem(KEY_CUSTOM_THEME_COLORS);
+    }
   } catch {}
 }
 
@@ -131,26 +165,6 @@ export async function setThemePreviewExpiry(timestamp: number | null): Promise<v
       await AsyncStorage.removeItem(KEY_THEME_PREVIEW_EXPIRY);
     } else {
       await AsyncStorage.setItem(KEY_THEME_PREVIEW_EXPIRY, timestamp.toString());
-    }
-  } catch {}
-}
-
-const KEY_HAS_USED_THEME_TRIAL = 'hasUsedThemeTrial';
-
-export async function getHasUsedThemeTrial(): Promise<boolean> {
-  try {
-    const raw = await AsyncStorage.getItem(KEY_HAS_USED_THEME_TRIAL);
-    return raw === 'true';
-  } catch {}
-  return false;
-}
-
-export async function setHasUsedThemeTrial(used: boolean): Promise<void> {
-  try {
-    if (used) {
-      await AsyncStorage.setItem(KEY_HAS_USED_THEME_TRIAL, 'true');
-    } else {
-      await AsyncStorage.removeItem(KEY_HAS_USED_THEME_TRIAL);
     }
   } catch {}
 }
@@ -453,6 +467,7 @@ export async function setHasDismissedClassroomPromo(value: boolean): Promise<voi
   } catch {}
 }
 
+
 // ---------- Notification preferences ----------
 
 const KEY_NOTIFICATION_PREFS = 'notificationPrefs';
@@ -477,7 +492,6 @@ export interface NotificationPrefs {
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
   todaysFocusPref: 'all' | 'task' | 'study' | 'exam';
-  taskReminderTime?: string;   // "HH:mm" - Plus/Pro custom reminder time
 }
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -492,7 +506,6 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
   todaysFocusPref: 'all',
-  taskReminderTime: '09:00',
 };
 
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
@@ -518,9 +531,6 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
             ? parsed.todaysFocusPref
             : DEFAULT_NOTIFICATION_PREFS.todaysFocusPref,
-        taskReminderTime: typeof parsed.taskReminderTime === 'string'
-            ? parsed.taskReminderTime
-            : DEFAULT_NOTIFICATION_PREFS.taskReminderTime,
       };
     }
   } catch {}

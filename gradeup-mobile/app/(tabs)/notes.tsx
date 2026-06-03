@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
@@ -1114,8 +1115,8 @@ export default function StudyHub() {
               ]}
               onPress={() => router.push('/cgpa-calculator' as any)}
             >
-              <Feather name="bar-chart-2" size={14} color={theme.primary} />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>Calculate CGPA</Text>
+              <Ionicons name="calculator" size={14} color={theme.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>GPA</Text>
             </Pressable>
             {subjectsMode === 'idle' ? (
             <Pressable

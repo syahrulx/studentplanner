@@ -231,6 +231,7 @@ export const PACK_ICON_MAPS: Record<Exclude<ThemePackId, 'none'>, Record<ThemeIc
   mono: MONO_ICON_MAP,
   spider: SPIDER_ICON_MAP,
   purple: PURPLE_ICON_MAP,
+  custom: DEFAULT_ICON_MAP,
 };
 
 /**

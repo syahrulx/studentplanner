@@ -11,6 +11,7 @@
  * API key never appears in the client bundle.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from './supabase';
 import {
   invokeGenerateFlashcards,
   type GenerateFlashcardsResult,
@@ -135,7 +136,12 @@ export async function generateQuizFromNotes(
 // ---------------------------------------------------------------------------
 
 const QUIZ_TEMP_KEY = '@quiz_generated_store';
-const QUIZ_SAVED_KEY = '@quiz_saved_library_v1';
+
+async function getCurrentUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) throw new Error('Not authenticated');
+  return session.user.id;
+}
 
 export async function setGeneratedQuizQuestions(questions: GeneratedQuizQuestion[]): Promise<void> {
   try {
@@ -163,12 +169,31 @@ export async function clearGeneratedQuizQuestions(): Promise<void> {
 
 export async function getSavedQuizzes(): Promise<SavedQuizItem[]> {
   try {
-    const data = await AsyncStorage.getItem(QUIZ_SAVED_KEY);
-    if (!data) return [];
-    const parsed = JSON.parse(data);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as SavedQuizItem[];
-  } catch {
+    const userId = await getCurrentUserId();
+    const { data, error } = await supabase
+      .from('saved_quizzes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('getSavedQuizzes error:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      createdAt: row.created_at,
+      questionCount: row.question_count,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+      quizType: row.quiz_type,
+      difficulty: row.difficulty,
+      questions: row.questions,
+    }));
+  } catch (e) {
+    console.warn('getSavedQuizzes exception:', e);
     return [];
   }
 }
@@ -181,28 +206,60 @@ export async function saveQuizToLibrary(input: {
   difficulty?: QuizDifficulty;
   questions: GeneratedQuizQuestion[];
 }): Promise<SavedQuizItem> {
+  const userId = await getCurrentUserId();
   const questions = (input.questions || []).slice(0, 50);
-  const item: SavedQuizItem = {
-    id: `quiz_${Date.now()}`,
+
+  const insertData = {
+    user_id: userId,
     title: (input.title || 'Revision Quiz').trim() || 'Revision Quiz',
-    createdAt: new Date().toISOString(),
-    questionCount: questions.length,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    quizType: input.quizType,
-    difficulty: input.difficulty,
+    question_count: questions.length,
+    source_type: input.sourceType,
+    source_id: input.sourceId || null,
+    quiz_type: input.quizType || null,
+    difficulty: input.difficulty || null,
     questions,
   };
-  const existing = await getSavedQuizzes();
-  const next = [item, ...existing].slice(0, 40);
-  await AsyncStorage.setItem(QUIZ_SAVED_KEY, JSON.stringify(next));
-  return item;
+
+  const { data, error } = await supabase
+    .from('saved_quizzes')
+    .insert(insertData)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error('Failed to save quiz to library: ' + error.message);
+  }
+
+  return {
+    id: data.id,
+    title: data.title,
+    createdAt: data.created_at,
+    questionCount: data.question_count,
+    sourceType: data.source_type,
+    sourceId: data.source_id,
+    quizType: data.quiz_type as QuizType,
+    difficulty: data.difficulty as QuizDifficulty,
+    questions: data.questions,
+  };
 }
 
 export async function deleteSavedQuiz(id: string): Promise<void> {
-  const existing = await getSavedQuizzes();
-  const next = existing.filter((q) => q.id !== id);
-  await AsyncStorage.setItem(QUIZ_SAVED_KEY, JSON.stringify(next));
+  try {
+    const userId = await getCurrentUserId();
+    const { error } = await supabase
+      .from('saved_quizzes')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+      
+    if (error) {
+      console.error('Failed to delete saved quiz:', error);
+      throw new Error(error.message);
+    }
+  } catch (e) {
+    console.warn('deleteSavedQuiz exception:', e);
+    throw e;
+  }
 }
 
 /**

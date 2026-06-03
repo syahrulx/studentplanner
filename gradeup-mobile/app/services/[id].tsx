@@ -211,7 +211,7 @@ export default function ServiceDetailScreen() {
   } catch (e) {}
 
   const myReview = reviews.find((r) => r.reviewer_id === userId);
-  const canReview = isCompleted && (role === 'requester' || role === 'taker') && !myReview;
+  const canReview = isCompleted && !!service.taker_id && (role === 'requester' || role === 'taker') && !myReview;
 
   // ─── Actions ──────────────────────────────────────────────────────────────
   const wrap = async (label: string, fn: () => Promise<void>, success?: string) => {

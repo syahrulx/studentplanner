@@ -24,6 +24,7 @@ function dowFromISO(dateISO: string): number | null {
 export function taskOccursOn(task: Pick<Task, 'dueDate' | 'repeatDays'>, dateISO: string): boolean {
   const day = dateISO.slice(0, 10);
   if (isRecurringTask(task)) {
+    if (task.dueDate && day < task.dueDate) return false;
     const dow = dowFromISO(day);
     if (dow == null) return false;
     return (task.repeatDays ?? []).includes(dow);
@@ -43,6 +44,7 @@ export function expandTasksForDate(tasks: Task[], dateISO: string): Task[] {
   const out: Task[] = [];
   for (const t of tasks) {
     if (isRecurringTask(t)) {
+      if (t.dueDate && day < t.dueDate) continue;
       if (dow != null && (t.repeatDays ?? []).includes(dow)) {
         out.push({ ...t, dueDate: day });
       }
@@ -75,8 +77,11 @@ export function expandTasksForRange(tasks: Task[], startISO: string, endISO: str
     const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
     const dow = cursor.getDay();
     for (const t of tasks) {
-      if (isRecurringTask(t) && (t.repeatDays ?? []).includes(dow)) {
-        out.push({ ...t, dueDate: iso });
+      if (isRecurringTask(t)) {
+        if (t.dueDate && iso < t.dueDate) continue;
+        if ((t.repeatDays ?? []).includes(dow)) {
+          out.push({ ...t, dueDate: iso });
+        }
       }
     }
     for (const t of oneOffByDate.get(iso) ?? []) out.push(t);

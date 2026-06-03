@@ -71,7 +71,7 @@ function syntheticCourse(id: string): Course {
 }
 
 export default function TaskDetails() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, occurrenceDate } = useLocalSearchParams<{ id: string; occurrenceDate?: string }>();
   const { tasks, courses, toggleTaskDone, taskCompletionKeys, deleteTask, updateTask, language } = useApp();
   const theme = useTheme();
   const themeId = useThemeId();
@@ -140,7 +140,7 @@ export default function TaskDetails() {
     setLocalTitle(task.title);
     setLocalNotes(task.notes || '');
     setLocalCourseId(task.courseId);
-    setLocalType(task.type);
+    setLocalType(task.type as TaskType);
     setLocalDueDate(task.dueDate);
     setLocalDueTime(task.dueTime || '23:59');
   }, [task?.id]);
@@ -168,9 +168,15 @@ export default function TaskDetails() {
       communityUserId &&
       sharedTaskRecord.recipient_id === communityUserId,
   );
+  
+  const isRecurring = Array.isArray(task?.repeatDays) && (task?.repeatDays || []).length > 0;
+  const targetDateISO = occurrenceDate || (task?.needsDate ? getTodayISO() : (task?.dueDate || getTodayISO()));
+
   const displayIsDone = isRecipientSharedView
     ? Boolean(sharedTaskRecord?.recipient_completed)
-    : Boolean(task?.isDone);
+    : isRecurring
+      ? taskCompletionKeys.has(`${task?.id}:${targetDateISO.slice(0, 10)}`)
+      : Boolean(task?.isDone);
 
   const isAlreadyShared = participants.length > 0;
 
@@ -209,7 +215,7 @@ export default function TaskDetails() {
   };
 
   // ── Derived display values ──────────────────────────────────────────────────
-  const effectiveDueDate = task.needsDate ? getTodayISO() : task.dueDate;
+  const effectiveDueDate = targetDateISO;
   const daysLeft = getDaysUntilDue(effectiveDueDate);
   const isOverdue = task.needsDate ? daysLeft < 0 : isTaskPastDueNow({ dueDate: task.dueDate, dueTime: task.dueTime || '23:59' });
   const isDueSoon = !isOverdue && daysLeft <= 3;
@@ -260,6 +266,15 @@ export default function TaskDetails() {
       );
       return;
     }
+    if (isRecurring) {
+      Alert.alert(T('deleteTask'), `This is a repeating task. What would you like to delete?`, [
+        { text: T('cancel'), style: 'cancel' },
+        { text: 'Skip this occurrence', onPress: () => { toggleTaskDone(task.id, targetDateISO.slice(0, 10)); router.back(); } },
+        { text: 'Delete all occurrences', style: 'destructive', onPress: () => { deleteTask(task.id); router.back(); } },
+      ]);
+      return;
+    }
+
     Alert.alert(T('deleteTask'), `"${task.title}" ${T('deleteTaskDesc')}`, [
       { text: T('cancel'), style: 'cancel' },
       { text: T('delete'), style: 'destructive', onPress: () => { deleteTask(task.id); router.back(); } },
@@ -281,22 +296,16 @@ export default function TaskDetails() {
       }
       return;
     }
-    // For recurring tasks, the detail screen toggles TODAY's occurrence —
-    // there is no single "the task is done" state to flip.
-    const isRecurring = Array.isArray(task.repeatDays) && task.repeatDays.length > 0;
-    const todayISOForTask = getTodayISO();
-    const recurringDoneToday = isRecurring && taskCompletionKeys.has(`${task.id}:${todayISOForTask}`);
-    const showAsDone = isRecurring ? recurringDoneToday : task.isDone;
-
-    if (showAsDone) {
+    // For recurring tasks, we toggle the specific occurrence date
+    if (displayIsDone) {
       Alert.alert(T('markAsNotDone'), `"${task.title}" ${T('markAsIncomplete')}`, [
         { text: T('cancel'), style: 'cancel' },
-        { text: T('undo'), onPress: () => toggleTaskDone(task.id, isRecurring ? todayISOForTask : undefined) },
+        { text: T('undo'), onPress: () => toggleTaskDone(task.id, isRecurring ? targetDateISO.slice(0, 10) : undefined) },
       ]);
     } else {
       Alert.alert(T('markAsDoneQuestion'), `"${task.title}" ${T('markAsCompleted')}`, [
         { text: T('cancel'), style: 'cancel' },
-        { text: T('markDone'), onPress: () => toggleTaskDone(task.id, isRecurring ? todayISOForTask : undefined) },
+        { text: T('markDone'), onPress: () => toggleTaskDone(task.id, isRecurring ? targetDateISO.slice(0, 10) : undefined) },
       ]);
     }
   };
@@ -563,21 +572,23 @@ export default function TaskDetails() {
           </Pressable>
 
           {/* Due Date */}
-          <Pressable
-            style={({ pressed }) => [s.groupRow, { borderBottomColor: theme.border }, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => setShowDateModal(true)}
-          >
-            <View style={[s.groupRowIcon, { backgroundColor: isNeutralPack ? '#111111' : 'rgba(0,51,102,0.07)' }]}>
-              <Feather name="calendar" size={16} color={isNeutralPack ? '#d4d4d4' : theme.primary} />
-            </View>
-            <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Due Date</Text>
-            <Text style={[s.groupRowValue, { color: task.needsDate ? (isNeutralPack ? '#d4d4d4' : theme.warning) : theme.text }]}>
-              {task.needsDate ? 'Not set' : formatDisplayDate(localDueDate)}
-            </Text>
-            <View style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}>
-              <Feather name="edit-2" size={14} color={theme.primary} />
-            </View>
-          </Pressable>
+          {!isRecurring && (
+            <Pressable
+              style={({ pressed }) => [s.groupRow, { borderBottomColor: theme.border }, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => setShowDateModal(true)}
+            >
+              <View style={[s.groupRowIcon, { backgroundColor: isNeutralPack ? '#111111' : 'rgba(0,51,102,0.07)' }]}>
+                <Feather name="calendar" size={16} color={isNeutralPack ? '#d4d4d4' : theme.primary} />
+              </View>
+              <Text style={[s.groupRowLabel, { color: theme.textSecondary }]}>Due Date</Text>
+              <Text style={[s.groupRowValue, { color: task.needsDate ? (isNeutralPack ? '#d4d4d4' : theme.warning) : theme.text }]}>
+                {task.needsDate ? 'Not set' : formatDisplayDate(localDueDate)}
+              </Text>
+              <View style={[s.fieldEditBtn, { backgroundColor: theme.backgroundSecondary }]}>
+                <Feather name="edit-2" size={14} color={theme.primary} />
+              </View>
+            </Pressable>
+          )}
 
           {/* Time */}
           <Pressable
@@ -794,8 +805,8 @@ export default function TaskDetails() {
                     localType === t && { backgroundColor: theme.primary + '15', borderColor: theme.primary },
                   ]}
                   onPress={() => {
-                    setLocalType(t);
-                    saveField({ type: t });
+                    setLocalType(t as TaskType);
+                    saveField({ type: t as TaskType });
                     setTypeModalOpen(false);
                   }}
                 >

@@ -224,7 +224,6 @@ export default function Planner() {
     user,
     language,
     academicCalendar,
-    autoDeletePastTasks,
   } = useApp();
   const {
     acceptedSharedTasks, toggleSharedCompletion, removeSharedTaskLink, userId: communityUserId,
@@ -559,23 +558,14 @@ export default function Planner() {
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
     if (view === 'all' || view === 'month') {
-      // Month and All views:
-      // Include ALL one-off tasks (past, present, future) so they never disappear.
-      const allOneOffs = tasks.filter((t) => !isRecurringTask(t));
-
-      // For recurring tasks, expand them for a 6-month window to prevent infinite occurrences.
+      // For lists that span many dates, expand recurring tasks into one
+      // virtual row per occurrence in the next ~60 days so they show on every
+      // scheduled weekday instead of just their placeholder dueDate.
       const start = new Date(`${todayISO}T12:00:00`);
-      start.setDate(start.getDate() - 30);
-      const startISO = toLocalISO(start);
-
-      const end = new Date(`${todayISO}T12:00:00`);
-      end.setDate(end.getDate() + 180); // 6 months forward
+      const end = new Date(start);
+      end.setDate(end.getDate() + 60);
       const endISO = toLocalISO(end);
-
-      const recurringTasks = tasks.filter(isRecurringTask);
-      const expandedRecurring = expandTasksForRange(recurringTasks, startISO, endISO);
-
-      list = [...allOneOffs, ...expandedRecurring];
+      list = expandTasksForRange(tasks, todayISO, endISO);
     } else if (view === 'week') {
       // Week view: expand only across the visible week so recurring tasks
       // show on each of their weekdays in the current week.
@@ -613,20 +603,8 @@ export default function Planner() {
       }
       return t;
     });
-
-    // Only hide past done one-off tasks in day/week views when the user has
-    // explicitly enabled "auto delete past tasks". Without that setting, done
-    // tasks always remain visible so the user can review their history.
-    if (autoDeletePastTasks && (view === 'day' || view === 'week')) {
-      list = list.filter((t) => {
-        if (isRecurringTask(t)) return true; // recurring occurrences always shown
-        if (!t.isDone) return true;          // undone tasks always shown
-        return t.dueDate >= todayISO;        // done tasks only if today or future
-      });
-    }
-
     return list;
-  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter, todayISO, taskCompletionKeys, autoDeletePastTasks]);
+  }, [tasks, activeDate, view, activeYear, activeMonth, activeFilter, todayISO, taskCompletionKeys]);
 
   const filteredStudyItems = useMemo((): PlannerStudyItem[] => {
     if (view === 'all' || view === 'month' || view === 'week') {
@@ -1073,7 +1051,8 @@ export default function Planner() {
 
   const handleItemPress = (item: PlannerItem) => {
     if (item.itemType === 'task') {
-      router.push({ pathname: '/task-details' as any, params: { id: item.id } });
+      const pt = item as PlannerTaskItem;
+      router.push({ pathname: '/task-details' as any, params: { id: pt.id, occurrenceDate: pt.dueDate } });
     } else if (item.itemType === 'study') {
       router.push({ pathname: '/study-details' as any, params: { studyKey: item.studyKey } });
     }
@@ -1542,8 +1521,7 @@ export default function Planner() {
                                               <Text
                                                 style={[
                                                   s.monthGridTagText,
-                                                  { color: isDone ? theme.textSecondary : theme.text, fontSize: dynamicFontSize },
-                                                  isDone && { textDecorationLine: 'line-through', opacity: 0.6 },
+                                                  { color: theme.text, fontSize: dynamicFontSize },
                                                 ]}
                                                 numberOfLines={dynamicLines}
                                               >
@@ -2019,16 +1997,7 @@ export default function Planner() {
                                         backgroundColor: isDone ? color : 'transparent' 
                                       }} />
                                     </View>
-                                    <Text 
-                                      style={{ 
-                                        fontSize: 9, 
-                                        fontWeight: '800', 
-                                        color: isDone ? theme.textSecondary : theme.text, 
-                                        lineHeight: 11, 
-                                        textDecorationLine: isDone ? 'line-through' : 'none' 
-                                      }} 
-                                      numberOfLines={2}
-                                    >
+                                    <Text style={{ fontSize: 9, fontWeight: '800', color: theme.text, lineHeight: 11 }} numberOfLines={2}>
                                       {title}
                                     </Text>
                                     {boundedHeight > 40 && (

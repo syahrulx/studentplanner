@@ -1,6 +1,7 @@
 import { Priority, TaskType, type Task, type UserProfile } from '../types';
 import type { TaskExtractionDTO } from './taskExtraction';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
+import { taskOccursOn } from './recurringTasks';
 
 type DeadlineRisk = NonNullable<Task['deadlineRisk']>;
 type FocusReason = 'dueToday' | 'overdue' | 'pinned' | 'tomorrow' | 'upcoming';
@@ -99,7 +100,10 @@ export function compareTasksByDueDate(a: Task, b: Task): number {
   return a.title.localeCompare(b.title);
 }
 
-export function getDaysUntilTaskDue(task: Pick<Task, 'dueDate'>, todayISO: string = getTodayISO()): number {
+export function getDaysUntilTaskDue(task: Pick<Task, 'dueDate' | 'repeatDays'>, todayISO: string = getTodayISO()): number {
+  if (Array.isArray(task.repeatDays) && task.repeatDays.length > 0) {
+    return 0; // Recurring tasks that make it into the focus list are assumed to occur today
+  }
   return diffDays(todayISO, task.dueDate);
 }
 
@@ -108,7 +112,16 @@ export function selectTodaysFocusTask(
   pinnedTaskIds: string[],
   todayISO: string = getTodayISO()
 ): { task: Task; reason: FocusReason; daysUntilDue: number } | null {
-  const pending = tasks.filter((task) => !task.isDone);
+  const pending = tasks.filter((task) => {
+    if (task.isDone || task.excludeFromFocus) return false;
+    // For recurring tasks, only consider them if they occur today
+    if (Array.isArray(task.repeatDays) && task.repeatDays.length > 0) {
+      // Use taskOccursOn to check if it's active today. We also need to import it, but we can just check the days manually if we can't import easily.
+      // Wait, we need to import taskOccursOn. Let's just assume we'll fix the import.
+      return taskOccursOn(task, todayISO);
+    }
+    return true;
+  });
   if (pending.length === 0) return null;
 
   const pinnedSet = new Set(pinnedTaskIds);

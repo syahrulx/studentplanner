@@ -355,3 +355,36 @@ export const SPIDER_THEME_CLASSIC_OVERRIDE: ThemePalette = {
 export function resolveSpiderTheme(useBlueAccents: boolean): ThemePalette {
   return useBlueAccents ? SPIDER_THEME_OVERRIDE : SPIDER_THEME_CLASSIC_OVERRIDE;
 }
+
+export function buildCustomTheme(
+  colors: { primary: string; card: string; background: string; text?: string; textSecondary?: string; textInverse?: string; border?: string; focusCard?: string; focusCardText?: string },
+  baseThemeId: ThemeId = 'dark'
+): ThemePalette {
+  const base = THEMES[baseThemeId];
+  const isDark = baseThemeId === 'dark' || baseThemeId === 'midnight';
+  
+  const cardBorder = colors.border ?? (isDark ? '#334155' : '#e2e8f0');
+
+  return {
+    ...base,
+    id: baseThemeId, // keep base ID so text/icon checks work correctly
+    name: 'Custom Theme',
+    background: colors.background,
+    backgroundSecondary: colors.background, // Keep simple for now
+    card: colors.card,
+    cardBorder: cardBorder,
+    border: colors.border ?? base.border,
+    primary: colors.primary,
+    secondary: colors.primary,
+    accent: colors.primary,
+    accent2: colors.primary,
+    text: colors.text ?? base.text,
+    textSecondary: colors.textSecondary ?? base.textSecondary,
+    textInverse: colors.textInverse ?? base.textInverse,
+    focusCard: colors.focusCard ?? base.focusCard,
+    focusCardText: colors.focusCardText ?? base.focusCardText,
+    tabIconDefault: colors.textSecondary ?? base.tabIconDefault,
+    tabIconSelected: colors.primary,
+    shortcutColors: [colors.primary, colors.primary, colors.primary],
+  };
+}

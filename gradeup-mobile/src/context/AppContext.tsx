@@ -26,12 +26,12 @@ import {
   setTheme as persistTheme,
   getThemePack,
   setThemePack as persistThemePack,
+  getCustomThemeColors,
+  setCustomThemeColors as persistCustomThemeColors,
   getSpiderBlueAccents,
   setSpiderBlueAccents as persistSpiderBlueAccents,
   getThemePreviewExpiry,
   setThemePreviewExpiry as persistThemePreviewExpiry,
-  getHasUsedThemeTrial,
-  setHasUsedThemeTrial as persistHasUsedThemeTrial,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
   setCompletedStudyKeys as persistCompletedStudies,
@@ -55,6 +55,7 @@ import {
   type AppLanguage,
   type AppLoghat,
   type ThemePackId,
+  type CustomThemeColors,
   type PlannerViewMode,
   type WeekStartsOn,
 } from '../storage';
@@ -90,7 +91,6 @@ import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
-import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -132,7 +132,6 @@ type AppState = {
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
   renameCourse: (subjectId: string, newName: string) => void;
-  updateCourse: (subjectId: string, updates: Partial<Course>) => void;
   deleteCourse: (subjectId: string) => void;
   tasks: Task[];
   tasksVersion: number;
@@ -155,10 +154,10 @@ type AppState = {
   setTheme: (theme: ThemeId) => void;
   themePack: ThemePackId;
   setThemePack: (pack: ThemePackId) => void;
+  customThemeColors: CustomThemeColors | null;
+  setCustomThemeColors: (colors: CustomThemeColors | null) => void;
   themePreviewExpiry: number | null;
   setThemePreviewExpiry: (timestamp: number | null) => void;
-  hasUsedThemeTrial: boolean;
-  setHasUsedThemeTrial: (used: boolean) => void;
   spiderBlueAccents: boolean;
   setSpiderBlueAccents: (enabled: boolean) => void;
   language: AppLanguage;
@@ -317,8 +316,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
+  const [customThemeColors, setCustomThemeColorsState] = useState<CustomThemeColors | null>(null);
   const [themePreviewExpiry, setThemePreviewExpiryState] = useState<number | null>(null);
-  const [hasUsedThemeTrial, setHasUsedThemeTrialState] = useState<boolean>(false);
   const [spiderBlueAccents, setSpiderBlueAccentsState] = useState(true);
   const [language, setLanguageState] = useState<AppLanguage>('en');
   const [loghat, setLoghatState] = useState<AppLoghat | null>(null);
@@ -357,6 +356,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     userName: user.name,
     theme,
     themePack,
+    customThemeColors,
   });
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
@@ -577,8 +577,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     getTheme().then(setThemeState);
-    Promise.all([getThemePack(), getThemePreviewExpiry(), getHasUsedThemeTrial()]).then(([pack, expiry, usedTrial]) => {
-      setHasUsedThemeTrialState(usedTrial);
+    Promise.all([getThemePack(), getThemePreviewExpiry(), getCustomThemeColors()]).then(([pack, expiry, customColors]) => {
       // Check if preview expired
       if (pack !== 'none' && expiry !== null && Date.now() > expiry) {
         setThemePackState('none');
@@ -587,6 +586,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         persistThemePreviewExpiry(null);
       } else {
         setThemePackState(pack);
+        setThemePreviewExpiryState(expiry);
+        setCustomThemeColorsState(customColors);
         setThemePreviewExpiryState(expiry);
       }
     });
@@ -702,10 +703,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
-        if (profile?.hasUsedThemeTrial !== undefined && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
-          setHasUsedThemeTrialState(profile.hasUsedThemeTrial);
-          persistHasUsedThemeTrial(profile.hasUsedThemeTrial).catch(() => {});
-        }
         const uniConn = r8.status === 'fulfilled' ? r8.value : null;
 
         let calendar: AcademicCalendar | null | undefined = undefined;
@@ -824,7 +821,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 mystudentEmail: (profile.mystudentEmail ?? '').trim(),
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
-                subscriptionPlan: profile.subscriptionPlan ?? 'free', // Will be overridden by RevenueCat below
+                subscriptionPlan: profile.subscriptionPlan ?? 'free',
               };
             }
           } else if ((authFallbackName || '').trim()) {
@@ -943,20 +940,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // ── Initialize RevenueCat & sync subscription plan from the store ──
-        try {
-          await initPurchases(uid);
-          const rcPlan = await getCurrentPlan();
-          // RevenueCat is the source of truth — override the DB value.
-          // This handles cases where the webhook hasn't fired yet (e.g. offline).
-          if (rcPlan !== 'free') {
-            setUserState((prev) => ({ ...prev, subscriptionPlan: rcPlan }));
-          }
-        } catch (e) {
-          if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
-          // Non-fatal: the user just keeps whatever plan is in the DB.
-        }
-
         // Check for new Google Classroom tasks in the background (no silent import)
         try {
           const { checkForNewTasks } = require('../lib/googleClassroom');
@@ -1039,7 +1022,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setAcademicCalendar(null);
           setTimetable([]);
           cancelAllAttendanceNotifications().catch(() => {});
-          logOutPurchases().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }
@@ -1058,22 +1040,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       removePushTokenListener();
     };
   }, []);
-
-  // RevenueCat: listen for real-time subscription changes (renewal, expiration, upgrade)
-  // and sync it to both local App State and Supabase profile database.
-  useEffect(() => {
-    const unsubscribe = onCustomerInfoUpdate((newPlan) => {
-      setUser((prev) => {
-        if (prev.subscriptionPlan === newPlan) return prev;
-        return { ...prev, subscriptionPlan: newPlan };
-      });
-      // Client-side fallback: sync the new plan state directly to Supabase
-      void updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
-        if (__DEV__) console.warn('[Rencana] Client-side subscription sync to DB failed:', err);
-      });
-    });
-    return unsubscribe;
-  }, [setUser, updateProfile]);
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack };
 
@@ -1138,23 +1104,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setThemePack = useCallback((pack: ThemePackId) => {
     setThemePackState(pack);
-    persistThemePack(pack).catch(() => {});
+    void persistThemePack(pack);
+  }, []);
+
+  const setCustomThemeColors = useCallback((colors: CustomThemeColors | null) => {
+    setCustomThemeColorsState(colors);
+    void persistCustomThemeColors(colors);
   }, []);
 
   const setThemePreviewExpiry = useCallback((timestamp: number | null) => {
     setThemePreviewExpiryState(timestamp);
     void persistThemePreviewExpiry(timestamp);
-  }, []);
-
-  const setHasUsedThemeTrial = useCallback((used: boolean) => {
-    setHasUsedThemeTrialState(used);
-    persistHasUsedThemeTrial(used).catch(() => {});
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id;
-      if (uid) {
-        profileDb.updateProfile(uid, { hasUsedThemeTrial: used }).catch(() => {});
-      }
-    });
   }, []);
 
   const setSpiderBlueAccents = useCallback((enabled: boolean) => {
@@ -1334,92 +1294,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
-    console.log('[AppContext] ==========================================');
-    console.log('[AppContext] addTask() called with task:', task);
-    console.log('[AppContext] options:', options);
-
-    console.log('[AppContext] Updating local tasks state (prepending task)...');
     setTasks((prev) => [task, ...prev]);
-
-    console.log('[AppContext] Scheduling task notification...');
-    scheduleTaskNotifications(task)
-      .then(() => console.log(`[AppContext] Notification successfully scheduled for task: ${task.id}`))
-      .catch((err) => console.error(`[AppContext] Failed to schedule notification for task: ${task.id}`, err));
-
-    if (options?.skipRemote) {
-      console.log('[AppContext] skipRemote is true. Exiting without Supabase sync.');
-      console.log('[AppContext] ==========================================');
-      return;
-    }
+    scheduleTaskNotifications(task).catch(() => {});
+    if (options?.skipRemote) return;
 
     // Persist to Supabase. If it fails (no session, RLS denial, network drop,
     // schema mismatch, etc.) we MUST surface that — historically we just
     // console.warn'd, which meant the task lived in memory only and quietly
     // vanished on the next app launch.
     (async () => {
-      console.log('[AppContext] Starting async remote sync for task:', task.id);
       try {
-        console.log('[AppContext] Fetching Supabase session...');
         const { data: { session } } = await supabase.auth.getSession();
         const uid = session?.user?.id;
-        console.log('[AppContext] Resolved Supabase UID:', uid);
-
         if (!uid) {
-          console.error('[AppContext] ❌ Sync failed: No active Supabase user session!');
-          console.log('[AppContext] Rolling back local tasks state...');
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-          console.log('[AppContext] Cancelling scheduled notifications...');
           cancelTaskNotifications(task.id).catch(() => {});
-
           Alert.alert(
             'Task not saved',
             'You appear to be signed out. Please sign in again and re-add the task so it is saved to your account.',
           );
-          console.log('[AppContext] ==========================================');
           return;
         }
-
-        console.log('[AppContext] Invoking taskDb.upsertTask()...');
         const { error } = await taskDb.upsertTask(uid, task);
         if (error) {
-          console.error('[AppContext] ❌ Supabase upsertTask failed with error:', error.message);
-          console.log('[AppContext] Rolling back local tasks state...');
+          console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-          console.log('[AppContext] Cancelling scheduled notifications...');
           cancelTaskNotifications(task.id).catch(() => {});
-
           Alert.alert(
             'Task not saved',
             `We could not save this task to your account. Please try again.\n\n(${error.message})`,
           );
-          console.log('[AppContext] ==========================================');
           return;
         }
-
-        console.log('[AppContext] ✅ Task successfully synced to Supabase database!');
-
-        console.log('[AppContext] Syncing new task to community streams...');
-        syncNewTaskToStreams(task.id, uid)
-          .then(() => console.log('[AppContext] ✅ Task successfully shared to streams'))
-          .catch((err) => {
-            console.warn('[AppContext] ⚠️ Failed to auto-sync task to streams:', err);
-          });
+        syncNewTaskToStreams(task.id, uid).catch((err) => {
+          console.warn('[Rencana] Failed to auto-sync task to streams:', err);
+        });
       } catch (e) {
-        console.error('[AppContext] ❌ Unexpected exception in remote task sync:', e);
-        console.log('[AppContext] Rolling back local tasks state...');
+        console.warn('[Rencana] Unexpected error while saving task:', e);
         setTasks((prev) => prev.filter((t) => t.id !== task.id));
-
-        console.log('[AppContext] Cancelling scheduled notifications...');
         cancelTaskNotifications(task.id).catch(() => {});
-
         Alert.alert(
           'Task not saved',
-          'An unexpected error occurred while saving this task. Please try again.',
+          'Something went wrong while saving your task. Please check your connection and try again.',
         );
-      } finally {
-        console.log('[AppContext] ==========================================');
       }
     })();
   }, []);
@@ -1776,33 +1693,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await coursesDb.updateCourse(uid, courseToSync);
       } catch (err) {
         console.warn('[Rencana] Failed to sync renamed course to Supabase:', err);
-      }
-    })();
-  }, []);
-
-  const updateCourse = useCallback((subjectId: string, updates: Partial<Course>) => {
-    let updated: Course | undefined;
-    setCourses((prev) => {
-      const next = prev.map((c) => {
-        if (c.id === subjectId) {
-          updated = { ...c, ...updates };
-          return updated;
-        }
-        return c;
-      });
-      persistCourses(next);
-      return next;
-    });
-    if (!updated) return;
-    const courseToSync = updated;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-      if (!uid) return;
-      try {
-        await coursesDb.updateCourse(uid, courseToSync);
-      } catch (err) {
-        console.warn('[Rencana] Failed to sync updated course to Supabase:', err);
       }
     })();
   }, []);
@@ -2193,7 +2083,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCourses,
     addCourse,
     renameCourse,
-    updateCourse,
     deleteCourse,
     tasks,
     tasksVersion,
@@ -2215,10 +2104,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTheme,
     themePack,
     setThemePack,
+    customThemeColors,
+    setCustomThemeColors,
     themePreviewExpiry,
     setThemePreviewExpiry,
-    hasUsedThemeTrial,
-    setHasUsedThemeTrial,
     spiderBlueAccents,
     setSpiderBlueAccents,
     language,

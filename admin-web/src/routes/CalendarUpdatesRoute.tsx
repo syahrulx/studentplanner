@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   extractCalendarFromUrl,
+  extractCalendarFromPdf,
   deleteUniversityCalendarOffer,
   insertUniversityCalendarOffers,
   listUniversities,
@@ -98,6 +99,11 @@ export function CalendarUpdatesRoute() {
   >([]);
   const [extractCandidateIdx, setExtractCandidateIdx] = useState(0);
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
+
+  // ── PDF extract state ──
+  const [pdfExtracting, setPdfExtracting] = useState(false);
+  const [pdfExtractErr, setPdfExtractErr] = useState('');
+  const [pdfExtractOk, setPdfExtractOk] = useState('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
 
@@ -655,17 +661,122 @@ export function CalendarUpdatesRoute() {
               <TextInput value={officialUrl} onChange={(e) => setOfficialUrl(e.target.value)} placeholder="https://…" />
             </Label>
 
-            <Label className="block">
-              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                Reference PDF (optional)
-              </span>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="application/pdf,.pdf"
-                className="block w-full text-sm font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:text-slate-200"
-              />
-            </Label>
+            {/* ─── PDF Upload + AI Extract ─── */}
+            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-lg">📄</span>
+                <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                  Upload PDF & Auto-Extract
+                </span>
+              </div>
+              <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Upload the university's academic calendar PDF. The system will extract text and use AI to auto-fill semester dates, teaching weeks, and period timelines.
+              </p>
+              {pdfExtractErr ? (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
+                  {pdfExtractErr}
+                </div>
+              ) : null}
+              {pdfExtractOk ? (
+                <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
+                  {pdfExtractOk}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="block flex-1 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:text-slate-200"
+                />
+                <Button
+                  type="button"
+                  disabled={pdfExtracting}
+                  onClick={async () => {
+                    setPdfExtractErr('');
+                    setPdfExtractOk('');
+                    const file = fileRef.current?.files?.[0];
+                    if (!file || file.size === 0) {
+                      setPdfExtractErr('Please choose a PDF file first.');
+                      return;
+                    }
+                    if (!file.name.toLowerCase().endsWith('.pdf')) {
+                      setPdfExtractErr('Only PDF files are supported.');
+                      return;
+                    }
+                    if (file.size > 10 * 1024 * 1024) {
+                      setPdfExtractErr('PDF is too large (max 10 MB).');
+                      return;
+                    }
+                    setPdfExtracting(true);
+                    try {
+                      // Read file as base64
+                      const arrayBuf = await file.arrayBuffer();
+                      const bytes = new Uint8Array(arrayBuf);
+                      let binary = '';
+                      for (let i = 0; i < bytes.length; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                      }
+                      const base64 = btoa(binary);
+
+                      const res = await extractCalendarFromPdf(base64, file.name);
+                      const d = res.extracted;
+                      const candidates = Array.isArray((d as any)?.candidates) ? ((d as any).candidates as any[]) : [];
+                      if (candidates.length > 0) {
+                        setExtractCandidates(candidates as any);
+                        setExtractCandidateIdx(0);
+                        applyExtractedCandidate(candidates[0] as any);
+                        const lvl = String((candidates[0] as any)?.program_level ?? '').trim();
+                        setPdfExtractOk(
+                          `✅ Extracted ${candidates.length} program calendar(s) from PDF. Auto-filled: ${lvl ? `${lvl} — ` : ''}${String((candidates[0] as any)?.semester_label ?? 'Calendar data')}. Review then publish.`
+                        );
+                      } else {
+                        const hasLegacy =
+                          Boolean((d as any)?.semester_label) ||
+                          Boolean((d as any)?.start_date) ||
+                          Boolean((d as any)?.end_date) ||
+                          Boolean((d as any)?.total_weeks) ||
+                          Array.isArray((d as any)?.periods);
+                        if (hasLegacy) {
+                          const one = {
+                            program_level: String((d as any)?.program_level ?? 'General'),
+                            semester_label: (d as any)?.semester_label,
+                            start_date: (d as any)?.start_date,
+                            end_date: (d as any)?.end_date,
+                            total_weeks: (d as any)?.total_weeks,
+                            break_start_date: (d as any)?.break_start_date ?? null,
+                            break_end_date: (d as any)?.break_end_date ?? null,
+                            periods: Array.isArray((d as any)?.periods) ? (d as any)?.periods : [],
+                          };
+                          setExtractCandidates([one]);
+                          setExtractCandidateIdx(0);
+                          applyExtractedCandidate(one as any);
+                          setPdfExtractOk(
+                            `✅ Extracted from PDF: ${String(one.semester_label ?? 'Calendar data')}. Review the auto-filled fields below, then publish.`
+                          );
+                        } else {
+                          setPdfExtractErr('AI extraction succeeded but returned no calendar data. Enter details manually.');
+                        }
+                      }
+                    } catch (e) {
+                      setPdfExtractErr(e instanceof Error ? e.message : 'PDF extraction failed. Enter details manually.');
+                    } finally {
+                      setPdfExtracting(false);
+                    }
+                  }}
+                  className="shrink-0 whitespace-nowrap"
+                >
+                  {pdfExtracting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Extracting from PDF…
+                    </span>
+                  ) : (
+                    '📄 Extract & Auto-Fill from PDF'
+                  )}
+                </Button>
+              </div>
+            </div>
 
             <Label className="block">
               <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">

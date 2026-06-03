@@ -1234,6 +1234,20 @@ export async function extractCalendarFromUrl(extractUrl: string): Promise<{
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; source_url: string; text_preview: string }>(data, error);
 }
 
+export async function extractCalendarFromPdf(pdfBase64: string, fileName?: string): Promise<{
+  extracted: ExtractedCalendarData;
+  text_preview: string;
+}> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'extract_calendar_from_pdf', pdfBase64, fileName: fileName ?? 'upload.pdf' },
+    headers,
+  );
+  return unwrapFunctionData<{ extracted: ExtractedCalendarData; text_preview: string }>(data, error);
+}
+
+
 // ─── Community Posts (Events/Services/Memos) ──────────────────────────────
 
 export type AdminCommunityPostRow = {
@@ -1947,52 +1961,4 @@ export async function deleteUserReport(id: string) {
     headers,
   );
   return unwrapFunctionData<{ ok: boolean }>(data, error);
-}
-
-// ─── What's New Prompts ──────────────────────────────────────────────────
-
-export type WhatsNewPromptRow = {
-  id: string;
-  is_active: boolean;
-  version_name: string;
-  title: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-};
-
-export async function listWhatsNewPrompts(): Promise<WhatsNewPromptRow[]> {
-  const { data, error } = await supabase
-    .from('whats_new_prompts')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw toError(error);
-  return data as WhatsNewPromptRow[];
-}
-
-export async function upsertWhatsNewPrompt(row: Partial<WhatsNewPromptRow> & { version_name: string; title: string; content: string }) {
-  // If we are setting this one as active, we should deactivate others first.
-  if (row.is_active) {
-    const { error: deactivateErr } = await supabase
-      .from('whats_new_prompts')
-      .update({ is_active: false })
-      .neq('id', row.id || '00000000-0000-0000-0000-000000000000');
-    if (deactivateErr) throw toError(deactivateErr);
-  }
-
-  const { data, error } = await supabase
-    .from('whats_new_prompts')
-    .upsert(row)
-    .select()
-    .single();
-  if (error) throw toError(error);
-  return data as WhatsNewPromptRow;
-}
-
-export async function deleteWhatsNewPrompt(id: string) {
-  const { error } = await supabase
-    .from('whats_new_prompts')
-    .delete()
-    .eq('id', id);
-  if (error) throw toError(error);
 }

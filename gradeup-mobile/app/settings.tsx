@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
@@ -111,86 +110,16 @@ export default function Settings() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
-  const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
-
-  const isPremium = user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro';
-
-  const formatTimeHMDisplay = (hhmm: string): string => {
-    const [hStr, mStr] = hhmm.split(':');
-    const h = parseInt(hStr, 10) || 0;
-    const m = parseInt(mStr, 10) || 0;
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayH = h % 12 === 0 ? 12 : h % 12;
-    const displayM = String(m).padStart(2, '0');
-    return `${displayH}:${displayM} ${ampm}`;
-  };
-
-  const timeStringToDate = (timeStr: string): Date => {
-    const [hStr, mStr] = (timeStr || '09:00').split(':');
-    const d = new Date();
-    d.setHours(parseInt(hStr, 10) || 9, parseInt(mStr, 10) || 0, 0, 0);
-    return d;
-  };
-
-  const dateToTimeString = (date: Date): string => {
-    const h = String(date.getHours()).padStart(2, '0');
-    const m = String(date.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-  };
-
-  const handleChooseReminderTime = () => {
-    if (!isPremium) {
-      Alert.alert(
-        'Premium Feature',
-        'Custom Task Reminder Time is exclusively available for Plus and Pro users.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
-        ]
-      );
-      return;
-    }
-    setShowReminderTimePicker(true);
-  };
-
-  const [customDaysModalOpen, setCustomDaysModalOpen] = useState(false);
-  const [customDaysValue, setCustomDaysValue] = useState('');
-
-  const handleCustomLeadTime = () => {
-    if (!isPremium) {
-      Alert.alert(
-        'Plus / Pro Feature',
-        'Custom lead time warnings are exclusively available for Plus and Pro users.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
-        ]
-      );
-      return;
-    }
-    setCustomDaysModalOpen(true);
-  };
 
   useEffect(() => {
-    getNotificationPrefs().then((p) => {
-      const hasInvalidLeadDays = p.taskLeadDays.some((d) => d > 0);
-      const hasCustomTime = p.taskReminderTime && p.taskReminderTime !== '09:00';
-      if (!isPremium && (hasInvalidLeadDays || hasCustomTime)) {
-        const restricted = { ...p, taskLeadDays: [0], taskReminderTime: '09:00' };
-        setNotifPrefs(restricted);
-        setNotificationPrefs(restricted).catch(() => {});
-        rescheduleAllTaskNotifications(tasks).catch(() => {});
-      } else {
-        setNotifPrefs(p);
-      }
-    });
+    getNotificationPrefs().then(setNotifPrefs);
     // Fetch user email for the Android Classroom notice
     if (Platform.OS === 'android') {
       supabase.auth.getUser().then(({ data }) => {
         if (data?.user?.email) setUserEmail(data.user.email);
       });
     }
-  }, [isPremium, tasks]);
+  }, []);
 
   const updateNotifPref = useCallback(
     (patch: Partial<NotificationPrefs>) => {
@@ -202,8 +131,7 @@ export default function Settings() {
         if (
           'tasksEnabled' in patch ||
           'taskLeadDays' in patch ||
-          'taskOverdueEnabled' in patch ||
-          'taskReminderTime' in patch
+          'taskOverdueEnabled' in patch
         ) {
           rescheduleAllTaskNotifications(tasks).catch(() => {});
         }
@@ -508,56 +436,6 @@ export default function Settings() {
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/subscription-plans' as any)}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#eab308') }]}>
-              <Feather name="zap" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Premium</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                {user.subscriptionPlan === 'pro'
-                  ? 'Active: Pro tier with highest AI limits.'
-                  : user.subscriptionPlan === 'plus'
-                    ? 'Active: Plus tier with daily study snaps.'
-                    : 'Manage plan, unlock AI limits & custom themes.'}
-              </Text>
-            </View>
-            <View
-              style={{
-                backgroundColor:
-                  user.subscriptionPlan === 'pro'
-                    ? '#eab308'
-                    : user.subscriptionPlan === 'plus'
-                      ? '#3b82f6'
-                      : theme.backgroundSecondary,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                borderRadius: 8,
-                marginRight: 8,
-                borderWidth: user.subscriptionPlan === 'free' ? 1 : 0,
-                borderColor: theme.border,
-              }}
-            >
-              <Text
-                style={{
-                  color:
-                    user.subscriptionPlan === 'pro' || user.subscriptionPlan === 'plus'
-                      ? '#fff'
-                      : theme.textSecondary,
-                  fontSize: 11,
-                  fontWeight: '800',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {user.subscriptionPlan || 'FREE'}
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-          <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setThemePickerOpen(true)}
           >
             <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>
@@ -583,6 +461,22 @@ export default function Settings() {
               <Text style={[styles.menuLabel, { color: theme.text }]}>Premium Themes</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                 Unlock premium theme packs (1-week free trial available)
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/custom-theme' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ec4899') }]}>
+              <Feather name="edit-3" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Custom Theme (Pro)</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Build your own aesthetic with custom colors
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -649,73 +543,37 @@ export default function Settings() {
                 <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
                   <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Before due date</Text>
                   <View style={styles.notifChipWrap}>
-                    {(() => {
-                      const defaultChips = [3, 1, 0];
-                      const allChips = Array.from(new Set([...defaultChips, ...notifPrefs.taskLeadDays])).sort((a, b) => b - a);
-                      return allChips.map((d) => {
-                        const active = notifPrefs.taskLeadDays.includes(d);
-                        const label = d === 0 ? 'Due day' : d === 1 ? '1 day' : `${d} days`;
-                        const isLocked = !isPremium && d > 0;
-                        return (
-                          <Pressable
-                            key={d}
-                            onPress={() => {
-                              if (isLocked) {
-                                Alert.alert(
-                                  'Plus / Pro Feature',
-                                  'Advance reminders (1 day and 3 days before) are exclusively available for Plus and Pro users. Free users are notified on the due day.',
-                                  [
-                                    { text: 'Cancel', style: 'cancel' },
-                                    { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
-                                  ]
-                                );
-                                return;
-                              }
-                              const next = active
-                                ? notifPrefs.taskLeadDays.filter((x) => x !== d)
-                                : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
-                              if (next.length > 0) updateNotifPref({ taskLeadDays: next });
-                            }}
+                    {[3, 1, 0].map((d) => {
+                      const active = notifPrefs.taskLeadDays.includes(d);
+                      const label = d === 0 ? 'Due day' : d === 1 ? '1 day' : '3 days';
+                      return (
+                        <Pressable
+                          key={d}
+                          onPress={() => {
+                            const next = active
+                              ? notifPrefs.taskLeadDays.filter((x) => x !== d)
+                              : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
+                            if (next.length > 0) updateNotifPref({ taskLeadDays: next });
+                          }}
+                          style={[
+                            styles.notifChip,
+                            {
+                              borderColor: active ? theme.primary : theme.border,
+                              backgroundColor: active ? theme.primary + '22' : theme.card,
+                            },
+                          ]}
+                        >
+                          <Text
                             style={[
-                              styles.notifChip,
-                              {
-                                borderColor: active ? theme.primary : theme.border,
-                                backgroundColor: active ? theme.primary + '22' : theme.card,
-                                opacity: isLocked ? 0.65 : 1,
-                              },
+                              styles.notifChipText,
+                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
                             ]}
                           >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <Text
-                                style={[
-                                  styles.notifChipText,
-                                  { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
-                                ]}
-                              >
-                                {label}
-                              </Text>
-                              {isLocked && <Feather name="lock" size={12} color={theme.textSecondary} />}
-                            </View>
-                          </Pressable>
-                        );
-                      });
-                    })()}
-                    <Pressable
-                      onPress={handleCustomLeadTime}
-                      style={[
-                        styles.notifChip,
-                        {
-                          borderColor: theme.border,
-                          backgroundColor: theme.card,
-                          borderStyle: 'dashed',
-                          borderWidth: 1.5,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.notifChipText, { color: theme.textSecondary, fontWeight: '600' }]}>
-                        + Custom
-                      </Text>
-                    </Pressable>
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
                   <View
                     style={{
@@ -743,42 +601,6 @@ export default function Settings() {
                       ios_backgroundColor={switchTrackOff}
                     />
                   </View>
-
-                  <View
-                    style={{
-                      height: StyleSheet.hairlineWidth,
-                      backgroundColor: theme.border,
-                      marginTop: 14,
-                      marginBottom: 14,
-                    }}
-                  />
-                  <Pressable
-                    style={({ pressed }) => [
-                      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-                      pressed && { opacity: 0.72 }
-                    ]}
-                    onPress={handleChooseReminderTime}
-                  >
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.menuLabel, { color: theme.text }]}>Reminder Time</Text>
-                        {!isPremium && (
-                          <View style={{ backgroundColor: theme.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>PLUS / PRO</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[styles.notifRowFootnote, { color: theme.textSecondary, marginTop: 2 }]}>
-                        Choose the exact time of day you want to receive your task reminders
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: theme.primary }}>
-                        {formatTimeHMDisplay(notifPrefs.taskReminderTime || '09:00')}
-                      </Text>
-                      <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-                    </View>
-                  </Pressable>
                 </View>
               ) : null}
 
@@ -1279,109 +1101,6 @@ export default function Settings() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={customDaysModalOpen} animationType="fade" transparent onRequestClose={() => setCustomDaysModalOpen(false)}>
-        <KeyboardAvoidingView style={styles.syncBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setCustomDaysModalOpen(false)} />
-          <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
-            <Text style={[styles.syncTitle, { color: theme.text }]}>Custom Lead Time</Text>
-            <Text style={[styles.syncDesc, { color: theme.textSecondary, marginBottom: 14 }]}>
-              Enter how many days before the task deadline you want to receive your notification reminder:
-            </Text>
-
-            <TextInput
-              value={customDaysValue}
-              onChangeText={(val) => setCustomDaysValue(val.replace(/[^0-9]/g, ''))}
-              placeholder="e.g. 5"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="number-pad"
-              maxLength={2}
-              style={[
-                styles.syncInput,
-                { color: theme.text, borderColor: theme.border, backgroundColor: theme.background, textAlign: 'center', fontSize: 24, fontWeight: 'bold', paddingVertical: 12 },
-              ]}
-              autoFocus
-            />
-
-            <View style={styles.syncActions}>
-              <Pressable
-                style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
-                onPress={() => {
-                  setCustomDaysModalOpen(false);
-                  setCustomDaysValue('');
-                }}
-              >
-                <Text style={{ color: theme.text, fontWeight: '600' }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.syncBtnPrimary, { backgroundColor: theme.primary }]}
-                onPress={() => {
-                  const days = parseInt(customDaysValue, 10);
-                  if (!isNaN(days) && days >= 0 && days <= 30) {
-                    const currentList = notifPrefs?.taskLeadDays || [3, 1, 0];
-                    if (currentList.includes(days)) {
-                      Alert.alert('Already added', `A reminder for ${days === 0 ? 'due day' : days === 1 ? '1 day' : `${days} days`} is already active.`);
-                      return;
-                    }
-                    const next = [...currentList, days].sort((a, b) => b - a);
-                    updateNotifPref({ taskLeadDays: next });
-                    setCustomDaysModalOpen(false);
-                    setCustomDaysValue('');
-                  } else {
-                    Alert.alert('Invalid number', 'Please enter a number of days between 0 and 30.');
-                  }
-                }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {Platform.OS === 'ios' && showReminderTimePicker && (
-        <Modal visible={showReminderTimePicker} transparent animationType="fade" onRequestClose={() => setShowReminderTimePicker(false)}>
-          <Pressable style={styles.modalBg} onPress={() => setShowReminderTimePicker(false)}>
-            <View style={[styles.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
-              <View style={styles.iosTimePickerWrap}>
-                <DateTimePicker
-                  value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
-                  mode="time"
-                  display="spinner"
-                  is24Hour
-                  textColor={theme.text}
-                  style={styles.iosTimePicker}
-                  onChange={(_, date) => {
-                    if (date) {
-                      const newTime = dateToTimeString(date);
-                      updateNotifPref({ taskReminderTime: newTime });
-                    }
-                  }}
-                />
-              </View>
-              <Pressable style={[styles.timeDoneBtn, { backgroundColor: theme.primary }]} onPress={() => setShowReminderTimePicker(false)}>
-                <Text style={{ color: theme.textInverse, fontWeight: '600', fontSize: 17 }}>Done</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Modal>
-      )}
-
-      {Platform.OS === 'android' && showReminderTimePicker && (
-        <DateTimePicker
-          value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
-          mode="time"
-          display="default"
-          is24Hour
-          onChange={(event, date) => {
-            setShowReminderTimePicker(false);
-            if (event.type === 'set' && date) {
-              const newTime = dateToTimeString(date);
-              updateNotifPref({ taskReminderTime: newTime });
-            }
-          }}
-        />
-      )}
-
       <Modal visible={themePickerOpen} animationType="fade" transparent onRequestClose={() => setThemePickerOpen(false)}>
         <KeyboardAvoidingView style={styles.syncBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setThemePickerOpen(false)} />
@@ -1580,35 +1299,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 12,
-  },
-  modalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  timeSheet: {
-    marginHorizontal: 16,
-    borderRadius: 14,
-    padding: 16,
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 400,
-    marginBottom: 40,
-  },
-  iosTimePickerWrap: {
-    height: 216,
-    width: '100%',
-    overflow: 'hidden',
-  },
-  iosTimePicker: {
-    height: 216,
-    width: '100%',
-  },
-  timeDoneBtn: {
-    marginTop: 12,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
   },
 });
 

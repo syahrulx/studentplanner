@@ -97,11 +97,26 @@ async function checkRateLimit(
 // Flashcard prompt
 // ---------------------------------------------------------------------------
 
-function buildFlashcardPrompt(content: string, count: number): { system: string; user: string } {
+function buildFlashcardPrompt(content: string, count: number, chunkIndex?: number, totalChunks?: number): { system: string; user: string } {
+  const chunkNote = (totalChunks && totalChunks > 1)
+    ? `\nThis is section ${(chunkIndex ?? 0) + 1} of ${totalChunks}. Generate cards ONLY from this section's content — do not repeat concepts from other sections.`
+    : '';
+
   return {
     system: `You are an expert university-level study assistant creating flashcards for exam preparation.
 
-Generate exactly ${count} flashcards from the provided content.
+Generate exactly ${count} flashcards from the provided content.${chunkNote}
+
+CRITICAL — NO DUPLICATES:
+- Every card MUST test a UNIQUE concept. Never create two cards about the same idea.
+- If a term/concept appears multiple times in the text, make only ONE card for it.
+- Vary your question styles: definitions, comparisons, fill-in-the-blank, "what is", "give an example", "true or false".
+
+COMPLETE COVERAGE:
+- Extract EVERY key term, definition, formula, and concept from the content.
+- Do NOT skip vocabulary lists, tables, or example sentences.
+- For language notes: each word/phrase gets its own card (front = target language, back = meaning/translation).
+- For multilingual content: detect the primary languages and keep the original terms on the front.
 
 Rules:
 - Target university/college students — assume the reader is studying for exams
@@ -117,10 +132,13 @@ Rules:
 - Skip trivial facts (page numbers, author bios, table of contents)
 
 Good example:
-{"front":"Ethics vs morals?","back":"Ethics: society’s rules. Morals: your own."}
+{"front":"Ethics vs morals?","back":"Ethics: society's rules. Morals: your own."}
 
 Another good example (single sentence):
 {"front":"What is a smart device?","back":"A device that senses, processes data, and can act or adapt."}
+
+Language example:
+{"front":"你好 (nǐ hǎo)","back":"Hello / Hi"}
 
 Bad example (too vague):
 {"front":"What is the introduction about?","back":"It introduces the topic."}
@@ -665,17 +683,70 @@ async function extractPdfText(
 }
 
 // ---------------------------------------------------------------------------
-// Deduplication
+// Deduplication (fuzzy — catches near-duplicate fronts)
 // ---------------------------------------------------------------------------
 
+/** Normalize a string for comparison: lowercase, remove punctuation, collapse whitespace. */
+function normKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Extract a set of significant words (skip tiny stop words). */
+function wordSet(s: string): Set<string> {
+  const stops = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'of', 'in', 'to', 'and', 'or', 'for', 'it', 'on', 'at', 'by', 'do', 'be']);
+  return new Set(
+    normKey(s).split(' ').filter((w) => w.length > 1 && !stops.has(w)),
+  );
+}
+
+/** Jaccard-style word overlap ratio (0-1). */
+function wordOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const w of a) if (b.has(w)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
 function deduplicateCards(cards: GeneratedCard[]): GeneratedCard[] {
-  const seen = new Set<string>();
-  return cards.filter((card) => {
-    const key = card.front.toLowerCase().trim();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const kept: GeneratedCard[] = [];
+  const keptFrontKeys: string[] = [];
+  const keptFrontWords: Set<string>[] = [];
+  const keptBackKeys: string[] = [];
+
+  for (const card of cards) {
+    const fKey = normKey(card.front);
+    const bKey = normKey(card.back);
+    if (!fKey) continue;
+
+    // 1. Exact front match
+    if (keptFrontKeys.includes(fKey)) continue;
+
+    // 2. Fuzzy front match (>70% word overlap)
+    const fWords = wordSet(card.front);
+    let isDup = false;
+    for (let i = 0; i < keptFrontWords.length; i++) {
+      if (wordOverlap(fWords, keptFrontWords[i]) > 0.70) {
+        isDup = true;
+        break;
+      }
+    }
+    if (isDup) continue;
+
+    // 3. Exact back match (same answer = likely same concept)
+    if (bKey && keptBackKeys.includes(bKey)) continue;
+
+    kept.push(card);
+    keptFrontKeys.push(fKey);
+    keptFrontWords.push(fWords);
+    keptBackKeys.push(bKey);
+  }
+
+  return kept;
 }
 
 // ---------------------------------------------------------------------------
@@ -837,37 +908,70 @@ Deno.serve(async (req) => {
       return errorJson('Content is too short for flashcard generation.', 'BAD_REQUEST');
     }
 
-    // Cap content
-    const MAX_CONTENT = 12_000;
+    // ── Content chunking ──
+    // Split large content into chunks so the AI can cover the whole PDF.
+    const MAX_CONTENT = 32_000; // raised from 12K to capture more detail
     textContent = textContent.slice(0, MAX_CONTENT);
+
+    const CHUNK_SIZE = 8_000;    // chars per chunk (fits comfortably in context)
+    const CHUNK_OVERLAP = 400;   // overlap to avoid splitting mid-concept
+
+    function splitIntoChunks(text: string, size: number, overlap: number): string[] {
+      if (text.length <= size) return [text];
+      const chunks: string[] = [];
+      let start = 0;
+      while (start < text.length) {
+        const end = Math.min(start + size, text.length);
+        chunks.push(text.slice(start, end));
+        if (end >= text.length) break;
+        // Try to break at a paragraph/line boundary within the overlap zone
+        const overlapStart = end - overlap;
+        const nlPos = text.lastIndexOf('\n', end);
+        start = (nlPos > overlapStart) ? nlPos + 1 : end - overlap;
+      }
+      return chunks;
+    }
+
+    const chunks = splitIntoChunks(textContent, CHUNK_SIZE, CHUNK_OVERLAP);
 
     const planMax =
       plan === 'pro'
-        ? 35
+        ? 50
         : plan === 'plus'
-          ? 20
-          : 10;
-    const defaultCount = plan === 'pro' ? 25 : plan === 'plus' ? 15 : 8;
+          ? 30
+          : 15;
+    const defaultCount = plan === 'pro' ? 35 : plan === 'plus' ? 20 : 12;
     const maxCards = Math.min(Math.max(1, body.count ?? defaultCount), planMax);
 
-    // ── Generate ──
+    // ── Generate (chunked) ──
     // Pro users get gpt-4o for higher quality flashcards
     const flashcardModel = plan === 'pro' ? 'gpt-4o' : 'gpt-4o-mini';
-    const prompts = buildFlashcardPrompt(textContent, maxCards);
-    const openAiTimeoutMs = source === 'pdf_storage' ? 32_000 : 45_000;
-    const result = await callOpenAI(openAiKey, prompts.system, prompts.user, 1800, 1, openAiTimeoutMs, flashcardModel);
+    const openAiTimeoutMs = source === 'pdf_storage' ? 40_000 : 45_000;
+
+    // Distribute requested card count across chunks
+    const cardsPerChunk = Math.max(5, Math.ceil((maxCards * 1.4) / chunks.length));
+
+    const chunkResults = await Promise.all(
+      chunks.map((chunk, i) => {
+        const prompts = buildFlashcardPrompt(chunk, cardsPerChunk, i, chunks.length);
+        return callOpenAI(openAiKey, prompts.system, prompts.user, 2400, 1, openAiTimeoutMs, flashcardModel);
+      }),
+    );
 
     let allCards: GeneratedCard[] = [];
     const errors: string[] = [];
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
 
-    if (result.error) {
-      errors.push(result.error);
-    } else {
-      allCards = result.cards;
+    for (const result of chunkResults) {
+      if (result.error) {
+        errors.push(result.error);
+      } else {
+        allCards.push(...result.cards);
+      }
+      totalPromptTokens += result.usage?.prompt_tokens ?? 0;
+      totalCompletionTokens += result.usage?.completion_tokens ?? 0;
     }
-
-    const totalPromptTokens = result.usage?.prompt_tokens ?? 0;
-    const totalCompletionTokens = result.usage?.completion_tokens ?? 0;
 
     // Normalize, deduplicate and cap
     allCards = deduplicateCards(sanitizeCards(allCards)).slice(0, maxCards);
@@ -899,7 +1003,7 @@ Deno.serve(async (req) => {
         prompt_tokens: totalPromptTokens,
         completion_tokens: totalCompletionTokens,
         total_tokens: totalPromptTokens + totalCompletionTokens,
-        chunks_processed: 1,
+        chunks_processed: chunks.length,
       },
       ...(errors.length > 0 ? { warnings: errors.slice(0, 3) } : {}),
     });

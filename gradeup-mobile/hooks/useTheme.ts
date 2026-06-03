@@ -1,14 +1,22 @@
 import { useApp } from '@/src/context/AppContext';
-import { THEMES, type ThemePalette, type ThemeId, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE, resolveSpiderTheme } from '@/constants/Themes';
+import { THEMES, type ThemePalette, type ThemeId, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE, resolveSpiderTheme, buildCustomTheme } from '@/constants/Themes';
 
+
+import { useMemo } from 'react';
 
 export function useTheme(): ThemePalette {
-  const { theme, themePack, spiderBlueAccents } = useApp();
-  if (themePack === 'cat') return CAT_THEME_OVERRIDE;
-  if (themePack === 'mono') return MONO_THEME_OVERRIDE;
-  if (themePack === 'spider') return resolveSpiderTheme(spiderBlueAccents);
-  if (themePack === 'purple') return PURPLE_THEME_OVERRIDE;
-  return THEMES[theme];
+  const { theme, themePack, spiderBlueAccents, customThemeColors } = useApp();
+  
+  return useMemo(() => {
+    if (themePack === 'custom' && customThemeColors) {
+      return buildCustomTheme(customThemeColors, theme);
+    }
+    if (themePack === 'cat') return CAT_THEME_OVERRIDE;
+    if (themePack === 'mono') return MONO_THEME_OVERRIDE;
+    if (themePack === 'spider') return resolveSpiderTheme(spiderBlueAccents);
+    if (themePack === 'purple') return PURPLE_THEME_OVERRIDE;
+    return THEMES[theme];
+  }, [theme, themePack, spiderBlueAccents, customThemeColors]);
 }
 
 /** Mono + Spider: neutral subject colors, planner greyscale, shared “dark minimal” UI rules. */

@@ -1136,6 +1136,192 @@ Rules:
       return json(200, { extracted: parsed, source_url: extractUrl, text_preview: previewSource.slice(0, 500) });
     }
 
+    // ── Extract calendar from uploaded PDF (base64) ──────────────────────────
+    if (action === 'extract_calendar_from_pdf') {
+      const pdfBase64 = String(payload.pdfBase64 || '').trim();
+      if (!pdfBase64 || pdfBase64.length < 100) {
+        return json(400, { error: 'Missing or empty PDF data.' });
+      }
+
+      const geminiKey = (Deno.env.get('GEMINI_API_KEY') ?? '').trim();
+      const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+      if (!openAiKey || openAiKey.length < 20) {
+        return json(400, { error: 'OPENAI_API_KEY is not set in Edge Function secrets.' });
+      }
+
+      // Decode base64 to bytes
+      let pdfBytes: Uint8Array;
+      try {
+        // Handle data URL prefix if present
+        const raw = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+        const binary = atob(raw);
+        pdfBytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          pdfBytes[i] = binary.charCodeAt(i);
+        }
+      } catch {
+        return json(400, { error: 'Invalid base64 data. Could not decode PDF.' });
+      }
+
+      // Validate PDF magic bytes
+      if (pdfBytes.length < 5 || !(pdfBytes[0] === 0x25 && pdfBytes[1] === 0x50 && pdfBytes[2] === 0x44 && pdfBytes[3] === 0x46 && pdfBytes[4] === 0x2d)) {
+        return json(400, { error: 'File does not appear to be a valid PDF (missing %PDF- header).' });
+      }
+
+      if (pdfBytes.byteLength > 10 * 1024 * 1024) {
+        return json(400, { error: 'PDF is too large (max 10 MB).' });
+      }
+
+      // Extract text from PDF
+      const nativeText = await extractPdfTextWithUnpdf(pdfBytes);
+      const geminiResult = nativeText ? { text: null as string | null } : await extractPdfTextWithGemini(pdfBytes, geminiKey);
+      const pdfText = nativeText ?? geminiResult.text ?? '';
+
+      if (pdfText.trim().length < 200) {
+        return json(400, {
+          error: `Could not extract readable text from the PDF. ${
+            geminiResult.error
+              ? `OCR fallback detail: ${geminiResult.error}`
+              : 'This file may be scanned/image-only (no selectable text).'
+          }`,
+        });
+      }
+
+      const truncatedText = pdfText.trim().slice(0, 18000);
+
+      // Call OpenAI to extract calendar data (same prompt as URL extraction)
+      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+Given the text content from a university's academic calendar PDF, extract structured semester/session information.
+
+IMPORTANT:
+Some PDFs list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
+In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+
+Return VALID JSON ONLY with this exact shape:
+{
+  "official_url_title": "string (document title or heading)",
+  "candidates": [
+    {
+      "program_level": "string (e.g. 'Bachelor', 'Master/Doctorate', 'Diploma', 'Foundation', 'Special')",
+      "semester_label": "string (e.g. 'Semester 1 2025/2026')",
+      "start_date": "YYYY-MM-DD (first day of teaching/lectures)",
+      "end_date": "YYYY-MM-DD (last day of the semester, after final exams)",
+      "total_weeks": number (total teaching weeks, typically 14-16),
+      "break_start_date": "YYYY-MM-DD or null (mid-semester break start)",
+      "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
+      "periods": [
+        {
+          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation",
+          "label": "string (e.g. 'Lectures Week 1-7')",
+          "startDate": "YYYY-MM-DD",
+          "endDate": "YYYY-MM-DD"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- If there is only ONE program level/calendar, still return a single-item candidates array.
+- Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
+- total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
+- The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
+- For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
+- If information is unclear or missing, use null for optional fields.
+- Do NOT invent or guess dates. Only extract what is explicitly stated.
+- Return JSON only. No markdown, no explanation, no code fences.`;
+
+      const userPrompt = `Extract academic calendar information from this university PDF document.\n\nPDF_TEXT:\n${truncatedText}`;
+
+      const aiController = new AbortController();
+      const aiTimeout = setTimeout(() => aiController.abort(), 30_000);
+      let aiContent = '';
+      try {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: aiController.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openAiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          return json(400, { error: `OpenAI error (${aiRes.status}): ${errText.slice(0, 300)}` });
+        }
+
+        const aiJson = await aiRes.json();
+        aiContent = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
+      } catch (aiErr: unknown) {
+        const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+        if (msg.includes('abort') || msg.includes('Abort')) {
+          return json(400, { error: 'AI extraction timed out (30s). Try a simpler PDF.' });
+        }
+        return json(400, { error: `AI request failed: ${msg}` });
+      } finally {
+        clearTimeout(aiTimeout);
+      }
+
+      // Parse AI response
+      const cleaned = aiContent
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(cleaned) as Record<string, unknown>;
+      } catch {
+        return json(400, { error: 'AI returned invalid JSON. The PDF content may be too complex. Try entering details manually.' });
+      }
+
+      // Backward-compat: wrap single calendar into candidates array
+      const hasCandidates = Array.isArray((parsed as any)?.candidates);
+      const hasLegacy =
+        typeof (parsed as any)?.semester_label === 'string' ||
+        typeof (parsed as any)?.start_date === 'string' ||
+        typeof (parsed as any)?.end_date === 'string' ||
+        typeof (parsed as any)?.total_weeks === 'number' ||
+        Array.isArray((parsed as any)?.periods);
+      if (!hasCandidates && hasLegacy) {
+        (parsed as any).candidates = [
+          {
+            program_level: (parsed as any)?.program_level ?? 'General',
+            semester_label: (parsed as any)?.semester_label,
+            start_date: (parsed as any)?.start_date,
+            end_date: (parsed as any)?.end_date,
+            total_weeks: (parsed as any)?.total_weeks,
+            break_start_date: (parsed as any)?.break_start_date ?? null,
+            break_end_date: (parsed as any)?.break_end_date ?? null,
+            periods: Array.isArray((parsed as any)?.periods) ? (parsed as any)?.periods : [],
+          },
+        ];
+      }
+
+      // Log the extraction
+      const extractedLabel =
+        (parsed as any)?.semester_label ??
+        (Array.isArray((parsed as any)?.candidates) ? String((parsed as any)?.candidates?.[0]?.semester_label ?? '') : '') ??
+        null;
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, fileName: String(payload.fileName || ''), extractedLabel },
+      });
+
+      return json(200, { extracted: parsed, text_preview: truncatedText.slice(0, 500) });
+    }
+
     // ── Support reports (Settings -> Report a Problem) ───────────────────────
     // Mobile users insert their own rows under RLS into public.support_reports;
     // admins use these actions (service-role) to list + manage them from the

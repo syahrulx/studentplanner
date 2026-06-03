@@ -33,6 +33,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     needsDate,
     repeatDays: repeatDays.length > 0 ? repeatDays : undefined,
     repeatNotify: row.repeat_notify == null ? undefined : Boolean(row.repeat_notify),
+    excludeFromFocus: Boolean(row.hide_from_focus),
+    excludeFromPulse: Boolean(row.hide_from_pulse),
   };
 }
 
@@ -76,6 +78,8 @@ export async function upsertTask(
       source_message: task.sourceMessage ?? null,
       repeat_days: repeatDays,
       repeat_notify: repeatDays.length > 0 ? Boolean(task.repeatNotify) : false,
+      hide_from_focus: Boolean(task.excludeFromFocus),
+      hide_from_pulse: Boolean(task.excludeFromPulse),
     },
     { onConflict: 'id,user_id' }
   );

@@ -176,6 +176,38 @@ export const UNIVERSITIES: UniversityConfig[] = [
     mode: 'webview',
     logoEmoji: '🛠️',
   },
+  {
+    id: 'ipg',
+    name: 'Institut Pendidikan Guru Malaysia',
+    shortName: 'IPG',
+    loginUrl: 'https://ipgm.moe.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
+  {
+    id: 'kptm',
+    name: 'Kolej Poly-Tech MARA',
+    shortName: 'KPTM',
+    loginUrl: 'https://kptm.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🏫',
+  },
+  {
+    id: 'oum',
+    name: 'Open University Malaysia',
+    shortName: 'OUM',
+    loginUrl: 'https://myinspire.oum.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
+  {
+    id: 'unitar',
+    name: 'UNITAR International University',
+    shortName: 'UNITAR',
+    loginUrl: 'https://auth.unitar.my',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
 ];
 
 let universitiesCache: UniversityConfig[] = [...UNIVERSITIES];

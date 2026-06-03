@@ -152,6 +152,7 @@ function createDashboardStyles(
   isDarkMinimal: boolean,
   isSpiderTheme: boolean,
   isPurpleTheme: boolean,
+  themePack: string,
 ) {
   const primary = theme.primary;
   const bg = theme.background;
@@ -165,7 +166,7 @@ function createDashboardStyles(
   const metaPillOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.82)' : border;
   const taskCardOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.38)' : border;
   const monoAccent = '#9ca3af';
-  const pulseCurrentColor = isSpiderTheme ? primary : isDarkMinimal ? monoAccent : GOLD;
+  const pulseCurrentColor = themePack === 'custom' ? theme.focusCardText : (isSpiderTheme ? primary : isDarkMinimal ? monoAccent : GOLD);
 
   return StyleSheet.create({
     container: { flex: 1 },
@@ -509,11 +510,11 @@ function createDashboardStyles(
 
     sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
     sectionWrapperFirst: { marginTop: 24 },
-    sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: isPurpleTheme ? text : primary },
+    sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: isPurpleTheme || themePack === 'custom' ? text : primary },
     sectionSubcopy: {
       fontSize: 13,
       lineHeight: 19,
-      color: isPurpleTheme ? text : textSecondary,
+      color: isPurpleTheme || themePack === 'custom' ? textSecondary : textSecondary,
       marginBottom: 16,
       maxWidth: '92%',
     },
@@ -863,8 +864,8 @@ export default function Dashboard() {
   const isPurpleTheme = themePack === 'purple';
   const isDarkMinimal = useDarkMinimalThemePack();
   const styles = useMemo(
-    () => createDashboardStyles(theme, isDarkMinimal, isSpiderTheme, isPurpleTheme),
-    [theme, isDarkMinimal, isSpiderTheme, isPurpleTheme],
+    () => createDashboardStyles(theme, isDarkMinimal, isSpiderTheme, isPurpleTheme, themePack),
+    [theme, isDarkMinimal, isSpiderTheme, isPurpleTheme, themePack],
   );
 
   const headerVisualBoost = HEADER_VISUAL_BOOST_IDS.has(themeId);
@@ -874,7 +875,12 @@ export default function Dashboard() {
   let headerSecondary: string;
   let headerSheenAccent: string;
 
-  if (isCatTheme) {
+  if (themePack === 'custom') {
+    headerAccent2 = theme.accent2;
+    headerPrimary = theme.primary;
+    headerSecondary = theme.secondary;
+    headerSheenAccent = theme.accent;
+  } else if (isCatTheme) {
     headerAccent2 = '#f8d49f';
     headerPrimary = '#f6c47f';
     headerSecondary = '#f7ddb8';
@@ -1130,7 +1136,7 @@ export default function Dashboard() {
   );
 
   const taskWeekCounts = useMemo(
-    () => taskCountsByOpenDueWeek(allTasks, pulseCalendar, user.startDate),
+    () => taskCountsByOpenDueWeek(allTasks.filter(t => !t.excludeFromPulse), pulseCalendar, user.startDate),
     [allTasks, pulseCalendar, user.startDate],
   );
   const { week: taskPeakWeek, max: taskPeakMax } = useMemo(
@@ -1549,7 +1555,11 @@ export default function Dashboard() {
         {/* Week peak alert – card + (Spider) decoration in red header under bottom-right corner */}
         <View style={styles.peakAlertSection}>
         <Pressable
-          style={({ pressed }) => [styles.peakAlertBox, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.peakAlertBox, 
+            themePack === 'custom' && { backgroundColor: theme.focusCard, borderColor: theme.border },
+            pressed && styles.pressed
+          ]}
           onPress={() => router.push('/stress-map' as any)}
         >
           {isSpiderTheme ? (
@@ -1579,40 +1589,61 @@ export default function Dashboard() {
           ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={[styles.peakAlertWeek, isPurpleTheme && { color: '#ffffff' }]}>{pulseMainTitle}</Text>
+              <Text style={[
+                styles.peakAlertWeek, 
+                isPurpleTheme && { color: '#ffffff' },
+                themePack === 'custom' && { color: theme.focusCardText }
+              ]}>{pulseMainTitle}</Text>
               {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
-                <Text style={styles.peakAlertSubline}>
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
                   {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
                 </Text>
               ) : null}
               {semesterPhase === 'no_calendar' ? (
-                <Text style={styles.peakAlertSubline}>{T('tapToSetCalendar')}</Text>
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
               ) : null}
-              <Text style={[styles.peakAlertLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.92)' }]}>
+              <Text style={[
+                styles.peakAlertLabel, 
+                isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
+                themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+              ]}>
                 {T('semesterPulse')}
               </Text>
             </View>
-            <View
-              style={[
-                styles.peakAlertBadge,
-                semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted,
-              ]}
-            >
-              {isCatTheme ? <CatLottie style={catStyles.peakCatLottie} /> : null}
-              <Text
-                style={[styles.peakAlertBadgeText, semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted]}
-                numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
-                adjustsFontSizeToFit
+              <View
+                style={[
+                  styles.peakAlertBadge,
+                  semesterPhase !== 'teaching' && styles.peakAlertBadgeMuted,
+                  themePack === 'custom' && { backgroundColor: theme.primary }
+                ]}
               >
+              {isCatTheme ? <CatLottie style={catStyles.peakCatLottie} /> : null}
+                <Text
+                  style={[
+                    styles.peakAlertBadgeText, 
+                    semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted,
+                    themePack === 'custom' && { color: theme.textInverse }
+                  ]}
+                  numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
+                  adjustsFontSizeToFit
+                >
                 {pulseBadgeText}
               </Text>
             </View>
           </View>
           <View style={styles.peakAlertBottom}>
-            <Text style={[styles.peakAlertProgressLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.9)' }]}>
+            <Text style={[
+              styles.peakAlertProgressLabel, 
+              isPurpleTheme && { color: 'rgba(255,255,255,0.9)' },
+              themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+            ]}>
               {T('progress')}
             </Text>
-            <Text style={[styles.peakAlertFinalLabel, isPurpleTheme && { color: 'rgba(255,255,255,0.95)' }]}>
+            <Text style={[
+              styles.peakAlertFinalLabel, 
+              isPurpleTheme && { color: 'rgba(255,255,255,0.95)' },
+              themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+            ]}>
               W{totalWeeks} {T('final')}
             </Text>
           </View>
@@ -1650,7 +1681,7 @@ export default function Dashboard() {
 
       {/* Today's focus */}
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>
-        <Text style={styles.sectionHeader}>{T('todaysFocus')}</Text>
+        <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('todaysFocus')}</Text>
         <Text style={styles.sectionSubcopy}>
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
         </Text>
@@ -1699,7 +1730,7 @@ export default function Dashboard() {
                   </View>
                 </View>
                 <View style={styles.focusArrowButton}>
-                  <Feather name="arrow-up-right" size={17} color={theme.primary} />
+                  <Feather name="arrow-up-right" size={17} color={themePack === 'custom' ? theme.text : theme.primary} />
                 </View>
               </View>
               <Text style={styles.focusTitle} numberOfLines={2}>{focusCard.title}</Text>
@@ -1742,7 +1773,7 @@ export default function Dashboard() {
       <View style={styles.sectionWrapper}>
         <View style={styles.timelineHeader}>
           <View style={styles.timelineHeaderBody}>
-            <Text style={styles.sectionHeader}>{T('upcoming')}</Text>
+            <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('upcoming')}</Text>
             <Text style={styles.sectionSubcopy}>A tighter view of your next deadlines and study windows.</Text>
           </View>
         </View>
