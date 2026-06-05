@@ -290,7 +290,17 @@ async function callOpenAI(
 
     const data = await res.json();
     const content = (data?.choices?.[0]?.message?.content ?? '').trim();
-    const usage = data?.usage ?? null;
+    // Normalize usage: OpenAI returns different field names depending on the model.
+    // Older models: prompt_tokens / completion_tokens / total_tokens
+    // Newer models (gpt-4.1, o-series): input_tokens / output_tokens
+    const rawUsage = data?.usage ?? null;
+    let usage: Record<string, number> | null = null;
+    if (rawUsage) {
+      const prompt = rawUsage.prompt_tokens ?? rawUsage.input_tokens ?? 0;
+      const completion = rawUsage.completion_tokens ?? rawUsage.output_tokens ?? 0;
+      const total = rawUsage.total_tokens ?? (prompt + completion);
+      usage = { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total };
+    }
     return { content, usage };
   } catch (err: any) {
     clearTimeout(timeout);
@@ -554,7 +564,10 @@ Deno.serve(async (req) => {
       model: targetModel,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
-      total_tokens: result.usage?.total_tokens ?? null,
+      // Ensure total is always recorded — fallback to sum of prompt + completion
+      total_tokens: result.usage?.total_tokens
+        ?? ((result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0))
+        || null,
     });
 
     // ── Parse AI response ──
