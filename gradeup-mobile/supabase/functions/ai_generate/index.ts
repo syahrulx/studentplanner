@@ -565,8 +565,8 @@ Deno.serve(async (req) => {
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
       // Ensure total is always recorded — fallback to sum of prompt + completion
-      total_tokens: result.usage?.total_tokens
-        ?? ((result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0))
+      total_tokens: (result.usage?.total_tokens
+        ?? ((result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0)))
         || null,
     });
 
