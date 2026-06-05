@@ -1247,6 +1247,19 @@ export async function extractCalendarFromPdf(pdfBase64: string, fileName?: strin
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; text_preview: string }>(data, error);
 }
 
+export async function extractCalendarFromImage(imageBase64: string, fileName?: string): Promise<{
+  extracted: ExtractedCalendarData;
+  text_preview: string;
+}> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'extract_calendar_from_image', imageBase64, fileName: fileName ?? 'upload.png' },
+    headers,
+  );
+  return unwrapFunctionData<{ extracted: ExtractedCalendarData; text_preview: string }>(data, error);
+}
+
 
 // ─── Community Posts (Events/Services/Memos) ──────────────────────────────
 

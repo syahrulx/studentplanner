@@ -1322,6 +1322,154 @@ Rules:
       return json(200, { extracted: parsed, text_preview: truncatedText.slice(0, 500) });
     }
 
+    // ── Extract calendar from uploaded Image (base64) ────────────────────────
+    if (action === 'extract_calendar_from_image') {
+      const imageBase64 = String(payload.imageBase64 || '').trim();
+      if (!imageBase64 || imageBase64.length < 100) {
+        return json(400, { error: 'Missing or empty image data.' });
+      }
+
+      const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+      if (!openAiKey || openAiKey.length < 20) {
+        return json(400, { error: 'OPENAI_API_KEY is not set in Edge Function secrets.' });
+      }
+
+      // Strip data-URL prefix if present and detect MIME type
+      let rawBase64 = imageBase64;
+      let detectedMime = 'image/png';
+      const dataUrlMatch = imageBase64.match(/^data:(image\/[a-z+]+);base64,/i);
+      if (dataUrlMatch) {
+        detectedMime = dataUrlMatch[1].toLowerCase();
+        rawBase64 = imageBase64.slice(dataUrlMatch[0].length);
+      } else {
+        try {
+          const first4 = atob(rawBase64.slice(0, 8));
+          if (first4.charCodeAt(0) === 0xFF && first4.charCodeAt(1) === 0xD8) {
+            detectedMime = 'image/jpeg';
+          } else if (first4.slice(1, 4) === 'PNG') {
+            detectedMime = 'image/png';
+          } else if (first4.slice(0, 4) === 'RIFF') {
+            detectedMime = 'image/webp';
+          }
+        } catch {
+          // ignore decode errors, default to png
+        }
+      }
+
+      const allowedMimes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+      if (!allowedMimes.includes(detectedMime)) {
+        return json(400, { error: `Unsupported image format: ${detectedMime}. Use PNG, JPEG, or WebP.` });
+      }
+
+      const estimatedBytes = Math.ceil(rawBase64.length * 3 / 4);
+      if (estimatedBytes > 10 * 1024 * 1024) {
+        return json(400, { error: 'Image is too large (max 10 MB).' });
+      }
+
+      const imageDataUrl = `data:${detectedMime};base64,${rawBase64}`;
+
+      const imgSystemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+Given an image of a university's academic calendar (screenshot, photo, or scan), extract structured semester/session information.
+
+IMPORTANT:
+Some images list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
+In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+
+Return VALID JSON ONLY with this exact shape:
+{
+  "official_url_title": "string (document title or heading visible in the image)",
+  "candidates": [
+    {
+      "program_level": "string (e.g. 'Bachelor', 'Master/Doctorate', 'Diploma', 'Foundation', 'Special')",
+      "semester_label": "string (e.g. 'Semester 1 2025/2026')",
+      "start_date": "YYYY-MM-DD",
+      "end_date": "YYYY-MM-DD",
+      "total_weeks": number,
+      "break_start_date": "YYYY-MM-DD or null",
+      "break_end_date": "YYYY-MM-DD or null",
+      "periods": [{ "type": "lecture|exam|break|revision|registration|orientation", "label": "string", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD" }]
+    }
+  ]
+}
+Rules: If only ONE program level, still return single-item candidates array. Dates must be YYYY-MM-DD. Do NOT invent dates. Return JSON only.`;
+
+      const aiController = new AbortController();
+      const aiTimeout = setTimeout(() => aiController.abort(), 45_000);
+      let aiContent = '';
+      try {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: aiController.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages: [
+              { role: 'system', content: imgSystemPrompt },
+              { role: 'user', content: [
+                { type: 'text', text: 'Extract academic calendar information from this image.' },
+                { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } },
+              ]},
+            ],
+            temperature: 0,
+            max_tokens: 3000,
+          }),
+        });
+        if (!aiRes.ok) {
+          const errText = await aiRes.text();
+          return json(400, { error: `OpenAI error (${aiRes.status}): ${errText.slice(0, 300)}` });
+        }
+        const aiJson = await aiRes.json();
+        aiContent = String(aiJson?.choices?.[0]?.message?.content ?? '').trim();
+      } catch (aiErr: unknown) {
+        const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+        if (msg.includes('abort') || msg.includes('Abort')) {
+          return json(400, { error: 'AI extraction timed out (45s). Try a clearer image.' });
+        }
+        return json(400, { error: `AI request failed: ${msg}` });
+      } finally {
+        clearTimeout(aiTimeout);
+      }
+
+      const cleanedImg = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let parsedImg: Record<string, unknown>;
+      try {
+        parsedImg = JSON.parse(cleanedImg) as Record<string, unknown>;
+      } catch {
+        return json(400, { error: 'AI returned invalid JSON. The image may be too blurry or complex. Try a clearer image or enter details manually.' });
+      }
+
+      // Backward-compat: wrap single calendar into candidates array
+      const hasCandidatesImg = Array.isArray((parsedImg as any)?.candidates);
+      const hasLegacyImg =
+        typeof (parsedImg as any)?.semester_label === 'string' ||
+        typeof (parsedImg as any)?.start_date === 'string' ||
+        Array.isArray((parsedImg as any)?.periods);
+      if (!hasCandidatesImg && hasLegacyImg) {
+        (parsedImg as any).candidates = [{
+          program_level: (parsedImg as any)?.program_level ?? 'General',
+          semester_label: (parsedImg as any)?.semester_label,
+          start_date: (parsedImg as any)?.start_date,
+          end_date: (parsedImg as any)?.end_date,
+          total_weeks: (parsedImg as any)?.total_weeks,
+          break_start_date: (parsedImg as any)?.break_start_date ?? null,
+          break_end_date: (parsedImg as any)?.break_end_date ?? null,
+          periods: Array.isArray((parsedImg as any)?.periods) ? (parsedImg as any)?.periods : [],
+        }];
+      }
+
+      const extractedLabelImg =
+        (parsedImg as any)?.semester_label ??
+        (Array.isArray((parsedImg as any)?.candidates) ? String((parsedImg as any)?.candidates?.[0]?.semester_label ?? '') : '') ??
+        null;
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, fileName: String(payload.fileName || ''), extractedLabel: extractedLabelImg },
+      });
+
+      return json(200, { extracted: parsedImg, text_preview: `[Image: ${String(payload.fileName || 'upload')}]` });
+    }
+
     // ── Support reports (Settings -> Report a Problem) ───────────────────────
     // Mobile users insert their own rows under RLS into public.support_reports;
     // admins use these actions (service-role) to list + manage them from the

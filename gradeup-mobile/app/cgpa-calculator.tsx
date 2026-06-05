@@ -10,12 +10,14 @@ import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { getAllSubjectGradeConfigs } from '@/src/lib/gradeStorage';
 import { calculateGrade, gradeColor } from '@/src/lib/gradeCalculator';
+import { supabase } from '@/src/lib/supabase';
+import * as coursesDb from '@/src/lib/coursesDb';
 import type { SubjectGradeConfig } from '@/src/types';
 
 export default function CgpaCalculatorScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { user, courses, updateCourse } = useApp();
+  const { user, courses } = useApp();
 
   const [loading, setLoading] = useState(true);
   const [configs, setConfigs] = useState<SubjectGradeConfig[]>([]);
@@ -48,7 +50,19 @@ export default function CgpaCalculatorScreen() {
 
   const handleUpdateCredit = (subjectId: string, newCredit: number) => {
     setCredits(prev => ({ ...prev, [subjectId]: newCredit }));
-    updateCourse(subjectId, { creditHours: newCredit });
+    // Sync to Supabase directly — updateCourse is not exposed from AppContext
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (!uid) return;
+        const course = courses.find(c => c.id === subjectId);
+        if (!course) return;
+        await coursesDb.updateCourse(uid, { ...course, creditHours: newCredit });
+      } catch (err) {
+        console.warn('[GpaCalculator] Failed to sync credit hours:', err);
+      }
+    })();
   };
 
   const results = useMemo(() => {

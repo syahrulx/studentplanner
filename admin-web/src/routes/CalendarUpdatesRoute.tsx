@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   extractCalendarFromUrl,
   extractCalendarFromPdf,
+  extractCalendarFromImage,
   deleteUniversityCalendarOffer,
   insertUniversityCalendarOffers,
   listUniversities,
@@ -104,6 +105,12 @@ export function CalendarUpdatesRoute() {
   const [pdfExtracting, setPdfExtracting] = useState(false);
   const [pdfExtractErr, setPdfExtractErr] = useState('');
   const [pdfExtractOk, setPdfExtractOk] = useState('');
+
+  // ── Image extract state ──
+  const imgFileRef = useRef<HTMLInputElement>(null);
+  const [imgExtracting, setImgExtracting] = useState(false);
+  const [imgExtractErr, setImgExtractErr] = useState('');
+  const [imgExtractOk, setImgExtractOk] = useState('');
 
   const eligible = useMemo(() => eligibleUniversities(universities), [universities]);
 
@@ -773,6 +780,122 @@ export function CalendarUpdatesRoute() {
                     </span>
                   ) : (
                     '📄 Extract & Auto-Fill from PDF'
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* ─── Image Upload + AI Extract ─── */}
+            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-lg">🖼️</span>
+                <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                  Upload Image & Auto-Extract
+                </span>
+              </div>
+              <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Upload a screenshot, photo, or scan of the academic calendar. The system will use GPT-4o Vision to extract semester dates, teaching weeks, and period timelines.
+              </p>
+              {imgExtractErr ? (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
+                  {imgExtractErr}
+                </div>
+              ) : null}
+              {imgExtractOk ? (
+                <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
+                  {imgExtractOk}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  ref={imgFileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                  className="block flex-1 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:text-slate-200"
+                />
+                <Button
+                  type="button"
+                  disabled={imgExtracting}
+                  onClick={async () => {
+                    setImgExtractErr('');
+                    setImgExtractOk('');
+                    const file = imgFileRef.current?.files?.[0];
+                    if (!file || file.size === 0) {
+                      setImgExtractErr('Please choose an image file first.');
+                      return;
+                    }
+                    if (!file.type.startsWith('image/')) {
+                      setImgExtractErr('Only image files are supported.');
+                      return;
+                    }
+                    if (file.size > 10 * 1024 * 1024) {
+                      setImgExtractErr('Image is too large (max 10 MB).');
+                      return;
+                    }
+                    setImgExtracting(true);
+                    try {
+                      const arrayBuf = await file.arrayBuffer();
+                      const bytes = new Uint8Array(arrayBuf);
+                      let binary = '';
+                      for (let i = 0; i < bytes.length; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                      }
+                      const base64 = btoa(binary);
+
+                      const res = await extractCalendarFromImage(`data:${file.type};base64,${base64}`, file.name);
+                      const d = res.extracted;
+                      const candidates = Array.isArray((d as any)?.candidates) ? ((d as any).candidates as any[]) : [];
+                      if (candidates.length > 0) {
+                        setExtractCandidates(candidates as any);
+                        setExtractCandidateIdx(0);
+                        applyExtractedCandidate(candidates[0] as any);
+                        const lvl = String((candidates[0] as any)?.program_level ?? '').trim();
+                        setImgExtractOk(
+                          `✅ Extracted ${candidates.length} program calendar(s) from image. Auto-filled: ${lvl ? `${lvl} — ` : ''}${String((candidates[0] as any)?.semester_label ?? 'Calendar data')}. Review then publish.`
+                        );
+                      } else {
+                        const hasLegacy =
+                          Boolean((d as any)?.semester_label) ||
+                          Boolean((d as any)?.start_date) ||
+                          Boolean((d as any)?.end_date) ||
+                          Boolean((d as any)?.total_weeks) ||
+                          Array.isArray((d as any)?.periods);
+                        if (hasLegacy) {
+                          const one = {
+                            program_level: String((d as any)?.program_level ?? 'General'),
+                            semester_label: (d as any)?.semester_label,
+                            start_date: (d as any)?.start_date,
+                            end_date: (d as any)?.end_date,
+                            total_weeks: (d as any)?.total_weeks,
+                            break_start_date: (d as any)?.break_start_date ?? null,
+                            break_end_date: (d as any)?.break_end_date ?? null,
+                            periods: Array.isArray((d as any)?.periods) ? (d as any)?.periods : [],
+                          };
+                          setExtractCandidates([one]);
+                          setExtractCandidateIdx(0);
+                          applyExtractedCandidate(one as any);
+                          setImgExtractOk(
+                            `✅ Extracted from image: ${String(one.semester_label ?? 'Calendar data')}. Review the auto-filled fields below, then publish.`
+                          );
+                        } else {
+                          setImgExtractErr('AI extraction succeeded but returned no calendar data. Enter details manually.');
+                        }
+                      }
+                    } catch (e) {
+                      setImgExtractErr(e instanceof Error ? e.message : 'Image extraction failed. Enter details manually.');
+                    } finally {
+                      setImgExtracting(false);
+                    }
+                  }}
+                  className="shrink-0 whitespace-nowrap"
+                >
+                  {imgExtracting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Extracting…
+                    </span>
+                  ) : (
+                    '🖼️ Extract & Auto-Fill from Image'
                   )}
                 </Button>
               </div>

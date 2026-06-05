@@ -7,12 +7,10 @@ import {
   StyleSheet,
   Animated,
   Dimensions,
-  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '@/hooks/useTheme';
 import { fetchActiveWhatsNewPrompt, type WhatsNewPrompt } from '../lib/whatsNewApi';
@@ -84,19 +82,15 @@ export default function WhatsNewPromptModal() {
   const features = parseFeatures(prompt.content);
   const isDark = theme.dark;
 
-  // ─── Liquid glass palette ───────────────────────────────────────────────────
-  // The "glass" effect: translucent white/black + specular highlight + soft glow
-  const glassBg = isDark ? 'rgba(28, 28, 30, 0.72)' : 'rgba(242, 242, 247, 0.72)';
-  const specularEdge = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.85)';
-  const specularSide = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.40)';
-  const iconGlass = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.65)';
-  const textPrimary = isDark ? '#FFFFFF' : '#000000';
+  // ─── Solid surface palette ──────────────────────────────────────────────────
+  const sheetBg      = isDark ? '#1C1C1E' : '#FFFFFF';
+  const iconBg       = isDark ? '#2C2C2E' : '#F2F2F7';
+  const iconBorder   = isDark ? '#3A3A3C' : '#E5E5EA';
+  const textPrimary  = isDark ? '#FFFFFF' : '#000000';
   const textSecondary = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
-  const divider = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
-
-  // Liquid glass button: a slightly more opaque glass pill
-  const btnBg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,122,255,1)';
-  const btnText = isDark ? '#FFFFFF' : '#FFFFFF';
+  const divider      = isDark ? '#2C2C2E' : '#E5E5EA';
+  const handleColor  = isDark ? '#48484A' : '#C7C7CC';
+  const featureListBg = isDark ? '#2C2C2E' : '#F2F2F7';
 
   return (
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
@@ -116,28 +110,11 @@ export default function WhatsNewPromptModal() {
           { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom + 8, 32) },
         ]}
       >
-        {/* ── Main glass surface ─────────────────────────────────────────── */}
-        <View style={[styles.glassPane, { backgroundColor: glassBg }]}>
-          
-          {/* Top specular highlight (the "glossy rim" of the glass) */}
-          <LinearGradient
-            colors={[specularEdge, specularSide, 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.specularTop}
-            pointerEvents="none"
-          />
-          {/* Side specular highlight */}
-          <LinearGradient
-            colors={[specularSide, 'transparent', specularSide]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
+        {/* ── Solid surface ───────────────────────────────────────────────── */}
+        <View style={[styles.sheetPane, { backgroundColor: sheetBg }]}>
 
           {/* Drag handle */}
-          <View style={[styles.handle, { backgroundColor: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)' }]} />
+          <View style={[styles.handle, { backgroundColor: handleColor }]} />
 
           {/* Title block */}
           <View style={styles.titleBlock}>
@@ -150,13 +127,13 @@ export default function WhatsNewPromptModal() {
           </View>
 
           {/* Feature rows */}
-          <View style={styles.featureList}>
+          <View style={[styles.featureList, { backgroundColor: featureListBg }]}>
             {features.map((f, i) => (
               <View key={i}>
                 {i > 0 && <View style={[styles.divider, { backgroundColor: divider }]} />}
                 <View style={styles.featureRow}>
-                  {/* Glass icon pill */}
-                  <View style={[styles.iconWrap, { backgroundColor: iconGlass, borderColor: specularEdge }]}>
+                  {/* Icon pill */}
+                  <View style={[styles.iconWrap, { backgroundColor: iconBg, borderColor: iconBorder }]}>
                     <Feather name={ICONS[i % ICONS.length]} size={18} color={isDark ? '#fff' : '#007AFF'} />
                   </View>
                   <View style={styles.featureText}>
@@ -178,22 +155,10 @@ export default function WhatsNewPromptModal() {
           <View style={styles.footer}>
             <TouchableOpacity
               onPress={handleDismiss}
-              activeOpacity={0.75}
-              style={styles.ctaOuter}
+              activeOpacity={0.8}
+              style={[styles.ctaBtn, { backgroundColor: '#007AFF' }]}
             >
-              {/* Glass button surface */}
-              <LinearGradient
-                colors={isDark
-                  ? ['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.10)']
-                  : ['#1a7eff', '#0062e5']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.ctaGradient}
-              >
-                {/* Inner top highlight for button glass */}
-                <View style={[styles.ctaHighlight, { borderColor: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.45)' }]} />
-                <Text style={[styles.ctaText, { color: btnText }]}>Continue</Text>
-              </LinearGradient>
+              <Text style={styles.ctaText}>Continue</Text>
             </TouchableOpacity>
           </View>
 
@@ -214,28 +179,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
   },
-  glassPane: {
+  sheetPane: {
     borderRadius: RADIUS,
     overflow: 'hidden',
-    // Outer shadow for depth
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 30,
-    elevation: 30,
-    // Thin outer border for the glass rim
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.35)',
-  },
-  specularTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 80,
-    borderTopLeftRadius: RADIUS,
-    borderTopRightRadius: RADIUS,
-    zIndex: 1,
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 20,
   },
   handle: {
     width: 36,
@@ -265,7 +216,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
     marginBottom: 20,
   },
   divider: {
@@ -307,41 +257,18 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     alignItems: 'center',
   },
-  ctaOuter: {
+  ctaBtn: {
     borderRadius: 100,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  ctaGradient: {
     paddingVertical: 15,
     paddingHorizontal: 52,
-    borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-  },
-  ctaHighlight: {
-    position: 'absolute',
-    top: 1,
-    left: 8,
-    right: 8,
-    height: '50%',
-    borderTopWidth: 1,
-    borderLeftWidth: 0.5,
-    borderRightWidth: 0.5,
-    borderBottomWidth: 0,
-    borderTopLeftRadius: 100,
-    borderTopRightRadius: 100,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    width: '100%',
   },
   ctaText: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
     letterSpacing: 0.1,
   },
 });
