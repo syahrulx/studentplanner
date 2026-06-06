@@ -748,6 +748,16 @@ serve(async (req) => {
       return json(200, { items: data ?? [] });
     }
 
+    if (action === 'crowdsourced_calendars_list') {
+      const { data, error: e } = await admin
+        .from('university_calendar_offers')
+        .select('*, user_profile:profiles!university_calendar_offers_created_by_fkey(id, full_name, email, phone_number, created_at)')
+        .eq('source', 'crowdsourced')
+        .order('created_at', { ascending: false });
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
     if (action === 'calendar_offers_insert') {
       const raw = payload.rows;
       if (!Array.isArray(raw) || raw.length === 0) return json(400, { error: 'missing_rows' });

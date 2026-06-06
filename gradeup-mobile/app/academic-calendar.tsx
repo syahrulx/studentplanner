@@ -1294,6 +1294,36 @@ export default function AcademicCalendarScreen() {
                       >
                         {o.semesterLabel}
                       </Text>
+                      {o.source === 'crowdsourced' ? (
+                        <Pressable
+                          hitSlop={15}
+                          style={{ paddingLeft: 10, paddingRight: 4, paddingVertical: 4 }}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert(
+                              "Report Calendar",
+                              "Are the dates for this calendar incorrect or fake?",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                  text: "Report",
+                                  style: "destructive",
+                                  onPress: async () => {
+                                    const { error } = await supabase.rpc('increment_calendar_report', { offer_id: o.id });
+                                    if (error) {
+                                      Alert.alert("Error", error.message);
+                                    } else {
+                                      Alert.alert("Reported", "Thank you. The admin has been notified.");
+                                    }
+                                  }
+                                }
+                              ]
+                            );
+                          }}
+                        >
+                          <Feather name="flag" size={16} color={theme.textSecondary} />
+                        </Pressable>
+                      ) : null}
                     </Pressable>
                   ))}
                   <Pressable

@@ -17,6 +17,7 @@ export type UniversityCalendarOffer = {
   officialUrl?: string;
   referencePdfUrl?: string;
   adminNote?: string;
+  source: string;
   createdAt: string;
 };
 
@@ -46,6 +47,7 @@ function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
     officialUrl: row.official_url != null ? String(row.official_url).trim() || undefined : undefined,
     referencePdfUrl: row.reference_pdf_url != null ? String(row.reference_pdf_url).trim() || undefined : undefined,
     adminNote: row.admin_note != null ? String(row.admin_note).trim() || undefined : undefined,
+    source: row.source != null ? String(row.source) : 'admin',
     createdAt: row.created_at != null ? String(row.created_at) : '',
   };
 }

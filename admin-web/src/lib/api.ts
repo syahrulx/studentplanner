@@ -1091,6 +1091,7 @@ export type AdminCalendarOfferRow = {
   created_at: string;
   created_by: string | null;
   source: string;
+  report_count?: number;
 };
 
 export type AdminCalendarOfferInsert = {
@@ -1152,7 +1153,13 @@ export async function listCrowdsourcedCalendarOffers(): Promise<CrowdsourcedCale
     headers,
   );
   const res = unwrapFunctionData<{ items: CrowdsourcedCalendarRow[] }>(data, error);
-  return res.items;
+  // Sort by report_count descending, then created_at descending
+  return res.items.sort((a, b) => {
+    const rA = a.report_count || 0;
+    const rB = b.report_count || 0;
+    if (rA !== rB) return rB - rA;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 }
 
 export async function insertUniversityCalendarOffers(rows: AdminCalendarOfferInsert[]): Promise<AdminCalendarOfferRow[]> {

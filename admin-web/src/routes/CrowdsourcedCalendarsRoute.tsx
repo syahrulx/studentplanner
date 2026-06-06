@@ -148,6 +148,11 @@ export function CrowdsourcedCalendarsRoute() {
                   </div>
                   
                   <div className="flex items-center gap-3">
+                    {(h.report_count ?? 0) > 0 ? (
+                      <div className="rounded-xl border border-red-500 bg-red-100 px-3 py-1.5 text-xs font-black text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950 dark:text-red-300 flex items-center gap-1">
+                        <span className="text-sm">🚨</span> {h.report_count} Reports
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900/60 transition-colors"
