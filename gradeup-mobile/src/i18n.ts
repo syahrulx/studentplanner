@@ -273,7 +273,7 @@ const translations = {
     academicCalendar: 'Academic Calendar',
     noUniversityCalendarTitle: 'No university calendar',
     noUniversityCalendarBody:
-      'There is no academic calendar published for your university in the app yet.\n\nIf you need help, go to Settings → Report a Problem and describe your university and what went wrong.',
+      'There is no academic calendar published for your university in the app yet.\n\nYou can set up your own academic calendar by going to Settings → Academic Calendar and tapping "Can\'t find yours? Add it yourself".',
     calendarOfferTitle: 'Academic calendar update',
     calendarOfferBody:
       'Your university shared a new official semester calendar. Review the dates and optional links, then apply it to your planner only if you agree.',
@@ -1117,7 +1117,7 @@ const translations = {
     academicCalendar: 'Kalendar Akademik',
     noUniversityCalendarTitle: 'Tiada kalendar universiti',
     noUniversityCalendarBody:
-      'Tiada kalendar akademik untuk universiti anda diterbitkan dalam aplikasi ini buat masa ini.\n\nJika anda perlukan bantuan, pergi ke Tetapan → Laporkan Masalah dan terangkan universiti anda serta masalah yang berlaku.',
+      'Tiada kalendar akademik untuk universiti anda diterbitkan dalam aplikasi ini buat masa ini.\n\nAnda boleh muat naik kalendar anda sendiri di bahagian Tetapan → Kalendar Akademik dan tekan "Tidak jumpa kalendar anda? Tambah sendiri".',
     calendarOfferTitle: 'Kemas kini kalendar akademik',
     calendarOfferBody:
       'Universiti anda berkongsi kalendar semester rasmi yang baharu. Semak tarikh dan pautan pilihan, kemudian gunakannya dalam perancang hanya jika anda setuju.',
