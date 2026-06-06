@@ -749,13 +749,39 @@ serve(async (req) => {
     }
 
     if (action === 'crowdsourced_calendars_list') {
-      const { data, error: e } = await admin
+      const { data: offers, error: e } = await admin
         .from('university_calendar_offers')
-        .select('*, user_profile:profiles!university_calendar_offers_created_by_fkey(id, full_name, email, phone_number, created_at)')
+        .select('*')
         .eq('source', 'crowdsourced')
         .order('created_at', { ascending: false });
       if (e) return json(400, { error: e.message });
-      return json(200, { items: data ?? [] });
+
+      const items = await Promise.all((offers ?? []).map(async (item) => {
+        let userProfile = null;
+        if (item.created_by) {
+          try {
+            const { data: userData, error: userErr } = await admin.auth.admin.getUserById(item.created_by);
+            if (!userErr && userData?.user) {
+              const u = userData.user;
+              userProfile = {
+                id: u.id,
+                full_name: String(u.user_metadata?.full_name || u.user_metadata?.name || '').trim() || null,
+                email: u.email ?? null,
+                phone_number: u.phone ?? null,
+                created_at: u.created_at,
+              };
+            }
+          } catch (err) {
+            console.error(`Failed to get auth user ${item.created_by}:`, err);
+          }
+        }
+        return {
+          ...item,
+          user_profile: userProfile,
+        };
+      }));
+
+      return json(200, { items });
     }
 
     if (action === 'calendar_offers_insert') {
