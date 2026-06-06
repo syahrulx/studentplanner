@@ -95,12 +95,11 @@ export default function AcademicCalendarScreen() {
   const [cfgLevel, setCfgLevel] = useState<AcademicLevel>(
     () => user.academicLevel ?? "Bachelor",
   );
-  const [cfgMode, setCfgMode] = useState<"Full-time" | "Part-time" | "Unknown">(
+  const [cfgMode, setCfgMode] = useState<"Full-time" | "Part-time">(
     () => {
       const v = (user.studyMode ?? "").toLowerCase();
       if (v.includes("part") || v.includes("separuh")) return "Part-time";
-      if (v.includes("full") || v.includes("sepenuh")) return "Full-time";
-      return "Unknown";
+      return "Full-time";
     },
   );
   const [syncStatus, setSyncStatus] = useState<string>("");
@@ -453,12 +452,7 @@ export default function AcademicCalendarScreen() {
     try {
       setCfgBusy(true);
       setSyncStatus("");
-      const studyMode =
-        cfgMode === "Unknown"
-          ? ""
-          : cfgMode === "Full-time"
-            ? "Full-time"
-            : "Part-time";
+      const studyMode = cfgMode === "Full-time" ? "Full-time" : "Part-time";
 
       const uniId = user.universityId;
       const sid = cfgStudentId.trim();
@@ -1383,7 +1377,7 @@ export default function AcademicCalendarScreen() {
               <Text style={[s.fieldLabel, { color: theme.textSecondary }]}>
                 Study mode
               </Text>
-              {(["Full-time", "Part-time", "Unknown"] as const).map((m) => (
+              {(["Full-time", "Part-time"] as const).map((m) => (
                 <TouchableOpacity
                   key={m}
                   style={[
