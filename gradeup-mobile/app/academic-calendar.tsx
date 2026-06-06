@@ -11,6 +11,7 @@ import {
   Dimensions,
   TextInput,
   FlatList,
+  TouchableOpacity,
 } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { router, useFocusEffect } from "expo-router";
@@ -1081,7 +1082,7 @@ export default function AcademicCalendarScreen() {
             onPress={() => setConfigOpen(false)}
           />
           <View
-            style={{ width: "100%", maxWidth: 360, marginTop: insets.top + 10 }}
+            style={{ width: "100%", maxWidth: 360, marginTop: insets.top + 10, zIndex: 10, elevation: 10 }}
           >
             <ScrollView
               style={[
@@ -1206,9 +1207,10 @@ export default function AcademicCalendarScreen() {
                       "Other",
                     ] as AcademicLevel[]
                   ).map((lvl) => (
-                    <Pressable
+                    <TouchableOpacity
                       key={lvl}
                       style={s.optRow}
+                      activeOpacity={0.6}
                       onPress={() => setCfgLevel(lvl)}
                     >
                       <Feather
@@ -1226,7 +1228,7 @@ export default function AcademicCalendarScreen() {
                       >
                         {lvl === "Foundation" ? "Group A" : "Group B"}
                       </Text>
-                    </Pressable>
+                    </TouchableOpacity>
                   ))}
                 </>
               ) : offersLoading ? (
@@ -1270,9 +1272,10 @@ export default function AcademicCalendarScreen() {
                     Select your semester to load dates.
                   </Text>
                   {adminOffers.map((o) => (
-                    <Pressable
+                    <TouchableOpacity
                       key={o.id}
                       style={s.optRow}
+                      activeOpacity={0.6}
                       onPress={() => {
                         setCfgSelectedOfferId(o.id);
                         setCfgLevel(
@@ -1295,10 +1298,14 @@ export default function AcademicCalendarScreen() {
                       >
                         {o.semesterLabel}
                       </Text>
-                      {o.source === 'crowdsourced' ? (
-                        <Pressable
+                      {o.source === "crowdsourced" ? (
+                        <TouchableOpacity
                           hitSlop={15}
-                          style={{ paddingLeft: 10, paddingRight: 4, paddingVertical: 4 }}
+                          style={{
+                            paddingLeft: 10,
+                            paddingRight: 4,
+                            paddingVertical: 4,
+                          }}
                           onPress={(e) => {
                             e.stopPropagation();
                             Alert.alert(
@@ -1310,22 +1317,32 @@ export default function AcademicCalendarScreen() {
                                   text: "Report",
                                   style: "destructive",
                                   onPress: async () => {
-                                    const { error } = await supabase.rpc('increment_calendar_report', { offer_id: o.id });
+                                    const { error } = await supabase.rpc(
+                                      "increment_calendar_report",
+                                      { offer_id: o.id },
+                                    );
                                     if (error) {
                                       Alert.alert("Error", error.message);
                                     } else {
-                                      Alert.alert("Reported", "Thank you. The admin has been notified.");
+                                      Alert.alert(
+                                        "Reported",
+                                        "Thank you. The admin has been notified.",
+                                      );
                                     }
-                                  }
-                                }
-                              ]
+                                  },
+                                },
+                              ],
                             );
                           }}
                         >
-                          <Feather name="flag" size={16} color={theme.textSecondary} />
-                        </Pressable>
+                          <Feather
+                            name="flag"
+                            size={16}
+                            color={theme.textSecondary}
+                          />
+                        </TouchableOpacity>
                       ) : null}
-                    </Pressable>
+                    </TouchableOpacity>
                   ))}
                   <Pressable
                     style={[
@@ -1354,9 +1371,10 @@ export default function AcademicCalendarScreen() {
                 Study mode
               </Text>
               {(["Full-time", "Part-time", "Unknown"] as const).map((m) => (
-                <Pressable
+                <TouchableOpacity
                   key={m}
                   style={s.optRow}
+                  activeOpacity={0.6}
                   onPress={() => setCfgMode(m)}
                 >
                   <Feather
@@ -1365,7 +1383,7 @@ export default function AcademicCalendarScreen() {
                     color={cfgMode === m ? theme.primary : theme.textSecondary}
                   />
                   <Text style={[s.optText, { color: theme.text }]}>{m}</Text>
-                </Pressable>
+                </TouchableOpacity>
               ))}
 
               <View style={s.divider} />
@@ -1583,64 +1601,117 @@ export default function AcademicCalendarScreen() {
             </View>
 
             <View style={{ marginTop: 24, marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 20,
+                }}
+              >
                 <Pressable
-                  onPress={() => setAlignPickWeek((prev) => Math.max(1, prev - 1))}
-                  style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.backgroundSecondary, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() =>
+                    setAlignPickWeek((prev) => Math.max(1, prev - 1))
+                  }
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 24,
+                    backgroundColor: theme.backgroundSecondary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
                 >
                   <Feather name="minus" size={22} color={theme.text} />
                 </Pressable>
-                
-                <Text style={{ fontSize: 24, fontWeight: '900', color: theme.text, minWidth: 160, textAlign: 'center' }}>
+
+                <Text
+                  style={{
+                    fontSize: 24,
+                    fontWeight: "900",
+                    color: theme.text,
+                    minWidth: 160,
+                    textAlign: "center",
+                  }}
+                >
                   {alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 1
-                    ? 'Study Week'
+                    ? "Study Week"
                     : alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 2
-                    ? 'Semester Break'
-                    : `Week ${alignPickWeek}`}
+                      ? "Semester Break"
+                      : `Week ${alignPickWeek}`}
                 </Text>
 
                 <Pressable
-                  onPress={() => setAlignPickWeek((prev) => Math.min((academicCalendar?.totalWeeks ?? 14) + 2, prev + 1))}
-                  style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.backgroundSecondary, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() =>
+                    setAlignPickWeek((prev) =>
+                      Math.min(
+                        (academicCalendar?.totalWeeks ?? 14) + 2,
+                        prev + 1,
+                      ),
+                    )
+                  }
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 24,
+                    backgroundColor: theme.backgroundSecondary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
                 >
                   <Feather name="plus" size={22} color={theme.text} />
                 </Pressable>
               </View>
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 28, justifyContent: 'center' }}>
-              {[
-                { label: "Study Week", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1 },
-                { label: "Semester Break", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2 },
-              ].map((opt) => (
-                <Pressable
-                  key={opt.val}
-                  style={[
-                    s.alignWeekBtn,
-                    {
-                      width: "48%",
-                      borderColor: theme.border,
-                      backgroundColor:
-                        alignPickWeek === opt.val
-                          ? theme.primary
-                          : theme.backgroundSecondary,
-                    },
-                  ]}
-                  onPress={() => setAlignPickWeek(opt.val)}
-                >
-                  <Text
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 10,
+                  marginTop: 28,
+                  justifyContent: "center",
+                }}
+              >
+                {[
+                  {
+                    label: "Study Week",
+                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1,
+                  },
+                  {
+                    label: "Semester Break",
+                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2,
+                  },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.val}
                     style={[
-                      s.alignWeekText,
+                      s.alignWeekBtn,
                       {
-                        fontSize: 14,
-                        color:
-                          alignPickWeek === opt.val ? theme.textInverse : theme.text,
+                        width: "48%",
+                        borderColor: theme.border,
+                        backgroundColor:
+                          alignPickWeek === opt.val
+                            ? theme.primary
+                            : theme.backgroundSecondary,
                       },
                     ]}
+                    onPress={() => setAlignPickWeek(opt.val)}
                   >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text
+                      style={[
+                        s.alignWeekText,
+                        {
+                          fontSize: 14,
+                          color:
+                            alignPickWeek === opt.val
+                              ? theme.textInverse
+                              : theme.text,
+                        },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             </View>
 
