@@ -1091,6 +1091,7 @@ export default function AcademicCalendarScreen() {
               contentContainerStyle={{ paddingBottom: 14 }}
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
             >
               <Text style={[s.modalTitle, { color: theme.text }]}>
                 Semester configuration
