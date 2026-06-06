@@ -9,6 +9,7 @@ import {
   type DashboardOverview,
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
+import { OpenAiCreditCard } from '../components/OpenAiCreditCard';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 
@@ -138,6 +139,8 @@ export function DashboardRoute() {
           ))
         )}
       </MotionStagger>
+
+      <OpenAiCreditCard />
 
       {err ? (
         <MotionSection delay={0.06}>

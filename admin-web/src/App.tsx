@@ -6,6 +6,7 @@ import { UsersRoute } from './routes/UsersRoute';
 import { UniversitiesRoute } from './routes/UniversitiesRoute';
 import { TimetablesRoute } from './routes/TimetablesRoute';
 import { CalendarUpdatesRoute } from './routes/CalendarUpdatesRoute';
+import { CrowdsourcedCalendarsRoute } from './routes/CrowdsourcedCalendarsRoute';
 import { LogsRoute } from './routes/LogsRoute';
 import { LocationsRoute } from './routes/LocationsRoute';
 import { CirclesRoute } from './routes/CirclesRoute';
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="timetables" element={<TimetablesRoute />} />
             <Route path="performance" element={<StudentPerformanceRoute />} />
             <Route path="calendar-updates" element={<CalendarUpdatesRoute />} />
+            <Route path="crowdsourced-calendars" element={<CrowdsourcedCalendarsRoute />} />
             <Route path="locations" element={<LocationsRoute />} />
             <Route path="circles" element={<CirclesRoute />} />
             <Route path="events" element={<EventsRoute />} />

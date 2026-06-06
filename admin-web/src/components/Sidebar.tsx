@@ -29,6 +29,7 @@ const nav: NavItem[] = [
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
   { to: '/performance', label: 'Performance', Icon: IconBell },
   { to: '/calendar-updates', label: 'Calendar updates', Icon: IconCalendar },
+  { to: '/crowdsourced-calendars', label: 'Crowdsourced Cals', Icon: IconCalendar },
   { to: '/locations', label: 'Locations', Icon: IconMapPin },
   { to: '/circles', label: 'Circles', Icon: IconCircles },
   
