@@ -1200,20 +1200,30 @@ Rules:
       const truncatedText = pdfText.trim().slice(0, 18000);
 
       // Call OpenAI to extract calendar data (same prompt as URL extraction)
-      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities and polytechnics.
 Given the text content from a university's academic calendar PDF, extract structured semester/session information.
 
-IMPORTANT:
-Some PDFs list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
-In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+CRITICAL RULES:
+1. Some PDFs list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
+   In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+
+2. VERY IMPORTANT: Some calendars (especially Politeknik & Kolej Komuniti) have DIFFERENT date ranges for different institutes/campus groups.
+   For example: "INSTITUSI A - Kedah, Kelantan dan Terengganu" vs "INSTITUSI B - Perlis, Pulau Pinang, Perak, Selangor..."
+   In this case, you MUST return SEPARATE candidates for EACH institute group, each with their own dates.
+   Use the "campus_group" field to identify which institute/group it belongs to (e.g. "Institusi A", "Institusi B").
+   Also include "campus_group_description" with the list of states/campuses in that group.
+
+3. If there are MULTIPLE sessions/semesters (e.g. "SESI I: 2026/2027" and "SESI II: 2026/2027"), return separate candidates for EACH session, for EACH institute group.
 
 Return VALID JSON ONLY with this exact shape:
 {
   "official_url_title": "string (document title or heading)",
   "candidates": [
     {
-      "program_level": "string (e.g. 'Bachelor', 'Master/Doctorate', 'Diploma', 'Foundation', 'Special')",
-      "semester_label": "string (e.g. 'Semester 1 2025/2026')",
+      "program_level": "string (e.g. 'Diploma', 'Bachelor', 'Master/Doctorate', 'Foundation', 'Sijil')",
+      "campus_group": "string or null (e.g. 'Institusi A', 'Institusi B', null if not applicable)",
+      "campus_group_description": "string or null (e.g. 'Kedah, Kelantan dan Terengganu')",
+      "semester_label": "string (e.g. 'Sesi 1 2026/2027')",
       "start_date": "YYYY-MM-DD (first day of teaching/lectures)",
       "end_date": "YYYY-MM-DD (last day of the semester, after final exams)",
       "total_weeks": number (total teaching weeks, typically 14-16),
@@ -1221,7 +1231,7 @@ Return VALID JSON ONLY with this exact shape:
       "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
       "periods": [
         {
-          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation",
+          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation" | "industrial_training",
           "label": "string (e.g. 'Lectures Week 1-7')",
           "startDate": "YYYY-MM-DD",
           "endDate": "YYYY-MM-DD"
@@ -1232,7 +1242,6 @@ Return VALID JSON ONLY with this exact shape:
 }
 
 Rules:
-- If there is only ONE program level/calendar, still return a single-item candidates array.
 - Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
@@ -1261,7 +1270,7 @@ Rules:
               { role: 'user', content: userPrompt },
             ],
             temperature: 0,
-            max_tokens: 2000,
+            max_tokens: 4000,
           }),
         });
 
@@ -1378,30 +1387,41 @@ Rules:
 
       const imageDataUrl = `data:${detectedMime};base64,${rawBase64}`;
 
-      const imgSystemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+      const imgSystemPrompt = `You are an academic calendar data extractor for Malaysian universities and polytechnics.
 Given an image of a university's academic calendar (screenshot, photo, or scan), extract structured semester/session information.
 
-IMPORTANT:
-Some images list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
-In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+CRITICAL RULES:
+1. Some calendars list MULTIPLE calendars by program level (e.g. "Bachelor Programme", "Master and Doctorate Programme").
+   In that case, return MULTIPLE candidates so the admin can choose which program level to publish.
+
+2. VERY IMPORTANT: Some calendars (especially Politeknik & Kolej Komuniti) have DIFFERENT date ranges for different institutes/campus groups.
+   For example: "INSTITUSI A - Kedah, Kelantan dan Terengganu" vs "INSTITUSI B - Perlis, Pulau Pinang, Perak, Selangor..."
+   In this case, you MUST return SEPARATE candidates for EACH institute group, each with their own dates.
+   Use the "campus_group" field to identify which institute/group it belongs to (e.g. "Institusi A", "Institusi B").
+   Also include "campus_group_description" with the list of states/campuses in that group.
+
+3. If there are MULTIPLE sessions/semesters (e.g. "SESI I: 2026/2027" and "SESI II: 2026/2027"), return separate candidates for EACH session, for EACH institute group.
+   For example: Institusi A Session 1, Institusi A Session 2, Institusi B Session 1, Institusi B Session 2 = 4 candidates.
 
 Return VALID JSON ONLY with this exact shape:
 {
   "official_url_title": "string (document title or heading visible in the image)",
   "candidates": [
     {
-      "program_level": "string (e.g. 'Bachelor', 'Master/Doctorate', 'Diploma', 'Foundation', 'Special')",
-      "semester_label": "string (e.g. 'Semester 1 2025/2026')",
-      "start_date": "YYYY-MM-DD",
-      "end_date": "YYYY-MM-DD",
+      "program_level": "string (e.g. 'Diploma', 'Bachelor', 'Master/Doctorate', 'Foundation', 'Sijil')",
+      "campus_group": "string or null (e.g. 'Institusi A', 'Institusi B', null if not applicable)",
+      "campus_group_description": "string or null (e.g. 'Kedah, Kelantan dan Terengganu')",
+      "semester_label": "string (e.g. 'Sesi 1 2026/2027')",
+      "start_date": "YYYY-MM-DD (first day of the semester, usually registration or first lecture day)",
+      "end_date": "YYYY-MM-DD (last day of the semester, end of final exam or last break day)",
       "total_weeks": number,
-      "break_start_date": "YYYY-MM-DD or null",
+      "break_start_date": "YYYY-MM-DD or null (mid-semester break)",
       "break_end_date": "YYYY-MM-DD or null",
-      "periods": [{ "type": "lecture|exam|break|revision|registration|orientation", "label": "string", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD" }]
+      "periods": [{ "type": "lecture|exam|break|revision|registration|orientation|industrial_training", "label": "string", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD" }]
     }
   ]
 }
-Rules: If only ONE program level, still return single-item candidates array. Dates must be YYYY-MM-DD. Do NOT invent dates. Return JSON only.`;
+Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible in the image. Return JSON only, no markdown.`;
 
       const aiController = new AbortController();
       const aiTimeout = setTimeout(() => aiController.abort(), 45_000);
@@ -1421,7 +1441,7 @@ Rules: If only ONE program level, still return single-item candidates array. Dat
               ]},
             ],
             temperature: 0,
-            max_tokens: 3000,
+            max_tokens: 4000,
           }),
         });
         if (!aiRes.ok) {

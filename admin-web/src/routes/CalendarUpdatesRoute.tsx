@@ -104,6 +104,8 @@ export function CalendarUpdatesRoute() {
   const [extractCandidates, setExtractCandidates] = useState<
     Array<{
       program_level?: string;
+      campus_group?: string | null;
+      campus_group_description?: string | null;
       semester_label?: string;
       start_date?: string;
       end_date?: string;
@@ -413,6 +415,8 @@ export function CalendarUpdatesRoute() {
 
   const applyExtractedCandidate = (d: {
     program_level?: string;
+    campus_group?: string | null;
+    campus_group_description?: string | null;
     semester_label?: string;
     start_date?: string;
     end_date?: string;
@@ -426,7 +430,21 @@ export function CalendarUpdatesRoute() {
       endDate: string;
     }>;
   }) => {
-    if (d.semester_label) setSemesterLabel(d.semester_label);
+    if (d.semester_label) {
+      let finalLabel = d.semester_label;
+      const group = d.campus_group ? String(d.campus_group).trim() : "";
+      const prog = d.program_level ? String(d.program_level).trim() : "";
+      
+      // If there are multiple candidates, ensure the label is unique 
+      // by prepending the institute or program level.
+      if (group) {
+        finalLabel = `${group} - ${finalLabel}`;
+      } else if (prog && prog.toLowerCase() !== "general") {
+        finalLabel = `${prog} - ${finalLabel}`;
+      }
+      
+      setSemesterLabel(finalLabel);
+    }
     if (d.start_date) setStartDate(d.start_date);
     if (d.end_date) setEndDate(d.end_date);
     if (d.total_weeks) setTotalWeeks(String(d.total_weeks));
@@ -708,11 +726,11 @@ export function CalendarUpdatesRoute() {
                     )}
                   </Button>
                 </div>
-                {extractCandidates.length > 1 ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {extractCandidates.length > 0 ? (
+                  <div className="mt-3">
                     <Label className="block">
                       <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                        Program level
+                        {extractCandidates.some(c => c.campus_group) ? 'Institute / Program' : 'Program level'}
                       </span>
                       <select
                         value={String(extractCandidateIdx)}
@@ -734,15 +752,25 @@ export function CalendarUpdatesRoute() {
                             String(c.program_level ?? "").trim() ||
                             `Candidate ${idx + 1}`;
                           const label = String(c.semester_label ?? "").trim();
+                          const group = c.campus_group ? String(c.campus_group).trim() : "";
+                          const groupDesc = c.campus_group_description ? ` (${String(c.campus_group_description).trim()})` : "";
+                          const parts = [group, lvl].filter(Boolean).join(" — ");
                           return (
                             <option key={`${lvl}-${idx}`} value={String(idx)}>
-                              {lvl}
-                              {label ? ` — ${label}` : ""}
+                              {parts}
+                              {groupDesc}
+                              {label ? ` • ${label}` : ""}
                             </option>
                           );
                         })}
                       </select>
                     </Label>
+                    {extractCandidates[extractCandidateIdx]?.campus_group_description ? (
+                      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                        📍 <span className="font-black">{extractCandidates[extractCandidateIdx]?.campus_group}:</span>{" "}
+                        {extractCandidates[extractCandidateIdx]?.campus_group_description}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
