@@ -1726,6 +1726,102 @@ export async function deleteAuthorityRequest(id: string): Promise<void> {
   }
 }
 
+// ─── Campuses & Organizations ────────────────────────────────────────────
+
+export type AdminCampusRow = {
+  id: string;
+  university_id: string;
+  name: string;
+  created_at: string;
+};
+
+export async function listCampuses(
+  universityId?: string,
+): Promise<AdminCampusRow[]> {
+  let q = supabase.from("campuses").select("*").order("name");
+  if (universityId) q = q.eq("university_id", universityId);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+  return data as AdminCampusRow[];
+}
+
+export async function createCampus(
+  universityId: string,
+  name: string,
+): Promise<AdminCampusRow> {
+  const { data, error } = await supabase
+    .from("campuses")
+    .insert({ university_id: universityId, name })
+    .select()
+    .single();
+  if (error) throw toError(error);
+  return data as AdminCampusRow;
+}
+
+export async function updateCampus(id: string, name: string): Promise<void> {
+  const { error } = await supabase
+    .from("campuses")
+    .update({ name })
+    .eq("id", id);
+  if (error) throw toError(error);
+}
+
+export async function deleteCampus(id: string): Promise<void> {
+  const { error } = await supabase.from("campuses").delete().eq("id", id);
+  if (error) throw toError(error);
+}
+
+export type AdminOrganizationRow = {
+  id: string;
+  university_id: string;
+  campus_id: string | null;
+  name: string;
+  created_at: string;
+};
+
+export async function listOrganizations(
+  universityId?: string,
+  campusId?: string,
+): Promise<AdminOrganizationRow[]> {
+  let q = supabase.from("organizations").select("*").order("name");
+  if (universityId) q = q.eq("university_id", universityId);
+  if (campusId) q = q.eq("campus_id", campusId);
+  const { data, error } = await q;
+  if (error) throw toError(error);
+  return data as AdminOrganizationRow[];
+}
+
+export async function createOrganization(
+  universityId: string,
+  campusId: string | null,
+  name: string,
+): Promise<AdminOrganizationRow> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .insert({ university_id: universityId, campus_id: campusId, name })
+    .select()
+    .single();
+  if (error) throw toError(error);
+  return data as AdminOrganizationRow;
+}
+
+export async function updateOrganization(
+  id: string,
+  campusId: string | null,
+  name: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("organizations")
+    .update({ campus_id: campusId, name })
+    .eq("id", id);
+  if (error) throw toError(error);
+}
+
+export async function deleteOrganization(id: string): Promise<void> {
+  const { error } = await supabase.from("organizations").delete().eq("id", id);
+  if (error) throw toError(error);
+}
+
 // ─── Student Verification ──────────────────────────────────────────────────
 
 export type AdminVerificationRow = {
