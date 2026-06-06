@@ -30,7 +30,6 @@ export function getCurrentAppVersion(): string {
   if (native && native.trim()) return native.trim();
   const fromConstants =
     (Constants.expoConfig?.version as string | undefined) ||
-    // @ts-expect-error — manifest2 shape varies across SDKs.
     (Constants.manifest2?.extra?.expoClient?.version as string | undefined);
   return (fromConstants && fromConstants.trim()) || '0.0.0';
 }

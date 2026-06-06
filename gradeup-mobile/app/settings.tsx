@@ -28,8 +28,8 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
 import { isTaskPastDueNow } from '@/src/utils/date';
-import { cancelAllTaskNotifications, rescheduleAllTaskNotifications } from '@/src/notificationManager';
-import { cancelAllAttendanceNotifications, rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
+import { cancelAllTaskNotifications } from '@/src/notificationManager';
+import { cancelAllAttendanceNotifications } from '@/src/attendanceNotifications';
 import { cancelAllRevisionNotifications } from '@/src/revisionNotifications';
 import {
   openPrivacyPolicy,
@@ -109,10 +109,7 @@ export default function Settings() {
   /** Logged-in email from Supabase auth (shown in Android GC notice). */
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
-
   useEffect(() => {
-    getNotificationPrefs().then(setNotifPrefs);
     // Fetch user email for the Android Classroom notice
     if (Platform.OS === 'android') {
       supabase.auth.getUser().then(({ data }) => {
@@ -120,36 +117,6 @@ export default function Settings() {
       });
     }
   }, []);
-
-  const updateNotifPref = useCallback(
-    (patch: Partial<NotificationPrefs>) => {
-      setNotifPrefs((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev, ...patch };
-        setNotificationPrefs(next).catch(() => {});
-
-        if (
-          'tasksEnabled' in patch ||
-          'taskLeadDays' in patch ||
-          'taskOverdueEnabled' in patch
-        ) {
-          rescheduleAllTaskNotifications(tasks).catch(() => {});
-        }
-        if ('attendanceCheckinPopup' in patch) {
-          // Cancel + reschedule so existing pending notifications pick up the
-          // new silent / loud presentation. The user's class events themselves
-          // are unchanged — only the visual delivery flips.
-          void supabase.auth.getSession().then(({ data: { session } }) => {
-            const uid = session?.user?.id;
-            if (!uid) return;
-            rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
-          });
-        }
-        return next;
-      });
-    },
-    [tasks, timetable],
-  );
 
   const {
     classroomPrefs,
@@ -511,245 +478,20 @@ export default function Settings() {
               ios_backgroundColor={switchTrackOff}
             />
           </View>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/notification-settings' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f43f5e') }]}>
+              <Feather name="bell" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Notifications</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
         </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>NOTIFICATIONS</Text>
-        {notifPrefs ? (
-          <>
-            {/* Card 1: simple on/off alerts (iOS Settings–style rows) */}
-            <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#3b82f6') }]}>
-                  <Feather name="bell" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Task Reminders</Text>
-                  {!notifPrefs.tasksEnabled ? (
-                    <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
-                      Alerts before due dates
-                    </Text>
-                  ) : null}
-                </View>
-                <Switch
-                  value={notifPrefs.tasksEnabled}
-                  onValueChange={(v) => updateNotifPref({ tasksEnabled: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-
-              {notifPrefs.tasksEnabled ? (
-                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
-                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Before due date</Text>
-                  <View style={styles.notifChipWrap}>
-                    {[3, 1, 0].map((d) => {
-                      const active = notifPrefs.taskLeadDays.includes(d);
-                      const label = d === 0 ? 'Due day' : d === 1 ? '1 day' : '3 days';
-                      return (
-                        <Pressable
-                          key={d}
-                          onPress={() => {
-                            const next = active
-                              ? notifPrefs.taskLeadDays.filter((x) => x !== d)
-                              : [...notifPrefs.taskLeadDays, d].sort((a, b) => b - a);
-                            if (next.length > 0) updateNotifPref({ taskLeadDays: next });
-                          }}
-                          style={[
-                            styles.notifChip,
-                            {
-                              borderColor: active ? theme.primary : theme.border,
-                              backgroundColor: active ? theme.primary + '22' : theme.card,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.notifChipText,
-                              { color: active ? theme.primary : theme.text, fontWeight: active ? '600' : '500' },
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <View
-                    style={{
-                      height: StyleSheet.hairlineWidth,
-                      backgroundColor: theme.border,
-                      marginTop: 14,
-                      marginBottom: 4,
-                    }}
-                  />
-                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary, marginBottom: 8 }]}>
-                    After due date
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={[styles.menuLabel, { color: theme.text }]}>Overdue alert</Text>
-                      <Text style={[styles.notifRowFootnote, { color: theme.textSecondary, marginTop: 2 }]}>
-                        After the due date and time if still not done
-                      </Text>
-                    </View>
-                    <Switch
-                      value={notifPrefs.taskOverdueEnabled}
-                      onValueChange={(v) => updateNotifPref({ taskOverdueEnabled: v })}
-                      trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                      thumbColor={switchThumb}
-                      ios_backgroundColor={switchTrackOff}
-                    />
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.dividerList} />
-
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#10b981') }]}>
-                  <Feather name="clock" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Study Timer</Text>
-                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
-                    When a focus session ends
-                  </Text>
-                </View>
-                <Switch
-                  value={notifPrefs.studyTimerEnabled}
-                  onValueChange={(v) => updateNotifPref({ studyTimerEnabled: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-
-              <View style={styles.dividerList} />
-
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#4285f4') }]}>
-                  <Feather name="download-cloud" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Classroom Sync</Text>
-                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
-                    New work from Google Classroom
-                  </Text>
-                </View>
-                <Switch
-                  value={notifPrefs.classroomSyncEnabled}
-                  onValueChange={(v) => updateNotifPref({ classroomSyncEnabled: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-
-              <View style={styles.dividerList} />
-
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f59e0b') }]}>
-                  <Feather name="users" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Shared Tasks</Text>
-                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={1}>
-                    When someone shares a task with you
-                  </Text>
-                </View>
-                <Switch
-                  value={notifPrefs.sharedTasksEnabled}
-                  onValueChange={(v) => updateNotifPref({ sharedTasksEnabled: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-
-              <View style={styles.dividerList} />
-
-              <View style={styles.menuRow}>
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ef4444') }]}>
-                  <Feather name="check-square" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Class Check-in Popup</Text>
-                  <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={2}>
-                    {notifPrefs.attendanceCheckinPopup
-                      ? 'Banner 5 minutes before class — turn off to stay quiet.'
-                      : 'Silent — still appears in the in-app Notification Manager.'}
-                  </Text>
-                </View>
-                <Switch
-                  value={notifPrefs.attendanceCheckinPopup}
-                  onValueChange={(v) => updateNotifPref({ attendanceCheckinPopup: v })}
-                  trackColor={{ false: switchTrackOff, true: switchTrackOn }}
-                  thumbColor={switchThumb}
-                  ios_backgroundColor={switchTrackOff}
-                />
-              </View>
-            </View>
-
-            {/* Card 2: Today's Focus Preference */}
-            <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
-              <Pressable
-                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-                onPress={() => setFocusPrefExpanded(!focusPrefExpanded)}
-              >
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f43f5e') }]}>
-                  <Feather name="target" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>Today's Focus</Text>
-                  <Text style={[styles.notifRowFootnote, { color: theme.primary }]} numberOfLines={1}>
-                    {notifPrefs.todaysFocusPref === 'all' ? 'Everything' : notifPrefs.todaysFocusPref === 'task' ? 'Tasks Only' : notifPrefs.todaysFocusPref === 'study' ? 'Study Time Only' : 'Exams Only'}
-                  </Text>
-                </View>
-                <Feather name={focusPrefExpanded ? "chevron-up" : "chevron-down"} size={20} color={theme.textSecondary} />
-              </Pressable>
-
-              {focusPrefExpanded ? (
-                <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
-                  <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Show on Home Screen</Text>
-                  <View style={{ flexDirection: 'column', gap: 16, marginTop: 12 }}>
-                    {[
-                      { id: 'all', label: 'Everything (Default)', desc: 'Tasks, study, and exams based on priority' },
-                      { id: 'task', label: 'Tasks Only', desc: 'Prioritize assignments, quizzes, and labs' },
-                      { id: 'exam', label: 'Exams Only', desc: 'Prioritize tests and exams' },
-                      { id: 'study', label: 'Study Time Only', desc: 'Prioritize revision sessions' }
-                    ].map((opt) => (
-                      <Pressable
-                        key={opt.id}
-                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-                        onPress={() => {
-                          updateNotifPref({ todaysFocusPref: opt.id as any });
-                          setFocusPrefExpanded(false);
-                        }}
-                      >
-                        <View style={{ flex: 1, paddingRight: 10 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{opt.label}</Text>
-                          <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>{opt.desc}</Text>
-                        </View>
-                        {notifPrefs.todaysFocusPref === opt.id && (
-                          <Feather name="check" size={20} color={theme.primary} />
-                        )}
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-
-            <Text style={[styles.notifSectionHint, { color: theme.textSecondary }]}>
-              Allow notifications for Rencana in system Settings if alerts are muted.
-            </Text>
-          </>
-        ) : (
-          <View style={[styles.cardGroup, { backgroundColor: theme.card, paddingVertical: 24, alignItems: 'center' }]}>
-            <ActivityIndicator color={theme.primary} />
-          </View>
-        )}
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           {T('semesterConfig').toUpperCase()}
@@ -848,7 +590,7 @@ export default function Settings() {
           ))}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('accountSection')}</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT & DATA</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
@@ -863,84 +605,7 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('reportSection')}</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/report-issue' as any)}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ef4444') }]}>
-              <Feather name="flag" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('reportIssueTitle')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('reportIssueDesc')}</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LEGAL</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => void openPrivacyPolicy()}
-            accessibilityRole="link"
-            accessibilityLabel="Open Privacy Policy"
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
-              <Feather name="shield" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Privacy Policy</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                How Rencana collects, uses, and protects your data
-              </Text>
-            </View>
-            <Feather name="external-link" size={18} color={theme.textSecondary} />
-          </Pressable>
           <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={openTermsOfUse}
-            accessibilityRole="button"
-            accessibilityLabel="Open Terms of Use"
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
-              <Feather name="file-text" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Terms of Use (EULA)</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                The agreement you accept to use Rencana
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-          <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={openCommunityGuidelines}
-            accessibilityRole="button"
-            accessibilityLabel="Open Community Guidelines"
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
-              <Feather name="users" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Community Guidelines</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                Rules for reactions, shared tasks, and study circles
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>DATA MANAGEMENT</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [
               styles.menuRow,
@@ -1205,50 +870,6 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   menuLabel: { flex: 1, fontSize: 16, fontWeight: '400' },
-  notifRowFootnote: {
-    fontSize: 12,
-    marginTop: 3,
-    lineHeight: 16,
-    opacity: 0.85,
-  },
-  notifInset: {
-    marginHorizontal: 12,
-    marginBottom: 10,
-    marginTop: 2,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  notifInsetCaption: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-  notifChipScrollContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 4,
-  },
-  notifChipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  notifChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  notifChipCompact: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  notifChipText: {
-    fontSize: 14,
-  },
   notifSectionHint: {
     fontSize: 12,
     lineHeight: 17,
