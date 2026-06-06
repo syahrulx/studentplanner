@@ -130,6 +130,8 @@ function normalizeOverviewRpc(raw: unknown): DashboardOverview {
       : (raw as Record<string, unknown>);
   return {
     total_users: Number(o.total_users),
+    dau: Number(o.dau ?? 0),
+    mau: Number(o.mau ?? 0),
     total_universities: Number(o.total_universities),
     total_courses: Number(o.total_courses ?? 0),
     total_timetables: Number(o.total_timetables),
