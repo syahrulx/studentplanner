@@ -1208,12 +1208,19 @@ export default function AcademicCalendarScreen() {
                   ).map((lvl) => (
                     <TouchableOpacity
                       key={lvl}
-                      style={s.optRow}
+                      style={[
+                        s.optRow,
+                        {
+                          borderWidth: 1,
+                          borderColor: cfgLevel === lvl ? theme.primary : theme.border,
+                          backgroundColor: cfgLevel === lvl ? theme.primary + "1A" : "transparent",
+                        }
+                      ]}
                       activeOpacity={0.6}
                       onPress={() => setCfgLevel(lvl)}
                     >
                       <Feather
-                        name="check-circle"
+                        name={cfgLevel === lvl ? "check-circle" : "circle"}
                         size={18}
                         color={
                           cfgLevel === lvl ? theme.primary : theme.textSecondary
@@ -1273,7 +1280,14 @@ export default function AcademicCalendarScreen() {
                   {adminOffers.map((o) => (
                     <TouchableOpacity
                       key={o.id}
-                      style={s.optRow}
+                      style={[
+                        s.optRow,
+                        {
+                          borderWidth: 1,
+                          borderColor: cfgSelectedOfferId === o.id ? theme.primary : theme.border,
+                          backgroundColor: cfgSelectedOfferId === o.id ? theme.primary + "1A" : "transparent",
+                        }
+                      ]}
                       activeOpacity={0.6}
                       onPress={() => {
                         setCfgSelectedOfferId(o.id);
@@ -1283,7 +1297,7 @@ export default function AcademicCalendarScreen() {
                       }}
                     >
                       <Feather
-                        name="check-circle"
+                        name={cfgSelectedOfferId === o.id ? "check-circle" : "circle"}
                         size={18}
                         color={
                           cfgSelectedOfferId === o.id
@@ -1372,12 +1386,19 @@ export default function AcademicCalendarScreen() {
               {(["Full-time", "Part-time", "Unknown"] as const).map((m) => (
                 <TouchableOpacity
                   key={m}
-                  style={s.optRow}
+                  style={[
+                    s.optRow,
+                    {
+                      borderWidth: 1,
+                      borderColor: cfgMode === m ? theme.primary : theme.border,
+                      backgroundColor: cfgMode === m ? theme.primary + "1A" : "transparent",
+                    }
+                  ]}
                   activeOpacity={0.6}
                   onPress={() => setCfgMode(m)}
                 >
                   <Feather
-                    name="check-circle"
+                    name={cfgMode === m ? "check-circle" : "circle"}
                     size={18}
                     color={cfgMode === m ? theme.primary : theme.textSecondary}
                   />
