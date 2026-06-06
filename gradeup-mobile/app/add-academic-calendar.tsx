@@ -364,6 +364,9 @@ export default function AddAcademicCalendarScreen() {
             <Text style={[s.label, { color: theme.textSecondary }]}>
               Break Start Date (Optional)
             </Text>
+            <Text style={{ fontSize: 13, color: theme.textSecondary, opacity: 0.8, marginBottom: 8, marginTop: -4 }}>
+              This is for the mid-semester break only (do not include the end-of-semester break).
+            </Text>
             <TextInput
               style={[
                 s.input,
