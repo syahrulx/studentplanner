@@ -1726,32 +1726,6 @@ export async function deleteAuthorityRequest(id: string): Promise<void> {
   }
 }
 
-// ─── OpenAI Credit Usage ─────────────────────────────────────────────────
-
-export async function getOpenAiCreditUsage(): Promise<{
-  usage: { total_usage: number; daily_costs: Array<{ timestamp: number; line_items: Array<{ name: string; cost: number }> }> };
-  subscription: { hard_limit_usd: number };
-}> {
-  const headers = await adminInvokeHeaders();
-  const { data, error } = await invokeEdgeFunction(
-    "admin_openai_usage",
-    { apiKey: "" },
-    headers,
-  );
-  if (error) throw error;
-  const d = data as any;
-  // The edge function returns a simplified shape; wrap it into the shape the component expects
-  return {
-    usage: {
-      total_usage: (d.totalUsageUsd ?? 0) * 100, // component divides by 100
-      daily_costs: d.daily_costs ?? [],
-    },
-    subscription: {
-      hard_limit_usd: d.hardLimitUsd ?? 0,
-    },
-  };
-}
-
 // ─── Student Verification ──────────────────────────────────────────────────
 
 export type AdminVerificationRow = {
