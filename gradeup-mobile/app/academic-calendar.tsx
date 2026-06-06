@@ -1098,7 +1098,7 @@ export default function AcademicCalendarScreen() {
               <Text style={[s.modalSub, { color: theme.textSecondary }]}>
                 {user.universityId === "uitm"
                   ? "Choose your level and study mode so we select the correct HEA calendar segment."
-                  : "Official dates come from calendars published for your university. Student ID is optional — we use it when we can infer your intake from it."}
+                  : "Select your active semester calendar to load official dates."}
               </Text>
 
               <View style={s.divider} />
@@ -1106,8 +1106,7 @@ export default function AcademicCalendarScreen() {
                 Student ID / matric
               </Text>
               <Text style={[s.modalSub, { color: theme.textSecondary }]}>
-                Optional. Used when the app can infer your semester or year from
-                your ID; if not, your selections still apply.
+                Optional. Used to infer your intake.
               </Text>
               <TextInput
                 value={cfgStudentId}
@@ -1242,9 +1241,7 @@ export default function AcademicCalendarScreen() {
                       { color: theme.textSecondary, marginTop: 8 },
                     ]}
                   >
-                    No calendars are published for this university yet. Save
-                    still updates study mode and student ID; ask your admin to
-                    publish calendars here.
+                    No calendars published for your university yet.
                   </Text>
                   <Pressable
                     style={[
@@ -1269,9 +1266,7 @@ export default function AcademicCalendarScreen() {
               ) : (
                 <>
                   <Text style={[s.modalSub, { color: theme.textSecondary }]}>
-                    Only calendars published for your university are listed (
-                    {adminOffers.length} option
-                    {adminOffers.length !== 1 ? "s" : ""}).
+                    Select your semester to load dates.
                   </Text>
                   {adminOffers.map((o) => (
                     <Pressable
