@@ -7,6 +7,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { buildCustomTheme, type ThemePalette } from '@/constants/Themes';
 import { LinearGradient } from 'expo-linear-gradient';
+// @ts-expect-error No type definitions available for this library
+import ColorPicker from 'react-native-wheel-color-picker';
 
 const PRESET_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e',
@@ -204,6 +206,18 @@ export default function CustomThemeScreen() {
           </ScrollView>
 
           <View style={styles.colorPickerWrap}>
+            <View style={styles.wheelWrap}>
+              <ColorPicker
+                color={activeColor}
+                onColorChangeComplete={setActiveColor}
+                thumbSize={30}
+                sliderSize={20}
+                noSnap={true}
+                row={false}
+                swatches={false}
+              />
+            </View>
+
             <View style={styles.hexRow}>
               <Text style={[styles.hexLabel, { color: theme.textSecondary }]}>HEX code</Text>
               <TextInput
@@ -321,6 +335,7 @@ const styles = StyleSheet.create({
   tabBtnText: { fontSize: 14, fontWeight: '700' },
   
   colorPickerWrap: { marginTop: 8 },
+  wheelWrap: { height: 260, marginBottom: 24 },
   hexRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   hexLabel: { fontSize: 14, fontWeight: '600' },
   hexInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, fontWeight: '600', width: 120, textAlign: 'center' },
