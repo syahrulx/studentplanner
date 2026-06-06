@@ -1624,6 +1624,39 @@ export default function AcademicCalendarScreen() {
                   </Text>
                 </Pressable>
               ))}
+              {[
+                { label: "Study Week", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1 },
+                { label: "Semester Break", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2 },
+              ].map((opt) => (
+                <Pressable
+                  key={opt.val}
+                  style={[
+                    s.alignWeekBtn,
+                    {
+                      width: "48%",
+                      borderColor: theme.border,
+                      backgroundColor:
+                        alignPickWeek === opt.val
+                          ? theme.primary
+                          : theme.backgroundSecondary,
+                    },
+                  ]}
+                  onPress={() => setAlignPickWeek(opt.val)}
+                >
+                  <Text
+                    style={[
+                      s.alignWeekText,
+                      {
+                        fontSize: 13,
+                        color:
+                          alignPickWeek === opt.val ? theme.textInverse : theme.text,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
             </ScrollView>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>

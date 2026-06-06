@@ -20,8 +20,11 @@ export function applyTeachingWeekOffsetToProgress(
   const cap = Math.max(1, totalWeeks);
   let w = p.week + o;
   if (w < 1) w = 1;
-  if (w > cap) {
-    return { week: cap, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
+  if (w === cap + 1) {
+    return { week: w, isBreak: true, label: 'Study week', semesterPhase: 'break_after' };
+  }
+  if (w > cap + 1) {
+    return { week: w, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
   }
   return { week: w, isBreak: false, label: `Week ${w}`, semesterPhase: 'teaching' };
 }
