@@ -16,6 +16,8 @@ export interface SubmitUserReportInput {
   message: string;
   /** Free-text @handle / email when reporting another user. */
   targetUserHandle?: string;
+  /** Optional email or WhatsApp number for fast feedback. */
+  contactInfo?: string;
 }
 
 function detectPlatform(): 'ios' | 'android' | 'web' | 'other' {
@@ -83,6 +85,7 @@ export async function submitUserReport(input: SubmitUserReportInput): Promise<{ 
       subject,
       message,
       target_user_handle: targetHandle.length > 0 ? targetHandle.slice(0, 200) : null,
+      contact_info: input.contactInfo?.trim() || null,
       app_version: detectAppVersion(),
       platform: detectPlatform(),
     })

@@ -403,6 +403,56 @@ export default function Settings() {
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/subscription-plans' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#eab308') }]}>
+              <Feather name="zap" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Premium</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                {user.subscriptionPlan === 'pro'
+                  ? 'Active: Pro tier with highest AI limits.'
+                  : user.subscriptionPlan === 'plus'
+                    ? 'Active: Plus tier with daily study snaps.'
+                    : 'Manage plan, unlock AI limits & custom themes.'}
+              </Text>
+            </View>
+            <View
+              style={{
+                backgroundColor:
+                  user.subscriptionPlan === 'pro'
+                    ? '#eab308'
+                    : user.subscriptionPlan === 'plus'
+                      ? '#3b82f6'
+                      : theme.backgroundSecondary,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 8,
+                marginRight: 8,
+                borderWidth: user.subscriptionPlan === 'free' ? 1 : 0,
+                borderColor: theme.border,
+              }}
+            >
+              <Text
+                style={{
+                  color:
+                    user.subscriptionPlan === 'pro' || user.subscriptionPlan === 'plus'
+                      ? '#fff'
+                      : theme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: '800',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {user.subscriptionPlan || 'FREE'}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setThemePickerOpen(true)}
           >
             <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>
@@ -588,6 +638,80 @@ export default function Settings() {
               {i < toolsMenuItems.length - 1 && <View style={styles.dividerList} />}
             </React.Fragment>
           ))}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('reportSection')}</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/report-issue' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ef4444') }]}>
+              <Feather name="flag" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('reportIssueTitle')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('reportIssueDesc')}</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LEGAL</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => void openPrivacyPolicy()}
+            accessibilityRole="link"
+            accessibilityLabel="Open Privacy Policy"
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+              <Feather name="shield" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Privacy Policy</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                How Rencana collects, uses, and protects your data
+              </Text>
+            </View>
+            <Feather name="external-link" size={18} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={openTermsOfUse}
+            accessibilityRole="button"
+            accessibilityLabel="Open Terms of Use"
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
+              <Feather name="file-text" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Terms of Use (EULA)</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                The agreement you accept to use Rencana
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={openCommunityGuidelines}
+            accessibilityRole="button"
+            accessibilityLabel="Open Community Guidelines"
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
+              <Feather name="users" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Community Guidelines</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Rules for reactions, shared tasks, and study circles
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT & DATA</Text>

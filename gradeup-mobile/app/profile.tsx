@@ -615,78 +615,7 @@ export default function Profile() {
         ))}
       </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>SUBSCRIPTION</Text>
-      <Pressable
-        onPress={() => router.push('/subscription-plans' as any)}
-        style={({ pressed }) => [
-          styles.subscriptionCard,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.cardBorder,
-            opacity: pressed ? 0.92 : 1,
-          },
-        ]}
-      >
-        <View style={styles.subscriptionHeaderRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: theme.textSecondary,
-                textTransform: 'uppercase',
-                letterSpacing: 0.6,
-              }}
-            >
-              Your plan
-            </Text>
-            <Text
-              style={{
-                marginTop: 6,
-                fontSize: 22,
-                fontWeight: '800',
-                color: theme.primary,
-                letterSpacing: -0.3,
-              }}
-            >
-              {subscriptionPlanLabel(user.subscriptionPlan)}
-            </Text>
-            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '600', color: theme.text, opacity: 0.92 }}>
-              Tap to compare Free, Plus & Pro
-            </Text>
-          </View>
-          <Feather name="chevron-right" size={22} color={theme.textSecondary} style={{ alignSelf: 'center', marginLeft: 8 }} />
-        </View>
 
-        <View style={styles.subscriptionBody}>
-          {planFeaturesLoading ? (
-            <View style={{ paddingVertical: 10 }}>
-              <ActivityIndicator size="small" color={theme.primary} />
-            </View>
-          ) : planFeatureLines.length > 0 ? (
-            planFeatureLines.slice(0, 3).map((line, idx) => (
-              <View key={`${idx}-${line.slice(0, 24)}`} style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-                <Text style={{ color: theme.primary, fontSize: 15, lineHeight: 22 }}>•</Text>
-                <Text style={{ flex: 1, fontSize: 14, fontWeight: '400', lineHeight: 22, color: theme.textSecondary }}>
-                  {line}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={{ fontSize: 14, fontWeight: '400', lineHeight: 22, color: theme.textSecondary }}>
-              {subscriptionPlanSummary(user.subscriptionPlan)}
-            </Text>
-          )}
-          {planFeatureLines.length > 3 ? (
-            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginBottom: 8 }}>
-              + more in plan picker
-            </Text>
-          ) : null}
-          <Text style={{ fontSize: 12, fontWeight: '400', lineHeight: 18, color: theme.textSecondary, marginTop: 12, opacity: 0.92 }}>
-            Plans are managed by your school or Rencana admins. Contact support if your plan should change.
-          </Text>
-        </View>
-      </Pressable>
 
       <View style={{ height: 60 }} />
 
@@ -970,25 +899,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  subscriptionCard: {
-    marginHorizontal: PAD,
-    borderRadius: RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-  },
-  subscriptionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  subscriptionBody: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 0,
-  },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

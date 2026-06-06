@@ -87,6 +87,8 @@ export function DashboardRoute() {
   const cards = useMemo(() => {
     return [
       { title: 'Total Users', value: overview ? String(overview.total_users) : busy ? '…' : '—' },
+      { title: 'DAU (24h)', value: overview ? String(overview.dau) : busy ? '…' : '—' },
+      { title: 'MAU (30d)', value: overview ? String(overview.mau) : busy ? '…' : '—' },
       { title: 'Total Universities', value: overview ? String(overview.total_universities) : busy ? '…' : '—' },
       { title: 'Courses in App', value: overview ? String(overview.total_courses) : busy ? '…' : '—' },
       { title: 'Timetables Generated', value: overview ? String(overview.total_timetables) : busy ? '…' : '—' },

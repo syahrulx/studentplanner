@@ -91,6 +91,7 @@ import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
+import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -314,6 +315,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pendingExtraction, setPendingExtraction] = useState('');
   const [pendingClassroomTasks, setPendingClassroomTasks] = useState<import('../lib/googleClassroom').PendingNewTask[]>([]);
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
+
+  // Bump last_active_at for DAU/MAU tracking
+  const lastBumpRef = useRef<number>(0);
+  const bumpActivity = useCallback(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      const now = Date.now();
+      // Only bump once every 5 minutes to avoid DB spam
+      if (now - lastBumpRef.current < 5 * 60 * 1000) return;
+      lastBumpRef.current = now;
+      supabase
+        .from('profiles')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('id', uid)
+        .then();
+    });
+  }, []);
+
+  useEffect(() => {
+    bumpActivity();
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state === 'active') bumpActivity();
+    });
+    return () => sub.remove();
+  }, [bumpActivity]);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
   const [customThemeColors, setCustomThemeColorsState] = useState<CustomThemeColors | null>(null);
@@ -940,6 +967,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // ── Initialize RevenueCat & sync subscription plan from the store ──
+        try {
+          await initPurchases(uid);
+          const rcPlan = await getCurrentPlan();
+          // RevenueCat is the source of truth — override the DB value.
+          // This handles cases where the webhook hasn't fired yet (e.g. offline).
+          if (rcPlan !== 'free') {
+            setUserState((prev) => ({ ...prev, subscriptionPlan: rcPlan }));
+          }
+        } catch (e) {
+          if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
+          // Non-fatal: the user just keeps whatever plan is in the DB.
+        }
+
         // Check for new Google Classroom tasks in the background (no silent import)
         try {
           const { checkForNewTasks } = require('../lib/googleClassroom');
@@ -1022,6 +1063,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setAcademicCalendar(null);
           setTimetable([]);
           cancelAllAttendanceNotifications().catch(() => {});
+          logOutPurchases().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }
@@ -1040,6 +1082,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       removePushTokenListener();
     };
   }, []);
+
+  // RevenueCat: listen for real-time subscription changes (renewal, expiration, upgrade)
+  // and sync it to both local App State and Supabase profile database.
+  useEffect(() => {
+    const unsubscribe = onCustomerInfoUpdate((newPlan) => {
+      setUser((prev) => {
+        if (prev.subscriptionPlan === newPlan) return prev;
+        return { ...prev, subscriptionPlan: newPlan };
+      });
+      // Client-side fallback: sync the new plan state directly to Supabase
+      void updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
+        if (__DEV__) console.warn('[Rencana] Client-side subscription sync to DB failed:', err);
+      });
+    });
+    return unsubscribe;
+  }, [setUser, updateProfile]);
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack };
 

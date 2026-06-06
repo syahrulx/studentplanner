@@ -49,6 +49,7 @@ export default function ReportIssueScreen() {
   const [kind, setKind] = useState<UserReportKind>('bug');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [contactInfo, setContactInfo] = useState('');
   const [targetUserHandle, setTargetUserHandle] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -67,6 +68,7 @@ export default function ReportIssueScreen() {
         subject,
         message,
         targetUserHandle: showsTargetField ? targetUserHandle : undefined,
+        contactInfo: contactInfo.trim().length > 0 ? contactInfo : undefined,
       });
       Alert.alert(T('reportSubmittedTitle'), T('reportSubmittedBody'), [
         { text: 'OK', onPress: () => router.back() },
@@ -163,6 +165,28 @@ export default function ReportIssueScreen() {
             </View>
           </>
         ) : null}
+
+        {/* Contact Info */}
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          EMAIL OR WHATSAPP NUMBER (OPTIONAL)
+        </Text>
+        <View
+          style={[
+            styles.inputBox,
+            { backgroundColor: theme.card, borderColor: theme.border ?? 'rgba(150,150,150,0.2)' },
+          ]}
+        >
+          <TextInput
+            value={contactInfo}
+            onChangeText={setContactInfo}
+            placeholder="For fast feedback"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={200}
+            style={[styles.singleLineInput, { color: theme.text }]}
+          />
+        </View>
 
         {/* Subject */}
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

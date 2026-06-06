@@ -474,6 +474,7 @@ const KEY_NOTIFICATION_PREFS = 'notificationPrefs';
 
 export interface NotificationPrefs {
   tasksEnabled: boolean;
+  taskReminderTime?: string; // "HH:mm"
   taskLeadDays: number[];
   /** One alert shortly after the due date and time if the task is still incomplete. */
   taskOverdueEnabled: boolean;
@@ -496,6 +497,7 @@ export interface NotificationPrefs {
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   tasksEnabled: true,
+  taskReminderTime: '09:00',
   taskLeadDays: [3, 1, 0],
   taskOverdueEnabled: true,
   studyTimerEnabled: true,

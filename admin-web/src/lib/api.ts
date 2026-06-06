@@ -116,6 +116,8 @@ export async function getMyAdminProfile(): Promise<AdminProfile> {
 
 export type DashboardOverview = {
   total_users: number;
+  dau: number;
+  mau: number;
   total_universities: number;
   total_courses: number;
   total_timetables: number;
@@ -1937,6 +1939,7 @@ export interface AdminUserReportRow {
   message: string;
   target_user_handle: string | null;
   target_user_id: string | null;
+  contact_info: string | null;
   app_version: string | null;
   platform: string | null;
   status: UserReportStatus;
@@ -1946,7 +1949,7 @@ export interface AdminUserReportRow {
 }
 
 const USER_REPORTS_COLUMNS =
-  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at';
+  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at';
 
 export async function listUserReports(opts: {
   status?: UserReportStatus | 'all';
@@ -1978,6 +1981,7 @@ export async function listUserReports(opts: {
             `message.ilike.%${safe}%`,
             `reporter_name_snapshot.ilike.%${safe}%`,
             `reporter_email_snapshot.ilike.%${safe}%`,
+            `contact_info.ilike.%${safe}%`,
             `target_user_handle.ilike.%${safe}%`,
           ].join(','),
         );

@@ -309,6 +309,10 @@ export async function purchasePackage(
     console.log(`${TAG} ============================================================`);
     return plan;
   } catch (error: any) {
+    if (isPurchaseCancelled(error)) {
+      console.log(`${TAG} ℹ️ User cancelled the purchase.`);
+      throw error;
+    }
     console.error(`${TAG} ❌ purchasePackage() FAILED`);
     console.error(`${TAG} Error name:                  ${error?.name}`);
     console.error(`${TAG} Error message:               ${error?.message}`);

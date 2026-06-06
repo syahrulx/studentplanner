@@ -140,6 +140,7 @@ export function UserReportsRoute() {
         r.message,
         r.reporter_name_snapshot,
         r.reporter_email_snapshot,
+        r.contact_info,
         r.target_user_handle,
         r.reporter_id,
       ]
@@ -316,6 +317,11 @@ export function UserReportsRoute() {
                             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                               {r.reporter_email_snapshot || '—'}
                             </div>
+                            {r.contact_info ? (
+                              <div className="mt-1 text-[11px] font-bold text-brand-600 dark:text-brand-400">
+                                📞 {r.contact_info}
+                              </div>
+                            ) : null}
                             <div className="mt-0.5 font-mono text-[11px] text-slate-400 dark:text-slate-500">
                               {shortId(r.reporter_id)}…
                             </div>
@@ -425,6 +431,7 @@ function ReportDetailModal({
         <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Detail label="Reporter name">{row.reporter_name_snapshot || '(no name)'}</Detail>
           <Detail label="Reporter email">{row.reporter_email_snapshot || '—'}</Detail>
+          <Detail label="Contact Info (User Provided)">{row.contact_info || '—'}</Detail>
           <Detail label="Reporter id" mono>{row.reporter_id || '—'}</Detail>
           <Detail label="Reported user handle">{row.target_user_handle || '—'}</Detail>
           <Detail label="Platform">{row.platform || '—'}</Detail>

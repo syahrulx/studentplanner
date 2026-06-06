@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
@@ -38,6 +39,40 @@ export default function NotificationSettings() {
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
+  const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
+
+  const isPremium = useApp().user.subscriptionPlan === 'plus' || useApp().user.subscriptionPlan === 'pro';
+
+  const formatTimeHMDisplay = (hhmm: string): string => {
+    const [hStr, mStr] = hhmm.split(':');
+    const h = parseInt(hStr, 10) || 0;
+    const m = parseInt(mStr, 10) || 0;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayH = h % 12 === 0 ? 12 : h % 12;
+    const displayM = String(m).padStart(2, '0');
+    return `${displayH}:${displayM} ${ampm}`;
+  };
+
+  const timeStringToDate = (timeStr: string): Date => {
+    const [hStr, mStr] = (timeStr || '09:00').split(':');
+    const d = new Date();
+    d.setHours(parseInt(hStr, 10) || 9, parseInt(mStr, 10) || 0, 0, 0);
+    return d;
+  };
+
+  const dateToTimeString = (date: Date): string => {
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  const handleChooseReminderTime = () => {
+    if (!isPremium) {
+      router.push('/subscription-plans' as any);
+      return;
+    }
+    setShowReminderTimePicker(true);
+  };
 
   useEffect(() => {
     getNotificationPrefs().then(setNotifPrefs);
@@ -71,11 +106,12 @@ export default function NotificationSettings() {
   );
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <>
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.background }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => router.back()}
@@ -176,6 +212,41 @@ export default function NotificationSettings() {
                     ios_backgroundColor={switchTrackOff}
                   />
                 </View>
+                <View
+                  style={{
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: theme.border,
+                    marginTop: 14,
+                    marginBottom: 14,
+                  }}
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+                    pressed && { opacity: 0.72 }
+                  ]}
+                  onPress={handleChooseReminderTime}
+                >
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.menuLabel, { color: theme.text }]}>Reminder Time</Text>
+                      {!isPremium && (
+                        <View style={{ backgroundColor: theme.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>PLUS / PRO</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.notifRowFootnote, { color: theme.textSecondary, marginTop: 2 }]}>
+                      Choose the exact time of day you want to receive your task reminders
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: theme.primary }}>
+                      {formatTimeHMDisplay(notifPrefs.taskReminderTime || '09:00')}
+                    </Text>
+                    <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                  </View>
+                </Pressable>
               </View>
             ) : null}
 
@@ -327,6 +398,51 @@ export default function NotificationSettings() {
 
       <View style={{ height: 60 }} />
     </ScrollView>
+
+      {Platform.OS === 'ios' && showReminderTimePicker && (
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+          <Pressable style={styles.modalBg} onPress={() => setShowReminderTimePicker(false)}>
+            <View style={[styles.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
+              <View style={styles.iosTimePickerWrap}>
+                <DateTimePicker
+                  value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
+                  mode="time"
+                  display="spinner"
+                  is24Hour
+                  textColor={theme.text}
+                  style={styles.iosTimePicker}
+                  onChange={(_, date) => {
+                    if (date) {
+                      const newTime = dateToTimeString(date);
+                      updateNotifPref({ taskReminderTime: newTime });
+                    }
+                  }}
+                />
+              </View>
+              <Pressable style={[styles.timeDoneBtn, { backgroundColor: theme.primary }]} onPress={() => setShowReminderTimePicker(false)}>
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 17 }}>Done</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </View>
+      )}
+
+      {Platform.OS === 'android' && showReminderTimePicker && (
+        <DateTimePicker
+          value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
+          mode="time"
+          display="default"
+          is24Hour
+          onChange={(event, date) => {
+            setShowReminderTimePicker(false);
+            if (event.type === 'set' && date) {
+              const newTime = dateToTimeString(date);
+              updateNotifPref({ taskReminderTime: newTime });
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -417,4 +533,34 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },
+  modalBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+    zIndex: 999,
+  },
+  timeSheet: {
+    marginHorizontal: 16,
+    borderRadius: 14,
+    padding: 16,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 400,
+    marginBottom: 40,
+  },
+  iosTimePickerWrap: {
+    height: 216,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  iosTimePicker: {
+    height: 216,
+    width: '100%',
+  },
+  timeDoneBtn: {
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
 });
