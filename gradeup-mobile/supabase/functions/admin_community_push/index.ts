@@ -180,7 +180,28 @@ serve(async (req: Request) => {
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
 
-      // Delegate to the existing community-push function so all rate-limiting, chunking
+      // 1. Bulk insert into in_app_notifications
+      // Chunk into batches of 500 to avoid payload size limits
+      const chunkSize = 500;
+      for (let i = 0; i < recipients.length; i += chunkSize) {
+        const batchIds = recipients.slice(i, i + chunkSize);
+        const rows = batchIds.map((uid) => ({
+          user_id: uid,
+          title: title,
+          body: body,
+          category: category,
+          data: data,
+        }));
+        
+        // We do not await/fail the whole request if inserting in-app notifications fails,
+        // but we log the error. We use the service key client (admin) since we bypass RLS for broadcasting.
+        const { error: insertErr } = await admin.from('in_app_notifications').insert(rows);
+        if (insertErr) {
+          console.error('[admin_community_push] Failed to bulk insert in_app_notifications:', insertErr.message);
+        }
+      }
+
+      // 2. Delegate to the existing community-push function so all rate-limiting, chunking
       // and opt-in filtering stays in one place.
       const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
         method: 'POST',
