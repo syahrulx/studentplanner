@@ -1581,49 +1581,32 @@ export default function AcademicCalendarScreen() {
               </Pressable>
             </View>
 
-            <ScrollView
-              style={{ maxHeight: 320, marginTop: 12 }}
-              contentContainerStyle={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                justifyContent: "space-between",
-                rowGap: 10,
-                columnGap: 10,
-                paddingBottom: 2,
-              }}
-              showsVerticalScrollIndicator={false}
-            >
-              {Array.from(
-                { length: Math.max(1, academicCalendar?.totalWeeks ?? 14) },
-                (_, i) => i + 1,
-              ).map((n) => (
+            <View style={{ marginTop: 24, marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
                 <Pressable
-                  key={n}
-                  style={[
-                    s.alignWeekBtn,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor:
-                        alignPickWeek === n
-                          ? theme.primary
-                          : theme.backgroundSecondary,
-                    },
-                  ]}
-                  onPress={() => setAlignPickWeek(n)}
+                  onPress={() => setAlignPickWeek((prev) => Math.max(1, prev - 1))}
+                  style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.backgroundSecondary, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text
-                    style={[
-                      s.alignWeekText,
-                      {
-                        color:
-                          alignPickWeek === n ? theme.textInverse : theme.text,
-                      },
-                    ]}
-                  >
-                    {n}
-                  </Text>
+                  <Feather name="minus" size={22} color={theme.text} />
                 </Pressable>
-              ))}
+                
+                <Text style={{ fontSize: 24, fontWeight: '900', color: theme.text, minWidth: 160, textAlign: 'center' }}>
+                  {alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 1
+                    ? 'Study Week'
+                    : alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 2
+                    ? 'Semester Break'
+                    : `Week ${alignPickWeek}`}
+                </Text>
+
+                <Pressable
+                  onPress={() => setAlignPickWeek((prev) => Math.min((academicCalendar?.totalWeeks ?? 14) + 2, prev + 1))}
+                  style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.backgroundSecondary, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Feather name="plus" size={22} color={theme.text} />
+                </Pressable>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 28, justifyContent: 'center' }}>
               {[
                 { label: "Study Week", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1 },
                 { label: "Semester Break", val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2 },
@@ -1647,7 +1630,7 @@ export default function AcademicCalendarScreen() {
                     style={[
                       s.alignWeekText,
                       {
-                        fontSize: 13,
+                        fontSize: 14,
                         color:
                           alignPickWeek === opt.val ? theme.textInverse : theme.text,
                       },
@@ -1657,7 +1640,8 @@ export default function AcademicCalendarScreen() {
                   </Text>
                 </Pressable>
               ))}
-            </ScrollView>
+              </View>
+            </View>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
               <Pressable
