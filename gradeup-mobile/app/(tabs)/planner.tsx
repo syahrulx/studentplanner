@@ -558,14 +558,23 @@ export default function Planner() {
   const filteredTasks = useMemo(() => {
     let list: import('@/src/types').Task[];
     if (view === 'all' || view === 'month') {
-      // For lists that span many dates, expand recurring tasks into one
-      // virtual row per occurrence in the next ~60 days so they show on every
-      // scheduled weekday instead of just their placeholder dueDate.
+      // Month and All views:
+      // Include ALL one-off tasks (past, present, future) so they never disappear.
+      const allOneOffs = tasks.filter((t) => !isRecurringTask(t));
+
+      // For recurring tasks, expand them for a 6-month window to prevent infinite occurrences.
       const start = new Date(`${todayISO}T12:00:00`);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 60);
+      start.setDate(start.getDate() - 30);
+      const startISO = toLocalISO(start);
+
+      const end = new Date(`${todayISO}T12:00:00`);
+      end.setDate(end.getDate() + 180); // 6 months forward
       const endISO = toLocalISO(end);
-      list = expandTasksForRange(tasks, todayISO, endISO);
+
+      const recurringTasks = tasks.filter(isRecurringTask);
+      const expandedRecurring = expandTasksForRange(recurringTasks, startISO, endISO);
+
+      list = [...allOneOffs, ...expandedRecurring];
     } else if (view === 'week') {
       // Week view: expand only across the visible week so recurring tasks
       // show on each of their weekdays in the current week.
@@ -1521,7 +1530,8 @@ export default function Planner() {
                                               <Text
                                                 style={[
                                                   s.monthGridTagText,
-                                                  { color: theme.text, fontSize: dynamicFontSize },
+                                                  { color: isDone ? theme.textSecondary : theme.text, fontSize: dynamicFontSize },
+                                                  isDone && { textDecorationLine: 'line-through', opacity: 0.6 },
                                                 ]}
                                                 numberOfLines={dynamicLines}
                                               >
@@ -1997,7 +2007,16 @@ export default function Planner() {
                                         backgroundColor: isDone ? color : 'transparent' 
                                       }} />
                                     </View>
-                                    <Text style={{ fontSize: 9, fontWeight: '800', color: theme.text, lineHeight: 11 }} numberOfLines={2}>
+                                    <Text 
+                                      style={{ 
+                                        fontSize: 9, 
+                                        fontWeight: '800', 
+                                        color: isDone ? theme.textSecondary : theme.text, 
+                                        lineHeight: 11, 
+                                        textDecorationLine: isDone ? 'line-through' : 'none' 
+                                      }} 
+                                      numberOfLines={2}
+                                    >
                                       {title}
                                     </Text>
                                     {boundedHeight > 40 && (
