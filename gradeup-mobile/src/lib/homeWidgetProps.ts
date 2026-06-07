@@ -41,6 +41,8 @@ export type HomeWidgetTheme = {
   textSecondary: string;
   danger: string;
   warning: string;
+  focusCard?: string;
+  focusCardText?: string;
 };
 
 export type HomeWidgetProps = {
@@ -53,11 +55,17 @@ export type HomeWidgetProps = {
   theme: HomeWidgetTheme;
 };
 
-export function homeWidgetThemeFromId(themeId: ThemeId, themePack?: string, spiderBlueAccents = true): HomeWidgetTheme {
+export function homeWidgetThemeFromId(
+  themeId: ThemeId, 
+  themePack?: string, 
+  spiderBlueAccents = true,
+  customThemeColors?: import('../storage').CustomThemeColors | null
+): HomeWidgetTheme {
   let t: ThemePalette = THEMES[themeId] ?? THEMES.light;
   if (themePack === 'cat') t = CAT_THEME_OVERRIDE;
   else if (themePack === 'mono') t = MONO_THEME_OVERRIDE;
   else if (themePack === 'spider') t = resolveSpiderTheme(spiderBlueAccents);
+  else if (themePack === 'purple') t = PURPLE_THEME_OVERRIDE;
   else if (themePack === 'purple') t = PURPLE_THEME_OVERRIDE;
 
   // Pass through ALL theme colors directly so the widget fully mirrors
@@ -71,9 +79,11 @@ export function homeWidgetThemeFromId(themeId: ThemeId, themePack?: string, spid
     border: t.border,
     primary: t.primary,
     text: t.text,
-    textSecondary: t.textSecondary,
+    textSecondary: themePack === 'custom' && customThemeColors?.textSecondary ? customThemeColors.textSecondary : t.textSecondary,
     danger: t.danger,
     warning: t.warning,
+    focusCard: themePack === 'custom' && customThemeColors?.focusCard ? customThemeColors.focusCard : (t as any).focusCard,
+    focusCardText: themePack === 'custom' && customThemeColors?.focusCardText ? customThemeColors.focusCardText : (t as any).focusCardText,
   };
 }
 
@@ -105,11 +115,12 @@ export function buildHomeWidgetProps(input: {
   todayISO?: string;
   maxTasks?: number;
   maxClasses?: number;
+  customThemeColors?: import('../storage').CustomThemeColors | null;
 }): HomeWidgetProps {
   const todayISO = input.todayISO ?? getTodayISO();
   const maxTasks = input.maxTasks ?? 5;
   const maxClasses = input.maxClasses ?? 6;
-  const theme = homeWidgetThemeFromId(input.themeId, input.themePack, input.spiderBlueAccents ?? true);
+  const theme = homeWidgetThemeFromId(input.themeId, input.themePack, input.spiderBlueAccents ?? true, input.customThemeColors);
 
   if (!input.signedIn) {
     return {

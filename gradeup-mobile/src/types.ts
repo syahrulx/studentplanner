@@ -162,6 +162,8 @@ export interface UserProfile {
   timetable?: TimetableEntry[];
   /** Subscription tier; default free when missing from DB */
   subscriptionPlan?: SubscriptionPlan;
+  /** True if the user has ever claimed a premium theme trial */
+  hasUsedThemeTrial?: boolean;
 }
 
 export interface Note {
@@ -311,4 +313,60 @@ export interface TaskShareStream {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type GradingScheme = 'UiTM' | 'uitm' | 'generic' | 'generic_4' | 'generic_5';
+
+export interface GradeAssessment {
+  id: string;
+  name: string;
+  /** Percentage weight within the carry-marks portion (0-100). All components must sum to 100. */
+  weight: number;
+  /** Marks scored by the student; null = not yet entered. */
+  scored: number | null;
+  /** Full marks available for this component (e.g. 100). */
+  maxScore: number;
+}
+
+/** Full grade configuration for one subject. Persisted both locally and in Supabase. */
+export interface SubjectGradeConfig {
+  subjectId: string;
+  gradingScheme: GradingScheme;
+  hasFinalExam: boolean;
+  /** % of total grade from carry marks (0–100). */
+  carryWeight: number;
+  /** % of total grade from final exam — auto-derived as (100 - carryWeight). */
+  finalWeight: number;
+  assessments: GradeAssessment[];
+  /** Final exam score; null = not yet entered. */
+  finalExamScored: number | null;
+  finalExamMaxScore: number;
+}
+
+/** A single row from the UiTM (or generic) grade table. */
+export interface GradeRow {
+  letter: string;
+  minPercent: number;
+  maxPercent: number;
+  point: number;
+}
+
+/** Result of the live grade calculation. */
+export interface GradeResult {
+  hasData?: boolean;
+  carryEarned: number;       // carry mark contribution to final score (out of carryWeight)
+  carryPossible: number;     // max possible carry earned so far
+  carryPending: number;      // carry % from components not yet entered
+  finalContribution: number; // final exam contribution to total (out of finalWeight)
+  totalScore: number;        // projected total % (0-100)
+  currentStandingScore?: number;
+  currentStandingGrade?: GradeRow;
+  grade: GradeRow;
+  /** What score user needs in final exam to reach each grade threshold. */
+  requiredForGrades: {
+    grade: string;
+    point: number;
+    required: number;        // % needed in final exam (0-100)
+    achievable: boolean;
+  }[];
 }

@@ -42,6 +42,7 @@ export async function getProfile(userId: string): Promise<{
   lastSync?: string;
   portalTeachingAnchoredSemester?: number;
   subscriptionPlan?: SubscriptionPlan;
+  hasUsedThemeTrial?: boolean;
 } | null> {
   const { data, error } = await supabase
     .from(TABLE)

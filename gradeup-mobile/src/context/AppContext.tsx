@@ -1083,23 +1083,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // RevenueCat: listen for real-time subscription changes (renewal, expiration, upgrade)
-  // and sync it to both local App State and Supabase profile database.
-  useEffect(() => {
-    const unsubscribe = onCustomerInfoUpdate((newPlan) => {
-      setUser((prev) => {
-        if (prev.subscriptionPlan === newPlan) return prev;
-        return { ...prev, subscriptionPlan: newPlan };
-      });
-      // Client-side fallback: sync the new plan state directly to Supabase
-      void updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
-        if (__DEV__) console.warn('[Rencana] Client-side subscription sync to DB failed:', err);
-      });
-    });
-    return unsubscribe;
-  }, [setUser, updateProfile]);
+  // RevenueCat listener will be registered below updateProfile
 
-  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack };
+  homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack, customThemeColors };
 
   // Solution C: Gate widget sync — only push to widgets once real data is loaded
   useEffect(() => {
@@ -1117,6 +1103,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           signedIn: Boolean(session?.user?.id),
           themeId: theme,
           themePack,
+          customThemeColors,
           maxTasks: 3,
         });
       });
@@ -1141,6 +1128,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           signedIn: Boolean(session?.user?.id),
           themeId: r.theme,
           themePack: r.themePack,
+          customThemeColors: r.customThemeColors,
           maxTasks: 3,
         });
       });
