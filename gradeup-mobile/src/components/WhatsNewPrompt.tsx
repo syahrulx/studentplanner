@@ -137,11 +137,11 @@ export default function WhatsNewPromptModal() {
                     <Feather name={ICONS[i % ICONS.length]} size={18} color={isDark ? '#fff' : '#007AFF'} />
                   </View>
                   <View style={styles.featureText}>
-                    <Text style={[styles.featureTitle, { color: textPrimary }]} numberOfLines={2}>
+                    <Text style={[styles.featureTitle, { color: textPrimary }]}>
                       {f.title}
                     </Text>
                     {!!f.body && (
-                      <Text style={[styles.featureBody, { color: textSecondary }]} numberOfLines={3}>
+                      <Text style={[styles.featureBody, { color: textSecondary }]}>
                         {f.body}
                       </Text>
                     )}
