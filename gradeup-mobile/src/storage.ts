@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { THEME_IDS, type ThemeId } from '@/constants/Themes';
 import type { Course } from './types';
+import type { ParticipantAnswer } from './lib/quizApi';
 
 const KEY_HAS_SEEN_TUTORIAL = 'hasSeenTutorial';
 const KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO = 'hasSeenNonUitmTimetableIntro';
@@ -654,5 +655,74 @@ export async function setTimetableSlotDetailsVisibility(
 ): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_TIMETABLE_SLOT_DETAILS, JSON.stringify(v));
+  } catch {}
+}
+
+// ---------- Quiz in-progress recovery ----------
+
+/**
+ * Answers in a live quiz are kept in memory and only batch-written to the DB
+ * when the quiz finishes (to avoid realtime congestion). That means a remount
+ * with no in-memory session — e.g. the app was killed/backgrounded mid-game —
+ * would otherwise reload empty answers from the DB and force the player to
+ * replay from question 1. We mirror progress to local storage on every answer
+ * so it can be recovered. Only the most recent session is retained.
+ */
+const KEY_QUIZ_PROGRESS = 'quizProgressV1';
+
+interface StoredQuizProgress {
+  sessionId: string;
+  answers: ParticipantAnswer[];
+  updatedAt: number;
+}
+
+function isParticipantAnswer(a: unknown): a is ParticipantAnswer {
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof (a as ParticipantAnswer).questionIndex === 'number' &&
+    typeof (a as ParticipantAnswer).selectedIndex === 'number' &&
+    typeof (a as ParticipantAnswer).correct === 'boolean' &&
+    typeof (a as ParticipantAnswer).timeMs === 'number'
+  );
+}
+
+export async function saveQuizProgress(
+  sessionId: string,
+  answers: ParticipantAnswer[],
+): Promise<void> {
+  if (!sessionId) return;
+  try {
+    const payload: StoredQuizProgress = { sessionId, answers, updatedAt: Date.now() };
+    await AsyncStorage.setItem(KEY_QUIZ_PROGRESS, JSON.stringify(payload));
+  } catch {}
+}
+
+/** Returns saved answers for the given session, or null if none/mismatch. */
+export async function getQuizProgress(sessionId: string): Promise<ParticipantAnswer[] | null> {
+  if (!sessionId) return null;
+  try {
+    const raw = await AsyncStorage.getItem(KEY_QUIZ_PROGRESS);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredQuizProgress>;
+    if (parsed?.sessionId !== sessionId || !Array.isArray(parsed.answers)) return null;
+    const answers = parsed.answers.filter(isParticipantAnswer);
+    return answers.length > 0 ? answers : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Clears stored progress. When sessionId is given, only clears if it matches. */
+export async function clearQuizProgress(sessionId?: string): Promise<void> {
+  try {
+    if (sessionId) {
+      const raw = await AsyncStorage.getItem(KEY_QUIZ_PROGRESS);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<StoredQuizProgress>;
+        if (parsed?.sessionId && parsed.sessionId !== sessionId) return;
+      }
+    }
+    await AsyncStorage.removeItem(KEY_QUIZ_PROGRESS);
   } catch {}
 }

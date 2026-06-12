@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import * as quizApi from '../lib/quizApi';
+import { saveQuizProgress, getQuizProgress, clearQuizProgress } from '../storage';
 import type {
   QuizSession,
   QuizParticipant,
@@ -222,9 +223,20 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     
     if (myPart) {
       setMyParticipantId(myPart.id);
-      const existingAnswers = (myPart.answers as ParticipantAnswer[]) || [];
-      setMyAnswers(existingAnswers);
-      myAnswersRef.current = existingAnswers;
+      const dbAnswers = (myPart.answers as ParticipantAnswer[]) || [];
+      // Live answers are only batch-written to the DB at finish, so a remount
+      // with no in-memory session (e.g. app was killed mid-game) would reload
+      // empty/stale DB answers. Recover from the local mirror and keep whichever
+      // source has more progress so we never replay already-answered questions.
+      let restored = dbAnswers;
+      try {
+        const localAnswers = await getQuizProgress(session.id);
+        if (localAnswers && localAnswers.length > dbAnswers.length) {
+          restored = localAnswers;
+        }
+      } catch {}
+      setMyAnswers(restored);
+      myAnswersRef.current = restored;
     } else {
       setMyAnswers([]);
       myAnswersRef.current = [];
@@ -251,14 +263,23 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     correct: boolean,
     timeMs: number,
   ) => {
-    // Append locally for instant tracking
+    // Append locally for instant tracking. Guard against duplicate submissions
+    // for the same question index (e.g. a tap racing the timer expiry) so a
+    // recovered session can't accumulate phantom extra answers.
     const answer: ParticipantAnswer = { questionIndex, selectedIndex, correct, timeMs };
-    const updatedAnswers = [...myAnswersRef.current, answer];
+    const alreadyAnswered = myAnswersRef.current.some((a) => a.questionIndex === questionIndex);
+    const updatedAnswers = alreadyAnswered
+      ? myAnswersRef.current
+      : [...myAnswersRef.current, answer];
     myAnswersRef.current = updatedAnswers;
     setMyAnswers(updatedAnswers);
 
-    // Database write removed to prevent realtime congestion.
-    // Answers are held in `myAnswersRef` and written as a batch when the quiz finishes.
+    // Database write removed to prevent realtime congestion. Answers are held in
+    // `myAnswersRef`, written as a batch when the quiz finishes, and mirrored to
+    // local storage on every answer so progress survives a mid-game app restart.
+    if (currentSession?.id && !alreadyAnswered) {
+      void saveQuizProgress(currentSession.id, updatedAnswers);
+    }
 
     // Broadcast to opponents — use cached userId ref to avoid auth roundtrip per answer
     if (channelRef.current && currentSession?.mode === 'multiplayer' && myUserIdRef.current) {
@@ -333,6 +354,9 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         await quizApi.finishSession(currentSession.id);
       }
     }
+
+    // Progress is now durably saved in the DB — drop the local recovery mirror.
+    void clearQuizProgress(currentSession.id);
   }, [myParticipantId, currentSession, opponentProgress]);
 
 
@@ -348,6 +372,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
   const leaveQuiz = useCallback(() => {
     cleanupChannel();
+    const leavingSessionId = currentSession?.id;
+    if (leavingSessionId) void clearQuizProgress(leavingSessionId);
     setCurrentSession(null);
     setParticipants([]);
     setMyParticipantId(null);
@@ -358,7 +384,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     setCountdown(null);
     setIsReady(false);
     setAllReady(false);
-  }, [cleanupChannel]);
+  }, [cleanupChannel, currentSession]);
 
   const value: QuizState = {
     currentSession,

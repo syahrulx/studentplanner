@@ -677,7 +677,7 @@ Deno.serve(async (req) => {
         pdfBytes: bytes,
       });
       if (pdfRes.ok) {
-        logTokenUsage(supabaseAdminForLimit, {
+        await logTokenUsage(supabaseAdminForLimit, {
           user_id: userId,
           kind: 'sow_extract_pdf',
           model: pdfModel,
@@ -719,7 +719,7 @@ Deno.serve(async (req) => {
       if (!textRes.ok) {
         return errorBody(`OpenAI error ${textRes.status}: ${textRes.detail}`, 'OPENAI');
       }
-      logTokenUsage(supabaseAdminForLimit, {
+      await logTokenUsage(supabaseAdminForLimit, {
         user_id: userId,
         kind: 'sow_extract_text',
         model: textModel,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, Share, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert, Share, ActivityIndicator, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as Clipboard from 'expo-clipboard';
@@ -196,7 +196,11 @@ export default function MatchLobby() {
       <Text style={[styles.playersLabel, { color: theme.textSecondary }]}>
         PLAYERS ({participants.length})
       </Text>
-      <View style={styles.playerList}>
+      <ScrollView
+        style={styles.playerScroll}
+        contentContainerStyle={styles.playerList}
+        showsVerticalScrollIndicator={false}
+      >
         {participants.map((p, idx) => {
           const initials = (p.profile?.name || 'P').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
           const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
@@ -224,7 +228,7 @@ export default function MatchLobby() {
             <Text style={[styles.waitingText, { color: theme.textSecondary }]}>Waiting for opponent...</Text>
           </View>
         )}
-      </View>
+      </ScrollView>
 
       {/* Countdown overlay */}
       {countdown !== null && countdown > 0 && (
@@ -288,7 +292,8 @@ const styles = StyleSheet.create({
   codeBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   playersLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },
-  playerList: { gap: 10, flex: 1 },
+  playerScroll: { flex: 1 },
+  playerList: { gap: 10, paddingBottom: 8 },
   playerCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: RADIUS_SM, borderWidth: 1 },
   playerAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   playerInitial: { color: '#fff', fontSize: 15, fontWeight: '700' },

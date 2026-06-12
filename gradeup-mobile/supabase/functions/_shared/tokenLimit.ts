@@ -139,8 +139,15 @@ export async function checkMonthlyTokenLimit(
   return { allowed: used < limit, used, limit, plan, remaining };
 }
 
-/** Log a usage row (best-effort, never throws). */
-export function logTokenUsage(
+/**
+ * Log a usage row (best-effort, never throws).
+ *
+ * Returns a Promise so callers can `await` it before returning a Response.
+ * In Deno Edge Functions the runtime exits as soon as the handler returns, so
+ * a fire-and-forget `.then(…)` is silently dropped — awaiting ensures the
+ * insert actually reaches the DB before the function terminates.
+ */
+export async function logTokenUsage(
   admin: SupabaseAdmin,
   row: {
     user_id: string;
@@ -150,14 +157,11 @@ export function logTokenUsage(
     completion_tokens: number | null;
     total_tokens: number | null;
   },
-): void {
+): Promise<void> {
   try {
-    admin
-      .from('ai_token_usage')
-      .insert(row)
-      .then(() => {}, () => {});
+    await admin.from('ai_token_usage').insert(row);
   } catch {
-    // ignore
+    // best-effort — never surface errors to the caller
   }
 }
 

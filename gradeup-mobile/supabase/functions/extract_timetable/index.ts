@@ -703,9 +703,10 @@ Deno.serve(async (req) => {
     }
 
     // Only at this point do we charge the user's monthly cap — we have a real
-    // result we can hand back to the client.
+    // result we can hand back to the client. Awaited so the insert completes
+    // before the Deno runtime exits after returning the Response.
     if (pendingUsage) {
-      logTokenUsage(supabaseAdminForLimit, {
+      await logTokenUsage(supabaseAdminForLimit, {
         user_id: userId,
         kind: pendingUsage.kind,
         model: pendingUsage.model,

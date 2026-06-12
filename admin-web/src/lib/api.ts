@@ -182,7 +182,7 @@ export type AiTokenUsagePoint = {
 };
 
 export async function getAiTokenUsageSeriesLast14Days(): Promise<AiTokenUsagePoint[]> {
-  // Last 14 days, including today.
+  // Build the full 14-day skeleton (UTC) so days with zero usage still appear.
   const now = new Date();
   const days: Array<{ key: string; name: string }> = [];
   for (let i = 13; i >= 0; i--) {
@@ -191,21 +191,14 @@ export async function getAiTokenUsageSeriesLast14Days(): Promise<AiTokenUsagePoi
     days.push({ key, name: key });
   }
 
-  const since = new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Uses RLS (admin policy) so no Edge Function required.
-  const { data, error } = await supabase
-    .from('ai_token_usage')
-    .select('created_at,total_tokens')
-    .gte('created_at', since)
-    .order('created_at', { ascending: true });
+  // Use the SECURITY DEFINER RPC so results are never filtered by RLS.
+  // This is the same pattern as admin_dashboard_overview and admin_course_usage_top.
+  const { data, error } = await supabase.rpc('admin_ai_token_usage_last14days');
   if (error) throw toError(error);
 
   const totalsByDay = new Map<string, number>();
-  for (const row of (data ?? []) as Array<{ created_at: string; total_tokens: number | null }>) {
-    const dayKey = new Date(row.created_at).toISOString().slice(0, 10);
-    const prev = totalsByDay.get(dayKey) ?? 0;
-    totalsByDay.set(dayKey, prev + (row.total_tokens ?? 0));
+  for (const row of (data ?? []) as Array<{ day: string; tokens: number }>) {
+    totalsByDay.set(row.day, Number(row.tokens ?? 0));
   }
 
   return days.map((d) => ({ name: d.name, tokens: totalsByDay.get(d.key) ?? 0 }));

@@ -66,24 +66,6 @@ export default function QuizGameplay() {
     hasLocalSubmitRef.current = false;
   }, [session?.id]);
 
-  // Sync reconnected state fast-forward — restore qIndex and score from existing answers
-  useEffect(() => {
-    if (hasRestoredProgressRef.current) return;
-    if (hasLocalSubmitRef.current) return;
-    if (!myAnswers || myAnswers.length === 0) return;
-    if (qIndex !== 0) return;
-
-    // Run only once after initial join/reconnect.
-    hasRestoredProgressRef.current = true;
-    setQIndex(myAnswers.length);
-    // Include speed bonus (same formula as submitAnswerAction and finishParticipant)
-    const sum = myAnswers.reduce(
-      (acc, ans) => acc + (ans.correct ? 10 : 0) + (ans.correct && ans.timeMs < 5000 ? 5 : 0),
-      0,
-    );
-    setScore(sum);
-  }, [myAnswers, qIndex]);
-
   const questions: GeneratedQuizQuestion[] = useMemo(() => {
     return (session?.questions as GeneratedQuizQuestion[]) || [];
   }, [session]);
@@ -145,6 +127,36 @@ export default function QuizGameplay() {
       forceNavigateToResults();
     }
   }, [finishQuiz, isMultiplayer, forceNavigateToResults]);
+
+  // Reconnect / recovery fast-forward — restore qIndex and score from existing
+  // answers (DB or local mirror). Runs once after join/reconnect, and only once
+  // the questions have loaded so we can resolve the correct position.
+  useEffect(() => {
+    if (hasRestoredProgressRef.current) return;
+    if (hasLocalSubmitRef.current) return;
+    if (!myAnswers || myAnswers.length === 0) return;
+    if (qIndex !== 0) return;
+    const total = questions.length;
+    if (total === 0) return; // wait until the session's questions have loaded
+
+    hasRestoredProgressRef.current = true;
+    // Include speed bonus (same formula as submitAnswerAction and finishParticipant)
+    const sum = myAnswers.reduce(
+      (acc, ans) => acc + (ans.correct ? 10 : 0) + (ans.correct && ans.timeMs < 5000 ? 5 : 0),
+      0,
+    );
+    scoreRef.current = sum;
+    setScore(sum);
+
+    if (myAnswers.length >= total) {
+      // Every question was already answered but results were never saved
+      // (e.g. the app was killed right after the last answer). Finalize now
+      // instead of landing on an out-of-range, blank question.
+      void saveResultsAndWait();
+    } else {
+      setQIndex(myAnswers.length);
+    }
+  }, [myAnswers, qIndex, questions.length, saveResultsAndWait]);
 
   const handleTimerExpired = useCallback(async () => {
     const qi = qIndexRef.current;
@@ -245,8 +257,6 @@ export default function QuizGameplay() {
 
   const handleOption = async (idx: number) => {
     const qi = qIndexRef.current;
-    const elapsed = Date.now() - startTimeRef.current;
-    if (elapsed < 550) return; // absorb ghost carry-over taps between question transitions
     if (!inputEnabled || selectedIdx !== null || submitLockRef.current || handledQuestionRef.current === qi) return;
     if (!armedTapRef.current || armedTapRef.current.qIndex !== qi || armedTapRef.current.optionIdx !== idx) return;
     armedTapRef.current = null;
@@ -254,7 +264,7 @@ export default function QuizGameplay() {
     handledQuestionRef.current = qi;
     hasLocalSubmitRef.current = true;
     setSelectedIdx(idx);
-    const timeMs = Date.now() - startTimeRef.current;
+    const timeMs = Math.max(0, Date.now() - startTimeRef.current);
     const correct = idx === current.correctIndex;
     const basePoints = correct ? 10 : 0;
     const speedBonus = correct && timeMs < 5000 ? 5 : 0;
@@ -292,8 +302,6 @@ export default function QuizGameplay() {
 
   const handleShortAnswerSubmit = async () => {
     const qi = qIndexRef.current;
-    const elapsed = Date.now() - startTimeRef.current;
-    if (elapsed < 550) return; // absorb ghost carry-over taps between question transitions
     if (!inputEnabled || selectedIdx !== null || submitLockRef.current || !shortAnswer.trim() || handledQuestionRef.current === qi) return;
     submitLockRef.current = true;
     handledQuestionRef.current = qi;

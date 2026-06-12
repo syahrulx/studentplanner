@@ -557,8 +557,9 @@ Deno.serve(async (req) => {
     }
 
     // Log every successful OpenAI call so the monthly budget reflects all AI
-    // spend (not just quiz). Fire-and-forget.
-    logTokenUsage(supabaseAdmin, {
+    // spend (not just quiz). Awaited so the insert completes before the Deno
+    // runtime exits after returning the Response.
+    await logTokenUsage(supabaseAdmin, {
       user_id: userId,
       kind: hasImage ? 'chat_vision' : kind,
       model: targetModel,
