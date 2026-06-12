@@ -381,6 +381,11 @@ function ThemeAwareLayout() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen name="classroom-sync" />
+        <Stack.Screen name="campus-map" />
+        <Stack.Screen
+          name="campus-map-upload"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
         <Stack.Screen
           name="import-calendar"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}

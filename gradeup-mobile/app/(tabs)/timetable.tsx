@@ -29,6 +29,7 @@ import {
   type CodexPetAnimationName,
 } from '@/components/PlaygroundCodexPet';
 import { useTranslations } from '@/src/i18n';
+import * as roomsApi from '@/src/lib/campusRoomsApi';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
@@ -202,10 +203,40 @@ export default function TimetableScreen() {
   const [gridEditMode, setGridEditMode] = useState(false);
   const [showNonUitmIntro, setShowNonUitmIntro] = useState(false);
   const [selectedClass, setSelectedClass] = useState<TimetableEntry | null>(null);
+  // Crowdsourced campus-map lookup for the selected class's room.
+  const [matchedRoom, setMatchedRoom] = useState<roomsApi.MatchedRoom | null>(null);
+  const [matchLoading, setMatchLoading] = useState(false);
 
   useEffect(() => {
     getTimetableSlotDetailsVisibility().then(setSlotDetails);
   }, []);
+
+  // Resolve where the selected class is held from the crowdsourced room map.
+  useEffect(() => {
+    const loc = selectedClass?.location?.trim();
+    if (!selectedClass || !user.universityId || !loc || loc === '-') {
+      setMatchedRoom(null);
+      setMatchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMatchedRoom(null);
+    setMatchLoading(true);
+    roomsApi
+      .matchRoom(loc)
+      .then((m) => {
+        if (!cancelled) setMatchedRoom(m);
+      })
+      .catch(() => {
+        if (!cancelled) setMatchedRoom(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMatchLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClass, user.universityId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -716,6 +747,14 @@ export default function TimetableScreen() {
         {showMenu && (
           <View style={s.headerActions}>
             <Pressable
+              onPress={() => router.push('/campus-map' as any)}
+              style={({ pressed }) => [s.headerIconBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={10}
+              accessibilityLabel={T('campusMapTitle')}
+            >
+              <Feather name="map" size={20} color={headerIconColor} />
+            </Pressable>
+            <Pressable
               onPress={() => {
                 if (!hasData) {
                   router.push('/timetable-edit' as any);
@@ -778,6 +817,16 @@ export default function TimetableScreen() {
             >
               <Feather name="download" size={18} color={theme.primary} />
               <Text style={[s.menuItemText, { color: theme.text }]}>Download as wallpaper</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setMenuOpen(false);
+                router.push('/campus-map' as any);
+              }}
+            >
+              <Feather name="map" size={18} color={theme.primary} />
+              <Text style={[s.menuItemText, { color: theme.text }]}>{T('campusMapTitle')}</Text>
             </Pressable>
             <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
             <Pressable
@@ -1075,6 +1124,55 @@ export default function TimetableScreen() {
                   <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.location}</Text>
                 </View>
               )}
+
+              {/* Crowdsourced campus-map location for this room */}
+              {selectedClass.location && selectedClass.location !== '-' && user.universityId ? (
+                matchedRoom ? (
+                  <Pressable
+                    onPress={() => {
+                      const room = selectedClass.location;
+                      setSelectedClass(null);
+                      router.push({ pathname: '/campus-map', params: { q: room } } as any);
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      backgroundColor: theme.primary + '14',
+                      borderRadius: 12,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <Feather name="navigation" size={16} color={theme.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.primary, fontSize: 14, fontWeight: '700' }}>
+                        {[matchedRoom.building, matchedRoom.level].filter(Boolean).join(' · ') || T('campusMapOnMap')}
+                      </Text>
+                      {matchedRoom.description ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
+                          {matchedRoom.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Feather name="chevron-right" size={18} color={theme.primary} />
+                  </Pressable>
+                ) : matchLoading ? null : (
+                  <Pressable
+                    onPress={() => {
+                      const room = selectedClass.location;
+                      setSelectedClass(null);
+                      router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }}
+                  >
+                    <Feather name="plus-circle" size={15} color={theme.textSecondary} />
+                    <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                      {T('campusMapAddThisRoom')}
+                    </Text>
+                  </Pressable>
+                )
+              ) : null}
               {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Feather name="user" size={16} color={theme.primary} />
