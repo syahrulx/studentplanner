@@ -447,6 +447,17 @@ function ReportDetailModal({
           </div>
         </div>
 
+        {row.screenshot_url ? (
+          <div className="mt-5">
+            <div className="mb-2 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+              Screenshot
+            </div>
+            <a href={row.screenshot_url} target="_blank" rel="noreferrer" className="block max-w-sm overflow-hidden rounded-2xl border border-slate-200 shadow-sm dark:border-slate-800 hover:opacity-90 transition-opacity">
+              <img src={row.screenshot_url} alt="User reported screenshot" className="w-full h-auto object-cover" />
+            </a>
+          </div>
+        ) : null}
+
         <div className="mt-5">
           <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
             Admin notes (private)

@@ -10,13 +10,15 @@ import {
   Text,
   TextInput,
   View,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
-import { submitUserReport, type UserReportKind } from '@/src/lib/reportsApi';
+import { submitUserReport, uploadSupportScreenshot, type UserReportKind } from '@/src/lib/reportsApi';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -51,6 +53,9 @@ export default function ReportIssueScreen() {
   const [message, setMessage] = useState('');
   const [contactInfo, setContactInfo] = useState('');
   const [targetUserHandle, setTargetUserHandle] = useState('');
+  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null);
+  const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
+  const [screenshotExt, setScreenshotExt] = useState<string>('jpeg');
   const [busy, setBusy] = useState(false);
 
   const showsTargetField = kind === 'user_complaint';
@@ -59,16 +64,53 @@ export default function ReportIssueScreen() {
     [subject, message, busy],
   );
 
+  async function pickImage() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        
+        // Ensure size is under 5MB (approx 5 * 1024 * 1024)
+        // Since we only have base64 length, we can estimate: (length * 3 / 4)
+        const sizeEst = asset.base64 ? (asset.base64.length * 3) / 4 : 0;
+        if (sizeEst > 5 * 1024 * 1024) {
+          Alert.alert(T('error'), 'Image must be under 5MB');
+          return;
+        }
+
+        setScreenshotBase64(asset.base64 || null);
+        setScreenshotUri(asset.uri);
+        const extMatch = asset.uri.match(/\.([^.]+)$/);
+        setScreenshotExt(extMatch ? extMatch[1].toLowerCase() : 'jpeg');
+      }
+    } catch (error) {
+      console.log('Error picking image:', error);
+    }
+  }
+
   async function handleSubmit() {
     if (!canSubmit) return;
     setBusy(true);
     try {
+      let screenshotUrl: string | undefined = undefined;
+      
+      if (screenshotBase64) {
+        screenshotUrl = await uploadSupportScreenshot(screenshotBase64, screenshotExt);
+      }
+      
       await submitUserReport({
         kind,
         subject,
         message,
         targetUserHandle: showsTargetField ? targetUserHandle : undefined,
         contactInfo: contactInfo.trim().length > 0 ? contactInfo : undefined,
+        screenshotUrl,
       });
       Alert.alert(T('reportSubmittedTitle'), T('reportSubmittedBody'), [
         { text: 'OK', onPress: () => router.back() },
@@ -234,6 +276,41 @@ export default function ReportIssueScreen() {
           {message.trim().length}/4000
         </Text>
 
+        {/* Screenshot Upload */}
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          SCREENSHOT (OPTIONAL, UNDER 5MB)
+        </Text>
+        <View style={styles.screenshotContainer}>
+          {screenshotUri ? (
+            <View style={styles.imagePreviewWrap}>
+              <Image source={{ uri: screenshotUri }} style={styles.imagePreview} />
+              <Pressable
+                style={[styles.removeImageBtn, { backgroundColor: theme.card }]}
+                onPress={() => {
+                  setScreenshotUri(null);
+                  setScreenshotBase64(null);
+                }}
+              >
+                <Feather name="x" size={20} color={theme.text} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.uploadBtn,
+                { backgroundColor: theme.card, borderColor: theme.border ?? 'rgba(150,150,150,0.2)' },
+                pressed && { opacity: 0.7 }
+              ]}
+              onPress={pickImage}
+            >
+              <Feather name="image" size={24} color={theme.textSecondary} />
+              <Text style={[styles.uploadBtnText, { color: theme.textSecondary }]}>
+                Upload Screenshot
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
         {/* Submit */}
         <Pressable
           disabled={!canSubmit}
@@ -337,5 +414,49 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginHorizontal: PAD + 4,
     lineHeight: 17,
+  },
+  screenshotContainer: {
+    marginHorizontal: PAD,
+    marginTop: 6,
+  },
+  uploadBtn: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS,
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadBtnText: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  imagePreviewWrap: {
+    position: 'relative',
+    width: '100%',
+    height: 180,
+    borderRadius: RADIUS,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  removeImageBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
 });

@@ -1946,12 +1946,13 @@ export interface AdminUserReportRow {
   platform: string | null;
   status: UserReportStatus;
   admin_notes: string | null;
+  screenshot_url: string | null;
   created_at: string;
   resolved_at: string | null;
 }
 
 const USER_REPORTS_COLUMNS =
-  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at';
+  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,screenshot_url,created_at,resolved_at';
 
 export async function listUserReports(opts: {
   status?: UserReportStatus | 'all';

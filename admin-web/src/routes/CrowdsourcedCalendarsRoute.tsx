@@ -11,7 +11,7 @@ import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 
 export function CrowdsourcedCalendarsRoute() {
-  const { searchQuery, clearSearch } = useAdminSearch();
+  const { searchQuery } = useAdminSearch();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
@@ -88,7 +88,7 @@ export function CrowdsourcedCalendarsRoute() {
       </MotionSection>
 
       {err ? (
-        <MotionPanel delay={0.05}>
+        <MotionPanel>
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
             {err}
           </div>
@@ -96,7 +96,7 @@ export function CrowdsourcedCalendarsRoute() {
       ) : null}
       
       {okMsg ? (
-        <MotionPanel delay={0.05}>
+        <MotionPanel>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
             {okMsg}
           </div>

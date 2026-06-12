@@ -1,6 +1,26 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
+import { decode } from 'base64-arraybuffer';
+
+export async function uploadSupportScreenshot(base64Image: string, ext: string = 'jpeg'): Promise<string> {
+  const { data: userRes, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userRes.user) throw new Error('You must be signed in to upload an image.');
+  
+  const userId = userRes.user.id;
+  const filePath = `${userId}/${Date.now()}.${ext}`;
+  
+  const { error: uploadError } = await supabase.storage
+    .from('support-screenshots')
+    .upload(filePath, decode(base64Image), {
+      contentType: `image/${ext}`,
+    });
+    
+  if (uploadError) throw uploadError;
+  
+  const { data } = supabase.storage.from('support-screenshots').getPublicUrl(filePath);
+  return data.publicUrl;
+}
 
 export type UserReportKind =
   | 'bug'
@@ -18,6 +38,8 @@ export interface SubmitUserReportInput {
   targetUserHandle?: string;
   /** Optional email or WhatsApp number for fast feedback. */
   contactInfo?: string;
+  /** Optional screenshot URL (public URL from support-screenshots bucket). */
+  screenshotUrl?: string;
 }
 
 function detectPlatform(): 'ios' | 'android' | 'web' | 'other' {
@@ -86,6 +108,7 @@ export async function submitUserReport(input: SubmitUserReportInput): Promise<{ 
       message,
       target_user_handle: targetHandle.length > 0 ? targetHandle.slice(0, 200) : null,
       contact_info: input.contactInfo?.trim() || null,
+      screenshot_url: input.screenshotUrl?.trim() || null,
       app_version: detectAppVersion(),
       platform: detectPlatform(),
     })

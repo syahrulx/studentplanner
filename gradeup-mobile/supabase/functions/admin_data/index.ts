@@ -1540,7 +1540,7 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       let q = admin
         .from('support_reports')
         .select(
-          'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,created_at,resolved_at',
+          'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,screenshot_url,created_at,resolved_at',
           { count: 'exact' },
         )
         .order('created_at', { ascending: false })

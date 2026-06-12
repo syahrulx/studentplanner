@@ -191,7 +191,7 @@ export function OpenAiCreditCard() {
                   contentStyle={{ backgroundColor: '#0F172A', borderColor: '#1E293B', borderRadius: '12px', fontSize: '12px' }}
                   itemStyle={{ color: '#F8FAFC', fontWeight: 'bold' }}
                   labelStyle={{ color: '#94A3B8', marginBottom: '4px' }}
-                  formatter={(v: number, name: string) => [`$${Number(v).toFixed(4)}`, name === 'cost' ? 'Actual' : 'Projected']}
+                  formatter={(v: any, name: any) => [`$${Number(v).toFixed(4)}`, name === 'cost' ? 'Actual' : 'Projected']}
                 />
                 <Area type="monotone" dataKey="cost" stroke="#2DD4BF" strokeWidth={2} fillOpacity={1} fill="url(#gActual)" dot={false} />
                 <Area type="monotone" dataKey="projected" stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 4" fillOpacity={1} fill="url(#gProjected)" dot={false} />
@@ -214,7 +214,7 @@ export function OpenAiCreditCard() {
                 <YAxis tickFormatter={(v) => `$${Number(v).toFixed(2)}`} tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0F172A', borderColor: '#1E293B', borderRadius: '12px', fontSize: '12px' }}
-                  formatter={(v: number) => [`$${Number(v).toFixed(2)}`, 'Cost']}
+                  formatter={(v: any) => [`$${Number(v).toFixed(2)}`, 'Cost']}
                   cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                 />
                 <Bar dataKey="total" radius={[8,8,0,0]}>
