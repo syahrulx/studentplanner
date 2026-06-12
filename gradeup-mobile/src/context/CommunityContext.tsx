@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
@@ -455,25 +455,57 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     refreshAll().finally(() => setLoading(false));
 
-    refreshTimerRef.current = setInterval(() => {
-      refreshFriends();
-      refreshCircles();
-      refreshRequests();
-      refreshUnreadCount();
-      refreshMyActivity();
-      refreshSharedGoals();
-      refreshFriendSnaps();
-    }, REFRESH_INTERVAL);
+    // The polls below are only a fallback for realtime subscriptions. Running
+    // them every 2/5 minutes while the app is backgrounded wasted battery and
+    // mobile data, so we only poll while the app is in the foreground and do a
+    // single catch-up refresh when it returns to active.
+    const startPolling = () => {
+      if (!refreshTimerRef.current) {
+        refreshTimerRef.current = setInterval(() => {
+          refreshFriends();
+          refreshCircles();
+          refreshRequests();
+          refreshUnreadCount();
+          refreshMyActivity();
+          refreshSharedGoals();
+          refreshFriendSnaps();
+        }, REFRESH_INTERVAL);
+      }
+      // Separate slower fallback poll for shared tasks (realtime covers most updates)
+      if (!sharedTasksTimerRef.current) {
+        sharedTasksTimerRef.current = setInterval(() => {
+          refreshSharedTasks();
+          refreshShareStreams();
+        }, SHARED_TASKS_REFRESH_INTERVAL);
+      }
+    };
 
-    // Separate slower fallback poll for shared tasks (realtime covers most updates)
-    sharedTasksTimerRef.current = setInterval(() => {
-      refreshSharedTasks();
-      refreshShareStreams();
-    }, SHARED_TASKS_REFRESH_INTERVAL);
+    const stopPolling = () => {
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      if (sharedTasksTimerRef.current) {
+        clearInterval(sharedTasksTimerRef.current);
+        sharedTasksTimerRef.current = null;
+      }
+    };
+
+    // App is active on mount.
+    startPolling();
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshAll();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
 
     return () => {
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      if (sharedTasksTimerRef.current) clearInterval(sharedTasksTimerRef.current);
+      stopPolling();
+      appStateSub.remove();
     };
   }, [
     userId,
@@ -802,6 +834,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           }
         );
 
+        // The effect may have been cleaned up while watchPositionAsync was still
+        // resolving (visibility toggled off, unmount, dependency change). If so,
+        // the cleanup already ran and saw a null ref — assigning now would leak a
+        // GPS watcher that runs forever in the background. Remove it instead.
+        if (!mounted) {
+          watcher.remove();
+          return;
+        }
+
         locationWatchRef.current = watcher;
       } catch (e) {
         console.warn('Location watch error:', e);
@@ -1086,7 +1127,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     return () => { supabase.removeChannel(channel); };
   }, [userId, refreshSharedTasks]);
 
-  const value: CommunityState = {
+  // Stable callback (was previously an inline arrow recreated every render,
+  // which forced the whole context value to change identity each time).
+  const refreshMyMusic = useCallback(async () => {
+    const vibe = await spotifyAuth.getMyVibe();
+    if (vibe) await refreshMyActivity();
+  }, [refreshMyActivity]);
+
+  const value = useMemo<CommunityState>(() => ({
     friends,
     friendsWithStatus,
     circles,
@@ -1134,10 +1182,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     myLongitude,
     locationVisibility,
     setLocationVisibility,
-    refreshMyMusic: async () => {
-      const vibe = await spotifyAuth.getMyVibe();
-      if (vibe) await refreshMyActivity();
-    },
+    refreshMyMusic,
     refreshAll,
     friendSnaps,
     friendStreaks,
@@ -1146,7 +1191,64 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshMyStreak,
     loading,
     userId,
-  };
+  }), [
+    friends,
+    friendsWithStatus,
+    circles,
+    incomingRequests,
+    unreadReactionCount,
+    unreadDmCount,
+    communityBadgeCount,
+    myActivity,
+    refreshFriends,
+    refreshCircles,
+    refreshRequests,
+    refreshUnreadCount,
+    refreshUnreadDmCount,
+    refreshMyActivity,
+    updateActivity,
+    clearMyActivity,
+    handleSendReaction,
+    handleSendBump,
+    selectedCircleId,
+    setSelectedCircleId,
+    filteredFriends,
+    sharedGoals,
+    refreshSharedGoals,
+    createSharedGoal,
+    updateSharedGoalStatus,
+    incomingSharedTasks,
+    acceptedSharedTasks,
+    refreshSharedTasks,
+    shareTaskWithFriend,
+    shareTaskWithCircle,
+    shareAllTasksWithFriend,
+    shareAllTasksWithCircle,
+    respondToShare,
+    toggleSharedCompletion,
+    removeSharedTaskLink,
+    shareStreams,
+    refreshShareStreams,
+    toggleShareStream,
+    toggleCircleShareStream,
+    locationPermissionGranted,
+    requestLocationPermission,
+    locationConsentGiven,
+    grantLocationConsent,
+    myLatitude,
+    myLongitude,
+    locationVisibility,
+    setLocationVisibility,
+    refreshMyMusic,
+    refreshAll,
+    friendSnaps,
+    friendStreaks,
+    myStreak,
+    refreshFriendSnaps,
+    refreshMyStreak,
+    loading,
+    userId,
+  ]);
 
   return <CommunityContext.Provider value={value}>{children}</CommunityContext.Provider>;
 }

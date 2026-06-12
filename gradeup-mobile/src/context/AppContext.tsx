@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Alert, AppState as RNAppState } from 'react-native';
 import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
@@ -893,6 +893,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return next;
         });
 
+        // Core data (profile, courses, notes, tasks, timetable, calendar) is now
+        // in state — let the UI paint immediately. The remaining work below
+        // (calendar auto-sync, RevenueCat plan refresh, Google Classroom check)
+        // is non-critical and used to block first paint by 1–4s. It now runs in
+        // the background and updates state as each piece lands.
+        if (gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+          setDataReady(true);
+        }
+
+        void (async () => {
         // Auto-sync academic calendar via university provider (once per session)
         if (!calendarAutoSyncedRef.current) {
           calendarAutoSyncedRef.current = true;
@@ -990,9 +1000,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             fireClassroomSyncNotification(newTasks.length).catch(() => {});
           }
         } catch {}
-
-        // ── Mark data as ready — UI can now render real data ──
-        setDataReady(true);
+        })();
       });
     };
 
@@ -1623,10 +1631,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteTask = useCallback((taskId: string) => {
     cancelTaskNotifications(taskId).catch(() => {});
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    // Snapshot for rollback: if the remote delete fails we must restore the task,
+    // otherwise it stays gone locally but resurrects on the next refresh/relogin
+    // (local and DB drift out of sync).
+    let removedTask: Task | undefined;
+    setTasks((prev) => {
+      removedTask = prev.find((t) => t.id === taskId);
+      return prev.filter((t) => t.id !== taskId);
+    });
+    let wasPinned = false;
     setPinnedTaskIds((prev) => {
       const next = prev.filter((id) => id !== taskId);
-      if (next.length !== prev.length) persistPinnedTaskIds(next);
+      if (next.length !== prev.length) {
+        wasPinned = true;
+        persistPinnedTaskIds(next);
+      }
       return next;
     });
 
@@ -1656,7 +1675,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (!uid) return;
-      await taskDb.deleteTask(uid, taskId);
+      try {
+        await taskDb.deleteTask(uid, taskId);
+      } catch (e) {
+        if (__DEV__) console.warn('[AppContext] Remote task delete failed, rolling back:', e);
+        // Restore so local state matches the DB (the task still exists remotely).
+        if (removedTask) {
+          const restored = removedTask;
+          setTasks((cur) => (cur.some((t) => t.id === taskId) ? cur : [...cur, restored]));
+        }
+        if (wasPinned) {
+          setPinnedTaskIds((cur) => {
+            if (cur.includes(taskId)) return cur;
+            const next = [...cur, taskId];
+            persistPinnedTaskIds(next);
+            return next;
+          });
+        }
+      }
     })();
   }, []);
 
@@ -2116,90 +2152,181 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const markDataReady = useCallback(() => setDataReady(true), []);
 
-  const value: AppState = {
-    dataReady,
-    user,
-    setUser,
-    academicCalendar,
-    setAcademicCalendar,
-    updateProfile,
-    updateAcademicCalendar,
-    clearAcademicCalendar,
-    courses,
-    setCourses,
-    addCourse,
-    renameCourse,
-    deleteCourse,
-    tasks,
-    tasksVersion,
-    setTasks,
-    notes,
-    setNotes,
-    deleteNote,
-    flashcards,
-    setFlashcards,
-    addFlashcard,
-    updateFlashcard,
-    deleteFlashcard,
-    deleteFlashcardsForNote,
-    pendingExtraction,
-    setPendingExtraction,
-    pendingClassroomTasks,
-    clearPendingClassroomTasks,
-    theme,
-    setTheme,
-    themePack,
-    setThemePack,
-    customThemeColors,
-    setCustomThemeColors,
-    themePreviewExpiry,
-    setThemePreviewExpiry,
-    spiderBlueAccents,
-    setSpiderBlueAccents,
-    language,
-    setLanguage,
-    loghat,
-    setLoghat,
-    revisionSettings,
-    revisionSettingsList,
-    setRevisionSettings,
-    deleteStudySetting,
-    completedStudyKeys,
-    markStudyDone,
-    unmarkStudyDone,
-    addTask,
-    updateTask,
-    toggleTaskDone,
-    taskCompletionKeys,
-    isTaskDoneOn,
-    deleteTask,
-    pinnedTaskIds,
-    pinTask,
-    unpinTask,
-    subjectColors,
-    setSubjectColor,
-    getSubjectColor,
-    lastPlannerView,
-    setLastPlannerView,
-    handleSaveNote,
-    handleGenerateFlashcards,
-    timetable,
-    setTimetable,
-    saveTimetableOnly,
-    saveTimetableAndLink,
-    disconnectUniversity,
-    refreshUniversityTimetable,
-    weekStartsOn,
-    setWeekStartsOn,
-    autoDeletePastTasks,
-    setAutoDeletePastTasks,
-    updateTimetableEntry,
-    addTimetableEntry,
-    removeTimetableEntry,
-    clearSemesterData,
-    refreshRemoteData,
-    markDataReady,
-  };
+  // Memoized so the context value keeps a stable reference across re-renders
+  // that don't actually change any of the underlying state/callbacks (e.g. a
+  // parent/navigation re-render). The dependency array lists every value the
+  // object references, so it recomputes exactly when one of them changes —
+  // correctness is identical to no memo, but consumers skip needless renders.
+  const value = useMemo<AppState>(
+    () => ({
+      dataReady,
+      user,
+      setUser,
+      academicCalendar,
+      setAcademicCalendar,
+      updateProfile,
+      updateAcademicCalendar,
+      clearAcademicCalendar,
+      courses,
+      setCourses,
+      addCourse,
+      renameCourse,
+      deleteCourse,
+      tasks,
+      tasksVersion,
+      setTasks,
+      notes,
+      setNotes,
+      deleteNote,
+      flashcards,
+      setFlashcards,
+      addFlashcard,
+      updateFlashcard,
+      deleteFlashcard,
+      deleteFlashcardsForNote,
+      pendingExtraction,
+      setPendingExtraction,
+      pendingClassroomTasks,
+      clearPendingClassroomTasks,
+      theme,
+      setTheme,
+      themePack,
+      setThemePack,
+      customThemeColors,
+      setCustomThemeColors,
+      themePreviewExpiry,
+      setThemePreviewExpiry,
+      spiderBlueAccents,
+      setSpiderBlueAccents,
+      language,
+      setLanguage,
+      loghat,
+      setLoghat,
+      revisionSettings,
+      revisionSettingsList,
+      setRevisionSettings,
+      deleteStudySetting,
+      completedStudyKeys,
+      markStudyDone,
+      unmarkStudyDone,
+      addTask,
+      updateTask,
+      toggleTaskDone,
+      taskCompletionKeys,
+      isTaskDoneOn,
+      deleteTask,
+      pinnedTaskIds,
+      pinTask,
+      unpinTask,
+      subjectColors,
+      setSubjectColor,
+      getSubjectColor,
+      lastPlannerView,
+      setLastPlannerView,
+      handleSaveNote,
+      handleGenerateFlashcards,
+      timetable,
+      setTimetable,
+      saveTimetableOnly,
+      saveTimetableAndLink,
+      disconnectUniversity,
+      refreshUniversityTimetable,
+      weekStartsOn,
+      setWeekStartsOn,
+      autoDeletePastTasks,
+      setAutoDeletePastTasks,
+      updateTimetableEntry,
+      addTimetableEntry,
+      removeTimetableEntry,
+      clearSemesterData,
+      refreshRemoteData,
+      markDataReady,
+    }),
+    [
+      dataReady,
+      user,
+      setUser,
+      academicCalendar,
+      setAcademicCalendar,
+      updateProfile,
+      updateAcademicCalendar,
+      clearAcademicCalendar,
+      courses,
+      setCourses,
+      addCourse,
+      renameCourse,
+      deleteCourse,
+      tasks,
+      tasksVersion,
+      setTasks,
+      notes,
+      setNotes,
+      deleteNote,
+      flashcards,
+      setFlashcards,
+      addFlashcard,
+      updateFlashcard,
+      deleteFlashcard,
+      deleteFlashcardsForNote,
+      pendingExtraction,
+      setPendingExtraction,
+      pendingClassroomTasks,
+      clearPendingClassroomTasks,
+      theme,
+      setTheme,
+      themePack,
+      setThemePack,
+      customThemeColors,
+      setCustomThemeColors,
+      themePreviewExpiry,
+      setThemePreviewExpiry,
+      spiderBlueAccents,
+      setSpiderBlueAccents,
+      language,
+      setLanguage,
+      loghat,
+      setLoghat,
+      revisionSettings,
+      revisionSettingsList,
+      setRevisionSettings,
+      deleteStudySetting,
+      completedStudyKeys,
+      markStudyDone,
+      unmarkStudyDone,
+      addTask,
+      updateTask,
+      toggleTaskDone,
+      taskCompletionKeys,
+      isTaskDoneOn,
+      deleteTask,
+      pinnedTaskIds,
+      pinTask,
+      unpinTask,
+      subjectColors,
+      setSubjectColor,
+      getSubjectColor,
+      lastPlannerView,
+      setLastPlannerView,
+      handleSaveNote,
+      handleGenerateFlashcards,
+      timetable,
+      setTimetable,
+      saveTimetableOnly,
+      saveTimetableAndLink,
+      disconnectUniversity,
+      refreshUniversityTimetable,
+      weekStartsOn,
+      setWeekStartsOn,
+      autoDeletePastTasks,
+      setAutoDeletePastTasks,
+      updateTimetableEntry,
+      addTimetableEntry,
+      removeTimetableEntry,
+      clearSemesterData,
+      refreshRemoteData,
+      markDataReady,
+    ],
+  );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

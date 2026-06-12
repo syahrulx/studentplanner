@@ -49,6 +49,21 @@ export default function QuizGameplay() {
   // Track last opponent questionIndex seen to suppress spurious flashes on initial join
   const lastOpponentQRef = useRef<Map<string, number>>(new Map());
 
+  // Managed registry for short-lived "flash"/UI timeouts (correct/wrong flashes,
+  // opponent flash, skip-button reveal). They fire setState after a delay, so
+  // without cleanup they can run after the screen unmounts (e.g. user navigates
+  // to results) and trigger a setState-after-unmount warning/crash. We track
+  // every id here and clear them all on unmount.
+  const flashTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const scheduleFlash = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      flashTimeoutsRef.current.delete(id);
+      fn();
+    }, ms);
+    flashTimeoutsRef.current.add(id);
+    return id;
+  }, []);
+
   // Load session from DB if not in context
   useEffect(() => {
     if (currentSession) {
@@ -122,11 +137,11 @@ export default function QuizGameplay() {
     if (isMultiplayer) {
       setWaitingForOpponents(true);
       // Show skip button after 5 seconds to prevent being stuck if someone drops
-      setTimeout(() => setShowSkipBtn(true), 5000);
+      scheduleFlash(() => setShowSkipBtn(true), 5000);
     } else {
       forceNavigateToResults();
     }
-  }, [finishQuiz, isMultiplayer, forceNavigateToResults]);
+  }, [finishQuiz, isMultiplayer, forceNavigateToResults, scheduleFlash]);
 
   // Reconnect / recovery fast-forward — restore qIndex and score from existing
   // answers (DB or local mirror). Runs once after join/reconnect, and only once
@@ -216,9 +231,12 @@ export default function QuizGameplay() {
   }, [qIndex, timerSeconds, current]);
 
   useEffect(() => {
+    const flashTimeouts = flashTimeoutsRef.current;
     return () => {
       if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current);
       if (inputGateTimeoutRef.current) clearTimeout(inputGateTimeoutRef.current);
+      flashTimeouts.forEach((id) => clearTimeout(id));
+      flashTimeouts.clear();
     };
   }, []);
 
@@ -250,9 +268,9 @@ export default function QuizGameplay() {
     if (latest.questionIndex > prevIndex) {
       lastOpponentQRef.current.set(latest.userId, latest.questionIndex);
       setOpponentFlash(latest.correct ? 'correct' : 'wrong');
-      setTimeout(() => setOpponentFlash(''), 1500);
+      scheduleFlash(() => setOpponentFlash(''), 1500);
     }
-  }, [opponentProgress, waitingForOpponents, participants.length, isMultiplayer, forceNavigateToResults]);
+  }, [opponentProgress, waitingForOpponents, participants.length, isMultiplayer, forceNavigateToResults, scheduleFlash]);
 
 
   const handleOption = async (idx: number) => {
@@ -273,11 +291,11 @@ export default function QuizGameplay() {
     if (correct) {
       setFlashCorrect(true);
       setStreak((s) => s + 1);
-      setTimeout(() => setFlashCorrect(false), 600);
+      scheduleFlash(() => setFlashCorrect(false), 600);
     } else {
       setFlashWrong(true);
       setStreak(0);
-      setTimeout(() => setFlashWrong(false), 600);
+      scheduleFlash(() => setFlashWrong(false), 600);
     }
 
     if (myParticipantId) {
@@ -321,11 +339,11 @@ export default function QuizGameplay() {
     if (correct) {
       setFlashCorrect(true);
       setStreak((s) => s + 1);
-      setTimeout(() => setFlashCorrect(false), 600);
+      scheduleFlash(() => setFlashCorrect(false), 600);
     } else {
       setFlashWrong(true);
       setStreak(0);
-      setTimeout(() => setFlashWrong(false), 600);
+      scheduleFlash(() => setFlashWrong(false), 600);
     }
 
     setSelectedIdx(0);

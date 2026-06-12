@@ -164,37 +164,40 @@ export async function getConversations(userId: string): Promise<DmConversation[]
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
 
-  // Fetch last message for each conversation
-  const enriched: DmConversation[] = [];
-  for (const c of convos) {
-    const friendId = c.user_a === userId ? c.user_b : c.user_a;
-    const friend = profileMap.get(friendId) || null;
+  // Enrich every conversation in parallel. Previously this was a sequential
+  // loop doing 2 round-trips per conversation (last message + unread count),
+  // so 20 chats meant ~40 serial requests and a multi-second blank inbox.
+  // Promise.all keeps the source order; the sort below still runs afterwards.
+  const enriched: DmConversation[] = await Promise.all(
+    convos.map(async (c) => {
+      const friendId = c.user_a === userId ? c.user_b : c.user_a;
+      const friend = profileMap.get(friendId) || null;
 
-    // Last message
-    const { data: lastMsgs } = await supabase
-      .from('dm_messages')
-      .select('*')
-      .eq('conversation_id', c.id)
-      .order('created_at', { ascending: false })
-      .limit(1);
+      const [{ data: lastMsgs }, { count }] = await Promise.all([
+        // Last message
+        supabase
+          .from('dm_messages')
+          .select('*')
+          .eq('conversation_id', c.id)
+          .order('created_at', { ascending: false })
+          .limit(1),
+        // Unread count
+        supabase
+          .from('dm_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', c.id)
+          .neq('sender_id', userId)
+          .eq('read_by_recipient', false),
+      ]);
 
-    const lastMessage = lastMsgs?.[0] || null;
-
-    // Unread count
-    const { count } = await supabase
-      .from('dm_messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('conversation_id', c.id)
-      .neq('sender_id', userId)
-      .eq('read_by_recipient', false);
-
-    enriched.push({
-      ...c,
-      friend: friend || undefined,
-      last_message: lastMessage as DmMessage | null,
-      unread_count: count || 0,
-    });
-  }
+      return {
+        ...c,
+        friend: friend || undefined,
+        last_message: (lastMsgs?.[0] || null) as DmMessage | null,
+        unread_count: count || 0,
+      };
+    }),
+  );
 
   // Sort by latest message locally, just in case last_message_at wasn't fully synced
   return enriched.sort((a, b) => {

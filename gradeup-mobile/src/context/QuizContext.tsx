@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import * as quizApi from '../lib/quizApi';
 import { saveQuizProgress, getQuizProgress, clearQuizProgress } from '../storage';
@@ -58,6 +58,10 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
   const [allReady, setAllReady] = useState(false);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Session id the current channel is bound to. Used so joining a *different*
+  // session tears down the old channel instead of silently reusing it (which
+  // left players on a previous match's channel — wrong opponent/ready/countdown).
+  const channelSessionIdRef = useRef<string | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ref always mirrors myAnswers so closures never get stale answers
   const myAnswersRef = useRef<ParticipantAnswer[]>([]);
@@ -71,6 +75,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
+    channelSessionIdRef.current = null;
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
@@ -149,14 +154,25 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     });
 
     channelRef.current = channel;
+    channelSessionIdRef.current = sessionId;
   }, [cleanupChannel]);
 
   const startCountdown = useCallback(() => {
+    // Clear any in-flight countdown first so a duplicate `game_start` broadcast
+    // can't stack multiple intervals (which made the countdown jump erratically
+    // and could keep ticking after unmount).
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
     setCountdown(3);
     countdownTimerRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev === null || prev <= 1) {
-          if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
           return 0;
         }
         return prev - 1;
@@ -242,9 +258,17 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
       myAnswersRef.current = [];
     }
 
-    // Only set up channel if one doesn't already exist — prevents reset mid-game
-    if (session.mode === 'multiplayer' && !channelRef.current) {
-      await setupChannel(session.id);
+    // Set up the channel when joining multiplayer. Reuse the existing channel
+    // ONLY if it's already bound to this same session (prevents a mid-game
+    // reset on remount/reconnect). If it's bound to a different session — e.g.
+    // the user starts a new match without explicitly leaving the previous one —
+    // tear it down and rebuild so we don't stay on the stale session's channel.
+    if (session.mode === 'multiplayer') {
+      const boundToThisSession =
+        channelRef.current && channelSessionIdRef.current === session.id;
+      if (!boundToThisSession) {
+        await setupChannel(session.id);
+      }
     }
 
     return session;
@@ -386,24 +410,44 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     setAllReady(false);
   }, [cleanupChannel, currentSession]);
 
-  const value: QuizState = {
-    currentSession,
-    participants,
-    myParticipantId,
-    myAnswers,
-    opponentProgress,
-    countdown,
-    isReady,
-    allReady,
-    createQuiz,
-    joinQuiz,
-    setReady: setReadyAction,
-    broadcastGameStart,
-    submitAnswer: submitAnswerAction,
-    finishQuiz: finishQuizAction,
-    leaveQuiz,
-    refreshParticipants,
-  };
+  const value = useMemo<QuizState>(
+    () => ({
+      currentSession,
+      participants,
+      myParticipantId,
+      myAnswers,
+      opponentProgress,
+      countdown,
+      isReady,
+      allReady,
+      createQuiz,
+      joinQuiz,
+      setReady: setReadyAction,
+      broadcastGameStart,
+      submitAnswer: submitAnswerAction,
+      finishQuiz: finishQuizAction,
+      leaveQuiz,
+      refreshParticipants,
+    }),
+    [
+      currentSession,
+      participants,
+      myParticipantId,
+      myAnswers,
+      opponentProgress,
+      countdown,
+      isReady,
+      allReady,
+      createQuiz,
+      joinQuiz,
+      setReadyAction,
+      broadcastGameStart,
+      submitAnswerAction,
+      finishQuizAction,
+      leaveQuiz,
+      refreshParticipants,
+    ],
+  );
 
   return <QuizContext.Provider value={value}>{children}</QuizContext.Provider>;
 }
