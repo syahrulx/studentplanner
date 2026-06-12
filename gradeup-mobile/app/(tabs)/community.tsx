@@ -659,7 +659,15 @@ export default function CommunityMap() {
       {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <View style={styles.topBarSide}>
+        <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+          <Pressable
+            onPress={() => router.push('/community/confessions' as any)}
+            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Confessions"
+          >
+            <Feather name="edit-3" size={22} color={theme.text} />
+          </Pressable>
           <Pressable
             onPress={() => router.push('/community/notifications' as any)}
             style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}

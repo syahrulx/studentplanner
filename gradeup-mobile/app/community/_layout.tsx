@@ -21,6 +21,8 @@ export default function CommunityLayout() {
       <Stack.Screen name="chat-room" />
       <Stack.Screen name="create-post" />
       <Stack.Screen name="post-detail" />
+      <Stack.Screen name="confessions" />
+      <Stack.Screen name="confession-detail" />
       <Stack.Screen name="request-authority" />
     </Stack>
   );

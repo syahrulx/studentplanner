@@ -55,6 +55,16 @@ export async function getFlashcards(userId: string): Promise<Flashcard[]> {
   return (data ?? []).map(rowToCard);
 }
 
+/**
+ * Strip null bytes (\u0000) from a string before writing to Postgres.
+ * PostgreSQL's text type rejects the null character (error 22P05), which can
+ * appear in PDF-extracted content or binary-mode OCR output.
+ */
+function sanitizeText(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  return value.replace(/\u0000/g, '');
+}
+
 export async function upsertNote(userId: string, note: Note): Promise<void> {
   const { error } = await supabase.from(NOTES_TABLE).upsert(
     {
@@ -62,14 +72,14 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
       user_id: userId,
       subject_id: note.subjectId,
       folder_id: note.folderId ?? null,
-      title: note.title,
-      content: note.content,
+      title: sanitizeText(note.title) ?? '',
+      content: sanitizeText(note.content) ?? '',
       tag: note.tag,
       updated_at: note.updatedAt ? new Date(note.updatedAt).toISOString() : new Date().toISOString(),
       attachment_path: note.attachmentPath ?? null,
       attachment_file_name: note.attachmentFileName ?? null,
-      extracted_text: note.extractedText ?? null,
-      extraction_error: note.extractionError ?? null,
+      extracted_text: sanitizeText(note.extractedText),
+      extraction_error: sanitizeText(note.extractionError),
     },
     { onConflict: 'id,user_id' }
   );
