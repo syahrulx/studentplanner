@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS public.confessions (
   id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   author_id      uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   university_id  text        NOT NULL,
+  -- Campus name (mirrors profiles.campus). NULL = single-campus uni or no campus set.
+  -- Used for campus-scoped filtering without exposing any personal info.
+  campus         text,
   content        text        NOT NULL CHECK (char_length(trim(content)) BETWEEN 1 AND 500),
   status         text        NOT NULL DEFAULT 'active'
                              CHECK (status IN ('active', 'flagged', 'removed')),
@@ -20,6 +23,9 @@ CREATE TABLE IF NOT EXISTS public.confessions (
 
 CREATE INDEX IF NOT EXISTS confessions_uni_feed_idx
   ON public.confessions (university_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS confessions_campus_feed_idx
+  ON public.confessions (university_id, campus, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.confession_likes (
   id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -210,6 +216,7 @@ CREATE OR REPLACE FUNCTION public._confession_caller_profile()
 RETURNS TABLE (
   user_id        uuid,
   university_id  text,
+  campus         text,
   status         text
 )
 LANGUAGE sql
@@ -217,32 +224,35 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT p.id, p.university_id, coalesce(p.status, 'active')
+  SELECT p.id, p.university_id, nullif(trim(coalesce(p.campus, '')), ''), coalesce(p.status, 'active')
   FROM public.profiles p
   WHERE p.id = auth.uid();
 $$;
 
-CREATE OR REPLACE FUNCTION public._confession_assert_can_post()
-RETURNS text
+-- Returns (university_id, campus) as a two-element record so callers can
+-- store both without re-querying profiles.
+CREATE OR REPLACE FUNCTION public._confession_assert_can_post(
+  OUT out_uni    text,
+  OUT out_campus text
+)
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_uni text;
+  v_uid    uuid := auth.uid();
   v_status text;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'not authenticated' USING ERRCODE = '42501';
   END IF;
 
-  SELECT cp.university_id, cp.status
-  INTO v_uni, v_status
+  SELECT cp.university_id, cp.campus, cp.status
+  INTO out_uni, out_campus, v_status
   FROM public._confession_caller_profile() cp;
 
-  IF v_uni IS NULL OR trim(v_uni) = '' THEN
+  IF out_uni IS NULL OR trim(out_uni) = '' THEN
     RAISE EXCEPTION 'Connect your university in Profile before posting confessions.'
       USING ERRCODE = 'P0001';
   END IF;
@@ -251,8 +261,6 @@ BEGIN
     RAISE EXCEPTION 'Your account cannot post right now.'
       USING ERRCODE = 'P0001';
   END IF;
-
-  RETURN v_uni;
 END;
 $$;
 
@@ -262,6 +270,7 @@ CREATE OR REPLACE FUNCTION public.create_confession(p_content text)
 RETURNS TABLE (
   id             uuid,
   content        text,
+  campus         text,
   created_at     timestamptz,
   like_count     int,
   comment_count  int,
@@ -273,13 +282,17 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_uni text;
+  v_uid    uuid := auth.uid();
+  v_uni    text;
+  v_campus text;
   v_trimmed text;
   v_recent int;
   v_row public.confessions%ROWTYPE;
 BEGIN
-  v_uni := public._confession_assert_can_post();
+  SELECT out_uni, out_campus
+  INTO v_uni, v_campus
+  FROM public._confession_assert_can_post();
+
   v_trimmed := trim(coalesce(p_content, ''));
 
   IF char_length(v_trimmed) < 1 OR char_length(v_trimmed) > 500 THEN
@@ -297,14 +310,15 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  INSERT INTO public.confessions (author_id, university_id, content)
-  VALUES (v_uid, v_uni, v_trimmed)
+  INSERT INTO public.confessions (author_id, university_id, campus, content)
+  VALUES (v_uid, v_uni, v_campus, v_trimmed)
   RETURNING * INTO v_row;
 
   RETURN QUERY
   SELECT
     v_row.id,
     v_row.content,
+    v_row.campus,
     v_row.created_at,
     v_row.like_count,
     v_row.comment_count,
@@ -317,11 +331,15 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.get_confessions(
   p_before timestamptz DEFAULT NULL,
-  p_limit int DEFAULT 20
+  p_limit  int         DEFAULT 20,
+  -- Campus filter. NULL = all campuses in this university.
+  -- Pass a specific campus name to scope the feed to that campus.
+  p_campus text        DEFAULT NULL
 )
 RETURNS TABLE (
   id             uuid,
   content        text,
+  campus         text,
   created_at     timestamptz,
   like_count     int,
   comment_count  int,
@@ -334,9 +352,9 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_uid uuid := auth.uid();
-  v_uni text;
-  v_limit int := greatest(1, least(coalesce(p_limit, 20), 50));
+  v_uid   uuid := auth.uid();
+  v_uni   text;
+  v_limit int  := greatest(1, least(coalesce(p_limit, 20), 50));
 BEGIN
   IF v_uid IS NULL THEN
     RETURN;
@@ -353,6 +371,7 @@ BEGIN
   SELECT
     c.id,
     c.content,
+    c.campus,
     c.created_at,
     c.like_count,
     c.comment_count,
@@ -365,6 +384,8 @@ BEGIN
   WHERE c.university_id = v_uni
     AND c.status = 'active'
     AND (p_before IS NULL OR c.created_at < p_before)
+    -- Campus filter: NULL means "all". When a campus is given, match exactly.
+    AND (p_campus IS NULL OR c.campus = p_campus)
   ORDER BY c.created_at DESC
   LIMIT v_limit;
 END;
@@ -376,6 +397,7 @@ CREATE OR REPLACE FUNCTION public.get_confession(p_id uuid)
 RETURNS TABLE (
   id             uuid,
   content        text,
+  campus         text,
   created_at     timestamptz,
   like_count     int,
   comment_count  int,
@@ -406,6 +428,7 @@ BEGIN
   SELECT
     c.id,
     c.content,
+    c.campus,
     c.created_at,
     c.like_count,
     c.comment_count,
@@ -507,7 +530,7 @@ DECLARE
   v_row public.confession_comments%ROWTYPE;
   v_alias text;
 BEGIN
-  v_uni := public._confession_assert_can_post();
+  SELECT out_uni INTO v_uni FROM public._confession_assert_can_post();
   v_trimmed := trim(coalesce(p_content, ''));
 
   IF char_length(v_trimmed) < 1 OR char_length(v_trimmed) > 300 THEN

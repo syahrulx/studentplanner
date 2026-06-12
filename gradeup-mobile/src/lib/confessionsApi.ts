@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 export interface Confession {
   id: string;
   content: string;
+  /** Campus name where this confession was posted, mirrors profiles.campus. Null for single-campus unis. */
+  campus: string | null;
   created_at: string;
   like_count: number;
   comment_count: number;
@@ -41,11 +43,14 @@ function toErrorMessage(error: unknown): string {
 export async function fetchConfessions(options?: {
   before?: string | null;
   limit?: number;
+  /** Campus name to filter by. Null/undefined = show all campuses. */
+  campus?: string | null;
 }): Promise<Confession[]> {
-  const { before = null, limit = DEFAULT_PAGE_SIZE } = options ?? {};
+  const { before = null, limit = DEFAULT_PAGE_SIZE, campus = null } = options ?? {};
   const { data, error } = await supabase.rpc('get_confessions', {
     p_before: before,
     p_limit: limit,
+    p_campus: campus,
   });
   if (error) throw new Error(toErrorMessage(error));
   return (data ?? []) as Confession[];

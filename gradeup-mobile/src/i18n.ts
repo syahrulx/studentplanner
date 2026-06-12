@@ -619,6 +619,9 @@ const translations = {
     confessionAnonymous: 'Anonymous',
     confessionComposeTitle: 'Share a confession',
     confessionComposePlaceholder: 'What is on your mind? (anonymous to other students)',
+    confessionAllCampuses: 'All Campuses',
+    confessionYouAreAt: 'You are at',
+    confessionPostingAs: 'Posting from',
     confessionRules:
       'Posts are anonymous to other students but subject to community guidelines. Be kind — no harassment, hate, or explicit content.',
     confessionPost: 'Post',
@@ -1499,6 +1502,9 @@ const translations = {
     confessionAnonymous: 'Tanpa nama',
     confessionComposeTitle: 'Kongsi pengakuan',
     confessionComposePlaceholder: 'Apa yang anda fikirkan? (tanpa nama kepada pelajar lain)',
+    confessionAllCampuses: 'Semua Kampus',
+    confessionYouAreAt: 'Anda di',
+    confessionPostingAs: 'Menyiar dari',
     confessionRules:
       'Siaran adalah tanpa nama kepada pelajar lain tetapi tertakluk pada garis panduan komuniti. Bersikap baik — tiada gangguan, kebencian, atau kandungan eksplisit.',
     confessionPost: 'Siarkan',
