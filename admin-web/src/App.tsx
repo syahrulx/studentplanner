@@ -22,6 +22,7 @@ import { BroadcastRoute } from './routes/BroadcastRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
 import { UserReportsRoute } from './routes/UserReportsRoute';
 import { WhatsNewRoute } from './routes/WhatsNewRoute';
+import { MinigamesRoute } from './routes/MinigamesRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="task-categories" element={<TaskCategoriesRoute />} />
             <Route path="user-reports" element={<UserReportsRoute />} />
             <Route path="whats-new" element={<WhatsNewRoute />} />
+            <Route path="minigames" element={<MinigamesRoute />} />
             <Route path="settings" element={<SettingsRoute />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

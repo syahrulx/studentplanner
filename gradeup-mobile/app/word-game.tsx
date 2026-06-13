@@ -5,6 +5,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { contrastText } from '@/src/lib/contrast';
 import Feather from '@expo/vector-icons/Feather';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,6 +65,7 @@ function mistakeEmoji(m: number): string {
 
 export default function WordGameHub() {
   const theme = useTheme();
+  const onPrimary = contrastText(theme.primary);
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const { friends, userId } = useCommunity();
@@ -201,10 +203,10 @@ export default function WordGameHub() {
                   style={[s.currentCard, { shadowColor: theme.primary }]}
                 >
                   <View style={s.currentCardLeft}>
-                    <Text style={s.currentCardTitle}>Level #{nextUnlocked}</Text>
-                    <Text style={s.currentCardSub}>Tap to play!</Text>
+                    <Text style={[s.currentCardTitle, { color: onPrimary }]}>Level #{nextUnlocked}</Text>
+                    <Text style={[s.currentCardSub, { color: onPrimary, opacity: 0.85 }]}>Tap to play!</Text>
                   </View>
-                  <View style={s.currentPlayBtn}>
+                  <View style={[s.currentPlayBtn, { backgroundColor: onPrimary }]}>
                     <Feather name="play" size={24} color={theme.primary} style={{ marginLeft: 3 }} />
                   </View>
                 </LinearGradient>
@@ -294,12 +296,12 @@ export default function WordGameHub() {
                     end={{ x: 1, y: 1 }}
                     style={[s.myScoreCard, { shadowColor: theme.primary }]}
                   >
-                    <Feather name="award" size={40} color="rgba(255,255,255,0.8)" />
+                    <Feather name="award" size={40} color={onPrimary} style={{ opacity: 0.8 }} />
                     <View style={s.myScoreInfo}>
-                      <Text style={s.myScoreTitle}>Your Total Score</Text>
-                      <Text style={s.myScoreVal}>{totalScore} <Text style={{ fontSize: 16, fontWeight: '700' }}>pts</Text></Text>
+                      <Text style={[s.myScoreTitle, { color: onPrimary, opacity: 0.9 }]}>Your Total Score</Text>
+                      <Text style={[s.myScoreVal, { color: onPrimary }]}>{totalScore} <Text style={{ fontSize: 16, fontWeight: '700' }}>pts</Text></Text>
                     </View>
-                    <View style={s.myScoreBadge}>
+                    <View style={[s.myScoreBadge, { backgroundColor: onPrimary }]}>
                       <Text style={[s.myScoreBadgeText, { color: theme.primary }]}>{completedCount}/100</Text>
                     </View>
                   </LinearGradient>
@@ -397,9 +399,11 @@ export default function WordGameHub() {
                       <View style={s.list}>
                         {entries.slice(3).map((entry, idx) => {
                           const isMe = entry.user_id === userId;
+                          // Appended self (outside top-N) carries its true global rank.
+                          const displayRank = entry.rank ?? idx + 4;
                           return (
                             <View key={entry.user_id} style={[s.lbRow, { backgroundColor: isMe ? theme.primary + '11' : theme.card }]}>
-                              <Text style={[s.lbRowRank, { color: theme.textSecondary }]}>{idx + 4}</Text>
+                              <Text style={[s.lbRowRank, { color: theme.textSecondary }]}>{displayRank}</Text>
                               <Avatar name={entry.name} avatarUrl={entry.avatar_url} size={36} />
                               <View style={s.rowBody}>
                                 <Text style={[s.rowName, { color: theme.text }]} numberOfLines={1}>{entry.name}</Text>

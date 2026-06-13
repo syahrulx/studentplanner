@@ -32,12 +32,15 @@ export default function InboxScreen() {
       const { data, error } = await supabase
         .from('in_app_notifications')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
-      
-      if (!error && data) {
-        setNotifications(data as InAppNotification[]);
+
+      if (error) {
+        console.warn('Failed to load inbox:', error.message);
+        return;
       }
+      setNotifications((data ?? []) as InAppNotification[]);
     } catch (e) {
       console.warn('Failed to load inbox:', e);
     }
@@ -80,7 +83,18 @@ export default function InboxScreen() {
 
     // Routing logic based on data type
     const t = item.data?.type;
-    if (t === 'service_chat_message' && item.data?.serviceId) {
+    if (t === 'broadcast') {
+      // Admin broadcast — honour an optional in-app deep link, otherwise stay put.
+      const rawRoute = typeof item.data?.route === 'string' ? item.data.route.trim() : '';
+      if (rawRoute.startsWith('/')) {
+        const params = item.data?.params && typeof item.data.params === 'object' ? item.data.params : null;
+        if (params && Object.keys(params).length > 0) {
+          router.push({ pathname: rawRoute, params } as any);
+        } else {
+          router.push(rawRoute as any);
+        }
+      }
+    } else if (t === 'service_chat_message' && item.data?.serviceId) {
       router.push(`/services/chat/${item.data.serviceId}` as any);
     } else if (t?.startsWith('service') || t === 'event_new') {
       const postId = item.data?.serviceId || item.data?.eventId;
@@ -144,7 +158,8 @@ export default function InboxScreen() {
               <View style={[styles.iconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Feather 
                   name={
-                    item.category === 'friend' ? 'users' 
+                    item.data?.type === 'broadcast' ? 'volume-2'
+                    : item.category === 'friend' ? 'users' 
                     : item.category === 'event' ? 'calendar'
                     : item.data?.type === 'service_chat_message' ? 'message-circle'
                     : item.data?.type === 'service_offer_new' ? 'tag'

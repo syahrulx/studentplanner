@@ -31,43 +31,36 @@ function jsonResp(status: number, body: unknown, corsHeaders: Record<string, str
   });
 }
 
+// Resolve target user ids for a broadcast.
+//
+// `pushOnly = false` → every user in the audience. These all receive an in-app
+//   notification (the inbox does not depend on push hardware/permissions).
+// `pushOnly = true`  → only users eligible for an Expo push (have a registered
+//   token AND have community push enabled). Used for the remote push fan-out.
 async function resolveRecipients(
   admin: ReturnType<typeof getServiceClient>,
   audience: Audience,
   userIds: string[] | undefined,
   universityId: string | undefined,
+  pushOnly: boolean,
 ): Promise<string[]> {
+  let query = admin.from('profiles').select('id');
+
   if (audience === 'user_ids') {
     const ids = (userIds ?? []).filter((v): v is string => typeof v === 'string' && v.length > 0);
     if (ids.length === 0) return [];
-    const { data, error } = await admin
-      .from('profiles')
-      .select('id')
-      .in('id', ids)
-      .not('expo_push_token', 'is', null)
-      .eq('community_push_enabled', true);
-    if (error) throw new Error(error.message);
-    return (data ?? []).map((r: { id: string }) => r.id);
-  }
-
-  if (audience === 'university') {
+    query = query.in('id', ids);
+  } else if (audience === 'university') {
     if (!universityId) return [];
-    const { data, error } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('university_id', universityId)
-      .not('expo_push_token', 'is', null)
-      .eq('community_push_enabled', true);
-    if (error) throw new Error(error.message);
-    return (data ?? []).map((r: { id: string }) => r.id);
+    query = query.eq('university_id', universityId);
+  }
+  // audience === 'all' applies no extra filter.
+
+  if (pushOnly) {
+    query = query.not('expo_push_token', 'is', null).eq('community_push_enabled', true);
   }
 
-  // 'all'
-  const { data, error } = await admin
-    .from('profiles')
-    .select('id')
-    .not('expo_push_token', 'is', null)
-    .eq('community_push_enabled', true);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []).map((r: { id: string }) => r.id);
 }
@@ -119,7 +112,8 @@ serve(async (req: Request) => {
   }
 
   try {
-    const recipients = await resolveRecipients(admin, audience, userIds, universityId);
+    // Everyone in the audience receives an in-app notification…
+    const recipients = await resolveRecipients(admin, audience, userIds, universityId, false);
 
     if (action === 'preview') {
       return json(200, { count: recipients.length });
@@ -130,6 +124,9 @@ serve(async (req: Request) => {
       const body = String(payload.body ?? '').trim();
       if (!title || !body) return json(400, { error: 'missing_title_or_body' });
       if (recipients.length === 0) return json(200, { sent: 0, reason: 'no_recipients' });
+
+      // …but only push-eligible users get a remote Expo push.
+      const pushRecipients = await resolveRecipients(admin, audience, userIds, universityId, true);
 
       // Rate-limit per admin (not applied to dev-secret bypass so automated
       // tooling stays unblocked; tighten if needed).
@@ -202,36 +199,44 @@ serve(async (req: Request) => {
       }
 
       // 2. Delegate to the existing community-push function so all rate-limiting, chunking
-      // and opt-in filtering stays in one place.
-      const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceKey}`,
-        },
-        body: JSON.stringify({
-          recipientUserIds: recipients,
-          title,
-          body,
-          category,
-          collapseKey,
-          data,
-        }),
-      });
+      // and opt-in filtering stays in one place. Only push-eligible users are sent here;
+      // if nobody is eligible we skip the call but the in-app notifications above still stand.
+      let parsed: unknown = { sent: 0, reason: 'no_push_recipients' };
+      let res: Response | null = null;
+      if (pushRecipients.length > 0) {
+        res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            recipientUserIds: pushRecipients,
+            title,
+            body,
+            category,
+            collapseKey,
+            data,
+          }),
+        });
 
-      const text = await res.text();
-      let parsed: unknown = null;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = { raw: text };
+        const text = await res.text();
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = { raw: text };
+        }
       }
+
+      // A null `res` means there were no push-eligible recipients; the in-app
+      // notifications were still written, so that path is a success.
+      const pushOk = res === null || res.ok;
 
       // Log the broadcast for audit with the acting admin id.
       try {
         await admin.from('admin_logs').insert({
           type: 'api_request',
-          status: res.ok ? 'success' : 'failed',
+          status: pushOk ? 'success' : 'failed',
           meta: {
             action: 'community_broadcast',
             actor: adminUserId ?? null,
@@ -239,30 +244,36 @@ serve(async (req: Request) => {
             audience,
             universityId: universityId ?? null,
             recipient_count: recipients.length,
+            push_recipient_count: pushRecipients.length,
             title,
             body,
             category,
             route: route || null,
             collapseKey,
-            response_status: res.status,
+            response_status: res?.status ?? null,
           },
         });
       } catch {
         // Non-fatal if logs table is unavailable.
       }
 
-      if (!res.ok) {
+      if (res && !res.ok) {
         const inner =
           parsed && typeof parsed === 'object' && 'error' in parsed
             ? String((parsed as { error: unknown }).error)
-            : (text || `HTTP ${res.status}`).slice(0, 500);
+            : `HTTP ${res.status}`;
         return json(502, {
           error: `community_push_failed (${res.status}): ${inner}`,
           community_push_status: res.status,
           community_push_response: parsed,
         });
       }
-      return json(200, parsed);
+      const pushResult = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      return json(200, {
+        ...pushResult,
+        in_app_recipients: recipients.length,
+        push_recipients: pushRecipients.length,
+      });
     }
 
     return json(400, { error: 'unknown_action' });

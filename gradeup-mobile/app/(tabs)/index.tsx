@@ -840,19 +840,24 @@ export default function Dashboard() {
 
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!user) return;
-      supabase
+  const refreshUnreadInboxCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { count } = await supabase
         .from('in_app_notifications')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .eq('is_read', false)
-        .then(({ count }) => {
-          if (count !== null) setUnreadInboxCount(count);
-        })
-        .catch(() => {});
-    }, [user])
+        .eq('is_read', false);
+      if (count !== null && count !== undefined) setUnreadInboxCount(count);
+    } catch {
+      // ignore — keep last known count
+    }
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshUnreadInboxCount();
+    }, [refreshUnreadInboxCount])
   );
 
   const theme = useTheme();
@@ -1088,6 +1093,7 @@ export default function Dashboard() {
       await Promise.all([
         refreshRemoteData(),
         refreshCommunityAll().catch(() => {}),
+        refreshUnreadInboxCount().catch(() => {}),
       ]);
     } catch (e) {
       if (__DEV__) console.warn('[Home] pull refresh failed', e);
@@ -1099,7 +1105,7 @@ export default function Dashboard() {
       }
       setRefreshingHome(false);
     }
-  }, [isCatTheme, isDarkMinimal, refreshRemoteData, refreshCommunityAll]);
+  }, [isCatTheme, isDarkMinimal, refreshRemoteData, refreshCommunityAll, refreshUnreadInboxCount]);
   const homeTeachingWeek = useMemo(
     () =>
       teachingWeekNumberForDate(
@@ -1536,10 +1542,10 @@ export default function Dashboard() {
               style={({ pressed }) => [styles.headerIconBtn, pressed && { opacity: 0.7 }]}
             >
               <Feather name="bell" size={22} color={headerOnPrimary} />
-              {(communityBadgeCount + unreadInboxCount) > 0 && (
+              {unreadInboxCount > 0 && (
                 <View style={[styles.notifBadge, { borderColor: headerPrimary, borderWidth: 1 }]}>
                   <Text style={styles.notifBadgeText}>
-                    {(communityBadgeCount + unreadInboxCount) > 99 ? '99+' : (communityBadgeCount + unreadInboxCount)}
+                    {unreadInboxCount > 99 ? '99+' : unreadInboxCount}
                   </Text>
                 </View>
               )}

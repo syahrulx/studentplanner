@@ -60,9 +60,14 @@ export default function Leaderboard() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const myEntry = entries.find((e) => e.user_id === userId);
-  const myRank = myEntry ? entries.indexOf(myEntry) + 1 : null;
-  const podium = entries.slice(0, 3);
-  const rest = entries.slice(3);
+  // An entry carrying its own `rank` is the current user appended outside the
+  // displayed top-N — show it only in the "my rank" card, not in the ranked list.
+  const listEntries = entries.filter((e) => !(e.user_id === userId && e.rank != null));
+  const myRank = myEntry
+    ? myEntry.rank ?? listEntries.indexOf(myEntry) + 1
+    : null;
+  const podium = listEntries.slice(0, 3);
+  const rest = listEntries.slice(3);
 
   return (
     <ScrollView style={[s.container, { backgroundColor: theme.background }]} contentContainerStyle={s.content}>

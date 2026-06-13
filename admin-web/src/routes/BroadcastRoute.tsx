@@ -648,6 +648,9 @@ export function BroadcastRoute() {
             ) : null}
             {sendResult ? (
               <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+                {typeof sendResult.in_app_recipients === 'number'
+                  ? `Delivered to ${sendResult.in_app_recipients} inbox(es). `
+                  : ''}
                 Sent {sendResult.sent ?? 0} push(es)
                 {typeof sendResult.batches === 'number' ? ` in ${sendResult.batches} batch(es)` : ''}
                 {sendResult.reason ? ` — ${sendResult.reason}` : ''}.

@@ -207,6 +207,50 @@ export interface GameLeaderboardEntry {
   avatar_url?: string;
   total_score: number;
   puzzles_solved: number;
+  // True global rank (1-based). Set only for the current user when appended
+  // outside the displayed top-N. Undefined for normal list rows.
+  rank?: number;
+}
+
+const GLOBAL_GAME_LEADERBOARD_LIMIT = 50;
+
+// Fully paginate word_game_scores and aggregate per user. Fallback for when the
+// server-side RPC isn't available. Reads ALL matching rows so global totals are
+// complete (not truncated to 5000) and consistent with the friends scope.
+async function aggregateGameClientSide(
+  scope: 'friends' | 'global',
+  userId: string,
+  friendIds: string[],
+): Promise<Map<string, { total_score: number; puzzles_solved: number }>> {
+  const userMap = new Map<string, { total_score: number; puzzles_solved: number }>();
+  const pageSize = 1000;
+  const HARD_CAP = 50000;
+  let from = 0;
+
+  while (from < HARD_CAP) {
+    let query = supabase
+      .from('word_game_scores')
+      .select('user_id, score')
+      .order('updated_at', { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (scope === 'friends') query = query.in('user_id', [...friendIds, userId]);
+
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) break;
+
+    for (const s of data) {
+      const entry = userMap.get(s.user_id) || { total_score: 0, puzzles_solved: 0 };
+      entry.total_score += s.score;
+      entry.puzzles_solved += 1;
+      userMap.set(s.user_id, entry);
+    }
+
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return userMap;
 }
 
 /** Fetch the word game leaderboard (friends or global). */
@@ -215,34 +259,30 @@ export async function getGameLeaderboard(
   userId: string,
   friendIds: string[] = [],
 ): Promise<GameLeaderboardEntry[]> {
-  // Fetch scores
-  let query = supabase
-    .from('word_game_scores')
-    .select('user_id, score')
-    .order('updated_at', { ascending: false })
-    .limit(5000);
-
-  if (scope === 'friends') {
-    query = query.in('user_id', [...friendIds, userId]);
-  }
-
-  const { data: scores, error } = await query;
-  if (error) {
-    console.error('[leaderboard] Error fetching scores:', error.message);
-    return [];
-  }
-  
-  console.log(`[leaderboard] Fetched ${scores?.length || 0} scores for scope ${scope}`);
-
-  if (!scores || scores.length === 0) return [];
-
-  // Aggregate per user
   const userMap = new Map<string, { total_score: number; puzzles_solved: number }>();
-  for (const s of scores) {
-    const entry = userMap.get(s.user_id) || { total_score: 0, puzzles_solved: 0 };
-    entry.total_score += s.score;
-    entry.puzzles_solved += 1;
-    userMap.set(s.user_id, entry);
+
+  // Preferred path: server-side SUM(score) GROUP BY user_id (complete + cheap).
+  let agg: any[] | null = null;
+  try {
+    const { data, error } = await supabase.rpc('get_word_game_leaderboard', {
+      p_user_ids: scope === 'friends' ? [...friendIds, userId] : null,
+      p_limit: scope === 'global' ? GLOBAL_GAME_LEADERBOARD_LIMIT : null,
+    });
+    if (!error && Array.isArray(data)) agg = data;
+  } catch {
+    agg = null;
+  }
+
+  if (agg) {
+    for (const r of agg) {
+      userMap.set(r.user_id, {
+        total_score: Number(r.total_score) || 0,
+        puzzles_solved: Number(r.puzzles_solved) || 0,
+      });
+    }
+  } else {
+    const fallback = await aggregateGameClientSide(scope, userId, friendIds);
+    for (const [uid, stats] of fallback) userMap.set(uid, stats);
   }
 
   const userIds = Array.from(userMap.keys());
@@ -269,5 +309,52 @@ export async function getGameLeaderboard(
   });
 
   entries.sort((a, b) => b.total_score - a.total_score);
-  return scope === 'global' ? entries.slice(0, 50) : entries;
+
+  if (scope !== 'global') return entries;
+
+  const top = entries.slice(0, GLOBAL_GAME_LEADERBOARD_LIMIT);
+  if (!top.some((e) => e.user_id === userId)) {
+    const self = await getGameUserRank(userId);
+    if (self && self.total_score > 0) {
+      const profile = profileMap.get(userId);
+      top.push({
+        user_id: userId,
+        name: profile?.name || 'You',
+        avatar_url: profile?.avatar_url,
+        total_score: self.total_score,
+        puzzles_solved: self.puzzles_solved,
+        rank: self.rank,
+      });
+    }
+  }
+  return top;
+}
+
+// Current user's global word-game total + true rank. RPC when available, else
+// full client-side aggregation fallback.
+async function getGameUserRank(
+  userId: string,
+): Promise<{ total_score: number; puzzles_solved: number; rank: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_word_game_user_rank', {
+      p_user_id: userId,
+    });
+    if (!error && Array.isArray(data) && data[0]) {
+      const r = data[0] as any;
+      return {
+        total_score: Number(r.total_score) || 0,
+        puzzles_solved: Number(r.puzzles_solved) || 0,
+        rank: Number(r.rank) || 0,
+      };
+    }
+  } catch {
+    // fall through to client-side fallback
+  }
+
+  const map = await aggregateGameClientSide('global', userId, []);
+  const sorted = Array.from(map.entries()).sort((a, b) => b[1].total_score - a[1].total_score);
+  const idx = sorted.findIndex(([uid]) => uid === userId);
+  if (idx === -1) return null;
+  const stats = sorted[idx][1];
+  return { total_score: stats.total_score, puzzles_solved: stats.puzzles_solved, rank: idx + 1 };
 }

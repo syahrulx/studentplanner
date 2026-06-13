@@ -69,10 +69,8 @@ export async function initPurchases(userId: string): Promise<void> {
   console.log(`${TAG} Selected API key for platform "${Platform.OS}": ${apiKey}`);
   console.log(`${TAG} Using appUserID: "${userId}"`);
 
-  if (__DEV__) {
-    console.log(`${TAG} DEV mode — setting log level to DEBUG`);
-    Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-  }
+  // Note: Purchases.setLogLevel(LOG_LEVEL.DEBUG) removed — crashes in Expo Go
+  // where the native module is null. Not needed for functionality.
 
   console.log(`${TAG} Calling Purchases.configure()...`);
   try {
@@ -80,12 +78,9 @@ export async function initPurchases(userId: string): Promise<void> {
     _configured = true;
     console.log(`${TAG} ✅ Purchases.configure() SUCCESS. _configured = true`);
   } catch (error: any) {
-    console.error(`${TAG} ❌ Purchases.configure() FAILED`);
-    console.error(`${TAG} Error name:    ${error?.name}`);
-    console.error(`${TAG} Error message: ${error?.message}`);
-    console.error(`${TAG} Error code:    ${error?.code}`);
-    console.error(`${TAG} Full error:    ${JSON.stringify(error, null, 2)}`);
-    throw error;
+    console.warn(`${TAG} Purchases.configure() failed — in-app purchases disabled.`);
+    console.warn(`${TAG} This is expected in Expo Go. Use a dev build (eas build) to test subscriptions.`);
+    return;
   }
   console.log(`${TAG} ============================================================`);
 }
