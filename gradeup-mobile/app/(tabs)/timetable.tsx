@@ -15,7 +15,8 @@ import {
   Easing,
   PanResponder,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import Reanimated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
 import ViewShot, { captureRef } from 'react-native-view-shot';
@@ -186,6 +187,44 @@ export default function TimetableScreen() {
   );
 
   const { width: winW, height: winH } = useWindowDimensions();
+
+  // --- HEADER MAP ANIMATION ---
+  const headerMapExpansion = useSharedValue(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Small delay after focus, then expand
+      headerMapExpansion.value = withDelay(
+        300,
+        withTiming(1, { duration: 500 })
+      );
+
+      // Collapse back after 3 seconds of being expanded
+      const collapseId = setTimeout(() => {
+        headerMapExpansion.value = withTiming(0, { duration: 400 });
+      }, 3500);
+
+      return () => {
+        clearTimeout(collapseId);
+        headerMapExpansion.value = 0; // Reset on blur
+      };
+    }, [])
+  );
+
+  const headerMapStyle = useAnimatedStyle(() => ({
+    width: interpolate(headerMapExpansion.value, [0, 1], [36, 115], 'clamp'),
+    borderRadius: 12,
+  }));
+
+  const headerMapLabelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(headerMapExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp'),
+    width: interpolate(headerMapExpansion.value, [0, 1], [0, 75], 'clamp'),
+    marginLeft: interpolate(headerMapExpansion.value, [0, 1], [0, 5], 'clamp'),
+    transform: [{ translateX: interpolate(headerMapExpansion.value, [0, 1], [10, 0], 'clamp') }],
+    overflow: 'hidden',
+    flexDirection: 'row',
+  }));
+
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -747,15 +786,19 @@ export default function TimetableScreen() {
         </View>
         {showMenu && (
           <View style={s.headerActions}>
-            <Pressable
-              onPress={() => router.push('/campus-map' as any)}
-              style={({ pressed }) => [s.headerMapBtn, { borderColor: headerIconColor + '40' }, pressed && { opacity: 0.7 }]}
-              hitSlop={6}
-              accessibilityLabel={T('campusMapTitle')}
-            >
-              <Feather name="map-pin" size={14} color={headerIconColor} />
-              <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]}>Campus Map</Text>
-            </Pressable>
+            <Reanimated.View style={[{ overflow: 'hidden' }, headerMapStyle]}>
+              <Pressable
+                onPress={() => router.push('/campus-map' as any)}
+                style={({ pressed }) => [s.headerMapBtn, { borderColor: headerIconColor + '40', backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}
+                hitSlop={6}
+                accessibilityLabel={T('campusMapTitle')}
+              >
+                <Feather name="map-pin" size={14} color={headerIconColor} />
+                <Reanimated.View style={headerMapLabelStyle}>
+                  <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]} numberOfLines={1}>Campus Map</Text>
+                </Reanimated.View>
+              </Pressable>
+            </Reanimated.View>
             <Pressable
               onPress={() => {
                 if (!hasData) {
@@ -1898,8 +1941,7 @@ export default function TimetableScreen() {
                           </Text>
                         ) : null}
                         {slotDetails.room && (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Feather name="map-pin" size={12} color={theme.primary} />
+                          <View>
                             <Text style={[s.listMetaLabel, { color: theme.primary }]}>{T('timetableRoom')}:</Text>
                             <Text style={[s.listMetaValue, { color: theme.textSecondary }]}>
                               {formatRoomDisplay(e.location, T('timetableRoomOnline'))}
@@ -2055,9 +2097,8 @@ const s = StyleSheet.create({
   headerMapBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    justifyContent: 'center',
+    height: 36,
     borderRadius: 12,
     borderWidth: 1,
   },
@@ -2258,11 +2299,6 @@ const s = StyleSheet.create({
   gridSlotTitle: { fontSize: 8, fontWeight: '600', lineHeight: 12 },
   /** Room on its own row(s); lecturer/group below — independent line limits. */
   gridSlotMetaColumn: { width: '100%', gap: 2 },
-  gridSlotMetaRoomRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 2,
-  },
   gridSlotMetaRoom: {
     fontSize: 10,
     lineHeight: 12,
@@ -2443,16 +2479,13 @@ function WeekGridSlotMetaText({
   return (
     <View style={[s.gridSlotMetaColumn, isHorizontal && { flexDirection: 'row', gap: 8, marginTop: 0 }]}>
       {room ? (
-        <View style={[s.gridSlotMetaRoomRow, isHorizontal && { flex: 1 }]}>
-          <Feather name="map-pin" size={7} color={theme.text} style={{ opacity: 0.7, marginTop: 1 }} />
-          <Text
-            style={[s.gridSlotMetaRoom, { color: theme.text, flex: 1 }]}
-            numberOfLines={isHorizontal ? 1 : roomLines}
-            ellipsizeMode="tail"
-          >
-            {room}
-          </Text>
-        </View>
+        <Text
+          style={[s.gridSlotMetaRoom, { color: theme.text }]}
+          numberOfLines={isHorizontal ? 1 : roomLines}
+          ellipsizeMode="tail"
+        >
+          {room}
+        </Text>
       ) : null}
       {tail ? (
         <Text
