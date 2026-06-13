@@ -1,5 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
-import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { checkContentModeration } from './servicesApi';
@@ -165,41 +163,9 @@ export async function fetchPost(postId: string): Promise<CommunityPost | null> {
 
 // ... (types remains the same)
 
-export async function uploadPostImage(uri: string): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const fileName = `${user.id}/${Date.now()}.jpg`;
-
-  try {
-    // 1. Read file as base64
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    // 2. Convert to ArrayBuffer
-    const arrayBuffer = decode(base64);
-
-    // 3. Upload to Supabase Storage
-    const { error } = await supabase.storage
-      .from('community-images')
-      .upload(fileName, arrayBuffer, {
-        contentType: 'image/jpeg',
-        upsert: false,
-      });
-
-    if (error) throw error;
-
-    const { data: urlData } = supabase.storage
-      .from('community-images')
-      .getPublicUrl(fileName);
-
-    return urlData.publicUrl;
-  } catch (e) {
-    console.error('[eventsApi] uploadPostImage error:', e);
-    throw e;
-  }
-}
+// Re-exported from the shared module so existing importers keep working while
+// avoiding a require cycle between eventsApi and servicesApi.
+export { uploadPostImage } from './postImageUpload';
 
 // ─── Create Post ────────────────────────────────────────────────────────────
 

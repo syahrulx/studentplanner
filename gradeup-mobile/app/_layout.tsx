@@ -394,7 +394,8 @@ function ThemeAwareLayout() {
         <Stack.Screen name="auto-share-settings" />
         <Stack.Screen name="community" />
         <Stack.Screen name="services" />
-        <Stack.Screen name="legal" />
+        <Stack.Screen name="legal/guidelines" />
+        <Stack.Screen name="legal/terms" />
         <Stack.Screen name="study-timer" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 

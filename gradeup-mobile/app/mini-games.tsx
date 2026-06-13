@@ -35,10 +35,13 @@ const GAMES: GameCard[] = [
   {
     key: 'crossword',
     title: 'Crossword',
-    subtitle: '2 mini puzzles a day · bonus words · streaks · rankings',
+    subtitle: '2 mini puzzles a day · hidden word · streaks · rankings',
     icon: 'grid',
     route: '/crossword',
-    tint: (t) => [t.accent || t.primary, (t.accent2 || t.primary) + 'CC'],
+    // Use the deep accent2 (not the pale accent) as the base so the auto-contrast
+    // text stays white/legible across themes — e.g. the cream "Cat" theme where
+    // accent is a pale tan that flipped the text to an unreadable dark.
+    tint: (t) => [t.accent2 || t.primary, (t.primary || t.accent2) + 'CC'],
   },
 ];
 

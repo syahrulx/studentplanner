@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ScrollView, Image, ActivityIndicator, Alert,
   useWindowDimensions, TextInput, Modal, KeyboardAvoidingView, Platform,
+  Keyboard,
 } from 'react-native';
 import { router, useNavigation } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,8 +17,8 @@ import {
   type CrosswordPuzzle, type CrosswordClue,
 } from '@/src/lib/crosswordEngine';
 import {
-  loadProgress, saveResult, isCompleted, getResult, completedCount, getTotalPoints,
-  playsLeftToday, previewPoints, allCompleted, BASE_POINTS, BONUS_WORD_POINTS,
+  loadProgress, saveResult, saveBonusAttempt, isCompleted, getResult, completedCount, getTotalPoints,
+  playsLeftToday, previewPoints, allCompleted, hasBonusAttempt, bonusWasFound, BASE_POINTS, BONUS_WORD_POINTS,
   getCrosswordLeaderboard,
   type CrosswordProgress, type CrosswordLeaderboardEntry,
 } from '@/src/lib/crosswordStorage';
@@ -131,6 +132,8 @@ export default function CrosswordScreen() {
         key={activePuzzle.id}
         puzzle={activePuzzle}
         readOnly={!!progress && isCompleted(progress, activePuzzle.id)}
+        initialBonusUsed={progress ? hasBonusAttempt(progress, activePuzzle.id) : false}
+        initialBonusFound={progress ? bonusWasFound(progress, activePuzzle.id) : false}
         theme={theme}
         isDark={isDark}
         insets={insets}
@@ -263,14 +266,15 @@ export default function CrosswordScreen() {
 
 // ───────────────────────────── Solve view ─────────────────────────────
 
-const KEY_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 const HINT_LIMIT = 2;
 
 function SolveView({
-  puzzle, readOnly, theme, isDark, insets, onExit, onSolved,
+  puzzle, readOnly, initialBonusUsed, initialBonusFound, theme, isDark, insets, onExit, onSolved,
 }: {
   puzzle: CrosswordPuzzle;
   readOnly: boolean;
+  initialBonusUsed: boolean;
+  initialBonusFound: boolean;
   theme: ReturnType<typeof useTheme>;
   isDark: boolean;
   insets: { top: number; bottom: number };
@@ -299,12 +303,18 @@ function SolveView({
   const [hints, setHints] = useState(0);
   const [done, setDone] = useState(readOnly);
   const [earned, setEarned] = useState<{ points: number; bonus: number; streak: number } | null>(null);
-  const [kbOpen, setKbOpen] = useState(true);
-  const [bonusFound, setBonusFound] = useState(false);
+  const [bonusFound, setBonusFound] = useState(initialBonusFound);
+  const [bonusUsed, setBonusUsed] = useState(initialBonusUsed);
   const [bonusModal, setBonusModal] = useState(false);
   const [bonusGuess, setBonusGuess] = useState('');
-  const bonusFoundRef = useRef(false);
+  const bonusFoundRef = useRef(initialBonusFound);
   const savedRef = useRef(false);
+
+  // Hidden input that drives the real system keyboard. Tapping a cell focuses it,
+  // tapping elsewhere blurs it. Letters/backspace are routed to the grid.
+  const inputRef = useRef<TextInput>(null);
+  const openKeyboard = useCallback(() => { if (!readOnly && !done) inputRef.current?.focus(); }, [readOnly, done]);
+  const closeKeyboard = useCallback(() => { inputRef.current?.blur(); Keyboard.dismiss(); }, []);
 
   // Pick the first playable cell on mount.
   useEffect(() => {
@@ -327,7 +337,7 @@ function SolveView({
 
   const selectCell = useCallback((r: number, c: number) => {
     if (cells[r][c].block || readOnly) return;
-    setKbOpen(true);
+    openKeyboard();
     if (sel && sel.r === r && sel.c === c) {
       // toggle direction if both available
       const both = cells[r][c].acrossClue != null && cells[r][c].downClue != null;
@@ -338,7 +348,7 @@ function SolveView({
     const cell = cells[r][c];
     if (dir === 'across' && cell.acrossClue == null && cell.downClue != null) setDir('down');
     else if (dir === 'down' && cell.downClue == null && cell.acrossClue != null) setDir('across');
-  }, [cells, sel, dir, readOnly]);
+  }, [cells, sel, dir, readOnly, openKeyboard]);
 
   const advance = useCallback(() => {
     if (currentWord.length === 0 || !sel) return;
@@ -382,6 +392,32 @@ function SolveView({
     });
   }, [sel, readOnly, done, currentWord]);
 
+  // iOS fires onKeyPress for every key (letters + Backspace) reliably.
+  const onKeyPress = useCallback((key: string) => {
+    if (readOnly || done) return;
+    if (key === 'Backspace') backspace();
+    else if (/^[a-zA-Z]$/.test(key)) typeLetter(key.toUpperCase());
+  }, [readOnly, done, typeLetter, backspace]);
+
+  // Android soft keyboards don't fire onKeyPress for letters, so we diff the
+  // field instead. It always holds a single sentinel space: a typed letter makes
+  // it length 2 (→ type that letter), a backspace makes it length 0 (→ delete).
+  const onInputChange = useCallback((text: string) => {
+    if (readOnly || done) return;
+    if (text.length > 1) {
+      const ch = text[text.length - 1];
+      if (/[a-zA-Z]/.test(ch)) typeLetter(ch.toUpperCase());
+    } else if (text.length < 1) {
+      backspace();
+    }
+  }, [readOnly, done, typeLetter, backspace]);
+
+  // Open the keyboard whenever the selected cell changes; close it once solved.
+  useEffect(() => {
+    if (sel && !readOnly && !done) inputRef.current?.focus();
+  }, [sel?.r, sel?.c]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (done) closeKeyboard(); }, [done, closeKeyboard]);
+
   const revealHint = useCallback(() => {
     if (readOnly || done) return;
     if (hints >= HINT_LIMIT) {
@@ -415,21 +451,22 @@ function SolveView({
     });
   }, [sel, readOnly, done, puzzle, finish, hints, entries, cells, currentWord, n]);
 
-  const submitBonusGuess = useCallback(() => {
-    if (checkBonusGuess(puzzle, bonusGuess)) {
+  // One guess only — persisted per user so leaving and returning can't retry.
+  const submitBonusGuess = useCallback(async () => {
+    if (bonusUsed) return;
+    const correct = checkBonusGuess(puzzle, bonusGuess);
+    const attempt = await saveBonusAttempt(puzzle.id, correct);
+    if (!attempt) return;
+    setBonusUsed(true);
+    setBonusModal(false);
+    setBonusGuess('');
+    if (correct) {
       bonusFoundRef.current = true;
       setBonusFound(true);
-      setBonusModal(false);
-      setBonusGuess('');
     } else {
-      Alert.alert('Not quite', 'That\u2019s not the secret word. Try again!');
+      Alert.alert('Not the secret word', 'You only get one guess — better luck on the next puzzle!');
     }
-  }, [puzzle, bonusGuess]);
-
-  const checkBoard = useCallback(() => {
-    setShowErrors(true);
-    setTimeout(() => setShowErrors(false), 1800);
-  }, []);
+  }, [puzzle, bonusGuess, bonusUsed]);
 
   const stepClue = useCallback((delta: number) => {
     if (currentClueIdx == null) {
@@ -456,12 +493,23 @@ function SolveView({
           <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{titleEmoji(puzzle.title)}  {puzzle.title}</Text>
-        <View style={{ width: 40 }} />
+        {!done && !readOnly ? (
+          <Pressable
+            onPress={revealHint}
+            disabled={hints >= HINT_LIMIT}
+            style={[styles.hintBtn, { backgroundColor: theme.card, opacity: hints >= HINT_LIMIT ? 0.4 : 1 }]}
+          >
+            <Feather name="eye" size={15} color={theme.text} />
+            <Text style={[styles.hintBtnText, { color: theme.text }]}>{HINT_LIMIT - hints}</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingTop: 6, paddingBottom: 16, flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
-        {/* Tapping anywhere outside a cell or the keyboard dismisses the keyboard. */}
-        <Pressable onPress={() => setKbOpen(false)} style={styles.contentTap}>
+        {/* Tap outside a cell to dismiss the system keyboard. */}
+        <Pressable onPress={closeKeyboard} style={styles.contentTap}>
         {/* Board */}
         <View style={[styles.boardCard, { backgroundColor: theme.backgroundSecondary, shadowColor: theme.primary }]}>
           <View style={[styles.boardWrap, { width: board, height: board }]}>
@@ -540,17 +588,27 @@ function SolveView({
           </View>
         )}
 
-        {/* Hidden bonus word — a secret challenge for extra points */}
+        {/* Hidden bonus word — one secret guess for extra points */}
         {!done && !readOnly && (
           <Pressable
-            onPress={() => !bonusFound && setBonusModal(true)}
-            style={[styles.bonusChip, { width: board, backgroundColor: bonusFound ? GOLD + '1F' : theme.card, borderColor: bonusFound ? GOLD : theme.border }]}
+            onPress={() => !bonusUsed && setBonusModal(true)}
+            disabled={bonusUsed}
+            style={[styles.bonusChip, {
+              width: board,
+              backgroundColor: bonusFound ? GOLD + '1F' : theme.card,
+              borderColor: bonusFound ? GOLD : theme.border,
+              opacity: bonusUsed && !bonusFound ? 0.6 : 1,
+            }]}
           >
-            <Feather name={bonusFound ? 'star' : 'search'} size={16} color={bonusFound ? GOLD : theme.textSecondary} />
+            <Feather name={bonusFound ? 'star' : bonusUsed ? 'x-circle' : 'search'} size={16} color={bonusFound ? GOLD : theme.textSecondary} />
             <Text style={[styles.bonusChipText, { color: bonusFound ? GOLD : theme.text }]}>
-              {bonusFound ? `Secret word found! +${BONUS_WORD_POINTS}` : `Find the hidden word · +${BONUS_WORD_POINTS}`}
+              {bonusFound
+                ? `Secret word found! +${BONUS_WORD_POINTS}`
+                : bonusUsed
+                  ? 'Secret word missed'
+                  : `Find the hidden word · one guess · +${BONUS_WORD_POINTS}`}
             </Text>
-            {!bonusFound && <Feather name="chevron-right" size={16} color={theme.textSecondary} />}
+            {!bonusUsed && <Feather name="chevron-right" size={16} color={theme.textSecondary} />}
           </Pressable>
         )}
 
@@ -596,6 +654,7 @@ function SolveView({
             </View>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Find the secret word</Text>
             <Text style={[styles.modalHint, { color: theme.textSecondary }]}>{puzzle.bonusHint}</Text>
+            <Text style={[styles.modalHint, { color: GOLD, fontWeight: '800' }]}>You only get one guess!</Text>
             <TextInput
               value={bonusGuess}
               onChangeText={setBonusGuess}
@@ -619,40 +678,25 @@ function SolveView({
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Keyboard — full-width tray anchored to the bottom, like a native keyboard.
-          Tapping a cell opens it; tapping anywhere else closes it. */}
-      {!done && kbOpen && (
-        <View style={[styles.kbTray, { backgroundColor: theme.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
-          <View style={styles.kbActions}>
-            <Pressable onPress={checkBoard} style={[styles.kbAction, { backgroundColor: theme.card }]}>
-              <Feather name="check" size={15} color={theme.text} />
-              <Text style={[styles.kbActionText, { color: theme.text }]}>Check</Text>
-            </Pressable>
-            <Pressable
-              onPress={revealHint}
-              disabled={hints >= HINT_LIMIT}
-              style={[styles.kbAction, { backgroundColor: theme.card, opacity: hints >= HINT_LIMIT ? 0.4 : 1 }]}
-            >
-              <Feather name="eye" size={15} color={theme.text} />
-              <Text style={[styles.kbActionText, { color: theme.text }]}>Hint · {HINT_LIMIT - hints}</Text>
-            </Pressable>
-          </View>
-          {KEY_ROWS.map((rowKeys, ri) => (
-            <View key={ri} style={styles.kbRow}>
-              {ri === 2 && (
-                <Pressable onPress={backspace} style={[styles.key, styles.keyWide, { backgroundColor: theme.border }]}>
-                  <Feather name="delete" size={18} color={theme.text} />
-                </Pressable>
-              )}
-              {rowKeys.split('').map((k) => (
-                <Pressable key={k} onPress={() => typeLetter(k)} style={[styles.key, { backgroundColor: theme.card }]}>
-                  <Text style={[styles.keyText, { color: theme.text }]}>{k}</Text>
-                </Pressable>
-              ))}
-              {ri === 2 && <View style={[styles.key, styles.keyWide, { opacity: 0 }]} />}
-            </View>
-          ))}
-        </View>
+      {/* Invisible field that brings up the device's real keyboard. */}
+      {!readOnly && (
+        <TextInput
+          ref={inputRef}
+          value={Platform.OS === 'ios' ? '' : ' '}
+          onChangeText={Platform.OS === 'ios' ? undefined : onInputChange}
+          onKeyPress={Platform.OS === 'ios' ? (e) => onKeyPress(e.nativeEvent.key) : undefined}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          autoComplete="off"
+          spellCheck={false}
+          keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'}
+          keyboardAppearance={isDark ? 'dark' : 'light'}
+          caretHidden
+          contextMenuHidden
+          blurOnSubmit={false}
+          importantForAutofill="no"
+          style={styles.hiddenInput}
+        />
       )}
     </View>
   );
@@ -872,16 +916,11 @@ const styles = StyleSheet.create({
   pointsPill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
   pointsPillText: { fontSize: 13, fontWeight: '700' },
 
-  // Keyboard — native-style full-width tray
+  // System keyboard + accessory bar
   contentTap: { width: '100%', alignItems: 'center', flexGrow: 1 },
-  kbTray: { paddingTop: 10, paddingHorizontal: 4, gap: 8 },
-  kbActions: { flexDirection: 'row', gap: 10, marginBottom: 4, justifyContent: 'center' },
-  kbAction: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  kbActionText: { fontSize: 13, fontWeight: '700' },
-  kbRow: { flexDirection: 'row', justifyContent: 'center', gap: 5, paddingHorizontal: 2 },
-  key: { flex: 1, maxWidth: 42, height: 46, borderRadius: 6, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 1, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  keyWide: { maxWidth: 58, flex: 1.5 },
-  keyText: { fontSize: 18, fontWeight: '600' },
+  hiddenInput: { position: 'absolute', width: 1, height: 1, opacity: 0, top: -200, left: 0 },
+  hintBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 12, borderRadius: 14 },
+  hintBtnText: { fontSize: 14, fontWeight: '800' },
 
   // Rankings (mirrors Word Game design)
   rankScroll: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 48 },

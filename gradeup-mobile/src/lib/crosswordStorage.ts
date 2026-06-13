@@ -32,8 +32,16 @@ export interface CrosswordResult {
   completedAt: string;
 }
 
+/** One secret-word guess per puzzle — persisted so leaving and returning can't retry. */
+export interface BonusAttempt {
+  puzzleId: number;
+  found: boolean;
+  attemptedAt: string;
+}
+
 export interface CrosswordProgress {
   results: CrosswordResult[];
+  bonusAttempts: BonusAttempt[];
   currentStreak: number;
   bestStreak: number;
   lastPlayedDate: string | null;
@@ -44,6 +52,7 @@ export interface CrosswordProgress {
 
 const EMPTY: CrosswordProgress = {
   results: [],
+  bonusAttempts: [],
   currentStreak: 0,
   bestStreak: 0,
   lastPlayedDate: null,
@@ -70,6 +79,37 @@ export function isCompleted(progress: CrosswordProgress, puzzleId: number): bool
 
 export function getResult(progress: CrosswordProgress, puzzleId: number): CrosswordResult | undefined {
   return progress.results.find((r) => r.puzzleId === puzzleId);
+}
+
+export function getBonusAttempt(progress: CrosswordProgress, puzzleId: number): BonusAttempt | undefined {
+  return (progress.bonusAttempts ?? []).find((a) => a.puzzleId === puzzleId);
+}
+
+/** Whether the player already used their one secret-word guess for this puzzle. */
+export function hasBonusAttempt(progress: CrosswordProgress, puzzleId: number): boolean {
+  if (isCompleted(progress, puzzleId)) return true;
+  return !!getBonusAttempt(progress, puzzleId);
+}
+
+/** Whether the secret word was found (from an in-progress attempt or a finished result). */
+export function bonusWasFound(progress: CrosswordProgress, puzzleId: number): boolean {
+  if (isCompleted(progress, puzzleId)) return (getResult(progress, puzzleId)?.bonusWords ?? 0) > 0;
+  return getBonusAttempt(progress, puzzleId)?.found ?? false;
+}
+
+/** Record the one allowed secret-word guess for a puzzle. No-op if already attempted. */
+export async function saveBonusAttempt(puzzleId: number, found: boolean): Promise<BonusAttempt | null> {
+  const userId = await currentUserId();
+  const progress = await loadProgress();
+  if (!progress.bonusAttempts) progress.bonusAttempts = [];
+
+  const existing = getBonusAttempt(progress, puzzleId);
+  if (existing) return existing;
+
+  const attempt: BonusAttempt = { puzzleId, found, attemptedAt: new Date().toISOString() };
+  progress.bonusAttempts.push(attempt);
+  await AsyncStorage.setItem(scopedKey(KEY, userId), JSON.stringify(progress));
+  return attempt;
 }
 
 export function getTotalPoints(progress: CrosswordProgress): number {
