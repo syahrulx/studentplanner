@@ -40,9 +40,10 @@ const GAMES: GameCard[] = [
     subtitle: '2 mini puzzles a day · hidden word · streaks · rankings',
     icon: 'grid',
     route: '/crossword',
-    // Use accent2 as the base (not pale accent) so contrast text stays white
-    // across themes — e.g. Cat theme where accent is a pale tan (#e4a06c).
-    // Gradient goes accent2 → secondary for a distinct mid-warm tone.
+    // Use the deep accent2 (not the pale accent) as the base so the auto-contrast
+    // text stays white/legible across themes — e.g. Cat theme where accent is a
+    // pale tan that flipped the text to an unreadable dark.
+    // Gradient ends at secondary for a warm distinct tone separate from the other cards.
     tint: (t) => [t.accent2 || t.primary, t.secondary],
   },
 ];

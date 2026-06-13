@@ -170,7 +170,9 @@ export async function getOfferings(): Promise<PlanOfferings> {
   console.log(`${TAG} Platform.OS  = "${Platform.OS}"`);
 
   if (!_configured) {
-    console.error(`${TAG} ❌ getOfferings() called BEFORE initPurchases(). Purchases not configured yet!`);
+    // Expected in Expo Go (purchases can't configure there) or before init has
+    // finished. Use warn — not error — so it doesn't trigger the red dev overlay.
+    console.warn(`${TAG} getOfferings() called before purchases were configured — returning empty offerings.`);
     return { plusPackage: null, proPackage: null, raw: null };
   }
 
