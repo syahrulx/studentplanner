@@ -1897,7 +1897,8 @@ export default function TimetableScreen() {
                           </Text>
                         ) : null}
                         {slotDetails.room && (
-                          <View style={s.listMeta}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Feather name="map-pin" size={12} color={theme.primary} />
                             <Text style={[s.listMetaLabel, { color: theme.primary }]}>{T('timetableRoom')}:</Text>
                             <Text style={[s.listMetaValue, { color: theme.textSecondary }]}>
                               {formatRoomDisplay(e.location, T('timetableRoomOnline'))}
@@ -2243,6 +2244,11 @@ const s = StyleSheet.create({
   gridSlotTitle: { fontSize: 8, fontWeight: '600', lineHeight: 12 },
   /** Room on its own row(s); lecturer/group below — independent line limits. */
   gridSlotMetaColumn: { width: '100%', gap: 2 },
+  gridSlotMetaRoomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 2,
+  },
   gridSlotMetaRoom: {
     fontSize: 10,
     lineHeight: 12,
@@ -2423,13 +2429,16 @@ function WeekGridSlotMetaText({
   return (
     <View style={[s.gridSlotMetaColumn, isHorizontal && { flexDirection: 'row', gap: 8, marginTop: 0 }]}>
       {room ? (
-        <Text
-          style={[s.gridSlotMetaRoom, { color: theme.text }]}
-          numberOfLines={isHorizontal ? 1 : roomLines}
-          ellipsizeMode="tail"
-        >
-          {room}
-        </Text>
+        <View style={[s.gridSlotMetaRoomRow, isHorizontal && { flex: 1 }]}>
+          <Feather name="map-pin" size={7} color={theme.text} style={{ opacity: 0.7, marginTop: 1 }} />
+          <Text
+            style={[s.gridSlotMetaRoom, { color: theme.text, flex: 1 }]}
+            numberOfLines={isHorizontal ? 1 : roomLines}
+            ellipsizeMode="tail"
+          >
+            {room}
+          </Text>
+        </View>
       ) : null}
       {tail ? (
         <Text
