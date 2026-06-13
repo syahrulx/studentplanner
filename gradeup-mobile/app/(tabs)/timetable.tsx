@@ -749,11 +749,12 @@ export default function TimetableScreen() {
           <View style={s.headerActions}>
             <Pressable
               onPress={() => router.push('/campus-map' as any)}
-              style={({ pressed }) => [s.headerIconBtn, pressed && { opacity: 0.7 }]}
-              hitSlop={10}
+              style={({ pressed }) => [s.headerMapBtn, { borderColor: headerIconColor + '40' }, pressed && { opacity: 0.7 }]}
+              hitSlop={6}
               accessibilityLabel={T('campusMapTitle')}
             >
-              <Feather name="map" size={20} color={headerIconColor} />
+              <Feather name="map-pin" size={14} color={headerIconColor} />
+              <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]}>Campus Map</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -2045,11 +2046,24 @@ const s = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   headerIconBtn: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  headerMapBtnLabel: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   menuModalRoot: {
     flex: 1,
