@@ -23,7 +23,10 @@ import { formatDisplayDate, getTodayISO, isTaskPastDueNow } from '@/src/utils/da
 import { useTranslations } from '@/src/i18n';
 import { getNotificationPrefs } from '@/src/storage';
 import { getDaysUntilTaskDue, selectTodaysFocusTask } from '@/src/lib/taskUtils';
-import { supabase } from '@/src/lib/supabase';
+import {
+  fetchUnreadInAppCount,
+  subscribeInAppNotifications,
+} from '@/src/lib/inAppNotifications';
 import {
   peakWeekFromTaskCounts,
   resolveDisplayTeachingWeeks,
@@ -841,18 +844,20 @@ export default function Dashboard() {
   const [unreadInboxCount, setUnreadInboxCount] = useState(0);
 
   const refreshUnreadInboxCount = useCallback(async () => {
-    if (!user) return;
+    const uid = communityUserId ?? user?.id;
+    if (!uid) return;
     try {
-      const { count } = await supabase
-        .from('in_app_notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-      if (count !== null && count !== undefined) setUnreadInboxCount(count);
+      setUnreadInboxCount(await fetchUnreadInAppCount(uid));
     } catch {
       // ignore — keep last known count
     }
-  }, [user]);
+  }, [communityUserId, user?.id]);
+
+  useEffect(() => {
+    if (!communityUserId) return;
+    refreshUnreadInboxCount();
+    return subscribeInAppNotifications(communityUserId, refreshUnreadInboxCount);
+  }, [communityUserId, refreshUnreadInboxCount]);
 
   useFocusEffect(
     useCallback(() => {

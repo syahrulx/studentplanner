@@ -5,46 +5,29 @@ import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/src/lib/supabase';
-import { useApp } from '@/src/context/AppContext';
+import {
+  fetchInAppNotifications,
+  getInAppNotificationUserId,
+  type InAppNotification,
+} from '@/src/lib/inAppNotifications';
 
-export interface InAppNotification {
-  id: string;
-  title: string;
-  body: string;
-  category: string;
-  is_read: boolean;
-  created_at: string;
-  data: any;
-}
+export type { InAppNotification };
 
 export default function InboxScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { user } = useApp();
 
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!user) return;
     try {
-      const { data, error } = await supabase
-        .from('in_app_notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) {
-        console.warn('Failed to load inbox:', error.message);
-        return;
-      }
-      setNotifications((data ?? []) as InAppNotification[]);
+      setNotifications(await fetchInAppNotifications());
     } catch (e) {
       console.warn('Failed to load inbox:', e);
     }
-  }, [user]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,12 +43,13 @@ export default function InboxScreen() {
   };
 
   const markAllAsRead = async () => {
-    if (!user) return;
+    const uid = await getInAppNotificationUserId();
+    if (!uid) return;
     try {
       await supabase
         .from('in_app_notifications')
         .update({ is_read: true })
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .eq('is_read', false);
       
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
@@ -75,14 +59,14 @@ export default function InboxScreen() {
   };
 
   const handlePress = async (item: InAppNotification) => {
-    if (!item.is_read && user) {
+    if (!item.is_read) {
       // Optimistically update
       setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, is_read: true } : n));
       await supabase.from('in_app_notifications').update({ is_read: true }).eq('id', item.id);
     }
 
     // Routing logic based on data type
-    const t = item.data?.type;
+    const t = item.data?.type as string | undefined;
     if (t === 'broadcast') {
       // Admin broadcast — honour an optional in-app deep link, otherwise stay put.
       const rawRoute = typeof item.data?.route === 'string' ? item.data.route.trim() : '';
