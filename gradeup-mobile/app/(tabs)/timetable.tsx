@@ -793,7 +793,7 @@ export default function TimetableScreen() {
                 hitSlop={6}
                 accessibilityLabel={T('campusMapTitle')}
               >
-                <Feather name="map-pin" size={14} color={headerIconColor} />
+                <Feather name="map" size={14} color={headerIconColor} />
                 <Reanimated.View style={headerMapLabelStyle}>
                   <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]} numberOfLines={1}>Campus Map</Text>
                 </Reanimated.View>
