@@ -1,12 +1,7 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
-import {
-  checkMonthlyTokenLimit,
-  formatMonthlyLimitMessage,
-  logTokenUsage,
-  MONTHLY_LIMIT_ERROR_CODE,
-} from '../_shared/tokenLimit.ts';
+import { getUserPlanRow } from '../_shared/tokenLimit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,6 +9,57 @@ const corsHeaders = {
 };
 
 const MAX_BYTES = 8 * 1024 * 1024;
+
+// Room extraction does NOT spend the monthly AI token budget. Instead it is
+// capped by a small number of extractions per calendar month, per plan.
+const ROOMMAP_EXTRACT_LIMITS: Record<string, number> = {
+  free: 1,
+  plus: 3,
+  pro: 5,
+};
+const ROOMMAP_EXTRACT_KIND = 'roommap_extract';
+const ROOMMAP_LIMIT_ERROR_CODE = 'ROOMMAP_EXTRACT_LIMIT';
+
+function roomExtractLimitForPlan(plan: string | null | undefined): number {
+  const key = (plan ?? 'free').toLowerCase();
+  return ROOMMAP_EXTRACT_LIMITS[key] ?? ROOMMAP_EXTRACT_LIMITS.free;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function countRoomExtractionsThisMonth(admin: any, userId: string): Promise<number> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  try {
+    const { count, error } = await admin
+      .from('ai_token_usage')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('kind', ROOMMAP_EXTRACT_KIND)
+      .gte('created_at', monthStart);
+    if (error) return 0;
+    return typeof count === 'number' ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function logRoomExtraction(admin: any, userId: string, model: string): Promise<void> {
+  try {
+    // total_tokens is null on purpose: this row is only an extraction-count
+    // marker and must NOT contribute to the monthly AI token budget.
+    await admin.from('ai_token_usage').insert({
+      user_id: userId,
+      kind: ROOMMAP_EXTRACT_KIND,
+      model,
+      prompt_tokens: null,
+      completion_tokens: null,
+      total_tokens: null,
+    });
+  } catch {
+    // best-effort — never surface errors to the caller
+  }
+}
 
 type RoomRow = {
   room_code: string;
@@ -116,45 +162,57 @@ function pickLongestText(...candidates: (string | null | undefined)[]): string {
 }
 
 const ROOM_SYSTEM =
-  'You extract a university faculty room/building directory from documents and images (floor guides, room signage lists, building maps). Output valid JSON only. Preserve the source language exactly — keep Malay terms like "Aras 1", "Blok A", "Bilik", "Makmal", "Dewan Kuliah". Never invent rooms; only extract entries clearly present in the source.';
+  'You extract university room/building information from documents and images: room directories, floor guides, signage lists, and architectural floor plans/maps. Output valid JSON only. Preserve the source language exactly — keep Malay terms like "Aras 1", "Blok A", "Bilik", "Makmal", "Dewan Kuliah", "Pejabat", "Tandas", "Surau". Never invent rooms; only extract entries clearly present in the source.';
 
 const ROOM_JSON_SHAPE =
   '{"rooms":[{"room_code":"DK1","room_label":"Dewan Kuliah 1","building":"Blok A","level":"Aras 1","description":"sebelah tandas, dekat tangga utama"}]}';
 
 function buildRoomPrompt(): string {
   return [
-    'Extract every room / lecture hall / lab / facility entry from the faculty directory below.',
+    'Extract every room / lecture hall / lab / office / toilet / surau / facility from the document below.',
+    'The source may be a room directory OR extracted text from an architectural floor plan — treat each distinct label as a room.',
     'Return JSON only with shape:',
     ROOM_JSON_SHAPE,
     'Field rules:',
-    '- room_code: the short code/identifier as printed (e.g. "DK1", "BK2-3", "MakmalA"). REQUIRED — skip rows with no code.',
-    '- room_label: the full friendly name if shown (e.g. "Dewan Kuliah 1"), else "".',
-    '- building: block/building name if shown (e.g. "Blok A", "FSKM"), else "".',
-    '- level: floor/level if shown (e.g. "Aras 1", "Level 2", "Ground Floor"), else "".',
-    '- description: any extra location hint (landmarks, nearby facilities, directions), else "".',
-    '- Keep the original wording and language. Do not translate.',
+    '- room_code: short code if printed (e.g. "DK1", "TH 1"). If no code, use the label/name (e.g. "Pejabat Pengurusan Pentadbiran FSKM", "Dewan Al-Ghazali").',
+    '- room_label: full friendly name if shown, else "".',
+    '- building: block/building if shown (e.g. "CS1", "Blok A"), else "".',
+    '- level: floor if shown (e.g. "Ground Floor (CS1)", "Aras 1"), else "".',
+    '- description: nearby landmarks or adjacent rooms, else "".',
+    '- Keep original wording and language. Do not translate.',
     '- One object per distinct room. Do not duplicate.',
+    '- Only skip if neither code nor usable name exists.',
     '',
-    '=== DIRECTORY TEXT ===',
+    '=== DOCUMENT TEXT ===',
   ].join('\n');
 }
 
 function buildImagePrompt(): string {
   return [
-    'You are looking at a university faculty room directory / floor guide / building map image.',
-    'Extract EVERY room, lecture hall, lab, office or facility listed, with where it is located.',
+    'You are looking at a university room directory, floor guide, signage board, or architectural FLOOR PLAN / building map.',
+    'Read ALL visible text labels on the document (including Malay and diagonal/rotated text), then extract EVERY room, office, lab, hall, toilet, surau, cafe or facility you can identify.',
+    '',
+    'For floor plans / maps specifically:',
+    '- Labels are placed ON the drawing (e.g. "Pejabat Pengurusan Pentadbiran FSKM", "TH 1", "Dewan Al-Ghazali", "Tandas (L)", "Surau (P)", "Cafe", "Laman Najib").',
+    '- Extract each labelled space as a separate room, even if there is no short code.',
+    '- Use the printed label as room_code when no short code exists (e.g. "TH 1", "Pejabat Pengurusan Pentadbiran FSKM").',
+    '- Put the floor title in level if shown (e.g. "Ground Floor (CS1)", "Aras 1").',
+    '- Put nearby landmarks or adjacent rooms in description (e.g. "dekat lif", "sebelah surau").',
+    '- Ignore watermarks (e.g. PPIM) — they are not rooms.',
     '',
     'For each entry capture:',
-    '- room_code: the short code as printed (e.g. DK1, BK2-3, MakmalA). If an entry has no code, skip it.',
-    '- room_label: the full name if shown, else "".',
-    '- building: block/building name if shown, else "".',
-    '- level: floor/level if shown (e.g. "Aras 1", "Level 2"), else "".',
+    '- room_code: short code if printed, otherwise the room name/label as shown.',
+    '- room_label: full name if different from code, else "".',
+    '- building: block/building name if shown (e.g. "CS1", "Blok A"), else "".',
+    '- level: floor/level if shown (e.g. "Ground Floor (CS1)", "Aras 1"), else "".',
     '- description: extra location hints (landmarks, nearby facilities), else "".',
     '',
     'Rules:',
-    '- Preserve the original language (keep Malay terms like Aras, Blok, Bilik, Makmal, Dewan Kuliah).',
+    '- Preserve the original language. Do NOT translate.',
     '- Do NOT invent entries. Only extract what is visible.',
     '- Do NOT duplicate the same room.',
+    '- Only skip an entry if it has neither a code nor any usable name.',
+    '- If genuinely unreadable, return {"rooms":[]}.',
     '',
     'Return JSON only with this shape:',
     ROOM_JSON_SHAPE,
@@ -171,14 +229,17 @@ function normalizeRooms(raw: unknown): RoomRow[] {
   const seen = new Set<string>();
   for (const row of rooms) {
     const r = row as Record<string, unknown>;
-    const code = String(r.room_code ?? r.code ?? r.roomCode ?? '').trim();
+    const label = String(r.room_label ?? r.label ?? r.name ?? '').trim();
+    // Fall back to the room name as the code when no short code was extracted,
+    // so clearly-named rooms aren't silently dropped.
+    const code = (String(r.room_code ?? r.code ?? r.roomCode ?? '').trim()) || label;
     if (!code) continue;
     const key = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push({
       room_code: code.slice(0, 60),
-      room_label: String(r.room_label ?? r.label ?? r.name ?? '').trim().slice(0, 120),
+      room_label: label.slice(0, 120),
       building: String(r.building ?? r.block ?? '').trim().slice(0, 120),
       level: String(r.level ?? r.floor ?? r.aras ?? '').trim().slice(0, 80),
       description: String(r.description ?? r.notes ?? r.hint ?? '').trim().slice(0, 400),
@@ -245,7 +306,10 @@ async function fromTextChat(args: { apiKey: string; model: string; documentText:
 
 async function fromPdfNative(args: { apiKey: string; model: string; pdfBytes: Uint8Array }) {
   const b64 = encodeBase64(args.pdfBytes);
-  const userText = [buildRoomPrompt(), 'The directory is attached as a PDF. Read it and produce the JSON.'].join('\n');
+  const userText = [
+    buildImagePrompt(),
+    'The document is attached as a PDF. It may be a floor plan / architectural map with labels on the drawing — read the visual layout, not just text layers.',
+  ].join('\n');
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${args.apiKey}` },
@@ -279,6 +343,7 @@ async function fromImage(args: { apiKey: string; model: string; mime: string; ba
     body: JSON.stringify({
       model: args.model,
       messages: [
+        { role: 'system', content: ROOM_SYSTEM },
         {
           role: 'user',
           content: [
@@ -326,9 +391,17 @@ Deno.serve(async (req) => {
     const supabaseAdminForLimit = serviceRole
       ? createClient(supabaseUrl, serviceRole, { auth: { persistSession: false, autoRefreshToken: false } })
       : supabaseUser;
-    const monthCheck = await checkMonthlyTokenLimit(supabaseAdminForLimit, userId);
-    if (!monthCheck.allowed) {
-      return errorBody(formatMonthlyLimitMessage(monthCheck), MONTHLY_LIMIT_ERROR_CODE);
+
+    // Room extraction is free of the monthly AI token budget. It is instead
+    // limited to a few extractions per calendar month, depending on plan.
+    const planRow = await getUserPlanRow(supabaseAdminForLimit, userId);
+    const extractLimit = roomExtractLimitForPlan(planRow.plan);
+    const usedExtractions = await countRoomExtractionsThisMonth(supabaseAdminForLimit, userId);
+    if (usedExtractions >= extractLimit) {
+      return errorBody(
+        "You've used all your AI room extractions for now. You can still add rooms manually, or upgrade your plan for more AI extractions.",
+        ROOMMAP_LIMIT_ERROR_CODE,
+      );
     }
 
     let body: Record<string, unknown>;
@@ -367,7 +440,7 @@ Deno.serve(async (req) => {
     const imageModel = (Deno.env.get('OPENAI_ROOMMAP_IMAGE_MODEL') ?? 'gpt-4o').trim();
 
     let modelText = '';
-    let pendingUsage: { kind: string; model: string; usage: Usage } | null = null;
+    let usedModel = '';
     const isPdf = mimeType === 'application/pdf' || isPdfMagic(bytes);
 
     if (isPdf) {
@@ -376,11 +449,30 @@ Deno.serve(async (req) => {
       const looseFallback = bytesToLooseText(bytes);
       const mergedText = pickLongestText(unpdfText, heuristicText, looseFallback);
 
+      // Floor-plan PDFs often embed label text in random stream order (≥120 chars
+      // of gibberish), so the cheap text path returns empty. If text path yields
+      // nothing, retry with PDF vision (gpt-4o reads the drawing layout).
       if (mergedText.trim().length >= 120) {
         const r = await fromTextChat({ apiKey: keyTrim, model: textModel, documentText: mergedText });
         if (!r.ok) return errorBody(`OpenAI error ${r.status}: ${r.detail}`, 'OPENAI');
-        pendingUsage = { kind: 'roommap_extract_text', model: textModel, usage: r.usage };
+        usedModel = textModel;
         modelText = r.text;
+        try {
+          const parsed = JSON.parse(modelText);
+          if (normalizeRooms(parsed).length === 0) {
+            const vr = await fromPdfNative({ apiKey: keyTrim, model: pdfModel, pdfBytes: bytes });
+            if (vr.ok && vr.text) {
+              usedModel = pdfModel;
+              modelText = vr.text;
+            }
+          }
+        } catch {
+          const vr = await fromPdfNative({ apiKey: keyTrim, model: pdfModel, pdfBytes: bytes });
+          if (vr.ok && vr.text) {
+            usedModel = pdfModel;
+            modelText = vr.text;
+          }
+        }
       } else {
         const r = await fromPdfNative({ apiKey: keyTrim, model: pdfModel, pdfBytes: bytes });
         if (!r.ok) {
@@ -389,7 +481,7 @@ Deno.serve(async (req) => {
             'PDF_READ',
           );
         }
-        pendingUsage = { kind: 'roommap_extract_pdf', model: pdfModel, usage: r.usage };
+        usedModel = pdfModel;
         modelText = r.text;
       }
     } else if (
@@ -400,7 +492,7 @@ Deno.serve(async (req) => {
     ) {
       const r = await fromImage({ apiKey: keyTrim, model: imageModel, mime: mimeType, base64: fileBase64 });
       if (!r.ok) return errorBody(`OpenAI error ${r.status}: ${r.detail}`, 'OPENAI');
-      pendingUsage = { kind: 'roommap_extract_image', model: imageModel, usage: r.usage };
+      usedModel = imageModel;
       modelText = r.text;
     } else {
       return errorBody(`Unsupported mime_type: ${mimeType}`, 'BAD_REQUEST');
@@ -416,21 +508,14 @@ Deno.serve(async (req) => {
     const rooms = normalizeRooms(parsed);
     if (rooms.length === 0) {
       return errorBody(
-        'No rooms could be extracted. Try a clearer photo or a text-based PDF of the directory.',
+        'No rooms could be extracted. Floor plans work best as a clear photo/PDF — try exporting the map as an image if this keeps failing.',
         'EMPTY_EXTRACTION',
       );
     }
 
-    if (pendingUsage) {
-      await logTokenUsage(supabaseAdminForLimit, {
-        user_id: userId,
-        kind: pendingUsage.kind,
-        model: pendingUsage.model,
-        prompt_tokens: pendingUsage.usage.prompt_tokens || null,
-        completion_tokens: pendingUsage.usage.completion_tokens || null,
-        total_tokens: pendingUsage.usage.total_tokens || null,
-      });
-    }
+    // Record one extraction-count marker (0 tokens → does not touch the
+    // monthly AI token budget). Only successful extractions are counted.
+    await logRoomExtraction(supabaseAdminForLimit, userId, usedModel);
 
     return jsonResponse({ rooms });
   } catch (e) {

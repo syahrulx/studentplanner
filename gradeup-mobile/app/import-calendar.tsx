@@ -235,7 +235,7 @@ export default function ImportCalendarScreen() {
 
   if (!isAtLeastPlus(user?.subscriptionPlan)) {
     return (
-      <View style={[styles.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+      <View style={[styles.root, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 0 : insets.top }]}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
             <Feather name="arrow-left" size={22} color={theme.text} />
@@ -266,7 +266,7 @@ export default function ImportCalendarScreen() {
 
   if (permissionGranted === false && !loadingCals) {
     return (
-      <View style={[styles.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+      <View style={[styles.root, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 0 : insets.top }]}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
             <Feather name="arrow-left" size={22} color={theme.text} />
@@ -288,7 +288,7 @@ export default function ImportCalendarScreen() {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+    <View style={[styles.root, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 0 : insets.top }]}>
       <View style={styles.headerRow}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Feather name="arrow-left" size={22} color={theme.text} />

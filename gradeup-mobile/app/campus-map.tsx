@@ -30,6 +30,13 @@ function campusShort(name: string): string {
   return name.replace(/^.+?kampus\s+/i, '').replace(/^.+?campus\s+/i, '') || name;
 }
 
+/** Ignore email-like / empty faculty values (some profiles store an email). */
+function sanitizeFaculty(raw: unknown): string | null {
+  const v = String(raw ?? '').trim();
+  if (!v || v.includes('@')) return null;
+  return v;
+}
+
 export default function CampusMapScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -40,9 +47,11 @@ export default function CampusMapScreen() {
   const userUni = (user as any)?.universityId ?? null;
   const universityName = (user as any)?.university?.trim() || userUni || '';
   const userCampus: string | null = ((user as any)?.campus ?? '').trim() || null;
+  const userFaculty: string | null = sanitizeFaculty((user as any)?.faculty);
 
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
+  const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
   const [search, setSearch] = useState(typeof params.q === 'string' ? params.q : '');
   const [items, setItems] = useState<CampusRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,17 +106,36 @@ export default function CampusMapScreen() {
     setLoading(true);
   };
 
+  // Distinct faculties present in the loaded set, so users can narrow the
+  // directory to a single faculty (the same room code can exist in several).
+  const facultyOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of items) {
+      const f = r.faculty?.trim();
+      if (f) set.add(f);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  // Drop a stale faculty selection when the loaded set no longer has it.
+  useEffect(() => {
+    if (selectedFaculty && !facultyOptions.includes(selectedFaculty)) {
+      setSelectedFaculty(null);
+    }
+  }, [facultyOptions, selectedFaculty]);
+
   // Client-side search over the loaded set (server also supports search, but
   // local filtering is instant as the user types).
   const sections: Section[] = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const base = selectedFaculty ? items.filter((r) => r.faculty === selectedFaculty) : items;
     const filtered = q
-      ? items.filter((r) =>
-          [r.room_code, r.room_label, r.building, r.level, r.description]
+      ? base.filter((r) =>
+          [r.room_code, r.room_label, r.building, r.level, r.description, r.faculty]
             .filter(Boolean)
             .some((v) => String(v).toLowerCase().includes(q)),
         )
-      : items;
+      : base;
     const byBuilding = new Map<string, CampusRoom[]>();
     for (const r of filtered) {
       const key = r.building?.trim() || T('campusMapNoBuilding');
@@ -117,7 +145,7 @@ export default function CampusMapScreen() {
     return Array.from(byBuilding.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([title, data]) => ({ title, data }));
-  }, [items, search, T]);
+  }, [items, search, selectedFaculty, T]);
 
   const handleVote = async (room: CampusRoom, dir: 1 | -1) => {
     const next = room.my_vote === dir ? 0 : dir;
@@ -224,6 +252,12 @@ export default function CampusMapScreen() {
         {locBits.length > 0 ? (
           <Text style={[s.loc, { color: theme.textSecondary }]}>{locBits.join(' · ')}</Text>
         ) : null}
+        {item.faculty ? (
+          <View style={s.facultyTag}>
+            <Feather name="bookmark" size={11} color={theme.textSecondary} />
+            <Text style={[s.facultyTagText, { color: theme.textSecondary }]} numberOfLines={1}>{item.faculty}</Text>
+          </View>
+        ) : null}
 
         <View style={s.voteRow}>
           <Text style={[s.voteQ, { color: theme.textSecondary }]}>{T('campusMapAccuratePrompt')}</Text>
@@ -305,6 +339,41 @@ export default function CampusMapScreen() {
                 {isYours ? <Feather name="map-pin" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
                 <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
                   {campusShort(c.name)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+
+      {facultyOptions.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={[s.filterBar, { borderBottomColor: theme.border }]}
+          contentContainerStyle={s.filterBarContent}
+        >
+          <Pressable
+            style={[s.filterPill, { backgroundColor: selectedFaculty === null ? theme.primary : theme.card, borderColor: selectedFaculty === null ? theme.primary : theme.border }]}
+            onPress={() => setSelectedFaculty(null)}
+          >
+            <Feather name="grid" size={11} color={selectedFaculty === null ? '#fff' : theme.textSecondary} style={{ marginRight: 3 }} />
+            <Text style={[s.filterPillText, { color: selectedFaculty === null ? '#fff' : theme.text }]}>
+              {T('campusMapAllFaculties')}
+            </Text>
+          </Pressable>
+          {facultyOptions.map((f) => {
+            const active = selectedFaculty === f;
+            const isYours = f === userFaculty;
+            return (
+              <Pressable
+                key={f}
+                style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
+                onPress={() => setSelectedFaculty(f)}
+              >
+                {isYours ? <Feather name="bookmark" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
+                <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
+                  {f}
                 </Text>
               </Pressable>
             );
@@ -448,6 +517,8 @@ const s = StyleSheet.create({
   menuBtn: { padding: 2 },
   label: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
   loc: { fontSize: 13, lineHeight: 19 },
+  facultyTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  facultyTagText: { fontSize: 12, flex: 1 },
   voteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   voteQ: { fontSize: 12, flex: 1 },
   voteBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },

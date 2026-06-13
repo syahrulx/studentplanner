@@ -64,6 +64,12 @@ export default function SubjectGradeScreen() {
   const [fMax, setFMax] = useState('100');
   const [fScored, setFScored] = useState('');
 
+  // Editable text buffers for the two final-exam numeric fields.
+  // Using local string state lets the user clear/retype freely without
+  // NaN or snap-back issues — the config is only updated on valid input.
+  const [finalMaxInput, setFinalMaxInput] = useState('100');
+  const [finalScoredInput, setFinalScoredInput] = useState('');
+
   // Grade editor form
   const [gLetter, setGLetter] = useState('');
   const [gMin, setGMin] = useState('');
@@ -77,6 +83,8 @@ export default function SubjectGradeScreen() {
     getSubjectGradeConfig(user.id, subjectId).then(c => {
       const loaded = c ?? makeDefault(subjectId);
       setConfig(loaded);
+      setFinalMaxInput(String(loaded.finalExamMaxScore));
+      setFinalScoredInput(loaded.finalExamScored !== null ? String(loaded.finalExamScored) : '');
       setCustomRows(getGradeTable(loaded.gradingScheme));
       setLoading(false);
     });
@@ -292,8 +300,32 @@ export default function SubjectGradeScreen() {
                   <View style={ss.scoreInputWrap}>
                     <TextInput
                       style={[ss.scoreInput, ss.scoreInputLg, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
-                      value={config.finalExamScored !== null ? String(config.finalExamScored) : ''}
-                      onChangeText={v => update({ finalExamScored: v.trim() ? parseFloat(v) : null })}
+                      value={finalScoredInput}
+                      onChangeText={v => {
+                        setFinalScoredInput(v);
+                        if (!v.trim()) {
+                          update({ finalExamScored: null });
+                        } else {
+                          const n = parseFloat(v);
+                          // Only commit when the string is a proper non-NaN number.
+                          // Partial input like "." or "-" is held in the buffer.
+                          if (!isNaN(n)) update({ finalExamScored: n });
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!finalScoredInput.trim()) {
+                          setFinalScoredInput('');
+                          update({ finalExamScored: null });
+                        } else {
+                          const n = parseFloat(finalScoredInput);
+                          if (isNaN(n)) {
+                            setFinalScoredInput('');
+                            update({ finalExamScored: null });
+                          } else {
+                            setFinalScoredInput(String(n));
+                          }
+                        }
+                      }}
                       keyboardType="decimal-pad"
                       placeholder="–"
                       placeholderTextColor={sub}
@@ -372,7 +404,10 @@ export default function SubjectGradeScreen() {
                 <Text style={[ss.settingLabel, { color: txt }]}>Has Final Exam</Text>
                 <Switch
                   value={config.hasFinalExam}
-                  onValueChange={v => update({ hasFinalExam: v, carryWeight: v ? 40 : 100, finalWeight: v ? 60 : 0 })}
+                  onValueChange={v => {
+                    if (!v) setFinalScoredInput('');
+                    update({ hasFinalExam: v, carryWeight: v ? 40 : 100, finalWeight: v ? 60 : 0 });
+                  }}
                   trackColor={{ true: pri, false: border }}
                 />
               </View>
@@ -406,8 +441,24 @@ export default function SubjectGradeScreen() {
                   <Text style={[ss.settingLabel, { color: txt }]}>Final Exam Full Marks</Text>
                   <TextInput
                     style={[ss.inlineInput, { color: txt, backgroundColor: bg }]}
-                    value={String(config.finalExamMaxScore)}
-                    onChangeText={v => update({ finalExamMaxScore: parseFloat(v) || 100 })}
+                    value={finalMaxInput}
+                    onChangeText={v => {
+                      setFinalMaxInput(v);
+                      const n = parseFloat(v);
+                      // Commit live only when the typed value is a valid positive number.
+                      // Empty / partial input (e.g. "" or "0.") is left untouched so the
+                      // field doesn't snap back to 100 while the user is editing.
+                      if (!isNaN(n) && n > 0) update({ finalExamMaxScore: n });
+                    }}
+                    onBlur={() => {
+                      const n = parseFloat(finalMaxInput);
+                      if (isNaN(n) || n <= 0) {
+                        setFinalMaxInput('100');
+                        update({ finalExamMaxScore: 100 });
+                      } else {
+                        setFinalMaxInput(String(n));
+                      }
+                    }}
                     keyboardType="decimal-pad"
                   />
                 </View>

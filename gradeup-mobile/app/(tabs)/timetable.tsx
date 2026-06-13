@@ -16,6 +16,7 @@ import {
   PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -1128,35 +1129,130 @@ export default function TimetableScreen() {
               {/* Crowdsourced campus-map location for this room */}
               {selectedClass.location && selectedClass.location !== '-' && user.universityId ? (
                 matchedRoom ? (
-                  <Pressable
-                    onPress={() => {
-                      const room = selectedClass.location;
-                      setSelectedClass(null);
-                      router.push({ pathname: '/campus-map', params: { q: room } } as any);
-                    }}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 10,
-                      backgroundColor: theme.primary + '14',
-                      borderRadius: 12,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                    }}
-                  >
-                    <Feather name="navigation" size={16} color={theme.primary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: theme.primary, fontSize: 14, fontWeight: '700' }}>
-                        {[matchedRoom.building, matchedRoom.level].filter(Boolean).join(' · ') || T('campusMapOnMap')}
-                      </Text>
-                      {matchedRoom.description ? (
-                        <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
-                          {matchedRoom.description}
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        const room = selectedClass.location;
+                        setSelectedClass(null);
+                        router.push({ pathname: '/campus-map', params: { q: room } } as any);
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        backgroundColor: theme.primary + '14',
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                      }}
+                    >
+                      <Feather name="navigation" size={16} color={theme.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: theme.primary, fontSize: 14, fontWeight: '700' }}>
+                          {[matchedRoom.building, matchedRoom.level].filter(Boolean).join(' · ') || T('campusMapOnMap')}
                         </Text>
-                      ) : null}
-                    </View>
-                    <Feather name="chevron-right" size={18} color={theme.primary} />
-                  </Pressable>
+                        {matchedRoom.description ? (
+                          <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
+                            {matchedRoom.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Feather name="chevron-right" size={18} color={theme.primary} />
+                    </Pressable>
+
+                    {matchedRoom.source_file_url ? (
+                      <View
+                        style={{
+                          borderRadius: 12,
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: theme.border,
+                          overflow: 'hidden',
+                          backgroundColor: theme.backgroundSecondary ?? theme.background,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: '700',
+                            letterSpacing: 0.4,
+                            textTransform: 'uppercase',
+                            color: theme.textSecondary,
+                            paddingHorizontal: 12,
+                            paddingTop: 10,
+                            paddingBottom: 6,
+                          }}
+                        >
+                          {T('campusMapReferenceTitle')}
+                        </Text>
+                        {roomsApi.isCampusRoomPdfRef(matchedRoom) ? (
+                          <Pressable
+                            onPress={() => {
+                              void WebBrowser.openBrowserAsync(matchedRoom.source_file_url!);
+                            }}
+                            style={({ pressed }) => [
+                              {
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 12,
+                                paddingHorizontal: 12,
+                                paddingVertical: 14,
+                              },
+                              pressed && { opacity: 0.7 },
+                            ]}
+                          >
+                            <View
+                              style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 10,
+                                backgroundColor: theme.primary + '18',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Feather name="file-text" size={22} color={theme.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: theme.text, fontSize: 15, fontWeight: '600' }}>
+                                {T('campusMapViewPdf')}
+                              </Text>
+                              <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
+                                {T('campusMapReferenceHint')}
+                              </Text>
+                            </View>
+                            <Feather name="external-link" size={16} color={theme.textSecondary} />
+                          </Pressable>
+                        ) : (
+                          <Pressable
+                            onPress={() => {
+                              void WebBrowser.openBrowserAsync(matchedRoom.source_file_url!);
+                            }}
+                            style={({ pressed }) => [pressed && { opacity: 0.85 }]}
+                          >
+                            <Image
+                              source={{ uri: matchedRoom.source_file_url }}
+                              style={{ width: '100%', height: 140, backgroundColor: theme.border + '40' }}
+                              resizeMode="cover"
+                            />
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                paddingVertical: 10,
+                              }}
+                            >
+                              <Feather name="maximize-2" size={14} color={theme.primary} />
+                              <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>
+                                {T('campusMapViewImage')}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        )}
+                      </View>
+                    ) : null}
+                  </>
                 ) : matchLoading ? null : (
                   <Pressable
                     onPress={() => {

@@ -14,6 +14,7 @@ export interface CampusRoom {
   level: string | null;
   description: string | null;
   campus: string | null;
+  faculty: string | null;
   source: 'pdf' | 'photo' | 'manual';
   source_file_url: string | null;
   upvote_count: number;
@@ -33,7 +34,17 @@ export interface MatchedRoom {
   level: string | null;
   description: string | null;
   campus: string | null;
+  faculty: string | null;
   verified: boolean;
+  source: 'pdf' | 'photo' | 'manual' | null;
+  source_file_url: string | null;
+}
+
+/** True when the matched room has an uploaded PDF directory reference. */
+export function isCampusRoomPdfRef(room: Pick<MatchedRoom, 'source' | 'source_file_url'>): boolean {
+  if (room.source === 'pdf') return true;
+  const url = (room.source_file_url ?? '').toLowerCase();
+  return url.includes('.pdf');
 }
 
 /** A row extracted by AI, before the user reviews & saves it. */
@@ -59,14 +70,37 @@ function toErrorMessage(error: unknown): string {
 export async function fetchCampusRooms(options?: {
   campus?: string | null;
   search?: string | null;
+  faculty?: string | null;
 }): Promise<CampusRoom[]> {
-  const { campus = null, search = null } = options ?? {};
+  const { campus = null, search = null, faculty = null } = options ?? {};
   const { data, error } = await supabase.rpc('get_campus_rooms', {
     p_campus: campus,
     p_search: search,
+    p_faculty: faculty,
   });
   if (error) throw new Error(toErrorMessage(error));
   return (data ?? []) as CampusRoom[];
+}
+
+/** Faculties registered for the caller's university + (optional) campus. */
+export async function fetchCampusFaculties(campus?: string | null): Promise<string[]> {
+  const { data, error } = await supabase.rpc('get_campus_faculties', {
+    p_campus: campus ?? null,
+  });
+  if (error) throw new Error(toErrorMessage(error));
+  return ((data ?? []) as { name: string }[])
+    .map((r) => (r?.name ?? '').trim())
+    .filter((n) => n.length > 0);
+}
+
+/** Register a new faculty under the caller's campus. Returns the stored name. */
+export async function addCampusFaculty(name: string, campus?: string | null): Promise<string> {
+  const { data, error } = await supabase.rpc('add_campus_faculty', {
+    p_name: name.trim(),
+    p_campus: campus ?? null,
+  });
+  if (error) throw new Error(toErrorMessage(error));
+  return String(data ?? name).trim();
 }
 
 /** Best matching room for a free-text timetable room string, or null. */
@@ -86,6 +120,7 @@ export async function saveExtractedRooms(
   rooms: ExtractedRoom[],
   source: 'pdf' | 'photo' = 'pdf',
   sourceFileUrl?: string | null,
+  faculty?: string | null,
 ): Promise<number> {
   const clean = rooms
     .map((r) => ({
@@ -101,6 +136,7 @@ export async function saveExtractedRooms(
     p_rows: clean,
     p_source: source,
     p_source_file_url: sourceFileUrl ?? null,
+    p_faculty: faculty ?? null,
   });
   if (error) throw new Error(toErrorMessage(error));
   return Number(data) || 0;
@@ -112,6 +148,7 @@ export async function createCampusRoom(input: {
   building?: string;
   level?: string;
   description?: string;
+  faculty?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase.rpc('create_campus_room', {
     p_room_code: input.roomCode.trim(),
@@ -120,6 +157,7 @@ export async function createCampusRoom(input: {
     p_level: input.level?.trim() || null,
     p_description: input.description?.trim() || null,
     p_source_file_url: null,
+    p_faculty: input.faculty?.trim() || null,
   });
   if (error) throw new Error(toErrorMessage(error));
   return String(data);

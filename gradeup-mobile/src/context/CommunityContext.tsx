@@ -85,6 +85,8 @@ interface CommunityState {
   refreshSharedTasks: () => Promise<void>;
   shareTaskWithFriend: (taskId: string, friendId: string, message?: string) => Promise<SharedTask | null>;
   shareTaskWithCircle: (taskId: string, circleId: string, message?: string) => Promise<SharedTask[]>;
+  /** Backfill the current user's links for tasks shared to a circle before they joined. Returns count added. */
+  syncCircleSharedTasks: (circleId: string) => Promise<number>;
   shareAllTasksWithFriend: (taskIds: string[], friendId: string, message?: string) => Promise<SharedTask[]>;
   shareAllTasksWithCircle: (taskIds: string[], circleId: string, message?: string) => Promise<SharedTask[]>;
   respondToShare: (sharedTaskId: string, accept: boolean) => Promise<void>;
@@ -1002,6 +1004,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     return results;
   }, [userId, refreshSharedTasks, tr]);
 
+  const syncCircleSharedTasks = useCallback(async (circleId: string) => {
+    if (!userId) return 0;
+    const count = await communityApi.syncCircleSharedTasks(circleId);
+    if (count > 0) await refreshSharedTasks();
+    return count;
+  }, [userId, refreshSharedTasks]);
+
   const shareAllTasksWithFriend = useCallback(async (taskIds: string[], friendId: string, message?: string) => {
     if (!userId) return [];
     if (!shareAllLimiter.attempt()) {
@@ -1165,6 +1174,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedTasks,
     shareTaskWithFriend,
     shareTaskWithCircle,
+    syncCircleSharedTasks,
     shareAllTasksWithFriend,
     shareAllTasksWithCircle,
     respondToShare,
@@ -1222,6 +1232,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshSharedTasks,
     shareTaskWithFriend,
     shareTaskWithCircle,
+    syncCircleSharedTasks,
     shareAllTasksWithFriend,
     shareAllTasksWithCircle,
     respondToShare,

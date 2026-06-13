@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -161,7 +162,7 @@ export default function TimetableImportScreen() {
   }, [entriesPreview, saveTimetableOnly, T]);
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.background, paddingTop: insets.top + 8 }]}>
+    <View style={[styles.screen, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 8 : insets.top + 8 }]}>
       <View style={styles.topRow}>
         <Pressable
           onPress={() => router.back()}

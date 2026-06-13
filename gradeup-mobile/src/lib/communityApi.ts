@@ -1507,6 +1507,23 @@ export async function shareTaskWithCircle(
   return (data || []) as SharedTask[];
 }
 
+/**
+ * Backfill the current user's shared-task links for everything previously
+ * shared to a circle (before they joined). Returns the number of new pending
+ * links created. Safe to call repeatedly — already-linked or previously
+ * declined tasks are skipped server-side.
+ */
+export async function syncCircleSharedTasks(circleId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('sync_circle_shared_tasks', {
+    p_circle_id: circleId,
+  });
+  if (error) {
+    console.error('Error syncing circle shared tasks:', error);
+    throw error;
+  }
+  return Number(data) || 0;
+}
+
 export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return [];

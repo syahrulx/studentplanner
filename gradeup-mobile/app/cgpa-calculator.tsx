@@ -111,7 +111,7 @@ export default function CgpaCalculatorScreen() {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+    <View style={[styles.root, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? 0 : insets.top }]}>
       <View style={[styles.navbar, { borderBottomColor: theme.border }]}>
         <Pressable onPress={() => router.back()} style={styles.navBtn} hitSlop={10}>
           <Feather name="chevron-down" size={24} color={theme.text} />

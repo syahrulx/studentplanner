@@ -404,7 +404,7 @@ export default function NotificationsScreen() {
   const theme = useTheme();
   const { language } = useApp();
   const T = useTranslations(language);
-  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
+  const { userId, refreshUnreadCount, incomingSharedTasks, respondToShare, refreshSharedTasks, refreshCircles, incomingRequests, refreshRequests, refreshFriends, syncCircleSharedTasks } = useCommunity();
   const { joinQuiz } = useQuiz();
   const params = useLocalSearchParams<Record<string, string | string[]>>();
 
@@ -1255,6 +1255,8 @@ export default function NotificationsScreen() {
                         try {
                           await communityApi.respondToCircleInvitation(inv.id, true);
                           await refreshCircles();
+                          // Pull tasks shared to this circle before joining (best-effort).
+                          if (inv.circle_id) void syncCircleSharedTasks(inv.circle_id).catch(() => {});
                           await loadReactions();
                         } finally {
                           setRespondingInviteIds((prev) => {

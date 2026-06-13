@@ -14,7 +14,7 @@ export default function CirclesScreen() {
   const theme = useTheme();
   const { language } = useApp();
   const T = useTranslations(language);
-  const { circles, refreshCircles, userId, friends } = useCommunity();
+  const { circles, refreshCircles, userId, friends, syncCircleSharedTasks } = useCommunity();
 
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -45,6 +45,8 @@ export default function CirclesScreen() {
       if (circle) {
         await refreshCircles();
         setJoinCode('');
+        // Pull tasks already shared to this circle before joining (best-effort).
+        void syncCircleSharedTasks(circle.id).catch(() => {});
         Alert.alert(T('commCircleJoinedTitle'), T('commCircleJoinedBody').replace('{name}', circle.name));
       } else {
         Alert.alert(T('commCircleCodeNotFoundTitle'), T('commCircleCodeNotFoundBody'));
@@ -52,7 +54,7 @@ export default function CirclesScreen() {
     } catch (e) {
       Alert.alert(T('commCircleJoinFailTitle'), T('commTryAgainShort'));
     }
-  }, [userId, joinCode, refreshCircles, T]);
+  }, [userId, joinCode, refreshCircles, syncCircleSharedTasks, T]);
 
   const handleShare = useCallback(async (circle: communityApi.Circle) => {
     try {

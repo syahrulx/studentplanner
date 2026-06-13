@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Image, Share, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Image, Share, Alert, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -34,11 +34,12 @@ export default function CircleDetailScreen() {
   const T = useTranslations(language);
   const params = useLocalSearchParams<{ circleId?: string | string[] }>();
   const circleId = Array.isArray(params.circleId) ? params.circleId[0] : params.circleId;
-  const { circles, userId, setSelectedCircleId, refreshCircles } = useCommunity();
+  const { circles, userId, setSelectedCircleId, refreshCircles, syncCircleSharedTasks } = useCommunity();
 
   const circle = circles.find((c) => c.id === circleId);
   const [members, setMembers] = useState<CircleMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const myMemberRole = useMemo(() => members.find((m) => m.user_id === userId)?.role ?? null, [members, userId]);
   const isCreator = Boolean(userId && circle?.created_by === userId);
   const canManageMembers = isCreator || myMemberRole === 'admin';
@@ -65,6 +66,26 @@ export default function CircleDetailScreen() {
       Alert.alert(T('commCopiedTitle'), T('commCopiedBody'));
     } catch {
       Alert.alert(T('commCopyFailTitle'), T('commTryAgainShort'));
+    }
+  };
+
+  const handleSyncSharedTasks = async () => {
+    if (!circleId || syncing) return;
+    setSyncing(true);
+    try {
+      const count = await syncCircleSharedTasks(circleId);
+      if (count > 0) {
+        Alert.alert(
+          T('commCircleSyncDoneTitle'),
+          T('commCircleSyncDoneBody').replace('{n}', String(count)),
+        );
+      } else {
+        Alert.alert(T('commCircleSyncNoneTitle'), T('commCircleSyncNoneBody'));
+      }
+    } catch {
+      Alert.alert(T('commCircleSyncFailTitle'), T('commTryAgainShort'));
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -151,6 +172,26 @@ export default function CircleDetailScreen() {
               <Text style={[styles.actionBtnText, { color: theme.text }]}>Share</Text>
             </Pressable>
           </View>
+
+          {/* Pull tasks already shared to this circle before you joined */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.syncBtn,
+              { borderColor: theme.primary, backgroundColor: theme.primary + '12' },
+              (pressed || syncing) && { opacity: 0.7 },
+            ]}
+            onPress={handleSyncSharedTasks}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Feather name="download-cloud" size={16} color={theme.primary} />
+            )}
+            <Text style={[styles.syncBtnText, { color: theme.primary }]}>
+              {syncing ? T('commCircleSyncing') : T('commCircleSyncSharedTasks')}
+            </Text>
+          </Pressable>
           <View style={[styles.codeRow, { backgroundColor: theme.background }]}>
             <Text style={[styles.codeLabel, { color: theme.textSecondary }]}>Invite Code:</Text>
             <Pressable
@@ -355,6 +396,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   actionBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  syncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    width: '100%',
+  },
+  syncBtnText: { fontSize: 14, fontWeight: '800' },
   codeRow: {
     flexDirection: 'row',
     alignItems: 'center',

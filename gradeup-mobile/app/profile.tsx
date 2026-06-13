@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,7 @@ import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
+import { fetchCampusFaculties, addCampusFaculty } from '@/src/lib/campusRoomsApi';
 
 export default function Profile() {
   const {
@@ -84,6 +85,12 @@ export default function Profile() {
     if (!q) return campuses;
     return campuses.filter(c => c.name.toLowerCase().includes(q));
   }, [campuses, campusSearchQuery]);
+
+  const [facultyListModalVisible, setFacultyListModalVisible] = useState(false);
+  const [facultyOptions, setFacultyOptions] = useState<string[]>([]);
+  const [newFacultyInput, setNewFacultyInput] = useState('');
+  const [addingFacultyProfile, setAddingFacultyProfile] = useState(false);
+  const facultyInputRef = useRef<TextInput>(null);
 
   const subscriptionTier: SubscriptionPlan =
     user.subscriptionPlan === 'plus' || user.subscriptionPlan === 'pro' ? user.subscriptionPlan : 'free';
@@ -268,13 +275,55 @@ export default function Profile() {
     }
   };
 
-  const handleEditFaculty = () => {
-    openEditModal({
-      field: 'faculty',
-      title: T('editFaculty'),
-      message: T('enterFaculty'),
-      value: user.faculty,
-    });
+  const handleEditFaculty = async () => {
+    if (!user.universityId) {
+      openEditModal({
+        field: 'faculty',
+        title: T('editFaculty'),
+        message: T('enterFaculty'),
+        value: user.faculty,
+      });
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const list = await fetchCampusFaculties(user.campus || null);
+      setFacultyOptions(list);
+    } catch {
+      setFacultyOptions([]);
+    } finally {
+      setIsUpdating(false);
+      setNewFacultyInput('');
+      setFacultyListModalVisible(true);
+    }
+  };
+
+  const handleSelectFaculty = async (name: string | null) => {
+    setFacultyListModalVisible(false);
+    setIsUpdating(true);
+    try {
+      await updateProfile({ faculty: name ?? '' });
+    } catch {
+      Alert.alert(T('error'), T('facultyUpdateFailed'));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleAddFacultyProfile = async () => {
+    const name = newFacultyInput.trim();
+    if (!name) return;
+    setAddingFacultyProfile(true);
+    try {
+      const saved = await addCampusFaculty(name, user.campus || null);
+      setFacultyOptions((prev) => (prev.includes(saved) ? prev : [...prev, saved].sort((a, b) => a.localeCompare(b))));
+      setNewFacultyInput('');
+      await handleSelectFaculty(saved);
+    } catch (e: any) {
+      Alert.alert(T('error'), e?.message || T('facultyUpdateFailed'));
+    } finally {
+      setAddingFacultyProfile(false);
+    }
   };
 
   const handleEditPortalSemester = () => {
@@ -734,6 +783,92 @@ export default function Profile() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Faculty List Modal */}
+      <Modal
+        visible={facultyListModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFacultyListModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setFacultyListModalVisible(false)} />
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{T('editFaculty')}</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>{T('campusMapFacultyHint')}</Text>
+
+            <View style={styles.facAddRow}>
+              <TextInput
+                ref={facultyInputRef}
+                style={[styles.facAddInput, { color: theme.text, backgroundColor: theme.backgroundSecondary || theme.background, borderColor: theme.border }]}
+                placeholder={T('campusMapAddFacultyPlaceholder')}
+                placeholderTextColor={theme.textSecondary}
+                value={newFacultyInput}
+                onChangeText={setNewFacultyInput}
+                autoCapitalize="characters"
+                onSubmitEditing={() => void handleAddFacultyProfile()}
+                returnKeyType="done"
+              />
+              <Pressable
+                style={({ pressed }) => [styles.facAddBtn, { backgroundColor: theme.primary }, (pressed || addingFacultyProfile) && { opacity: 0.6 }]}
+                onPress={() => {
+                  if (!newFacultyInput.trim()) {
+                    facultyInputRef.current?.focus();
+                    return;
+                  }
+                  void handleAddFacultyProfile();
+                }}
+                disabled={addingFacultyProfile}
+              >
+                {addingFacultyProfile ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="plus" size={22} color="#fff" />}
+              </Pressable>
+            </View>
+
+            {facultyOptions.length === 0 ? (
+              <View style={styles.facEmpty}>
+                <Feather name="bookmark" size={26} color={theme.textSecondary} />
+                <Text style={[styles.facEmptyText, { color: theme.textSecondary }]}>{T('campusMapNoFacultiesYet')}</Text>
+              </View>
+            ) : (
+              <ScrollView style={[styles.facList, { borderColor: theme.border }]} keyboardShouldPersistTaps="handled">
+                {user.faculty ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.facRow, { borderBottomColor: theme.border }, pressed && { opacity: 0.6 }]}
+                    onPress={() => handleSelectFaculty(null)}
+                  >
+                    <Text style={[styles.facRowText, { color: theme.primary }]}>{T('campusMapClearFaculty')}</Text>
+                  </Pressable>
+                ) : null}
+                {facultyOptions.map((f, i) => {
+                  const active = f === user.faculty;
+                  const last = i === facultyOptions.length - 1;
+                  return (
+                    <Pressable
+                      key={f}
+                      style={({ pressed }) => [styles.facRow, { borderBottomColor: theme.border }, last && { borderBottomWidth: 0 }, pressed && { opacity: 0.6 }]}
+                      onPress={() => handleSelectFaculty(f)}
+                    >
+                      <Text style={[styles.facRowText, { color: theme.text, fontWeight: active ? '600' : '400' }]}>{f}</Text>
+                      {active ? <Feather name="check" size={20} color={theme.primary} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [styles.facCancel, { borderColor: theme.border }, pressed && { opacity: 0.6 }]}
+              onPress={() => setFacultyListModalVisible(false)}
+              disabled={isUpdating}
+            >
+              <Text style={[styles.facCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -745,6 +880,16 @@ const RADIUS = 14;
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingVertical: 56 },
+  facAddRow: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 16 },
+  facAddInput: { flex: 1, height: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingHorizontal: 14, fontSize: 16 },
+  facAddBtn: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  facList: { maxHeight: 280, borderTopWidth: StyleSheet.hairlineWidth },
+  facRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 15, paddingHorizontal: 2, borderBottomWidth: StyleSheet.hairlineWidth },
+  facRowText: { fontSize: 16, flex: 1, paddingRight: 10 },
+  facEmpty: { alignItems: 'center', gap: 8, paddingVertical: 30, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'transparent' },
+  facEmptyText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  facCancel: { height: 50, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  facCancelText: { fontSize: 16, fontWeight: '600' },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
