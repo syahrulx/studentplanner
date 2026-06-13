@@ -1158,7 +1158,12 @@ export default function TimetableScreen() {
             </View>
             <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, marginBottom: 16 }}>{entryDisplayTitle(selectedClass)}</Text>
             
-            <View style={{ gap: 12 }}>
+            <ScrollView
+              style={{ maxHeight: 420 }}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={{ gap: 12 }}
+            >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Feather name="clock" size={16} color={theme.primary} />
                 <Text style={{ color: theme.text, fontSize: 15 }}>{(T as any)(DAY_META[selectedClass.day].fullKey)}, {selectedClass.startTime} - {selectedClass.endTime}</Text>
@@ -1169,7 +1174,6 @@ export default function TimetableScreen() {
                   <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.location}</Text>
                 </View>
               )}
-
 
               {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1188,6 +1192,7 @@ export default function TimetableScreen() {
               {selectedClass.location && selectedClass.location !== '-' && user.universityId ? (
                 matchedRoom ? (
                   <>
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 4 }} />
                     <Pressable
                       onPress={() => {
                         const room = selectedClass.location;
@@ -1312,25 +1317,28 @@ export default function TimetableScreen() {
                     ) : null}
                   </>
                 ) : matchLoading ? null : (
-                  <Pressable
-                    onPress={() => {
-                      const room = selectedClass.location;
-                      setSelectedClass(null);
-                      router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
-                    }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, marginTop: 4 }}
-                  >
-                    <Feather name="plus-circle" size={15} color={theme.textSecondary} />
-                    <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
-                      {T('campusMapAddThisRoom')}
-                    </Text>
-                  </Pressable>
+                  <>
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 4 }} />
+                    <Pressable
+                      onPress={() => {
+                        const room = selectedClass.location;
+                        setSelectedClass(null);
+                        router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }}
+                    >
+                      <Feather name="plus-circle" size={15} color={theme.textSecondary} />
+                      <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                        {T('campusMapAddThisRoom')}
+                      </Text>
+                    </Pressable>
+                  </>
                 )
               ) : null}
-            </View>
+            </ScrollView>
 
             <Pressable
-              style={{ marginTop: 24, alignSelf: 'flex-end', padding: 8 }}
+              style={{ marginTop: 16, alignSelf: 'flex-end', padding: 8 }}
               onPress={() => setSelectedClass(null)}
             >
               <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 16 }}>Close</Text>
@@ -2140,6 +2148,7 @@ const s = StyleSheet.create({
   detailsModalCard: {
     width: '100%',
     maxWidth: 400,
+    maxHeight: '85%',
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 24,
