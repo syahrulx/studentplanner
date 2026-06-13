@@ -1170,6 +1170,20 @@ export default function TimetableScreen() {
                 </View>
               )}
 
+
+              {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="user" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.lecturer}</Text>
+                </View>
+              )}
+              {selectedClass.group && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="users" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>Group: {selectedClass.group}</Text>
+                </View>
+              )}
+
               {/* Crowdsourced campus-map location for this room */}
               {selectedClass.location && selectedClass.location !== '-' && user.universityId ? (
                 matchedRoom ? (
@@ -1304,7 +1318,7 @@ export default function TimetableScreen() {
                       setSelectedClass(null);
                       router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
                     }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, marginTop: 4 }}
                   >
                     <Feather name="plus-circle" size={15} color={theme.textSecondary} />
                     <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
@@ -1313,18 +1327,6 @@ export default function TimetableScreen() {
                   </Pressable>
                 )
               ) : null}
-              {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Feather name="user" size={16} color={theme.primary} />
-                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.lecturer}</Text>
-                </View>
-              )}
-              {selectedClass.group && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Feather name="users" size={16} color={theme.primary} />
-                  <Text style={{ color: theme.text, fontSize: 15 }}>Group: {selectedClass.group}</Text>
-                </View>
-              )}
             </View>
 
             <Pressable
