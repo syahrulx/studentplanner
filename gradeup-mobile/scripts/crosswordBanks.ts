@@ -8,7 +8,10 @@ export interface BankEntry {
 }
 export interface Theme {
   title: string;
+  /** Hidden bonus word — NOT placed in the grid; players guess it for extra points. */
   bonus: string;
+  /** Optional hint for the hidden bonus word. Defaults to the bonus word's own clue. */
+  bonusHint?: string;
   entries: BankEntry[];
 }
 

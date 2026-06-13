@@ -1,7 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { currentUserId, scopedKey, readScoped } from './scopedStorage';
 
-const KEY = '@connections_progress';
+// The local key is scoped per user so multiple accounts on a shared device keep
+// their own progress instead of overwriting one another. v2: the old un-scoped
+// cache is intentionally abandoned so previously cross-contaminated accounts
+// start clean and repopulate from their own remote scores.
+const KEY = '@connections_progress_v2';
 
 export interface PuzzleResult {
   puzzleId: number;
@@ -27,7 +32,7 @@ const EMPTY: ConnectionsProgress = {
 
 export async function loadProgress(): Promise<ConnectionsProgress> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await readScoped(KEY, await currentUserId());
     if (!raw) return { ...EMPTY, results: [] };
     return JSON.parse(raw) as ConnectionsProgress;
   } catch {
@@ -36,6 +41,7 @@ export async function loadProgress(): Promise<ConnectionsProgress> {
 }
 
 export async function saveResult(result: PuzzleResult): Promise<ConnectionsProgress> {
+  const userId = await currentUserId();
   const progress = await loadProgress();
   // Don't save duplicate — keep best score
   const existing = progress.results.findIndex((r) => r.puzzleId === result.puzzleId);
@@ -60,7 +66,7 @@ export async function saveResult(result: PuzzleResult): Promise<ConnectionsProgr
   progress.bestStreak = Math.max(progress.bestStreak, progress.currentStreak);
   progress.lastPlayedDate = today;
 
-  await AsyncStorage.setItem(KEY, JSON.stringify(progress));
+  await AsyncStorage.setItem(scopedKey(KEY, userId), JSON.stringify(progress));
 
   // Sync to Supabase for leaderboard (fire-and-forget)
   syncScoreToSupabase(result).catch(() => {});
@@ -69,7 +75,7 @@ export async function saveResult(result: PuzzleResult): Promise<ConnectionsProgr
 }
 
 export async function resetProgress(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
+  await AsyncStorage.removeItem(scopedKey(KEY, await currentUserId()));
 }
 
 export function calculateScore(mistakes: number, timeMs: number): number {
@@ -189,7 +195,7 @@ export async function syncScoresFromSupabase(): Promise<ConnectionsProgress | nu
     }
 
     if (updated) {
-      await AsyncStorage.setItem(KEY, JSON.stringify(localProgress));
+      await AsyncStorage.setItem(scopedKey(KEY, session.user.id), JSON.stringify(localProgress));
       console.log(`[sync] Merged ${remoteScores.length} remote scores into local storage.`);
     }
     

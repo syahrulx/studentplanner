@@ -1,12 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { TOTAL_PUZZLES } from './crosswordEngine';
+import { currentUserId, scopedKey, readScoped } from './scopedStorage';
 
 // Local + remote persistence for the Crossword mini-game. One Supabase row per
 // user (crossword_scores) holding aggregate totals for the leaderboard — fully
-// separate from the word game and 2048.
+// separate from the word game and 2048. The local key is scoped per user so each
+// account on a shared device keeps its own completed-puzzle history.
 
-const KEY = '@crossword_progress';
+// v2: per-user scoped key. The old un-scoped/shared cache is intentionally
+// abandoned so accounts that previously cross-contaminated start clean.
+const KEY = '@crossword_progress_v2';
 
 /** Puzzles a player may complete per calendar day. */
 export const DAILY_LIMIT = 2;
@@ -52,7 +56,7 @@ const yesterdayStr = () => new Date(Date.now() - 86400000).toISOString().slice(0
 
 export async function loadProgress(): Promise<CrosswordProgress> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await readScoped(KEY, await currentUserId());
     if (!raw) return { ...EMPTY, results: [] };
     return { ...EMPTY, ...(JSON.parse(raw) as Partial<CrosswordProgress>) } as CrosswordProgress;
   } catch {
@@ -112,6 +116,7 @@ export async function saveResult(input: {
   bonusWords: number;
   hintsUsed: number;
 }): Promise<SaveOutcome> {
+  const userId = await currentUserId();
   const progress = await loadProgress();
   const today = todayStr();
 
@@ -146,14 +151,14 @@ export async function saveResult(input: {
   }
   if (!already) progress.playsToday += 1;
 
-  await AsyncStorage.setItem(KEY, JSON.stringify(progress));
+  await AsyncStorage.setItem(scopedKey(KEY, userId), JSON.stringify(progress));
   syncScoreToSupabase(progress).catch(() => {});
 
   return { progress, pointsAwarded: points, streak: progress.currentStreak, alreadyDone: already };
 }
 
 export async function resetProgress(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
+  await AsyncStorage.removeItem(scopedKey(KEY, await currentUserId()));
 }
 
 // ---------------------------------------------------------------------------

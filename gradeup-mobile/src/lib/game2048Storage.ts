@@ -1,11 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { currentUserId, scopedKey, readScoped } from './scopedStorage';
 
 // Local + remote persistence for the 2048 minigame. Mirrors connectionsStorage.ts
 // but lives in its own AsyncStorage key and Supabase table (game_2048_scores) so
-// it is completely separate from the word game.
+// it is completely separate from the word game. The local key is scoped per user
+// so multiple accounts on one device keep their own progress.
 
-const KEY = '@game2048_progress';
+// v2: per-user scoped key. The old un-scoped/shared cache is intentionally
+// abandoned so accounts that previously cross-contaminated start clean.
+const KEY = '@game2048_progress_v2';
 
 export interface Game2048Progress {
   /** Highest single-game score ever. */
@@ -50,7 +54,7 @@ export function pointsForTile(bestTile: number): number {
 
 export async function loadProgress(): Promise<Game2048Progress> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await readScoped(KEY, await currentUserId());
     if (!raw) return { ...EMPTY };
     return { ...EMPTY, ...(JSON.parse(raw) as Partial<Game2048Progress>) };
   } catch {
@@ -69,6 +73,7 @@ export interface Game2048Result {
 export async function saveGameResult(
   result: Game2048Result,
 ): Promise<{ progress: Game2048Progress; pointsAwarded: number }> {
+  const userId = await currentUserId();
   const progress = await loadProgress();
   const pointsAwarded = pointsForTile(result.bestTile);
 
@@ -88,14 +93,14 @@ export async function saveGameResult(
   progress.bestStreak = Math.max(progress.bestStreak, progress.currentStreak);
   progress.lastPlayedDate = today;
 
-  await AsyncStorage.setItem(KEY, JSON.stringify(progress));
+  await AsyncStorage.setItem(scopedKey(KEY, userId), JSON.stringify(progress));
   syncScoreToSupabase(progress).catch(() => {});
 
   return { progress, pointsAwarded };
 }
 
 export async function resetProgress(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
+  await AsyncStorage.removeItem(scopedKey(KEY, await currentUserId()));
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +157,7 @@ export async function syncScoresFromSupabase(): Promise<Game2048Progress | null>
       totalPoints: Math.max(local.totalPoints, remote.total_points ?? 0),
       gamesPlayed: Math.max(local.gamesPlayed, remote.games_played ?? 0),
     };
-    await AsyncStorage.setItem(KEY, JSON.stringify(merged));
+    await AsyncStorage.setItem(scopedKey(KEY, userId), JSON.stringify(merged));
     return merged;
   } catch {
     return null;

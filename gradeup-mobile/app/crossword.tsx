@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ScrollView, Image, ActivityIndicator, Alert,
-  useWindowDimensions,
+  useWindowDimensions, TextInput, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { router, useNavigation } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,7 +12,7 @@ import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { contrastText } from '@/src/lib/contrast';
 import {
-  CROSSWORD_PUZZLES, TOTAL_PUZZLES, buildCells, clueCells, isComplete, bonusWordsSolved,
+  CROSSWORD_PUZZLES, TOTAL_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
   type CrosswordPuzzle, type CrosswordClue,
 } from '@/src/lib/crosswordEngine';
 import {
@@ -128,6 +128,7 @@ export default function CrosswordScreen() {
   if (activePuzzle) {
     return (
       <SolveView
+        key={activePuzzle.id}
         puzzle={activePuzzle}
         readOnly={!!progress && isCompleted(progress, activePuzzle.id)}
         theme={theme}
@@ -299,6 +300,10 @@ function SolveView({
   const [done, setDone] = useState(readOnly);
   const [earned, setEarned] = useState<{ points: number; bonus: number; streak: number } | null>(null);
   const [kbOpen, setKbOpen] = useState(true);
+  const [bonusFound, setBonusFound] = useState(false);
+  const [bonusModal, setBonusModal] = useState(false);
+  const [bonusGuess, setBonusGuess] = useState('');
+  const bonusFoundRef = useRef(false);
   const savedRef = useRef(false);
 
   // Pick the first playable cell on mount.
@@ -341,10 +346,10 @@ function SolveView({
     if (i >= 0 && i < currentWord.length - 1) setSel(currentWord[i + 1]);
   }, [currentWord, sel]);
 
-  const finish = useCallback(async (filled: string[][]) => {
+  const finish = useCallback(async () => {
     if (savedRef.current) return;
     savedRef.current = true;
-    const bonus = bonusWordsSolved(puzzle, filled);
+    const bonus = bonusFoundRef.current ? 1 : 0;
     const out = await saveResult({ puzzleId: puzzle.id, bonusWords: bonus, hintsUsed: hints });
     setEarned({ points: out.pointsAwarded, bonus, streak: out.streak });
     setDone(true);
@@ -357,7 +362,7 @@ function SolveView({
     setEntries((prev) => {
       const next = prev.map((row) => row.slice());
       next[sel.r][sel.c] = ch;
-      if (isComplete(puzzle, next)) finish(next);
+      if (isComplete(puzzle, next)) finish();
       return next;
     });
     advance();
@@ -405,10 +410,21 @@ function SolveView({
     setEntries((prev) => {
       const next = prev.map((row) => row.slice());
       next[t.r][t.c] = puzzle.solution[t.r][t.c] || '';
-      if (isComplete(puzzle, next)) finish(next);
+      if (isComplete(puzzle, next)) finish();
       return next;
     });
   }, [sel, readOnly, done, puzzle, finish, hints, entries, cells, currentWord, n]);
+
+  const submitBonusGuess = useCallback(() => {
+    if (checkBonusGuess(puzzle, bonusGuess)) {
+      bonusFoundRef.current = true;
+      setBonusFound(true);
+      setBonusModal(false);
+      setBonusGuess('');
+    } else {
+      Alert.alert('Not quite', 'That\u2019s not the secret word. Try again!');
+    }
+  }, [puzzle, bonusGuess]);
 
   const checkBoard = useCallback(() => {
     setShowErrors(true);
@@ -443,7 +459,9 @@ function SolveView({
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingTop: 6, paddingBottom: 16, flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingTop: 6, paddingBottom: 16, flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
+        {/* Tapping anywhere outside a cell or the keyboard dismisses the keyboard. */}
+        <Pressable onPress={() => setKbOpen(false)} style={styles.contentTap}>
         {/* Board */}
         <View style={[styles.boardCard, { backgroundColor: theme.backgroundSecondary, shadowColor: theme.primary }]}>
           <View style={[styles.boardWrap, { width: board, height: board }]}>
@@ -462,9 +480,7 @@ function SolveView({
                     ? theme.primary
                     : active
                       ? theme.primary + '2E'
-                      : cell.bonus
-                        ? GOLD + '18'
-                        : theme.card;
+                      : theme.card;
                 return (
                   <Pressable
                     key={`${r}-${c}`}
@@ -472,8 +488,8 @@ function SolveView({
                     style={[styles.cell, {
                       width: cellSize, height: cellSize, left, top,
                       backgroundColor: bg,
-                      borderColor: cell.bonus ? GOLD : isSel ? theme.primary : 'transparent',
-                      borderWidth: cell.bonus ? 1.5 : 0,
+                      borderColor: isSel ? theme.primary : 'transparent',
+                      borderWidth: isSel ? 0 : 0,
                     }]}
                   >
                     {cell.number != null && (
@@ -510,7 +526,7 @@ function SolveView({
               {currentClue ? (
                 <>
                   <Text style={[styles.clueMeta, { color: theme.primary }]}>
-                    {currentClue.number} {currentClue.direction === 'across' ? 'Across' : 'Down'}{currentClue.bonus ? '  ★ Bonus' : ''}
+                    {currentClue.number} {currentClue.direction === 'across' ? 'Across' : 'Down'}
                   </Text>
                   <Text style={[styles.clueText, { color: theme.text }]}>{currentClue.clue}</Text>
                 </>
@@ -522,6 +538,20 @@ function SolveView({
               <Feather name="chevron-right" size={22} color={theme.textSecondary} />
             </Pressable>
           </View>
+        )}
+
+        {/* Hidden bonus word — a secret challenge for extra points */}
+        {!done && !readOnly && (
+          <Pressable
+            onPress={() => !bonusFound && setBonusModal(true)}
+            style={[styles.bonusChip, { width: board, backgroundColor: bonusFound ? GOLD + '1F' : theme.card, borderColor: bonusFound ? GOLD : theme.border }]}
+          >
+            <Feather name={bonusFound ? 'star' : 'search'} size={16} color={bonusFound ? GOLD : theme.textSecondary} />
+            <Text style={[styles.bonusChipText, { color: bonusFound ? GOLD : theme.text }]}>
+              {bonusFound ? `Secret word found! +${BONUS_WORD_POINTS}` : `Find the hidden word · +${BONUS_WORD_POINTS}`}
+            </Text>
+            {!bonusFound && <Feather name="chevron-right" size={16} color={theme.textSecondary} />}
+          </Pressable>
         )}
 
         {/* Completion card */}
@@ -536,8 +566,15 @@ function SolveView({
                   <Text style={[styles.pointsPillText, { color: theme.primary }]}>+{earned.points} Rencana Points</Text>
                 </View>
                 <Text style={[styles.doneBreak, { color: theme.textSecondary }]}>
-                  {BASE_POINTS} base{earned.bonus > 0 ? ` · +${earned.bonus * BONUS_WORD_POINTS} bonus word` : ''} · 🔥 {earned.streak}-day streak
+                  {BASE_POINTS} base{earned.bonus > 0 ? ` · +${earned.bonus * BONUS_WORD_POINTS} secret word` : ''} · 🔥 {earned.streak}-day streak
                 </Text>
+                {earned.bonus > 0 ? (
+                  <Text style={[styles.doneBonus, { color: GOLD }]}>⭐ You found the secret word: {puzzle.bonusWord}</Text>
+                ) : (
+                  <Text style={[styles.doneBreak, { color: theme.textSecondary }]}>
+                    Secret word missed — it was <Text style={{ color: GOLD, fontWeight: '800' }}>{puzzle.bonusWord}</Text>
+                  </Text>
+                )}
               </>
             )}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
@@ -547,16 +584,43 @@ function SolveView({
             </View>
           </View>
         )}
-
+        </Pressable>
       </ScrollView>
 
-      {/* Keyboard — full-width tray anchored to the bottom, like a native keyboard */}
-      {!done && !kbOpen && (
-        <Pressable onPress={() => setKbOpen(true)} style={[styles.kbShow, { backgroundColor: theme.backgroundSecondary, paddingBottom: insets.bottom + 10 }]}>
-          <Feather name="chevron-up" size={18} color={theme.primary} />
-          <Text style={[styles.kbShowText, { color: theme.primary }]}>Show keyboard</Text>
-        </Pressable>
-      )}
+      {/* Hidden bonus word guess modal */}
+      <Modal visible={bonusModal} transparent animationType="fade" onRequestClose={() => setBonusModal(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card }]}>
+            <View style={[styles.bonusIcon, { backgroundColor: GOLD + '22' }]}>
+              <Feather name="search" size={22} color={GOLD} />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Find the secret word</Text>
+            <Text style={[styles.modalHint, { color: theme.textSecondary }]}>{puzzle.bonusHint}</Text>
+            <TextInput
+              value={bonusGuess}
+              onChangeText={setBonusGuess}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              placeholder="Type your guess"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.bonusInput, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: theme.border }]}
+              onSubmitEditing={submitBonusGuess}
+              returnKeyType="done"
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <Pressable onPress={() => { setBonusModal(false); setBonusGuess(''); }} style={[styles.modalBtn, { backgroundColor: theme.backgroundSecondary }]}>
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={submitBonusGuess} style={[styles.modalBtn, { backgroundColor: GOLD }]}>
+                <Text style={[styles.modalBtnText, { color: '#1a1500' }]}>Guess</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Keyboard — full-width tray anchored to the bottom, like a native keyboard.
+          Tapping a cell opens it; tapping anywhere else closes it. */}
       {!done && kbOpen && (
         <View style={[styles.kbTray, { backgroundColor: theme.backgroundSecondary, paddingBottom: insets.bottom + 6 }]}>
           <View style={styles.kbActions}>
@@ -571,10 +635,6 @@ function SolveView({
             >
               <Feather name="eye" size={15} color={theme.text} />
               <Text style={[styles.kbActionText, { color: theme.text }]}>Hint · {HINT_LIMIT - hints}</Text>
-            </Pressable>
-            <Pressable onPress={() => setKbOpen(false)} style={[styles.kbAction, { backgroundColor: theme.card }]}>
-              <Feather name="chevron-down" size={16} color={theme.text} />
-              <Text style={[styles.kbActionText, { color: theme.text }]}>Close</Text>
             </Pressable>
           </View>
           {KEY_ROWS.map((rowKeys, ri) => (
@@ -787,19 +847,33 @@ const styles = StyleSheet.create({
   clueMeta: { fontSize: 12, fontWeight: '800' },
   clueText: { fontSize: 15, fontWeight: '600', marginTop: 2 },
 
+  // Hidden bonus word
+  bonusChip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginTop: 12, borderWidth: 1.5 },
+  bonusChipText: { flex: 1, fontSize: 13.5, fontWeight: '800' },
+
+  // Bonus guess modal
+  modalBackdrop: { flex: 1, backgroundColor: '#00000088', alignItems: 'center', justifyContent: 'center', padding: 28 },
+  modalCard: { width: '100%', maxWidth: 360, borderRadius: 24, padding: 24, alignItems: 'center', gap: 10 },
+  bonusIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  modalTitle: { fontSize: 19, fontWeight: '900' },
+  modalHint: { fontSize: 14, fontWeight: '600', textAlign: 'center', lineHeight: 19 },
+  bonusInput: { width: '100%', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 13, fontSize: 18, fontWeight: '800', textAlign: 'center', letterSpacing: 2, marginTop: 6 },
+  modalBtn: { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14 },
+  modalBtnText: { fontSize: 15, fontWeight: '800' },
+
   // Completion
   doneCard: { alignItems: 'center', borderRadius: 18, padding: 20, marginTop: 16 },
   doneEmoji: { fontSize: 40 },
   doneTitle: { fontSize: 22, fontWeight: '900', marginTop: 4 },
   doneBreak: { fontSize: 12.5, fontWeight: '600', marginTop: 8, textAlign: 'center' },
+  doneBonus: { fontSize: 13.5, fontWeight: '800', marginTop: 8, textAlign: 'center' },
   doneBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
   doneBtnText: { fontSize: 14, fontWeight: '800' },
   pointsPill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
   pointsPillText: { fontSize: 13, fontWeight: '700' },
 
   // Keyboard — native-style full-width tray
-  kbShow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 14 },
-  kbShowText: { fontSize: 14, fontWeight: '700' },
+  contentTap: { width: '100%', alignItems: 'center', flexGrow: 1 },
   kbTray: { paddingTop: 10, paddingHorizontal: 4, gap: 8 },
   kbActions: { flexDirection: 'row', gap: 10, marginBottom: 4, justifyContent: 'center' },
   kbAction: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },

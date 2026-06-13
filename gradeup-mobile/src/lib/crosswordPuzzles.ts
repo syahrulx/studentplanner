@@ -8,7 +8,6 @@ export interface CrosswordClue {
   answer: string;
   row: number;
   col: number;
-  bonus: boolean;
 }
 export interface CrosswordPuzzle {
   id: number;
@@ -16,7 +15,10 @@ export interface CrosswordPuzzle {
   size: number;
   solution: (string | null)[][];
   clues: CrosswordClue[];
+  /** Hidden bonus word — not part of the grid. Players guess it for extra points. */
   bonusWord: string;
+  /** Subtle hint shown for the hidden bonus word. */
+  bonusHint: string;
 }
 
 export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
@@ -40,7 +42,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "E",
         null,
-        null,
+        "S",
         null
       ],
       [
@@ -49,7 +51,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "E",
         null,
-        "Z",
+        "H",
         null
       ],
       [
@@ -67,7 +69,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "B",
+        "E",
         null
       ],
       [
@@ -76,17 +78,17 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "R",
+        "P",
         null
       ],
       [
-        null,
+        "G",
         "O",
-        null,
-        "S",
-        "E",
         "A",
-        "L"
+        "T",
+        null,
+        null,
+        null
       ]
     ],
     "clues": [
@@ -96,8 +98,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Black-and-white bamboo eater",
         "answer": "PANDA",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
@@ -105,26 +106,23 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Forest animal with antlers",
         "answer": "DEER",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Thick-skinned beast with a horn",
-        "answer": "RHINO",
-        "row": 2,
-        "col": 1,
-        "bonus": false
+        "clue": "Wool-giving farm animal",
+        "answer": "SHEEP",
+        "row": 1,
+        "col": 5
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "Striped relative of the horse",
-        "answer": "ZEBRA",
+        "clue": "Thick-skinned beast with a horn",
+        "answer": "RHINO",
         "row": 2,
-        "col": 5,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 5,
@@ -132,20 +130,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Animal you can ride",
         "answer": "HORSE",
         "row": 3,
-        "col": 1,
-        "bonus": true
+        "col": 1
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "It claps and barks at the zoo",
-        "answer": "SEAL",
+        "clue": "Horned animal that climbs",
+        "answer": "GOAT",
         "row": 6,
-        "col": 3,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "HORSE"
+    "bonusWord": "TIGER",
+    "bonusHint": "Big striped cat"
   },
   {
     "id": 2,
@@ -153,66 +150,66 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
+        "P",
+        null,
+        "A",
+        "P",
+        "P",
         "L",
+        "E"
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "E",
+        null,
+        null
+      ],
+      [
+        "A",
         null,
         "B",
-        "E",
-        "R",
-        "R",
-        "Y"
-      ],
-      [
-        "E",
         null,
         "A",
         null,
+        null
+      ],
+      [
+        "C",
+        "H",
+        "E",
+        "R",
+        "R",
+        "Y",
+        null
+      ],
+      [
+        "H",
+        null,
+        "R",
+        null,
         null,
         null,
         null
       ],
       [
-        "M",
         null,
-        "N",
-        null,
-        null,
-        "M",
-        null
-      ],
-      [
         "O",
         "R",
         "A",
         "N",
         "G",
-        "E",
-        null
-      ],
-      [
-        "N",
-        null,
-        "N",
-        null,
-        null,
-        "L",
-        null
-      ],
-      [
-        null,
-        "M",
-        "A",
-        "N",
-        "G",
-        "O",
-        null
+        "E"
       ],
       [
         null,
         null,
+        "Y",
         null,
         null,
         null,
-        "N",
         null
       ]
     ],
@@ -220,59 +217,54 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Sour yellow citrus",
-        "answer": "LEMON",
+        "clue": "Fuzzy orange fruit",
+        "answer": "PEACH",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "across",
-        "clue": "Small soft fruit, like a straw-",
-        "answer": "BERRY",
+        "clue": "Keeps the doctor away",
+        "answer": "APPLE",
         "row": 0,
-        "col": 2,
-        "bonus": false
-      },
-      {
-        "number": 2,
-        "direction": "down",
-        "clue": "Long yellow fruit",
-        "answer": "BANANA",
-        "row": 0,
-        "col": 2,
-        "bonus": true
+        "col": 2
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Big juicy summer fruit",
-        "answer": "MELON",
-        "row": 2,
-        "col": 5,
-        "bonus": false
+        "clue": "Bell-shaped fruit",
+        "answer": "PEAR",
+        "row": 0,
+        "col": 4
       },
       {
         "number": 4,
-        "direction": "across",
-        "clue": "Round citrus, same name as a color",
-        "answer": "ORANGE",
-        "row": 3,
-        "col": 0,
-        "bonus": false
+        "direction": "down",
+        "clue": "Small soft fruit, like a straw-",
+        "answer": "BERRY",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "Sweet tropical fruit",
-        "answer": "MANGO",
+        "clue": "Small red fruit with a stone",
+        "answer": "CHERRY",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Round citrus, same name as a color",
+        "answer": "ORANGE",
         "row": 5,
-        "col": 1,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "BANANA"
+    "bonusWord": "BANANA",
+    "bonusHint": "Long yellow fruit"
   },
   {
     "id": 3,
@@ -350,8 +342,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Earth is one",
         "answer": "PLANET",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -359,8 +350,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Imagined being from space",
         "answer": "ALIEN",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 3,
@@ -368,8 +358,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Icy body with a glowing tail",
         "answer": "COMET",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 4,
@@ -377,8 +366,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Path around the sun",
         "answer": "ORBIT",
         "row": 2,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 5,
@@ -386,8 +374,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Shooting star",
         "answer": "METEOR",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -395,11 +382,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "The planet we live on",
         "answer": "EARTH",
         "row": 6,
-        "col": 2,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "METEOR"
+    "bonusWord": "ROCKET",
+    "bonusHint": "It launches into space"
   },
   {
     "id": 4,
@@ -477,8 +464,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It has prongs for eating",
         "answer": "FORK",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
@@ -486,8 +472,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Holds your coffee",
         "answer": "MUG",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 3,
@@ -495,8 +480,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Cook meat over flames",
         "answer": "GRILL",
         "row": 0,
-        "col": 4,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 4,
@@ -504,8 +488,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You cook on it",
         "answer": "STOVE",
         "row": 2,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 5,
@@ -513,8 +496,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It boils water for tea",
         "answer": "KETTLE",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -522,11 +504,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You bake in it",
         "answer": "OVEN",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "KETTLE"
+    "bonusWord": "SPOON",
+    "bonusHint": "You eat soup with it"
   },
   {
     "id": 5,
@@ -534,31 +516,31 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        "G",
         null,
-        null,
-        null,
+        "S",
+        "N",
+        "O",
         "W",
         null,
         null
       ],
       [
-        "U",
         null,
-        "C",
-        "H",
+        null,
+        null,
+        null,
         "I",
-        "L",
-        "L"
+        null,
+        null
       ],
       [
         "S",
         null,
-        null,
+        "S",
         null,
         "N",
         null,
-        null
+        "F"
       ],
       [
         "T",
@@ -570,165 +552,29 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "R"
       ],
       [
+        "O",
         null,
-        "A",
-        null,
+        "N",
         null,
         "Y",
         null,
-        "A"
+        "O"
       ],
       [
+        "R",
         null,
-        "I",
+        "N",
         null,
         null,
         null,
-        null,
-        "I"
+        "S"
       ],
       [
-        "C",
-        "L",
-        "O",
-        "U",
-        "D",
-        null,
-        "N"
-      ]
-    ],
-    "clues": [
-      {
-        "number": 1,
-        "direction": "down",
-        "clue": "A sudden burst of wind",
-        "answer": "GUST",
-        "row": 0,
-        "col": 0,
-        "bonus": false
-      },
-      {
-        "number": 2,
-        "direction": "down",
-        "clue": "Lots of breeze",
-        "answer": "WINDY",
-        "row": 0,
-        "col": 4,
-        "bonus": false
-      },
-      {
-        "number": 3,
-        "direction": "across",
-        "clue": "A cold feeling in the air",
-        "answer": "CHILL",
-        "row": 1,
-        "col": 2,
-        "bonus": false
-      },
-      {
-        "number": 4,
-        "direction": "across",
-        "clue": "The boom after lightning",
-        "answer": "THUNDER",
-        "row": 3,
-        "col": 0,
-        "bonus": false
-      },
-      {
-        "number": 5,
-        "direction": "down",
-        "clue": "Ice balls from the sky",
-        "answer": "HAIL",
-        "row": 3,
-        "col": 1,
-        "bonus": false
-      },
-      {
-        "number": 6,
-        "direction": "down",
-        "clue": "Water falling from the sky",
-        "answer": "RAIN",
-        "row": 3,
-        "col": 6,
-        "bonus": false
-      },
-      {
-        "number": 7,
-        "direction": "across",
-        "clue": "It floats and may bring rain",
-        "answer": "CLOUD",
-        "row": 6,
-        "col": 0,
-        "bonus": true
-      }
-    ],
-    "bonusWord": "CLOUD"
-  },
-  {
-    "id": 6,
-    "title": "Sports",
-    "size": 7,
-    "solution": [
-      [
-        "H",
-        "O",
-        "C",
-        "K",
-        "E",
-        "Y",
-        null
-      ],
-      [
-        null,
-        null,
-        "O",
-        null,
-        null,
-        null,
-        null
-      ],
-      [
-        null,
-        null,
-        "A",
-        null,
         "M",
         null,
-        null
-      ],
-      [
-        "S",
-        "O",
-        "C",
-        "C",
-        "E",
-        "R",
-        null
-      ],
-      [
-        "U",
-        null,
-        "H",
-        null,
-        "D",
-        null,
-        "N"
-      ],
-      [
-        "R",
+        "Y",
         null,
         null,
-        "R",
-        "A",
-        "C",
-        "E"
-      ],
-      [
-        "F",
-        null,
-        null,
-        null,
-        "L",
         null,
         "T"
       ]
@@ -737,133 +583,119 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "across",
-        "clue": "Game played with sticks and a puck",
-        "answer": "HOCKEY",
+        "clue": "White winter flakes",
+        "answer": "SNOW",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Person who trains the team",
-        "answer": "COACH",
+        "clue": "Lots of breeze",
+        "answer": "WINDY",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Prize for winning",
-        "answer": "MEDAL",
+        "clue": "Wind, rain and thunder",
+        "answer": "STORM",
         "row": 2,
-        "col": 4,
-        "bonus": false
-      },
-      {
-        "number": 4,
-        "direction": "across",
-        "clue": "Game played with a round ball and feet",
-        "answer": "SOCCER",
-        "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "Ride waves on a board",
-        "answer": "SURF",
-        "row": 3,
-        "col": 0,
-        "bonus": false
+        "clue": "Bright and clear sky",
+        "answer": "SUNNY",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 5,
         "direction": "down",
-        "clue": "Ball passes over or into it",
-        "answer": "NET",
-        "row": 4,
-        "col": 6,
-        "bonus": false
+        "clue": "Icy coating on cold mornings",
+        "answer": "FROST",
+        "row": 2,
+        "col": 6
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "A contest of speed",
-        "answer": "RACE",
-        "row": 5,
-        "col": 3,
-        "bonus": false
+        "clue": "The boom after lightning",
+        "answer": "THUNDER",
+        "row": 3,
+        "col": 0
       }
     ],
-    "bonusWord": "SOCCER"
+    "bonusWord": "CLOUD",
+    "bonusHint": "It floats and may bring rain"
   },
   {
-    "id": 7,
-    "title": "Music",
+    "id": 6,
+    "title": "Sports",
     "size": 7,
     "solution": [
       [
-        "S",
         null,
-        null,
-        null,
-        null,
-        "O",
-        null
-      ],
-      [
-        "O",
-        null,
-        "T",
-        "E",
-        "M",
-        "P",
-        "O"
-      ],
-      [
-        "N",
-        null,
-        null,
-        null,
-        null,
-        "E",
-        null
-      ],
-      [
-        "G",
-        "U",
-        "I",
-        "T",
-        "A",
         "R",
+        null,
+        null,
+        "B",
+        null,
         null
       ],
       [
         null,
-        null,
-        null,
-        "U",
-        null,
         "A",
-        null
-      ],
-      [
-        "P",
-        "I",
-        "A",
-        "N",
+        null,
+        "G",
         "O",
+        "A",
+        "L"
+      ],
+      [
+        null,
+        "C",
+        null,
+        null,
+        "X",
         null,
         null
       ],
       [
-        null,
-        null,
-        null,
+        "T",
         "E",
+        "N",
+        "N",
+        "I",
+        "S",
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "N",
+        null,
+        null
+      ],
+      [
+        "A",
+        null,
+        "R",
+        "U",
+        "G",
+        "B",
+        "Y"
+      ],
+      [
+        "M",
+        null,
+        null,
+        null,
         null,
         null,
         null
@@ -873,59 +705,168 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Music with words",
-        "answer": "SONG",
+        "clue": "A contest of speed",
+        "answer": "RACE",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Drama that is sung",
-        "answer": "OPERA",
+        "clue": "Sport with gloves and punches",
+        "answer": "BOXING",
         "row": 0,
-        "col": 5,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
         "direction": "across",
-        "clue": "Speed of the music",
-        "answer": "TEMPO",
+        "clue": "Where you score in soccer",
+        "answer": "GOAL",
         "row": 1,
-        "col": 2,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 4,
         "direction": "across",
-        "clue": "Six-stringed instrument",
-        "answer": "GUITAR",
+        "clue": "Racket game over a net",
+        "answer": "TENNIS",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "A group of players",
+        "answer": "TEAM",
+        "row": 3,
+        "col": 0
       },
       {
         "number": 5,
-        "direction": "down",
-        "clue": "A melody",
-        "answer": "TUNE",
-        "row": 3,
-        "col": 3,
-        "bonus": false
-      },
-      {
-        "number": 6,
         "direction": "across",
-        "clue": "Instrument with black and white keys",
-        "answer": "PIANO",
+        "clue": "Rough game with an oval ball",
+        "answer": "RUGBY",
         "row": 5,
-        "col": 0,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "GUITAR"
+    "bonusWord": "SOCCER",
+    "bonusHint": "Game played with a round ball and feet"
+  },
+  {
+    "id": 7,
+    "title": "Music",
+    "size": 7,
+    "solution": [
+      [
+        "F",
+        "L",
+        "U",
+        "T",
+        "E",
+        null,
+        null
+      ],
+      [
+        null,
+        "Y",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "R",
+        null,
+        null,
+        "P",
+        null,
+        null
+      ],
+      [
+        "V",
+        "I",
+        "O",
+        "L",
+        "I",
+        "N",
+        null
+      ],
+      [
+        null,
+        "C",
+        null,
+        null,
+        "A",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "N",
+        null,
+        null
+      ],
+      [
+        "T",
+        "E",
+        "M",
+        "P",
+        "O",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Slim wind instrument",
+        "answer": "FLUTE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "The words of a song",
+        "answer": "LYRIC",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Instrument with black and white keys",
+        "answer": "PIANO",
+        "row": 2,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Small string instrument played with a bow",
+        "answer": "VIOLIN",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Speed of the music",
+        "answer": "TEMPO",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "GUITAR",
+    "bonusHint": "Six-stringed instrument"
   },
   {
     "id": 8,
@@ -956,7 +897,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "A",
         null,
-        "H",
+        "N",
         null
       ],
       [
@@ -974,26 +915,26 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "N",
         null,
-        "A",
-        null
-      ],
-      [
-        null,
-        null,
-        null,
-        null,
-        null,
         "R",
         null
       ],
       [
         null,
-        "C",
-        "H",
-        "E",
-        "S",
-        "T",
+        null,
+        null,
+        null,
+        null,
+        "V",
         null
+      ],
+      [
+        null,
+        null,
+        "L",
+        "I",
+        "V",
+        "E",
+        "R"
       ]
     ],
     "clues": [
@@ -1003,8 +944,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Joint where your watch sits",
         "answer": "WRIST",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -1012,8 +952,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Hard part of the skeleton",
         "answer": "BONE",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 2,
@@ -1021,17 +960,15 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You think with it",
         "answer": "BRAIN",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "It pumps your blood",
-        "answer": "HEART",
+        "clue": "It carries signals in the body",
+        "answer": "NERVE",
         "row": 2,
-        "col": 5,
-        "bonus": true
+        "col": 5
       },
       {
         "number": 4,
@@ -1039,20 +976,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Your backbone",
         "answer": "SPINE",
         "row": 3,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "Front of the upper body",
-        "answer": "CHEST",
+        "clue": "Organ that cleans the blood",
+        "answer": "LIVER",
         "row": 6,
-        "col": 1,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "HEART"
+    "bonusWord": "HEART",
+    "bonusHint": "It pumps your blood"
   },
   {
     "id": 9,
@@ -1060,30 +996,30 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        "P",
-        "E",
-        "N",
-        "C",
-        "I",
-        "L",
+        "R",
+        null,
+        null,
+        null,
+        null,
+        "B",
         null
       ],
       [
-        "A",
+        "U",
         null,
         null,
-        "L",
-        null,
-        null,
-        null
+        "B",
+        "O",
+        "O",
+        "K"
       ],
       [
+        "L",
+        null,
         "P",
         null,
         null,
         "A",
-        null,
-        "G",
         null
       ],
       [
@@ -1098,16 +1034,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "R",
         null,
-        null,
-        "S",
-        null,
-        "A",
-        null
-      ],
-      [
-        null,
-        null,
-        null,
+        "P",
         null,
         null,
         "D",
@@ -1115,71 +1042,75 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       ],
       [
         null,
-        "M",
-        "A",
-        "R",
-        "K",
+        null,
         "E",
-        "R"
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "G",
+        "R",
+        "A",
+        "D",
+        "E",
+        null
       ]
     ],
     "clues": [
       {
         "number": 1,
-        "direction": "across",
-        "clue": "You write with it and erase it",
-        "answer": "PENCIL",
-        "row": 0,
-        "col": 0,
-        "bonus": true
-      },
-      {
-        "number": 1,
         "direction": "down",
-        "clue": "You write on a sheet of it",
-        "answer": "PAPER",
+        "clue": "Tool for measuring straight lines",
+        "answer": "RULER",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "A group of students",
-        "answer": "CLASS",
+        "clue": "Teacher writes on it",
+        "answer": "BOARD",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
-        "direction": "down",
-        "clue": "A mark for your work",
-        "answer": "GRADE",
-        "row": 2,
-        "col": 5,
-        "bonus": false
+        "direction": "across",
+        "clue": "You read it to learn",
+        "answer": "BOOK",
+        "row": 1,
+        "col": 3
       },
       {
         "number": 4,
-        "direction": "across",
-        "clue": "It rubs out mistakes",
-        "answer": "ERASER",
-        "row": 3,
-        "col": 0,
-        "bonus": false
+        "direction": "down",
+        "clue": "You write on a sheet of it",
+        "answer": "PAPER",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "Thick colored pen",
-        "answer": "MARKER",
+        "clue": "It rubs out mistakes",
+        "answer": "ERASER",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "A mark for your work",
+        "answer": "GRADE",
         "row": 6,
-        "col": 1,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "PENCIL"
+    "bonusWord": "PENCIL",
+    "bonusHint": "You write with it and erase it"
   },
   {
     "id": 10,
@@ -1257,8 +1188,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Fish often found in a sandwich",
         "answer": "TUNA",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
@@ -1266,8 +1196,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Used to catch fish",
         "answer": "NET",
         "row": 1,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 3,
@@ -1275,8 +1204,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Sea animal with eight arms",
         "answer": "OCTOPUS",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 4,
@@ -1284,8 +1212,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It walks sideways with claws",
         "answer": "CRAB",
         "row": 3,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 5,
@@ -1293,8 +1220,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Cloth that catches wind on a boat",
         "answer": "SAIL",
         "row": 3,
-        "col": 6,
-        "bonus": false
+        "col": 6
       },
       {
         "number": 6,
@@ -1302,8 +1228,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It rolls onto the shore",
         "answer": "WAVE",
         "row": 5,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 7,
@@ -1311,11 +1236,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Long, snake-like fish",
         "answer": "EEL",
         "row": 6,
-        "col": 4,
-        "bonus": false
+        "col": 4
       }
     ],
-    "bonusWord": "OCTOPUS"
+    "bonusWord": "WHALE",
+    "bonusHint": "The largest sea animal"
   },
   {
     "id": 11,
@@ -1327,27 +1252,27 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
+        "S",
         null,
-        null,
-        "C"
+        null
       ],
       [
         "O",
         null,
         null,
         null,
-        "P",
+        "T",
         null,
-        "R"
+        "H"
       ],
       [
         "O",
         null,
         "R",
         null,
-        "A",
+        "O",
         null,
-        "O"
+        "A"
       ],
       [
         "S",
@@ -1363,25 +1288,25 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "V",
         null,
-        "R",
+        "K",
         null,
-        null
+        "K"
       ],
       [
         null,
-        "H",
+        null,
         "E",
-        "R",
-        "O",
-        "N",
+        null,
+        null,
+        null,
         null
       ],
       [
-        null,
-        null,
+        "F",
+        "I",
         "N",
-        null,
-        "T",
+        "C",
+        "H",
         null,
         null
       ]
@@ -1393,26 +1318,23 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Larger relative of the duck",
         "answer": "GOOSE",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Black bird with a harsh caw",
-        "answer": "CROW",
+        "clue": "Long-legged bird said to bring babies",
+        "answer": "STORK",
         "row": 0,
-        "col": 6,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Colorful bird that can talk",
-        "answer": "PARROT",
+        "clue": "Sharp-eyed hunting bird",
+        "answer": "HAWK",
         "row": 1,
-        "col": 4,
-        "bonus": false
+        "col": 6
       },
       {
         "number": 4,
@@ -1420,8 +1342,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Big black bird",
         "answer": "RAVEN",
         "row": 2,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 5,
@@ -1429,20 +1350,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Common small brown bird",
         "answer": "SPARROW",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "Tall wading bird with long legs",
-        "answer": "HERON",
-        "row": 5,
-        "col": 1,
-        "bonus": false
+        "clue": "Small songbird",
+        "answer": "FINCH",
+        "row": 6,
+        "col": 0
       }
     ],
-    "bonusWord": "SPARROW"
+    "bonusWord": "EAGLE",
+    "bonusHint": "Large bird of prey"
   },
   {
     "id": 12,
@@ -1520,8 +1440,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Deep red root vegetable",
         "answer": "BEET",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 1,
@@ -1529,8 +1448,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It grows in a pod",
         "answer": "BEAN",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 2,
@@ -1538,8 +1456,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Leafy green superfood",
         "answer": "KALE",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 3,
@@ -1547,8 +1464,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Popeye's leafy green",
         "answer": "SPINACH",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 4,
@@ -1556,8 +1472,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Tiny green ball in a pod",
         "answer": "PEA",
         "row": 3,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 5,
@@ -1565,8 +1480,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Yellow kernels on a cob",
         "answer": "CORN",
         "row": 3,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 6,
@@ -1574,11 +1488,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Green pod used in gumbo",
         "answer": "OKRA",
         "row": 5,
-        "col": 3,
-        "bonus": false
+        "col": 3
       }
     ],
-    "bonusWord": "SPINACH"
+    "bonusWord": "CARROT",
+    "bonusHint": "Orange root rabbits love"
   },
   {
     "id": 13,
@@ -1587,29 +1501,29 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "solution": [
       [
         "B",
-        null,
-        null,
-        "C",
+        "R",
         "O",
+        "W",
         "N",
-        "E"
+        null,
+        null
       ],
       [
         "L",
         null,
-        "P",
         null,
-        "V",
+        null,
+        null,
         null,
         null
       ],
       [
         "A",
         null,
-        "U",
+        "G",
         null,
-        "A",
         null,
+        "H",
         null
       ],
       [
@@ -1624,88 +1538,83 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "K",
         null,
-        "P",
+        "E",
         null,
         null,
-        null,
+        "A",
         null
       ],
       [
         null,
         null,
-        "L",
+        "E",
         null,
         null,
-        null,
-        null
-      ],
-      [
-        "G",
         "R",
-        "E",
-        "E",
+        null
+      ],
+      [
+        "P",
+        "I",
         "N",
+        "K",
         null,
+        "T",
         null
       ]
     ],
     "clues": [
       {
         "number": 1,
+        "direction": "across",
+        "clue": "Color of chocolate",
+        "answer": "BROWN",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 1,
         "direction": "down",
         "clue": "Color of the night sky",
         "answer": "BLACK",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
-        "direction": "across",
-        "clue": "Shape of an ice-cream holder",
-        "answer": "CONE",
-        "row": 0,
-        "col": 3,
-        "bonus": false
+        "direction": "down",
+        "clue": "Color of grass",
+        "answer": "GREEN",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Egg-shaped",
-        "answer": "OVAL",
-        "row": 0,
-        "col": 4,
-        "bonus": false
+        "clue": "Love-shaped symbol",
+        "answer": "HEART",
+        "row": 2,
+        "col": 5
       },
       {
         "number": 4,
-        "direction": "down",
-        "clue": "Color of grapes",
-        "answer": "PURPLE",
-        "row": 1,
-        "col": 2,
-        "bonus": true
-      },
-      {
-        "number": 5,
         "direction": "across",
         "clue": "A perfectly round shape",
         "answer": "CIRCLE",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
-        "number": 6,
+        "number": 5,
         "direction": "across",
-        "clue": "Color of grass",
-        "answer": "GREEN",
+        "clue": "Light red color",
+        "answer": "PINK",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "PURPLE"
+    "bonusWord": "PURPLE",
+    "bonusHint": "Color of grapes"
   },
   {
     "id": 14,
@@ -1713,135 +1622,121 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
+        null,
+        null,
+        null,
+        "J",
+        null,
+        null,
+        "V"
+      ],
+      [
+        null,
+        null,
+        "N",
+        "U",
+        "R",
+        "S",
+        "E"
+      ],
+      [
+        null,
+        "P",
+        null,
         "D",
         null,
         null,
-        "M",
-        "A",
-        "I",
-        "D"
+        "T"
       ],
       [
+        "S",
+        "I",
+        "N",
+        "G",
+        "E",
+        "R",
+        null
+      ],
+      [
+        null,
+        "L",
+        null,
+        "E",
+        null,
+        null,
+        null
+      ],
+      [
+        null,
         "O",
         null,
-        "W",
         null,
-        "C",
         null,
-        null
-      ],
-      [
-        "C",
-        null,
-        "R",
-        null,
-        "T",
         null,
         null
       ],
       [
+        null,
         "T",
         "A",
         "I",
         "L",
         "O",
-        "R",
-        null
-      ],
-      [
-        "O",
-        null,
-        "T",
-        null,
-        "R",
-        null,
-        "V"
-      ],
-      [
-        "R",
-        null,
-        "E",
-        null,
-        null,
-        null,
-        "E"
-      ],
-      [
-        null,
-        "A",
-        "R",
-        "T",
-        "I",
-        "S",
-        "T"
+        "R"
       ]
     ],
     "clues": [
       {
         "number": 1,
         "direction": "down",
-        "clue": "They help sick people get well",
-        "answer": "DOCTOR",
+        "clue": "They decide cases in court",
+        "answer": "JUDGE",
         "row": 0,
-        "col": 0,
-        "bonus": true
+        "col": 3
       },
       {
         "number": 2,
-        "direction": "across",
-        "clue": "They clean hotel rooms",
-        "answer": "MAID",
+        "direction": "down",
+        "clue": "Animal doctor",
+        "answer": "VET",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 6
       },
       {
         "number": 3,
-        "direction": "down",
-        "clue": "They perform in films",
-        "answer": "ACTOR",
-        "row": 0,
-        "col": 4,
-        "bonus": false
+        "direction": "across",
+        "clue": "They care for patients",
+        "answer": "NURSE",
+        "row": 1,
+        "col": 2
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "They write books",
-        "answer": "WRITER",
-        "row": 1,
-        "col": 2,
-        "bonus": false
+        "clue": "They fly planes",
+        "answer": "PILOT",
+        "row": 2,
+        "col": 1
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "They make and fix clothes",
-        "answer": "TAILOR",
+        "clue": "They perform songs",
+        "answer": "SINGER",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 6,
-        "direction": "down",
-        "clue": "Animal doctor",
-        "answer": "VET",
-        "row": 4,
-        "col": 6,
-        "bonus": false
-      },
-      {
-        "number": 7,
         "direction": "across",
-        "clue": "They paint and draw",
-        "answer": "ARTIST",
+        "clue": "They make and fix clothes",
+        "answer": "TAILOR",
         "row": 6,
-        "col": 1,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "DOCTOR"
+    "bonusWord": "DOCTOR",
+    "bonusHint": "They help sick people get well"
   },
   {
     "id": 15,
@@ -1852,10 +1747,10 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "V",
         null,
         "T",
+        "R",
         "A",
-        "X",
         "I",
-        null
+        "N"
       ],
       [
         "I",
@@ -1864,16 +1759,16 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "H"
+        null
       ],
       [
         "S",
         null,
         "U",
         null,
-        "R",
+        "H",
         null,
-        "O"
+        null
       ],
       [
         "A",
@@ -1889,27 +1784,27 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
+        "T",
+        null,
+        "A"
+      ],
+      [
+        "R",
+        "O",
         "U",
-        null,
-        "E"
-      ],
-      [
-        null,
-        null,
-        null,
-        null,
         "T",
-        null,
-        "L"
-      ],
-      [
-        "T",
-        "I",
-        "C",
-        "K",
         "E",
-        "T",
-        null
+        null,
+        "X"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "L",
+        null,
+        "I"
       ]
     ],
     "clues": [
@@ -1919,17 +1814,15 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Permission to enter a country",
         "answer": "VISA",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "across",
-        "clue": "Car you pay to ride in",
-        "answer": "TAXI",
+        "clue": "It runs on rails",
+        "answer": "TRAIN",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 2,
@@ -1937,47 +1830,43 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "A guided trip around sights",
         "answer": "TOUR",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 3,
         "direction": "down",
         "clue": "Where you sleep on a trip",
         "answer": "HOTEL",
-        "row": 1,
-        "col": 6,
-        "bonus": false
+        "row": 2,
+        "col": 4
       },
       {
         "number": 4,
-        "direction": "down",
-        "clue": "The path you take",
-        "answer": "ROUTE",
-        "row": 2,
-        "col": 4,
-        "bonus": false
-      },
-      {
-        "number": 5,
         "direction": "across",
         "clue": "Where planes take off and land",
         "answer": "AIRPORT",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Car you pay to ride in",
+        "answer": "TAXI",
+        "row": 3,
+        "col": 6
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "You need it to board",
-        "answer": "TICKET",
-        "row": 6,
-        "col": 0,
-        "bonus": true
+        "clue": "The path you take",
+        "answer": "ROUTE",
+        "row": 5,
+        "col": 0
       }
     ],
-    "bonusWord": "TICKET"
+    "bonusWord": "TICKET",
+    "bonusHint": "You need it to board"
   },
   {
     "id": 16,
@@ -1997,55 +1886,55 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
+        null,
+        "C",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        "S",
+        null,
+        "A",
+        null,
+        null
+      ],
+      [
+        null,
+        "S",
+        "H",
+        "I",
+        "R",
+        "T",
+        null
+      ],
+      [
+        null,
+        null,
         "O",
         null,
-        "H",
-        null
-      ],
-      [
-        null,
-        "P",
-        null,
-        "C",
-        null,
-        "A",
-        null
-      ],
-      [
-        "J",
-        "A",
-        "C",
-        "K",
-        "E",
-        "T",
-        null
-      ],
-      [
-        null,
-        "N",
-        null,
-        "S",
-        null,
-        null,
-        null
-      ],
-      [
-        null,
-        "T",
-        null,
-        null,
-        null,
-        null,
-        null
-      ],
-      [
-        null,
-        "S",
-        "C",
-        "A",
-        "R",
         "F",
-        null
+        null,
+        "H"
+      ],
+      [
+        null,
+        null,
+        "E",
+        null,
+        null,
+        null,
+        "A"
+      ],
+      [
+        null,
+        null,
+        "S",
+        "K",
+        "I",
+        "R",
+        "T"
       ]
     ],
     "clues": [
@@ -2055,56 +1944,51 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "One-piece outfit",
         "answer": "DRESS",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "They go on before shoes",
-        "answer": "SOCKS",
+        "clue": "You wrap it around your neck",
+        "answer": "SCARF",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "You wear it on your head",
-        "answer": "HAT",
-        "row": 1,
-        "col": 5,
-        "bonus": false
+        "clue": "You wear them on your feet",
+        "answer": "SHOES",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 4,
-        "direction": "down",
-        "clue": "You wear them on your legs",
-        "answer": "PANTS",
-        "row": 2,
-        "col": 1,
-        "bonus": false
+        "direction": "across",
+        "clue": "Top with buttons and a collar",
+        "answer": "SHIRT",
+        "row": 3,
+        "col": 1
       },
       {
         "number": 5,
-        "direction": "across",
-        "clue": "Light coat for your top half",
-        "answer": "JACKET",
-        "row": 3,
-        "col": 0,
-        "bonus": true
+        "direction": "down",
+        "clue": "You wear it on your head",
+        "answer": "HAT",
+        "row": 4,
+        "col": 6
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "You wrap it around your neck",
-        "answer": "SCARF",
+        "clue": "It hangs from the waist",
+        "answer": "SKIRT",
         "row": 6,
-        "col": 1,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "JACKET"
+    "bonusWord": "JACKET",
+    "bonusHint": "Light coat for your top half"
   },
   {
     "id": 17,
@@ -2113,125 +1997,120 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "solution": [
       [
         null,
-        "W",
-        "I",
-        "N",
+        null,
+        null,
+        null,
+        null,
         "D",
-        "O",
-        "W"
-      ],
-      [
-        null,
-        null,
-        null,
-        null,
-        "O",
-        null,
         null
       ],
       [
+        "L",
         null,
-        null,
-        "T",
-        null,
+        "F",
+        "L",
         "O",
-        null,
-        null
+        "O",
+        "R"
       ],
       [
-        "S",
-        "T",
         "A",
+        null,
+        null,
+        null,
+        null,
+        "O",
+        null
+      ],
+      [
+        "M",
         "I",
         "R",
+        "R",
+        "O",
+        "R",
+        null
+      ],
+      [
+        "P",
+        null,
+        null,
+        "O",
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "C",
+        "L",
+        "O",
         "S",
-        null
-      ],
-      [
-        null,
-        null,
-        "B",
-        null,
-        null,
-        "I",
-        null
-      ],
-      [
-        "W",
-        "A",
-        "L",
-        "L",
-        null,
-        "N",
-        null
-      ],
-      [
-        null,
-        null,
         "E",
+        "T"
+      ],
+      [
         null,
         null,
-        "K",
+        null,
+        "F",
+        null,
+        null,
         null
       ]
     ],
     "clues": [
       {
         "number": 1,
-        "direction": "across",
-        "clue": "You look outside through it",
-        "answer": "WINDOW",
-        "row": 0,
-        "col": 1,
-        "bonus": true
-      },
-      {
-        "number": 2,
         "direction": "down",
         "clue": "You open it to enter",
         "answer": "DOOR",
         "row": 0,
-        "col": 4,
-        "bonus": false
+        "col": 5
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "It gives light on a desk",
+        "answer": "LAMP",
+        "row": 1,
+        "col": 0
       },
       {
         "number": 3,
-        "direction": "down",
-        "clue": "You eat at it",
-        "answer": "TABLE",
-        "row": 2,
-        "col": 2,
-        "bonus": false
+        "direction": "across",
+        "clue": "You walk on it",
+        "answer": "FLOOR",
+        "row": 1,
+        "col": 2
       },
       {
         "number": 4,
         "direction": "across",
-        "clue": "You climb them between floors",
-        "answer": "STAIRS",
+        "clue": "You see your reflection in it",
+        "answer": "MIRROR",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 5,
         "direction": "down",
-        "clue": "You wash your hands in it",
-        "answer": "SINK",
+        "clue": "It covers the house on top",
+        "answer": "ROOF",
         "row": 3,
-        "col": 5,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "It divides the rooms",
-        "answer": "WALL",
+        "clue": "Small room for storing clothes",
+        "answer": "CLOSET",
         "row": 5,
-        "col": 0,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "WINDOW"
+    "bonusWord": "WINDOW",
+    "bonusHint": "You look outside through it"
   },
   {
     "id": 18,
@@ -2309,8 +2188,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Grassy field with flowers",
         "answer": "MEADOW",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
@@ -2318,8 +2196,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It has a trunk and leaves",
         "answer": "TREE",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 3,
@@ -2327,8 +2204,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Water flowing to the sea",
         "answer": "RIVER",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 4,
@@ -2336,8 +2212,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "A small rock",
         "answer": "STONE",
         "row": 2,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 5,
@@ -2345,8 +2220,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Dry, sandy region",
         "answer": "DESERT",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -2354,11 +2228,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Low land between hills",
         "answer": "VALLEY",
         "row": 6,
-        "col": 1,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "DESERT"
+    "bonusWord": "FOREST",
+    "bonusHint": "A large area full of trees"
   },
   {
     "id": 19,
@@ -2436,8 +2310,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Small white grains",
         "answer": "RICE",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 2,
@@ -2445,8 +2318,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Sweet treat for a birthday",
         "answer": "CAKE",
         "row": 0,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
@@ -2454,8 +2326,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Sweet food made by bees",
         "answer": "HONEY",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 4,
@@ -2463,8 +2334,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Browned bread",
         "answer": "TOAST",
         "row": 2,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 5,
@@ -2472,8 +2342,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Long strand in your soup",
         "answer": "NOODLE",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -2481,11 +2350,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Bowl of fresh vegetables",
         "answer": "SALAD",
         "row": 5,
-        "col": 2,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "NOODLE"
+    "bonusWord": "CHEESE",
+    "bonusHint": "Dairy food made from milk"
   },
   {
     "id": 20,
@@ -2493,126 +2362,121 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        "C",
-        null,
-        "C",
-        "O",
-        "D",
-        "E",
-        null
-      ],
-      [
-        "A",
-        null,
-        "H",
+        "M",
         null,
         null,
-        null,
-        null
-      ],
-      [
-        "B",
-        null,
-        "I",
         null,
         "M",
         null,
         null
       ],
       [
-        "L",
-        "A",
-        "P",
-        "T",
         "O",
-        "P",
-        null
+        null,
+        null,
+        "C",
+        "O",
+        "D",
+        "E"
       ],
       [
-        "E",
-        null,
-        null,
-        null,
         "U",
         null,
+        "D",
+        null,
+        "D",
+        null,
         null
       ],
       [
-        null,
-        null,
-        null,
-        null,
         "S",
+        "C",
+        "R",
+        "E",
+        "E",
+        "N",
+        null
+      ],
+      [
+        "E",
+        null,
+        "O",
+        null,
+        "M",
         null,
         null
       ],
       [
-        "R",
-        "O",
-        "U",
-        "T",
-        "E",
-        "R",
+        null,
+        null,
+        "N",
+        null,
+        null,
+        null,
         null
+      ],
+      [
+        null,
+        null,
+        "E",
+        "M",
+        "A",
+        "I",
+        "L"
       ]
     ],
     "clues": [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Wire that connects devices",
-        "answer": "CABLE",
+        "clue": "You click with it",
+        "answer": "MOUSE",
         "row": 0,
-        "col": 0,
-        "bonus": false
-      },
-      {
-        "number": 2,
-        "direction": "across",
-        "clue": "Instructions for a program",
-        "answer": "CODE",
-        "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Tiny computer part",
-        "answer": "CHIP",
+        "clue": "Box that connects you to the internet",
+        "answer": "MODEM",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
-        "direction": "down",
-        "clue": "You click with it",
-        "answer": "MOUSE",
-        "row": 2,
-        "col": 4,
-        "bonus": false
+        "direction": "across",
+        "clue": "Instructions for a program",
+        "answer": "CODE",
+        "row": 1,
+        "col": 3
       },
       {
         "number": 4,
-        "direction": "across",
-        "clue": "Portable computer",
-        "answer": "LAPTOP",
-        "row": 3,
-        "col": 0,
-        "bonus": true
+        "direction": "down",
+        "clue": "Small flying machine with a camera",
+        "answer": "DRONE",
+        "row": 2,
+        "col": 2
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "It shares the Wi-Fi signal",
-        "answer": "ROUTER",
+        "clue": "You watch it on a device",
+        "answer": "SCREEN",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Electronic message",
+        "answer": "EMAIL",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "LAPTOP"
+    "bonusWord": "LAPTOP",
+    "bonusHint": "Portable computer"
   },
   {
     "id": 21,
@@ -2620,135 +2484,113 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        null,
-        null,
         "T",
-        "O",
         "R",
-        "C",
-        "H"
+        "A",
+        "I",
+        "L",
+        null,
+        null
       ],
       [
-        null,
-        "T",
-        null,
-        null,
         "O",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "R",
+        null,
+        null,
+        null,
+        "C",
+        null,
+        null
+      ],
+      [
+        "C",
+        "O",
+        "M",
+        "P",
+        "A",
+        "S",
+        "S"
+      ],
+      [
+        "H",
+        null,
+        null,
+        null,
+        "B",
         null,
         null
       ],
       [
         null,
-        "R",
         null,
-        null,
-        "P",
-        null,
-        "K"
-      ],
-      [
-        "L",
-        "A",
+        "K",
         "N",
-        "T",
-        "E",
-        "R",
-        "N"
-      ],
-      [
-        null,
         "I",
-        null,
-        "E",
-        null,
-        null,
-        "I"
+        "F",
+        "E"
       ],
       [
         null,
-        "L",
+        null,
+        null,
         null,
         "N",
         null,
-        null,
-        "F"
-      ],
-      [
-        null,
-        null,
-        "S",
-        "T",
-        "O",
-        "V",
-        "E"
+        null
       ]
     ],
     "clues": [
       {
         "number": 1,
         "direction": "across",
+        "clue": "A path through the woods",
+        "answer": "TRAIL",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 1,
+        "direction": "down",
         "clue": "Handheld flashlight",
         "answer": "TORCH",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "You tie things with it",
-        "answer": "ROPE",
-        "row": 0,
-        "col": 4,
-        "bonus": false
+        "clue": "Small wooden hut",
+        "answer": "CABIN",
+        "row": 2,
+        "col": 4
       },
       {
         "number": 3,
-        "direction": "down",
-        "clue": "A path through the woods",
-        "answer": "TRAIL",
-        "row": 1,
-        "col": 1,
-        "bonus": false
+        "direction": "across",
+        "clue": "It points north",
+        "answer": "COMPASS",
+        "row": 3,
+        "col": 0
       },
       {
         "number": 4,
-        "direction": "down",
+        "direction": "across",
         "clue": "Handy cutting tool",
         "answer": "KNIFE",
-        "row": 2,
-        "col": 6,
-        "bonus": false
-      },
-      {
-        "number": 5,
-        "direction": "across",
-        "clue": "Portable light for the dark",
-        "answer": "LANTERN",
-        "row": 3,
-        "col": 0,
-        "bonus": true
-      },
-      {
-        "number": 6,
-        "direction": "down",
-        "clue": "You sleep in it outdoors",
-        "answer": "TENT",
-        "row": 3,
-        "col": 3,
-        "bonus": false
-      },
-      {
-        "number": 7,
-        "direction": "across",
-        "clue": "Small camp cooker",
-        "answer": "STOVE",
-        "row": 6,
-        "col": 2,
-        "bonus": false
+        "row": 5,
+        "col": 2
       }
     ],
-    "bonusWord": "LANTERN"
+    "bonusWord": "LANTERN",
+    "bonusHint": "Portable light for the dark"
   },
   {
     "id": 22,
@@ -2758,19 +2600,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         null,
         "C",
+        "R",
+        "A",
+        "B",
         null,
-        null,
-        null,
-        "S",
         null
       ],
       [
-        "B",
-        "O",
-        "A",
-        "T",
         null,
-        "H",
+        "O",
+        null,
+        null,
+        null,
+        "P",
         null
       ],
       [
@@ -2779,7 +2621,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "E",
+        "A",
         null
       ],
       [
@@ -2797,7 +2639,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         "U",
         null,
-        "L",
+        "M",
         null
       ],
       [
@@ -2822,60 +2664,55 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "clues": [
       {
         "number": 1,
+        "direction": "across",
+        "clue": "It scuttles on the sand",
+        "answer": "CRAB",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 1,
         "direction": "down",
         "clue": "Colorful sea growth",
         "answer": "CORAL",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "You collect it in the sand",
-        "answer": "SHELL",
-        "row": 0,
-        "col": 5,
-        "bonus": true
+        "clue": "Tropical beach tree",
+        "answer": "PALM",
+        "row": 1,
+        "col": 5
       },
       {
         "number": 3,
         "direction": "across",
-        "clue": "It floats on the water",
-        "answer": "BOAT",
-        "row": 1,
-        "col": 0,
-        "bonus": false
-      },
-      {
-        "number": 4,
-        "direction": "across",
         "clue": "Open summer shoe",
         "answer": "SANDAL",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
-        "number": 5,
+        "number": 4,
         "direction": "down",
         "clue": "A hill of sand",
         "answer": "DUNE",
         "row": 3,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
-        "number": 6,
+        "number": 5,
         "direction": "across",
         "clue": "You lie on it at the beach",
         "answer": "TOWEL",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "SHELL"
+    "bonusWord": "SHELL",
+    "bonusHint": "You collect it in the sand"
   },
   {
     "id": 23,
@@ -2953,8 +2790,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You wrap it around your neck",
         "answer": "SCARF",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -2962,8 +2798,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Slide down a snowy slope",
         "answer": "SKI",
         "row": 1,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 2,
@@ -2971,8 +2806,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Rain mixed with snow",
         "answer": "SLEET",
         "row": 1,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 3,
@@ -2980,8 +2814,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Frozen water",
         "answer": "ICE",
         "row": 1,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 4,
@@ -2989,8 +2822,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Turn to ice",
         "answer": "FREEZE",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 5,
@@ -2998,11 +2830,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "A blizzard is a snow ___",
         "answer": "STORM",
         "row": 5,
-        "col": 2,
-        "bonus": false
+        "col": 2
       }
     ],
-    "bonusWord": "FREEZE"
+    "bonusWord": "FROST",
+    "bonusHint": "Icy coating on cold mornings"
   },
   {
     "id": 24,
@@ -3010,135 +2842,113 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        "L",
+        null,
+        null,
+        "D",
+        "A",
+        "I",
+        "S",
+        "Y"
+      ],
+      [
         null,
         null,
         null,
-        "H",
         null,
+        null,
+        "T",
         null
       ],
       [
+        null,
+        null,
+        null,
+        "S",
+        null,
         "E",
+        null
+      ],
+      [
         null,
         "B",
         "L",
         "O",
         "O",
-        "M"
+        "M",
+        null
       ],
       [
-        "A",
         null,
         null,
         null,
-        "S",
+        "I",
+        null,
         null,
         null
       ],
       [
-        "F",
+        null,
+        "T",
+        "U",
         "L",
-        "O",
-        "W",
-        "E",
-        "R",
+        "I",
+        "P",
         null
       ],
       [
         null,
         null,
         null,
-        "E",
-        null,
-        "A",
-        null
-      ],
-      [
         null,
         null,
         null,
-        "E",
-        null,
-        "K",
-        null
-      ],
-      [
-        "S",
-        "E",
-        "E",
-        "D",
-        null,
-        "E",
         null
       ]
     ],
     "clues": [
       {
         "number": 1,
-        "direction": "down",
-        "clue": "Green part of a plant",
-        "answer": "LEAF",
+        "direction": "across",
+        "clue": "White flower with a yellow center",
+        "answer": "DAISY",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "You water plants with it",
-        "answer": "HOSE",
+        "clue": "It holds up the flower",
+        "answer": "STEM",
         "row": 0,
-        "col": 4,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
-        "direction": "across",
-        "clue": "What a flower does in spring",
-        "answer": "BLOOM",
-        "row": 1,
-        "col": 2,
-        "bonus": false
+        "direction": "down",
+        "clue": "The dirt plants grow in",
+        "answer": "SOIL",
+        "row": 2,
+        "col": 3
       },
       {
         "number": 4,
         "direction": "across",
-        "clue": "A rose or a tulip",
-        "answer": "FLOWER",
+        "clue": "What a flower does in spring",
+        "answer": "BLOOM",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 1
       },
       {
         "number": 5,
-        "direction": "down",
-        "clue": "Unwanted plant",
-        "answer": "WEED",
-        "row": 3,
-        "col": 3,
-        "bonus": false
-      },
-      {
-        "number": 6,
-        "direction": "down",
-        "clue": "Tool for gathering leaves",
-        "answer": "RAKE",
-        "row": 3,
-        "col": 5,
-        "bonus": false
-      },
-      {
-        "number": 7,
         "direction": "across",
-        "clue": "You plant it to grow a plant",
-        "answer": "SEED",
-        "row": 6,
-        "col": 0,
-        "bonus": false
+        "clue": "Cup-shaped spring flower",
+        "answer": "TULIP",
+        "row": 5,
+        "col": 1
       }
     ],
-    "bonusWord": "FLOWER"
+    "bonusWord": "FLOWER",
+    "bonusHint": "A rose or a tulip"
   },
   {
     "id": 25,
@@ -3216,8 +3026,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Stinging insect with a thin waist",
         "answer": "WASP",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -3225,8 +3034,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Tiny insect that harms plants",
         "answer": "APHID",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 3,
@@ -3234,8 +3042,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Swarming grasshopper",
         "answer": "LOCUST",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 4,
@@ -3243,8 +3050,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It makes honey",
         "answer": "BEE",
         "row": 1,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 4,
@@ -3252,8 +3058,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Hard-shelled crawling bug",
         "answer": "BEETLE",
         "row": 1,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 5,
@@ -3261,8 +3066,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It chirps at night",
         "answer": "CRICKET",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -3270,11 +3074,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Tiny jumping pest on pets",
         "answer": "FLEA",
         "row": 6,
-        "col": 3,
-        "bonus": false
+        "col": 3
       }
     ],
-    "bonusWord": "CRICKET"
+    "bonusWord": "SPIDER",
+    "bonusHint": "It spins a web"
   },
   {
     "id": 26,
@@ -3336,11 +3140,11 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null
       ],
       [
-        "D",
-        "R",
-        "I",
+        null,
+        "B",
+        "O",
         "L",
-        "L",
+        "T",
         null,
         null
       ]
@@ -3352,8 +3156,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You tighten bolts with it",
         "answer": "WRENCH",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -3361,8 +3164,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Tool for carving wood",
         "answer": "CHISEL",
         "row": 0,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
@@ -3370,8 +3172,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "A measuring ___",
         "answer": "TAPE",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 4,
@@ -3379,8 +3180,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It checks if things are flat",
         "answer": "LEVEL",
         "row": 2,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 5,
@@ -3388,20 +3188,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "You grip things with them",
         "answer": "PLIERS",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "It makes holes",
-        "answer": "DRILL",
+        "clue": "Metal pin fastened with a nut",
+        "answer": "BOLT",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 1
       }
     ],
-    "bonusWord": "PLIERS"
+    "bonusWord": "HAMMER",
+    "bonusHint": "You hit nails with it"
   },
   {
     "id": 27,
@@ -3413,7 +3212,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "L",
+        "H",
         null,
         null
       ],
@@ -3421,17 +3220,17 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "E",
         null,
         null,
-        "H",
+        "J",
         "O",
-        "P",
-        "E"
+        "Y",
+        null
       ],
       [
         "N",
         null,
-        "H",
+        "C",
         null,
-        "N",
+        "P",
         null,
         null
       ],
@@ -3447,25 +3246,25 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "E",
         null,
-        "P",
-        null,
         "L",
         null,
+        null,
+        null,
         null
       ],
       [
         null,
         null,
-        "P",
-        null,
-        "Y",
-        null,
-        null
+        "M",
+        "E",
+        "R",
+        "R",
+        "Y"
       ],
       [
-        "J",
-        "O",
-        "Y",
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -3479,35 +3278,31 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Nervous and on edge",
         "answer": "TENSE",
         "row": 0,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Feeling all alone",
-        "answer": "LONELY",
+        "clue": "Wishing for something good",
+        "answer": "HOPE",
         "row": 0,
-        "col": 4,
-        "bonus": false
+        "col": 4
       },
       {
         "number": 3,
         "direction": "across",
-        "clue": "Wishing for something good",
-        "answer": "HOPE",
+        "clue": "A feeling of great happiness",
+        "answer": "JOY",
         "row": 1,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "Feeling full of joy",
-        "answer": "HAPPY",
+        "clue": "Peaceful and relaxed",
+        "answer": "CALM",
         "row": 2,
-        "col": 2,
-        "bonus": true
+        "col": 2
       },
       {
         "number": 5,
@@ -3515,20 +3310,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Feeling afraid",
         "answer": "SCARED",
         "row": 3,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "A feeling of great happiness",
-        "answer": "JOY",
-        "row": 6,
-        "col": 0,
-        "bonus": false
+        "clue": "Cheerful and jolly",
+        "answer": "MERRY",
+        "row": 5,
+        "col": 2
       }
     ],
-    "bonusWord": "HAPPY"
+    "bonusWord": "HAPPY",
+    "bonusHint": "Feeling full of joy"
   },
   {
     "id": 28,
@@ -3538,63 +3332,63 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         null,
         null,
-        null,
-        null,
-        "W",
-        null,
-        "T"
+        "P",
+        "U",
+        "N",
+        "C",
+        "H"
       ],
       [
         null,
+        null,
+        null,
+        null,
+        null,
+        "I",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "L",
+        null,
+        "D",
+        null
+      ],
+      [
         null,
         "S",
         "H",
         "A",
         "K",
-        "E"
-      ],
-      [
-        null,
-        "M",
-        null,
-        null,
-        "T",
-        null,
-        "A"
-      ],
-      [
-        "C",
-        "O",
-        "F",
-        "F",
-        "E",
         "E",
         null
       ],
       [
         null,
-        "C",
+        "O",
         null,
+        "T",
         null,
         "R",
-        null,
         null
       ],
       [
         null,
-        "H",
+        "D",
         null,
-        null,
+        "T",
         null,
         null,
         null
       ],
       [
-        "L",
+        "W",
         "A",
         "T",
-        "T",
         "E",
+        "R",
         null,
         null
       ]
@@ -3602,60 +3396,55 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "clues": [
       {
         "number": 1,
-        "direction": "down",
-        "clue": "Clear, plain drink",
-        "answer": "WATER",
+        "direction": "across",
+        "clue": "Mixed fruity party drink",
+        "answer": "PUNCH",
         "row": 0,
-        "col": 4,
-        "bonus": false
+        "col": 2
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "Drink made by steeping leaves",
-        "answer": "TEA",
+        "clue": "Drink made from apples",
+        "answer": "CIDER",
         "row": 0,
-        "col": 6,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
+        "direction": "down",
+        "clue": "Coffee with steamed milk",
+        "answer": "LATTE",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 4,
         "direction": "across",
         "clue": "Thick blended milk drink",
         "answer": "SHAKE",
-        "row": 1,
-        "col": 2,
-        "bonus": false
+        "row": 3,
+        "col": 1
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "Coffee with chocolate",
-        "answer": "MOCHA",
-        "row": 2,
-        "col": 1,
-        "bonus": false
+        "clue": "Fizzy sweet drink",
+        "answer": "SODA",
+        "row": 3,
+        "col": 1
       },
       {
         "number": 5,
         "direction": "across",
-        "clue": "Hot drink that wakes you up",
-        "answer": "COFFEE",
-        "row": 3,
-        "col": 0,
-        "bonus": true
-      },
-      {
-        "number": 6,
-        "direction": "across",
-        "clue": "Coffee with steamed milk",
-        "answer": "LATTE",
+        "clue": "Clear, plain drink",
+        "answer": "WATER",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "COFFEE"
+    "bonusWord": "COFFEE",
+    "bonusHint": "Hot drink that wakes you up"
   },
   {
     "id": 29,
@@ -3663,78 +3452,77 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "size": 7,
     "solution": [
       [
-        null,
-        null,
-        "I",
-        "N",
-        "D",
-        "I",
-        "A"
-      ],
-      [
-        null,
-        "S",
-        null,
-        "E",
-        null,
-        null,
-        null
-      ],
-      [
-        null,
-        "P",
-        null,
-        "P",
-        null,
-        "J",
-        null
-      ],
-      [
-        "C",
-        "A",
-        "N",
-        "A",
-        "D",
-        "A",
-        null
-      ],
-      [
-        null,
-        "I",
-        null,
-        "L",
-        null,
-        "P",
-        null
-      ],
-      [
-        null,
-        "N",
-        null,
-        null,
-        null,
-        "A",
-        null
-      ],
-      [
-        null,
-        null,
         "C",
         "H",
         "I",
         "N",
-        "A"
+        "A",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "E",
+        null,
+        "I",
+        null
+      ],
+      [
+        null,
+        "J",
+        null,
+        "P",
+        null,
+        "T",
+        null
+      ],
+      [
+        "C",
+        "A",
+        "N",
+        "A",
+        "D",
+        "A",
+        null
+      ],
+      [
+        null,
+        "P",
+        null,
+        "L",
+        null,
+        "L",
+        null
+      ],
+      [
+        null,
+        "A",
+        null,
+        null,
+        null,
+        "Y",
+        null
+      ],
+      [
+        "I",
+        "N",
+        "D",
+        "I",
+        "A",
+        null,
+        null
       ]
     ],
     "clues": [
       {
         "number": 1,
         "direction": "across",
-        "clue": "Country of the Taj Mahal",
-        "answer": "INDIA",
+        "clue": "Country with the Great Wall",
+        "answer": "CHINA",
         "row": 0,
-        "col": 2,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 2,
@@ -3742,17 +3530,15 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Country with Mount Everest",
         "answer": "NEPAL",
         "row": 0,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Country known for flamenco",
-        "answer": "SPAIN",
+        "clue": "Boot-shaped European country",
+        "answer": "ITALY",
         "row": 1,
-        "col": 1,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 4,
@@ -3760,8 +3546,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Land of the rising sun",
         "answer": "JAPAN",
         "row": 2,
-        "col": 5,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 5,
@@ -3769,20 +3554,19 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Country north of the USA",
         "answer": "CANADA",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
         "direction": "across",
-        "clue": "Country with the Great Wall",
-        "answer": "CHINA",
+        "clue": "Country of the Taj Mahal",
+        "answer": "INDIA",
         "row": 6,
-        "col": 2,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "CANADA"
+    "bonusWord": "BRAZIL",
+    "bonusHint": "Largest country in South America"
   },
   {
     "id": 30,
@@ -3860,8 +3644,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "It wakes you up",
         "answer": "ALARM",
         "row": 0,
-        "col": 1,
-        "bonus": false
+        "col": 1
       },
       {
         "number": 2,
@@ -3869,8 +3652,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "First day of the work week",
         "answer": "MONDAY",
         "row": 0,
-        "col": 5,
-        "bonus": false
+        "col": 5
       },
       {
         "number": 3,
@@ -3878,8 +3660,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "When the sun sets",
         "answer": "DUSK",
         "row": 1,
-        "col": 0,
-        "bonus": false
+        "col": 0
       },
       {
         "number": 4,
@@ -3887,8 +3668,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "About thirty days",
         "answer": "MONTH",
         "row": 2,
-        "col": 3,
-        "bonus": false
+        "col": 3
       },
       {
         "number": 5,
@@ -3896,8 +3676,7 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "The smallest unit on a clock face",
         "answer": "SECOND",
         "row": 3,
-        "col": 0,
-        "bonus": true
+        "col": 0
       },
       {
         "number": 6,
@@ -3905,10 +3684,10 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "The dark part of the day",
         "answer": "NIGHT",
         "row": 6,
-        "col": 0,
-        "bonus": false
+        "col": 0
       }
     ],
-    "bonusWord": "SECOND"
+    "bonusWord": "MINUTE",
+    "bonusHint": "Sixty seconds"
   }
 ];

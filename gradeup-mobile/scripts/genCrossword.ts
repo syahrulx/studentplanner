@@ -28,7 +28,11 @@ interface Placed {
   row: number;
   col: number;
   dir: Dir;
-  bonus: boolean;
+}
+
+/** The hidden bonus word for a theme — never placed in the grid. */
+function bonusWordOf(theme: Theme): string {
+  return theme.bonus.toUpperCase().replace(/[^A-Z]/g, '');
 }
 
 // ---- deterministic RNG so output is stable across runs ----
@@ -108,9 +112,11 @@ function placeWord(grid: Grid, word: string, row: number, col: number, dir: Dir)
 
 /** One attempt at building a layout from a shuffled candidate ordering. */
 function attempt(theme: Theme, rnd: () => number): { placed: Placed[]; filled: number } {
+  const bonus = bonusWordOf(theme);
   const candidates = theme.entries
     .map((e) => ({ ...e, word: e.word.toUpperCase().replace(/[^A-Z]/g, '') }))
-    .filter((e) => e.word.length >= 3 && e.word.length <= SIZE);
+    // The bonus word stays hidden — never place it in the grid.
+    .filter((e) => e.word.length >= 3 && e.word.length <= SIZE && e.word !== bonus);
 
   const ordered = shuffle(candidates, rnd).sort((a, b) => b.word.length - a.word.length);
   const grid = emptyGrid();
@@ -121,7 +127,7 @@ function attempt(theme: Theme, rnd: () => number): { placed: Placed[]; filled: n
   if (!first) return { placed: [], filled: 0 };
   const startCol = Math.floor((SIZE - first.word.length) / 2);
   placeWord(grid, first.word, 3, startCol, 'across');
-  placed.push({ answer: first.word, clue: first.clue, row: 3, col: startCol, dir: 'across', bonus: false });
+  placed.push({ answer: first.word, clue: first.clue, row: 3, col: startCol, dir: 'across' });
 
   const remaining = shuffle(ordered.slice(1), rnd);
   // Multiple passes so words that couldn't cross early can attach later.
@@ -150,7 +156,7 @@ function attempt(theme: Theme, rnd: () => number): { placed: Placed[]; filled: n
       const topK = options.slice(0, Math.min(3, options.length));
       const choice = topK[Math.floor(rnd() * topK.length)];
       placeWord(grid, cand.word, choice.row, choice.col, choice.dir);
-      placed.push({ answer: cand.word, clue: cand.clue, row: choice.row, col: choice.col, dir: choice.dir, bonus: false });
+      placed.push({ answer: cand.word, clue: cand.clue, row: choice.row, col: choice.col, dir: choice.dir });
     }
   }
 
@@ -186,7 +192,6 @@ interface OutClue {
   answer: string;
   row: number;
   col: number;
-  bonus: boolean;
 }
 interface OutPuzzle {
   id: number;
@@ -194,17 +199,18 @@ interface OutPuzzle {
   size: number;
   solution: (string | null)[][];
   clues: OutClue[];
+  /** Hidden bonus word — not part of the grid. Players guess it for extra points. */
   bonusWord: string;
+  /** Subtle hint shown for the hidden bonus word. */
+  bonusHint: string;
 }
 
 function finalize(theme: Theme, id: number, placed: Placed[]): OutPuzzle {
-  // Pick bonus word: the theme's preferred bonus if it got placed, else longest.
-  const byLen = placed.slice().sort((a, b) => b.answer.length - a.answer.length);
-  let bonusAnswer =
-    (theme.bonus && placed.find((p) => p.answer === theme.bonus.toUpperCase())?.answer) ||
-    byLen[0]?.answer ||
-    '';
-  for (const p of placed) p.bonus = p.answer === bonusAnswer;
+  // The hidden bonus word never appears in the grid; its hint defaults to the
+  // word's own clue from the bank, or a generic theme hint.
+  const bonusAnswer = bonusWordOf(theme);
+  const bankClue = theme.entries.find((e) => e.word.toUpperCase().replace(/[^A-Z]/g, '') === bonusAnswer)?.clue;
+  const bonusHint = theme.bonusHint || bankClue || `A hidden ${theme.title.toLowerCase()} word`;
 
   // Build solution grid.
   const grid = emptyGrid();
@@ -229,11 +235,10 @@ function finalize(theme: Theme, id: number, placed: Placed[]): OutPuzzle {
       answer: p.answer,
       row: p.row,
       col: p.col,
-      bonus: p.bonus,
     }))
     .sort((a, b) => a.number - b.number || (a.direction === b.direction ? 0 : a.direction === 'across' ? -1 : 1));
 
-  return { id, title: theme.title, size: SIZE, solution: grid, clues, bonusWord: bonusAnswer };
+  return { id, title: theme.title, size: SIZE, solution: grid, clues, bonusWord: bonusAnswer, bonusHint };
 }
 
 function asciiPreview(p: OutPuzzle): string {
@@ -272,8 +277,9 @@ for (const id of [1, 2, 3]) {
   if (!p) continue;
   console.log(`\n=== Puzzle #${p.id} — ${p.title} (${p.clues.length} words) ===`);
   console.log(asciiPreview(p));
+  console.log(`  Hidden bonus: ${p.bonusWord} — ${p.bonusHint}`);
   for (const c of p.clues) {
-    console.log(`  ${c.number}${c.direction[0].toUpperCase()} ${c.bonus ? '★' : ' '} ${c.answer} — ${c.clue}`);
+    console.log(`  ${c.number}${c.direction[0].toUpperCase()} ${c.answer} — ${c.clue}`);
   }
 }
 
@@ -291,7 +297,6 @@ export interface CrosswordClue {
   answer: string;
   row: number;
   col: number;
-  bonus: boolean;
 }
 export interface CrosswordPuzzle {
   id: number;
@@ -299,7 +304,10 @@ export interface CrosswordPuzzle {
   size: number;
   solution: (string | null)[][];
   clues: CrosswordClue[];
+  /** Hidden bonus word — not part of the grid. Players guess it for extra points. */
   bonusWord: string;
+  /** Subtle hint shown for the hidden bonus word. */
+  bonusHint: string;
 }
 `;
   const body = `export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(puzzles, null, 2)};\n`;

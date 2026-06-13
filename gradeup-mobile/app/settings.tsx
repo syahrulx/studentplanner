@@ -714,7 +714,7 @@ export default function Settings() {
           </Pressable>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT & DATA</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT</Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
@@ -729,7 +729,10 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
-          <View style={styles.dividerList} />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>DANGER ZONE</Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [
               styles.menuRow,

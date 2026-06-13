@@ -16,8 +16,6 @@ export interface CellInfo {
   acrossClue: number | null;
   /** Index (into puzzle.clues) of the down word covering this cell, if any. */
   downClue: number | null;
-  /** True if this cell belongs to the puzzle's bonus word. */
-  bonus: boolean;
 }
 
 const dirDelta = (dir: CrosswordDir): [number, number] => (dir === 'across' ? [0, 1] : [1, 0]);
@@ -42,7 +40,6 @@ export function buildCells(puzzle: CrosswordPuzzle): CellInfo[][] {
       number: null as number | null,
       acrossClue: null as number | null,
       downClue: null as number | null,
-      bonus: false,
     })),
   );
 
@@ -53,7 +50,6 @@ export function buildCells(puzzle: CrosswordPuzzle): CellInfo[][] {
       const cell = cells[row][col];
       if (clue.direction === 'across') cell.acrossClue = idx;
       else cell.downClue = idx;
-      if (clue.bonus) cell.bonus = true;
     }
   });
 
@@ -82,13 +78,11 @@ export function isClueCorrect(puzzle: CrosswordPuzzle, clueIdx: number, entries:
   return true;
 }
 
-/** Count how many of the puzzle's bonus-word clues are correctly filled. */
-export function bonusWordsSolved(puzzle: CrosswordPuzzle, entries: string[][]): number {
-  let n = 0;
-  puzzle.clues.forEach((clue, idx) => {
-    if (clue.bonus && isClueCorrect(puzzle, idx, entries)) n++;
-  });
-  return n;
+/** True if `guess` matches the puzzle's hidden bonus word (case/space-insensitive). */
+export function checkBonusGuess(puzzle: CrosswordPuzzle, guess: string): boolean {
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z]/g, '');
+  if (!puzzle.bonusWord) return false;
+  return norm(guess) === norm(puzzle.bonusWord);
 }
 
 export function getPuzzle(id: number): CrosswordPuzzle | undefined {
