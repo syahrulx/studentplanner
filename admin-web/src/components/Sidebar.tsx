@@ -44,6 +44,7 @@ const nav: NavItem[] = [
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
   { to: '/user-reports', label: 'User Reports', Icon: IconFileText },
   { to: '/whats-new', label: "What's New", Icon: IconBell },
+  { to: '/minigames', label: 'Minigames', Icon: IconGrid },
 
   { header: 'System' },
   { to: '/broadcast', label: 'Broadcast', Icon: IconBell },

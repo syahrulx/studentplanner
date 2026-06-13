@@ -67,6 +67,9 @@ export interface LeaderboardEntry {
   avatar_url?: string;
   total_xp: number;
   games_played: number;
+  // True global rank (1-based). Set for the current user so their own card can be
+  // shown even when they're outside the displayed top-N. Undefined for list rows.
+  rank?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +373,50 @@ export async function findRandomSession(
 // Leaderboard
 // ---------------------------------------------------------------------------
 
+const GLOBAL_LEADERBOARD_LIMIT = 50;
+
+// Fully paginate a quiz_scores query and aggregate per user. Used as a fallback
+// when the server-side RPC isn't available. Unlike the old limit(5000) approach
+// this reads ALL matching rows, so global totals are complete (not truncated)
+// and therefore consistent with the friends scope.
+async function aggregateQuizClientSide(
+  scope: 'friends' | 'global',
+  userId: string,
+  friendIds: string[],
+  since: string | null,
+): Promise<Map<string, { total_xp: number; games_played: number }>> {
+  const userMap = new Map<string, { total_xp: number; games_played: number }>();
+  const pageSize = 1000;
+  const HARD_CAP = 50000; // safety bound to avoid runaway loops
+  let from = 0;
+
+  while (from < HARD_CAP) {
+    let query = supabase
+      .from('quiz_scores')
+      .select('user_id, xp_earned')
+      .order('created_at', { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (scope === 'friends') query = query.in('user_id', [...friendIds, userId]);
+    if (since) query = query.gte('created_at', since);
+
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) break;
+
+    for (const s of data) {
+      const existing = userMap.get(s.user_id) || { total_xp: 0, games_played: 0 };
+      existing.total_xp += s.xp_earned;
+      existing.games_played += 1;
+      userMap.set(s.user_id, existing);
+    }
+
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return userMap;
+}
+
 export async function getLeaderboard(
   scope: 'friends' | 'global',
   userId: string,
@@ -386,30 +433,32 @@ export async function getLeaderboard(
     since = d.toISOString();
   }
 
-  // Fetch scores with a server-side filter — aggregate in JS only over the relevant subset
-  let query = supabase
-    .from('quiz_scores')
-    .select('user_id, xp_earned')
-    .order('created_at', { ascending: false })
-    .limit(5000); // reasonable upper bound
-
-  if (scope === 'friends') {
-    query = query.in('user_id', [...friendIds, userId]);
-  }
-  if (since) {
-    query = query.gte('created_at', since);
-  }
-
-  const { data: scores, error } = await query;
-  if (error || !scores) return [];
-
-  // Aggregate by user (in JS over the already-filtered, small set)
   const userMap = new Map<string, { total_xp: number; games_played: number }>();
-  for (const s of scores) {
-    const existing = userMap.get(s.user_id) || { total_xp: 0, games_played: 0 };
-    existing.total_xp += s.xp_earned;
-    existing.games_played += 1;
-    userMap.set(s.user_id, existing);
+
+  // Preferred path: server-side SUM(...) GROUP BY user_id (complete + cheap).
+  let agg: any[] | null = null;
+  try {
+    const { data, error } = await supabase.rpc('get_quiz_leaderboard', {
+      p_user_ids: scope === 'friends' ? [...friendIds, userId] : null,
+      p_since: since,
+      p_limit: scope === 'global' ? GLOBAL_LEADERBOARD_LIMIT : null,
+    });
+    if (!error && Array.isArray(data)) agg = data;
+  } catch {
+    agg = null;
+  }
+
+  if (agg) {
+    for (const r of agg) {
+      userMap.set(r.user_id, {
+        total_xp: Number(r.total_xp) || 0,
+        games_played: Number(r.games_played) || 0,
+      });
+    }
+  } else {
+    // Fallback for envs where the RPC migration hasn't been applied yet.
+    const fallback = await aggregateQuizClientSide(scope, userId, friendIds, since);
+    for (const [uid, stats] of fallback) userMap.set(uid, stats);
   }
 
   const userIds = Array.from(userMap.keys());
@@ -436,7 +485,59 @@ export async function getLeaderboard(
   });
 
   entries.sort((a, b) => b.total_xp - a.total_xp);
-  return scope === 'global' ? entries.slice(0, 50) : entries;
+
+  if (scope !== 'global') return entries;
+
+  const top = entries.slice(0, GLOBAL_LEADERBOARD_LIMIT);
+  // If the current user isn't in the displayed top-N, append their own entry with
+  // their true global rank so the "my rank" card still shows on the global tab.
+  if (!top.some((e) => e.user_id === userId)) {
+    const self = await getQuizUserRank(userId, since);
+    if (self && self.total_xp > 0) {
+      const profile = profileMap.get(userId);
+      top.push({
+        user_id: userId,
+        name: profile?.name || 'You',
+        avatar_url: profile?.avatar_url,
+        total_xp: self.total_xp,
+        games_played: self.games_played,
+        rank: self.rank,
+      });
+    }
+  }
+  return top;
+}
+
+// Returns the current user's global total + true rank. Uses the RPC when available,
+// otherwise falls back to a full client-side aggregation.
+async function getQuizUserRank(
+  userId: string,
+  since: string | null,
+): Promise<{ total_xp: number; games_played: number; rank: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_quiz_user_rank', {
+      p_user_id: userId,
+      p_since: since,
+    });
+    if (!error && Array.isArray(data) && data[0]) {
+      const r = data[0] as any;
+      return {
+        total_xp: Number(r.total_xp) || 0,
+        games_played: Number(r.games_played) || 0,
+        rank: Number(r.rank) || 0,
+      };
+    }
+  } catch {
+    // fall through to client-side fallback
+  }
+
+  // Fallback: aggregate everyone, then derive the user's total and rank.
+  const map = await aggregateQuizClientSide('global', userId, [], since);
+  const sorted = Array.from(map.entries()).sort((a, b) => b[1].total_xp - a[1].total_xp);
+  const idx = sorted.findIndex(([uid]) => uid === userId);
+  if (idx === -1) return null;
+  const stats = sorted[idx][1];
+  return { total_xp: stats.total_xp, games_played: stats.games_played, rank: idx + 1 };
 }
 
 export async function getMyQuizHistory(userId: string): Promise<QuizScore[]> {

@@ -1236,6 +1236,11 @@ export type SendBroadcastResult = {
   batches?: number;
   results?: unknown;
   reason?: string;
+  // Number of users that received the in-app inbox notification (everyone in the
+  // audience, regardless of push eligibility).
+  in_app_recipients?: number;
+  // Number of users eligible for a remote Expo push (subset of in_app_recipients).
+  push_recipients?: number;
 };
 
 export async function sendBroadcast(opts: SendBroadcastArgs): Promise<SendBroadcastResult> {

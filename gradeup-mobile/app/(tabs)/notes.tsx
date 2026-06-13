@@ -824,13 +824,13 @@ export default function StudyHub() {
               { backgroundColor: quickActionCardTint },
               pressed && { opacity: 0.85 },
             ]}
-            onPress={() => router.push('/word-game' as any)}
+            onPress={() => router.push('/mini-games' as any)}
           >
             <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
               <Feather name="grid" size={20} color={onPrimaryIcon} />
             </View>
-            <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>Word Game</Text>
-            <Text style={s.quickActionSub} numberOfLines={2}>Puzzles & rankings</Text>
+            <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>Mini Games</Text>
+            <Text style={s.quickActionSub} numberOfLines={2}>Word Game & 2048</Text>
           </Pressable>
         </View>
         <Pressable
