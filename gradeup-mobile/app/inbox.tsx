@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -19,12 +20,43 @@ import {
   deleteInAppNotifications,
   deleteAllInAppNotifications,
   markAllInAppNotificationsRead,
-  markInAppNotificationsRead,
   type InAppNotification,
 } from '@/src/lib/inAppNotifications';
 import { supabase } from '@/src/lib/supabase';
 
 export type { InAppNotification };
+
+/* ─── Avatar — identical to community/notifications.tsx ─── */
+
+function getInitials(name?: string | null) {
+  if (!name) return '?';
+  return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function Avatar({ name, avatarUrl, size = 44 }: { name?: string | null; avatarUrl?: string | null; size?: number }) {
+  const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
+  const i = (name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length;
+  if (avatarUrl) {
+    return <Image source={{ uri: avatarUrl }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
+  }
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: COLORS[i], alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ color: '#fff', fontWeight: '700', fontSize: size * 0.38 }}>{getInitials(name)}</Text>
+    </View>
+  );
+}
+
+/** Fallback icon-only avatar for notifications with no sender (broadcasts, system). */
+function IconAvatar({ icon, color, size = 44, dimmed }: { icon: keyof typeof Feather.glyphMap; color: string; size?: number; dimmed?: boolean }) {
+  return (
+    <View style={[
+      { width: size, height: size, borderRadius: size / 2, backgroundColor: color + '25', alignItems: 'center', justifyContent: 'center' },
+      dimmed && { opacity: 0.6 },
+    ]}>
+      <Feather name={icon} size={size * 0.44} color={color} />
+    </View>
+  );
+}
 
 /* ─── helpers ─── */
 
@@ -38,40 +70,34 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-/** Pick a deterministic colour from a notification's category/type for the avatar circle. */
-function avatarColor(item: InAppNotification): string {
-  const t = (item.data?.type as string) ?? '';
-  if (t === 'broadcast') return '#8b5cf6';
-  if (t === 'service_chat_message') return '#3b82f6';
-  if (t.startsWith('service_offer')) return '#f59e0b';
-  if (t === 'service_completed' || t === 'service_review_received') return '#10b981';
-  if (t === 'service_cancelled' || t === 'service_quit' || t === 'service_rejected') return '#ef4444';
-  if (t === 'event_new') return '#ec4899';
-  if (item.category === 'friend') return '#6366f1';
-  return '#64748b';
-}
-
-/** Pick a Feather icon based on the notification type. */
-function avatarIcon(item: InAppNotification): keyof typeof Feather.glyphMap {
+function notifIcon(item: InAppNotification): keyof typeof Feather.glyphMap {
   const t = (item.data?.type as string) ?? '';
   if (t === 'broadcast') return 'volume-2';
-  if (item.category === 'friend') return 'users';
+  if (item.category === 'friend' || t === 'friend_request' || t === 'friend_accepted') return 'users';
   if (item.category === 'event' || t === 'event_new') return 'calendar';
   if (t === 'service_chat_message') return 'message-circle';
   if (t === 'service_offer_new') return 'tag';
-  if (t === 'service_offer_accepted') return 'check-circle';
-  if (t === 'service_offer_rejected') return 'x-circle';
-  if (t === 'service_submitted') return 'upload-cloud';
-  if (t === 'service_completed') return 'award';
-  if (t === 'service_rejected') return 'rotate-ccw';
-  if (t === 'service_quit') return 'log-out';
-  if (t === 'service_cancelled') return 'slash';
-  if (t === 'service_cancel_requested') return 'alert-triangle';
+  if (t === 'service_offer_accepted' || t === 'service_completed') return 'check-circle';
+  if (t === 'service_offer_rejected' || t === 'service_rejected') return 'x-circle';
   if (t === 'service_review_received') return 'star';
+  if (t === 'service_cancelled' || t === 'service_quit') return 'slash';
   return 'bell';
 }
 
-/* ─── component ─── */
+function notifIconColor(item: InAppNotification): string {
+  const t = (item.data?.type as string) ?? '';
+  if (t === 'broadcast') return '#8b5cf6';
+  if (t === 'service_completed' || t === 'service_offer_accepted' || t === 'friend_accepted') return '#10b981';
+  if (t === 'service_cancelled' || t === 'service_rejected' || t === 'service_offer_rejected' || t === 'service_quit') return '#ef4444';
+  if (t === 'service_chat_message') return '#3b82f6';
+  if (t === 'service_offer_new') return '#f59e0b';
+  if (t === 'service_review_received') return '#f59e0b';
+  if (item.category === 'friend') return '#6366f1';
+  if (item.category === 'event') return '#ec4899';
+  return '#64748b';
+}
+
+/* ─── main screen ─── */
 
 export default function InboxScreen() {
   const theme = useTheme();
@@ -81,7 +107,7 @@ export default function InboxScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Selection mode
+  // Selection mode — identical UX to community/notifications.tsx
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
@@ -104,13 +130,10 @@ export default function InboxScreen() {
   const allSelected = selectionMode && notifications.length > 0 && selectedIds.size === notifications.length;
 
   const toggleSelectAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === allIds.length) return new Set();
-      return new Set(allIds);
-    });
+    setSelectedIds((prev) => (prev.size === allIds.length ? new Set() : new Set(allIds)));
   }, [allIds]);
 
-  /* ── data loading ── */
+  /* ── data ── */
 
   const load = useCallback(async () => {
     try {
@@ -124,7 +147,7 @@ export default function InboxScreen() {
     useCallback(() => {
       setLoading(true);
       load().finally(() => setLoading(false));
-    }, [load])
+    }, [load]),
   );
 
   const onRefresh = async () => {
@@ -151,8 +174,7 @@ export default function InboxScreen() {
       await deleteInAppNotifications(Array.from(selectedIds));
       setNotifications((prev) => prev.filter((n) => !selectedIds.has(n.id)));
       exitSelectionMode();
-    } catch (e) {
-      console.warn(e);
+    } catch {
       Alert.alert('Delete failed', 'Could not delete notifications. Please try again.');
     } finally {
       setClearing(false);
@@ -174,8 +196,7 @@ export default function InboxScreen() {
               await deleteAllInAppNotifications();
               setNotifications([]);
               exitSelectionMode();
-            } catch (e) {
-              console.warn(e);
+            } catch {
               Alert.alert('Delete failed', 'Could not delete notifications.');
             } finally {
               setClearing(false);
@@ -187,19 +208,16 @@ export default function InboxScreen() {
   }, [exitSelectionMode]);
 
   const handlePress = async (item: InAppNotification) => {
-    // Mark as read optimistically
     if (!item.is_read) {
       setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
       supabase.from('in_app_notifications').update({ is_read: true }).eq('id', item.id).then();
     }
 
-    // Routing logic based on data type
     const t = item.data?.type as string | undefined;
     if (t === 'broadcast') {
-      // Admin broadcast — honour an optional in-app deep link, otherwise stay put.
       const rawRoute = typeof item.data?.route === 'string' ? (item.data.route as string).trim() : '';
       if (rawRoute.startsWith('/')) {
-        const params = item.data?.params && typeof item.data.params === 'object' ? item.data.params : null;
+        const params = item.data?.params && typeof item.data.params === 'object' ? item.data.params as any : null;
         if (params && Object.keys(params).length > 0) {
           router.push({ pathname: rawRoute, params } as any);
         } else {
@@ -210,12 +228,9 @@ export default function InboxScreen() {
       router.push(`/services/chat/${item.data.serviceId}` as any);
     } else if (t?.startsWith('service') || t === 'event_new') {
       const postId = item.data?.serviceId || item.data?.eventId;
-      if (postId) {
-        router.push(`/services/${postId}` as any);
-      } else {
-        router.push('/(tabs)/community' as any);
-      }
-    } else if (item.category === 'friend') {
+      if (postId) router.push(`/services/${postId}` as any);
+      else router.push('/(tabs)/community' as any);
+    } else if (item.category === 'friend' || t === 'friend_request' || t === 'friend_accepted') {
       router.push('/profile' as any);
     }
   };
@@ -223,10 +238,12 @@ export default function InboxScreen() {
   /* ── render ── */
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const hasSender = (item: InAppNotification) => !!(item.sender_profile?.name || item.sender_profile?.avatar_url);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header — matches community/notifications style */}
+
+      {/* Header — identical structure to community/notifications.tsx */}
       <View style={[styles.headerRow, { paddingTop: Platform.OS === 'ios' ? insets.top + 4 : 40 }]}>
         <Pressable
           onPress={() => (selectionMode ? exitSelectionMode() : router.back())}
@@ -238,10 +255,9 @@ export default function InboxScreen() {
         >
           <Feather name={selectionMode ? 'x' : 'chevron-left'} size={24} color={theme.text} />
         </Pressable>
+
         <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-          {selectionMode
-            ? `${selectedIds.size} selected`
-            : 'Notifications'}
+          {selectionMode ? `${selectedIds.size} selected` : 'Notifications'}
         </Text>
 
         {selectionMode ? (
@@ -251,10 +267,7 @@ export default function InboxScreen() {
               onPress={toggleSelectAll}
               style={({ pressed }) => [
                 styles.headerBtn,
-                {
-                  borderColor: theme.border,
-                  opacity: notifications.length === 0 ? 0.35 : pressed ? 0.75 : 1,
-                },
+                { borderColor: theme.border, opacity: notifications.length === 0 ? 0.35 : pressed ? 0.75 : 1 },
               ]}
             >
               <Text style={[styles.headerBtnText, { color: theme.textSecondary }]}>
@@ -265,36 +278,26 @@ export default function InboxScreen() {
               disabled={clearing || selectedIds.size === 0}
               onPress={() => {
                 const count = selectedIds.size;
-                if (count === 0) return;
+                if (!count) return;
                 Alert.alert(
                   'Delete selected?',
                   `Delete ${count} notification${count > 1 ? 's' : ''}?`,
                   [
                     { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () => void clearSelected(),
-                    },
+                    { text: 'Delete', style: 'destructive', onPress: () => void clearSelected() },
                   ],
                 );
               }}
               style={({ pressed }) => [
                 styles.headerBtn,
                 styles.destructiveBtn,
-                {
-                  borderColor: '#ef4444',
-                  opacity: selectedIds.size === 0 ? 0.35 : pressed ? 0.75 : 1,
-                },
+                { borderColor: '#ef4444', opacity: selectedIds.size === 0 ? 0.35 : pressed ? 0.75 : 1 },
               ]}
             >
-              {clearing ? (
-                <ActivityIndicator size="small" color="#ef4444" />
-              ) : (
-                <Text style={[styles.headerBtnText, { color: '#ef4444' }]}>
-                  Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-                </Text>
-              )}
+              {clearing
+                ? <ActivityIndicator size="small" color="#ef4444" />
+                : <Text style={[styles.headerBtnText, { color: '#ef4444' }]}>Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</Text>
+              }
             </Pressable>
           </View>
         ) : (
@@ -302,24 +305,16 @@ export default function InboxScreen() {
             {unreadCount > 0 && (
               <Pressable
                 onPress={markAllAsRead}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { borderColor: theme.border },
-                  pressed && { opacity: 0.75 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { borderColor: theme.border }, pressed && { opacity: 0.75 }]}
               >
-                <Feather name="check-circle" size={14} color={theme.primary} style={{ marginRight: 4 }} />
+                <Feather name="check-circle" size={13} color={theme.primary} style={{ marginRight: 3 }} />
                 <Text style={[styles.headerBtnText, { color: theme.primary }]}>Read all</Text>
               </Pressable>
             )}
             {notifications.length > 0 && (
               <Pressable
                 onPress={() => setSelectionMode(true)}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { borderColor: theme.border },
-                  pressed && { opacity: 0.75 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { borderColor: theme.border }, pressed && { opacity: 0.75 }]}
               >
                 <Text style={[styles.headerBtnText, { color: theme.textSecondary }]}>Select</Text>
               </Pressable>
@@ -344,20 +339,14 @@ export default function InboxScreen() {
         <FlatList
           data={notifications}
           keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
-          }
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 24 }}
           showsVerticalScrollIndicator={false}
           ListFooterComponent={
-            notifications.length > 0 && !selectionMode ? (
+            !selectionMode ? (
               <Pressable
                 onPress={clearAll}
-                style={({ pressed }) => [
-                  styles.clearAllBtn,
-                  { borderColor: theme.border },
-                  pressed && { opacity: 0.7 },
-                ]}
+                style={({ pressed }) => [styles.clearAllBtn, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
               >
                 <Feather name="trash-2" size={14} color="#ef4444" />
                 <Text style={styles.clearAllText}>Delete all notifications</Text>
@@ -367,8 +356,7 @@ export default function InboxScreen() {
           renderItem={({ item }) => {
             const isRead = item.is_read;
             const isSelected = selectedIds.has(item.id);
-            const bg = avatarColor(item);
-            const icon = avatarIcon(item);
+            const withSender = hasSender(item);
 
             return (
               <Pressable
@@ -377,66 +365,75 @@ export default function InboxScreen() {
                   {
                     backgroundColor: isSelected
                       ? theme.primary + '16'
-                      : isRead
-                        ? theme.card
-                        : theme.primary + '08',
+                      : isRead ? theme.card : theme.primary + '08',
                     borderColor: isSelected
                       ? theme.primary
-                      : isRead
-                        ? theme.border
-                        : theme.primary + '30',
+                      : isRead ? theme.border : theme.primary + '30',
                   },
                   pressed && { opacity: 0.85 },
                 ]}
-                onPress={() => {
-                  if (selectionMode) toggleSelected(item.id);
-                  else handlePress(item);
-                }}
-                onLongPress={() => {
-                  if (!selectionMode) setSelectionMode(true);
-                  toggleSelected(item.id);
-                }}
+                onPress={() => selectionMode ? toggleSelected(item.id) : handlePress(item)}
+                onLongPress={() => { if (!selectionMode) setSelectionMode(true); toggleSelected(item.id); }}
               >
-                {/* Selection checkbox */}
-                {selectionMode ? (
-                  <View
-                    style={[
-                      styles.selectCheckbox,
-                      {
-                        borderColor: isSelected ? theme.primary : theme.border,
-                        backgroundColor: isSelected ? theme.primary : 'transparent',
-                      },
-                    ]}
-                  >
-                    {isSelected ? <Feather name="check" size={14} color="#fff" /> : null}
+                {/* Checkbox in selection mode */}
+                {selectionMode && (
+                  <View style={[
+                    styles.selectCheckbox,
+                    { borderColor: isSelected ? theme.primary : theme.border, backgroundColor: isSelected ? theme.primary : 'transparent' },
+                  ]}>
+                    {isSelected && <Feather name="check" size={14} color="#fff" />}
                   </View>
-                ) : null}
+                )}
 
-                {/* Avatar icon */}
-                <View style={[styles.avatarCircle, { backgroundColor: bg + (isRead ? '30' : '') }, isRead && styles.avatarDim]}>
-                  <Feather name={icon} size={20} color={isRead ? bg : '#fff'} />
+                {/* Avatar: real profile picture if sender known, icon otherwise */}
+                <View style={isRead ? styles.avatarDim : undefined}>
+                  {withSender ? (
+                    <Avatar
+                      name={item.sender_profile?.name}
+                      avatarUrl={item.sender_profile?.avatar_url}
+                      size={44}
+                    />
+                  ) : (
+                    <IconAvatar
+                      icon={notifIcon(item)}
+                      color={notifIconColor(item)}
+                      size={44}
+                      dimmed={isRead}
+                    />
+                  )}
                 </View>
 
                 {/* Body */}
                 <View style={styles.notifBody}>
                   <View style={styles.notifTopRow}>
                     <Text
-                      style={[styles.notifTitle, { color: isRead ? theme.textSecondary : theme.text }]}
+                      style={[styles.notifName, { color: isRead ? theme.textSecondary : theme.text }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {item.title}
+                      {/* Show sender name as the "header" if we have one, else use notification title */}
+                      {withSender ? (item.sender_profile!.name ?? item.title) : item.title}
                     </Text>
                     <Text style={[styles.notifTime, { color: isRead ? theme.tabIconDefault : theme.textSecondary }]}>
                       {timeAgo(item.created_at)}
                     </Text>
                   </View>
+
                   <View style={styles.notifMessageRow}>
+                    {/* Show icon lead + body — same as community reaction row */}
+                    <View style={styles.notifLeadSlot}>
+                      <Feather
+                        name={notifIcon(item)}
+                        size={16}
+                        color={isRead ? theme.tabIconDefault : notifIconColor(item)}
+                      />
+                    </View>
                     <Text
                       style={[styles.notifMessage, { color: isRead ? theme.tabIconDefault : theme.textSecondary }]}
                       numberOfLines={3}
                     >
-                      {item.body}
+                      {/* If we have a sender, show the notification title as the subtitle */}
+                      {withSender ? item.title + (item.body !== item.title ? `\n${item.body}` : '') : item.body}
                     </Text>
                   </View>
                 </View>
@@ -456,7 +453,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  /* Header — matches community/notifications.tsx */
+  // Header — matches community/notifications.tsx exactly
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -464,20 +461,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
+  backBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   title: { flex: 1, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  headerActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  headerActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -489,11 +475,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerBtnText: { fontSize: 14, fontWeight: '700' },
-  destructiveBtn: {
-    borderWidth: 1.5,
-  },
+  destructiveBtn: { borderWidth: 1.5 },
 
-  /* Selection */
+  // Checkbox
   selectCheckbox: {
     width: 24,
     height: 24,
@@ -504,7 +488,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
-  /* Cards — matches community/notifications.tsx */
+  // Cards — matches community/notifications.tsx notifCard
   notifCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -516,41 +500,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     position: 'relative',
   },
-  avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   avatarDim: { opacity: 0.65 },
   notifBody: { flex: 1, minWidth: 0 },
-  notifTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  notifTitle: { fontSize: 15, fontWeight: '700', flex: 1, minWidth: 0 },
+  notifTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  notifName: { fontSize: 15, fontWeight: '700', flex: 1, minWidth: 0 },
   notifTime: { fontSize: 12, fontWeight: '600', flexShrink: 0, marginTop: 2 },
-  notifMessageRow: {
-    marginTop: 4,
-  },
-  notifMessage: { fontSize: 14, lineHeight: 21, fontWeight: '500' },
-  unreadDot: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  notifMessageRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 6, gap: 4 },
+  notifLeadSlot: { width: 28, minHeight: 22, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 2 },
+  notifMessage: { fontSize: 14, lineHeight: 21, flex: 1, minWidth: 0, fontWeight: '500' },
+  unreadDot: { position: 'absolute', top: 14, right: 14, width: 8, height: 8, borderRadius: 4 },
 
-  /* Empty state */
+  // Empty state
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '700' },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 240 },
 
-  /* Clear all */
+  // Footer
   clearAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',

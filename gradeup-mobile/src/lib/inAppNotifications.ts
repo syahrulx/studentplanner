@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
 
+export interface SenderProfile {
+  id: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
 export interface InAppNotification {
   id: string;
   user_id: string;
@@ -9,6 +15,8 @@ export interface InAppNotification {
   is_read: boolean;
   created_at: string;
   data: Record<string, unknown> | null;
+  /** Enriched client-side after fetch — same as community notifications pattern. */
+  sender_profile?: SenderProfile | null;
 }
 
 /** Resolve the signed-in Supabase user id (same source community notifications use). */
@@ -34,6 +42,20 @@ export async function fetchUnreadInAppCount(userId?: string | null): Promise<num
   return count ?? 0;
 }
 
+/** Extract a sender UUID from a notification's data field. Mirrors the trigger payload shape. */
+function extractSenderId(data: Record<string, unknown> | null): string | null {
+  if (!data) return null;
+  // Try all known sender ID keys used by triggers
+  return (
+    (data.senderId as string) ||
+    (data.requesterId as string) ||
+    (data.friendId as string) ||
+    (data.inviterId as string) ||
+    (data.actorId as string) ||
+    null
+  );
+}
+
 export async function fetchInAppNotifications(limit = 50): Promise<InAppNotification[]> {
   const uid = await getInAppNotificationUserId();
   if (!uid) return [];
@@ -49,7 +71,39 @@ export async function fetchInAppNotifications(limit = 50): Promise<InAppNotifica
     if (__DEV__) console.warn('[inAppNotifications] list failed:', error.message);
     throw error;
   }
-  return (data ?? []) as InAppNotification[];
+
+  const notifications = (data ?? []) as InAppNotification[];
+
+  // Collect all unique sender IDs — same client-side pattern as community notifications.
+  const senderIds = [
+    ...new Set(
+      notifications
+        .map((n) => extractSenderId(n.data))
+        .filter((id): id is string => !!id),
+    ),
+  ];
+
+  // Batch fetch profiles in a single query (no extra migration needed).
+  const profileMap = new Map<string, SenderProfile>();
+  if (senderIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_url')
+      .in('id', senderIds);
+
+    for (const p of profiles ?? []) {
+      profileMap.set(p.id, p as SenderProfile);
+    }
+  }
+
+  // Attach sender_profile to each notification.
+  return notifications.map((n) => {
+    const senderId = extractSenderId(n.data);
+    return {
+      ...n,
+      sender_profile: senderId ? (profileMap.get(senderId) ?? null) : null,
+    };
+  });
 }
 
 /** Live badge updates when new in-app notifications arrive. */
