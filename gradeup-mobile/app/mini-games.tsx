@@ -22,7 +22,8 @@ const GAMES: GameCard[] = [
     subtitle: 'Connections puzzles · daily streaks · rankings',
     icon: 'grid',
     route: '/word-game',
-    tint: (t) => [t.primary, t.primary + 'CC'],
+    // Card 1: primary solid → accent (lighter highlight)
+    tint: (t) => [t.primary, t.accent],
   },
   {
     key: '2048',
@@ -30,15 +31,19 @@ const GAMES: GameCard[] = [
     subtitle: 'Slide & merge to 2048 · earn Rencana Points · rankings',
     icon: 'box',
     route: '/game-2048',
-    tint: (t) => [t.secondary || t.primary, (t.accent2 || t.secondary || t.primary) + 'CC'],
+    // Card 2: accent2 (darker/deeper) → primary — gives a clearly darker card
+    tint: (t) => [t.accent2, t.primary],
   },
   {
     key: 'crossword',
     title: 'Crossword',
-    subtitle: '2 mini puzzles a day · bonus words · streaks · rankings',
+    subtitle: '2 mini puzzles a day · hidden word · streaks · rankings',
     icon: 'grid',
     route: '/crossword',
-    tint: (t) => [t.accent || t.primary, (t.accent2 || t.primary) + 'CC'],
+    // Use accent2 as the base (not pale accent) so contrast text stays white
+    // across themes — e.g. Cat theme where accent is a pale tan (#e4a06c).
+    // Gradient goes accent2 → secondary for a distinct mid-warm tone.
+    tint: (t) => [t.accent2 || t.primary, t.secondary],
   },
 ];
 
