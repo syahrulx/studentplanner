@@ -212,13 +212,13 @@ export default function TimetableScreen() {
   );
 
   const headerMapStyle = useAnimatedStyle(() => ({
-    width: interpolate(headerMapExpansion.value, [0, 1], [36, 115], 'clamp'),
+    width: interpolate(headerMapExpansion.value, [0, 1], [36, 75], 'clamp'),
     borderRadius: 12,
   }));
 
   const headerMapLabelStyle = useAnimatedStyle(() => ({
     opacity: interpolate(headerMapExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp'),
-    width: interpolate(headerMapExpansion.value, [0, 1], [0, 75], 'clamp'),
+    width: interpolate(headerMapExpansion.value, [0, 1], [0, 30], 'clamp'),
     marginLeft: interpolate(headerMapExpansion.value, [0, 1], [0, 5], 'clamp'),
     transform: [{ translateX: interpolate(headerMapExpansion.value, [0, 1], [10, 0], 'clamp') }],
     overflow: 'hidden',
@@ -795,7 +795,7 @@ export default function TimetableScreen() {
               >
                 <Feather name="map-pin" size={14} color={headerIconColor} />
                 <Reanimated.View style={headerMapLabelStyle}>
-                  <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]} numberOfLines={1}>Campus Map</Text>
+                  <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]} numberOfLines={1}>Map</Text>
                 </Reanimated.View>
               </Pressable>
             </Reanimated.View>
