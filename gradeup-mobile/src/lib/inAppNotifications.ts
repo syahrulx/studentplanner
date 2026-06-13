@@ -72,3 +72,49 @@ export function subscribeInAppNotifications(userId: string, onChange: () => void
     supabase.removeChannel(channel);
   };
 }
+
+/** Delete specific notifications by ID. */
+export async function deleteInAppNotifications(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await supabase
+    .from('in_app_notifications')
+    .delete()
+    .in('id', ids);
+  if (error) throw error;
+}
+
+/** Delete ALL notifications for the current user. */
+export async function deleteAllInAppNotifications(): Promise<void> {
+  const uid = await getInAppNotificationUserId();
+  if (!uid) return;
+  const { error } = await supabase
+    .from('in_app_notifications')
+    .delete()
+    .eq('user_id', uid);
+  if (error) throw error;
+}
+
+/** Mark specific notifications as read by ID. */
+export async function markInAppNotificationsRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const uid = await getInAppNotificationUserId();
+  if (!uid) return;
+  const { error } = await supabase
+    .from('in_app_notifications')
+    .update({ is_read: true })
+    .eq('user_id', uid)
+    .in('id', ids);
+  if (error) throw error;
+}
+
+/** Mark ALL notifications as read for the current user. */
+export async function markAllInAppNotificationsRead(): Promise<void> {
+  const uid = await getInAppNotificationUserId();
+  if (!uid) return;
+  const { error } = await supabase
+    .from('in_app_notifications')
+    .update({ is_read: true })
+    .eq('user_id', uid)
+    .eq('is_read', false);
+  if (error) throw error;
+}
