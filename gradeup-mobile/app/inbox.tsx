@@ -420,7 +420,6 @@ export default function InboxScreen() {
                   </View>
 
                   <View style={styles.notifMessageRow}>
-                    {/* Show icon lead + body — same as community reaction row */}
                     <View style={styles.notifLeadSlot}>
                       <Feather
                         name={notifIcon(item)}
@@ -432,8 +431,7 @@ export default function InboxScreen() {
                       style={[styles.notifMessage, { color: isRead ? theme.tabIconDefault : theme.textSecondary }]}
                       numberOfLines={3}
                     >
-                      {/* If we have a sender, show the notification title as the subtitle */}
-                      {withSender ? item.title + (item.body !== item.title ? `\n${item.body}` : '') : item.body}
+                      {item.body}
                     </Text>
                   </View>
                 </View>
