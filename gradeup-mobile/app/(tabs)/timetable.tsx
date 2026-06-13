@@ -1151,7 +1151,10 @@ export default function TimetableScreen() {
     return (
       <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
         <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
-          <Pressable style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={(e) => e.stopPropagation()}>
+          <View
+            style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onStartShouldSetResponder={() => true}
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
               <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: color, marginRight: 8 }} />
               <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>{selectedClass.subjectCode}</Text>
@@ -1162,6 +1165,7 @@ export default function TimetableScreen() {
               style={{ maxHeight: 420 }}
               showsVerticalScrollIndicator={false}
               bounces={false}
+              nestedScrollEnabled
               contentContainerStyle={{ gap: 12 }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1343,7 +1347,7 @@ export default function TimetableScreen() {
             >
               <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 16 }}>Close</Text>
             </Pressable>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
     );
