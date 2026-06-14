@@ -138,6 +138,23 @@ export default function ConfessionDetailScreen() {
     ]);
   };
 
+  const handleBlockConfessionAuthor = () => {
+    if (!confession) return;
+    Alert.alert('Block User', 'Are you sure you want to block this user? You will no longer see their confessions or comments.', [
+      { text: T('cancel'), style: 'cancel' },
+      {
+        text: 'Block User',
+        style: 'destructive',
+        onPress: () => {
+          void confessionsApi.blockConfessionAuthor(confession.id).then(() => {
+            Alert.alert('User Blocked', 'You will no longer see content from this user.');
+            router.back();
+          }).catch(() => {});
+        },
+      },
+    ]);
+  };
+
   const handleDeleteConfession = () => {
     if (!confession) return;
     Alert.alert(T('confessionDeleteTitle'), T('confessionDeleteBody'), [
@@ -194,6 +211,21 @@ export default function ConfessionDetailScreen() {
   const handleCommentMenu = (comment: ConfessionComment) => {
     const buttons: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [
       { text: T('confessionReport'), onPress: () => handleReportComment(comment) },
+      { 
+        text: 'Block User', 
+        style: 'destructive', 
+        onPress: () => {
+          Alert.alert('Block User', 'Are you sure you want to block this user?', [
+            { text: T('cancel'), style: 'cancel' },
+            { text: 'Block', style: 'destructive', onPress: () => {
+              void confessionsApi.blockConfessionCommentAuthor(comment.id).then(() => {
+                setComments(prev => prev.filter(c => c.id !== comment.id && c.parent_id !== comment.id));
+                Alert.alert('User Blocked', 'You will no longer see content from this user.');
+              }).catch(() => {});
+            }}
+          ]);
+        }
+      },
     ];
     if (comment.is_mine) {
       buttons.unshift({
@@ -302,6 +334,7 @@ export default function ConfessionDetailScreen() {
           onPress={() => {
             const buttons: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [
               { text: T('confessionReport'), onPress: handleReportConfession },
+              { text: 'Block User', style: 'destructive', onPress: handleBlockConfessionAuthor },
             ];
             if (confession.is_mine) {
               buttons.unshift({

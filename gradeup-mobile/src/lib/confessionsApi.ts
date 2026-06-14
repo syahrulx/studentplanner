@@ -162,8 +162,23 @@ export async function reportConfession(
 
   const { error } = await supabase.from('confession_reports').insert(row);
   if (error) {
-    // Duplicate report — treat as success
-    if (error.code === '23505') return;
+    if (error.code === '23505') return; // duplicate
     throw new Error(toErrorMessage(error));
   }
+}
+
+// ─── Blocking (Apple UGC compliance) ────────────────────────────────────────
+
+export async function blockConfessionAuthor(confessionId: string): Promise<void> {
+  const { error } = await supabase.rpc('block_confession_author', {
+    p_confession_id: confessionId,
+  });
+  if (error) throw new Error(toErrorMessage(error));
+}
+
+export async function blockConfessionCommentAuthor(commentId: string): Promise<void> {
+  const { error } = await supabase.rpc('block_confession_comment_author', {
+    p_comment_id: commentId,
+  });
+  if (error) throw new Error(toErrorMessage(error));
 }
