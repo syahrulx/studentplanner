@@ -103,9 +103,48 @@ export async function addCampusFaculty(name: string, campus?: string | null): Pr
   return String(data ?? name).trim();
 }
 
+/**
+ * Strip common Malay/English room-type prefix words so that
+ * "Bilik BK31", "Bilik kuliah BK31", "Dewan BK31" etc. all reduce
+ * to just the room code ("BK31") before being sent to the database.
+ * The DB _norm_room function then normalises case/punctuation as usual.
+ *
+ * This is a client-side pre-pass; the DB match_room still handles its
+ * own normalisation, so this does NOT break rooms that are stored
+ * without a prefix.
+ *
+ * Exported so the campus-map search screen can apply the same stripping
+ * before filtering the local room list.
+ */
+export function stripRoomPrefixes(text: string): string {
+  // List of prefix words to strip (case-insensitive, whole words)
+  const PREFIXES = [
+    'bilik', 'dewan', 'makmal', 'lab', 'laboratory',
+    'kuliah', 'tutorial', 'kelas', 'class', 'room'
+  ];
+  
+  let cleaned = (text ?? '').trim();
+  
+  // Repeatedly strip matching prefixes from the start
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of PREFIXES) {
+      // Regex matches prefix at start of string, followed by space or punctuation
+      const regex = new RegExp(`^${prefix}\\b\\s*`, 'i');
+      if (regex.test(cleaned)) {
+        cleaned = cleaned.replace(regex, '').trim();
+        changed = true;
+      }
+    }
+  }
+  
+  return cleaned || text; // fallback to original if stripped everything
+}
+
 /** Best matching room for a free-text timetable room string, or null. */
 export async function matchRoom(roomText: string): Promise<MatchedRoom | null> {
-  const trimmed = (roomText ?? '').trim();
+  const trimmed = stripRoomPrefixes(roomText);
   if (!trimmed || trimmed === '-') return null;
   const { data, error } = await supabase.rpc('match_room', { p_room_text: trimmed });
   if (error) throw new Error(toErrorMessage(error));

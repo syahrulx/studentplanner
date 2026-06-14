@@ -127,13 +127,18 @@ export default function CampusMapScreen() {
   // Client-side search over the loaded set (server also supports search, but
   // local filtering is instant as the user types).
   const sections: Section[] = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const rawQ = search.trim().toLowerCase();
+    const q = roomsApi.stripRoomPrefixes(rawQ).toLowerCase();
     const base = selectedFaculty ? items.filter((r) => r.faculty === selectedFaculty) : items;
     const filtered = q
       ? base.filter((r) =>
           [r.room_code, r.room_label, r.building, r.level, r.description, r.faculty]
             .filter(Boolean)
-            .some((v) => String(v).toLowerCase().includes(q)),
+            .some((v) => {
+              const str = String(v).toLowerCase();
+              // Check against both the raw query (e.g., if they typed an exact label) and the stripped query
+              return str.includes(rawQ) || str.includes(q);
+            }),
         )
       : base;
     const byBuilding = new Map<string, CampusRoom[]>();
