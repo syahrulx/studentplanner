@@ -4,12 +4,12 @@ import {
   Text,
   Pressable,
   SectionList,
+  FlatList,
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
   TextInput,
   Alert,
-  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -318,72 +318,60 @@ export default function CampusMapScreen() {
       ) : null}
 
       {showCampusFilter ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={[s.filterBar, { borderBottomColor: theme.border }]}
-          contentContainerStyle={s.filterBarContent}
-        >
-          <Pressable
-            style={[s.filterPill, { backgroundColor: selectedCampus === null ? theme.primary : theme.card, borderColor: selectedCampus === null ? theme.primary : theme.border }]}
-            onPress={() => handleSelectCampus(null)}
-          >
-            <Text style={[s.filterPillText, { color: selectedCampus === null ? '#fff' : theme.text }]}>
-              {T('confessionAllCampuses')}
-            </Text>
-          </Pressable>
-          {campuses.map((c) => {
-            const active = selectedCampus === c.name;
-            const isYours = c.name === userCampus;
-            return (
-              <Pressable
-                key={c.id}
-                style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
-                onPress={() => handleSelectCampus(c.name)}
-              >
-                {isYours ? <Feather name="map-pin" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
-                <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
-                  {campusShort(c.name)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <View style={[s.filterBar, { borderBottomColor: theme.border }]}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={[{ id: '__all__', name: null as string | null }, ...campuses.map((c) => ({ id: c.id, name: c.name }))]}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={s.filterBarContent}
+            renderItem={({ item }) => {
+              const isAll = item.id === '__all__';
+              const active = isAll ? selectedCampus === null : selectedCampus === item.name;
+              const isYours = !isAll && item.name === userCampus;
+              return (
+                <Pressable
+                  style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
+                  onPress={() => handleSelectCampus(item.name)}
+                >
+                  {isYours ? <Feather name="map-pin" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
+                  <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
+                    {isAll ? T('confessionAllCampuses') : campusShort(item.name!)}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+        </View>
       ) : null}
 
       {facultyOptions.length > 1 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={[s.filterBar, { borderBottomColor: theme.border }]}
-          contentContainerStyle={s.filterBarContent}
-        >
-          <Pressable
-            style={[s.filterPill, { backgroundColor: selectedFaculty === null ? theme.primary : theme.card, borderColor: selectedFaculty === null ? theme.primary : theme.border }]}
-            onPress={() => setSelectedFaculty(null)}
-          >
-            <Feather name="grid" size={11} color={selectedFaculty === null ? '#fff' : theme.textSecondary} style={{ marginRight: 3 }} />
-            <Text style={[s.filterPillText, { color: selectedFaculty === null ? '#fff' : theme.text }]}>
-              {T('campusMapAllFaculties')}
-            </Text>
-          </Pressable>
-          {facultyOptions.map((f) => {
-            const active = selectedFaculty === f;
-            const isYours = f === userFaculty;
-            return (
-              <Pressable
-                key={f}
-                style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
-                onPress={() => setSelectedFaculty(f)}
-              >
-                {isYours ? <Feather name="bookmark" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
-                <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
-                  {f}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <View style={[s.filterBar, { borderBottomColor: theme.border }]}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={['__all__', ...facultyOptions]}
+            keyExtractor={(item) => item}
+            contentContainerStyle={s.filterBarContent}
+            renderItem={({ item }) => {
+              const isAll = item === '__all__';
+              const active = isAll ? selectedFaculty === null : selectedFaculty === item;
+              const isYours = !isAll && item === userFaculty;
+              return (
+                <Pressable
+                  style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
+                  onPress={() => isAll ? setSelectedFaculty(null) : setSelectedFaculty(item)}
+                >
+                  {isAll ? <Feather name="grid" size={11} color={active ? '#fff' : theme.textSecondary} style={{ marginRight: 3 }} /> : null}
+                  {isYours ? <Feather name="bookmark" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
+                  <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
+                    {isAll ? T('campusMapAllFaculties') : item}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+        </View>
       ) : null}
 
       {/* Search */}
@@ -476,16 +464,15 @@ const s = StyleSheet.create({
   },
   campusBannerText: { fontSize: 12, lineHeight: 16, flex: 1 },
 
-  filterBar: { maxHeight: 52, borderBottomWidth: StyleSheet.hairlineWidth },
-  filterBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  filterBar: { height: 54, borderBottomWidth: StyleSheet.hairlineWidth },
+  filterBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    height: 34,
     borderRadius: 999,
     borderWidth: 1.5,
-    maxWidth: 180,
   },
   filterPillText: { fontSize: 13, fontWeight: '600' },
 

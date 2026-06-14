@@ -217,14 +217,12 @@ function StableMarker({
       anchor={{ x: 0.5, y: 0.77 }} // Fixed anchor for the 180px container
       allowOverlap={true}
       allowOverlapWithPuck={true}
-      style={{ zIndex: isSelected ? 999 : isFaded ? 1 : 10 }}
     >
       <Pressable 
         onPress={onPress} 
         style={[
           styles.markerWrapper, 
           isFaded && { opacity: 0.4 },
-          isSelected && { transform: [{ scale: 1.12 }] },
         ]} 
         hitSlop={10}
         disabled={isFaded}
@@ -410,6 +408,9 @@ export default function CommunityMap() {
   const confessPillExpansion = useSharedValue(0);
   const checkInPulse = useSharedValue(1);
 
+  const [sentReaction, setSentReaction] = useState<string | null>(null);
+  const [sentBump, setSentBump] = useState<boolean>(false);
+
   useFocusEffect(
     useCallback(() => {
       pillExpansion.value = withDelay(
@@ -494,6 +495,7 @@ export default function CommunityMap() {
   }));
 
   const {
+    friends,
     filteredFriends,
     circles,
     communityBadgeCount,
@@ -636,6 +638,8 @@ export default function CommunityMap() {
   const handleQuickReact = useCallback(
     async (friendId: string, emoji: string) => {
       await sendReaction(friendId, emoji);
+      setSentReaction(emoji);
+      setTimeout(() => setSentReaction(null), 1500);
     },
     [sendReaction]
   );
@@ -643,6 +647,8 @@ export default function CommunityMap() {
   const handleBump = useCallback(
     async (friendId: string) => {
       await sendBump(friendId);
+      setSentBump(true);
+      setTimeout(() => setSentBump(false), 1500);
     },
     [sendBump]
   );
@@ -653,7 +659,7 @@ export default function CommunityMap() {
         centerCoordinate: [myLongitude, myLatitude],
         zoomLevel: 15,
         animationDuration: 500,
-        padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+        padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
       });
     }
   }, [hasValidMyCoords, myLatitude, myLongitude]);
@@ -764,7 +770,7 @@ export default function CommunityMap() {
               style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
             >
               <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
-                {selectedCircle?.name || 'All Friends'}
+                {selectedCircle?.name || 'Circle'}
               </Text>
             </Pressable>
             <Pressable
@@ -798,10 +804,13 @@ export default function CommunityMap() {
               setShowCircleSelector(false);
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <Feather name="users" size={16} color={theme.text} />
               <Text style={[styles.circleDropdownText, { color: theme.text }]}>All Friends</Text>
             </View>
+            <Text style={[styles.circleDropdownCount, { color: theme.textSecondary }]}>
+              {friends.length}
+            </Text>
           </Pressable>
           {circles.map((circle) => (
             <Pressable
@@ -860,13 +869,15 @@ export default function CommunityMap() {
 
             {React.createElement((Mapbox as any).Camera, {
               ref: cameraRef,
-              zoomLevel: 15,
-              pitch: 45,
-              heading: 0,
-              centerCoordinate: [mapCenterLng, mapCenterLat],
+              defaultSettings: {
+                zoomLevel: 15,
+                pitch: 45,
+                heading: 0,
+                centerCoordinate: [mapCenterLng, mapCenterLat],
+              },
               animationMode: 'flyTo',
               animationDuration: 1500,
-              padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+              padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
             })}
 
             {/* My own pin — hidden in ghost mode; coords stay in state for map center only */}
@@ -994,9 +1005,6 @@ export default function CommunityMap() {
             </Animated.View>
           )}
         </View>
-
-      </View>
-
 
       {/* ─── SELECTED FRIEND POPUP ─── */}
       {selectedFriend && (() => {
@@ -1222,6 +1230,7 @@ export default function CommunityMap() {
                 {(['👋', '🔥', '💪', '📚', '❤️'] as const).map((reactionType) => {
                   const meta = communityApi.REACTION_EMOJIS.find((r) => r.type === reactionType);
                   const icon = (meta?.icon ?? 'star') as any;
+                  const isSent = sentReaction === reactionType;
                   return (
                   <Pressable
                     key={reactionType}
@@ -1229,12 +1238,12 @@ export default function CommunityMap() {
                     accessibilityLabel={`Send ${meta?.label ?? 'reaction'}`}
                     style={({ pressed }) => [
                       styles.reactionDisc,
-                      { backgroundColor: theme.background, borderColor: theme.border },
+                      { backgroundColor: isSent ? theme.primary : theme.background, borderColor: isSent ? theme.primary : theme.border },
                       pressed && { opacity: 0.72 },
                     ]}
                     onPress={() => handleQuickReact(selectedFriend.id, reactionType)}
                   >
-                    <Feather name={icon} size={20} color={theme.primary} />
+                    <Feather name={isSent ? 'check' : icon} size={20} color={isSent ? '#fff' : theme.primary} />
                   </Pressable>
                   );
                 })}
@@ -1243,18 +1252,19 @@ export default function CommunityMap() {
                   accessibilityLabel="Send bump"
                   style={({ pressed }) => [
                     styles.reactionDisc,
-                    { backgroundColor: theme.background, borderColor: theme.border },
+                    { backgroundColor: sentBump ? theme.primary : theme.background, borderColor: sentBump ? theme.primary : theme.border },
                     pressed && { opacity: 0.72 },
                   ]}
                   onPress={() => handleBump(selectedFriend.id)}
                 >
-                  <Feather name="zap" size={20} color={theme.primary} />
+                  <Feather name={sentBump ? 'check' : 'zap'} size={20} color={sentBump ? '#fff' : theme.primary} />
                 </Pressable>
               </View>
             </View>
           </View>
         );
       })()}
+      </View>
 
       {/* ─── BOTTOM SHEET ─── */}
       <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
@@ -1398,7 +1408,7 @@ export default function CommunityMap() {
                       centerCoordinate: [myLongitude, myLatitude],
                       zoomLevel: 19,
                       animationDuration: 1000,
-                      padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+                      padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
                     });
                   }
                 }}
@@ -1513,7 +1523,7 @@ export default function CommunityMap() {
                         centerCoordinate: [friend.location.longitude, friend.location.latitude],
                         zoomLevel: 19,
                         animationDuration: 1000,
-                        padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+                        padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
                       });
                     }
                   }}
@@ -1604,7 +1614,6 @@ export default function CommunityMap() {
               )}
             </View>
           ) : null}
-        </View>
       </View>
 
       {/* ─── MY OWN SNAP PREVIEW ─── */}
@@ -2490,7 +2499,7 @@ const styles = StyleSheet.create({
   },
   mapOverlay: {
     position: 'absolute',
-    bottom: SCREEN_HEIGHT * 0.45 + 16,
+    bottom: 16,
     left: 16,
     flexDirection: 'row',
     gap: 8,
@@ -2569,7 +2578,7 @@ const styles = StyleSheet.create({
   // Friend popup
   friendPopup: {
     position: 'absolute',
-    bottom: SCREEN_HEIGHT * 0.45 + 16,
+    bottom: 16,
     left: 16,
     right: 16,
     borderRadius: 20,
@@ -2580,7 +2589,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
-    zIndex: 15,
+    zIndex: 200,
   },
   friendInfoCard: {
     position: 'absolute',

@@ -100,6 +100,9 @@ export default function ConfessionsScreen() {
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string>('🔥 All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   const [items, setItems] = useState<Confession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +117,20 @@ export default function ConfessionsScreen() {
   const [draftTag, setDraftTag] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const hiddenIdsRef = useRef<Set<string>>(new Set());
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const trimmed = searchQuery.trim();
+      if (activeSearch !== trimmed) {
+        setActiveSearch(trimmed);
+        setItems([]);
+        setHasMore(true);
+        setLoading(true);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [searchQuery, activeSearch]);
 
   useEffect(() => {
     if (!userUni) return;
@@ -130,12 +147,12 @@ export default function ConfessionsScreen() {
     if (!userUni) { setItems([]); setLoading(false); setRefreshing(false); return; }
     try {
       const tagQuery = selectedTag === '🔥 All' ? null : selectedTag;
-      const data = await confessionsApi.fetchConfessions({ limit: PAGE_SIZE, campus: selectedCampus, tag: tagQuery });
+      const data = await confessionsApi.fetchConfessions({ limit: PAGE_SIZE, campus: selectedCampus, tag: tagQuery, search: activeSearch || null });
       setItems(data.filter((c) => !hiddenIdsRef.current.has(c.id)));
       setHasMore(data.length >= PAGE_SIZE);
     } catch (e) { if (__DEV__) console.warn('[Confessions] load error:', e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [userUni, selectedCampus, selectedTag]);
+  }, [userUni, selectedCampus, selectedTag, activeSearch]);
 
   const loadMore = useCallback(async () => {
     if (!userUni || loadingMore || !hasMore || items.length === 0) return;
@@ -143,13 +160,13 @@ export default function ConfessionsScreen() {
     try {
       const last = items[items.length - 1];
       const tagQuery = selectedTag === '🔥 All' ? null : selectedTag;
-      const data = await confessionsApi.fetchConfessions({ before: last.created_at, limit: PAGE_SIZE, campus: selectedCampus, tag: tagQuery });
+      const data = await confessionsApi.fetchConfessions({ before: last.created_at, limit: PAGE_SIZE, campus: selectedCampus, tag: tagQuery, search: activeSearch || null });
       const filtered = data.filter((c) => !hiddenIdsRef.current.has(c.id));
       setItems((prev) => { const seen = new Set(prev.map((p) => p.id)); return [...prev, ...filtered.filter((r) => !seen.has(r.id))]; });
       setHasMore(data.length >= PAGE_SIZE);
     } catch (e) { if (__DEV__) console.warn('[Confessions] loadMore error:', e); }
     finally { setLoadingMore(false); }
-  }, [userUni, loadingMore, hasMore, items, selectedCampus, selectedTag]);
+  }, [userUni, loadingMore, hasMore, items, selectedCampus, selectedTag, activeSearch]);
 
   useFocusEffect(useCallback(() => { setLoading(true); void loadFeed(); }, [loadFeed]));
 
@@ -318,11 +335,39 @@ export default function ConfessionsScreen() {
           {universityName ? <Text style={[s.headerSub, { color: theme.textSecondary }]} numberOfLines={1}>{universityName}</Text> : null}
         </View>
         {userUni ? (
-          <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); setComposerOpen(true); }} style={s.headerRight} hitSlop={12}>
-            <Feather name="edit" size={22} color={theme.primary} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <Pressable onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              if (isSearchVisible) {
+                setSearchQuery('');
+              }
+              setIsSearchVisible(!isSearchVisible);
+            }} hitSlop={12}>
+              <Feather name="search" size={22} color={isSearchVisible ? theme.primary : theme.textSecondary} />
+            </Pressable>
+            <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); setComposerOpen(true); }} hitSlop={12}>
+              <Feather name="edit" size={22} color={theme.primary} />
+            </Pressable>
+          </View>
         ) : <View style={s.headerRight} />}
       </View>
+
+      {/* ─── Search Bar ───── */}
+      {isSearchVisible && (
+        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={[s.searchWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Feather name="search" size={16} color={theme.textSecondary} />
+          <TextInput
+            style={[s.searchInput, { color: theme.text }]}
+            placeholder="Search confessions..."
+            placeholderTextColor={theme.textSecondary + '80'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            autoFocus
+          />
+        </Animated.View>
+      )}
 
       {/* ─── Apple Segmented Controls ───── */}
       <View style={s.filtersWrapper}>
@@ -439,6 +484,20 @@ const s = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.4 },
   headerSub: { fontSize: 12, fontWeight: '500', marginTop: 2, opacity: 0.8 },
+
+  /* Search Bar */
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
 
   /* Apple Segmented Controls */
   filtersWrapper: { paddingVertical: 12, gap: 12 },

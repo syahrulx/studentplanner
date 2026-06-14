@@ -48,12 +48,16 @@ export async function fetchConfessions(options?: {
   limit?: number;
   /** Campus name to filter by. Null/undefined = show all campuses. */
   campus?: string | null;
+  tag?: string | null;
+  search?: string | null;
 }): Promise<Confession[]> {
-  const { before = null, limit = DEFAULT_PAGE_SIZE, campus = null } = options ?? {};
+  const { before = null, limit = DEFAULT_PAGE_SIZE, campus = null, tag = null, search = null } = options ?? {};
   const { data, error } = await supabase.rpc('get_confessions', {
     p_before: before,
     p_limit: limit,
     p_campus: campus,
+    p_tag: tag,
+    p_search: search,
   });
   if (error) throw new Error(toErrorMessage(error));
   return (data ?? []) as Confession[];

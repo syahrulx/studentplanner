@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import ImageCropPicker from 'react-native-image-crop-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
@@ -389,19 +390,27 @@ export default function Profile() {
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.5,
-        base64: true,
-      });
+      let result;
+      try {
+        result = await ImageCropPicker.openPicker({
+          width: 800,
+          height: 800,
+          cropping: true,
+          cropperCircleOverlay: true,
+          includeBase64: true,
+          mediaType: 'photo',
+        });
+      } catch (e: any) {
+        if (e?.message?.includes('User cancelled') || e?.code === 'E_PICKER_CANCELLED') {
+          return;
+        }
+        throw e;
+      }
 
-      if (!result.canceled && result.assets[0].base64) {
+      if (result && result.data) {
         setIsUploading(true);
-        const asset = result.assets[0];
-        const ext = asset.uri.split('.').pop() || 'jpeg';
-        const publicUrl = await uploadAvatar(asset.base64 || '', ext);
+        const ext = result.mime?.split('/')[1] || 'jpeg';
+        const publicUrl = await uploadAvatar(result.data, ext);
         setUser({ ...user, avatar: publicUrl });
       }
     } catch (error) {
