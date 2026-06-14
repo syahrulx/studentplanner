@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate, withSequence, Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -44,6 +45,44 @@ export default function SubjectGradeScreen() {
   const dark = theme.background === '#000000' || theme.background.startsWith('#0') || theme.background === '#121212';
 
   // ── State ──────────────────────────────────────────────────────────────────
+  const pillExpansion = useSharedValue(0);
+
+  useEffect(() => {
+    pillExpansion.value = withDelay(
+      800,
+      withSequence(
+        withTiming(1, { duration: 500, easing: Easing.out(Easing.back(1.5)) }),
+        withDelay(3000, withTiming(0, { duration: 400, easing: Easing.inOut(Easing.ease) }))
+      )
+    );
+  }, []);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    width: interpolate(pillExpansion.value, [0, 1], [40, 110], 'clamp'),
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: theme.card,
+    borderColor: theme.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: theme.text,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
+  }));
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pillExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp'),
+    width: interpolate(pillExpansion.value, [0, 1], [0, 65], 'clamp'),
+    marginLeft: interpolate(pillExpansion.value, [0, 1], [0, 6], 'clamp'),
+    transform: [{ translateX: interpolate(pillExpansion.value, [0, 1], [10, 0], 'clamp') }],
+    overflow: 'hidden',
+  }));
+
   const [config, setConfig] = useState<SubjectGradeConfig>(makeDefault(subjectId));
   const [loading, setLoading] = useState(true);
 
@@ -217,9 +256,23 @@ export default function SubjectGradeScreen() {
         <Text style={[ss.navTitle, { color: txt, textTransform: 'uppercase' }]} numberOfLines={1}>
           {subjectId}
         </Text>
-        <Pressable onPress={() => setSettingsOpen(true)} style={ss.navBtnRight}>
-          <Feather name="sliders" size={22} color={pri} />
-        </Pressable>
+        <View style={{ flex: 1, alignItems: 'flex-end', paddingRight: 8, paddingVertical: 4 }}>
+          <Animated.View style={pillStyle}>
+            <Pressable 
+              onPress={() => setSettingsOpen(true)} 
+              style={({ pressed }) => [
+                { width: '100%', height: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+                pressed && { opacity: 0.7 }
+              ]}
+              hitSlop={8}
+            >
+              <Feather name="settings" size={18} color={pri} />
+              <Animated.View style={labelStyle}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: pri }} numberOfLines={1}>Edit here</Text>
+              </Animated.View>
+            </Pressable>
+          </Animated.View>
+        </View>
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

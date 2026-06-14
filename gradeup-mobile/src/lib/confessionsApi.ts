@@ -72,10 +72,11 @@ export async function fetchConfession(confessionId: string): Promise<Confession 
   return rows[0] ?? null;
 }
 
-export async function createConfession(content: string): Promise<Confession> {
+export async function createConfession(content: string, tag?: string | null): Promise<Confession> {
   const trimmed = content.trim();
   const { data, error } = await supabase.rpc('create_confession', {
     p_content: trimmed,
+    p_tag: tag ?? null,
   });
   if (error) throw new Error(toErrorMessage(error));
   const rows = (data ?? []) as Confession[];

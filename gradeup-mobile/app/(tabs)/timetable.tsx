@@ -753,7 +753,7 @@ export default function TimetableScreen() {
               hitSlop={10}
               accessibilityLabel={T('campusMapTitle')}
             >
-              <Feather name="map" size={20} color={headerIconColor} />
+              <Feather name="map-pin" size={20} color={headerIconColor} />
             </Pressable>
             <Pressable
               onPress={() => {
@@ -1146,7 +1146,7 @@ export default function TimetableScreen() {
                         paddingVertical: 10,
                       }}
                     >
-                      <Feather name="navigation" size={16} color={theme.primary} />
+                      <Feather name="map" size={16} color={theme.primary} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: theme.primary, fontSize: 14, fontWeight: '700' }}>
                           {[matchedRoom.building, matchedRoom.level].filter(Boolean).join(' · ') || T('campusMapOnMap')}
