@@ -313,8 +313,29 @@ function SolveView({
   // Hidden input that drives the real system keyboard. Tapping a cell focuses it,
   // tapping elsewhere blurs it. Letters/backspace are routed to the grid.
   const inputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const [kbHeight, setKbHeight] = useState(0);
   const openKeyboard = useCallback(() => { if (!readOnly && !done) inputRef.current?.focus(); }, [readOnly, done]);
   const closeKeyboard = useCallback(() => { inputRef.current?.blur(); Keyboard.dismiss(); }, []);
+
+  // Reserve space below the clue/bonus rows when the system keyboard is open (TestFlight
+  // builds don't shrink the ScrollView automatically for our hidden TextInput).
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKbHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (kbHeight <= 0 || done) return;
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), Platform.OS === 'ios' ? 80 : 40);
+    return () => clearTimeout(t);
+  }, [kbHeight, done]);
 
   // Pick the first playable cell on mount.
   useEffect(() => {
@@ -507,9 +528,19 @@ function SolveView({
         )}
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingTop: 6, paddingBottom: 16, flexGrow: 1 }} showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
-        {/* Tap outside a cell to dismiss the system keyboard. */}
-        <Pressable onPress={closeKeyboard} style={styles.contentTap}>
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          alignItems: 'center',
+          paddingTop: 6,
+          paddingBottom: kbHeight + insets.bottom + 24,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      >
+        <View style={styles.contentTap}>
         {/* Board */}
         <View style={[styles.boardCard, { backgroundColor: theme.backgroundSecondary, shadowColor: theme.primary }]}>
           <View style={[styles.boardWrap, { width: board, height: board }]}>
@@ -642,7 +673,7 @@ function SolveView({
             </View>
           </View>
         )}
-        </Pressable>
+        </View>
       </ScrollView>
 
       {/* Hidden bonus word guess modal */}
@@ -918,7 +949,7 @@ const styles = StyleSheet.create({
   pointsPillText: { fontSize: 13, fontWeight: '700' },
 
   // System keyboard + accessory bar
-  contentTap: { width: '100%', alignItems: 'center', flexGrow: 1 },
+  contentTap: { width: '100%', alignItems: 'center' },
   hiddenInput: { position: 'absolute', width: 1, height: 1, opacity: 0, top: -200, left: 0 },
   hintBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 12, borderRadius: 14 },
   hintBtnText: { fontSize: 14, fontWeight: '800' },
