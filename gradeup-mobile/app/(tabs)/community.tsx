@@ -51,6 +51,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  withSpring,
   interpolate,
   withDelay,
   withTiming,
@@ -60,7 +61,6 @@ import Animated, {
 import { Avatar } from '@/components/Avatar';
 import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
-import BottomSheet, { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 
 
 import {
@@ -401,8 +401,6 @@ export default function CommunityMap() {
     showRoadLabels: false,
     showTransitLabels: false,
   }), [theme.id]);
-  const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['15%', '45%'], []);
   const { language, user, timetable } = useApp();
   /** Keeps “current class” under Studying in sync as periods change. */
   useWallClockTick(30_000);
@@ -469,7 +467,7 @@ export default function CommunityMap() {
     };
   });
   const confessBtnStyle = useAnimatedStyle(() => {
-    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [36, 120], 'clamp');
+    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [36, 95], 'clamp');
     return {
       maxWidth,
       overflow: 'hidden',
@@ -479,7 +477,7 @@ export default function CommunityMap() {
 
   const confessLabelStyle = useAnimatedStyle(() => {
     const opacity = interpolate(confessPillExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp');
-    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [0, 100], 'clamp');
+    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [0, 60], 'clamp');
     const marginLeft = interpolate(confessPillExpansion.value, [0, 1], [0, 6], 'clamp');
     return {
       opacity,
@@ -753,8 +751,8 @@ export default function CommunityMap() {
             </Pressable>
           </Animated.View>
         </View>
-        <View style={styles.circleSelectorWrap}>
-          <View style={styles.circleSelector}>
+        <View style={styles.circleSelectorWrap} pointerEvents="box-none">
+          <View style={[styles.circleSelector, { pointerEvents: 'auto' }]}>
             <Pressable
               onPress={() => {
                 if (selectedCircle?.id) {
@@ -1259,15 +1257,13 @@ export default function CommunityMap() {
       })()}
 
       {/* ─── BOTTOM SHEET ─── */}
-      <BottomSheet
-        ref={bottomSheetRef}
-        index={1}
-        snapPoints={snapPoints}
-        backgroundStyle={{ backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32 }}
-        handleIndicatorStyle={{ backgroundColor: theme.textSecondary + '40', width: 40, height: 5 }}
-      >
-        <View style={{ flex: 1 }}>
-          <View style={styles.bottomSheetTabs}>
+      <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+        {/* Tab switcher */}
+        <View style={styles.bottomSheetHandle}>
+          <View style={[styles.handleBar, { backgroundColor: theme.textSecondary + '40' }]} />
+        </View>
+
+        <View style={styles.bottomSheetTabs}>
             <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>Friends</Text>
             <View style={styles.bottomSheetActions}>
               <Animated.View style={snapStreakOuterStyle}>
@@ -1368,7 +1364,7 @@ export default function CommunityMap() {
           )}
 
           {/* Friends list */}
-          <BottomSheetScrollView
+          <ScrollView
             style={styles.peopleList}
             contentContainerStyle={styles.peopleListContent}
             showsVerticalScrollIndicator={false}
@@ -1591,7 +1587,7 @@ export default function CommunityMap() {
               ))
             )}
             <View style={{ height: 120 }} />
-          </BottomSheetScrollView>
+          </ScrollView>
           {refreshingCommunity ? (
             <View pointerEvents="none" style={styles.peopleRefreshOverlayTop}>
               {isCatTheme || isDarkMinimal ? (
@@ -1609,7 +1605,7 @@ export default function CommunityMap() {
             </View>
           ) : null}
         </View>
-      </BottomSheet>
+      </View>
 
       {/* ─── MY OWN SNAP PREVIEW ─── */}
       {showMySnap && friendSnaps.has(user.id!) && (() => {
@@ -2294,11 +2290,16 @@ const styles = StyleSheet.create({
     height: 40,
   },
   circleSelectorWrap: {
-    flex: 1,
-    minWidth: 0,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    pointerEvents: 'box-none',
+    zIndex: 0,
   },
   topBarBtn: {
     width: 40,
