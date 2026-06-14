@@ -7,10 +7,12 @@ export interface Confession {
   content: string;
   /** Campus name where this confession was posted, mirrors profiles.campus. Null for single-campus unis. */
   campus: string | null;
+  tag: string | null;
   created_at: string;
   like_count: number;
   comment_count: number;
-  liked_by_me: boolean;
+  my_reaction: string | null;
+  reaction_counts: Record<string, number>;
   is_mine: boolean;
 }
 
@@ -20,6 +22,7 @@ export interface ConfessionComment {
   created_at: string;
   alias: string;
   is_mine: boolean;
+  parent_id?: string | null;
 }
 
 export type ConfessionReportReason =
@@ -87,6 +90,14 @@ export async function toggleConfessionLike(confessionId: string): Promise<boolea
   return Boolean(data);
 }
 
+export async function setConfessionReaction(confessionId: string, reaction: string | null): Promise<void> {
+  const { error } = await supabase.rpc('set_confession_reaction', {
+    p_confession_id: confessionId,
+    p_reaction: reaction,
+  });
+  if (error) throw new Error(toErrorMessage(error));
+}
+
 // ─── Comments ─────────────────────────────────────────────────────────────────
 
 export async function fetchConfessionComments(
@@ -102,11 +113,13 @@ export async function fetchConfessionComments(
 export async function addConfessionComment(
   confessionId: string,
   content: string,
+  parentId?: string,
 ): Promise<ConfessionComment> {
   const trimmed = content.trim();
   const { data, error } = await supabase.rpc('add_confession_comment', {
     p_confession_id: confessionId,
     p_content: trimmed,
+    p_parent_id: parentId || null,
   });
   if (error) throw new Error(toErrorMessage(error));
   const rows = (data ?? []) as ConfessionComment[];

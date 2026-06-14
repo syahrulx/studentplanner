@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,14 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Feather from '@expo/vector-icons/Feather';
+
+import * as Haptics from 'expo-haptics';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -23,6 +26,15 @@ import * as confessionsApi from '@/src/lib/confessionsApi';
 import type { Confession, ConfessionComment } from '@/src/lib/confessionsApi';
 
 const MAX_COMMENT = 300;
+
+const REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '🔥'];
+
+function getTopReactions(counts: Record<string, number> | undefined) {
+  if (!counts) return [];
+  const entries = Object.entries(counts).filter(([_, c]) => c > 0);
+  entries.sort((a, b) => b[1] - a[1]);
+  return entries.slice(0, 3).map(e => e[0]);
+}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -45,7 +57,17 @@ export default function ConfessionDetailScreen() {
   const [comments, setComments] = useState<ConfessionComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [commentDraft, setCommentDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<ConfessionComment | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [activeReactionPicker, setActiveReactionPicker] = useState(false);
+
+  const getTagColor = (tag: string | null) => {
+    if (tag === '☕️ Tea') return '#F59E0B'; // Amber
+    if (tag === '❤️ Crush') return '#EC4899'; // Pink
+    if (tag === '📚 Rant') return '#EF4444'; // Red
+    if (tag === '❓ Advice') return '#3B82F6'; // Blue
+    return '#8B5CF6'; // Purple
+  };
 
   const loadAll = useCallback(async () => {
     if (!confessionId) return;
@@ -70,22 +92,32 @@ export default function ConfessionDetailScreen() {
     }, [loadAll]),
   );
 
-  const handleToggleLike = async () => {
+  const handleReaction = async (reaction: string | null) => {
     if (!confession) return;
-    const wasLiked = confession.liked_by_me;
-    const delta = wasLiked ? -1 : 1;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const wasReacted = !!confession.my_reaction;
+    const oldReaction = confession.my_reaction;
+    const isAdding = !!reaction;
+
+    let newCount = confession.like_count;
+    if (wasReacted && !isAdding) newCount = Math.max(0, newCount - 1);
+    if (!wasReacted && isAdding) newCount += 1;
+
     setConfession({
       ...confession,
-      liked_by_me: !wasLiked,
-      like_count: Math.max(0, confession.like_count + delta),
+      my_reaction: reaction,
+      like_count: newCount,
     });
+    
+    if (activeReactionPicker) setActiveReactionPicker(false);
+
     try {
-      await confessionsApi.toggleConfessionLike(confession.id);
+      await confessionsApi.setConfessionReaction(confession.id, reaction);
     } catch {
       setConfession({
         ...confession,
-        liked_by_me: wasLiked,
-        like_count: Math.max(0, confession.like_count - delta),
+        my_reaction: oldReaction,
+        like_count: confession.like_count,
       });
     }
   };
@@ -179,10 +211,11 @@ export default function ConfessionDetailScreen() {
     if (!text || !confessionId || submitting) return;
     setSubmitting(true);
     try {
-      const created = await confessionsApi.addConfessionComment(confessionId, text);
+      const created = await confessionsApi.addConfessionComment(confessionId, text, replyingTo?.id);
       setComments((prev) => [...prev, created]);
       setConfession((c) => (c ? { ...c, comment_count: c.comment_count + 1 } : c));
       setCommentDraft('');
+      setReplyingTo(null);
     } catch (e: any) {
       Alert.alert(T('error'), e?.message || T('confessionCommentError'));
     } finally {
@@ -190,18 +223,47 @@ export default function ConfessionDetailScreen() {
     }
   };
 
-  const renderComment = ({ item }: { item: ConfessionComment }) => (
-    <View style={[s.commentCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={s.commentHeader}>
-        <Text style={[s.commentAlias, { color: theme.primary }]}>{item.alias}</Text>
-        <Text style={[s.commentTime, { color: theme.textSecondary }]}>{timeAgo(item.created_at)}</Text>
-        <Pressable hitSlop={12} onPress={() => handleCommentMenu(item)}>
-          <Feather name="more-horizontal" size={16} color={theme.textSecondary} />
-        </Pressable>
+  // Group comments hierarchically
+  const groupedComments = React.useMemo(() => {
+    const roots = comments.filter(c => !c.parent_id);
+    const result: ConfessionComment[] = [];
+    roots.forEach(root => {
+      result.push(root);
+      const replies = comments.filter(c => c.parent_id === root.id);
+      result.push(...replies);
+    });
+    return result;
+  }, [comments]);
+
+  const renderComment = ({ item }: { item: ConfessionComment }) => {
+    const isReply = !!item.parent_id;
+    return (
+      <View style={[
+        s.commentCard, 
+        { backgroundColor: theme.card, borderColor: theme.border },
+        isReply && { marginLeft: 32, marginTop: -4, borderTopWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+      ]}>
+        <View style={s.commentHeader}>
+          {isReply && <Feather name="corner-down-right" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />}
+          <Text style={[s.commentAlias, { color: theme.primary }]}>{item.alias}</Text>
+          <Text style={[s.commentTime, { color: theme.textSecondary }]}>{timeAgo(item.created_at)}</Text>
+          
+          {!isReply && (
+            <Pressable hitSlop={12} onPress={() => {
+              setReplyingTo(item);
+            }} style={{ marginRight: 12 }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>Reply</Text>
+            </Pressable>
+          )}
+
+          <Pressable hitSlop={12} onPress={() => handleCommentMenu(item)}>
+            <Feather name="more-horizontal" size={16} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+        <Text style={[s.commentBody, { color: theme.text }]}>{item.content}</Text>
       </View>
-      <Text style={[s.commentBody, { color: theme.text }]}>{item.content}</Text>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -257,33 +319,71 @@ export default function ConfessionDetailScreen() {
       </View>
 
       <FlatList
-        data={comments}
+        data={groupedComments}
         keyExtractor={(item) => item.id}
         renderItem={renderComment}
         contentContainerStyle={s.listContent}
         ListHeaderComponent={
-          <View style={[s.confessionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={s.confessionMeta}>
-              <View style={[s.anonBadge, { backgroundColor: theme.primary + '18' }]}>
-                <Feather name="eye-off" size={14} color={theme.primary} />
-                <Text style={[s.anonText, { color: theme.primary }]}>{T('confessionAnonymous')}</Text>
+          <View style={{ position: 'relative' }}>
+            <ReactionBubble
+              visible={activeReactionPicker}
+              onSelect={(e) => void handleReaction(e)}
+              theme={theme}
+            />
+
+            <View style={[s.confessionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={s.confessionMeta}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={[s.anonAvatar, { backgroundColor: getTagColor(confession.tag) + '15' }]}>
+                    <Feather name="user" size={20} color={getTagColor(confession.tag)} />
+                  </View>
+                  <View>
+                    <Text style={[s.metaText, { color: theme.text }]}>
+                      {confession.tag || 'Anon'}
+                    </Text>
+                    <Text style={[s.timeText, { color: theme.textSecondary }]}>{timeAgo(confession.created_at)}</Text>
+                  </View>
+                </View>
               </View>
-              <Text style={[s.timeText, { color: theme.textSecondary }]}>{timeAgo(confession.created_at)}</Text>
-            </View>
-            <Text style={[s.confessionBody, { color: theme.text }]}>{confession.content}</Text>
-            <Pressable style={s.likeRow} onPress={() => void handleToggleLike()}>
-              <Feather
-                name="heart"
-                size={20}
-                color={confession.liked_by_me ? '#ef4444' : theme.textSecondary}
-              />
-              <Text style={[s.likeText, { color: theme.textSecondary }]}>
-                {confession.like_count} {T('confessionLikes')}
+              <Text style={[s.confessionBody, { color: theme.text }]}>{confession.content}</Text>
+              <View style={s.detailBottomRight}>
+                <Pressable
+                  style={[
+                    s.upvotePill, 
+                    !!confession.my_reaction ? { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' } : { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }
+                  ]}
+                  hitSlop={8}
+                  onPress={() => void handleReaction(confession.my_reaction ? null : '❤️')}
+                  onLongPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setActiveReactionPicker(!activeReactionPicker);
+                  }}
+                  delayLongPress={200}
+                >
+                  {!!confession.my_reaction ? (
+                    <Text style={s.upvoteReactedEmoji}>{confession.my_reaction}</Text>
+                  ) : (
+                    confession.like_count > 0 ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 2 }}>
+                        {getTopReactions(confession.reaction_counts).map((r, i) => (
+                          <Text key={r} style={{ fontSize: 14, marginLeft: i > 0 ? -4 : 0 }}>{r}</Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Feather name="heart" size={16} color={theme.textSecondary} />
+                    )
+                  )}
+                  {confession.like_count > 0 ? (
+                    <Text style={[s.actionCount, { color: confession.my_reaction ? theme.primary : theme.textSecondary }]}>
+                      {confession.like_count}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              </View>
+              <Text style={[s.commentsLabel, { color: theme.textSecondary }]}>
+                {T('confessionComments')} ({confession.comment_count})
               </Text>
-            </Pressable>
-            <Text style={[s.commentsLabel, { color: theme.textSecondary }]}>
-              {T('confessionComments')} ({confession.comment_count})
-            </Text>
+            </View>
           </View>
         }
         ListEmptyComponent={
@@ -298,19 +398,32 @@ export default function ConfessionDetailScreen() {
             backgroundColor: theme.card,
             borderTopColor: theme.border,
             paddingBottom: Math.max(insets.bottom, 12),
+            flexDirection: 'column',
+            alignItems: 'stretch',
           },
         ]}
       >
-        <TextInput
-          style={[s.input, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-          placeholder={T('confessionCommentPlaceholder')}
-          placeholderTextColor={theme.textSecondary}
-          value={commentDraft}
-          onChangeText={setCommentDraft}
-          maxLength={MAX_COMMENT}
-          multiline
-        />
-        <Pressable
+        {replyingTo && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 }}>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, fontWeight: '600' }}>
+              Replying to <Text style={{ color: theme.primary }}>{replyingTo.alias}</Text>
+            </Text>
+            <Pressable hitSlop={12} onPress={() => setReplyingTo(null)}>
+              <Feather name="x" size={16} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+        )}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12 }}>
+          <TextInput
+            style={[s.input, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+            placeholder={replyingTo ? 'Write a reply...' : T('confessionCommentPlaceholder')}
+            placeholderTextColor={theme.textSecondary}
+            value={commentDraft}
+            onChangeText={setCommentDraft}
+            maxLength={MAX_COMMENT}
+            multiline
+          />
+          <Pressable
           style={[s.sendBtn, { backgroundColor: commentDraft.trim() ? theme.primary : theme.border }]}
           onPress={() => void handleSubmitComment()}
           disabled={!commentDraft.trim() || submitting}
@@ -321,8 +434,61 @@ export default function ConfessionDetailScreen() {
             <Feather name="send" size={18} color="#fff" />
           )}
         </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+function ReactionBubble({ visible, onSelect, theme }: {
+  visible: boolean;
+  onSelect: (emoji: string) => void;
+  theme: any;
+}) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 100, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(scaleAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0, duration: 100, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        s.reactionBubbleWrapper,
+        {
+          opacity: opacityAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      <View style={[s.reactionBubble, { backgroundColor: theme.card + 'F0', borderColor: theme.border }]}>
+        {REACTIONS.map((emoji) => (
+          <Pressable
+            key={emoji}
+            onPressIn={() => { Haptics.selectionAsync().catch(() => {}); onSelect(emoji); }}
+            style={({ pressed }) => [
+              s.reactionBubbleBtn,
+              pressed && { transform: [{ scale: 1.3 }], backgroundColor: theme.primary + '20' },
+            ]}
+          >
+            <Text style={s.reactionBubbleEmoji}>{emoji}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </Animated.View>
   );
 }
 
@@ -338,21 +504,30 @@ const s = StyleSheet.create({
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '800' },
   listContent: { padding: 16, paddingBottom: 24, gap: 10 },
-  confessionCard: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 8 },
-  confessionMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
-  anonBadge: {
+  confessionCard: {
+    padding: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 16,
+  },
+  confessionMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  anonAvatar: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  metaText: { fontSize: 14, fontWeight: '600' },
+  timeText: { fontSize: 13, fontWeight: '500' },
+  confessionBody: { fontSize: 18, lineHeight: 28, fontWeight: '400', letterSpacing: -0.3 },
+  detailBottomRight: { marginTop: 16, flexDirection: 'row', justifyContent: 'flex-start' },
+  actionPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  upvotePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  anonText: { fontSize: 12, fontWeight: '700' },
-  timeText: { fontSize: 12, fontWeight: '600', flex: 1, textAlign: 'right' },
-  confessionBody: { fontSize: 16, lineHeight: 24, fontWeight: '500' },
-  likeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
-  likeText: { fontSize: 14, fontWeight: '600' },
+  upvoteReactedEmoji: { fontSize: 18 },
+  upvoteCount: { fontSize: 16, fontWeight: '700' },
+  actionCount: { fontSize: 13, fontWeight: '700' },
   commentsLabel: { fontSize: 13, fontWeight: '700', marginTop: 16 },
   commentCard: { borderRadius: 12, borderWidth: 1, padding: 12 },
   commentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
@@ -386,4 +561,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  reactionBubbleWrapper: { position: 'absolute', top: -60, left: 0, right: 0, zIndex: 10, alignItems: 'center' },
+  reactionBubble: { flexDirection: 'row', padding: 8, borderRadius: 24, borderWidth: 1, overflow: 'hidden' },
+  reactionBubbleBtn: { padding: 8, borderRadius: 12 },
+  reactionBubbleEmoji: { fontSize: 22 },
 });

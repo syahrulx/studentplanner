@@ -8,11 +8,12 @@ import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 
 let BlurView: React.ComponentType<any> | null = null;
-try {
-  BlurView = require('expo-blur').BlurView;
-} catch {
-  BlurView = null;
-}
+// Temporarily disabled dynamic require because the native module isn't built into the current dev client
+// try {
+//   BlurView = require('expo-blur').BlurView;
+// } catch {
+//   BlurView = null;
+// }
 
 const BAR_H = 64;
 const BAR_RADIUS = 32;

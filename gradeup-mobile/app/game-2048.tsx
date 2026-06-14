@@ -552,6 +552,7 @@ function RankingsTab({
                     {center && <Feather name="award" size={20} color="#f59e0b" style={{ marginTop: 4 }} />}
                     <Text style={[styles.podiumName, { color: theme.text }]} numberOfLines={1}>{entry.name?.split(' ')[0]}</Text>
                     <Text style={[styles.podiumSub, { color: theme.textSecondary }]}>tile {entry.best_tile}</Text>
+                    <Text style={[styles.podiumPts, { color: theme.primary }]}>{entry.best_score.toLocaleString()} pts</Text>
                     <View style={[styles.podiumBar, { backgroundColor: PODIUM_COLORS[idx] + '25', height: center ? 60 : idx === 1 ? 44 : 32 }]}>
                       <Text style={[styles.podiumRankText, { color: PODIUM_COLORS[idx] }]}>#{idx + 1}</Text>
                     </View>
@@ -652,6 +653,7 @@ const styles = StyleSheet.create({
   podiumCrown: { borderWidth: 4, borderRadius: 40, padding: 4, backgroundColor: '#fff' },
   podiumName: { fontSize: 14, fontWeight: '800', marginTop: 10 },
   podiumSub: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  podiumPts: { fontSize: 13, fontWeight: '800', marginTop: 2 },
   podiumBar: { width: '100%', borderRadius: 16, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 12, marginTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
   podiumRankText: { fontSize: 16, fontWeight: '900' },
 

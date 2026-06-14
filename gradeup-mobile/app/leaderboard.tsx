@@ -164,7 +164,8 @@ export default function Leaderboard() {
                     </View>
                     {idx === 0 && <Feather name="award" size={20} color="#f59e0b" style={{ marginTop: 4 }} />}
                     <Text style={[s.podiumName, { color: theme.text }]} numberOfLines={1}>{entry.name?.split(' ')[0]}</Text>
-                    <Text style={[s.podiumXP, { color: theme.textSecondary }]}>{entry.total_xp} XP</Text>
+                    <Text style={[s.podiumXP, { color: theme.textSecondary }]}>{entry.games_played} solved</Text>
+                    <Text style={[s.podiumPts, { color: theme.primary }]}>{entry.total_xp.toLocaleString()} pts</Text>
                     <View style={[s.podiumBar, { backgroundColor: PODIUM_COLORS[idx] + '25', height: isCenter ? 60 : idx === 1 ? 44 : 32 }]}>
                       <Text style={[s.podiumRank, { color: PODIUM_COLORS[idx] }]}>#{idx + 1}</Text>
                     </View>
@@ -194,9 +195,9 @@ export default function Leaderboard() {
                   <Avatar name={entry.name} avatarUrl={entry.avatar_url} size={36} />
                   <View style={s.rowBody}>
                     <Text style={[s.rowName, { color: theme.text }]} numberOfLines={1}>{isMe ? `${entry.name} (You)` : entry.name}</Text>
-                    <Text style={[s.rowSub, { color: theme.textSecondary }]}>{entry.games_played} games</Text>
+                    <Text style={[s.rowSub, { color: theme.textSecondary }]}>{entry.games_played} solved</Text>
                   </View>
-                  <Text style={[s.rowXP, { color: isMe ? theme.primary : theme.text }]}>{entry.total_xp} XP</Text>
+                  <Text style={[s.rowXP, { color: isMe ? theme.primary : theme.text }]}>{entry.total_xp.toLocaleString()} pts</Text>
                 </View>
               );
             })}
@@ -252,6 +253,7 @@ const s = StyleSheet.create({
   podiumCrown: { borderWidth: 3, borderRadius: 40, padding: 3 },
   podiumName: { fontSize: 13, fontWeight: '700', marginTop: 6 },
   podiumXP: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  podiumPts: { fontSize: 12, fontWeight: '800', marginTop: 2 },
   podiumBar: { width: '100%', borderRadius: 10, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8, marginTop: 8 },
   podiumRank: { fontSize: 14, fontWeight: '800' },
 

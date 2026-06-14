@@ -388,6 +388,7 @@ export default function WordGameHub() {
                               {idx === 0 && <Feather name="award" size={20} color="#f59e0b" style={{ marginTop: 4 }} />}
                               <Text style={[s.podiumName, { color: theme.text }]} numberOfLines={1}>{entry.name?.split(' ')[0]}</Text>
                               <Text style={[s.podiumXP, { color: theme.textSecondary }]}>{entry.puzzles_solved} solved</Text>
+                              <Text style={[s.podiumPts, { color: theme.primary }]}>{entry.total_score.toLocaleString()} pts</Text>
                               <View style={[s.podiumBar, { backgroundColor: PODIUM_COLORS[idx] + '25', height: isCenter ? 60 : idx === 1 ? 44 : 32 }]}>
                                 <Text style={[s.podiumRank, { color: PODIUM_COLORS[idx] }]}>#{idx + 1}</Text>
                               </View>
@@ -548,6 +549,7 @@ const s = StyleSheet.create({
   podiumCrown: { borderWidth: 4, borderRadius: 40, padding: 4, backgroundColor: '#fff' },
   podiumName: { fontSize: 14, fontWeight: '800', marginTop: 10 },
   podiumXP: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  podiumPts: { fontSize: 13, fontWeight: '800', marginTop: 2 },
   podiumBar: { width: '100%', borderRadius: 16, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 12, marginTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
   podiumRank: { fontSize: 16, fontWeight: '900' },
 

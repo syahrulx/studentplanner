@@ -15,8 +15,7 @@ import {
   Easing,
   PanResponder,
 } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import Reanimated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate } from 'react-native-reanimated';
+import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
 import ViewShot, { captureRef } from 'react-native-view-shot';
@@ -187,44 +186,6 @@ export default function TimetableScreen() {
   );
 
   const { width: winW, height: winH } = useWindowDimensions();
-
-  // --- HEADER MAP ANIMATION ---
-  const headerMapExpansion = useSharedValue(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      // Small delay after focus, then expand
-      headerMapExpansion.value = withDelay(
-        300,
-        withTiming(1, { duration: 500 })
-      );
-
-      // Collapse back after 3 seconds of being expanded
-      const collapseId = setTimeout(() => {
-        headerMapExpansion.value = withTiming(0, { duration: 400 });
-      }, 3500);
-
-      return () => {
-        clearTimeout(collapseId);
-        headerMapExpansion.value = 0; // Reset on blur
-      };
-    }, [])
-  );
-
-  const headerMapStyle = useAnimatedStyle(() => ({
-    width: interpolate(headerMapExpansion.value, [0, 1], [36, 75], 'clamp'),
-    borderRadius: 12,
-  }));
-
-  const headerMapLabelStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(headerMapExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp'),
-    width: interpolate(headerMapExpansion.value, [0, 1], [0, 30], 'clamp'),
-    marginLeft: interpolate(headerMapExpansion.value, [0, 1], [0, 5], 'clamp'),
-    transform: [{ translateX: interpolate(headerMapExpansion.value, [0, 1], [10, 0], 'clamp') }],
-    overflow: 'hidden',
-    flexDirection: 'row',
-  }));
-
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -786,19 +747,14 @@ export default function TimetableScreen() {
         </View>
         {showMenu && (
           <View style={s.headerActions}>
-            <Reanimated.View style={[{ overflow: 'hidden' }, headerMapStyle]}>
-              <Pressable
-                onPress={() => router.push('/campus-map' as any)}
-                style={({ pressed }) => [s.headerMapBtn, { borderColor: headerIconColor + '40', backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}
-                hitSlop={6}
-                accessibilityLabel={T('campusMapTitle')}
-              >
-                <Feather name="map-pin" size={14} color={headerIconColor} />
-                <Reanimated.View style={headerMapLabelStyle}>
-                  <Text style={[s.headerMapBtnLabel, { color: headerIconColor }]} numberOfLines={1}>Map</Text>
-                </Reanimated.View>
-              </Pressable>
-            </Reanimated.View>
+            <Pressable
+              onPress={() => router.push('/campus-map' as any)}
+              style={({ pressed }) => [s.headerIconBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={10}
+              accessibilityLabel={T('campusMapTitle')}
+            >
+              <Feather name="map" size={20} color={headerIconColor} />
+            </Pressable>
             <Pressable
               onPress={() => {
                 if (!hasData) {
@@ -1151,23 +1107,14 @@ export default function TimetableScreen() {
     return (
       <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
         <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
-          <View
-            style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onStartShouldSetResponder={() => true}
-          >
+          <Pressable style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={(e) => e.stopPropagation()}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
               <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: color, marginRight: 8 }} />
               <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>{selectedClass.subjectCode}</Text>
             </View>
             <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, marginBottom: 16 }}>{entryDisplayTitle(selectedClass)}</Text>
             
-            <ScrollView
-              style={{ maxHeight: 420 }}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-              nestedScrollEnabled
-              contentContainerStyle={{ gap: 12 }}
-            >
+            <View style={{ gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Feather name="clock" size={16} color={theme.primary} />
                 <Text style={{ color: theme.text, fontSize: 15 }}>{(T as any)(DAY_META[selectedClass.day].fullKey)}, {selectedClass.startTime} - {selectedClass.endTime}</Text>
@@ -1179,24 +1126,10 @@ export default function TimetableScreen() {
                 </View>
               )}
 
-              {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Feather name="user" size={16} color={theme.primary} />
-                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.lecturer}</Text>
-                </View>
-              )}
-              {selectedClass.group && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Feather name="users" size={16} color={theme.primary} />
-                  <Text style={{ color: theme.text, fontSize: 15 }}>Group: {selectedClass.group}</Text>
-                </View>
-              )}
-
               {/* Crowdsourced campus-map location for this room */}
               {selectedClass.location && selectedClass.location !== '-' && user.universityId ? (
                 matchedRoom ? (
                   <>
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 4 }} />
                     <Pressable
                       onPress={() => {
                         const room = selectedClass.location;
@@ -1321,33 +1254,42 @@ export default function TimetableScreen() {
                     ) : null}
                   </>
                 ) : matchLoading ? null : (
-                  <>
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 4 }} />
-                    <Pressable
-                      onPress={() => {
-                        const room = selectedClass.location;
-                        setSelectedClass(null);
-                        router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
-                      }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }}
-                    >
-                      <Feather name="plus-circle" size={15} color={theme.textSecondary} />
-                      <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
-                        {T('campusMapAddThisRoom')}
-                      </Text>
-                    </Pressable>
-                  </>
+                  <Pressable
+                    onPress={() => {
+                      const room = selectedClass.location;
+                      setSelectedClass(null);
+                      router.push({ pathname: '/campus-map-upload', params: { prefillCode: room } } as any);
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }}
+                  >
+                    <Feather name="plus-circle" size={15} color={theme.textSecondary} />
+                    <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                      {T('campusMapAddThisRoom')}
+                    </Text>
+                  </Pressable>
                 )
               ) : null}
-            </ScrollView>
+              {selectedClass.lecturer && selectedClass.lecturer !== '-' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="user" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>{selectedClass.lecturer}</Text>
+                </View>
+              )}
+              {selectedClass.group && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Feather name="users" size={16} color={theme.primary} />
+                  <Text style={{ color: theme.text, fontSize: 15 }}>Group: {selectedClass.group}</Text>
+                </View>
+              )}
+            </View>
 
             <Pressable
-              style={{ marginTop: 16, alignSelf: 'flex-end', padding: 8 }}
+              style={{ marginTop: 24, alignSelf: 'flex-end', padding: 8 }}
               onPress={() => setSelectedClass(null)}
             >
               <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 16 }}>Close</Text>
             </Pressable>
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     );
@@ -1955,7 +1897,7 @@ export default function TimetableScreen() {
                           </Text>
                         ) : null}
                         {slotDetails.room && (
-                          <View>
+                          <View style={s.listMeta}>
                             <Text style={[s.listMetaLabel, { color: theme.primary }]}>{T('timetableRoom')}:</Text>
                             <Text style={[s.listMetaValue, { color: theme.textSecondary }]}>
                               {formatRoomDisplay(e.location, T('timetableRoomOnline'))}
@@ -2102,23 +2044,11 @@ const s = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   headerIconBtn: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerMapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 36,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  headerMapBtnLabel: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   menuModalRoot: {
     flex: 1,
@@ -2152,7 +2082,6 @@ const s = StyleSheet.create({
   detailsModalCard: {
     width: '100%',
     maxWidth: 400,
-    maxHeight: '85%',
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 24,
