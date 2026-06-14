@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { TOTAL_PUZZLES } from './crosswordEngine';
 import { currentUserId, scopedKey, readScoped } from './scopedStorage';
+import { getTodayISO, getYesterdayISO } from '../utils/date';
 
 // Local + remote persistence for the Crossword mini-game. One Supabase row per
 // user (crossword_scores) holding aggregate totals for the leaderboard — fully
@@ -60,8 +61,8 @@ const EMPTY: CrosswordProgress = {
   playsToday: 0,
 };
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const yesterdayStr = () => new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const todayStr = () => getTodayISO();
+const yesterdayStr = () => getYesterdayISO();
 
 export async function loadProgress(): Promise<CrosswordProgress> {
   try {

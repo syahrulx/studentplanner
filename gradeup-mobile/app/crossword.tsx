@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ScrollView, Image, ActivityIndicator, Alert,
   useWindowDimensions, TextInput, Modal, KeyboardAvoidingView, Platform,
-  Keyboard,
+  Keyboard, AppState,
 } from 'react-native';
-import { router, useNavigation } from 'expo-router';
+import { router, useNavigation, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { contrastText } from '@/src/lib/contrast';
+import { getTodayISO } from '@/src/utils/date';
 import {
   CROSSWORD_PUZZLES, TOTAL_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
   type CrosswordPuzzle, type CrosswordClue,
@@ -92,9 +93,27 @@ export default function CrosswordScreen() {
   const [progress, setProgress] = useState<CrosswordProgress | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [set1Open, setSet1Open] = useState(true);
+  /** Tracks the local calendar day so daily unlocks refresh after midnight. */
+  const [todayISO, setTodayISO] = useState(() => getTodayISO());
 
   const reload = useCallback(async () => setProgress(await loadProgress()), []);
   useEffect(() => { reload(); }, [reload]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setTodayISO(getTodayISO());
+      reload();
+    }, [reload]),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      setTodayISO(getTodayISO());
+      reload();
+    });
+    return () => sub.remove();
+  }, [reload]);
 
   const activePuzzle = activeId != null ? CROSSWORD_PUZZLES.find((p) => p.id === activeId) : null;
 
@@ -145,7 +164,7 @@ export default function CrosswordScreen() {
 
   // ─── Hub (levels + rankings) ───
   const solved = progress ? completedCount(progress) : 0;
-  const left = progress ? playsLeftToday(progress) : 2;
+  const left = useMemo(() => (progress ? playsLeftToday(progress) : 2), [progress, todayISO]);
   const onPrimary = contrastText(theme.primary);
 
   return (
