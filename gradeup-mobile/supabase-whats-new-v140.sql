@@ -14,7 +14,7 @@ INSERT INTO public.whats_new_prompts (
   '1.4.0',
   'What''s New in Rencana v1.4.0 🎉',
   '• Room Location
-Find classrooms, facilities, and study spaces on the interactive campus map!
+Find and contribute classroom locations, facilities, and study spaces on the interactive campus map!
 • Confessions
 Share anonymous thoughts and reply to others directly on the campus map!
 • More Mini-games
