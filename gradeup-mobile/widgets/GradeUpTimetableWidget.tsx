@@ -17,6 +17,18 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
 
+  // ── Rendering-mode awareness (iOS 16+) ──
+  // 'fullColor' = normal home screen, 'accented' = Tinted, 'vibrant' = Clear
+  const renderMode = _env.widgetRenderingMode ?? 'fullColor';
+  const isFullColor = renderMode === 'fullColor';
+
+  // Helper: only apply foregroundStyle when in fullColor mode;
+  // in accented/vibrant modes, omit it so iOS auto-tints for legibility.
+  const fg = (color: string) => isFullColor ? [foregroundStyle(color)] : [];
+  const bgMods = isFullColor
+    ? [containerRelativeFrame({ axes: 'both' }), background(widgetBg)]
+    : [containerRelativeFrame({ axes: 'both' })];
+
   const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Rencana', signedIn: false, tasks: [], classes: [], theme: { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' } };
   const p = props || fallback;
 
@@ -32,15 +44,15 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
   if (!p.signedIn) {
     return (
-      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={bgMods}>
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
           spacing={6}
         >
           <Spacer />
-          <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Classes</Text>
-          <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view timetable</Text>
+          <Text modifiers={[font({ weight: 'bold', size: 16 }), ...fg(accent)]}>Classes</Text>
+          <Text modifiers={[font({ size: 12 }), ...fg(muted), lineLimit(2)]}>Sign in to view timetable</Text>
         </VStack>
       </ZStack>
     );
@@ -120,7 +132,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   }
 
   return (
-    <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+    <ZStack alignment="topLeading" modifiers={bgMods}>
       <VStack
         alignment="leading"
         modifiers={[
@@ -132,32 +144,32 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
         {/* Header */}
         <HStack spacing={6} alignment="top" modifiers={[frame({ maxWidth: 'infinity' })]}>
           <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
-            <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), foregroundStyle(title), lineLimit(1)]}>
+            <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), ...fg(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
             </Text>
             {!small ? (
-              <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
+              <Text modifiers={[font({ size: 10, weight: 'bold' }), ...fg(accent)]}>
                 {dl}
               </Text>
             ) : null}
           </VStack>
           <Spacer />
           <VStack spacing={0} alignment="trailing">
-            <Text modifiers={[font({ size: small ? 20 : denseMedium ? 20 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
+            <Text modifiers={[font({ size: small ? 20 : denseMedium ? 20 : 28, weight: 'heavy' }), ...fg(accent)]}>
               {String(p.classes.length)}
             </Text>
             {!denseMedium ? (
-              <Text modifiers={[font({ size: 8, weight: 'semibold' }), foregroundStyle(muted)]}>today</Text>
+              <Text modifiers={[font({ size: 8, weight: 'semibold' }), ...fg(muted)]}>today</Text>
             ) : null}
           </VStack>
         </HStack>
 
-        <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.2)]} />
+        <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.2)]} />
 
         {/* Content Section */}
         {cls.length === 0 ? (
           <HStack>
-            <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>No classes today</Text>
+            <Text modifiers={[font({ size: 13, weight: 'semibold' }), ...fg(muted)]}>No classes today</Text>
             <Spacer />
           </HStack>
         ) : (denseSmall || denseMedium) ? (
@@ -166,39 +178,39 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
             <VStack spacing={0} alignment="center" modifiers={[frame({ maxWidth: 'infinity', alignment: 'center' })]}>
               {/* Cell 1 (Index 0) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
-                <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[0].startTime}</Text>
-                <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[0].label}</Text>
-                <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text>
+                <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[0].startTime}</Text>
+                <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[0].label}</Text>
+                <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text>
               </VStack>
 
-              <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+              <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
 
               {/* Cell 3 (Index 2) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
                 {cls[2] ? (
                   <>
-                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[2].startTime}</Text>
-                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[2].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[2].location || '—'}</Text>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[2].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[2].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[2].location || '—'}</Text>
                   </>
                 ) : <Spacer />}
               </VStack>
 
               {cls.length > 4 ? (
                 <>
-                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
                   {/* Cell 5 (Index 4) */}
                   <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
-                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[4].startTime}</Text>
-                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[4].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[4].location || '—'}</Text>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[4].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[4].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[4].location || '—'}</Text>
                   </VStack>
                 </>
               ) : null}
             </VStack>
 
             {/* Continuous Vertical Divider */}
-            <VStack modifiers={[frame({ width: 1 }), background(line), opacity(0.22), padding({ vertical: 2 })]}>
+            <VStack modifiers={[frame({ width: 1 }), ...(isFullColor ? [background(line)] : []), opacity(0.22), padding({ vertical: 2 })]}>
               <Spacer />
             </VStack>
 
@@ -208,36 +220,36 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
                 {cls[1] ? (
                   <>
-                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[1].startTime}</Text>
-                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[1].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[1].location || '—'}</Text>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[1].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[1].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[1].location || '—'}</Text>
                   </>
                 ) : <Spacer />}
               </VStack>
 
-              <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+              <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
 
               {/* Cell 4 (Index 3) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
                 {cls[3] ? (
                   <>
-                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[3].startTime}</Text>
-                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[3].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[3].location || '—'}</Text>
+                    <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[3].startTime}</Text>
+                    <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[3].label}</Text>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[3].location || '—'}</Text>
                   </>
                 ) : <Spacer />}
               </VStack>
 
               {cls.length > 4 ? (
                 <>
-                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), foregroundStyle(line), opacity(0.18)]} />
+                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
                   {/* Cell 6 (Index 5) */}
                   <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
                     {cls[5] ? (
                       <>
-                        <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>{cls[5].startTime}</Text>
-                        <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>{cls[5].label}</Text>
-                        <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>{cls[5].location || '—'}</Text>
+                        <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[5].startTime}</Text>
+                        <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[5].label}</Text>
+                        <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[5].location || '—'}</Text>
                       </>
                     ) : <Spacer />}
                   </VStack>
@@ -249,23 +261,23 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
           <VStack spacing={0} alignment="leading">
             {cls.map((c, i) => (
               <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={0} alignment="leading">
-                {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), foregroundStyle(line), opacity(0.18)]} /> : null}
+                {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 6 }), ...fg(line), opacity(0.18)]} /> : null}
                 <HStack spacing={small ? 6 : 10} alignment="top" modifiers={[padding({ vertical: small ? 0 : 3 })]}>
                   <VStack spacing={0} alignment="leading" modifiers={small ? [] : [frame({ width: 46 })]}>
-                    <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: small ? 10 : 13, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>
                       {c.startTime}
                     </Text>
                     {!small ? (
-                      <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(muted), lineLimit(1)]}>
+                      <Text modifiers={[font({ size: 9, weight: 'semibold' }), ...fg(muted), lineLimit(1)]}>
                         {c.endTime}
                       </Text>
                     ) : null}
                   </VStack>
                   <VStack spacing={1} alignment="leading">
-                    <Text modifiers={[font({ size: small ? 11 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: small ? 11 : 14, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
                       {c.label}
                     </Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), foregroundStyle(muted), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>
                       {c.location || '—'}
                     </Text>
                   </VStack>

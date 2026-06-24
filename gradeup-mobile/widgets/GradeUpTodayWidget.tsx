@@ -20,6 +20,18 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
 
+  // ── Rendering-mode awareness (iOS 16+) ──
+  // 'fullColor' = normal home screen, 'accented' = Tinted, 'vibrant' = Clear
+  const renderMode = _env.widgetRenderingMode ?? 'fullColor';
+  const isFullColor = renderMode === 'fullColor';
+
+  // Helper: only apply foregroundStyle when in fullColor mode;
+  // in accented/vibrant modes, omit it so iOS auto-tints for legibility.
+  const fg = (color: string) => isFullColor ? [foregroundStyle(color)] : [];
+  const bgMods = isFullColor
+    ? [containerRelativeFrame({ axes: 'both' }), background(widgetBg)]
+    : [containerRelativeFrame({ axes: 'both' })];
+
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
     if (a === 'today') return warn;
@@ -96,15 +108,15 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   if (!p.signedIn) {
     return (
-      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={bgMods}>
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
           spacing={6}
         >
           <Spacer />
-          <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Rencana</Text>
-          <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
+          <Text modifiers={[font({ weight: 'bold', size: 16 }), ...fg(accent)]}>Rencana</Text>
+          <Text modifiers={[font({ size: 12 }), ...fg(muted), lineLimit(2)]}>Sign in to see your schedule</Text>
         </VStack>
       </ZStack>
     );
@@ -183,7 +195,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
     const sTasks = p.tasks.slice(0, 2);
     const sCls   = p.classes.slice(0, 2);
     return (
-      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={bgMods}>
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -191,27 +203,27 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         >
           <HStack spacing={4} alignment="top">
             <VStack spacing={1} alignment="leading" modifiers={[padding({ leading: 4, top: 4 })]}>
-              <Text modifiers={[font({ weight: 'heavy', size: 13 }), foregroundStyle(title), lineLimit(1)]}>
+              <Text modifiers={[font({ weight: 'heavy', size: 13 }), ...fg(title), lineLimit(1)]}>
                 Today
               </Text>
-            <Text modifiers={[font({ size: 9, weight: 'semibold' }), foregroundStyle(accent), lineLimit(1)]}>
+            <Text modifiers={[font({ size: 9, weight: 'semibold' }), ...fg(accent), lineLimit(1)]}>
               {dl}
             </Text>
           </VStack>
           <Spacer />
-          <Text modifiers={[font({ size: 18, weight: 'heavy' }), foregroundStyle(accent)]}>
+          <Text modifiers={[font({ size: 18, weight: 'heavy' }), ...fg(accent)]}>
             {String(count)}
           </Text>
         </HStack>
 
-        <Divider modifiers={[foregroundStyle(line), opacity(0.18)]} />
+        <Divider modifiers={[...fg(line), opacity(0.18)]} />
 
         {sTasks.length > 0 ? (
           <VStack spacing={4} alignment="leading">
             {sTasks.map((t) => (
               <HStack key={t.id} spacing={5} alignment="center">
-                <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent))]}>●</Text>
-                <Text modifiers={[font({ size: 11, weight: 'semibold' }), foregroundStyle(body), lineLimit(1)]}>
+                <Text modifiers={[font({ size: 6 }), ...fg(dotClr(t.accent))]}>●</Text>
+                <Text modifiers={[font({ size: 11, weight: 'semibold' }), ...fg(body), lineLimit(1)]}>
                   {t.title}
                 </Text>
                 <Spacer />
@@ -221,21 +233,21 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         ) : null}
 
         {sTasks.length > 0 && sCls.length > 0 ? (
-          <Divider modifiers={[foregroundStyle(line), opacity(0.18)]} />
+          <Divider modifiers={[...fg(line), opacity(0.18)]} />
         ) : null}
 
         {sCls.length > 0 ? (
           <VStack spacing={5} alignment="leading">
             {sCls.map((c, i) => (
               <HStack key={`${c.startTime}-${i}`} spacing={6} alignment="top">
-                <Text modifiers={[font({ size: 10, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                <Text modifiers={[font({ size: 10, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>
                   {c.startTime}
                 </Text>
                 <VStack spacing={0} alignment="leading">
-                  <Text modifiers={[font({ size: 11, weight: 'bold' }), foregroundStyle(body), lineLimit(1)]}>
+                  <Text modifiers={[font({ size: 11, weight: 'bold' }), ...fg(body), lineLimit(1)]}>
                     {c.label}
                   </Text>
-                  <Text modifiers={[font({ size: 8 }), foregroundStyle(muted), lineLimit(1)]}>
+                  <Text modifiers={[font({ size: 8 }), ...fg(muted), lineLimit(1)]}>
                     {c.location || '—'}
                   </Text>
                 </VStack>
@@ -247,7 +259,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
         {sTasks.length === 0 && sCls.length === 0 ? (
           <HStack>
-            <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>Free day</Text>
+            <Text modifiers={[font({ size: 11 }), ...fg(muted)]}>Free day</Text>
             <Spacer />
           </HStack>
         ) : null}
@@ -263,7 +275,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const colCls  = p.classes.slice(0, colMax);
 
   return (
-    <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+    <ZStack alignment="topLeading" modifiers={bgMods}>
       <VStack
         alignment="leading"
         modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -273,17 +285,17 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         {/* Header */}
         <HStack spacing={6} alignment="top">
           <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
-            <Text modifiers={[font({ weight: 'heavy', size: dense ? 14 : 17 }), foregroundStyle(title), lineLimit(1), padding({ top: dense ? 2 : 0 })]}>
+            <Text modifiers={[font({ weight: 'heavy', size: dense ? 14 : 17 }), ...fg(title), lineLimit(1), padding({ top: dense ? 2 : 0 })]}>
               Today
             </Text>
-          <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent), lineLimit(1)]}>
+          <Text modifiers={[font({ size: 10, weight: 'bold' }), ...fg(accent), lineLimit(1)]}>
             {dl}
           </Text>
         </VStack>
         <Spacer />
       </HStack>
 
-      <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
+      <Divider modifiers={[...fg(line), opacity(0.2)]} />
 
       {/* Two-column content */}
       <HStack spacing={0} alignment="top">
@@ -291,33 +303,33 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         {/* TASKS column */}
         <VStack spacing={dense ? 4 : 6} alignment="leading" modifiers={[padding({ trailing: 12 })]}>
           <HStack spacing={4}>
-            <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>TASKS</Text>
+            <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>TASKS</Text>
             <Spacer />
-            <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>
+            <Text modifiers={[font({ size: 8, weight: 'bold' }), ...fg(muted)]}>
               {String(p.tasks.length)}
             </Text>
           </HStack>
 
           {colTask.length === 0 ? (
             <HStack>
-              <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>All done</Text>
+              <Text modifiers={[font({ size: 11 }), ...fg(muted)]}>All done</Text>
               <Spacer />
             </HStack>
           ) : (
             <VStack spacing={dense ? 3 : 5} alignment="leading">
               {colTask.map((t) => (
                 <HStack key={t.id} spacing={5} alignment="top">
-                  <Text modifiers={[font({ size: 6 }), foregroundStyle(dotClr(t.accent)), padding({ top: 4 })]}>●</Text>
+                  <Text modifiers={[font({ size: 6 }), ...fg(dotClr(t.accent)), padding({ top: 4 })]}>●</Text>
                   <VStack spacing={dense ? 0 : 1} alignment="leading">
-                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
                       {t.title}
                     </Text>
                     {!dense && stsTxt(t.accent) ? (
-                      <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(dotClr(t.accent)), lineLimit(1)]}>
+                      <Text modifiers={[font({ size: 8, weight: 'bold' }), ...fg(dotClr(t.accent)), lineLimit(1)]}>
                         {stsTxt(t.accent)}
                       </Text>
                     ) : !dense ? (
-                      <Text modifiers={[font({ size: 8 }), foregroundStyle(muted), lineLimit(1)]}>
+                      <Text modifiers={[font({ size: 8 }), ...fg(muted), lineLimit(1)]}>
                         {t.subtitle}
                       </Text>
                     ) : null}
@@ -331,23 +343,23 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
 
         {/* Vertical 1pt line */}
-        <VStack modifiers={[frame({ width: 1 }), background(line), opacity(0.22)]}>
+        <VStack modifiers={[frame({ width: 1 }), ...(isFullColor ? [background(line)] : []), opacity(0.22)]}>
           <Spacer />
         </VStack>
 
         {/* CLASSES column */}
         <VStack spacing={dense ? 2 : 6} alignment="leading" modifiers={[padding({ leading: 12 })]}>
           <HStack spacing={4}>
-            <Text modifiers={[font({ size: 8, weight: 'heavy' }), foregroundStyle(accent)]}>CLASSES</Text>
+            <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>CLASSES</Text>
             <Spacer />
-            <Text modifiers={[font({ size: 8, weight: 'bold' }), foregroundStyle(muted)]}>
+            <Text modifiers={[font({ size: 8, weight: 'bold' }), ...fg(muted)]}>
               {String(p.classes.length)}
             </Text>
           </HStack>
 
           {colCls.length === 0 ? (
             <HStack>
-              <Text modifiers={[font({ size: 11 }), foregroundStyle(muted)]}>No classes</Text>
+              <Text modifiers={[font({ size: 11 }), ...fg(muted)]}>No classes</Text>
               <Spacer />
             </HStack>
           ) : (
@@ -355,15 +367,15 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
               {colCls.map((c, i) => (
                 <VStack key={`${c.startTime}-${c.label}-${i}`} spacing={dense ? 0 : 1} alignment="leading">
                   <HStack spacing={dense ? 4 : 5} alignment="firstTextBaseline">
-                    <Text modifiers={[font({ size: dense ? 10 : 11, weight: 'heavy' }), foregroundStyle(accent), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: dense ? 10 : 11, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>
                       {c.startTime}
                     </Text>
-                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: dense ? 11 : 12, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
                       {c.label}
                     </Text>
                     <Spacer />
                   </HStack>
-                  <Text modifiers={[font({ size: dense ? 7 : 8 }), foregroundStyle(muted), lineLimit(1)]}>
+                  <Text modifiers={[font({ size: dense ? 7 : 8 }), ...fg(muted), lineLimit(1)]}>
                     {c.location || '—'}
                   </Text>
                 </VStack>

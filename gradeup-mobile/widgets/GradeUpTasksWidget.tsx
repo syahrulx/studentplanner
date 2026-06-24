@@ -19,6 +19,18 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   // Increase blue presence for Spider theme
   const widgetBg = pack === 'spider' ? (props?.theme?.focusCard || bg) : bg;
 
+  // ── Rendering-mode awareness (iOS 16+) ──
+  // 'fullColor' = normal home screen, 'accented' = Tinted, 'vibrant' = Clear
+  const renderMode = _env.widgetRenderingMode ?? 'fullColor';
+  const isFullColor = renderMode === 'fullColor';
+
+  // Helper: only apply foregroundStyle when in fullColor mode;
+  // in accented/vibrant modes, omit it so iOS auto-tints for legibility.
+  const fg = (color: string) => isFullColor ? [foregroundStyle(color)] : [];
+  const bgMods = isFullColor
+    ? [containerRelativeFrame({ axes: 'both' }), background(widgetBg)]
+    : [containerRelativeFrame({ axes: 'both' })];
+
   function dotClr(a: HomeWidgetTaskRow['accent']): string {
     if (a === 'overdue') return red;
     if (a === 'today') return warn;
@@ -46,15 +58,15 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   if (!p.signedIn) {
     return (
-      <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+      <ZStack alignment="topLeading" modifiers={bgMods}>
         <VStack
           alignment="leading"
           modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
           spacing={6}
         >
           <Spacer />
-          <Text modifiers={[font({ weight: 'bold', size: 16 }), foregroundStyle(accent)]}>Tasks</Text>
-          <Text modifiers={[font({ size: 12 }), foregroundStyle(muted), lineLimit(2)]}>Sign in to view tasks</Text>
+          <Text modifiers={[font({ weight: 'bold', size: 16 }), ...fg(accent)]}>Tasks</Text>
+          <Text modifiers={[font({ size: 12 }), ...fg(muted), lineLimit(2)]}>Sign in to view tasks</Text>
         </VStack>
       </ZStack>
     );
@@ -117,7 +129,7 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
   // ─── HOME SCREEN (small / medium / large) ───
   return (
-    <ZStack alignment="topLeading" modifiers={[containerRelativeFrame({ axes: 'both' }), background(widgetBg)]}>
+    <ZStack alignment="topLeading" modifiers={bgMods}>
       <VStack
         alignment="leading"
         modifiers={[padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })]}
@@ -127,21 +139,21 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
         {/* Header */}
         <HStack spacing={6} alignment="top">
           <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: small ? 4 : 6, top: small ? 6 : 8 })]}>
-            <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), foregroundStyle(title)]}>
+            <Text modifiers={[font({ weight: 'heavy', size: small ? 15 : 18 }), ...fg(title)]}>
               Tasks
             </Text>
-          <Text modifiers={[font({ size: 10, weight: 'bold' }), foregroundStyle(accent)]}>
+          <Text modifiers={[font({ size: 10, weight: 'bold' }), ...fg(accent)]}>
             {String(p.tasks.length)} pending
           </Text>
         </VStack>
         <Spacer />
         <VStack spacing={2} alignment="trailing" modifiers={[padding({ trailing: small ? 4 : 6, top: small ? 6 : 8 })]}>
-          <Text modifiers={[font({ size: small ? 22 : 28, weight: 'heavy' }), foregroundStyle(accent)]}>
+          <Text modifiers={[font({ size: small ? 22 : 28, weight: 'heavy' }), ...fg(accent)]}>
             {String(p.tasks.length)}
           </Text>
           {!small ? (
             <Link destination="rencana://add-task">
-              <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(accent)]}>
+              <Text modifiers={[font({ size: 9, weight: 'bold' }), ...fg(accent)]}>
                 + Add
               </Text>
             </Link>
@@ -149,31 +161,31 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
         </VStack>
       </HStack>
 
-      <Divider modifiers={[foregroundStyle(line), opacity(0.2)]} />
+      <Divider modifiers={[...fg(line), opacity(0.2)]} />
 
       {/* Task list */}
       {tasks.length === 0 ? (
         <HStack>
-          <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(muted)]}>All caught up</Text>
+          <Text modifiers={[font({ size: 13, weight: 'semibold' }), ...fg(muted)]}>All caught up</Text>
           <Spacer />
         </HStack>
       ) : (
         <VStack spacing={0} alignment="leading">
           {tasks.map((t, i) => (
             <VStack key={t.id} spacing={0} alignment="leading">
-              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 5 }), foregroundStyle(line), opacity(0.18)]} /> : null}
+              {i > 0 ? <Divider modifiers={[padding({ vertical: small ? 4 : 5 }), ...fg(line), opacity(0.18)]} /> : null}
               <HStack spacing={8} alignment="top" modifiers={[padding({ vertical: small ? 2 : 4 })]}>
-                <Text modifiers={[font({ size: 7 }), foregroundStyle(dotClr(t.accent)), padding({ top: 5 })]}>●</Text>
+                <Text modifiers={[font({ size: 7 }), ...fg(dotClr(t.accent)), padding({ top: 5 })]}>●</Text>
                 <VStack spacing={2} alignment="leading">
-                  <Text modifiers={[font({ size: small ? 12 : 14, weight: 'bold' }), foregroundStyle(title), lineLimit(1)]}>
+                  <Text modifiers={[font({ size: small ? 12 : 14, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
                     {t.title}
                   </Text>
                   {statusLabel(t.accent) ? (
-                    <Text modifiers={[font({ size: 9, weight: 'bold' }), foregroundStyle(dotClr(t.accent)), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: 9, weight: 'bold' }), ...fg(dotClr(t.accent)), lineLimit(1)]}>
                       {statusLabel(t.accent)}
                     </Text>
                   ) : (
-                    <Text modifiers={[font({ size: 9 }), foregroundStyle(muted), lineLimit(1)]}>
+                    <Text modifiers={[font({ size: 9 }), ...fg(muted), lineLimit(1)]}>
                       {t.subtitle}
                     </Text>
                   )}

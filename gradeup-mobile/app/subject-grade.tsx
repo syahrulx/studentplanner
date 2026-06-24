@@ -174,14 +174,15 @@ export default function SubjectGradeScreen() {
     const weight = parseFloat(fWeight);
     const maxScore = parseFloat(fMax);
     const scored = fScored.trim() ? parseFloat(fScored) : null;
+    const safedScored = scored !== null && !isNaN(scored) && isFinite(scored) ? scored : null;
     
     if (!name) return setAssessError('Component name is required.');
     if (!weight || weight <= 0 || weight > config.carryWeight) return setAssessError(`Weight must be between 1 and ${config.carryWeight}.`);
     if (!maxScore || maxScore <= 0) return setAssessError('Max score must be greater than 0.');
 
     const next = editAssess 
-      ? config.assessments.map(a => a.id === editAssess.id ? { ...a, name, weight, maxScore, scored } : a)
-      : [...config.assessments, { id: uid(), name, weight, maxScore, scored }];
+      ? config.assessments.map(a => a.id === editAssess.id ? { ...a, name, weight, maxScore, scored: safedScored } : a)
+      : [...config.assessments, { id: uid(), name, weight, maxScore, scored: safedScored }];
       
     const validation = validateAssessmentWeights(next, config.carryWeight);
     if (validation.total > config.carryWeight + 0.01) {
@@ -197,9 +198,42 @@ export default function SubjectGradeScreen() {
     setAddAssessOpen(false);
   }
 
-  function scoreChange(id: string, raw: string) {
-    const val = raw.trim() === '' ? null : parseFloat(raw);
-    update({ assessments: config.assessments.map(a => a.id === id ? { ...a, scored: val } : a) });
+  // Local string buffers for inline score inputs — keyed by assessment id.
+  // This lets the user type partial decimals like "85." without snapping back.
+  const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
+
+  function getScoreDisplay(a: { id: string; scored: number | null }) {
+    if (a.id in scoreInputs) return scoreInputs[a.id];
+    return a.scored !== null ? String(a.scored) : '';
+  }
+
+  function scoreTextChange(id: string, raw: string) {
+    setScoreInputs(prev => ({ ...prev, [id]: raw }));
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      update({ assessments: config.assessments.map(a => a.id === id ? { ...a, scored: null } : a) });
+    } else {
+      const n = parseFloat(trimmed);
+      if (!isNaN(n)) {
+        update({ assessments: config.assessments.map(a => a.id === id ? { ...a, scored: n } : a) });
+      }
+    }
+  }
+
+  function scoreBlur(id: string) {
+    const raw = scoreInputs[id];
+    if (raw === undefined) return;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setScoreInputs(prev => { const next = { ...prev }; delete next[id]; return next; });
+    } else {
+      const n = parseFloat(trimmed);
+      if (isNaN(n)) {
+        setScoreInputs(prev => { const next = { ...prev }; delete next[id]; return next; });
+      } else {
+        setScoreInputs(prev => ({ ...prev, [id]: String(n) }));
+      }
+    }
   }
 
   // ── Custom Grade Handlers ───────────────────────────────────────────────────
@@ -316,8 +350,9 @@ export default function SubjectGradeScreen() {
                     <View style={ss.scoreInputWrap}>
                       <TextInput
                         style={[ss.scoreInput, { color: txt, backgroundColor: dark ? border + '60' : bg }]}
-                        value={a.scored !== null ? String(a.scored) : ''}
-                        onChangeText={v => scoreChange(a.id, v)}
+                        value={getScoreDisplay(a)}
+                        onChangeText={v => scoreTextChange(a.id, v)}
+                        onBlur={() => scoreBlur(a.id)}
                         keyboardType="decimal-pad"
                         placeholder="–"
                         placeholderTextColor={sub}

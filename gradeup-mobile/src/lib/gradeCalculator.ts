@@ -96,8 +96,9 @@ export function calcCarryRatio(assessments: GradeAssessment[]): {
   let pendingWeight = 0;
 
   for (const a of assessments) {
-    if (a.scored !== null && a.maxScore > 0) {
-      const fraction = Math.min(a.scored, a.maxScore) / a.maxScore;
+    if (a.scored !== null && a.scored !== undefined && isFinite(a.scored) && a.maxScore > 0) {
+      const clamped = Math.max(0, Math.min(a.scored, a.maxScore));
+      const fraction = clamped / a.maxScore;
       earnedWeighted += fraction * a.weight;
       possibleWeight += a.weight;
     } else {
@@ -122,8 +123,10 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
 
   // Final exam contribution
   let finalContribution = 0;
-  if (hasFinalExam && finalExamScored !== null && finalExamMaxScore > 0) {
-    const finalRatio = Math.min(finalExamScored, finalExamMaxScore) / finalExamMaxScore;
+  if (hasFinalExam && finalExamScored !== null && finalExamScored !== undefined
+      && isFinite(finalExamScored) && finalExamMaxScore > 0) {
+    const clampedFinal = Math.max(0, Math.min(finalExamScored, finalExamMaxScore));
+    const finalRatio = clampedFinal / finalExamMaxScore;
     finalContribution = finalRatio * finalWeight;
   }
 
@@ -131,7 +134,8 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
   const grade = percentToGrade(totalScore, gradingScheme);
 
   let seatedWeight = carryPossible;
-  if (hasFinalExam && finalExamScored !== null && finalExamMaxScore > 0) {
+  if (hasFinalExam && finalExamScored !== null && finalExamScored !== undefined
+      && isFinite(finalExamScored) && finalExamMaxScore > 0) {
     seatedWeight += finalWeight;
   }
   const currentStandingScore = seatedWeight > 0 ? (totalScore / seatedWeight) * 100 : 0;
