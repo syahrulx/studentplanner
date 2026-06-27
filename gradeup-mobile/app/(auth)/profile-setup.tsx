@@ -155,6 +155,7 @@ export default function ProfileSetup() {
       </LinearGradient>
 
       {/* ── Card ── */}
+      <View style={styles.cardWrap}>
       <View style={styles.card}>
         <Text style={styles.stepLabel}>STEP 1 OF 1</Text>
         <Text style={styles.cardTitle}>Your Details</Text>
@@ -241,6 +242,7 @@ export default function ProfileSetup() {
           <Text style={styles.skipText}>Skip for now</Text>
         </Pressable>
       </View>
+      </View>
 
       {/* ── University Modal ── */}
       <Modal visible={universityModalVisible} transparent animationType="slide" onRequestClose={() => setUniversityModalVisible(false)}>
@@ -324,9 +326,15 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 24, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
   heroSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4, fontWeight: '500' },
 
+  cardWrap: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
   card: {
     marginTop: -24,
-    marginHorizontal: 20,
+    width: '100%',
+    maxWidth: 460,
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 24,

@@ -8,7 +8,7 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
   TextInput,
   FlatList,
   TouchableOpacity,
@@ -42,7 +42,6 @@ import {
   type UniversityCalendarOffer,
 } from "@/src/lib/universityCalendarOffersDb";
 
-const SCREEN_W = Dimensions.get("window").width;
 const GRID_GAP = 6;
 
 function inferAcademicLevelFromOfferLabel(label: string): AcademicLevel {
@@ -74,15 +73,15 @@ export default function AcademicCalendarScreen() {
   } = useApp();
   const T = useTranslations(language);
   const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
   const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const todayMonthCursor = useMemo(() => {
     const t = new Date();
     return new Date(t.getFullYear(), t.getMonth(), 1);
   }, []);
   const modalMaxH = useMemo(() => {
-    const h = Dimensions.get("window").height;
-    return Math.max(420, h - (insets.top + 120));
-  }, [insets.top]);
+    return Math.max(420, screenH - (insets.top + 120));
+  }, [insets.top, screenH]);
   const [configOpen, setConfigOpen] = useState(false);
   const [cfgBusy, setCfgBusy] = useState(false);
   const [uniGateOpen, setUniGateOpen] = useState(false);
@@ -128,7 +127,7 @@ export default function AcademicCalendarScreen() {
   >("all");
   const [selectedDayISO, setSelectedDayISO] = useState<string>("");
   const [gridWidth, setGridWidth] = useState<number>(() =>
-    Math.max(280, SCREEN_W - 32),
+    Math.max(280, screenW - 32),
   );
 
   const activeDateIsInAcademicCalendar = useMemo(() => {

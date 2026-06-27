@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,8 +14,6 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { useTheme } from '@/hooks/useTheme';
 import { fetchActiveWhatsNewPrompt, type WhatsNewPrompt } from '../lib/whatsNewApi';
-
-const { height: SCREEN_H } = Dimensions.get('window');
 
 function parseFeatures(content: string): { title: string; body: string }[] {
   const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -40,7 +38,8 @@ export default function WhatsNewPromptModal() {
   const [visible, setVisible] = useState(false);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
+  const { height: screenH } = useWindowDimensions();
+  const slideAnim = useRef(new Animated.Value(screenH)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -67,7 +66,7 @@ export default function WhatsNewPromptModal() {
 
   const handleDismiss = async () => {
     Animated.parallel([
-      Animated.timing(slideAnim, { toValue: SCREEN_H, duration: 300, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: screenH, duration: 300, useNativeDriver: true }),
       Animated.timing(fadeAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start(async () => {
       setVisible(false);

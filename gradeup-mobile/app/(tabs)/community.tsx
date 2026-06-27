@@ -12,7 +12,7 @@ import {
   RefreshControl,
   StyleSheet,
   Platform,
-  Dimensions,
+  useWindowDimensions,
   ActivityIndicator,
   Modal,
   Alert,
@@ -81,11 +81,25 @@ import type { TimetableEntry } from '@/src/types';
 import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 const COMMUNITY_REFRESH_MIN_MS = 1200;
-const SNAP_PREVIEW_WIDTH = Math.min(112, Math.max(96, SCREEN_WIDTH * 0.29));
-const SNAP_PREVIEW_HEIGHT = SNAP_PREVIEW_WIDTH * 1.38;
+const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
+
+function useCommunityLayout() {
+  const { width, height } = useWindowDimensions();
+  return useMemo(() => {
+    const snapPreviewWidth = Math.min(112, Math.max(96, width * 0.29));
+    return {
+      statusCardWidth: (width - 50) / 2,
+      snapPreviewWidth,
+      snapPreviewHeight: snapPreviewWidth * 1.38,
+      bottomSheetHeight: height * 0.4,
+      floatingCatBottom: height * 0.4 - 10,
+      locationBannerBottom: height * 0.45 + 16,
+      friendInfoBottom: height * 0.42 + 16,
+    };
+  }, [width, height]);
+}
+
 
 // Mapbox components are imported at the top of the file.
 
@@ -386,6 +400,7 @@ import * as Notifications from 'expo-notifications';
 
 export default function CommunityMap() {
   const theme = useTheme();
+  const layout = useCommunityLayout();
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
   const isSpiderTheme = themePack === 'spider';
@@ -709,7 +724,7 @@ export default function CommunityMap() {
       ) : (
       <>
       {/* Theme-pack overlays: absolutely positioned decorations, map tab only */}
-      {isCatTheme ? <CatLottie style={styles.floatingCat} /> : null}
+      {isCatTheme ? <CatLottie style={[styles.floatingCat, { bottom: layout.floatingCatBottom }]} /> : null}
       {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
@@ -1267,7 +1282,7 @@ export default function CommunityMap() {
       </View>
 
       {/* ─── BOTTOM SHEET ─── */}
-      <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+      <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border, height: layout.bottomSheetHeight }]}>
         {/* Tab switcher */}
         <View style={styles.bottomSheetHandle}>
           <View style={[styles.handleBar, { backgroundColor: theme.textSecondary + '40' }]} />
@@ -1620,7 +1635,7 @@ export default function CommunityMap() {
       {showMySnap && friendSnaps.has(user.id!) && (() => {
         const mySnap = friendSnaps.get(user.id!)!;
         return (
-          <View style={[styles.friendInfoCard, { backgroundColor: theme.card }]}>
+          <View style={[styles.friendInfoCard, { backgroundColor: theme.card, bottom: layout.friendInfoBottom }]}>
             <Pressable
               style={styles.friendInfoCardClose}
               onPress={() => setShowMySnap(false)}
@@ -1634,7 +1649,11 @@ export default function CommunityMap() {
                 accessibilityLabel="Open your snap"
                 style={({ pressed }) => [
                   styles.snapPreviewPhone,
-                  { borderColor: theme.border },
+                  {
+                    borderColor: theme.border,
+                    width: layout.snapPreviewWidth,
+                    height: layout.snapPreviewHeight,
+                  },
                   pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
                 ]}
                 onPress={() => {
@@ -1807,6 +1826,7 @@ function StatusPopup({
   userId?: string;
 }) {
   const themePack = useThemePack();
+  const layout = useCommunityLayout();
   const isDarkMinimal = useDarkMinimalThemePack();
   const isMonoOnly = themePack === 'mono';
   const [selectedType, setSelectedType] = useState<ActivityType>(
@@ -1920,6 +1940,7 @@ function StatusPopup({
                   style={({ pressed }) => [
                     popupStyles.statusCard,
                     {
+                      width: layout.statusCardWidth,
                       backgroundColor: isSelected
                         ? isDarkMinimal
                           ? 'rgba(255,255,255,0.12)'
@@ -2185,7 +2206,6 @@ const popupStyles = StyleSheet.create({
     marginBottom: 16,
   },
   statusCard: {
-    width: (SCREEN_WIDTH - 40 - 10) / 2,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
@@ -2231,7 +2251,6 @@ const styles = StyleSheet.create({
   floatingCat: {
     position: 'absolute',
     right: 18,
-    bottom: SCREEN_HEIGHT * 0.4 - 10,
     width: 62,
     height: 46,
     opacity: 0.96,
@@ -2523,7 +2542,6 @@ const styles = StyleSheet.create({
   // Location session prompt banner (Apple 5.1.2)
   locationSessionBanner: {
     position: 'absolute',
-    bottom: SCREEN_HEIGHT * 0.45 + 16,
     left: 16,
     right: 16,
     borderRadius: 24,
@@ -2593,7 +2611,6 @@ const styles = StyleSheet.create({
   },
   friendInfoCard: {
     position: 'absolute',
-    bottom: SCREEN_HEIGHT * 0.42 + 16,
     left: 16,
     right: 16,
     borderRadius: 20,
@@ -2687,8 +2704,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   snapPreviewPhone: {
-    width: SNAP_PREVIEW_WIDTH,
-    height: SNAP_PREVIEW_HEIGHT,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
@@ -2976,7 +2991,6 @@ const styles = StyleSheet.create({
 
   // Bottom sheet
   bottomSheet: {
-    height: SCREEN_HEIGHT * 0.4,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: StyleSheet.hairlineWidth,

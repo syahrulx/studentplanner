@@ -1844,6 +1844,7 @@ const styles = StyleSheet.create({
   },
   introModal: {
     width: '100%',
+    maxWidth: 460,
     borderRadius: 24,
     padding: 24,
     alignItems: 'center',

@@ -34,6 +34,7 @@ import {
   teachingWeekNumberForDate,
 } from '@/src/lib/academicWeek';
 import { useDarkMinimalThemePack, useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
+import { useResponsive } from '@/hooks/useResponsive';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
 import { Avatar } from '@/components/Avatar';
 import { useFocusEffect } from '@react-navigation/native';
@@ -513,6 +514,10 @@ function createDashboardStyles(
 
     sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
     sectionWrapperFirst: { marginTop: 24 },
+    // Tablet: Today's focus + Upcoming side by side, filling the width.
+    dashRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, gap: 20, marginTop: 24 },
+    dashColLeft: { flex: 1, minWidth: 0, marginHorizontal: 0, marginTop: 0 },
+    dashColRight: { flex: 1.4, minWidth: 0, marginHorizontal: 0, marginTop: 0 },
     sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: isPurpleTheme || themePack === 'custom' ? text : primary },
     sectionSubcopy: {
       fontSize: 13,
@@ -1089,6 +1094,7 @@ export default function Dashboard() {
     }
   }, [refreshingHome]);
   const { height: windowHeight } = useWindowDimensions();
+  const { isTablet } = useResponsive();
   const onRefreshHome = useCallback(async () => {
     setRefreshingHome(true);
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -1690,8 +1696,9 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Today's focus */}
-      <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>
+      {/* Today's focus + Upcoming — side by side on tablet */}
+      <View style={isTablet ? styles.dashRow : undefined}>
+      <View style={[styles.sectionWrapper, styles.sectionWrapperFirst, isTablet && styles.dashColLeft]}>
         <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('todaysFocus')}</Text>
         <Text style={styles.sectionSubcopy}>
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
@@ -1781,7 +1788,7 @@ export default function Dashboard() {
 
 
       {/* Timeline / Upcoming */}
-      <View style={styles.sectionWrapper}>
+      <View style={[styles.sectionWrapper, isTablet && styles.dashColRight]}>
         <View style={styles.timelineHeader}>
           <View style={styles.timelineHeaderBody}>
             <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('upcoming')}</Text>
@@ -1913,6 +1920,7 @@ export default function Dashboard() {
             </Pressable>
           ) : null}
         </View>
+      </View>
       </View>
 
       <View style={{ height: 48 }} />

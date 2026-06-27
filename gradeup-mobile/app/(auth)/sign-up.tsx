@@ -315,6 +315,7 @@ export default function SignUp() {
         </LinearGradient>
 
         {/* ── Card ── */}
+        <View style={styles.cardWrap}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Create Account</Text>
 
@@ -493,6 +494,7 @@ export default function SignUp() {
             <Text style={styles.legalPreface}>.</Text>
           </View>
         </View>
+        </View>
 
       </ScrollView>
 
@@ -576,9 +578,15 @@ const styles = StyleSheet.create({
   },
   heroTitle: { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
   heroSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4, fontWeight: '500' },
+  cardWrap: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
   card: {
     marginTop: -24,
-    marginHorizontal: 20,
+    width: '100%',
+    maxWidth: 460,
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 24,

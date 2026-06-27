@@ -30,6 +30,7 @@ import {
   type CodexPetAnimationName,
 } from '@/components/PlaygroundCodexPet';
 import { useTranslations } from '@/src/i18n';
+import { useResponsive } from '@/hooks/useResponsive';
 import * as roomsApi from '@/src/lib/campusRoomsApi';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
@@ -179,6 +180,7 @@ export default function TimetableScreen() {
   const isPurpleTheme = themePack === 'purple';
   const purplePageBg = '#f3efff';
   const isDarkMinimal = useDarkMinimalThemePack();
+  const { twoPane, masterPaneWidth } = useResponsive();
   const T = useTranslations(language);
   const resolveSlotColor = useCallback(
     (entry: TimetableEntry) => (isDarkMinimal ? '#9ca3af' : entrySlotColor(entry, subjectColors)),
@@ -1101,13 +1103,14 @@ export default function TimetableScreen() {
     );
   }
 
-  function renderClassDetailsModal() {
+  function renderClassDetailsModal(forPane = false) {
     if (!selectedClass) return null;
     const color = resolveSlotColor(selectedClass);
-    return (
-      <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
-        <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
-          <Pressable style={[s.detailsModalCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={(e) => e.stopPropagation()}>
+    const inSidePane = twoPane && viewMode === 'list';
+    // Root-level call while a side pane is active: the pane renders the detail instead.
+    if (inSidePane && !forPane) return null;
+    const cardInner = (
+      <Pressable style={[s.detailsModalCard, inSidePane && s.detailsSidePaneCard, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={(e) => e.stopPropagation()}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
               <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: color, marginRight: 8 }} />
               <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>{selectedClass.subjectCode}</Text>
@@ -1289,7 +1292,13 @@ export default function TimetableScreen() {
             >
               <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 16 }}>Close</Text>
             </Pressable>
-          </Pressable>
+      </Pressable>
+    );
+    if (inSidePane) return cardInner;
+    return (
+      <Modal visible={!!selectedClass} transparent animationType="fade" onRequestClose={() => setSelectedClass(null)}>
+        <Pressable style={s.detailsModalOverlay} onPress={() => setSelectedClass(null)}>
+          {cardInner}
         </Pressable>
       </Modal>
     );
@@ -1846,7 +1855,7 @@ export default function TimetableScreen() {
 
   /* ── List view ────────────────────────────────────── */
   function renderListView() {
-    return (
+    const listScroll = (
       <ScrollView style={s.listScroll} contentContainerStyle={s.listContent}>
         {allDaysGrouped.map(({ day, items }) => {
           const fullKey = DAY_META[day as DayOfWeek].fullKey;
@@ -1943,6 +1952,30 @@ export default function TimetableScreen() {
           );
         })}
       </ScrollView>
+    );
+
+    if (!twoPane) return listScroll;
+
+    return (
+      <View style={s.listTwoPane}>
+        <View style={[s.listMasterPane, { width: masterPaneWidth, borderRightColor: theme.border }]}>
+          {listScroll}
+        </View>
+        <View style={s.listDetailPane}>
+          {selectedClass ? (
+            <ScrollView contentContainerStyle={s.listDetailPaneContent} showsVerticalScrollIndicator={false}>
+              {renderClassDetailsModal(true)}
+            </ScrollView>
+          ) : (
+            <View style={s.listDetailEmpty}>
+              <Feather name="calendar" size={40} color={theme.textSecondary} />
+              <Text style={{ color: theme.textSecondary, marginTop: 12, fontSize: 15, fontWeight: '600' }}>
+                {(T as any)('timetableSelectClassDetail') || 'Select a class to see details'}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
     );
   }
 
@@ -2262,6 +2295,17 @@ const s = StyleSheet.create({
   gridEmptyText: { fontSize: 12 },
   listScroll: { flex: 1 },
   listContent: { padding: 16, paddingBottom: 40 },
+  listTwoPane: { flex: 1, flexDirection: 'row' },
+  listMasterPane: { flexShrink: 0, borderRightWidth: StyleSheet.hairlineWidth },
+  listDetailPane: { flex: 1, minWidth: 0 },
+  listDetailPaneContent: { padding: 20, paddingTop: 24, alignItems: 'stretch' },
+  listDetailEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  detailsSidePaneCard: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   listDayBox: {
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,

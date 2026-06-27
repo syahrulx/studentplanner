@@ -8,7 +8,6 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -26,8 +25,6 @@ import {
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
 import type { StudySnap, SnapReaction } from '@/src/types';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const REACTION_EMOJIS = ['🔥', '💪', '📚', '❤️', '👍', '🎉'];
 
@@ -304,8 +301,8 @@ const s = StyleSheet.create({
   container: { flex: 1 },
   fullImage: {
     ...StyleSheet.absoluteFillObject,
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width: '100%',
+    height: '100%',
   },
 
   // Top overlay

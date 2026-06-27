@@ -842,6 +842,7 @@ const translations = {
     timetableScheduleConflictDetail:
       'This overlaps with {code} ({start}–{end}) on the same day. Change the day or time.',
     timetableToday: 'Today',
+    timetableSelectClassDetail: 'Select a class to see details',
     tasksPulseNoTasks: 'Add sow',
     workloadSteady: 'STEADY LOAD',
     workloadPeakWave: 'PEAK WEEK LOAD',
@@ -1802,6 +1803,7 @@ const translations = {
     timetableScheduleConflictDetail:
       'Bertindih dengan {code} ({start}–{end}) pada hari yang sama. Ubah hari atau masa.',
     timetableToday: 'Hari ini',
+    timetableSelectClassDetail: 'Pilih kelas untuk lihat butiran',
     tasksPulseNoTasks: 'Tambah tugas untuk lihat minggu puncak',
     workloadSteady: 'BEBAN STABIL',
     workloadPeakWave: 'BEBAN PUNCAK',

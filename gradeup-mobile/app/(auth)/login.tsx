@@ -277,6 +277,7 @@ export default function Login() {
         </LinearGradient>
 
         {/* ── Card ── */}
+        <View style={styles.cardWrap}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Welcome back</Text>
           <Text style={styles.cardSubtitle}>Sign in to continue your journey</Text>
@@ -431,6 +432,7 @@ export default function Login() {
             <Text style={styles.legalPreface}>.</Text>
           </View>
         </View>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -471,9 +473,15 @@ const styles = StyleSheet.create({
   },
 
   // Card
+  cardWrap: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
   card: {
     marginTop: -28,
-    marginHorizontal: 20,
+    width: '100%',
+    maxWidth: 460,
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 28,

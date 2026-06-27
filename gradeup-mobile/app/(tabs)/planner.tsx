@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, Dimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch, Image } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Modal, TextInput, ScrollView, Alert, useWindowDimensions, LayoutChangeEvent, NativeSyntheticEvent, NativeScrollEvent, ActivityIndicator, Switch, Image } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate } from 'react-native-reanimated';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
@@ -190,6 +190,7 @@ const CALENDAR_STRIP_SLOT = 64;
 export default function Planner() {
   const scrollRef = useRef<ScrollView>(null);
   const weekGridScrollRef = useRef<ScrollView>(null);
+  const { width: windowWidth } = useWindowDimensions();
   const theme = useTheme();
   const themePack = useThemePack();
   const isCatTheme = themePack === 'cat';
@@ -366,10 +367,10 @@ export default function Planner() {
 
   const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const calendarStripSideInset = useMemo(() => {
-    const fallbackWidth = Dimensions.get('window').width - 72;
+    const fallbackWidth = windowWidth - 72;
     const stripWidth = calendarStripWidth || fallbackWidth;
     return Math.max(16, stripWidth / 2 - CALENDAR_STRIP_SLOT / 2);
-  }, [calendarStripWidth]);
+  }, [calendarStripWidth, windowWidth]);
   const monthDays = useMemo(() => {
     const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
     const result: { dateISO: string; dayNum: string; label: string }[] = [];
@@ -1391,7 +1392,7 @@ export default function Planner() {
   // Render month grid — compact (default) or expanded (zoomed in)
   const renderMonthGrid = () => {
     const days = monthGridCells;
-    const screenWidth = Dimensions.get('window').width;
+    const screenWidth = windowWidth;
 
     // Shared navigation header (expand/collapse lives here — avoids overlap with tab bar)
     const monthNav = (

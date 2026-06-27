@@ -6,6 +6,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
+import { useResponsive } from '@/hooks/useResponsive';
 
 let BlurView: React.ComponentType<any> | null = null;
 // Temporarily disabled dynamic require because the native module isn't built into the current dev client
@@ -38,6 +39,15 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
   const isDark = isDarkTheme(themeId);
   const insets = useSafeAreaInsets();
   const { communityBadgeCount } = useCommunity();
+  const { isTablet } = useResponsive();
+
+  // Tablet: a larger, more proportional pill so it doesn't look tiny on iPad.
+  const barH = isTablet ? 74 : BAR_H;
+  const barMaxWidth = isTablet ? 560 : 420;
+  const iconSize = isTablet ? 27 : 24;
+  const homeIconSize = isTablet ? 28 : 24;
+  const homeCircle = isTablet ? 58 : 50;
+  const labelSize = isTablet ? 12 : 10;
 
   const hasBlur = BlurView && Platform.OS !== 'web';
   // Use completely transparent background when blur is active, letting the native OS handle the material
@@ -54,7 +64,7 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
         style={[
           styles.barOuter,
           styles.barShadow,
-          { shadowColor: isDark ? '#000000' : `${theme.primary}33` },
+          { maxWidth: barMaxWidth, height: barH, shadowColor: isDark ? '#000000' : `${theme.primary}33` },
         ]}
       >
         {hasBlur && (() => {
@@ -90,19 +100,19 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
             return (
               <Pressable
                 key={route.key}
-                style={({ pressed }) => [styles.tab, { paddingTop: 0, paddingBottom: 8 }, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.tab, { height: barH, paddingTop: 0, paddingBottom: 8 }, pressed && styles.pressed]}
                 onPress={onPress}
               >
                 <View style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 25,
+                  width: homeCircle,
+                  height: homeCircle,
+                  borderRadius: homeCircle / 2,
                   backgroundColor: focused ? activeColor : theme.card,
                   borderColor: focused ? activeColor : theme.border,
                   borderWidth: focused ? 0 : 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  marginTop: -20, // breaks out cleanly
+                  marginTop: isTablet ? -24 : -20, // breaks out cleanly
                   marginBottom: 4,
                   shadowColor: focused ? activeColor : '#000000',
                   shadowOffset: { width: 0, height: 6 },
@@ -113,13 +123,13 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                   {options.tabBarIcon?.({
                     focused,
                     color: focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor,
-                    size: 24,
+                    size: homeIconSize,
                   })}
                   {focused && isCatTheme ? (
                     <Feather name="heart" size={10} color={focused ? (isMonoTheme ? '#000000' : theme.textInverse) : inactiveColor} style={styles.catHomeAccent} />
                   ) : null}
                 </View>
-                <Text style={[styles.label, { color }]} numberOfLines={1}>
+                <Text style={[styles.label, { color, fontSize: labelSize }]} numberOfLines={1}>
                   {(options.tabBarLabel as string) ?? options.title ?? route.name}
                 </Text>
               </Pressable>
@@ -129,11 +139,11 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
           return (
             <Pressable
               key={route.key}
-              style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.tab, { height: barH }, pressed && styles.pressed]}
               onPress={onPress}
             >
               <View style={styles.tabIconWrap}>
-                {options.tabBarIcon?.({ focused, color, size: 24 })}
+                {options.tabBarIcon?.({ focused, color, size: iconSize })}
                 {route.name === 'community' && communityBadgeCount > 0 ? (
                   <View style={[styles.communityBadge, { borderColor: theme.card }]}>
                     <Text style={styles.communityBadgeText} numberOfLines={1}>
@@ -143,7 +153,7 @@ export function GlassTabBar({ state, descriptors, navigation }: BottomTabBarProp
                 ) : null}
               </View>
               <Text
-                style={[styles.label, { color }]}
+                style={[styles.label, { color, fontSize: labelSize }]}
                 numberOfLines={1}
               >
                 {(options.tabBarLabel as string) ?? options.title ?? route.name}
