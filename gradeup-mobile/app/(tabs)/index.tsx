@@ -359,6 +359,12 @@ function createDashboardStyles(
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
     },
+    // Explicit size so iOS <Image> covers the container instead of falling back
+    // to the source's intrinsic 600px (which caused the wide-header seam).
+    headerWaveFill: {
+      width: '100%',
+      height: '100%',
+    },
     monoHeaderPattern: {
       borderBottomLeftRadius: 28,
       borderBottomRightRadius: 28,
@@ -1493,13 +1499,24 @@ export default function Dashboard() {
           },
         ]}
       >
-        <LinearGradient
-          colors={[headerAccent2, headerPrimary, headerSecondary]}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFillObject, styles.headerGradient]}
-        />
+        {isTablet ? (
+          // Tablet: pure vertical fade (no horizontal variation) so the wide
+          // header doesn't split into a light-left / dark-right "cut".
+          <LinearGradient
+            colors={[headerPrimary, headerSecondary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={[StyleSheet.absoluteFillObject, styles.headerGradient]}
+          />
+        ) : (
+          <LinearGradient
+            colors={[headerAccent2, headerPrimary, headerSecondary]}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[StyleSheet.absoluteFillObject, styles.headerGradient]}
+          />
+        )}
         {isCatTheme ? (
           <View style={[StyleSheet.absoluteFillObject, styles.catHeaderPattern]} pointerEvents="none">
             <View style={[styles.catHeaderBubble, styles.catHeaderBubbleA]} />
@@ -1513,11 +1530,20 @@ export default function Dashboard() {
           <SpiderHeaderWebOverlay />
         ) : isPurpleTheme ? (
           <PurpleAuroraOverlay variant="soft" opacity={1.0} veilColor="rgba(54, 31, 124, 0.74)" />
+        ) : isTablet ? (
+          // Tablet: give the Image explicit full width/height (like PurpleAuroraOverlay)
+          // so `cover` fills the wide header. Without explicit dimensions iOS sizes the
+          // Image to the source's intrinsic 600px and tiles one native tile on the left
+          // (the visible "cut").
+          <Image
+            source={require('../../assets/images/wave-texture.png')}
+            style={[StyleSheet.absoluteFillObject, styles.headerWave, styles.headerWaveFill, { opacity: headerWaveOpacity }]}
+            resizeMode="cover"
+          />
         ) : (
           <Image
             source={require('../../assets/images/wave-texture.png')}
             style={[StyleSheet.absoluteFillObject, styles.headerWave, { opacity: headerWaveOpacity }]}
-            // iPad/TestFlight can stretch this texture too much; repeat keeps it crisp on large ratios.
             resizeMode={Platform.OS === 'ios' ? 'repeat' : 'cover'}
           />
         )}
