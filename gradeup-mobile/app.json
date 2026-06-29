@@ -14,7 +14,7 @@
       "backgroundColor": "#eaecf1"
     },
     "ios": {
-      "buildNumber": "125",
+      "buildNumber": "126",
       "supportsTablet": true,
       "requireFullScreen": true,
       "bundleIdentifier": "com.aizztech.rencana",
@@ -48,7 +48,7 @@
     },
     "android": {
       "googleServicesFile": "./google-services.json",
-      "versionCode": 131,
+      "versionCode": 132,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-foreground.png",
         "backgroundColor": "#ffffff",
