@@ -8,6 +8,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
 import { TabBarProvider } from '@/contexts/TabBarContext';
 import { GlassTabBar } from '@/components/GlassTabBar';
+import { WebSidebar } from '@/components/WebSidebar';
+import { useResponsive } from '@/hooks/useResponsive';
 import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
 import { supabase } from '@/src/lib/supabase';
@@ -19,6 +21,7 @@ export default function TabLayout() {
   const { language } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
+  const { isDesktop } = useResponsive();
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [gate, setGate] = useState<'loading' | 'signed-out' | 'needs-profile' | 'ready'>('loading');
 
@@ -88,8 +91,11 @@ export default function TabLayout() {
 
   return (
     <TabBarProvider openAddMenu={openAddMenu}>
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        {isDesktop ? <WebSidebar /> : null}
+        <View style={{ flex: 1, minWidth: 0 }}>
       <Tabs
-        tabBar={(props) => <GlassTabBar {...props} />}
+        tabBar={(props) => (isDesktop ? null : <GlassTabBar {...props} />)}
         screenOptions={{
           tabBarActiveTintColor: theme.tabIconSelected,
           tabBarInactiveTintColor: theme.tabIconDefault,
@@ -153,6 +159,8 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
+        </View>
+      </View>
 
       {/* Add Menu Modal — triggered by + button in Planner header */}
       <Modal visible={addMenuOpen} transparent animationType="fade">

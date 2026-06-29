@@ -1,7 +1,7 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import { uploadPostImage } from './postImageUpload';
+import { readUriAsBase64 } from './readUriAsBase64';
 
 // ─── Content Moderation ─────────────────────────────────────────────────────
 
@@ -1353,10 +1353,8 @@ export async function uploadDeliveryAttachment(uri: string): Promise<string> {
   const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   try {
-    // 1. Read file as base64
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    // 1. Read file as base64 (web-safe)
+    const base64 = await readUriAsBase64(uri);
 
     // 2. Convert to ArrayBuffer
     const arrayBuffer = decode(base64);

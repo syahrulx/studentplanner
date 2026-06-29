@@ -1,6 +1,6 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import { readUriAsBase64 } from './readUriAsBase64';
 
 // Shared helper for uploading a community post image to Supabase Storage. Lives
 // in its own module so both eventsApi and servicesApi can use it without
@@ -12,10 +12,8 @@ export async function uploadPostImage(uri: string): Promise<string> {
   const fileName = `${user.id}/${Date.now()}.jpg`;
 
   try {
-    // 1. Read file as base64
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    // 1. Read file as base64 (web-safe)
+    const base64 = await readUriAsBase64(uri);
 
     // 2. Convert to ArrayBuffer
     const arrayBuffer = decode(base64);

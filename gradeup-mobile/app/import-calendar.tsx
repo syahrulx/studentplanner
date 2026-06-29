@@ -107,6 +107,12 @@ export default function ImportCalendarScreen() {
   }, [calendars]);
 
   const loadCalendars = useCallback(async () => {
+    // Device calendars don't exist on web — skip and show the unavailable state.
+    if (Platform.OS === 'web') {
+      setPermissionGranted(false);
+      setLoadingCals(false);
+      return;
+    }
     setLoadingCals(true);
     try {
       const ok = await ensureCalendarPermission();
@@ -297,7 +303,14 @@ export default function ImportCalendarScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {loadingCals ? (
+      {Platform.OS === 'web' ? (
+        <View style={styles.centered}>
+          <Feather name="calendar" size={40} color={theme.textSecondary} />
+          <Text style={{ color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 24, marginTop: 12 }}>
+            Importing from your device calendar is available in the Rencana mobile app.
+          </Text>
+        </View>
+      ) : loadingCals ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.primary} />
         </View>

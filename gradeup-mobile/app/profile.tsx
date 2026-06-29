@@ -16,6 +16,7 @@ import {
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import ImageCropPicker from 'react-native-image-crop-picker';
+import { readUriAsBase64 } from '@/src/lib/readUriAsBase64';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
@@ -384,6 +385,28 @@ export default function Profile() {
 
   const handleEditAvatar = async () => {
     try {
+      // Web: react-native-image-crop-picker has no web build, so use expo-image-picker
+      // (with allowsEditing) and the returned base64.
+      if (Platform.OS === 'web') {
+        const picked = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.9,
+          base64: true,
+        });
+        if (picked.canceled || !picked.assets?.length) return;
+        const asset = picked.assets[0];
+        const data = asset.base64 ?? (asset.uri ? await readUriAsBase64(asset.uri) : null);
+        if (data) {
+          setIsUploading(true);
+          const ext = (asset.mimeType?.split('/')[1]) || 'jpeg';
+          const publicUrl = await uploadAvatar(data, ext);
+          setUser({ ...user, avatar: publicUrl });
+        }
+        return;
+      }
+
       const ok = await ensureImageLibraryAccessForPicker();
       if (!ok) {
         Alert.alert('Permission needed', 'Allow photo access in your device settings to change your profile picture.');

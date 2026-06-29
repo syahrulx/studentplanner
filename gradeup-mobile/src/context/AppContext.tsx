@@ -91,6 +91,8 @@ import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
+import { reconcileAmbientLiveActivities } from '../liveActivityTriggers';
+import { endAllLiveActivities } from '../liveActivityManager';
 import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
@@ -732,6 +734,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
         const uniConn = r8.status === 'fulfilled' ? r8.value : null;
 
+        if (profile?.themePreferences) {
+          const tp = profile.themePreferences;
+          const validThemes: ThemeId[] = ['light', 'dark', 'blush', 'midnight', 'emerald'];
+          const validPacks: ThemePackId[] = ['none', 'cat', 'mono', 'spider', 'purple', 'custom'];
+          if (tp.theme && validThemes.includes(tp.theme as ThemeId)) {
+            setThemeState(tp.theme as ThemeId);
+            void persistTheme(tp.theme as ThemeId);
+          }
+          if (tp.themePack && validPacks.includes(tp.themePack as ThemePackId)) {
+            setThemePackState(tp.themePack as ThemePackId);
+            void persistThemePack(tp.themePack as ThemePackId);
+          }
+          if (typeof tp.spiderBlueAccents === 'boolean') {
+            setSpiderBlueAccentsState(tp.spiderBlueAccents);
+            void persistSpiderBlueAccents(tp.spiderBlueAccents);
+          }
+          if (tp.customThemeColors !== undefined) {
+            setCustomThemeColorsState(tp.customThemeColors);
+            void persistCustomThemeColors(tp.customThemeColors);
+          }
+        }
+
         let calendar: AcademicCalendar | null | undefined = undefined;
         if (r6.status === 'fulfilled') {
           calendar = r6.value ?? null;
@@ -1071,6 +1095,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setAcademicCalendar(null);
           setTimetable([]);
           cancelAllAttendanceNotifications().catch(() => {});
+          endAllLiveActivities().catch(() => {});
           logOutPurchases().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
@@ -1102,17 +1127,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => {
       void supabase.auth.getSession().then(({ data: { session } }) => {
         if (cancelled) return;
+        const signedIn = Boolean(session?.user?.id);
         syncHomeScreenWidget({
           tasks,
           courses,
           timetable,
           pinnedTaskIds,
           userName: user.name,
-          signedIn: Boolean(session?.user?.id),
+          signedIn,
           themeId: theme,
           themePack,
           customThemeColors,
           maxTasks: 3,
+        });
+        void reconcileAmbientLiveActivities({
+          signedIn,
+          tasks,
+          courses,
+          timetable,
+          themeId: theme,
+          themePack,
+          customThemeColors,
         });
       });
     }, 500); // Debounce to prevent JSI pressure
@@ -1127,21 +1162,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (state !== 'active') return;
       const r = homeWidgetInputsRef.current;
       void supabase.auth.getSession().then(({ data: { session } }) => {
+        const signedIn = Boolean(session?.user?.id);
         syncHomeScreenWidget({
           tasks: r.tasks,
           courses: r.courses,
           timetable: r.timetable,
           pinnedTaskIds: r.pinnedTaskIds,
           userName: r.userName,
-          signedIn: Boolean(session?.user?.id),
+          signedIn,
           themeId: r.theme,
           themePack: r.themePack,
           customThemeColors: r.customThemeColors,
           maxTasks: 3,
         });
+        void reconcileAmbientLiveActivities({
+          signedIn,
+          tasks: r.tasks,
+          courses: r.courses,
+          timetable: r.timetable,
+          themeId: r.theme,
+          themePack: r.themePack,
+          customThemeColors: r.customThemeColors,
+        });
       });
     });
     return () => sub.remove();
+  }, []);
+
+  // Re-evaluate ambient Live Activities on a slow cadence so class/deadline
+  // countdowns start and stop at the right wall-clock moment even when no app
+  // data changes. Cheap: it only reconciles already-cached state.
+  useEffect(() => {
+    const tick = () => {
+      const r = homeWidgetInputsRef.current;
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        void reconcileAmbientLiveActivities({
+          signedIn: Boolean(session?.user?.id),
+          tasks: r.tasks,
+          courses: r.courses,
+          timetable: r.timetable,
+          themeId: r.theme,
+          themePack: r.themePack,
+          customThemeColors: r.customThemeColors,
+        });
+      });
+    };
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   const refreshRemoteData = useCallback(async () => {
@@ -1151,20 +1218,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await loadRemoteDataRef.current(uid, getAuthFallbackName(session));
   }, []);
 
+  const syncThemePreferencesToProfile = useCallback(
+    async (prefs: {
+      theme: ThemeId;
+      themePack: ThemePackId;
+      spiderBlueAccents: boolean;
+      customThemeColors: CustomThemeColors | null;
+    }) => {
+      const uid = user.id?.trim();
+      if (!uid) return;
+      try {
+        await profileDb.updateProfile(uid, { themePreferences: prefs });
+      } catch {
+        /* theme_preferences column may not be migrated yet */
+      }
+    },
+    [user.id],
+  );
+
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
     persistTheme(next);
-  }, []);
+    void syncThemePreferencesToProfile({
+      theme: next,
+      themePack,
+      spiderBlueAccents,
+      customThemeColors,
+    });
+  }, [themePack, spiderBlueAccents, customThemeColors, syncThemePreferencesToProfile]);
 
   const setThemePack = useCallback((pack: ThemePackId) => {
     setThemePackState(pack);
     void persistThemePack(pack);
-  }, []);
+    void syncThemePreferencesToProfile({
+      theme,
+      themePack: pack,
+      spiderBlueAccents,
+      customThemeColors,
+    });
+  }, [theme, spiderBlueAccents, customThemeColors, syncThemePreferencesToProfile]);
 
   const setCustomThemeColors = useCallback((colors: CustomThemeColors | null) => {
     setCustomThemeColorsState(colors);
     void persistCustomThemeColors(colors);
-  }, []);
+    void syncThemePreferencesToProfile({
+      theme,
+      themePack,
+      spiderBlueAccents,
+      customThemeColors: colors,
+    });
+  }, [theme, themePack, spiderBlueAccents, syncThemePreferencesToProfile]);
 
   const setThemePreviewExpiry = useCallback((timestamp: number | null) => {
     setThemePreviewExpiryState(timestamp);
@@ -1174,7 +1277,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setSpiderBlueAccents = useCallback((enabled: boolean) => {
     setSpiderBlueAccentsState(enabled);
     persistSpiderBlueAccents(enabled);
-  }, []);
+    void syncThemePreferencesToProfile({
+      theme,
+      themePack,
+      spiderBlueAccents: enabled,
+      customThemeColors,
+    });
+  }, [theme, themePack, customThemeColors, syncThemePreferencesToProfile]);
 
   const setLanguage = useCallback((lang: AppLanguage) => {
     setLanguageState(lang);

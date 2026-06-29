@@ -16,6 +16,12 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { scheduleStudyTimerComplete, cancelStudyTimerNotification } from '@/src/notificationManager';
 import { getCurrentTimetableSubjectLabel } from '@/src/lib/timetableCurrentSlot';
+import {
+  startOrReplaceLiveActivity,
+  updateLiveActivity,
+  endLiveActivity,
+  type LiveActivityInput,
+} from '@/src/liveActivityManager';
 
 // Duration presets (milliseconds)
 const PRESETS = [
@@ -88,6 +94,29 @@ export default function StudyTimerScreen() {
     }
   }, []);
 
+  // Build the props for the study-timer Live Activity (iOS Lock Screen / Dynamic Island).
+  const buildStudyLiveActivity = useCallback(
+    (ph: 'focus' | 'break', secs: number): LiveActivityInput => {
+      const course = courses.find((c) => c.id === selectedCourseId);
+      const slotLabel = getCurrentTimetableSubjectLabel(timetable);
+      const now = Date.now();
+      return {
+        phase: ph,
+        title: ph === 'break' ? 'Break time' : course?.name || slotLabel || 'Focus session',
+        subtitle:
+          ph === 'break'
+            ? 'Recharge before the next round'
+            : course?.id || slotLabel || 'Stay focused',
+        startMs: now,
+        endMs: now + secs * 1000,
+        accent: theme.primary,
+        text: theme.text,
+        textSecondary: theme.textSecondary,
+      };
+    },
+    [courses, selectedCourseId, timetable, theme.primary, theme.text, theme.textSecondary],
+  );
+
   const startTimer = useCallback(
     (initialSecs: number, currentPhase: Phase) => {
       clearTimer();
@@ -109,9 +138,11 @@ export default function StudyTimerScreen() {
             setPhase('break');
             setSecondsLeft(breakSecs);
             // Don't auto-start break – let user press Start
+            endLiveActivity('studyTimer').catch(() => {});
           } else {
             setPhase('idle');
             setSecondsLeft(focusSecs);
+            endLiveActivity('studyTimer').catch(() => {});
           }
         }
       }, 1000);
@@ -124,6 +155,7 @@ export default function StudyTimerScreen() {
       setPhase('focus');
       startTimer(focusSecs, 'focus');
       scheduleStudyTimerComplete(preset.focus, selectedCourseId || undefined).catch(() => {});
+      startOrReplaceLiveActivity('studyTimer', buildStudyLiveActivity('focus', focusSecs)).catch(() => {});
       if (broadcastEnabled) {
         const course = courses.find((c) => c.id === selectedCourseId);
         const slotLabel = getCurrentTimetableSubjectLabel(timetable);
@@ -132,19 +164,22 @@ export default function StudyTimerScreen() {
       }
     } else if (phase === 'break') {
       startTimer(breakSecs, 'break');
+      startOrReplaceLiveActivity('studyTimer', buildStudyLiveActivity('break', breakSecs)).catch(() => {});
     }
-  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, timetable, updateActivity, preset.focus]);
+  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, timetable, updateActivity, preset.focus, buildStudyLiveActivity]);
 
   const handlePause = useCallback(() => {
     clearTimer();
     stopPulse();
     cancelStudyTimerNotification().catch(() => {});
+    updateLiveActivity('studyTimer', { pauseAtMs: Date.now() }).catch(() => {});
   }, [clearTimer, stopPulse]);
 
   const handleReset = useCallback(async () => {
     clearTimer();
     stopPulse();
     cancelStudyTimerNotification().catch(() => {});
+    endLiveActivity('studyTimer').catch(() => {});
     setPhase('idle');
     setSecondsLeft(focusSecs);
     if (broadcastEnabled) {

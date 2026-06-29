@@ -18,8 +18,7 @@ import {
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
-import ViewShot, { captureRef } from 'react-native-view-shot';
-import * as MediaLibrary from 'expo-media-library';
+import { ExportCanvas, saveExportCanvas } from '@/components/ViewShotCompat';
 import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import {
@@ -194,7 +193,7 @@ export default function TimetableScreen() {
   const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
   const [exportPreset, setExportPreset] = useState<'screen' | 'portrait' | 'landscape'>('portrait');
   const [exporting, setExporting] = useState(false);
-  const exportShotRef = useRef<ViewShot | null>(null);
+  const exportShotRef = useRef<any>(null);
   const [slotDetails, setSlotDetails] = useState<TimetableSlotDetailsVisibility>({
     courseName: false,
     scrollAllDaysInCompact: false,
@@ -947,23 +946,11 @@ export default function TimetableScreen() {
     if (exporting) return;
     setExporting(true);
     try {
-      // writeOnly: avoid READ_MEDIA_IMAGES/VIDEO (Play policy); image export only needs add/save access.
-      const { status } = await MediaLibrary.requestPermissionsAsync(true);
-      if (status !== 'granted') {
-        setExporting(false);
-        return;
-      }
-      if (!exportShotRef.current) {
-        setExporting(false);
-        return;
-      }
-      const uri = await captureRef(exportShotRef.current, {
+      const result = await saveExportCanvas(exportShotRef.current, {
         format: exportFormat,
-        quality: exportFormat === 'jpg' ? 0.95 : 1,
-        result: 'tmpfile',
+        quality: 0.95,
       });
-      await MediaLibrary.saveToLibraryAsync(uri);
-      setExportOpen(false);
+      if (result === 'saved') setExportOpen(false);
     } catch {
       // ignore
     } finally {
@@ -1073,11 +1060,12 @@ export default function TimetableScreen() {
 
         {/* Hidden full-size capture canvas (not constrained by preview frame). */}
         <View style={s.exportHiddenCanvas} pointerEvents="none">
-          <ViewShot
-            ref={(r) => {
+          <ExportCanvas
+            ref={(r: any) => {
               exportShotRef.current = r;
             }}
-            options={{ format: exportFormat, quality: exportFormat === 'jpg' ? 0.95 : 1, result: 'tmpfile' }}
+            format={exportFormat}
+            quality={exportFormat === 'jpg' ? 0.95 : 1}
             style={{
               width: exportSize.width,
               height: exportSize.height,
@@ -1097,7 +1085,7 @@ export default function TimetableScreen() {
                 ? renderLandscapeGridStatic(activeGrid.w)
                 : renderWeekGridStatic(activeGrid.w)}
             </View>
-          </ViewShot>
+          </ExportCanvas>
         </View>
       </Modal>
     );

@@ -172,7 +172,7 @@ export default ({ config }) => {
       "expo-build-properties",
       {
         "ios": {
-          "deploymentTarget": "16.0"
+          "deploymentTarget": "16.2"
         }
       }
     ],

@@ -1,6 +1,7 @@
-import { PDFDocument, StandardFonts, rgb, type PDFPage, type PDFFont } from 'pdf-lib';
+import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import type { PDFPage, PDFFont } from 'pdf-lib';
 import type { ParticipantAnswer } from '@/src/lib/quizApi';
 import type { GeneratedQuizQuestion } from '@/src/lib/studyApi';
 
@@ -72,12 +73,13 @@ export type QuizPdfMeta = {
 };
 
 type DrawState = {
-  pdfDoc: PDFDocument;
+  pdfDoc: import('pdf-lib').PDFDocument;
   page: PDFPage;
   y: number;
   font: PDFFont;
   fontBold: PDFFont;
   lineHeight: number;
+  rgb: (r: number, g: number, b: number) => ReturnType<typeof import('pdf-lib')['rgb']>;
 };
 
 function ensureLineFits(st: DrawState) {
@@ -97,7 +99,7 @@ function drawLine(st: DrawState, text: string, size: number, bold = false) {
       y: st.y,
       size,
       font,
-      color: rgb(0.12, 0.12, 0.14),
+      color: st.rgb(0.12, 0.12, 0.14),
     });
     st.y -= Math.max(st.lineHeight, size + 2);
   }
@@ -123,6 +125,7 @@ async function buildQuizPdf(params: {
 }): Promise<Uint8Array> {
   const { questions, answersByIndex, summary, meta } = params;
 
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -136,6 +139,7 @@ async function buildQuizPdf(params: {
     font,
     fontBold,
     lineHeight,
+    rgb,
   };
 
   const title = pdfSafe(summary.title?.trim() || 'Quiz results');
@@ -213,6 +217,17 @@ export async function shareQuizResultsPdf(params: {
     summary: params.summary,
     meta: params.meta,
   });
+
+  if (Platform.OS === 'web') {
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `quiz-results-${Date.now()}.pdf`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
 
   const baseDir = FileSystem.cacheDirectory;
   if (!baseDir) {

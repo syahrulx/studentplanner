@@ -44,25 +44,46 @@ async function resolveRecipients(
   universityId: string | undefined,
   pushOnly: boolean,
 ): Promise<string[]> {
-  let query = admin.from('profiles').select('id');
+  const allIds: string[] = [];
+  const pageSize = 1000;
+  let hasMore = true;
+  let page = 0;
 
-  if (audience === 'user_ids') {
-    const ids = (userIds ?? []).filter((v): v is string => typeof v === 'string' && v.length > 0);
-    if (ids.length === 0) return [];
-    query = query.in('id', ids);
-  } else if (audience === 'university') {
-    if (!universityId) return [];
-    query = query.eq('university_id', universityId);
+  while (hasMore) {
+    let query = admin.from('profiles').select('id').order('id');
+
+    if (audience === 'user_ids') {
+      const ids = (userIds ?? []).filter((v): v is string => typeof v === 'string' && v.length > 0);
+      if (ids.length === 0) return [];
+      query = query.in('id', ids);
+    } else if (audience === 'university') {
+      if (!universityId) return [];
+      query = query.eq('university_id', universityId);
+    }
+    // audience === 'all' applies no extra filter.
+
+    if (pushOnly) {
+      query = query.not('expo_push_token', 'is', null).eq('community_push_enabled', true);
+    }
+
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    query = query.range(from, to);
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    const rows = data ?? [];
+    allIds.push(...rows.map((r: { id: string }) => r.id));
+
+    if (rows.length < pageSize) {
+      hasMore = false;
+    } else {
+      page++;
+    }
   }
-  // audience === 'all' applies no extra filter.
 
-  if (pushOnly) {
-    query = query.not('expo_push_token', 'is', null).eq('community_push_enabled', true);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((r: { id: string }) => r.id);
+  return allIds;
 }
 
 async function recentBroadcastCount(

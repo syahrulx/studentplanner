@@ -1,14 +1,17 @@
 import { useMemo } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 
 const TABLET_MIN = 700;
 const LARGE_TABLET_MIN = 1024;
+const DESKTOP_MIN = 1024;
 
 export type ResponsiveLayout = {
   width: number;
   height: number;
   isTablet: boolean;
   isLargeTablet: boolean;
+  /** Wide web viewport: render a left sidebar instead of the bottom tab pill. */
+  isDesktop: boolean;
   contentMaxWidth: number;
   gutter: number;
   columns: number;
@@ -24,6 +27,8 @@ export function useResponsive(): ResponsiveLayout {
   return useMemo(() => {
     const isTablet = width >= TABLET_MIN;
     const isLargeTablet = width >= LARGE_TABLET_MIN;
+    // Desktop chrome (sidebar) is a web-only concept; native tablets keep the pill.
+    const isDesktop = Platform.OS === 'web' && width >= DESKTOP_MIN;
 
     const contentMaxWidth = isLargeTablet ? 820 : isTablet ? 720 : 600;
     const gutter = isLargeTablet ? 28 : isTablet ? 24 : 16;
@@ -37,6 +42,7 @@ export function useResponsive(): ResponsiveLayout {
       height,
       isTablet,
       isLargeTablet,
+      isDesktop,
       contentMaxWidth,
       gutter,
       columns,

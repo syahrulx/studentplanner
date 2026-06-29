@@ -5,10 +5,10 @@
  * Uses the same Supabase client and upload patterns as eventsApi.ts.
  */
 
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { readUriAsBase64 } from './readUriAsBase64';
 import type { StudySnap, SnapStreak, SnapReaction, SubscriptionPlan } from '../types';
 import { maxStreakRevivals } from './flashcardGenerationLimits';
 
@@ -91,9 +91,7 @@ export async function uploadSnapImage(uri: string): Promise<string> {
 
   const fileName = `${user.id}/${Date.now()}.jpg`;
 
-  const base64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  const base64 = await readUriAsBase64(uri);
 
   const arrayBuffer = decode(base64);
 

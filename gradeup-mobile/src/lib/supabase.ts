@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
-import { LogBox } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl as string | undefined;
 const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey as string | undefined;
@@ -19,7 +19,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // On web, OAuth providers redirect back with the session in the URL hash, so
+    // let supabase-js parse it. On native we use deep links + WebBrowser instead.
+    detectSessionInUrl: Platform.OS === 'web',
   },
 });
 

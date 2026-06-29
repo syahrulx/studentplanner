@@ -22,20 +22,23 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Mapbox requires native code compiled into a dev build — it throws in Expo Go.
-// Wrap in try-catch so the module still loads and exports its default component.
+// Mapbox requires native code compiled into a dev build — it throws in Expo Go,
+// and @rnmapbox/maps has no web build (aliased to a stub in metro.config.js).
+// Keep Mapbox null on web so the CommunityMapPlaceholder renders instead.
 let Mapbox: typeof import('@rnmapbox/maps').default | null = null;
-try {
-  Mapbox = require('@rnmapbox/maps').default as typeof import('@rnmapbox/maps').default;
-  const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
-  if (_mapboxToken) {
-    console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
-    (Mapbox as any).setAccessToken(_mapboxToken);
-  } else {
-    console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
+if (Platform.OS !== 'web') {
+  try {
+    Mapbox = require('@rnmapbox/maps').default as typeof import('@rnmapbox/maps').default;
+    const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+    if (_mapboxToken) {
+      console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
+      (Mapbox as any).setAccessToken(_mapboxToken);
+    } else {
+      console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
+    }
+  } catch {
+    console.log('[MAP] Mapbox native code not available (Expo Go) — map tab will show placeholder');
   }
-} catch {
-  console.log('[MAP] Mapbox native code not available (Expo Go) — map tab will show placeholder');
 }
 
 // Mapbox Standard configuration helper
@@ -47,6 +50,7 @@ function getMapState(themeId: string) {
 }
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { CommunityMapPlaceholder } from '@/components/CommunityMapPlaceholder';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, {
   useSharedValue,
@@ -865,13 +869,14 @@ export default function CommunityMap() {
       {/* ─── MAP SECTION ─── */}
       <View style={styles.mapContainer}>
         {!Mapbox ? (
-          <View style={[styles.map, { alignItems: 'center', justifyContent: 'center', backgroundColor: theme.backgroundSecondary }]}>
-            <Feather name="map" size={40} color={theme.textSecondary} />
-            <Text style={{ color: theme.textSecondary, marginTop: 12, fontSize: 15, fontWeight: '600' }}>Map unavailable</Text>
-            <Text style={{ color: theme.textSecondary, marginTop: 4, fontSize: 13, textAlign: 'center', paddingHorizontal: 32 }}>
-              Use a development build to see the live map.
-            </Text>
-          </View>
+          <CommunityMapPlaceholder
+            style={styles.map}
+            message={
+              Platform.OS === 'web'
+                ? 'The live campus map is available in the Rencana mobile app.'
+                : 'Use a development build to see the live map.'
+            }
+          />
         ) : (
           <Mapbox.MapView
             style={styles.map}

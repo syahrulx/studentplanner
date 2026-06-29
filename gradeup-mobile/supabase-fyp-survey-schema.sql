@@ -293,7 +293,9 @@ GRANT EXECUTE ON FUNCTION public.close_survey_early(UUID) TO authenticated;
 --    Partitioned by university so fairness is within the same school
 -- ---------------------------------------------------------------------------
 
-CREATE OR REPLACE VIEW public.survey_fair_queue AS
+DROP VIEW IF EXISTS public.survey_fair_queue;
+
+CREATE OR REPLACE VIEW public.survey_fair_queue WITH (security_invoker = true) AS
 SELECT
   cp.*,
   RANK() OVER (

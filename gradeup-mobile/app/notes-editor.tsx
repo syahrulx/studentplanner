@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Feather from '@expo/vector-icons/Feather';
-import { WebView } from 'react-native-webview';
+import { PdfWebView } from '@/components/PdfWebView';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { uploadNoteAttachment, getNoteAttachmentUrl } from '@/src/lib/noteStorage';
@@ -402,15 +402,10 @@ export default function NotesEditor() {
               <Text style={[s.pdfLoadingText, { color: theme.textSecondary }]}>Loading PDF...</Text>
             </View>
           ) : (
-            <WebView
-              source={{ uri: pdfPreviewUrl as string }}
+            <PdfWebView
+              uri={pdfPreviewUrl as string}
               style={s.pdfReader}
-              startInLoadingState
-              renderLoading={() => (
-                <View style={s.pdfLoadingWrap}>
-                  <ActivityIndicator size="small" color={theme.primary} />
-                </View>
-              )}
+              loadingColor={theme.primary}
             />
           )}
         </View>

@@ -2,6 +2,21 @@ import type { AppLanguage } from './storage';
 
 const translations = {
   en: {
+    // Live Activities
+    liveActivitiesTitle: 'Live Activities',
+    liveActivitiesSubtitle: 'Pick one Live Activity for your Lock Screen and Dynamic Island. Only the selected mode is shown.',
+    liveActivityOff: 'Off',
+    liveActivityOffDesc: 'No Live Activity on the Lock Screen.',
+    liveActivityOffSection: 'Turn off',
+    liveActivityStudyTimer: 'Study timer',
+    liveActivityStudyTimerDesc: 'Live countdown of your active focus session.',
+    liveActivityNextClass: 'Next class',
+    liveActivityNextClassDesc: 'Countdown to your next class and time left during one.',
+    liveActivityDeadline: 'Next deadline',
+    liveActivityDeadlineDesc: 'Countdown to your nearest upcoming task due date.',
+    liveActivityAttendance: 'Class check-in',
+    liveActivityAttendanceDesc: 'A live reminder when a class check-in window opens.',
+    liveActivityRequiresIos: 'Requires iOS 16.1 or later.',
     // Home
     hello: 'Hello',
     todaysFocus: "Today's focus",

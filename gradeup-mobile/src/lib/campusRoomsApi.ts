@@ -1,8 +1,8 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { FunctionsHttpError } from '@supabase/functions-js';
 import { supabase } from './supabase';
 import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
+import { readUriAsBase64 } from './readUriAsBase64';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -259,7 +259,7 @@ export async function uploadDirectoryFile(uri: string, isPdf: boolean): Promise<
     if (!user) return null;
     const ext = isPdf ? 'pdf' : 'jpg';
     const fileName = `${user.id}/${Date.now()}.${ext}`;
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+    const base64 = await readUriAsBase64(uri);
     const arrayBuffer = decode(base64);
     const { error } = await supabase.storage
       .from('campus-directories')

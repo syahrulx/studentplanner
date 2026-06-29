@@ -541,6 +541,23 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
+          {Platform.OS === 'ios' ? (
+            <>
+              <View style={styles.dividerList} />
+              <Pressable
+                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                onPress={() => router.push('/live-activities' as any)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+                  <Feather name="activity" size={18} color={themedIconFg('#fff')} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>{T('liveActivitiesTitle')}</Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </>
+          ) : null}
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

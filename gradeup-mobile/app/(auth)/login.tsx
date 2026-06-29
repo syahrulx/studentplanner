@@ -113,6 +113,30 @@ export default function Login() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setError(null);
+
+    // Web: full-page OAuth redirect. supabase-js navigates the browser to Google
+    // and back to our origin with the session in the URL hash, which is then
+    // parsed automatically (detectSessionInUrl) and handled by onAuthStateChange.
+    if (Platform.OS === 'web') {
+      try {
+        const { error: oauthError } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: { prompt: 'select_account' },
+          },
+        });
+        if (oauthError) {
+          setError('Google sign-in failed. Please try again.');
+          setGoogleLoading(false);
+        }
+      } catch {
+        setError('Google sign-in failed. Please try again.');
+        setGoogleLoading(false);
+      }
+      return;
+    }
+
     try {
       const redirectUrl = authRedirect('login');
 
@@ -198,6 +222,24 @@ export default function Login() {
   const handleAppleSignIn = async () => {
     setAppleLoading(true);
     setError(null);
+
+    if (Platform.OS === 'web') {
+      try {
+        const { error: oauthError } = await supabase.auth.signInWithOAuth({
+          provider: 'apple',
+          options: { redirectTo: window.location.origin },
+        });
+        if (oauthError) {
+          setError('Apple sign-in failed. Please try again.');
+          setAppleLoading(false);
+        }
+      } catch {
+        setError('Apple sign-in failed. Please try again.');
+        setAppleLoading(false);
+      }
+      return;
+    }
+
     try {
       const redirectUrl = authRedirect('login');
       const { data, error: oauthError } = await withTimeout(

@@ -14,7 +14,7 @@ WebBrowser.maybeCompleteAuthSession();
 import { useCallback, useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { LogBox } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 LogBox.ignoreLogs([
@@ -81,6 +81,8 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   useEffect(() => {
+    // expo-notifications tap routing is native-only; skip on web.
+    if (Platform.OS === 'web') return;
     const handleNotificationData = (data: Record<string, any> | undefined, delayed?: boolean) => {
       if (!data?.type) return;
       const nav = (fn: () => void) => (delayed ? setTimeout(fn, 100) : fn());
@@ -401,6 +403,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="services" />
         <Stack.Screen name="legal" />
         <Stack.Screen name="study-timer" />
+        <Stack.Screen name="live-activities" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 
           name="ai-chat" 

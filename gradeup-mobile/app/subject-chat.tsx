@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Markdown from 'react-native-markdown-display';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import { readUriAsBase64 } from '@/src/lib/readUriAsBase64';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
@@ -185,7 +185,7 @@ STUDENT NOTES CONTENT:
       const checkAndSetImage = async (uri: string, base64: string | null | undefined) => {
         let b64 = base64;
         if (!b64 && uri) {
-          b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          b64 = await readUriAsBase64(uri);
         }
         if (b64 && (b64.length * 0.75) > 10 * 1024 * 1024) {
           Alert.alert('File Too Large', 'Please select an image smaller than 10MB.');

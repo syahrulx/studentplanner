@@ -34,6 +34,30 @@ import { openPrivacyPolicy, openTermsOfUse } from '@/src/constants/legal';
 
 const TIERS: SubscriptionPlan[] = ['free', 'plus', 'pro'];
 
+/**
+ * Existing Rencana subscription website. On web we hand the upgrade/manage flow
+ * off to this site (Curlec/Razorpay checkout) instead of RevenueCat. It shares
+ * the same Supabase project, so a successful payment updates
+ * `profiles.subscription_plan` and the plan syncs straight back into the app.
+ */
+const RENCANA_WEB_BASE = 'https://www.rencana.com.my';
+
+/**
+ * Open a page on the Rencana subscription website (web only). When the app is
+ * embedded on the rencana.com.my origin (served under `/app`), navigate in the
+ * SAME tab with a relative URL so the shared Supabase session carries over with
+ * no second sign-in. When hosted elsewhere, open the absolute URL in a new tab.
+ */
+function openRencanaWeb(path: string) {
+  if (typeof window === 'undefined') return;
+  const onRencana = /(^|\.)rencana\.com\.my$/i.test(window.location.hostname);
+  if (onRencana) {
+    window.location.assign(path);
+  } else {
+    window.open(`${RENCANA_WEB_BASE}${path}`, '_blank', 'noopener');
+  }
+}
+
 export default function SubscriptionPlansScreen() {
   const theme = useTheme();
   const { user, updateProfile } = useApp();
@@ -180,6 +204,14 @@ export default function SubscriptionPlansScreen() {
       return;
     }
 
+    // Web: hand off to the existing Rencana subscription website. Upgrades go to
+    // the pricing/checkout page; downgrades/cancellations go to the billing page.
+    // Both share this app's Supabase project, so the new plan syncs back here.
+    if (Platform.OS === 'web') {
+      openRencanaWeb(selected === 'free' ? '/billing' : '/pricing');
+      return;
+    }
+
     // Downgrade to free — they manage this from their phone's Settings
     if (selected === 'free') {
       if (Platform.OS === 'ios') {
@@ -236,6 +268,11 @@ export default function SubscriptionPlansScreen() {
 
   /** Restore previous purchases (Apple requires this button). */
   const onRestore = async () => {
+    if (Platform.OS === 'web') {
+      // Manage/restore happens on the subscription website (shared backend).
+      openRencanaWeb('/billing');
+      return;
+    }
     setRestoring(true);
     try {
       const restoredPlan = await restorePurchases();

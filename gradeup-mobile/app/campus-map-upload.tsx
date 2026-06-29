@@ -14,7 +14,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import { readUriAsBase64 } from '@/src/lib/readUriAsBase64';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -146,7 +146,7 @@ export default function CampusMapUploadScreen() {
     await supabase.auth.refreshSession();
     setBusy(true);
     try {
-      const b64 = await FileSystem.readAsStringAsync(picked.uri, { encoding: 'base64' });
+      const b64 = await readUriAsBase64(picked.uri);
       if (!b64 || b64.length > MAX_BASE64_CHARS) {
         Alert.alert(T('error'), T('campusMapFileTooLarge'));
         return;

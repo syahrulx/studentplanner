@@ -2,7 +2,9 @@
 -- eliminates the N+1 double-fetch pattern in getSessionParticipants.
 -- After running this migration, update getSessionParticipants to query this view.
 
-create or replace view quiz_participants_with_profile as
+drop view if exists quiz_participants_with_profile;
+
+create or replace view quiz_participants_with_profile with (security_invoker = true) as
   select
     qp.id,
     qp.session_id,
@@ -15,6 +17,7 @@ create or replace view quiz_participants_with_profile as
     p.avatar_url as profile_avatar_url
   from quiz_participants qp
   left join profiles p on p.id = qp.user_id;
+
 
 -- Grant read access to authenticated users
 grant select on quiz_participants_with_profile to authenticated;

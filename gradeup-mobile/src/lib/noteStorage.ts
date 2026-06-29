@@ -4,9 +4,9 @@
  * Run supabase-storage-notes.sql in Supabase SQL Editor for RLS policies.
  * Create the bucket in Dashboard (Storage → New bucket → note-attachments, Private) or call ensureBucket once.
  */
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import { readUriAsBase64 } from './readUriAsBase64';
 
 export const NOTE_ATTACHMENTS_BUCKET = 'note-attachments';
 
@@ -26,10 +26,8 @@ export async function uploadNoteAttachment(
 ): Promise<{ path: string; error: Error | null }> {
   const path = `${userId}/${noteId}/${fileName}`;
   try {
-    // 1. Read file as base64
-    const base64 = await FileSystem.readAsStringAsync(fileUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    // 1. Read file as base64 (web-safe)
+    const base64 = await readUriAsBase64(fileUri);
 
     // 2. Convert to ArrayBuffer
     const arrayBuffer = decode(base64);

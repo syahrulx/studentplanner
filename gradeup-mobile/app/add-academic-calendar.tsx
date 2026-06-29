@@ -13,7 +13,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy";
+import { readUriAsBase64 } from "@/src/lib/readUriAsBase64";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/src/context/AppContext";
 import { supabase } from "@/src/lib/supabase";
@@ -49,9 +49,7 @@ export default function AddAcademicCalendarScreen() {
       const fileUri = res.assets[0].uri;
 
       setBusy(true);
-      const base64 = await FileSystem.readAsStringAsync(fileUri, {
-        encoding: 'base64',
-      });
+      const base64 = await readUriAsBase64(fileUri);
 
       const { data, error } = await supabase.functions.invoke("user_tools", {
         body: { action: "extract_calendar_from_pdf", pdfBase64: base64 },

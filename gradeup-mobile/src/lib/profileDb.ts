@@ -1,6 +1,23 @@
 import { supabase } from './supabase';
 import type { AcademicLevel, SubscriptionPlan } from '../types';
 
+export interface ThemePreferencesRow {
+  theme?: string;
+  themePack?: string;
+  spiderBlueAccents?: boolean;
+  customThemeColors?: {
+    primary: string;
+    card: string;
+    background: string;
+    text?: string;
+    textSecondary?: string;
+    textInverse?: string;
+    border?: string;
+    focusCard?: string;
+    focusCardText?: string;
+  } | null;
+}
+
 function normalizeSubscriptionPlanUpdate(raw: SubscriptionPlan): SubscriptionPlan {
   if (raw === 'plus' || raw === 'pro') return raw;
   return 'free';
@@ -43,11 +60,12 @@ export async function getProfile(userId: string): Promise<{
   portalTeachingAnchoredSemester?: number;
   subscriptionPlan?: SubscriptionPlan;
   hasUsedThemeTrial?: boolean;
+  themePreferences?: ThemePreferencesRow | null;
 } | null> {
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial, theme_preferences',
     )
     .eq('id', userId)
     .single();
@@ -72,6 +90,7 @@ export async function getProfile(userId: string): Promise<{
     portal_teaching_anchored_semester: number | null;
     subscription_plan: string | null;
     has_used_theme_trial: boolean | null;
+    theme_preferences: ThemePreferencesRow | null;
   };
   const level = row.academic_level as AcademicLevel | undefined;
   return {
@@ -100,6 +119,7 @@ export async function getProfile(userId: string): Promise<{
         : undefined,
     subscriptionPlan: normalizeSubscriptionPlan(row.subscription_plan),
     hasUsedThemeTrial: row.has_used_theme_trial ?? false,
+    themePreferences: row.theme_preferences ?? null,
   };
 }
 
@@ -124,6 +144,7 @@ export async function updateProfile(
     portalTeachingAnchoredSemester?: number | null;
     subscriptionPlan?: SubscriptionPlan;
     hasUsedThemeTrial?: boolean;
+    themePreferences?: ThemePreferencesRow | null;
   },
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
@@ -155,6 +176,9 @@ export async function updateProfile(
   }
   if (updates.hasUsedThemeTrial !== undefined) {
     payload.has_used_theme_trial = updates.hasUsedThemeTrial;
+  }
+  if (updates.themePreferences !== undefined) {
+    payload.theme_preferences = updates.themePreferences;
   }
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.from(TABLE).update(payload).eq('id', userId);
