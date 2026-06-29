@@ -32,6 +32,7 @@ import {
   getPostTeachingKind,
   maxWeekAlignPick,
   resolveBreakPeriodLabel,
+  EXAM_PERIOD_WEEKS,
 } from "@/src/lib/academicUtils";
 import {
   disableClassNotificationsForSemesterBreak,
@@ -1789,6 +1790,7 @@ export default function AcademicCalendarScreen() {
               <View
                 style={{
                   flexDirection: "row",
+                  flexWrap: "wrap",
                   gap: 10,
                   marginTop: 28,
                   justifyContent: "center",
@@ -1805,7 +1807,7 @@ export default function AcademicCalendarScreen() {
                   },
                   {
                     label: T("semesterBreak"),
-                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 3,
+                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2 + EXAM_PERIOD_WEEKS,
                   },
                 ].map((opt) => (
                   <Pressable
@@ -1813,8 +1815,9 @@ export default function AcademicCalendarScreen() {
                     style={[
                       s.alignWeekBtn,
                       {
-                        flex: 1,
-                        minWidth: 0,
+                        width: undefined,
+                        minWidth: 90,
+                        paddingHorizontal: 12,
                         borderColor: theme.border,
                         backgroundColor:
                           alignPickWeek === opt.val

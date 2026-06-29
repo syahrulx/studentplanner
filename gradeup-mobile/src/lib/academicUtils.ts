@@ -8,6 +8,9 @@ export type AcademicProgress = {
   semesterPhase: SemesterPhase;
 };
 
+/** Number of weeks allocated for the exam period (typically ~1 month). */
+export const EXAM_PERIOD_WEEKS = 4;
+
 /** Shift calendar-derived teaching week (clamped). Skips `no_calendar` / `before_start`. */
 export function applyTeachingWeekOffsetToProgress(
   p: AcademicProgress,
@@ -23,10 +26,10 @@ export function applyTeachingWeekOffsetToProgress(
   if (w === cap + 1) {
     return { week: w, isBreak: true, label: 'Study week', semesterPhase: 'break_after' };
   }
-  if (w === cap + 2) {
+  if (w >= cap + 2 && w <= cap + 1 + EXAM_PERIOD_WEEKS) {
     return { week: w, isBreak: true, label: 'Exam week', semesterPhase: 'break_after' };
   }
-  if (w > cap + 2) {
+  if (w > cap + 1 + EXAM_PERIOD_WEEKS) {
     return { week: w, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
   }
   return { week: w, isBreak: false, label: `Week ${w}`, semesterPhase: 'teaching' };
@@ -34,17 +37,17 @@ export function applyTeachingWeekOffsetToProgress(
 
 export type PostTeachingKind = 'study' | 'exam' | 'semester_break';
 
-/** Post-teaching align weeks: +1 study, +2 exam, +3+ semester break. */
+/** Post-teaching align weeks: +1 study, +2..+5 exam (~1 month), +6+ semester break. */
 export function getPostTeachingKind(week: number, totalWeeks: number): PostTeachingKind | null {
   const cap = Math.max(1, totalWeeks);
   if (week === cap + 1) return 'study';
-  if (week === cap + 2) return 'exam';
-  if (week >= cap + 3) return 'semester_break';
+  if (week >= cap + 2 && week <= cap + 1 + EXAM_PERIOD_WEEKS) return 'exam';
+  if (week >= cap + 2 + EXAM_PERIOD_WEEKS) return 'semester_break';
   return null;
 }
 
 export function maxWeekAlignPick(totalWeeks: number): number {
-  return Math.max(1, totalWeeks) + 3;
+  return Math.max(1, totalWeeks) + 2 + EXAM_PERIOD_WEEKS;
 }
 
 export function resolveBreakPeriodLabel(
