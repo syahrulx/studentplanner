@@ -34,6 +34,7 @@ import {
 import { getEnabledSubscriptionFeaturesForTier } from '@/src/lib/subscriptionFeatures';
 import type { SubscriptionPlan } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
+import { resolveBreakPeriodLabel } from '@/src/lib/academicUtils';
 import { getTodayISO } from '@/src/utils/date';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
@@ -586,7 +587,11 @@ export default function Profile() {
                 : semesterPhase === 'before_start'
                   ? T('semesterNotStartedShort')
                   : user.isBreak || semesterPhase === 'break_after'
-                    ? T('semesterBreak') || 'Semester Break'
+                    ? resolveBreakPeriodLabel(user.currentWeek ?? 1, totalWeeks, {
+                        study: T('studyWeek'),
+                        exam: T('examWeek'),
+                        semesterBreak: T('semesterBreak'),
+                      })
                     : `W${profileTeachingWeek} of ${totalWeeks}`}
             </Text>
           </View>

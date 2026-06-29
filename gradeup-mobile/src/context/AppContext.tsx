@@ -94,6 +94,10 @@ import { syncHomeScreenWidget } from '../homeWidgetSync';
 import { reconcileAmbientLiveActivities } from '../liveActivityTriggers';
 import { endAllLiveActivities } from '../liveActivityManager';
 import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
+import {
+  disableClassNotificationsForSemesterBreak,
+  isUserInSemesterBreak,
+} from '../lib/semesterBreakNotifications';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -376,6 +380,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
   const academicCalendarRef = useRef<AcademicCalendar | null>(null);
+  const userRef = useRef(user);
+  const wasSemesterBreakRef = useRef(false);
   const loadRemoteDataRef = useRef<(uid: string, authFallbackName?: string) => Promise<void>>(async () => {});
   const homeWidgetInputsRef = useRef({
     tasks,
@@ -425,6 +431,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     academicCalendarRef.current = academicCalendar;
   }, [academicCalendar]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const scheduleAttendanceNotifications = useCallback((uid: string, entries: TimetableEntry[]) => {
+    const cal = academicCalendarRef.current;
+    const total = cal ? mergeTeachingWeeksForStoredCalendar(cal) : 14;
+    const semesterBreak = isUserInSemesterBreak(userRef.current, total);
+    return rescheduleAttendanceNotifications(uid, entries, { semesterBreak });
+  }, []);
+
+  /** Auto-disable class check-in notifications when the user enters semester break. */
+  useEffect(() => {
+    const total = academicCalendar
+      ? mergeTeachingWeeksForStoredCalendar(academicCalendar)
+      : 14;
+    const onBreak = isUserInSemesterBreak(user, total);
+    if (onBreak && !wasSemesterBreakRef.current) {
+      void disableClassNotificationsForSemesterBreak();
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (!uid) return;
+        scheduleAttendanceNotifications(uid, timetableForAttendanceRef.current);
+      });
+    }
+    wasSemesterBreakRef.current = onBreak;
+  }, [
+    user.isBreak,
+    user.semesterPhase,
+    user.currentWeek,
+    academicCalendar?.totalWeeks,
+    scheduleAttendanceNotifications,
+  ]);
 
   /**
    * UiTM: when the profile resolves to UiTM but `academic_calendars` has no full HEA period table,
@@ -525,7 +565,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void supabase.auth.getSession().then(({ data: { session } }) => {
         const uid = session?.user?.id;
         if (!uid) return;
-        rescheduleAttendanceNotifications(uid, entries).catch(() => {});
+        scheduleAttendanceNotifications(uid, entries).catch(() => {});
       });
     });
     return () => sub.remove();
@@ -728,7 +768,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r7.status === 'fulfilled') {
           const tt = r7.value ?? [];
           setTimetable(tt);
-          rescheduleAttendanceNotifications(uid, tt).catch(() => {});
+          scheduleAttendanceNotifications(uid, tt).catch(() => {});
         }
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
@@ -1040,7 +1080,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void flushPendingAttendanceEvents();
           // Ensure attendance notifications are scheduled only after permission is granted.
           // This avoids silent failures when timetable loads before the permission prompt resolves.
-          rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
+          scheduleAttendanceNotifications(uid, timetable).catch(() => {});
         }
       })
       .catch(() => {});
@@ -2033,7 +2073,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await profileDb.updateProfile(uid, { universityId, lastSync: now });
     setTimetable(entries);
     setUserState((prev) => ({ ...prev, universityId, lastSync: now, studentId: sid || prev.studentId, timetable: entries }));
-    rescheduleAttendanceNotifications(uid, entries).catch(() => {});
+    scheduleAttendanceNotifications(uid, entries).catch(() => {});
   }, []);
 
   const saveTimetableOnly = useCallback(async (entries: TimetableEntry[], options?: { semesterLabel?: string }) => {
@@ -2043,7 +2083,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await timetableDb.saveTimetable(uid, entries, options?.semesterLabel);
     setTimetable(entries);
     setUserState((prev) => ({ ...prev, timetable: entries }));
-    rescheduleAttendanceNotifications(uid, entries).catch(() => {});
+    scheduleAttendanceNotifications(uid, entries).catch(() => {});
   }, []);
 
   const clearSemesterData = useCallback(async () => {
@@ -2224,7 +2264,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       await timetableDb.updateTimetableEntry(uid, entryId, normalized);
       // Re-schedule attendance banners so changes to day/startTime take effect.
-      rescheduleAttendanceNotifications(uid, mergedAfterUpdate).catch(() => {});
+      scheduleAttendanceNotifications(uid, mergedAfterUpdate).catch(() => {});
     },
     [],
   );
@@ -2241,7 +2281,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return merged;
     });
     await timetableDb.saveTimetable(uid, merged);
-    rescheduleAttendanceNotifications(uid, merged).catch(() => {});
+    scheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 
   const removeTimetableEntry = useCallback(async (entryId: string) => {
@@ -2256,7 +2296,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return merged;
     });
     await timetableDb.saveTimetable(uid, merged);
-    rescheduleAttendanceNotifications(uid, merged).catch(() => {});
+    scheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 
   const markDataReady = useCallback(() => setDataReady(true), []);

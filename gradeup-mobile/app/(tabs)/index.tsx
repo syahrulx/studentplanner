@@ -33,6 +33,7 @@ import {
   taskCountsByOpenDueWeek,
   teachingWeekNumberForDate,
 } from '@/src/lib/academicWeek';
+import { resolveBreakPeriodLabel } from '@/src/lib/academicUtils';
 import { useDarkMinimalThemePack, useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
 import { useResponsive } from '@/hooks/useResponsive';
 import { themePrefersLightOutline, type ThemeId, type ThemePalette } from '@/constants/Themes';
@@ -235,6 +236,15 @@ function createDashboardStyles(
       justifyContent: 'space-between',
     },
     peakAlertLeft: {},
+    peakAlertWeekRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    peakAlertEditBtn: {
+      padding: 4,
+      marginTop: -2,
+    },
     peakAlertWeek: {
       fontSize: 20,
       fontWeight: '800',
@@ -1170,16 +1180,49 @@ export default function Dashboard() {
   const headerSemesterStatus = useMemo(() => {
     if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
     if (semesterPhase === 'before_start') return T('semesterNotStartedShort');
-    if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
+    if (semesterPhase === 'break_after' || user.isBreak) {
+      return resolveBreakPeriodLabel(user.currentWeek ?? 1, academicCalendar?.totalWeeks ?? 14, {
+        study: T('studyWeek'),
+        exam: T('examWeek'),
+        semesterBreak: T('semesterBreak'),
+      });
+    }
     return `${T('week')} ${homeTeachingWeek}`;
-  }, [semesterPhase, user.isBreak, homeTeachingWeek, T]);
+  }, [semesterPhase, user.isBreak, user.currentWeek, academicCalendar?.totalWeeks, homeTeachingWeek, T]);
 
   const pulseMainTitle = useMemo(() => {
     if (semesterPhase === 'no_calendar') return T('semesterNotConfigured');
     if (semesterPhase === 'before_start') return T('notInSemester');
-    if (semesterPhase === 'break_after' || user.isBreak) return T('semesterBreak') || 'Semester Break';
+    if (semesterPhase === 'break_after' || user.isBreak) {
+      return resolveBreakPeriodLabel(user.currentWeek ?? 1, academicCalendar?.totalWeeks ?? 14, {
+        study: T('studyWeek'),
+        exam: T('examWeek'),
+        semesterBreak: T('semesterBreak'),
+      });
+    }
     return `${T('week')} ${homeTeachingWeek}`;
-  }, [semesterPhase, user.isBreak, homeTeachingWeek, T]);
+  }, [semesterPhase, user.isBreak, user.currentWeek, academicCalendar?.totalWeeks, homeTeachingWeek, T]);
+
+  const showWeekAlignEdit =
+    Boolean(academicCalendar?.startDate) && semesterPhase === 'teaching' && !user.isBreak;
+
+  const onWeekAlignPress = useCallback(() => {
+    if (!academicCalendar?.startDate) {
+      Alert.alert(
+        T('academicCalendar') || 'Academic calendar',
+        T('tapToSetCalendar'),
+        [
+          { text: T('cancel') || 'Cancel', style: 'cancel' },
+          {
+            text: T('openCalendar') || 'Open calendar',
+            onPress: () => router.push('/academic-calendar' as any),
+          },
+        ],
+      );
+      return;
+    }
+    router.push({ pathname: '/academic-calendar', params: { weekAlign: '1' } } as any);
+  }, [academicCalendar?.startDate, T]);
 
   const pulseBadgeText = useMemo(() => {
     if (semesterPhase === 'teaching' && !user.isBreak) {
@@ -1632,11 +1675,34 @@ export default function Dashboard() {
           ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={[
-                styles.peakAlertWeek, 
-                isPurpleTheme && { color: '#ffffff' },
-                themePack === 'custom' && { color: theme.focusCardText }
-              ]}>{pulseMainTitle}</Text>
+              <View style={styles.peakAlertWeekRow}>
+                <Text style={[
+                  styles.peakAlertWeek, 
+                  isPurpleTheme && { color: '#ffffff' },
+                  themePack === 'custom' && { color: theme.focusCardText }
+                ]}>{pulseMainTitle}</Text>
+                {showWeekAlignEdit ? (
+                  <Pressable
+                    onPress={onWeekAlignPress}
+                    hitSlop={10}
+                    style={({ pressed }) => [styles.peakAlertEditBtn, pressed && { opacity: 0.65 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={T('weekAlignment')}
+                  >
+                    <Feather
+                      name="edit-2"
+                      size={15}
+                      color={
+                        isPurpleTheme
+                          ? 'rgba(255,255,255,0.88)'
+                          : themePack === 'custom'
+                            ? theme.focusCardText
+                            : theme.textSecondary
+                      }
+                    />
+                  </Pressable>
+                ) : null}
+              </View>
               {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
                 <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
                   {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}

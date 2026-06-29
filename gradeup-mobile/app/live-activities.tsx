@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -51,6 +52,14 @@ export default function LiveActivitiesSettings() {
   }, []);
 
   const selectMode = useCallback((mode: LiveActivityMode) => {
+    if (Platform.OS !== 'ios' && mode !== null) {
+      Alert.alert(
+        'Not Supported',
+        'Live Activities are an iOS feature and have no effect on Android.'
+      );
+      return;
+    }
+
     setActiveMode((prev) => {
       if (prev === mode) return prev;
       setLiveActivityPrefs({ activeMode: mode }).catch(() => {});

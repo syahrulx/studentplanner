@@ -19,12 +19,14 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { rescheduleAllTaskNotifications } from '@/src/notificationManager';
 import { rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
+import { mergeTeachingWeeksForStoredCalendar } from '@/src/lib/academicUtils';
+import { isUserInSemesterBreak } from '@/src/lib/semesterBreakNotifications';
 
 const PAD = 20;
 const RADIUS = 14;
 
 export default function NotificationSettings() {
-  const { language, tasks, timetable } = useApp();
+  const { language, tasks, timetable, user, academicCalendar } = useApp();
   const theme = useTheme();
   const themePack = useThemePack();
   const isMonoTheme = themePack === 'mono';
@@ -96,13 +98,17 @@ export default function NotificationSettings() {
           void supabase.auth.getSession().then(({ data: { session } }) => {
             const uid = session?.user?.id;
             if (!uid) return;
-            rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
+            const total = academicCalendar
+              ? mergeTeachingWeeksForStoredCalendar(academicCalendar)
+              : 14;
+            const semesterBreak = isUserInSemesterBreak(user, total);
+            rescheduleAttendanceNotifications(uid, timetable, { semesterBreak }).catch(() => {});
           });
         }
         return next;
       });
     },
-    [tasks, timetable],
+    [tasks, timetable, user, academicCalendar?.totalWeeks],
   );
 
   return (

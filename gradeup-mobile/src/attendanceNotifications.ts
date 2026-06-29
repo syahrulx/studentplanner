@@ -197,8 +197,16 @@ type PlannedOccurrence = {
 export async function rescheduleAttendanceNotifications(
   userId: string,
   timetable: TimetableEntry[],
-  opts?: { horizonDays?: number },
+  opts?: { horizonDays?: number; semesterBreak?: boolean },
 ): Promise<void> {
+  if (opts?.semesterBreak) {
+    rescheduleQueue = rescheduleQueue
+      .catch(() => {})
+      .then(async () => {
+        await cancelAllAttendanceNotifications();
+      });
+    return rescheduleQueue;
+  }
   rescheduleQueue = rescheduleQueue
     .catch(() => {})
     .then(async () => {

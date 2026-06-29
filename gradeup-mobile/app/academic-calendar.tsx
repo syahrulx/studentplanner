@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -13,8 +13,15 @@ import {
   FlatList,
   TouchableOpacity,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  interpolate,
+} from "react-native-reanimated";
 import Feather from "@expo/vector-icons/Feather";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/src/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -22,7 +29,14 @@ import { useTranslations } from "@/src/i18n";
 import {
   getAcademicProgressFromCalendar,
   getAcademicProgress,
+  getPostTeachingKind,
+  maxWeekAlignPick,
+  resolveBreakPeriodLabel,
 } from "@/src/lib/academicUtils";
+import {
+  disableClassNotificationsForSemesterBreak,
+  isSemesterBreakAlignWeek,
+} from "@/src/lib/semesterBreakNotifications";
 import {
   searchUniversities,
   getUniversityById,
@@ -129,6 +143,39 @@ export default function AcademicCalendarScreen() {
   const [gridWidth, setGridWidth] = useState<number>(() =>
     Math.max(280, screenW - 32),
   );
+
+  const headerExpansion = useSharedValue(0);
+  const weekPillExpandedWidth = 84;
+  const weekLabelWidth = 36;
+
+  useFocusEffect(
+    useCallback(() => {
+      headerExpansion.value = withDelay(300, withTiming(1, { duration: 500 }));
+      const collapseId = setTimeout(() => {
+        headerExpansion.value = withTiming(0, { duration: 400 });
+      }, 3500);
+      return () => {
+        clearTimeout(collapseId);
+        headerExpansion.value = 0;
+      };
+    }, []),
+  );
+
+  const weekPillStyle = useAnimatedStyle(() => ({
+    width: interpolate(headerExpansion.value, [0, 1], [44, weekPillExpandedWidth], "clamp"),
+    borderRadius: 22,
+    overflow: "hidden",
+  }));
+
+  const weekLabelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(headerExpansion.value, [0, 0.4, 1], [0, 0, 1], "clamp"),
+    width: interpolate(headerExpansion.value, [0, 1], [0, weekLabelWidth], "clamp"),
+    marginLeft: interpolate(headerExpansion.value, [0, 1], [0, 6], "clamp"),
+    transform: [
+      { translateX: interpolate(headerExpansion.value, [0, 1], [10, 0], "clamp") },
+    ],
+    overflow: "hidden",
+  }));
 
   const activeDateIsInAcademicCalendar = useMemo(() => {
     const ss = String(todayISO).slice(0, 10);
@@ -247,15 +294,12 @@ export default function AcademicCalendarScreen() {
 
   const openWeekAlign = useCallback(() => {
     if (!academicCalendar?.startDate) return;
-    const raw = getAcademicProgressFromCalendar(
+    const current = getAcademicProgressFromCalendar(
       academicCalendar,
       user.startDate,
-      {
-        ignoreTeachingWeekOffset: true,
-      },
     );
-    const cap = Math.max(1, academicCalendar.totalWeeks ?? 14);
-    setAlignPickWeek(Math.max(1, Math.min(cap, raw.week)));
+    const maxPick = maxWeekAlignPick(academicCalendar.totalWeeks ?? 14);
+    setAlignPickWeek(Math.max(1, Math.min(maxPick, current.week)));
     setWeekAlignOpen(true);
   }, [academicCalendar, user.startDate]);
 
@@ -283,6 +327,26 @@ export default function AcademicCalendarScreen() {
     }
     presentWeekAlignFlow();
   }, [academicCalendar?.startDate, presentWeekAlignFlow]);
+
+  const { weekAlign: weekAlignParam } = useLocalSearchParams<{ weekAlign?: string }>();
+  const weekAlignLaunchRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      const requested =
+        weekAlignParam === "1" ||
+        weekAlignParam === "true" ||
+        weekAlignParam === "yes";
+      if (!requested || weekAlignLaunchRef.current) return;
+      weekAlignLaunchRef.current = true;
+      router.setParams({ weekAlign: undefined });
+      const timer = setTimeout(() => {
+        onHeaderAlignPress();
+        weekAlignLaunchRef.current = false;
+      }, 350);
+      return () => clearTimeout(timer);
+    }, [weekAlignParam, onHeaderAlignPress]),
+  );
 
   const openWeekAlignFromConfig = useCallback(() => {
     setConfigOpen(false);
@@ -312,6 +376,10 @@ export default function AcademicCalendarScreen() {
         teachingWeekOffset: newOffset,
         isActive: true,
       });
+      const cap = Math.max(1, academicCalendar.totalWeeks ?? 14);
+      if (isSemesterBreakAlignWeek(alignPickWeek, cap)) {
+        await disableClassNotificationsForSemesterBreak();
+      }
       setWeekAlignOpen(false);
     } catch (e) {
       Alert.alert(
@@ -750,21 +818,54 @@ export default function AcademicCalendarScreen() {
             {progress.semesterPhase === "before_start"
               ? "Before semester"
               : progress.semesterPhase === "break_after"
-                ? "Semester break"
+                ? resolveBreakPeriodLabel(progress.week, academicCalendar?.totalWeeks ?? 14, {
+                    study: T("studyWeek"),
+                    exam: T("examWeek"),
+                    semesterBreak: T("semesterBreak"),
+                  })
                 : `Week ${progress.week} of ${academicCalendar?.totalWeeks ?? 14}`}
           </Text>
         </View>
-        <Pressable
-          style={s.editBtn}
-          onPress={() => setConfigOpen(true)}
-          disabled={!user.universityId}
-        >
-          <Feather
-            name="sliders"
-            size={16}
-            color={user.universityId ? theme.primary : theme.textSecondary}
-          />
-        </Pressable>
+        <View style={s.headerActions}>
+          <Animated.View style={weekPillStyle}>
+            <Pressable
+              style={({ pressed }) => [
+                s.headerPillBtn,
+                !academicCalendar?.startDate && { opacity: 0.45 },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={onHeaderAlignPress}
+              disabled={!academicCalendar?.startDate}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={T("updateWeek")}
+            >
+              <View style={s.headerPillInner}>
+                <Feather
+                  name="edit-2"
+                  size={16}
+                  color={academicCalendar?.startDate ? theme.primary : theme.textSecondary}
+                />
+                <Animated.View style={weekLabelStyle}>
+                  <Text style={s.headerPillLabel} numberOfLines={1}>
+                    {T("updateWeek")}
+                  </Text>
+                </Animated.View>
+              </View>
+            </Pressable>
+          </Animated.View>
+          <Pressable
+            style={s.editBtn}
+            onPress={() => setConfigOpen(true)}
+            disabled={!user.universityId}
+          >
+            <Feather
+              name="sliders"
+              size={16}
+              color={user.universityId ? theme.primary : theme.textSecondary}
+            />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -1647,18 +1748,27 @@ export default function AcademicCalendarScreen() {
                     textAlign: "center",
                   }}
                 >
-                  {alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 1
-                    ? "Study Week"
-                    : alignPickWeek === (academicCalendar?.totalWeeks ?? 14) + 2
-                      ? "Semester Break"
-                      : `Week ${alignPickWeek}`}
+                  {getPostTeachingKind(
+                    alignPickWeek,
+                    academicCalendar?.totalWeeks ?? 14,
+                  )
+                    ? resolveBreakPeriodLabel(
+                        alignPickWeek,
+                        academicCalendar?.totalWeeks ?? 14,
+                        {
+                          study: T("studyWeek"),
+                          exam: T("examWeek"),
+                          semesterBreak: T("semesterBreak"),
+                        },
+                      )
+                    : `Week ${alignPickWeek}`}
                 </Text>
 
                 <Pressable
                   onPress={() =>
                     setAlignPickWeek((prev) =>
                       Math.min(
-                        (academicCalendar?.totalWeeks ?? 14) + 2,
+                        maxWeekAlignPick(academicCalendar?.totalWeeks ?? 14),
                         prev + 1,
                       ),
                     )
@@ -1686,12 +1796,16 @@ export default function AcademicCalendarScreen() {
               >
                 {[
                   {
-                    label: "Study Week",
+                    label: T("studyWeek"),
                     val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1,
                   },
                   {
-                    label: "Semester Break",
+                    label: T("examWeek"),
                     val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2,
+                  },
+                  {
+                    label: T("semesterBreak"),
+                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 3,
                   },
                 ].map((opt) => (
                   <Pressable
@@ -1699,7 +1813,8 @@ export default function AcademicCalendarScreen() {
                     style={[
                       s.alignWeekBtn,
                       {
-                        width: "48%",
+                        flex: 1,
+                        minWidth: 0,
                         borderColor: theme.border,
                         backgroundColor:
                           alignPickWeek === opt.val
@@ -1713,13 +1828,14 @@ export default function AcademicCalendarScreen() {
                       style={[
                         s.alignWeekText,
                         {
-                          fontSize: 14,
+                          fontSize: 12,
                           color:
                             alignPickWeek === opt.val
                               ? theme.textInverse
                               : theme.text,
                         },
                       ]}
+                      numberOfLines={2}
                     >
                       {opt.label}
                     </Text>
@@ -1796,8 +1912,8 @@ function styles(theme: ReturnType<typeof useTheme>) {
       justifyContent: "center",
     },
     title: {
-      fontSize: 20,
-      fontWeight: "900",
+      fontSize: 17,
+      fontWeight: "800",
       color: theme.text,
       letterSpacing: -0.3,
     },
@@ -1807,10 +1923,43 @@ function styles(theme: ReturnType<typeof useTheme>) {
       fontWeight: "700",
       color: theme.textSecondary,
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    headerPillBtn: {
+      width: "100%",
+      height: 44,
+      borderRadius: 22,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+      backgroundColor: theme.card,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: theme.text,
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 2,
+    },
+    headerPillInner: {
+      flexDirection: "row",
+      alignItems: "center",
+      height: "100%",
+      minWidth: 44,
+      justifyContent: "center",
+    },
+    headerPillLabel: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: theme.primary,
+      flexShrink: 0,
+    },
     editBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: theme.card,
       borderWidth: 1,
       borderColor: theme.border,

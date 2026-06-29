@@ -1,0 +1,971 @@
+diff --git a/gradeup-mobile/app/(tabs)/community.tsx b/gradeup-mobile/app/(tabs)/community.tsx
+index 3b89006..00ac5f1 100644
+--- a/gradeup-mobile/app/(tabs)/community.tsx
++++ b/gradeup-mobile/app/(tabs)/community.tsx
+@@ -54,10 +54,13 @@ import Animated, {
+   interpolate,
+   withDelay,
+   withTiming,
++  withRepeat,
++  withSequence,
+ } from 'react-native-reanimated';
+ import { Avatar } from '@/components/Avatar';
+ import { CatLottie } from '@/components/CatLottie';
+ import { SpiderLottie } from '@/components/SpiderLottie';
++import BottomSheet, { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+ 
+ 
+ import {
+@@ -398,12 +401,16 @@ export default function CommunityMap() {
+     showRoadLabels: false,
+     showTransitLabels: false,
+   }), [theme.id]);
++  const bottomSheetRef = useRef<BottomSheet>(null);
++  const snapPoints = useMemo(() => ['15%', '45%'], []);
+   const { language, user, timetable } = useApp();
+   /** Keeps “current class” under Studying in sync as periods change. */
+   useWallClockTick(30_000);
+   const T = useTranslations(language);
+ 
+   const pillExpansion = useSharedValue(0);
++  const confessPillExpansion = useSharedValue(0);
++  const checkInPulse = useSharedValue(1);
+ 
+   useFocusEffect(
+     useCallback(() => {
+@@ -411,14 +418,30 @@ export default function CommunityMap() {
+         300,
+         withTiming(1, { duration: 500 })
+       );
++      
++      confessPillExpansion.value = withDelay(
++        300,
++        withTiming(1, { duration: 500 })
++      );
+ 
+       const collapseId = setTimeout(() => {
+-        pillExpansion.value = withTiming(0, { duration: 400 });
++        confessPillExpansion.value = withTiming(0, { duration: 400 });
+       }, 3500);
+ 
++      checkInPulse.value = withRepeat(
++        withSequence(
++          withTiming(1.03, { duration: 800 }),
++          withTiming(1, { duration: 800 })
++        ),
++        -1,
++        true
++      );
++
+       return () => {
+         clearTimeout(collapseId);
+         pillExpansion.value = 0;
++        confessPillExpansion.value = 0;
++        checkInPulse.value = 1;
+       };
+     }, [])
+   );
+@@ -445,6 +468,32 @@ export default function CommunityMap() {
+       alignItems: 'center',
+     };
+   });
++  const confessBtnStyle = useAnimatedStyle(() => {
++    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [36, 120], 'clamp');
++    return {
++      maxWidth,
++      overflow: 'hidden',
++      borderRadius: 18,
++    };
++  });
++
++  const confessLabelStyle = useAnimatedStyle(() => {
++    const opacity = interpolate(confessPillExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp');
++    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [0, 100], 'clamp');
++    const marginLeft = interpolate(confessPillExpansion.value, [0, 1], [0, 6], 'clamp');
++    return {
++      opacity,
++      maxWidth,
++      marginLeft,
++      overflow: 'hidden',
++      flexDirection: 'row',
++      alignItems: 'center',
++    };
++  });
++
++  const checkInBtnStyle = useAnimatedStyle(() => ({
++    transform: [{ scale: checkInPulse.value }],
++  }));
+ 
+   const {
+     filteredFriends,
+@@ -606,6 +655,7 @@ export default function CommunityMap() {
+         centerCoordinate: [myLongitude, myLatitude],
+         zoomLevel: 15,
+         animationDuration: 500,
++        padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+       });
+     }
+   }, [hasValidMyCoords, myLatitude, myLongitude]);
+@@ -659,15 +709,7 @@ export default function CommunityMap() {
+       {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
+       {/* ─── TOP BAR ─── */}
+       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+-        <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+-          <Pressable
+-            onPress={() => router.push('/community/confessions' as any)}
+-            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+-            accessibilityRole="button"
+-            accessibilityLabel="Confessions"
+-          >
+-            <Feather name="edit-3" size={22} color={theme.text} />
+-          </Pressable>
++        <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, width: 'auto' }]}>
+           <Pressable
+             onPress={() => router.push('/community/notifications' as any)}
+             style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+@@ -683,6 +725,33 @@ export default function CommunityMap() {
+               </View>
+             ) : null}
+           </Pressable>
++          <Animated.View style={confessBtnStyle}>
++            <Pressable
++              onPress={() => router.push('/community/confessions' as any)}
++              style={({ pressed }) => [{ 
++                flexDirection: 'row', 
++                alignItems: 'center', 
++                backgroundColor: theme.card, 
++                borderWidth: StyleSheet.hairlineWidth,
++                borderColor: theme.border,
++                paddingHorizontal: 9, 
++                paddingVertical: 9, 
++                borderRadius: 18,
++                shadowColor: '#000',
++                shadowOffset: { width: 0, height: 1 },
++                shadowOpacity: 0.05,
++                shadowRadius: 2,
++                elevation: 1
++              }, pressed && { opacity: 0.7 }]}
++              accessibilityRole="button"
++              accessibilityLabel="Confessions"
++            >
++              <Feather name="edit-3" size={16} color={theme.text} />
++              <Animated.View style={confessLabelStyle}>
++                <Text style={{ color: theme.text, fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Confess</Text>
++              </Animated.View>
++            </Pressable>
++          </Animated.View>
+         </View>
+         <View style={styles.circleSelectorWrap}>
+           <View style={styles.circleSelector}>
+@@ -709,14 +778,16 @@ export default function CommunityMap() {
+             </Pressable>
+           </View>
+         </View>
+-        <Pressable
+-          onPress={() => router.push('/community/settings' as any)}
+-          style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
+-          accessibilityRole="button"
+-          accessibilityLabel="Settings"
+-        >
+-          <Feather name="settings" size={22} color={theme.text} />
+-        </Pressable>
++        <View style={[styles.topBarSide, { flex: 1, width: 'auto', alignItems: 'flex-end' }]}>
++          <Pressable
++            onPress={() => router.push('/community/settings' as any)}
++            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
++            accessibilityRole="button"
++            accessibilityLabel="Settings"
++          >
++            <Feather name="settings" size={22} color={theme.text} />
++          </Pressable>
++        </View>
+       </View>
+ 
+       {/* ─── CIRCLE SELECTOR DROPDOWN ─── */}
+@@ -797,6 +868,7 @@ export default function CommunityMap() {
+               centerCoordinate: [mapCenterLng, mapCenterLat],
+               animationMode: 'flyTo',
+               animationDuration: 1500,
++              padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+             })}
+ 
+             {/* My own pin — hidden in ghost mode; coords stay in state for map center only */}
+@@ -857,37 +929,7 @@ export default function CommunityMap() {
+           </Mapbox.MapView>
+         )}
+ 
+-        {/* ─── First-time location consent (Apple 5.1.2 compliance) ─── */}
+-        {!locationConsentGiven && locationVisibility !== 'off' && (
+-          <View style={[styles.locationSessionBanner, { backgroundColor: theme.card, shadowColor: theme.text }]}>
+-            <View style={styles.locationSessionBannerContent}>
+-              <View style={[styles.locationIconWrap, { backgroundColor: theme.primary + '1A' }]}>
+-                <Feather name="map-pin" size={24} color={theme.primary} />
+-              </View>
+-              <View style={{ flex: 1, marginLeft: 16 }}>
+-                <Text style={[styles.locationSessionBannerTitle, { color: theme.text }]}>
+-                  Check in on the map?
+-                </Text>
+-                <Text style={[styles.locationSessionBannerSub, { color: theme.textSecondary }]}>
+-                  Share your location with friends for this session. You will be automatically checked out when you leave.
+-                </Text>
+-              </View>
+-            </View>
+-            <View style={styles.locationSessionBannerActions}>
+-              <Pressable
+-                style={({ pressed }) => [
+-                  styles.locationSessionBtnPrimary,
+-                  { backgroundColor: theme.primary },
+-                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+-                ]}
+-                onPress={grantLocationConsent}
+-              >
+-                <Feather name="navigation" size={16} color={isMonoOnly ? '#000000' : '#ffffff'} />
+-                <Text style={[styles.locationSessionBtnPrimaryText, { color: isMonoOnly ? '#000000' : '#ffffff' }]}>Check In Now</Text>
+-              </Pressable>
+-            </View>
+-          </View>
+-        )}
++        {/* ─── First-time location consent (Moved to Map Overlay) ─── */}
+ 
+         {/* Map overlay: center on me + visibility (Set Status lives on your row in the Friends sheet) */}
+         <View style={styles.mapOverlay}>
+@@ -924,6 +966,35 @@ export default function CommunityMap() {
+               color={locationVisibility === 'off' ? (isMonoOnly ? '#000000' : "#FFF") : (isMonoOnly ? '#000000' : theme.primary)} 
+             />
+           </Pressable>
++
++          {!locationConsentGiven && locationVisibility !== 'off' && (
++            <Animated.View style={[{ marginLeft: 8 }, checkInBtnStyle]}>
++              <Pressable
++                style={({ pressed }) => [
++                  {
++                    flexDirection: 'row',
++                    alignItems: 'center',
++                    backgroundColor: theme.primary,
++                    paddingHorizontal: 16,
++                    paddingVertical: 12,
++                    borderRadius: 24,
++                    shadowColor: theme.primary,
++                    shadowOffset: { width: 0, height: 4 },
++                    shadowOpacity: 0.35,
++                    shadowRadius: 10,
++                    elevation: 5,
++                  },
++                  pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
++                ]}
++                onPress={grantLocationConsent}
++              >
++                <Feather name="navigation" size={16} color={isMonoOnly ? '#000000' : '#ffffff'} />
++                <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '800', color: isMonoOnly ? '#000000' : '#ffffff' }}>
++                  Tap to Check In
++                </Text>
++              </Pressable>
++            </Animated.View>
++          )}
+         </View>
+ 
+       </View>
+@@ -1188,352 +1259,357 @@ export default function CommunityMap() {
+       })()}
+ 
+       {/* ─── BOTTOM SHEET ─── */}
+-      <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+-        {/* Tab switcher */}
+-        <View style={styles.bottomSheetHandle}>
+-          <View style={[styles.handleBar, { backgroundColor: theme.textSecondary + '40' }]} />
+-        </View>
+-
+-        <View style={styles.bottomSheetTabs}>
+-          <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>Friends</Text>
+-          <View style={styles.bottomSheetActions}>
+-            <Animated.View style={snapStreakOuterStyle}>
+-              <Pressable
+-                style={({ pressed }) => [
+-                  styles.tabPill,
+-                  isMonoOnly
+-                    ? { backgroundColor: '#ffffff' }
+-                    : themePack === 'spider'
+-                    ? { backgroundColor: theme.primary }
+-                    : { backgroundColor: theme.primary + '18' },
+-                  pressed && { opacity: 0.7 },
+-                  { width: '100%', gap: 0 },
+-                ]}
+-                onPress={() => router.push('/snap-camera' as any)}
+-              >
+-              <Feather
+-                name="camera"
+-                size={14}
+-                color={
+-                  isMonoOnly
+-                    ? '#000000'
+-                    : themePack === 'spider'
+-                    ? theme.textInverse
+-                    : theme.primary
+-                }
+-              />
+-              <Animated.View style={snapStreakLabelStyle}>
+-                <Text
+-                  numberOfLines={1}
+-                  style={[
+-                    styles.tabPillText,
+-                    {
+-                      color:
+-                        isMonoOnly
+-                          ? '#000000'
+-                          : themePack === 'spider'
+-                          ? theme.textInverse
+-                          : theme.primary,
+-                    },
++      <BottomSheet
++        ref={bottomSheetRef}
++        index={1}
++        snapPoints={snapPoints}
++        backgroundStyle={{ backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32 }}
++        handleIndicatorStyle={{ backgroundColor: theme.textSecondary + '40', width: 40, height: 5 }}
++      >
++        <View style={{ flex: 1 }}>
++          <View style={styles.bottomSheetTabs}>
++            <Text style={[styles.bottomSheetTitle, { color: theme.text }]}>Friends</Text>
++            <View style={styles.bottomSheetActions}>
++              <Animated.View style={snapStreakOuterStyle}>
++                <Pressable
++                  style={({ pressed }) => [
++                    styles.tabPill,
++                    isMonoOnly
++                      ? { backgroundColor: '#ffffff' }
++                      : themePack === 'spider'
++                      ? { backgroundColor: theme.primary }
++                      : { backgroundColor: theme.primary + '18' },
++                    pressed && { opacity: 0.7 },
++                    { width: '100%', gap: 0 },
+                   ]}
++                  onPress={() => router.push('/snap-camera' as any)}
+                 >
+-                  Snap Streak
+-                </Text>
+-              </Animated.View>
+-            </Pressable>
+-            </Animated.View>
+-            <Pressable
+-              style={({ pressed }) => [
+-                styles.addFriendBtn,
+-                { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
+-                pressed && { opacity: 0.8 },
+-              ]}
+-              onPress={() => router.push('/community/add-friend' as any)}
+-            >
+-              <Feather name="user-plus" size={14} color={isMonoOnly ? '#000000' : theme.textInverse} />
+-            </Pressable>
+-            <Pressable
+-              style={({ pressed }) => [
+-                styles.addFriendBtn,
+-                { backgroundColor: isMonoOnly ? '#ffffff' : theme.card, borderWidth: 1.5, borderColor: isMonoOnly ? '#000000' : theme.primary },
+-                pressed && { opacity: 0.8 },
+-              ]}
+-              onPress={() => {
+-                const isPro = (user as any).subscriptionPlan === 'pro';
+-                if (isPro) {
+-                  router.push('/community/chat-list' as any);
+-                } else {
+-                  Alert.alert(
+-                    'Pro Feature',
+-                    'Direct messaging is available exclusively for Pro subscribers. Upgrade to chat with your friends, share flashcards, and quiz together.',
+-                    [
+-                      { text: 'Cancel', style: 'cancel' },
+-                      { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
+-                    ],
+-                  );
+-                }
+-              }}
+-            >
+-              <Feather name="message-circle" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
+-              {unreadDmCount > 0 && (
+-                <View style={styles.dmBadge}>
+-                  <Text style={styles.dmBadgeText}>
+-                    {unreadDmCount > 9 ? '9+' : String(unreadDmCount)}
+-                  </Text>
+-                </View>
+-              )}
+-            </Pressable>
+-          </View>
+-        </View>
+-        {favoriteNames.length > 0 && (
+-          <View style={[styles.favoriteRow, { borderColor: theme.border }]}>
+-            <Feather name="heart" size={13} color={theme.primary} />
+-            <Text style={[styles.favoriteRowText, { color: theme.text }]} numberOfLines={1}>
+-              {favoriteNames.join(', ')}
+-            </Text>
+-          </View>
+-        )}
+-
+-        {/* Friends list */}
+-        <ScrollView
+-          style={styles.peopleList}
+-          contentContainerStyle={styles.peopleListContent}
+-          showsVerticalScrollIndicator={false}
+-          alwaysBounceVertical
+-          overScrollMode="always"
+-          refreshControl={
+-            <RefreshControl
+-              refreshing={refreshingCommunity}
+-              onRefresh={handleRefreshCommunity}
+-              tintColor="transparent"
+-              colors={['transparent']}
+-              progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
+-            />
+-          }
+-        >
+-          {/* Me row — left: zoom to me on map; right: Set Status (opens popup; was unreachable inside one big Pressable) */}
+-          <View
+-            style={[
+-              styles.personRow,
+-              { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+-            ]}
+-          >
+-            <Pressable
+-              style={({ pressed }) => [
+-                styles.meRowMainHit,
+-                pressed && { backgroundColor: theme.background },
+-              ]}
+-              onPress={() => {
+-                if (hasValidMyCoords && cameraRef.current) {
+-                  cameraRef.current.setCamera({
+-                    centerCoordinate: [myLongitude, myLatitude],
+-                    zoomLevel: 19,
+-                    animationDuration: 1000,
+-                  });
+-                }
+-              }}
+-            >
+-              <View style={styles.myAvatarWrap}>
+-                <Avatar name={user.name} avatarUrl={user.avatar} size={44} />
+-                <View style={[styles.onlineDot, { borderColor: theme.card }]} />
+-              </View>
+-              <View style={styles.personInfo}>
+-                <Text
+-                  style={[styles.personName, { color: theme.text }]}
+-                  numberOfLines={1}
+-                  ellipsizeMode="tail"
+-                >
+-                  {user.name}{' '}
+-                  <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
+-                </Text>
+-                {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
+-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+-                    <Feather
+-                      name={communityApi.getActivityFeatherIcon(myActivity.activity_type) as any}
+-                      size={14}
+-                      color={theme.primary}
+-                    />
+-                    <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+-                      {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
+-                    </Text>
+-                  </View>
+-                ) : myActivity?.activity_type === 'idle' ? (
+-                  <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
+-                    Use Set Status to share what you’re doing
++                <Feather
++                  name="camera"
++                  size={14}
++                  color={
++                    isMonoOnly
++                      ? '#000000'
++                      : themePack === 'spider'
++                      ? theme.textInverse
++                      : theme.primary
++                  }
++                />
++                <Animated.View style={snapStreakLabelStyle}>
++                  <Text
++                    numberOfLines={1}
++                    style={[
++                      styles.tabPillText,
++                      {
++                        color:
++                          isMonoOnly
++                            ? '#000000'
++                            : themePack === 'spider'
++                            ? theme.textInverse
++                            : theme.primary,
++                      },
++                    ]}
++                  >
++                    Snap Streak
+                   </Text>
+-                ) : null}
+-                {myActivity?.is_playing && myActivity.song_name ? (
+-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+-                    <Feather name="music" size={14} color={theme.primary} />
+-                    <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+-                      {myActivity.song_name}
+-                    </Text>
+-                  </View>
+-                ) : null}
+-              </View>
+-            </Pressable>
+-            <Pressable
+-              accessibilityRole="button"
+-              accessibilityLabel="Set status"
+-              style={({ pressed }) => [
+-                styles.meRowSetStatusBtn,
+-                {
+-                  backgroundColor: isMonoOnly ? '#ffffff' : theme.card,
+-                  borderColor: isMonoOnly ? '#e5e7eb' : theme.border,
+-                },
+-                pressed && { opacity: 0.85 },
+-              ]}
+-              onPress={() => setShowStatusPopup(true)}
+-            >
+-              <Feather name="edit-3" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
+-              <Text
+-                style={[styles.meRowSetStatusText, { color: isMonoOnly ? '#000000' : theme.primary }]}
+-                numberOfLines={1}
+-              >
+-                Set Status
+-              </Text>
+-            </Pressable>
+-          </View>
+-
+-          {loading ? (
+-            isCatTheme || isDarkMinimal ? (
+-              <View style={styles.catLoadingWrap}>
+-                {themePack === 'spider' ? (
+-                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+-                ) : (
+-                  <CatLottie
+-                    variant={isCatTheme ? 'loading' : 'monoLoading'}
+-                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+-                  />
+-                )}
+-              </View>
+-            ) : (
+-              <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
+-            )
+-          ) : visibleFriends.length === 0 ? (
+-            <View style={styles.emptyState}>
+-              <Feather name="users" size={40} color={theme.textSecondary} />
+-              <Text style={[styles.emptyTitle, { color: theme.text }]}>No friends yet</Text>
+-              <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>
+-                Add friends to see them on the map and stay connected
+-              </Text>
++                </Animated.View>
++              </Pressable>
++              </Animated.View>
+               <Pressable
+-                style={[
+-                  styles.emptyBtn,
++                style={({ pressed }) => [
++                  styles.addFriendBtn,
+                   { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
++                  pressed && { opacity: 0.8 },
+                 ]}
+                 onPress={() => router.push('/community/add-friend' as any)}
+               >
+-                <Feather name="user-plus" size={16} color={isMonoOnly ? '#000000' : theme.textInverse} />
+-                <Text style={[styles.emptyBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>Add Friends</Text>
++                <Feather name="user-plus" size={14} color={isMonoOnly ? '#000000' : theme.textInverse} />
++              </Pressable>
++              <Pressable
++                style={({ pressed }) => [
++                  styles.addFriendBtn,
++                  { backgroundColor: isMonoOnly ? '#ffffff' : theme.card, borderWidth: 1.5, borderColor: isMonoOnly ? '#000000' : theme.primary },
++                  pressed && { opacity: 0.8 },
++                ]}
++                onPress={() => {
++                  const isPro = (user as any).subscriptionPlan === 'pro';
++                  if (isPro) {
++                    router.push('/community/chat-list' as any);
++                  } else {
++                    Alert.alert(
++                      'Pro Feature',
++                      'Direct messaging is available exclusively for Pro subscribers. Upgrade to chat with your friends, share flashcards, and quiz together.',
++                      [
++                        { text: 'Cancel', style: 'cancel' },
++                        { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
++                      ],
++                    );
++                  }
++                }}
++              >
++                <Feather name="message-circle" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
++                {unreadDmCount > 0 && (
++                  <View style={styles.dmBadge}>
++                    <Text style={styles.dmBadgeText}>
++                      {unreadDmCount > 9 ? '9+' : String(unreadDmCount)}
++                    </Text>
++                  </View>
++                )}
+               </Pressable>
+             </View>
+-          ) : (
+-            visibleFriends.map((friend) => (
++          </View>
++          {favoriteNames.length > 0 && (
++            <View style={[styles.favoriteRow, { borderColor: theme.border }]}>
++              <Feather name="heart" size={13} color={theme.primary} />
++              <Text style={[styles.favoriteRowText, { color: theme.text }]} numberOfLines={1}>
++                {favoriteNames.join(', ')}
++              </Text>
++            </View>
++          )}
++
++          {/* Friends list */}
++          <BottomSheetScrollView
++            style={styles.peopleList}
++            contentContainerStyle={styles.peopleListContent}
++            showsVerticalScrollIndicator={false}
++            alwaysBounceVertical
++            overScrollMode="always"
++            refreshControl={
++              <RefreshControl
++                refreshing={refreshingCommunity}
++                onRefresh={handleRefreshCommunity}
++                tintColor="transparent"
++                colors={['transparent']}
++                progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
++              />
++            }
++          >
++            {/* Me row — left: zoom to me on map; right: Set Status (opens popup; was unreachable inside one big Pressable) */}
++            <View
++              style={[
++                styles.personRow,
++                { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
++              ]}
++            >
+               <Pressable
+-                key={friend.id}
+                 style={({ pressed }) => [
+-                  styles.personRow,
++                  styles.meRowMainHit,
+                   pressed && { backgroundColor: theme.background },
+                 ]}
+                 onPress={() => {
+-                  // Only zoom deeply into the friend's location, don't show the popup
+-                  if (friend.location && cameraRef.current) {
++                  if (hasValidMyCoords && cameraRef.current) {
+                     cameraRef.current.setCamera({
+-                      centerCoordinate: [friend.location.longitude, friend.location.latitude],
++                      centerCoordinate: [myLongitude, myLatitude],
+                       zoomLevel: 19,
+                       animationDuration: 1000,
++                      padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+                     });
+                   }
+                 }}
+               >
+-                <Pressable
+-                  onPress={(e) => {
+-                    e.stopPropagation();
+-                    router.push({ pathname: '/community/friend-profile', params: { friendId: friend.id } } as any);
+-                  }}
+-                >
+-                  <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={44} />
+-                </Pressable>
+-
++                <View style={styles.myAvatarWrap}>
++                  <Avatar name={user.name} avatarUrl={user.avatar} size={44} />
++                  <View style={[styles.onlineDot, { borderColor: theme.card }]} />
++                </View>
+                 <View style={styles.personInfo}>
+                   <Text
+                     style={[styles.personName, { color: theme.text }]}
+                     numberOfLines={1}
+                     ellipsizeMode="tail"
+                   >
+-                    {friend.name}
++                    {user.name}{' '}
++                    <Text style={{ fontWeight: '400', color: theme.textSecondary }}>(You)</Text>
+                   </Text>
+-                  <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
+-                    {friend.location?.place_name || (friend.location ? 'Location shared' : 'Location off')}
+-                  </Text>
+-                  {friend.activity && friend.activity.activity_type !== 'idle' && friend.activity.activity_type !== 'listening_music' && (
+-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
++                  {myActivity && myActivity.activity_type !== 'idle' && myActivity.activity_type !== 'listening_music' ? (
++                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                       <Feather
+-                        name={communityApi.getActivityFeatherIcon(friend.activity.activity_type) as any}
++                        name={communityApi.getActivityFeatherIcon(myActivity.activity_type) as any}
+                         size={14}
+                         color={theme.primary}
+                       />
+                       <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+-                        {activityStatusDetailLine(friend.activity, { isSelf: false, timetable })}
++                        {activityStatusDetailLine(myActivity, { isSelf: true, timetable })}
+                       </Text>
+                     </View>
+-                  )}
+-                  {friend.music?.isPlaying && friend.music.song ? (
++                  ) : myActivity?.activity_type === 'idle' ? (
++                    <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
++                      Use Set Status to share what you’re doing
++                    </Text>
++                  ) : null}
++                  {myActivity?.is_playing && myActivity.song_name ? (
+                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                       <Feather name="music" size={14} color={theme.primary} />
+                       <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+-                        {friend.music.song}
++                        {myActivity.song_name}
+                       </Text>
+                     </View>
+                   ) : null}
+                 </View>
+-                <View style={styles.personRight}>
+-                  {getSharedCountWith(friend.id) > 0 && (
+-                    <View style={styles.sharedTaskBadge}>
+-                      <Feather name="clipboard" size={10} color="#6366f1" />
+-                      <Text style={styles.sharedTaskBadgeText}>{getSharedCountWith(friend.id)}</Text>
+-                    </View>
++              </Pressable>
++              <Pressable
++                accessibilityRole="button"
++                accessibilityLabel="Set status"
++                style={({ pressed }) => [
++                  styles.meRowSetStatusBtn,
++                  {
++                    backgroundColor: isMonoOnly ? '#ffffff' : theme.card,
++                    borderColor: isMonoOnly ? '#e5e7eb' : theme.border,
++                  },
++                  pressed && { opacity: 0.85 },
++                ]}
++                onPress={() => setShowStatusPopup(true)}
++              >
++                <Feather name="edit-3" size={14} color={isMonoOnly ? '#000000' : theme.primary} />
++                <Text
++                  style={[styles.meRowSetStatusText, { color: isMonoOnly ? '#000000' : theme.primary }]}
++                  numberOfLines={1}
++                >
++                  Set Status
++                </Text>
++              </Pressable>
++            </View>
++
++            {loading ? (
++              isCatTheme || isDarkMinimal ? (
++                <View style={styles.catLoadingWrap}>
++                  {themePack === 'spider' ? (
++                    <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
++                  ) : (
++                    <CatLottie
++                      variant={isCatTheme ? 'loading' : 'monoLoading'}
++                      style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
++                    />
+                   )}
+-                  <Text style={[styles.personTime, { color: theme.textSecondary }]}>
+-                    {timeAgo(friend.location?.updated_at || friend.activity?.updated_at)}
+-                  </Text>
++                </View>
++              ) : (
++                <ActivityIndicator style={{ marginTop: 20 }} color={theme.primary} />
++              )
++            ) : visibleFriends.length === 0 ? (
++              <View style={styles.emptyState}>
++                <Feather name="users" size={40} color={theme.textSecondary} />
++                <Text style={[styles.emptyTitle, { color: theme.text }]}>No friends yet</Text>
++                <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>
++                  Add friends to see them on the map and stay connected
++                </Text>
++                <Pressable
++                  style={[
++                    styles.emptyBtn,
++                    { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary },
++                  ]}
++                  onPress={() => router.push('/community/add-friend' as any)}
++                >
++                  <Feather name="user-plus" size={16} color={isMonoOnly ? '#000000' : theme.textInverse} />
++                  <Text style={[styles.emptyBtnText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>Add Friends</Text>
++                </Pressable>
++              </View>
++            ) : (
++              visibleFriends.map((friend) => (
++                <Pressable
++                  key={friend.id}
++                  style={({ pressed }) => [
++                    styles.personRow,
++                    pressed && { backgroundColor: theme.background },
++                  ]}
++                  onPress={() => {
++                    // Only zoom deeply into the friend's location, don't show the popup
++                    if (friend.location && cameraRef.current) {
++                      cameraRef.current.setCamera({
++                        centerCoordinate: [friend.location.longitude, friend.location.latitude],
++                        zoomLevel: 19,
++                        animationDuration: 1000,
++                        padding: { paddingBottom: SCREEN_HEIGHT * 0.45, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
++                      });
++                    }
++                  }}
++                >
+                   <Pressable
+                     onPress={(e) => {
+                       e.stopPropagation();
+-                      toggleFavoriteFriend(friend.id);
++                      router.push({ pathname: '/community/friend-profile', params: { friendId: friend.id } } as any);
+                     }}
+-                    style={({ pressed }) => [pressed && { opacity: 0.5 }]}
+                   >
+-                    <Feather
+-                      name={favoriteSet.has(friend.id) ? 'heart' : 'heart'}
+-                      size={18}
+-                      color={favoriteSet.has(friend.id) ? '#ef4444' : theme.textSecondary}
+-                    />
++                    <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={44} />
+                   </Pressable>
+-                </View>
+-              </Pressable>
+-            ))
+-          )}
+-          <View style={{ height: 120 }} />
+-        </ScrollView>
+-        {refreshingCommunity ? (
+-          <View pointerEvents="none" style={styles.peopleRefreshOverlayTop}>
+-            {isCatTheme || isDarkMinimal ? (
+-              themePack === 'spider' ? (
+-                <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
+-              ) : (
+-                <CatLottie
+-                  variant={isCatTheme ? 'loading' : 'monoLoading'}
+-                  style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
+-                />
+-              )
+-            ) : (
+-              <ActivityIndicator color={theme.primary} />
++
++                  <View style={styles.personInfo}>
++                    <Text
++                      style={[styles.personName, { color: theme.text }]}
++                      numberOfLines={1}
++                      ellipsizeMode="tail"
++                    >
++                      {friend.name}
++                    </Text>
++                    <Text style={[styles.personStatus, { color: theme.textSecondary }]} numberOfLines={1}>
++                      {friend.location?.place_name || (friend.location ? 'Location shared' : 'Location off')}
++                    </Text>
++                    {friend.activity && friend.activity.activity_type !== 'idle' && friend.activity.activity_type !== 'listening_music' && (
++                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
++                        <Feather
++                          name={communityApi.getActivityFeatherIcon(friend.activity.activity_type) as any}
++                          size={14}
++                          color={theme.primary}
++                        />
++                        <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
++                          {activityStatusDetailLine(friend.activity, { isSelf: false, timetable })}
++                        </Text>
++                      </View>
++                    )}
++                    {friend.music?.isPlaying && friend.music.song ? (
++                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
++                        <Feather name="music" size={14} color={theme.primary} />
++                        <Text style={[styles.personActivity, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
++                          {friend.music.song}
++                        </Text>
++                      </View>
++                    ) : null}
++                  </View>
++                  <View style={styles.personRight}>
++                    {getSharedCountWith(friend.id) > 0 && (
++                      <View style={styles.sharedTaskBadge}>
++                        <Feather name="clipboard" size={10} color="#6366f1" />
++                        <Text style={styles.sharedTaskBadgeText}>{getSharedCountWith(friend.id)}</Text>
++                      </View>
++                    )}
++                    <Text style={[styles.personTime, { color: theme.textSecondary }]}>
++                      {timeAgo(friend.location?.updated_at || friend.activity?.updated_at)}
++                    </Text>
++                    <Pressable
++                      onPress={(e) => {
++                        e.stopPropagation();
++                        toggleFavoriteFriend(friend.id);
++                      }}
++                      style={({ pressed }) => [pressed && { opacity: 0.5 }]}
++                    >
++                      <Feather
++                        name={favoriteSet.has(friend.id) ? 'heart' : 'heart'}
++                        size={18}
++                        color={favoriteSet.has(friend.id) ? '#ef4444' : theme.textSecondary}
++                      />
++                    </Pressable>
++                  </View>
++                </Pressable>
++              ))
+             )}
+-          </View>
+-        ) : null}
+-      </View>
++            <View style={{ height: 120 }} />
++          </BottomSheetScrollView>
++          {refreshingCommunity ? (
++            <View pointerEvents="none" style={styles.peopleRefreshOverlayTop}>
++              {isCatTheme || isDarkMinimal ? (
++                themePack === 'spider' ? (
++                  <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
++                ) : (
++                  <CatLottie
++                    variant={isCatTheme ? 'loading' : 'monoLoading'}
++                    style={!isCatTheme && isDarkMinimal ? styles.monoLoadingLottie : styles.catLoadingLottie}
++                  />
++                )
++              ) : (
++                <ActivityIndicator color={theme.primary} />
++              )}
++            </View>
++          ) : null}
++        </View>
++      </BottomSheet>
+ 
+       {/* ─── MY OWN SNAP PREVIEW ─── */}
+       {showMySnap && friendSnaps.has(user.id!) && (() => {
+@@ -2054,8 +2130,6 @@ const popupStyles = StyleSheet.create({
+     justifyContent: 'flex-end',
+   },
+   container: {
+-    borderTopLeftRadius: 24,
+-    borderTopRightRadius: 24,
+     paddingHorizontal: 20,
+     paddingTop: 20,
+     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+@@ -2215,9 +2289,8 @@ const styles = StyleSheet.create({
+     borderBottomWidth: StyleSheet.hairlineWidth,
+     zIndex: 20,
+   },
+-  /** Matches topBarBtn width so circle title stays visually centered. */
++  /** Balances the left/right sections. */
+   topBarSide: {
+-    width: 40,
+     height: 40,
+   },
+   circleSelectorWrap: {
+@@ -2416,10 +2489,11 @@ const styles = StyleSheet.create({
+   },
+   mapOverlay: {
+     position: 'absolute',
+-    bottom: 16,
++    bottom: SCREEN_HEIGHT * 0.45 + 16,
+     left: 16,
+     flexDirection: 'row',
+     gap: 8,
++    zIndex: 100,
+   },
+   mapOverlayBtn: {
+     flexDirection: 'row',
+@@ -2439,7 +2513,7 @@ const styles = StyleSheet.create({
+   // Location session prompt banner (Apple 5.1.2)
+   locationSessionBanner: {
+     position: 'absolute',
+-    bottom: Platform.OS === 'ios' ? 80 : 60,
++    bottom: SCREEN_HEIGHT * 0.45 + 16,
+     left: 16,
+     right: 16,
+     borderRadius: 24,
+@@ -2494,7 +2568,7 @@ const styles = StyleSheet.create({
+   // Friend popup
+   friendPopup: {
+     position: 'absolute',
+-    bottom: SCREEN_HEIGHT * 0.42 + 16,
++    bottom: SCREEN_HEIGHT * 0.45 + 16,
+     left: 16,
+     right: 16,
+     borderRadius: 20,

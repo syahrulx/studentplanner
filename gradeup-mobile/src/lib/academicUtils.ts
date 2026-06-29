@@ -23,10 +23,39 @@ export function applyTeachingWeekOffsetToProgress(
   if (w === cap + 1) {
     return { week: w, isBreak: true, label: 'Study week', semesterPhase: 'break_after' };
   }
-  if (w > cap + 1) {
+  if (w === cap + 2) {
+    return { week: w, isBreak: true, label: 'Exam week', semesterPhase: 'break_after' };
+  }
+  if (w > cap + 2) {
     return { week: w, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
   }
   return { week: w, isBreak: false, label: `Week ${w}`, semesterPhase: 'teaching' };
+}
+
+export type PostTeachingKind = 'study' | 'exam' | 'semester_break';
+
+/** Post-teaching align weeks: +1 study, +2 exam, +3+ semester break. */
+export function getPostTeachingKind(week: number, totalWeeks: number): PostTeachingKind | null {
+  const cap = Math.max(1, totalWeeks);
+  if (week === cap + 1) return 'study';
+  if (week === cap + 2) return 'exam';
+  if (week >= cap + 3) return 'semester_break';
+  return null;
+}
+
+export function maxWeekAlignPick(totalWeeks: number): number {
+  return Math.max(1, totalWeeks) + 3;
+}
+
+export function resolveBreakPeriodLabel(
+  week: number,
+  totalWeeks: number,
+  labels: { study: string; exam: string; semesterBreak: string },
+): string {
+  const kind = getPostTeachingKind(week, totalWeeks);
+  if (kind === 'study') return labels.study;
+  if (kind === 'exam') return labels.exam;
+  return labels.semesterBreak;
 }
 
 type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
