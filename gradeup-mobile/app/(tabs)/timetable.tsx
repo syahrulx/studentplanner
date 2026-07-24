@@ -103,6 +103,16 @@ function entryDisplayTitle(e: TimetableEntry): string {
   return d || e.subjectName;
 }
 
+/**
+ * Compact cards normally show only the course code. An explicit display name
+ * is a user override, so it must remain visible even when "Show course name"
+ * is disabled.
+ */
+function entryPrimaryLabel(e: TimetableEntry, showCourseName: boolean): string {
+  const customName = e.displayName?.trim();
+  return !showCourseName && customName ? customName : e.subjectCode;
+}
+
 function entrySlotColor(e: TimetableEntry, subjectColors: Record<string, string>): string {
   return getTimetableEntryColor(e, subjectColors);
 }
@@ -1422,6 +1432,7 @@ export default function TimetableScreen() {
                         const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
                         const color = resolveSlotColor(entry);
                         const title = entryDisplayTitle(entry);
+                        const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
                         const hasTitle = Boolean(slotDetails.courseName && height > 38);
                         const metaParts = weekGridMetaParts(
                           entry,
@@ -1446,7 +1457,7 @@ export default function TimetableScreen() {
                               ]}
                               numberOfLines={2}
                             >
-                              {entry.subjectCode}
+                              {primaryLabel}
                             </Text>
                             {hasTitle ? (
                               <Text
@@ -1606,6 +1617,7 @@ export default function TimetableScreen() {
                     const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
                     const color = resolveSlotColor(entry);
                     const title = entryDisplayTitle(entry);
+                    const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
                     const hasTitle = Boolean(slotDetails.courseName && height > 38);
                     const metaParts = weekGridMetaParts(
                       entry,
@@ -1642,7 +1654,7 @@ export default function TimetableScreen() {
                             ]}
                             numberOfLines={2}
                           >
-                            {entry.subjectCode}
+                            {primaryLabel}
                           </Text>
                           {hasTitle ? (
                             <Text
@@ -1768,6 +1780,7 @@ export default function TimetableScreen() {
                       
                       const color = resolveSlotColor(entry);
                       const title = entryDisplayTitle(entry);
+                      const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
                       const hasTitle = Boolean(slotDetails.courseName && width > 60);
                       const metaParts = weekGridMetaParts(
                         entry,
@@ -1810,7 +1823,7 @@ export default function TimetableScreen() {
                               ]}
                               numberOfLines={isHorizontal ? 1 : 2}
                             >
-                              {entry.subjectCode}
+                              {primaryLabel}
                             </Text>
                             <View style={{ flex: 1 }}>
                               {hasTitle ? (
@@ -1881,6 +1894,7 @@ export default function TimetableScreen() {
                 {items.map((e) => {
                   const color = resolveSlotColor(e);
                   const title = entryDisplayTitle(e);
+                  const primaryLabel = entryPrimaryLabel(e, slotDetails.courseName);
                   const cardStyle = [s.listCard, { backgroundColor: theme.background, borderLeftColor: color }];
                   const cardInner = (
                     <>
@@ -1890,7 +1904,7 @@ export default function TimetableScreen() {
                         <Text style={[s.listTime, { color: theme.primary }]}>{e.endTime}</Text>
                       </View>
                       <View style={s.listCardBody}>
-                        <Text style={[s.listCode, { color }]}>{e.subjectCode}</Text>
+                        <Text style={[s.listCode, { color }]} numberOfLines={2}>{primaryLabel}</Text>
                         {slotDetails.courseName ? (
                           <Text style={[s.listName, { color: theme.text }]} numberOfLines={2}>
                             {title}

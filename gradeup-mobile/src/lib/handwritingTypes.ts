@@ -5,6 +5,7 @@ export type EraserStyle = 'precision' | 'segment' | 'stroke';
 export interface HandwritingToolSettings {
   penStyle: PenStyle;
   smoothing: number;
+  stabilization: number;
   pressureSensitivity: number;
   tipSharpness: number;
   taperedEnds: boolean;
@@ -42,6 +43,7 @@ export interface HandwritingStroke {
   opacity: number;
   penStyle?: PenStyle;
   smoothing?: number;
+  stabilization?: number;
   pressureSensitivity?: number;
   tipSharpness?: number;
   taperedEnds?: boolean;
@@ -71,6 +73,7 @@ export const HANDWRITING_CONTENT_PREFIX = '[Rencana Handwriting]';
 export const DEFAULT_HANDWRITING_TOOL_SETTINGS: HandwritingToolSettings = {
   penStyle: 'fountain',
   smoothing: 0.45,
+  stabilization: 0.35,
   pressureSensitivity: 0.5,
   tipSharpness: 0.5,
   taperedEnds: true,
