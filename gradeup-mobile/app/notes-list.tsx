@@ -13,6 +13,7 @@ import { ImportProgressBar } from '@/components/ImportProgressBar';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { useTranslations } from '@/src/i18n';
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
+import { displayHandwritingSummary, handwritingNoteSummary } from '@/src/lib/handwritingTypes';
 
 const REGISTERED_NOTE_FOLDERS_KEY = 'notes_subject_registered_folders_v1';
 const MAX_PDF_AI_BYTES = 25 * 1024 * 1024;
@@ -250,8 +251,34 @@ export default function NotesList() {
     return allNotes.filter((n) => n.folderId === selectedFolder);
   }, [allNotes, selectedFolder]);
 
-  const openNewNote = () =>
-    router.push({ pathname: '/notes-editor' as any, params: { subjectId, ...(selectedFolder ? { folderId: selectedFolder } : {}) } });
+  const openNewHandwritingNote = () => {
+    if (!isAtLeastPlus(user.subscriptionPlan)) {
+      Alert.alert(
+        'Plus feature',
+        'Handwritten notebooks and PDF annotation are available with Rencana Plus or Pro.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View plans', onPress: () => router.push('/subscription-plans' as never) },
+        ],
+      );
+      return;
+    }
+    const noteId = `n${Date.now()}`;
+    handleSaveNote({
+      id: noteId,
+      subjectId,
+      folderId: selectedFolder ?? undefined,
+      title: 'Handwritten note',
+      content: handwritingNoteSummary(1),
+      noteType: 'handwriting',
+      tag: 'Lecture',
+      updatedAt: new Date().toISOString().slice(0, 10),
+    });
+    router.push({
+      pathname: '/handwriting-editor' as any,
+      params: { subjectId, noteId },
+    });
+  };
 
   const handleCreateFolder = () => {
     const name = newFolderName.trim();
@@ -548,7 +575,20 @@ export default function NotesList() {
             <View style={[styles.cardGroup, index === 0 && styles.cardGroupFirst, isLast && styles.cardGroupLast]}>
               <Pressable
                 style={({ pressed }) => [styles.noteRow, pressed && { opacity: 0.7 }]}
-                onPress={() => router.push({ pathname: '/notes-editor' as any, params: { subjectId, noteId: item.id } })}
+                onPress={() => {
+                  const isPdf = item.attachmentFileName?.toLowerCase().endsWith('.pdf') ||
+                    item.attachmentPath?.toLowerCase().endsWith('.pdf');
+                  const opensWritingCanvas = item.noteType === 'handwriting' ||
+                    (!!isPdf && isAtLeastPlus(user.subscriptionPlan));
+                  router.push({
+                    pathname: opensWritingCanvas ? '/handwriting-editor' as any : '/notes-editor' as any,
+                    params: {
+                      subjectId,
+                      noteId: item.id,
+                      ...(isPdf && opensWritingCanvas ? { pdfMode: '1' } : {}),
+                    },
+                  });
+                }}
                 onLongPress={() => Alert.alert(item.title, undefined, [
                   { text: 'Move to folder', onPress: () => setMoveNoteId(item.id) },
                   { text: 'Delete', style: 'destructive', onPress: () => deleteNote(item.id) },
@@ -558,6 +598,16 @@ export default function NotesList() {
                 <View style={styles.noteRowBody}>
                   <Text style={styles.noteTitle} numberOfLines={1}>{item.title}</Text>
                   {(() => {
+                    if (item.noteType === 'handwriting') {
+                      return (
+                        <View style={styles.extractionRow}>
+                          <Feather name="edit-3" size={12} color={theme.primary} />
+                          <Text style={[styles.noteSnippet, { color: theme.primary }]}>
+                            {item.content ? displayHandwritingSummary(item.content) : 'Handwritten notebook'}
+                          </Text>
+                        </View>
+                      );
+                    }
                     const isExtracting = extractingIds.has(item.id) || item.content === 'Extracting text from PDF...';
                     const hasFailed = !!item.extractionError;
                     const isReady = !!(item.extractedText && item.extractedText.trim().length > 0);
@@ -667,9 +717,12 @@ export default function NotesList() {
       <Modal visible={showPlusMenu} transparent animationType="fade">
         <Pressable style={styles.menuBackdropTopRight} onPress={() => setShowPlusMenu(false)}>
           <View style={styles.menuPanel} onStartShouldSetResponder={() => true}>
-            <Pressable style={styles.menuItem} onPress={() => { setShowPlusMenu(false); openNewNote(); }}>
-              <Feather name="file-text" size={18} color={theme.text} />
-              <Text style={styles.menuItemText}>New note</Text>
+            <Pressable style={styles.menuItem} onPress={() => { setShowPlusMenu(false); openNewHandwritingNote(); }}>
+              <Feather name="edit-3" size={18} color={theme.primary} />
+              <Text style={styles.menuItemText}>New handwritten note</Text>
+              {!isAtLeastPlus(user.subscriptionPlan) ? (
+                <Text style={{ color: theme.primary, fontSize: 9, fontWeight: '900' }}>PLUS</Text>
+              ) : null}
             </Pressable>
             <Pressable
               style={[styles.menuItem, isImporting && styles.menuItemDisabled]}
