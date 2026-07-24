@@ -40,6 +40,13 @@ export function getTodayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Yesterday as yyyy-mm-dd (local time) */
+export function getYesterdayISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** End of the task deadline in local time (last moment that is still “on time”). Invalid → null. */
 export function getTaskDueDateTimeEnd(task: { dueDate: string; dueTime: string }): Date | null {
   const d = (task.dueDate ?? '').trim().slice(0, 10);
