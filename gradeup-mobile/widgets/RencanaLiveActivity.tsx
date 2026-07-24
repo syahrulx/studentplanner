@@ -117,12 +117,10 @@ function RencanaLiveActivityLayout(props: RencanaLiveActivityProps): LiveActivit
     </HStack>
   );
 
-  // Ambient activities (class, deadline, check-in) stay on the Lock Screen only.
-  // Study timer keeps Dynamic Island compact / expanded layouts.
-  if (kind !== 'studyTimer') {
-    return { banner };
-  }
-
+  // All activity kinds get the Dynamic Island compact / expanded layouts.
+  // iOS cannot present a Live Activity on the Lock Screen while hiding it from
+  // the Dynamic Island — omitting these regions renders an empty island pill,
+  // so every kind must supply them.
   return {
     banner,
     compactLeading: <Text modifiers={[font({ size: 14 })]}>{emoji}</Text>,

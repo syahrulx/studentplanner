@@ -145,17 +145,23 @@ function buildQuizPrompt(
   };
 
   return {
-    system: `You are a quiz question generator. Generate exactly ${count} questions.
+    system: `You are a quiz question generator. Generate up to ${count} questions STRICTLY from the provided study material.
 
-Rules:
+GROUNDING (most important — read carefully):
+- Use ONLY facts that are explicitly stated in the provided study material. Do NOT use outside knowledge, prior training, or assumptions.
+- The marked correct answer MUST be exactly what the material states. If the material and common knowledge disagree, ALWAYS follow the material.
+- Before marking an answer correct, find the exact sentence in the material that proves it. If no sentence in the material clearly supports an answer, DO NOT create that question.
+- It is better to return FEWER questions than ${count} than to invent a question or guess an answer not grounded in the text.
+- Wrong options (distractors) must be clearly incorrect according to the material — never partially-true or ambiguous.
+
+FORMAT:
 - ${typeInstr[quizType] || typeInstr.mcq}
 - Difficulty: ${diffInstr[difficulty] || diffInstr.medium}
-- Focus ONLY on the educational/academic subject matter.
-- Questions must test the student's knowledge of the actual topics and concepts.
+- Focus ONLY on the educational/academic subject matter in the material.
 - Return ONLY a JSON array. No markdown, no explanation.
 - Each object must have: "question" (string), "options" (string[]), "correctIndex" (number)${quizType === 'short_answer' || quizType === 'mixed' ? ', and optionally "expectedAnswer" (string)' : ''}.
-- Also include "proof" (string): one short line (max 18 words) citing why the answer is correct (definition/fact/excerpt).`,
-    user: `Generate quiz questions from the following study material:\n\n${content}`,
+- "proof" (string, REQUIRED): a SHORT VERBATIM excerpt (max 18 words) copied from the material that directly proves the correct answer. Do not paraphrase — quote the source. If you cannot quote a supporting line, drop the question.`,
+    user: `Use ONLY the study material below. Every question and every correct answer must be traceable to a specific sentence in it.\n\n=== STUDY MATERIAL ===\n${content}\n=== END OF STUDY MATERIAL ===`,
   };
 }
 
@@ -255,7 +261,8 @@ async function callOpenAI(
   apiKey: string,
   messages: { role: string; content: string | unknown[] }[],
   maxTokens: number,
-  model: string = 'gpt-4o-mini'
+  model: string = 'gpt-4o-mini',
+  temperature: number = 0.7
 ): Promise<{ content: string; usage: Record<string, number> | null; error?: string }> {
   const controller = new AbortController();
   // Vision requests may take longer due to image processing
@@ -276,7 +283,7 @@ async function callOpenAI(
       body: JSON.stringify({
         model,
         messages,
-        ...(isReasoningModel ? {} : { temperature: 0.7 }),
+        ...(isReasoningModel ? {} : { temperature }),
         max_completion_tokens: maxTokens,
       }),
     });
@@ -550,7 +557,10 @@ Deno.serve(async (req) => {
       targetModel = 'gpt-4o-mini'; // Plus chat stays on mini
     }
 
-    const result = await callOpenAI(openAiKey, messages, maxTokens, targetModel);
+    // Quiz & task extraction must stay faithful to the source material, so use a
+    // low temperature. Chat stays conversational at the default.
+    const temperature = kind === 'chat' ? 0.7 : 0.2;
+    const result = await callOpenAI(openAiKey, messages, maxTokens, targetModel, temperature);
 
     if (result.error) {
       return errorJson(result.error, 'OPENAI_ERROR');
@@ -605,13 +615,35 @@ Deno.serve(async (req) => {
     }
 
     // ── Return result ──
-    const questions = (parsed as any[]).slice(0, count).map((q: any) => ({
-      question: String(q.question || '').slice(0, 500),
-      options: Array.isArray(q.options) ? q.options.map((o: any) => String(o).slice(0, 250)) : [],
-      correctIndex: Number(q.correctIndex ?? 0),
-      expectedAnswer: normalizeExpectedAnswer(q.expectedAnswer),
-      proof: q.proof ? String(q.proof).replace(/\s+/g, ' ').trim().slice(0, 160) : undefined,
-    }));
+    const questions = (parsed as any[]).slice(0, count).map((q: any) => {
+      const options = Array.isArray(q.options) ? q.options.map((o: any) => String(o).slice(0, 250)) : [];
+      let correctIndex = Number(q.correctIndex ?? 0);
+
+      // Shuffle MCQ options so the correct answer isn't always in the model's
+      // preferred slot (gpt-4o-mini biases toward a fixed index, producing
+      // "all B" quizzes). Skip True/False (fixed order) and short-answer
+      // (no options, correctIndex -1).
+      const isTrueFalse =
+        options.length === 2 &&
+        String(options[0]).toLowerCase() === 'true' &&
+        String(options[1]).toLowerCase() === 'false';
+      if (options.length > 2 && !isTrueFalse && correctIndex >= 0 && correctIndex < options.length) {
+        const correctValue = options[correctIndex];
+        for (let i = options.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [options[i], options[j]] = [options[j], options[i]];
+        }
+        correctIndex = options.indexOf(correctValue);
+      }
+
+      return {
+        question: String(q.question || '').slice(0, 500),
+        options,
+        correctIndex,
+        expectedAnswer: normalizeExpectedAnswer(q.expectedAnswer),
+        proof: q.proof ? String(q.proof).replace(/\s+/g, ' ').trim().slice(0, 160) : undefined,
+      };
+    });
     return json({ questions });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

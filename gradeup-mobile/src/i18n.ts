@@ -4,18 +4,18 @@ const translations = {
   en: {
     // Live Activities
     liveActivitiesTitle: 'Live Activities',
-    liveActivitiesSubtitle: 'Pick one Live Activity mode. Study timer can use the Dynamic Island; other modes show on the Lock Screen only.',
+    liveActivitiesSubtitle: 'Pick one Live Activity for your Lock Screen and Dynamic Island. Only the selected mode is shown.',
     liveActivityOff: 'Off',
     liveActivityOffDesc: 'No Live Activity on the Lock Screen.',
     liveActivityOffSection: 'Turn off',
     liveActivityStudyTimer: 'Study timer',
     liveActivityStudyTimerDesc: 'Focus countdown on the Lock Screen and Dynamic Island while you study.',
     liveActivityNextClass: 'Next class',
-    liveActivityNextClassDesc: 'Countdown on the Lock Screen only — not in the Dynamic Island.',
+    liveActivityNextClassDesc: 'Countdown to your next class and time left during one.',
     liveActivityDeadline: 'Next deadline',
-    liveActivityDeadlineDesc: 'Due-date countdown on the Lock Screen only.',
+    liveActivityDeadlineDesc: 'Countdown to your nearest upcoming task due date.',
     liveActivityAttendance: 'Class check-in',
-    liveActivityAttendanceDesc: 'Check-in reminder on the Lock Screen only.',
+    liveActivityAttendanceDesc: 'A live reminder when a class check-in window opens.',
     liveActivityRequiresIos: 'Requires iOS 16.1 or later.',
     // Home
     hello: 'Hello',
