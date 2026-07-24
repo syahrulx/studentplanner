@@ -169,6 +169,8 @@ export interface UserProfile {
 export interface Note {
   id: string;
   subjectId: string;
+  /** Text/PDF note (default) or an editable handwriting notebook. */
+  noteType?: 'text' | 'handwriting';
   /** Optional chapter/folder name (user-defined). */
   folderId?: string;
   title: string;

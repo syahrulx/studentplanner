@@ -55,7 +55,8 @@ export default function SubscriptionPlansScreen() {
       'Import tasks from Apple & Google Calendar',
       'Smarter AI with much higher monthly limits',
       'AI Tutor: 1 persistent chat history per subject',
-      'Study Snap: 3 photos/day & 1-week history'
+      'Study Snap: 3 photos/day & 1-week history',
+      'Handwritten notebooks & PDF annotation with stylus support'
     ],
     pro: [
       'Everything in Plus, plus:',
@@ -64,7 +65,8 @@ export default function SubscriptionPlansScreen() {
       'Pro AI chatbot tutor with expert-level study help',
       'Study Snap: highest photo allowance & full history archive',
       'Activity Status: Custom text & emoji statuses',
-      'Share AI-generated flashcards with friends & study circles'
+      'Share AI-generated flashcards with friends & study circles',
+      'Pro handwriting templates including Cornell & dark paper'
     ],
   });
   const [loadingFeatures, setLoadingFeatures] = useState(true);

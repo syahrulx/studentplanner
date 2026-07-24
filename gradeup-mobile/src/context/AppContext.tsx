@@ -75,6 +75,7 @@ import {
 import { ensureAttendanceCategory, flushPendingAttendanceEvents } from '../attendanceRecording';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
+import { deleteHandwritingCache } from '../lib/handwritingDb';
 import * as taskDb from '../lib/taskDb';
 import * as studyTimeDb from '../lib/studyTimeDb';
 import * as coursesDb from '../lib/coursesDb';
@@ -1828,6 +1829,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId)); // Also remove associated flashcards locally
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.id) {
+        void deleteHandwritingCache(session.user.id, noteId);
         studyDb.deleteNote(session.user.id, noteId).catch((err) => {
           if (__DEV__) console.error('[Note] persist failed (delete):', err);
         });

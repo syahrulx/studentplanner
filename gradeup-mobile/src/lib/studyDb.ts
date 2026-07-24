@@ -4,17 +4,20 @@
  */
 import { supabase } from './supabase';
 import type { Note, Flashcard } from '../types';
+import { isHandwritingNoteContent } from './handwritingTypes';
 
 const NOTES_TABLE = 'notes';
 const CARDS_TABLE = 'flashcards';
 
 function rowToNote(row: Record<string, unknown>): Note {
+  const content = String(row.content ?? '');
   return {
     id: String(row.id),
     subjectId: String(row.subject_id),
+    noteType: row.note_type === 'handwriting' || isHandwritingNoteContent(content) ? 'handwriting' : 'text',
     folderId: row.folder_id != null ? String(row.folder_id) : undefined,
     title: String(row.title),
-    content: String(row.content ?? ''),
+    content,
     tag: (row.tag as Note['tag']) || 'Lecture',
     updatedAt: row.updated_at ? new Date(String(row.updated_at)).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
     attachmentPath: row.attachment_path != null ? String(row.attachment_path) : undefined,
@@ -66,23 +69,31 @@ function sanitizeText(value: string | null | undefined): string | null {
 }
 
 export async function upsertNote(userId: string, note: Note): Promise<void> {
-  const { error } = await supabase.from(NOTES_TABLE).upsert(
-    {
-      id: note.id,
-      user_id: userId,
-      subject_id: note.subjectId,
-      folder_id: note.folderId ?? null,
-      title: sanitizeText(note.title) ?? '',
-      content: sanitizeText(note.content) ?? '',
-      tag: note.tag,
-      updated_at: note.updatedAt ? new Date(note.updatedAt).toISOString() : new Date().toISOString(),
-      attachment_path: note.attachmentPath ?? null,
-      attachment_file_name: note.attachmentFileName ?? null,
-      extracted_text: sanitizeText(note.extractedText),
-      extraction_error: sanitizeText(note.extractionError),
-    },
-    { onConflict: 'id,user_id' }
+  const basePayload = {
+    id: note.id,
+    user_id: userId,
+    subject_id: note.subjectId,
+    folder_id: note.folderId ?? null,
+    title: sanitizeText(note.title) ?? '',
+    content: sanitizeText(note.content) ?? '',
+    tag: note.tag,
+    updated_at: note.updatedAt ? new Date(note.updatedAt).toISOString() : new Date().toISOString(),
+    attachment_path: note.attachmentPath ?? null,
+    attachment_file_name: note.attachmentFileName ?? null,
+    extracted_text: sanitizeText(note.extractedText),
+    extraction_error: sanitizeText(note.extractionError),
+  };
+  let { error } = await supabase.from(NOTES_TABLE).upsert(
+    { ...basePayload, note_type: note.noteType ?? 'text' },
+    { onConflict: 'id,user_id' },
   );
+
+  // Keep existing typed/PDF note writes working during a staged rollout where
+  // the mobile build reaches users before the additive handwriting migration.
+  if (error && /note_type/i.test(error.message ?? '')) {
+    const legacyResult = await supabase.from(NOTES_TABLE).upsert(basePayload, { onConflict: 'id,user_id' });
+    error = legacyResult.error;
+  }
   if (error) {
     // Notes historically failed silently because of a missing column — surface
     // the real reason so we never lose user writes without noticing again.

@@ -46,7 +46,7 @@ export default function NotesEditor() {
     noteId?: string;
     folderId?: string;
   }>();
-  const { notes, handleSaveNote, deleteNote, courses, language, user } = useApp();
+  const { notes, handleSaveNote, deleteNote, courses, language } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const T = useTranslations(language);

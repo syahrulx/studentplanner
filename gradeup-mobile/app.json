@@ -15,7 +15,7 @@
     },
     "ios": {
       "buildNumber": "121",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.aizztech.rencana",
       "appleTeamId": "Z9JR65SA89",
       "config": {},
