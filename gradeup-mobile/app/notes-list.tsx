@@ -251,9 +251,6 @@ export default function NotesList() {
     return allNotes.filter((n) => n.folderId === selectedFolder);
   }, [allNotes, selectedFolder]);
 
-  const openNewNote = () =>
-    router.push({ pathname: '/notes-editor' as any, params: { subjectId, ...(selectedFolder ? { folderId: selectedFolder } : {}) } });
-
   const openNewHandwritingNote = () => {
     if (!isAtLeastPlus(user.subscriptionPlan)) {
       Alert.alert(
@@ -720,10 +717,6 @@ export default function NotesList() {
       <Modal visible={showPlusMenu} transparent animationType="fade">
         <Pressable style={styles.menuBackdropTopRight} onPress={() => setShowPlusMenu(false)}>
           <View style={styles.menuPanel} onStartShouldSetResponder={() => true}>
-            <Pressable style={styles.menuItem} onPress={() => { setShowPlusMenu(false); openNewNote(); }}>
-              <Feather name="file-text" size={18} color={theme.text} />
-              <Text style={styles.menuItemText}>New note</Text>
-            </Pressable>
             <Pressable style={styles.menuItem} onPress={() => { setShowPlusMenu(false); openNewHandwritingNote(); }}>
               <Feather name="edit-3" size={18} color={theme.primary} />
               <Text style={styles.menuItemText}>New handwritten note</Text>
