@@ -74,13 +74,14 @@ export function getGradeTable(scheme: GradingScheme): GradeRow[] {
 
 /**
  * Convert a raw percentage to the matching GradeRow.
- * Clamps input to [0, 100].
+ * Clamps input to [0, 100]. Grade rows are ordered from highest to lowest,
+ * so their minimum thresholds form continuous bands that also cover decimals.
  */
 export function percentToGrade(percent: number, scheme: GradingScheme): GradeRow {
   const table = getGradeTable(scheme);
   const clamped = Math.max(0, Math.min(100, percent));
   for (const row of table) {
-    if (clamped >= row.minPercent && clamped <= row.maxPercent) return row;
+    if (clamped >= row.minPercent) return row;
   }
   // Fallback to lowest grade (F)
   return table[table.length - 1];

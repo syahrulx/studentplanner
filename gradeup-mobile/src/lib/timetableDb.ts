@@ -198,11 +198,12 @@ export async function updateTimetableEntry(
     row.group_name = g.length > 0 ? g : null;
   }
   if (Object.keys(row).length === 0) return;
-  await supabase
+  const { error } = await supabase
     .from('timetable_entries')
     .update(row)
     .eq('user_id', userId)
     .eq('id', entryId);
+  if (error) throw new Error(error.message || 'Failed to update timetable entry');
 }
 
 export async function deleteTimetable(userId: string): Promise<void> {

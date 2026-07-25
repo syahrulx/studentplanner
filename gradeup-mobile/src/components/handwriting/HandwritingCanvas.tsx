@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   Gesture,
@@ -10,6 +10,7 @@ import {
   type PanGestureHandlerEventPayload,
 } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
+import { WebView } from 'react-native-webview';
 import type {
   HandwritingPage,
   HandwritingPoint,
@@ -29,7 +30,7 @@ interface Props {
   width: number;
   fingerDrawing: boolean;
   settings: HandwritingToolSettings;
-  simultaneousGesture?: GestureType;
+  simultaneousGestures?: GestureType[];
   disabled?: boolean;
   transparentBackground?: boolean;
   onChange: (strokes: HandwritingStroke[]) => void;
@@ -48,87 +49,166 @@ function pointFromEvent(event: PanEvent, width: number, height: number): Handwri
   };
 }
 
-function segmentWidth(
-  stroke: HandwritingStroke,
-  start: HandwritingPoint,
-  end: HandwritingPoint,
-  segmentIndex = 0,
-  segmentCount = 1,
-): number {
-  if (stroke.tool === 'highlighter') return stroke.width * 2.4;
-  if (stroke.tool === 'pencil') return stroke.width * (0.72 + (stroke.pencilSoftness ?? 0.5) * 0.22);
-  const pressure = Math.max(0.15, ((start.pressure ?? 0.5) + (end.pressure ?? 0.5)) / 2);
-  const sensitivity = stroke.penStyle === 'ball' ? 0 : (stroke.pressureSensitivity ?? 0.5);
-  const pressureFactor = 1 + (pressure - 0.5) * sensitivity * (stroke.penStyle === 'brush' ? 1.8 : 1.1);
-  const endDistance = Math.min(segmentIndex + 1, segmentCount - segmentIndex);
-  const sharpness = stroke.tipSharpness ?? 0.5;
-  const taperFactor = stroke.taperedEnds
-    ? Math.min(1, 0.65 - sharpness * 0.3 + endDistance * (0.18 + sharpness * 0.08))
-    : 1;
-  return Math.max(0.7, stroke.width * pressureFactor * taperFactor);
+interface PixelPoint {
+  x: number;
+  y: number;
+  pressure: number;
 }
 
-function StrokeView({
-  stroke,
-  canvasWidth,
-  canvasHeight,
-}: {
-  stroke: HandwritingStroke;
-  canvasWidth: number;
-  canvasHeight: number;
-}) {
-  if (!stroke.points.length) return null;
-  if (stroke.points.length === 1) {
-    const point = stroke.points[0];
-    const size = segmentWidth(stroke, point, point);
-    return (
-      <View
-        style={{
-          position: 'absolute',
-          left: point.x * canvasWidth - size / 2,
-          top: point.y * canvasHeight - size / 2,
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: stroke.color,
-          opacity: stroke.opacity,
-        }}
-      />
-    );
+function pixelPoints(
+  stroke: HandwritingStroke,
+  canvasWidth: number,
+  canvasHeight: number,
+): PixelPoint[] {
+  return stroke.points.map((point) => ({
+    x: point.x * canvasWidth,
+    y: point.y * canvasHeight,
+    pressure: Math.max(0.05, Math.min(1, point.pressure ?? 0.5)),
+  }));
+}
+
+/**
+ * Chaikin corner cutting keeps the writer's intent while removing the small
+ * angular hooks produced by sparse touch/stylus events.
+ */
+function softenPoints(points: PixelPoint[], passes: number): PixelPoint[] {
+  let result = points;
+  for (let pass = 0; pass < passes; pass += 1) {
+    if (result.length < 3) return result;
+    const next: PixelPoint[] = [result[0]];
+    for (let index = 0; index < result.length - 1; index += 1) {
+      const a = result[index];
+      const b = result[index + 1];
+      next.push({
+        x: a.x * 0.75 + b.x * 0.25,
+        y: a.y * 0.75 + b.y * 0.25,
+        pressure: a.pressure * 0.75 + b.pressure * 0.25,
+      });
+      next.push({
+        x: a.x * 0.25 + b.x * 0.75,
+        y: a.y * 0.25 + b.y * 0.75,
+        pressure: a.pressure * 0.25 + b.pressure * 0.75,
+      });
+    }
+    next.push(result[result.length - 1]);
+    result = next;
+  }
+  return result;
+}
+
+function number(value: number): string {
+  return value.toFixed(2);
+}
+
+function continuousPath(points: PixelPoint[], smoothing: number): string {
+  if (!points.length) return '';
+  if (points.length === 1) return `M ${number(points[0].x)} ${number(points[0].y)}`;
+
+  // Fast mode follows the input closely. Balanced and Smooth progressively
+  // soften corners, but all modes remain one joined vector path.
+  const softened = smoothing >= 0.68
+    ? softenPoints(points, 2)
+    : smoothing >= 0.3
+      ? softenPoints(points, 1)
+      : points;
+  if (smoothing < 0.3 || softened.length < 3) {
+    return softened
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${number(point.x)} ${number(point.y)}`)
+      .join(' ');
   }
 
-  return (
-    <>
-      {stroke.points.slice(1).map((point, index) => {
-        const previous = stroke.points[index];
-        const x1 = previous.x * canvasWidth;
-        const y1 = previous.y * canvasHeight;
-        const x2 = point.x * canvasWidth;
-        const y2 = point.y * canvasHeight;
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const length = Math.max(0.5, Math.hypot(dx, dy));
-        const thickness = segmentWidth(stroke, previous, point, index, stroke.points.length - 1);
-        return (
-          <View
-            key={`${stroke.id}-${index}`}
-            style={{
-              position: 'absolute',
-              left: (x1 + x2) / 2 - length / 2,
-              top: (y1 + y2) / 2 - thickness / 2,
-              width: length,
-              height: thickness,
-              borderRadius: thickness / 2,
-              backgroundColor: stroke.color,
-              opacity: stroke.opacity,
-              transform: [{ rotateZ: `${Math.atan2(dy, dx)}rad` }],
-            }}
-          />
-        );
-      })}
-    </>
-  );
+  let path = `M ${number(softened[0].x)} ${number(softened[0].y)}`;
+  for (let index = 1; index < softened.length - 1; index += 1) {
+    const point = softened[index];
+    const next = softened[index + 1];
+    path += ` Q ${number(point.x)} ${number(point.y)} ${number((point.x + next.x) / 2)} ${number((point.y + next.y) / 2)}`;
+  }
+  const last = softened[softened.length - 1];
+  path += ` T ${number(last.x)} ${number(last.y)}`;
+  return path;
 }
+
+function averagePressure(points: PixelPoint[]): number {
+  if (!points.length) return 0.5;
+  return points.reduce((sum, point) => sum + point.pressure, 0) / points.length;
+}
+
+function svgAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function strokeSvgMarkup(
+  stroke: HandwritingStroke,
+  canvasWidth: number,
+  canvasHeight: number,
+): string {
+  const points = pixelPoints(stroke, canvasWidth, canvasHeight);
+  if (!points.length) return '';
+  const smoothing = stroke.smoothing ?? 0.45;
+  const path = continuousPath(points, smoothing);
+  const pressure = averagePressure(points);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const strokeColor = svgAttribute(stroke.color);
+
+  if (stroke.tool === 'highlighter') {
+    const markerWidth = Math.max(5, stroke.width * 2.8);
+    return points.length === 1
+      ? `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(markerWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/>`
+      : `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(markerWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="square" stroke-linejoin="round"/>`;
+  }
+
+  if (stroke.tool === 'pencil') {
+    const softness = stroke.pencilSoftness ?? 0.5;
+    const pencilWidth = Math.max(0.8, stroke.width * (0.58 + softness * 0.28));
+    const opacity = Math.max(0.2, stroke.opacity);
+    if (points.length === 1) {
+      return `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(pencilWidth / 2)}" fill="${strokeColor}" opacity="${number(opacity * 0.78)}"/>`;
+    }
+    return [
+      '<g>',
+      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(pencilWidth)}" stroke-opacity="${number(opacity * 0.78)}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(Math.max(0.45, pencilWidth * 0.45))}" stroke-opacity="${number(Math.min(0.34, opacity * (0.18 + softness * 0.12)))}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${number(0.9 + softness)} ${number(1.8 + (1 - softness) * 1.8)}" transform="translate(0.35 0.25)"/>`,
+      '</g>',
+    ].join('');
+  }
+
+  const style = stroke.penStyle ?? 'fountain';
+  const sensitivity = style === 'ball' ? 0 : (stroke.pressureSensitivity ?? 0.5);
+  const pressureMultiplier = 1 + (pressure - 0.5) * sensitivity * (style === 'brush' ? 1.5 : 0.85);
+  const styleMultiplier = style === 'ball' ? 0.82 : style === 'brush' ? 1.3 : 1;
+  const penWidth = Math.max(0.75, stroke.width * styleMultiplier * pressureMultiplier);
+  const roundEndpoints = !stroke.taperedEnds;
+  const lineCap = roundEndpoints ? 'round' : 'butt';
+
+  return [
+    '<g>',
+    style === 'brush'
+      ? `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(penWidth * 1.32)}" stroke-opacity="0.16" stroke-linecap="round" stroke-linejoin="round"/>`
+      : '',
+    `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(penWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="${lineCap}" stroke-linejoin="${style === 'fountain' && (stroke.tipSharpness ?? 0.5) > 0.65 ? 'bevel' : 'round'}"/>`,
+    roundEndpoints
+      ? `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(penWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/><circle cx="${number(last.x)}" cy="${number(last.y)}" r="${number(penWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/>`
+      : '',
+    '</g>',
+  ].join('');
+}
+
+const INK_DOCUMENT = `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+      svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    </style>
+  </head>
+  <body><svg id="ink" xmlns="http://www.w3.org/2000/svg"></svg></body>
+</html>`;
 
 function Rule({
   left,
@@ -206,12 +286,13 @@ export default function HandwritingCanvas({
   width: selectedWidth,
   fingerDrawing,
   settings,
-  simultaneousGesture,
+  simultaneousGestures,
   disabled = false,
   transparentBackground = false,
   onChange,
   onCommit,
 }: Props) {
+  const inkWebViewRef = useRef<WebView>(null);
   const sizeRef = useRef({ width: 1, height: 1 });
   const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
   const [displayStrokes, setDisplayStrokes] = useState(page.strokes);
@@ -224,6 +305,25 @@ export default function HandwritingCanvas({
     strokesRef.current = page.strokes;
     setDisplayStrokes(page.strokes);
   }, [page.strokes]);
+
+  const renderInk = useCallback(() => {
+    const markup = displayStrokes
+      .map((stroke) => strokeSvgMarkup(stroke, canvasSize.width, canvasSize.height))
+      .join('');
+    inkWebViewRef.current?.injectJavaScript(`
+      (function () {
+        var ink = document.getElementById('ink');
+        if (!ink) return;
+        ink.setAttribute('viewBox', '0 0 ${canvasSize.width} ${canvasSize.height}');
+        ink.innerHTML = ${JSON.stringify(markup)};
+      })();
+      true;
+    `);
+  }, [canvasSize.height, canvasSize.width, displayStrokes]);
+
+  useEffect(() => {
+    renderInk();
+  }, [renderInk]);
 
   const acceptsPointer = (event: PanEvent): boolean => (
     !disabled &&
@@ -289,6 +389,7 @@ export default function HandwritingCanvas({
           : 1,
       penStyle: settings.penStyle,
       smoothing: settings.smoothing,
+      stabilization: settings.stabilization,
       pressureSensitivity: settings.pressureSensitivity,
       tipSharpness: settings.tipSharpness,
       taperedEnds: settings.taperedEnds,
@@ -312,12 +413,18 @@ export default function HandwritingCanvas({
     if (!activeId) return;
     const activeStroke = strokesRef.current.find((stroke) => stroke.id === activeId);
     const lastPoint = activeStroke?.points[activeStroke.points.length - 1];
-    const smoothing = activeStroke?.smoothing ?? settings.smoothing;
+    const stabilization = activeStroke?.stabilization ?? settings.stabilization;
     const point = lastPoint
       ? {
         ...rawPoint,
-        x: lastPoint.x + (rawPoint.x - lastPoint.x) * (1 - smoothing * 0.68),
-        y: lastPoint.y + (rawPoint.y - lastPoint.y) * (1 - smoothing * 0.68),
+        x: lastPoint.x + (rawPoint.x - lastPoint.x) * Math.min(
+          0.96,
+          1 - stabilization * 0.62 + Math.hypot(rawPoint.x - lastPoint.x, rawPoint.y - lastPoint.y) * 12,
+        ),
+        y: lastPoint.y + (rawPoint.y - lastPoint.y) * Math.min(
+          0.96,
+          1 - stabilization * 0.62 + Math.hypot(rawPoint.x - lastPoint.x, rawPoint.y - lastPoint.y) * 12,
+        ),
       }
       : rawPoint;
     if (lastPoint) {
@@ -385,9 +492,9 @@ export default function HandwritingCanvas({
         runOnJS(cancelGesture)();
       })
       .cancelsTouchesInView(false);
-    if (simultaneousGesture) gesture.simultaneousWithExternalGesture(simultaneousGesture);
+    if (simultaneousGestures?.length) gesture.simultaneousWithExternalGesture(...simultaneousGestures);
     return gesture;
-  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGesture, onChange, onCommit]);
+  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit]);
 
   return (
     <GestureDetector gesture={pan}>
@@ -408,16 +515,21 @@ export default function HandwritingCanvas({
           height={canvasSize.height}
           transparent={transparentBackground}
         />
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {displayStrokes.map((stroke) => (
-            <StrokeView
-              key={stroke.id}
-              stroke={stroke}
-              canvasWidth={canvasSize.width}
-              canvasHeight={canvasSize.height}
-            />
-          ))}
-        </View>
+        <WebView
+          ref={inkWebViewRef}
+          source={{ html: INK_DOCUMENT }}
+          originWhitelist={['*']}
+          style={styles.inkWebView}
+          containerStyle={styles.inkWebView}
+          pointerEvents="none"
+          scrollEnabled={false}
+          bounces={false}
+          overScrollMode="never"
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          javaScriptEnabled
+          onLoadEnd={renderInk}
+        />
       </View>
     </GestureDetector>
   );
@@ -425,4 +537,8 @@ export default function HandwritingCanvas({
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  inkWebView: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
 });

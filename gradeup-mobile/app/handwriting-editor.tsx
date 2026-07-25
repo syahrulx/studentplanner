@@ -20,10 +20,13 @@ import {
   type GestureType,
 } from 'react-native-gesture-handler';
 import Animated, {
+  runOnJS,
   scrollTo,
   useAnimatedRef,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,7 +76,7 @@ interface ContinuousPageProps {
   strokeWidth: number;
   fingerDrawing: boolean;
   settings: HandwritingToolSettings;
-  documentGesture: GestureType;
+  documentGestures: GestureType[];
   primaryColor: string;
   secondaryTextColor: string;
   loadPdfPage: (pageNumber: number) => Promise<string | null>;
@@ -91,7 +94,7 @@ function ContinuousPage({
   strokeWidth,
   fingerDrawing,
   settings,
-  documentGesture,
+  documentGestures,
   primaryColor,
   secondaryTextColor,
   loadPdfPage,
@@ -145,7 +148,7 @@ function ContinuousPage({
             width={strokeWidth}
             fingerDrawing={fingerDrawing}
             settings={settings}
-            simultaneousGesture={documentGesture}
+            simultaneousGestures={documentGestures}
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
             onChange={(strokes) => onChange(page.id, strokes)}
             onCommit={(previous) => onCommit(page.id, previous)}
@@ -266,6 +269,7 @@ export default function HandwritingEditor() {
   const [insertPosition, setInsertPosition] = useState<'before' | 'after'>('after');
   const [toolSettings, setToolSettings] = useState<HandwritingToolSettings>(DEFAULT_HANDWRITING_TOOL_SETTINGS);
   const [workspaceSize, setWorkspaceSize] = useState({ width: 1, height: 1 });
+  const [zoomScale, setZoomScale] = useState(1);
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const [redoStacks, setRedoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
 
@@ -281,6 +285,12 @@ export default function HandwritingEditor() {
   const documentListRef = useAnimatedRef<FlatList<HandwritingPage>>();
   const scrollOffset = useSharedValue(0);
   const panStartOffset = useSharedValue(0);
+  const horizontalOffset = useSharedValue(0);
+  const panStartHorizontalOffset = useSharedValue(0);
+  const horizontalLimit = useSharedValue(0);
+  const committedZoom = useSharedValue(1);
+  const pinchStartZoom = useSharedValue(1);
+  const pinchPreview = useSharedValue(1);
 
   useEffect(() => { pagesRef.current = pages; }, [pages]);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
@@ -642,7 +652,14 @@ export default function HandwritingEditor() {
     ],
     [],
   );
-  const pageWidth = Math.max(1, workspaceSize.width - 24);
+  const basePageWidth = Math.max(1, workspaceSize.width - 24);
+  const pageWidth = basePageWidth * zoomScale;
+  useEffect(() => {
+    committedZoom.value = zoomScale;
+    const nextLimit = Math.max(0, (pageWidth - basePageWidth) / 2);
+    horizontalLimit.value = nextLimit;
+    horizontalOffset.value = Math.max(-nextLimit, Math.min(nextLimit, horizontalOffset.value));
+  }, [basePageWidth, committedZoom, horizontalLimit, horizontalOffset, pageWidth, zoomScale]);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 45 }).current;
   const documentScrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -667,16 +684,54 @@ export default function HandwritingEditor() {
     })
     .onStart(() => {
       panStartOffset.value = scrollOffset.value;
+      panStartHorizontalOffset.value = horizontalOffset.value;
     })
     .onUpdate((event) => {
       const offset = Math.max(0, panStartOffset.value - event.translationY);
       scrollOffset.value = offset;
       scrollTo(documentListRef, 0, offset, false);
+      horizontalOffset.value = Math.max(
+        -horizontalLimit.value,
+        Math.min(horizontalLimit.value, panStartHorizontalOffset.value + event.translationX),
+      );
     })
     .onEnd((event) => {
       const projectedOffset = Math.max(0, scrollOffset.value - event.velocityY * 0.16);
       scrollTo(documentListRef, 0, projectedOffset, true);
     }), [fingerDrawing]);
+  const commitDocumentZoom = useCallback((value: number) => {
+    const next = Math.max(1, Math.min(3, value));
+    setZoomScale(Math.round(next * 20) / 20);
+  }, []);
+  const documentPinchGesture = useMemo(() => Gesture.Pinch()
+    .onStart(() => {
+      pinchStartZoom.value = committedZoom.value;
+      pinchPreview.value = 1;
+    })
+    .onUpdate((event) => {
+      const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
+      pinchPreview.value = next / Math.max(0.01, pinchStartZoom.value);
+    })
+    .onEnd((event) => {
+      const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
+      committedZoom.value = next;
+      runOnJS(commitDocumentZoom)(next);
+      pinchPreview.value = withTiming(1, { duration: 120 });
+    }), [commitDocumentZoom]);
+  const documentGesture = useMemo(
+    () => Gesture.Simultaneous(documentScrollGesture, documentPinchGesture),
+    [documentPinchGesture, documentScrollGesture],
+  );
+  const documentExternalGestures = useMemo<GestureType[]>(
+    () => [documentScrollGesture, documentPinchGesture],
+    [documentPinchGesture, documentScrollGesture],
+  );
+  const documentTransformStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: pinchPreview.value },
+      { translateX: horizontalOffset.value },
+    ],
+  }));
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
     const visibleIndex = viewableItems.find((item) => item.index != null)?.index;
     if (visibleIndex != null) setActiveIndex(visibleIndex);
@@ -748,7 +803,7 @@ export default function HandwritingEditor() {
         <Pressable
           onPress={() => Alert.alert(
             'Writing controls',
-            'Scroll vertically to see every page. Apple Pencil and tablet styluses write. With Finger ink off, one finger scrolls. Turn on Finger ink for one-finger drawing; use two fingers to navigate.',
+            'Pinch with two fingers to zoom. Drag to move around the document. Apple Pencil and tablet styluses write. With Finger ink off, one finger navigates; turn it on for one-finger drawing.',
           )}
           style={styles.headerBtn}
         >
@@ -846,6 +901,19 @@ export default function HandwritingEditor() {
             </Text>
           </View>
         </Pressable>
+        <Pressable
+          onPress={() => {
+            setZoomScale(1);
+            horizontalOffset.value = 0;
+          }}
+          disabled={zoomScale === 1}
+          style={styles.actionBtn}
+        >
+          <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
+          <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
+            {Math.round(zoomScale * 100)}%
+          </Text>
+        </Pressable>
       </ScrollView>
 
       <View
@@ -855,49 +923,47 @@ export default function HandwritingEditor() {
           height: event.nativeEvent.layout.height,
         })}
       >
-        <GestureDetector gesture={documentScrollGesture}>
-          <Animated.FlatList
-            ref={documentListRef}
-            data={pages}
-            keyExtractor={(page) => page.id}
-            style={styles.documentList}
-            contentContainerStyle={styles.documentContent}
-            showsVerticalScrollIndicator
-            scrollEnabled={false}
-            nestedScrollEnabled
-            minimumZoomScale={1}
-            maximumZoomScale={4}
-            pinchGestureEnabled
-            initialNumToRender={2}
-            maxToRenderPerBatch={3}
-            windowSize={5}
-            removeClippedSubviews={false}
-            viewabilityConfig={viewabilityConfig}
-            onViewableItemsChanged={onViewableItemsChanged}
-            onScroll={documentScrollHandler}
-            scrollEventThrottle={16}
-            renderItem={({ item }) => (
-              <ContinuousPage
-                page={item}
-                pageWidth={pageWidth}
-                aspectRatio={item.pdfPageNumber != null
-                  ? (pdfPageRatios[item.pdfPageNumber] ?? HANDWRITING_PAGE_ASPECT_RATIO)
-                  : HANDWRITING_PAGE_ASPECT_RATIO}
-                documentVersion={pdfPageCount}
-                tool={tool}
-                color={color}
-                strokeWidth={strokeWidth}
-                fingerDrawing={fingerDrawing}
-                settings={toolSettings}
-                documentGesture={documentScrollGesture}
-                primaryColor={theme.primary}
-                secondaryTextColor={theme.textSecondary}
-                loadPdfPage={loadPdfPage}
-                onChange={updatePageStrokes}
-                onCommit={commitPageGesture}
-              />
-            )}
-          />
+        <GestureDetector gesture={documentGesture}>
+          <Animated.View style={[styles.documentViewport, documentTransformStyle]}>
+            <Animated.FlatList
+              ref={documentListRef}
+              data={pages}
+              keyExtractor={(page) => page.id}
+              style={styles.documentList}
+              contentContainerStyle={styles.documentContent}
+              showsVerticalScrollIndicator
+              scrollEnabled={false}
+              initialNumToRender={2}
+              maxToRenderPerBatch={3}
+              windowSize={5}
+              removeClippedSubviews={false}
+              viewabilityConfig={viewabilityConfig}
+              onViewableItemsChanged={onViewableItemsChanged}
+              onScroll={documentScrollHandler}
+              scrollEventThrottle={16}
+              renderItem={({ item }) => (
+                <ContinuousPage
+                  page={item}
+                  pageWidth={pageWidth}
+                  aspectRatio={item.pdfPageNumber != null
+                    ? (pdfPageRatios[item.pdfPageNumber] ?? HANDWRITING_PAGE_ASPECT_RATIO)
+                    : HANDWRITING_PAGE_ASPECT_RATIO}
+                  documentVersion={pdfPageCount}
+                  tool={tool}
+                  color={color}
+                  strokeWidth={strokeWidth}
+                  fingerDrawing={fingerDrawing}
+                  settings={toolSettings}
+                  documentGestures={documentExternalGestures}
+                  primaryColor={theme.primary}
+                  secondaryTextColor={theme.textSecondary}
+                  loadPdfPage={loadPdfPage}
+                  onChange={updatePageStrokes}
+                  onCommit={commitPageGesture}
+                />
+              )}
+            />
+          </Animated.View>
         </GestureDetector>
       </View>
 
@@ -1091,6 +1157,18 @@ export default function HandwritingEditor() {
                     onChange={(smoothing) => setToolSettings((current) => ({ ...current, smoothing }))}
                     primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
                   />
+                  <ToolOptionRow
+                    label="Stroke stabilizer"
+                    hint="Steadies small hand movements while keeping your natural letter shape."
+                    options={[
+                      { label: 'Off', value: 0, symbol: '⌁' },
+                      { label: 'Gentle', value: 0.35, symbol: '∿' },
+                      { label: 'Strong', value: 0.72, symbol: '〜' },
+                    ]}
+                    value={toolSettings.stabilization}
+                    onChange={(stabilization) => setToolSettings((current) => ({ ...current, stabilization }))}
+                    primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
+                  />
                   {toolSettings.penStyle !== 'ball' ? (
                     <ToolOptionRow
                       label="Pressure sensitivity"
@@ -1153,6 +1231,18 @@ export default function HandwritingEditor() {
                     ]}
                     value={toolSettings.smoothing}
                     onChange={(smoothing) => setToolSettings((current) => ({ ...current, smoothing }))}
+                    primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
+                  />
+                  <ToolOptionRow
+                    label="Stroke stabilizer"
+                    hint="Reduces wobble without removing the pencil texture."
+                    options={[
+                      { label: 'Off', value: 0, symbol: '⌁' },
+                      { label: 'Gentle', value: 0.35, symbol: '∿' },
+                      { label: 'Strong', value: 0.72, symbol: '〜' },
+                    ]}
+                    value={toolSettings.stabilization}
+                    onChange={(stabilization) => setToolSettings((current) => ({ ...current, stabilization }))}
                     primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
                   />
                   <ToolOptionRow
@@ -1342,6 +1432,7 @@ const styles = StyleSheet.create({
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
   pdfWorkspace: { padding: 0, backgroundColor: '#17191d' },
+  documentViewport: { flex: 1, width: '100%' },
   documentList: { flex: 1, width: '100%' },
   documentContent: { alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 28 },
   continuousPageWrap: { alignItems: 'center', marginBottom: 12 },

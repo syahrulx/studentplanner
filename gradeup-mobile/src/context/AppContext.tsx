@@ -2242,6 +2242,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (normalized.group !== undefined) {
         normalized.group = normalized.group.trim();
       }
+      // Persist first so the editor never reports success for a change that
+      // failed to reach the timetable table. The screen updates immediately
+      // after the confirmed write.
+      await timetableDb.updateTimetableEntry(uid, entryId, normalized);
       let mergedAfterUpdate: TimetableEntry[] = [];
       setTimetable((prev) => {
         const next = prev.map((e) => {
@@ -2264,7 +2268,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         mergedAfterUpdate = next;
         return next;
       });
-      await timetableDb.updateTimetableEntry(uid, entryId, normalized);
       // Re-schedule attendance banners so changes to day/startTime take effect.
       scheduleAttendanceNotifications(uid, mergedAfterUpdate).catch(() => {});
     },
