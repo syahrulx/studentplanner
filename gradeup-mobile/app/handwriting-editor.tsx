@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -59,6 +62,7 @@ import {
 import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
+import { invokeAiGenerate, type AiGenerateChatResult } from '@/src/lib/invokeAiGenerate';
 
 const COLORS = ['#111827', '#2563eb', '#dc2626', '#16a34a', '#7c3aed', '#f59e0b'];
 const FIXED_INK_COLORS = COLORS.slice(0, -2);
@@ -324,6 +328,50 @@ export default function HandwritingEditor() {
   const [zoomScale, setZoomScale] = useState(1);
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const [redoStacks, setRedoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
+
+  // ── AI Chat Side Panel state ──
+  type AiChatMessage = { role: 'ai' | 'user'; text: string };
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([
+    { role: 'ai', text: 'Hi! I\'m your AI study assistant. Ask me anything about your notes — summarize, explain, or quiz you!' },
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const aiScrollRef = useRef<ScrollView>(null);
+  const AI_PANEL_WIDTH = Dimensions.get('window').width * 0.55;
+
+  const sendAiMessage = useCallback(async () => {
+    const text = aiInput.trim();
+    if (!text || aiProcessing) return;
+    const userMsg: AiChatMessage = { role: 'user', text };
+    setAiMessages((prev) => [...prev, userMsg]);
+    setAiInput('');
+    setAiProcessing(true);
+    setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    try {
+      const chatHistory = [...aiMessages, userMsg].map((m) => ({
+        role: m.role === 'ai' ? 'assistant' as const : 'user' as const,
+        content: m.text,
+      }));
+      const { data, error } = await invokeAiGenerate<AiGenerateChatResult>({
+        kind: 'chat',
+        content: text,
+        chat_history: chatHistory,
+        subject_id: subjectId,
+        question: text,
+      });
+      if (error) {
+        setAiMessages((prev) => [...prev, { role: 'ai', text: `Sorry, something went wrong: ${error}` }]);
+      } else if (data?.response) {
+        setAiMessages((prev) => [...prev, { role: 'ai', text: data.response }]);
+      }
+    } catch {
+      setAiMessages((prev) => [...prev, { role: 'ai', text: 'Could not reach AI. Please try again.' }]);
+    } finally {
+      setAiProcessing(false);
+      setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 150);
+    }
+  }, [aiInput, aiProcessing, aiMessages, subjectId]);
 
   const pagesRef = useRef(pages);
   const pdfDocumentRef = useRef<PDFDocument | null>(null);
@@ -985,66 +1033,75 @@ export default function HandwritingEditor() {
         </Pressable>
       </ScrollView>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[styles.actionBarScroll, { backgroundColor: theme.card, borderBottomColor: theme.border }]}
-        contentContainerStyle={styles.actionBar}
-      >
-        <Pressable
-          onPress={undo}
-          disabled={!(undoStacks[activePage.id]?.length)}
-          style={styles.actionBtn}
+      <View style={[styles.actionBarRow, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.actionBarScrollInner}
+          contentContainerStyle={styles.actionBar}
         >
-          <Feather name="corner-up-left" size={18} color={undoStacks[activePage.id]?.length ? theme.text : theme.border} />
-          <Text style={[styles.actionLabel, { color: theme.text }, !(undoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Undo</Text>
-        </Pressable>
-        <Pressable
-          onPress={redo}
-          disabled={!(redoStacks[activePage.id]?.length)}
-          style={styles.actionBtn}
-        >
-          <Feather name="corner-up-right" size={18} color={redoStacks[activePage.id]?.length ? theme.text : theme.border} />
-          <Text style={[styles.actionLabel, { color: theme.text }, !(redoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Redo</Text>
-        </Pressable>
-        {!isPdfAnnotation ? (
-          <Pressable onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
-            <Feather name="grid" size={18} color={theme.text} />
-            <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
+          <Pressable
+            onPress={undo}
+            disabled={!(undoStacks[activePage.id]?.length)}
+            style={styles.actionBtn}
+          >
+            <Feather name="corner-up-left" size={18} color={undoStacks[activePage.id]?.length ? theme.text : theme.border} />
+            <Text style={[styles.actionLabel, { color: theme.text }, !(undoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Undo</Text>
           </Pressable>
-        ) : null}
-        <Pressable
-          onPress={() => setFingerDrawing((value) => !value)}
-          style={[
-            styles.fingerModeBtn,
-            {
-              backgroundColor: fingerDrawing ? `${theme.primary}18` : theme.background,
-              borderColor: fingerDrawing ? `${theme.primary}55` : theme.border,
-            },
-          ]}
-        >
-          <Feather name="edit-3" size={17} color={fingerDrawing ? theme.primary : theme.text} />
-          <View>
-            <Text style={[styles.fingerModeLabel, { color: fingerDrawing ? theme.primary : theme.text }]}>Finger ink</Text>
-            <Text style={[styles.fingerModeState, { color: fingerDrawing ? theme.primary : theme.textSecondary }]}>
-              {fingerDrawing ? 'On' : 'Off'}
+          <Pressable
+            onPress={redo}
+            disabled={!(redoStacks[activePage.id]?.length)}
+            style={styles.actionBtn}
+          >
+            <Feather name="corner-up-right" size={18} color={redoStacks[activePage.id]?.length ? theme.text : theme.border} />
+            <Text style={[styles.actionLabel, { color: theme.text }, !(redoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Redo</Text>
+          </Pressable>
+          {!isPdfAnnotation ? (
+            <Pressable onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
+              <Feather name="grid" size={18} color={theme.text} />
+              <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={() => setFingerDrawing((value) => !value)}
+            style={[
+              styles.fingerModeBtn,
+              {
+                backgroundColor: fingerDrawing ? `${theme.primary}18` : theme.background,
+                borderColor: fingerDrawing ? `${theme.primary}55` : theme.border,
+              },
+            ]}
+          >
+            <Feather name="edit-3" size={17} color={fingerDrawing ? theme.primary : theme.text} />
+            <View>
+              <Text style={[styles.fingerModeLabel, { color: fingerDrawing ? theme.primary : theme.text }]}>Finger ink</Text>
+              <Text style={[styles.fingerModeState, { color: fingerDrawing ? theme.primary : theme.textSecondary }]}>
+                {fingerDrawing ? 'On' : 'Off'}
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setZoomScale(1);
+              horizontalOffset.value = 0;
+            }}
+            disabled={zoomScale === 1}
+            style={styles.actionBtn}
+          >
+            <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
+            <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
+              {Math.round(zoomScale * 100)}%
             </Text>
-          </View>
-        </Pressable>
+          </Pressable>
+        </ScrollView>
         <Pressable
-          onPress={() => {
-            setZoomScale(1);
-            horizontalOffset.value = 0;
-          }}
-          disabled={zoomScale === 1}
-          style={styles.actionBtn}
+          onPress={() => setShowAiPanel(true)}
+          style={[styles.aiActionBtn, showAiPanel && { backgroundColor: `${theme.primary}18` }]}
         >
-          <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
-          <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
-            {Math.round(zoomScale * 100)}%
-          </Text>
+          <Feather name="message-circle" size={17} color={showAiPanel ? theme.primary : theme.text} />
+          <Text style={[styles.actionLabel, { color: showAiPanel ? theme.primary : theme.text }]}>Ask AI</Text>
         </Pressable>
-      </ScrollView>
+      </View>
 
       <View
         style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace]}
@@ -1098,6 +1155,91 @@ export default function HandwritingEditor() {
           </Animated.View>
         </GestureDetector>
       </View>
+
+      {/* ── AI Chat Side Panel ── */}
+      <Modal visible={showAiPanel} transparent animationType="fade" onRequestClose={() => setShowAiPanel(false)}>
+        <View style={[styles.aiOverlay, { paddingTop: insets.top + 164 }]}>
+          <Pressable style={styles.aiOverlayDismiss} onPress={() => setShowAiPanel(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[styles.aiPanel, { width: AI_PANEL_WIDTH, backgroundColor: theme.card }]}
+          >
+            {/* Header */}
+            <View style={[styles.aiPanelHeader, { borderBottomColor: theme.border }]}>
+              <View style={[styles.aiPanelHeaderIcon, { backgroundColor: `${theme.primary}14` }]}>
+                <Feather name="message-circle" size={18} color={theme.primary} />
+              </View>
+              <Text style={[styles.aiPanelTitle, { color: theme.text }]}>Ask AI</Text>
+              <Pressable onPress={() => setShowAiPanel(false)} style={styles.aiPanelCloseBtn}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            {/* Messages */}
+            <ScrollView
+              ref={aiScrollRef}
+              style={styles.aiMessages}
+              contentContainerStyle={styles.aiMessagesContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => aiScrollRef.current?.scrollToEnd({ animated: true })}
+            >
+              {aiMessages.map((msg, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.aiBubble,
+                    msg.role === 'user'
+                      ? [styles.aiUserBubble, { backgroundColor: theme.primary }]
+                      : [styles.aiAssistantBubble, { backgroundColor: theme.background }],
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.aiBubbleText,
+                      { color: msg.role === 'user' ? theme.textInverse : theme.text },
+                    ]}
+                  >
+                    {msg.text}
+                  </Text>
+                </View>
+              ))}
+              {aiProcessing ? (
+                <View style={[styles.aiBubble, styles.aiAssistantBubble, { backgroundColor: theme.background }]}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                </View>
+              ) : null}
+            </ScrollView>
+
+            {/* Input Bar */}
+            <View style={[styles.aiInputBar, { borderTopColor: theme.border, backgroundColor: theme.card, paddingBottom: Math.max(8, insets.bottom) }]}>
+              <TextInput
+                style={[styles.aiTextInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                value={aiInput}
+                onChangeText={setAiInput}
+                placeholder="Ask about your notes…"
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                maxLength={2000}
+                editable={!aiProcessing}
+                onSubmitEditing={() => { void sendAiMessage(); }}
+                blurOnSubmit
+              />
+              <Pressable
+                onPress={() => { void sendAiMessage(); }}
+                disabled={!aiInput.trim() || aiProcessing}
+                style={[
+                  styles.aiSendBtn,
+                  {
+                    backgroundColor: aiInput.trim() && !aiProcessing ? theme.primary : theme.border,
+                  },
+                ]}
+              >
+                <Feather name="arrow-up" size={18} color={aiInput.trim() && !aiProcessing ? theme.textInverse : theme.textSecondary} />
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       <Modal visible={showMoreMenu} transparent animationType="fade" onRequestClose={() => setShowMoreMenu(false)}>
         <Pressable style={styles.moreMenuBackdrop} onPress={() => setShowMoreMenu(false)}>
@@ -1554,8 +1696,20 @@ const styles = StyleSheet.create({
   savePillSaved: { backgroundColor: '#059669' },
   saveText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   actionBarScroll: { flexGrow: 0, height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
+  actionBarRow: { flexDirection: 'row', height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
+  actionBarScrollInner: { flex: 1, height: 46 },
   actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 8, gap: 3 },
   actionBtn: { height: 38, minWidth: 52, paddingHorizontal: 7, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  aiActionBtn: {
+    height: 46,
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'rgba(128,128,128,0.2)',
+  },
   actionLabel: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   fingerModeBtn: {
     height: 34,
@@ -1667,4 +1821,99 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8, marginTop: 2, marginBottom: 4 },
   templateRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 12 },
   proBadge: { fontSize: 10, fontWeight: '900' },
+  // ── AI Chat Side Panel styles ──
+  aiOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  aiOverlayDismiss: {
+    flex: 1,
+  },
+  aiPanel: {
+    height: '100%',
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    shadowOffset: { width: -4, height: 0 },
+    elevation: 12,
+  },
+  aiPanelHeader: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  aiPanelHeaderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiPanelTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  aiPanelCloseBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiMessages: {
+    flex: 1,
+  },
+  aiMessagesContent: {
+    padding: 12,
+    gap: 10,
+  },
+  aiBubble: {
+    maxWidth: '92%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+  },
+  aiUserBubble: {
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 4,
+  },
+  aiAssistantBubble: {
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 4,
+  },
+  aiBubbleText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+  aiInputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  aiTextInput: {
+    flex: 1,
+    minHeight: 38,
+    maxHeight: 100,
+    borderRadius: 19,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingTop: 9,
+    paddingBottom: 9,
+    fontSize: 14,
+  },
+  aiSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
