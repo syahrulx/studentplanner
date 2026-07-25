@@ -35,6 +35,7 @@ interface Props {
   transparentBackground?: boolean;
   onChange: (strokes: HandwritingStroke[]) => void;
   onCommit: (previousStrokes: HandwritingStroke[]) => void;
+  onToolGestureEnd?: (tool: HandwritingTool) => void;
 }
 
 function clampPoint(value: number): number {
@@ -291,6 +292,7 @@ export default function HandwritingCanvas({
   transparentBackground = false,
   onChange,
   onCommit,
+  onToolGestureEnd,
 }: Props) {
   const inkWebViewRef = useRef<WebView>(null);
   const sizeRef = useRef({ width: 1, height: 1 });
@@ -440,6 +442,7 @@ export default function HandwritingCanvas({
   };
 
   const finishGesture = () => {
+    const acceptedTool = gestureAcceptedRef.current ? tool : null;
     if (gestureAcceptedRef.current && beforeGestureRef.current !== strokesRef.current) {
       if (tool === 'highlighter' && settings.straightMarker && activeStrokeIdRef.current) {
         strokesRef.current = strokesRef.current.map((stroke) => {
@@ -451,6 +454,7 @@ export default function HandwritingCanvas({
       onCommit(beforeGestureRef.current);
       onChange(strokesRef.current);
     }
+    if (acceptedTool) onToolGestureEnd?.(acceptedTool);
     activeStrokeIdRef.current = null;
     gestureAcceptedRef.current = false;
   };
@@ -494,7 +498,7 @@ export default function HandwritingCanvas({
       .cancelsTouchesInView(false);
     if (simultaneousGestures?.length) gesture.simultaneousWithExternalGesture(...simultaneousGestures);
     return gesture;
-  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit]);
+  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onToolGestureEnd]);
 
   return (
     <GestureDetector gesture={pan}>

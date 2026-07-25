@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  Switch,
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -26,12 +27,15 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withDecay,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import ColorPicker from 'react-native-wheel-color-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PDFDocument } from 'pdf-lib';
 import HandwritingCanvas from '@/src/components/handwriting/HandwritingCanvas';
 import { useApp } from '@/src/context/AppContext';
@@ -57,6 +61,40 @@ import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
 
 const COLORS = ['#111827', '#2563eb', '#dc2626', '#16a34a', '#7c3aed', '#f59e0b'];
+const FIXED_INK_COLORS = COLORS.slice(0, -2);
+const FALLBACK_SAVED_COLORS = COLORS.slice(-2);
+const SAVED_INK_COLORS_KEY = 'rencana_handwriting_saved_ink_colours_v1';
+const AUTO_RETURN_ERASER_KEY = 'rencana_handwriting_auto_return_eraser_v1';
+type InkColorTool = 'pen' | 'pencil' | 'highlighter';
+type SavedInkColors = Record<InkColorTool, string[]>;
+
+const EMPTY_SAVED_INK_COLORS: SavedInkColors = {
+  pen: [],
+  pencil: [],
+  highlighter: [],
+};
+
+function isSavedInkColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function parseSavedInkColors(value: unknown): SavedInkColors {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const colorsFor = (tool: InkColorTool) => (
+    Array.isArray(source[tool])
+      ? [...new Set(source[tool].filter(isSavedInkColor))].slice(-2)
+      : []
+  );
+  return {
+    pen: colorsFor('pen'),
+    pencil: colorsFor('pencil'),
+    highlighter: colorsFor('highlighter'),
+  };
+}
+
+function inkColorTool(tool: HandwritingTool): InkColorTool {
+  return tool === 'eraser' ? 'pen' : tool;
+}
 const TEMPLATES: Array<{ id: HandwritingTemplate; label: string; pro?: boolean }> = [
   { id: 'blank', label: 'Blank' },
   { id: 'ruled', label: 'Ruled' },
@@ -77,11 +115,13 @@ interface ContinuousPageProps {
   fingerDrawing: boolean;
   settings: HandwritingToolSettings;
   documentGestures: GestureType[];
+  horizontalOffset: SharedValue<number>;
   primaryColor: string;
   secondaryTextColor: string;
   loadPdfPage: (pageNumber: number) => Promise<string | null>;
   onChange: (pageId: string, strokes: HandwritingStroke[]) => void;
   onCommit: (pageId: string, previous: HandwritingStroke[]) => void;
+  onToolGestureEnd: (tool: HandwritingTool) => void;
 }
 
 function ContinuousPage({
@@ -95,14 +135,21 @@ function ContinuousPage({
   fingerDrawing,
   settings,
   documentGestures,
+  horizontalOffset,
   primaryColor,
   secondaryTextColor,
   loadPdfPage,
   onChange,
   onCommit,
+  onToolGestureEnd,
 }: ContinuousPageProps) {
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(page.pdfPageNumber != null);
+  const horizontalPanStyle = useAnimatedStyle(() => ({
+    // Move the paper inside the clipped list viewport. Moving the viewport
+    // itself leaves its clip area behind and makes a zoomed page feel stuck.
+    transform: [{ translateX: horizontalOffset.value }],
+  }));
 
   useEffect(() => {
     let active = true;
@@ -121,7 +168,7 @@ function ContinuousPage({
   }, [documentVersion, loadPdfPage, page.pdfPageNumber]);
 
   return (
-    <View style={styles.continuousPageWrap}>
+    <Animated.View style={[styles.continuousPageWrap, horizontalPanStyle]}>
       <View style={[styles.continuousPaper, { width: pageWidth, aspectRatio }]}>
         {pdfUri ? (
           <WebView
@@ -152,10 +199,11 @@ function ContinuousPage({
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
             onChange={(strokes) => onChange(page.id, strokes)}
             onCommit={(previous) => onCommit(page.id, previous)}
+            onToolGestureEnd={onToolGestureEnd}
           />
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -241,6 +289,8 @@ export default function HandwritingEditor() {
   const { notes, user, handleSaveNote } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
+  const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
   const note = notes.find((candidate) => candidate.id === noteId);
   const premium = isAtLeastPlus(user?.subscriptionPlan);
   const pro = isPro(user?.subscriptionPlan);
@@ -249,6 +299,7 @@ export default function HandwritingEditor() {
   const [pages, setPages] = useState<HandwritingPage[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [tool, setTool] = useState<HandwritingTool>('pen');
+  const [autoReturnAfterErasing, setAutoReturnAfterErasing] = useState(true);
   const [color, setColor] = useState(COLORS[0]);
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [fingerDrawing, setFingerDrawing] = useState(false);
@@ -260,6 +311,7 @@ export default function HandwritingEditor() {
   const [showColors, setShowColors] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [customColor, setCustomColor] = useState(color);
+  const [savedInkColors, setSavedInkColors] = useState<SavedInkColors>(EMPTY_SAVED_INK_COLORS);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageRatios, setPdfPageRatios] = useState<Record<number, number>>({});
   const [exporting, setExporting] = useState(false);
@@ -278,6 +330,7 @@ export default function HandwritingEditor() {
   const pdfPageFilesRef = useRef<Map<number, string>>(new Map());
   const pdfPagePromisesRef = useRef<Map<number, Promise<string | null>>>(new Map());
   const uidRef = useRef<string | null>(null);
+  const lastWritingToolRef = useRef<InkColorTool>('pen');
   const dirtyRef = useRef(false);
   const revisionRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,10 +343,47 @@ export default function HandwritingEditor() {
   const horizontalLimit = useSharedValue(0);
   const committedZoom = useSharedValue(1);
   const pinchStartZoom = useSharedValue(1);
-  const pinchPreview = useSharedValue(1);
+  const liveZoom = useSharedValue(1);
+  const activeInkColorTool = inkColorTool(tool);
+  const visibleInkColors = useMemo(() => {
+    const saved = savedInkColors[activeInkColorTool];
+    const trailing = [...FALLBACK_SAVED_COLORS];
+    const start = trailing.length - saved.length;
+    saved.forEach((savedColor, index) => { trailing[start + index] = savedColor; });
+    return [...FIXED_INK_COLORS, ...trailing];
+  }, [activeInkColorTool, savedInkColors]);
 
   useEffect(() => { pagesRef.current = pages; }, [pages]);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  useEffect(() => {
+    if (tool !== 'eraser') lastWritingToolRef.current = tool;
+  }, [tool]);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(savedInkColorsKey).then((stored) => {
+      if (!active || !stored) return;
+      try {
+        setSavedInkColors(parseSavedInkColors(JSON.parse(stored)));
+      } catch {
+        // Keep the default swatches if an older local value cannot be read.
+      }
+    }).catch(() => {
+      // A custom colour is optional; drawing should never be blocked by storage.
+    });
+    return () => { active = false; };
+  }, [savedInkColorsKey]);
+
+  useEffect(() => {
+    let active = true;
+    setAutoReturnAfterErasing(true);
+    void AsyncStorage.getItem(autoReturnEraserKey).then((stored) => {
+      if (active && stored != null) setAutoReturnAfterErasing(stored !== 'off');
+    }).catch(() => {
+      // Keep the default enabled setting if the preference cannot be read.
+    });
+    return () => { active = false; };
+  }, [autoReturnEraserKey]);
 
   useEffect(() => {
     let active = true;
@@ -504,6 +594,17 @@ export default function HandwritingEditor() {
     setRedoStacks((current) => ({ ...current, [pageId]: [] }));
   }, []);
 
+  const handleToolGestureEnd = useCallback((completedTool: HandwritingTool) => {
+    if (completedTool === 'eraser' && autoReturnAfterErasing) {
+      setTool(lastWritingToolRef.current);
+    }
+  }, [autoReturnAfterErasing]);
+
+  const updateAutoReturnAfterErasing = useCallback((enabled: boolean) => {
+    setAutoReturnAfterErasing(enabled);
+    void AsyncStorage.setItem(autoReturnEraserKey, enabled ? 'on' : 'off');
+  }, [autoReturnEraserKey]);
+
   const undo = () => {
     if (!activePage) return;
     const stack = undoStacks[activePage.id] ?? [];
@@ -643,6 +744,26 @@ export default function HandwritingEditor() {
     }
   };
 
+  const useCustomColor = useCallback(() => {
+    setColor(customColor);
+    if (tool === 'eraser') setTool('pen');
+    setShowColors(false);
+  }, [customColor, tool]);
+
+  const saveCustomColor = useCallback(() => {
+    if (!isSavedInkColor(customColor)) return;
+    const colorTool = inkColorTool(tool);
+    const next: SavedInkColors = {
+      ...savedInkColors,
+      [colorTool]: [...savedInkColors[colorTool].filter((saved) => saved !== customColor), customColor].slice(-2),
+    };
+    setSavedInkColors(next);
+    setColor(customColor);
+    if (tool === 'eraser') setTool('pen');
+    setShowColors(false);
+    void AsyncStorage.setItem(savedInkColorsKey, JSON.stringify(next));
+  }, [customColor, savedInkColors, savedInkColorsKey, tool]);
+
   const tools = useMemo<Array<{ id: HandwritingTool; icon: keyof typeof Feather.glyphMap; label: string }>>(
     () => [
       { id: 'pen', icon: 'edit-3', label: 'Pen' },
@@ -656,6 +777,9 @@ export default function HandwritingEditor() {
   const pageWidth = basePageWidth * zoomScale;
   useEffect(() => {
     committedZoom.value = zoomScale;
+    // The layout now owns this zoom level, so the temporary transform can
+    // return to 1 without applying the scale a second time.
+    liveZoom.value = zoomScale;
     const nextLimit = Math.max(0, (pageWidth - basePageWidth) / 2);
     horizontalLimit.value = nextLimit;
     horizontalOffset.value = Math.max(-nextLimit, Math.min(nextLimit, horizontalOffset.value));
@@ -698,25 +822,32 @@ export default function HandwritingEditor() {
     .onEnd((event) => {
       const projectedOffset = Math.max(0, scrollOffset.value - event.velocityY * 0.16);
       scrollTo(documentListRef, 0, projectedOffset, true);
+      if (horizontalLimit.value > 0 && Math.abs(event.velocityX) > 40) {
+        horizontalOffset.value = withDecay({
+          velocity: event.velocityX,
+          clamp: [-horizontalLimit.value, horizontalLimit.value],
+        });
+      }
     }), [fingerDrawing]);
   const commitDocumentZoom = useCallback((value: number) => {
     const next = Math.max(1, Math.min(3, value));
-    setZoomScale(Math.round(next * 20) / 20);
+    setZoomScale(Math.round(next * 100) / 100);
   }, []);
   const documentPinchGesture = useMemo(() => Gesture.Pinch()
     .onStart(() => {
       pinchStartZoom.value = committedZoom.value;
-      pinchPreview.value = 1;
+      liveZoom.value = committedZoom.value;
     })
     .onUpdate((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
-      pinchPreview.value = next / Math.max(0.01, pinchStartZoom.value);
+      liveZoom.value = next;
     })
     .onEnd((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
-      committedZoom.value = next;
       runOnJS(commitDocumentZoom)(next);
-      pinchPreview.value = withTiming(1, { duration: 120 });
+    })
+    .onFinalize((_event, success) => {
+      if (!success) liveZoom.value = withTiming(committedZoom.value, { duration: 120 });
     }), [commitDocumentZoom]);
   const documentGesture = useMemo(
     () => Gesture.Simultaneous(documentScrollGesture, documentPinchGesture),
@@ -728,8 +859,7 @@ export default function HandwritingEditor() {
   );
   const documentTransformStyle = useAnimatedStyle(() => ({
     transform: [
-      { scale: pinchPreview.value },
-      { translateX: horizontalOffset.value },
+      { scale: liveZoom.value / Math.max(0.01, committedZoom.value) },
     ],
   }));
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
@@ -803,7 +933,7 @@ export default function HandwritingEditor() {
         <Pressable
           onPress={() => Alert.alert(
             'Writing controls',
-            'Pinch with two fingers to zoom. Drag to move around the document. Apple Pencil and tablet styluses write. With Finger ink off, one finger navigates; turn it on for one-finger drawing.',
+            'Pinch with two fingers to zoom. Once zoomed, drag in any direction to move around the page. Apple Pencil and tablet styluses write. With Finger ink off, one finger navigates; turn it on for one-finger drawing.',
           )}
           style={styles.headerBtn}
         >
@@ -840,9 +970,9 @@ export default function HandwritingEditor() {
           </Pressable>
         ))}
         <View style={[styles.separator, { backgroundColor: theme.border }]} />
-        {COLORS.map((ink) => (
+        {visibleInkColors.map((ink, index) => (
           <Pressable
-            key={ink}
+            key={`${activeInkColorTool}-${ink}-${index}`}
             onPress={() => { setColor(ink); if (tool === 'eraser') setTool('pen'); }}
             style={[styles.colorDotWrap, color === ink && { borderColor: theme.primary, backgroundColor: `${theme.primary}18` }]}
           >
@@ -955,11 +1085,13 @@ export default function HandwritingEditor() {
                   fingerDrawing={fingerDrawing}
                   settings={toolSettings}
                   documentGestures={documentExternalGestures}
+                  horizontalOffset={horizontalOffset}
                   primaryColor={theme.primary}
                   secondaryTextColor={theme.textSecondary}
                   loadPdfPage={loadPdfPage}
                   onChange={updatePageStrokes}
                   onCommit={commitPageGesture}
+                  onToolGestureEnd={handleToolGestureEnd}
                 />
               )}
             />
@@ -1008,6 +1140,21 @@ export default function HandwritingEditor() {
                 <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Delete this page and its writing</Text>
               </View>
             </Pressable>
+            <View style={[styles.moreMenuRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}> 
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}> 
+                <Feather name="rotate-ccw" size={17} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Return after erasing</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Switch back after one erase touch</Text>
+              </View>
+              <Switch
+                value={autoReturnAfterErasing}
+                onValueChange={updateAutoReturnAfterErasing}
+                trackColor={{ false: theme.border, true: `${theme.primary}99` }}
+                thumbColor={autoReturnAfterErasing ? theme.primary : theme.card}
+              />
+            </View>
             <Pressable
               disabled={exporting}
               onPress={() => {
@@ -1338,6 +1485,9 @@ export default function HandwritingEditor() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.colorModal, { backgroundColor: theme.card }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Custom ink colour</Text>
+            <Text style={[styles.colorSaveHint, { color: theme.textSecondary }]}>
+              Save up to two colours for {activeInkColorTool === 'highlighter' ? 'Marker' : activeInkColorTool === 'pen' ? 'Pen' : 'Pencil'}. They replace the two rightmost swatches.
+            </Text>
             <View style={{ height: 280 }}>
               <ColorPicker
                 color={customColor}
@@ -1352,11 +1502,11 @@ export default function HandwritingEditor() {
               <Pressable onPress={() => setShowColors(false)} style={styles.modalBtn}>
                 <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>Cancel</Text>
               </Pressable>
-              <Pressable
-                onPress={() => { setColor(customColor); setTool('pen'); setShowColors(false); }}
-                style={[styles.modalBtn, { backgroundColor: theme.primary }]}
-              >
-                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Use colour</Text>
+              <Pressable onPress={useCustomColor} style={styles.modalBtn}>
+                <Text style={{ color: theme.primary, fontWeight: '800' }}>Use once</Text>
+              </Pressable>
+              <Pressable onPress={saveCustomColor} style={[styles.modalBtn, { backgroundColor: theme.primary }]}>
+                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Save colour</Text>
               </Pressable>
             </View>
           </View>
@@ -1507,6 +1657,7 @@ const styles = StyleSheet.create({
   optionSymbol: { minHeight: 18, fontSize: 16, lineHeight: 18, fontWeight: '800' },
   clearPageBtn: { marginTop: 16, height: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   colorModal: { width: '100%', maxWidth: 430, borderRadius: 22, padding: 20 },
+  colorSaveHint: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
   templateModal: { width: '100%', maxWidth: 430, borderRadius: 22, padding: 20 },
   modalTitle: { fontSize: 19, fontWeight: '900', marginBottom: 8 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },

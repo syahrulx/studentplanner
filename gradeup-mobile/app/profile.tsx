@@ -14,8 +14,6 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import ImageCropPicker from 'react-native-image-crop-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
@@ -35,6 +33,7 @@ import type { SubscriptionPlan } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
 import { getTodayISO } from '@/src/utils/date';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { pickAvatarImage } from '@/src/lib/pickAvatarImage';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
 import { fetchCampusFaculties, addCampusFaculty } from '@/src/lib/campusRoomsApi';
 
@@ -390,24 +389,10 @@ export default function Profile() {
         return;
       }
 
-      let result;
-      try {
-        result = await ImageCropPicker.openPicker({
-          width: 800,
-          height: 800,
-          cropping: true,
-          cropperCircleOverlay: true,
-          includeBase64: true,
-          mediaType: 'photo',
-        });
-      } catch (e: any) {
-        if (e?.message?.includes('User cancelled') || e?.code === 'E_PICKER_CANCELLED') {
-          return;
-        }
-        throw e;
-      }
+      const result = await pickAvatarImage();
+      if (!result) return;
 
-      if (result && result.data) {
+      if (result.data) {
         setIsUploading(true);
         const ext = result.mime?.split('/')[1] || 'jpeg';
         const publicUrl = await uploadAvatar(result.data, ext);
