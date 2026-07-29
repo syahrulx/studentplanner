@@ -841,6 +841,35 @@ serve(async (req) => {
       return json(200, { ok: true });
     }
 
+    if (action === 'crowdsourced_calendars_delete_expired') {
+      const rawIds = Array.isArray(payload.ids) ? payload.ids : [];
+      const ids = Array.from(new Set(rawIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))))
+        .slice(0, 500);
+      if (!ids.length) return json(400, { error: 'missing_valid_ids' });
+
+      // `end_date` is a DATE column. Comparing its ISO form keeps today's
+      // calendar intact; only calendars that ended before today are eligible.
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: deleted, error: e } = await admin
+        .from('university_calendar_offers')
+        .delete()
+        .in('id', ids)
+        .eq('source', 'crowdsourced')
+        .lt('end_date', today)
+        .select('id');
+      if (e) return json(400, { error: e.message });
+
+      const deletedCount = (deleted ?? []).length;
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, requestedCount: ids.length, deletedCount, beforeDate: today },
+      });
+      return json(200, { deletedCount });
+    }
+
     if (action === 'subscription_plan_features_save') {
       const tier = String(payload.tier || '').trim();
       if (!['free', 'plus', 'pro'].includes(tier)) return json(400, { error: 'invalid_tier' });

@@ -1189,6 +1189,25 @@ export async function deleteUniversityCalendarOffer(id: string): Promise<void> {
   unwrapFunctionData<{ ok: true }>(data, error);
 }
 
+/**
+ * Removes crowdsourced calendars whose end date is already before today.
+ * The Edge Function repeats these constraints server-side so the bulk control
+ * can never remove active or admin-published calendars.
+ */
+export async function deleteExpiredCrowdsourcedCalendarOffers(ids: string[]): Promise<number> {
+  const offerIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 500);
+  if (!offerIds.length) return 0;
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'crowdsourced_calendars_delete_expired', ids: offerIds },
+    headers,
+  );
+  const res = unwrapFunctionData<{ deletedCount: number }>(data, error);
+  return Number(res.deletedCount) || 0;
+}
+
 export type ExtractedCalendarData = {
   official_url_title?: string;
   candidates?: Array<{
