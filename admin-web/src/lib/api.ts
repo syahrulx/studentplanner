@@ -1107,13 +1107,20 @@ export type AdminCalendarOfferInsert = {
   created_by?: string | null;
 };
 
-export async function listUniversityCalendarOffers(opts?: { universityId?: string; limit?: number }) {
+export async function listUniversityCalendarOffers(opts?: {
+  universityId?: string;
+  limit?: number;
+  orderBy?: 'created_at' | 'end_date';
+  ascending?: boolean;
+}) {
   const lim = Math.max(1, Math.min(300, opts?.limit ?? 120));
+  const orderBy = opts?.orderBy === 'end_date' ? 'end_date' : 'created_at';
+  const ascending = opts?.ascending ?? false;
   if (await hasSessionJwt()) {
     let q = supabase
       .from('university_calendar_offers')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order(orderBy, { ascending })
       .limit(lim);
     const u = (opts?.universityId ?? '').trim();
     if (u) q = q.eq('university_id', u);
@@ -1125,7 +1132,7 @@ export async function listUniversityCalendarOffers(opts?: { universityId?: strin
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'calendar_offers_list', universityId: opts?.universityId ?? '', limit: lim },
+    { action: 'calendar_offers_list', universityId: opts?.universityId ?? '', limit: lim, orderBy, ascending },
     headers,
   );
   const res = unwrapFunctionData<{ items: AdminCalendarOfferRow[] }>(data, error);
@@ -1202,6 +1209,21 @@ export async function deleteExpiredCrowdsourcedCalendarOffers(ids: string[]): Pr
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
     { action: 'crowdsourced_calendars_delete_expired', ids: offerIds },
+    headers,
+  );
+  const res = unwrapFunctionData<{ deletedCount: number }>(data, error);
+  return Number(res.deletedCount) || 0;
+}
+
+/** Removes expired admin-published calendar offers; crowdsourced offers use their own review flow. */
+export async function deleteExpiredAdminCalendarOffers(ids: string[], deleteAllExpired = false): Promise<number> {
+  const offerIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 500);
+  if (!offerIds.length && !deleteAllExpired) return 0;
+
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'calendar_offers_delete_expired_admin', ids: offerIds, deleteAllExpired },
     headers,
   );
   const res = unwrapFunctionData<{ deletedCount: number }>(data, error);
