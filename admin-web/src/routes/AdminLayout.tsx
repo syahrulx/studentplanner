@@ -48,54 +48,56 @@ export function AdminLayout() {
 
   return (
     <RequireAdmin>
-      <div className="min-h-dvh bg-slate-50 dark:bg-slate-950">
+      <div className="h-dvh overflow-hidden bg-slate-50 dark:bg-slate-950">
         {mobileNav}
-        <div className="flex min-h-dvh">
-          <div className="hidden md:block">
+        <div className="flex h-full min-h-0">
+          <div className="hidden h-full min-h-0 md:block">
             <Sidebar />
           </div>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <AdminSearchProvider>
             <Topbar onOpenMobileNav={() => setMobileOpen(true)} theme={theme} setTheme={setTheme} />
-            <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
-              {bypassAuth && !loading && !user && !devSecretSet ? (
-                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                  <span className="font-black">No Supabase session.</span> RLS blocks direct reads until you sign in as an
-                  admin, so the UI will not match the Table Editor.{' '}
-                  <Link to="/login" className="font-black text-brand-700 underline underline-offset-2 dark:text-brand-400">
-                    Sign in
-                  </Link>
-                  , or for local dev set the same value in{' '}
-                  <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">VITE_ADMIN_WEB_DEV_SECRET</code> (this
-                  app) and <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">ADMIN_WEB_DEV_SECRET</code>{' '}
-                  (Edge Function secret), then redeploy <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">admin_users</code>{' '}
-                  and <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">admin_data</code>.
-                </div>
-              ) : null}
-              {bypassAuth && !loading && !user && devSecretSet ? (
-                <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-                  <span className="font-black">Dev data mode.</span> API calls use{' '}
-                  <code className="rounded bg-sky-100/80 px-1 dark:bg-sky-900/50">VITE_ADMIN_WEB_DEV_SECRET</code>. Anyone who
-                  can load this app can use that key — keep it local, rotate it, and never ship it in a public build.
-                </div>
-              ) : null}
-              {reduceMotion ? (
-                <Outlet key={location.pathname} />
-              ) : (
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={location.pathname}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    variants={pageVariants}
-                    transition={pageTransition}
-                    className="will-change-[opacity,transform]"
-                  >
-                    <Outlet />
-                  </motion.div>
-                </AnimatePresence>
-              )}
+            <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="mx-auto w-full max-w-7xl px-4 py-6">
+                {bypassAuth && !loading && !user && !devSecretSet ? (
+                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+                    <span className="font-black">No Supabase session.</span> RLS blocks direct reads until you sign in as an
+                    admin, so the UI will not match the Table Editor.{' '}
+                    <Link to="/login" className="font-black text-brand-700 underline underline-offset-2 dark:text-brand-400">
+                      Sign in
+                    </Link>
+                    , or for local dev set the same value in{' '}
+                    <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">VITE_ADMIN_WEB_DEV_SECRET</code> (this
+                    app) and <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">ADMIN_WEB_DEV_SECRET</code>{' '}
+                    (Edge Function secret), then redeploy <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">admin_users</code>{' '}
+                    and <code className="rounded bg-amber-100/80 px-1 dark:bg-amber-900/50">admin_data</code>.
+                  </div>
+                ) : null}
+                {bypassAuth && !loading && !user && devSecretSet ? (
+                  <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+                    <span className="font-black">Dev data mode.</span> API calls use{' '}
+                    <code className="rounded bg-sky-100/80 px-1 dark:bg-sky-900/50">VITE_ADMIN_WEB_DEV_SECRET</code>. Anyone who
+                    can load this app can use that key — keep it local, rotate it, and never ship it in a public build.
+                  </div>
+                ) : null}
+                {reduceMotion ? (
+                  <Outlet key={location.pathname} />
+                ) : (
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={location.pathname}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      variants={pageVariants}
+                      transition={pageTransition}
+                      className="will-change-[opacity,transform]"
+                    >
+                      <Outlet />
+                    </motion.div>
+                  </AnimatePresence>
+                )}
+              </div>
             </main>
             </AdminSearchProvider>
           </div>
@@ -104,4 +106,3 @@ export function AdminLayout() {
     </RequireAdmin>
   );
 }
-

@@ -30,7 +30,7 @@ export function Topbar({
   }, [admin?.email, user?.email]);
 
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+    <header className="z-10 shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -161,4 +161,3 @@ export function Topbar({
     </header>
   );
 }
-
