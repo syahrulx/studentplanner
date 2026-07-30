@@ -85,66 +85,73 @@ Deno.serve(async (req) => {
   let newPlan: 'free' | 'plus' | 'pro' = 'free';
   const now = new Date();
 
-  // Check all possible key formats (dashboard ID and display name variants)
-  const proKeys  = ['Rencana Pro',  'rencana_pro',  'pro'];
-  const plusKeys = ['Rencana Plus', 'rencana_plus', 'plus'];
+  // EXPIRATION means the subscription has genuinely ended — RevenueCat's own
+  // event.entitlement_ids for an EXPIRATION event still lists the entitlement
+  // that just expired (it identifies the transaction, not current status), so
+  // trusting it here would incorrectly keep the user on their old paid plan
+  // forever. Skip the entitlement lookups entirely and force free.
+  //
+  // CANCELLATION only means auto-renew was turned off — the user keeps
+  // access until the period they already paid for actually ends (the later
+  // EXPIRATION event), so it must NOT force a downgrade here.
+  if (eventType === 'EXPIRATION') {
+    newPlan = 'free';
+  } else {
+    // Check all possible key formats (dashboard ID and display name variants)
+    const proKeys  = ['Rencana Pro',  'rencana_pro',  'pro'];
+    const plusKeys = ['Rencana Plus', 'rencana_plus', 'plus'];
 
-  // 1. First, check event.entitlement_ids array (most direct and robust for events)
-  const activeIds = new Set(
-    (Array.isArray(event?.entitlement_ids) ? event.entitlement_ids : [])
-      .map((x) => String(x).trim())
-  );
+    // 1. First, check event.entitlement_ids array (most direct and robust for events)
+    const activeIds = new Set(
+      (Array.isArray(event?.entitlement_ids) ? event.entitlement_ids : [])
+        .map((x) => String(x).trim())
+    );
 
-  console.log('[revenuecat-webhook] parsed activeIds:', Array.from(activeIds));
-  console.log('[revenuecat-webhook] parsed entitlements from subscriber:', JSON.stringify(entitlements));
+    console.log('[revenuecat-webhook] parsed activeIds:', Array.from(activeIds));
+    console.log('[revenuecat-webhook] parsed entitlements from subscriber:', JSON.stringify(entitlements));
 
-  for (const key of proKeys) {
-    if (activeIds.has(key)) {
-      newPlan = 'pro';
-      break;
-    }
-  }
-
-  if (newPlan === 'free') {
-    for (const key of plusKeys) {
+    for (const key of proKeys) {
       if (activeIds.has(key)) {
-        newPlan = 'plus';
+        newPlan = 'pro';
         break;
       }
     }
-  }
 
-  // 2. Second, fallback to checking entitlements objects (with expiry validation)
-  if (newPlan === 'free') {
-    for (const key of proKeys) {
-      const ent = entitlements[key];
-      if (ent) {
-        // null expires_date means lifetime / no expiry — treat as active
-        if (!ent.expires_date || new Date(ent.expires_date) > now) {
-          newPlan = 'pro';
-          break;
-        }
-      }
-    }
-  }
-
-  // Fall back to Plus
-  if (newPlan === 'free') {
-    for (const key of plusKeys) {
-      const ent = entitlements[key];
-      if (ent) {
-        if (!ent.expires_date || new Date(ent.expires_date) > now) {
+    if (newPlan === 'free') {
+      for (const key of plusKeys) {
+        if (activeIds.has(key)) {
           newPlan = 'plus';
           break;
         }
       }
     }
-  }
 
-  // For CANCELLATION / EXPIRATION events → force free
-  const expiryEvents = ['EXPIRATION', 'CANCELLATION', 'SUBSCRIBER_ALIAS'];
-  if (expiryEvents.includes(eventType) && newPlan === 'free') {
-    newPlan = 'free'; // already free, explicit for clarity
+    // 2. Second, fallback to checking entitlements objects (with expiry validation)
+    if (newPlan === 'free') {
+      for (const key of proKeys) {
+        const ent = entitlements[key];
+        if (ent) {
+          // null expires_date means lifetime / no expiry — treat as active
+          if (!ent.expires_date || new Date(ent.expires_date) > now) {
+            newPlan = 'pro';
+            break;
+          }
+        }
+      }
+    }
+
+    // Fall back to Plus
+    if (newPlan === 'free') {
+      for (const key of plusKeys) {
+        const ent = entitlements[key];
+        if (ent) {
+          if (!ent.expires_date || new Date(ent.expires_date) > now) {
+            newPlan = 'plus';
+            break;
+          }
+        }
+      }
+    }
   }
 
   // ── Update Supabase ──
