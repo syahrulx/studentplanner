@@ -124,6 +124,10 @@ export default function CrosswordScreen() {
     return CROSSWORD_PUZZLES.find((p) => !isCompleted(progress, p.id))?.id ?? null;
   }, [progress]);
 
+  // Must be computed before the early return below (Solve mode) so this hook
+  // always runs, regardless of whether a puzzle is currently open.
+  const left = useMemo(() => (progress ? playsLeftToday(progress) : 2), [progress, todayISO]);
+
   const openPuzzle = useCallback((p: CrosswordPuzzle) => {
     if (!progress) return;
     const done = isCompleted(progress, p.id);
@@ -164,7 +168,6 @@ export default function CrosswordScreen() {
 
   // ─── Hub (levels + rankings) ───
   const solved = progress ? completedCount(progress) : 0;
-  const left = useMemo(() => (progress ? playsLeftToday(progress) : 2), [progress, todayISO]);
   const onPrimary = contrastText(theme.primary);
 
   return (
