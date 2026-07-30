@@ -29,6 +29,11 @@ export const uitmProvider: CalendarProvider = {
   ): Promise<Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> | null> {
     const rangeOk = isAcademicCalendarRangeComplete(currentCalendar);
     const hasPeriods = (currentCalendar?.periods?.length ?? 0) > 0;
+    const isCommunityVerified = /uitm\s+community\s+verified/i.test(String(currentCalendar?.semesterLabel ?? ''));
+
+    // Community calendars are an explicit, per-user choice. Never replace one
+    // silently with HEA data during background auto-sync.
+    if (isCommunityVerified && rangeOk) return null;
 
     // Full calendar already persisted — no HEA on every app open.
     if (rangeOk && hasPeriods) {

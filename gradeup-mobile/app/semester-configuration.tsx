@@ -70,7 +70,8 @@ export default function SemesterConfigurationScreen() {
       const groupChanged = oldGroup !== recommendedGroup;
       const calComplete = isAcademicCalendarRangeComplete(academicCalendar);
       const hasPeriods = (academicCalendar?.periods?.length ?? 0) > 0;
-      const needsHea = !calComplete || !hasPeriods || groupChanged;
+      const isCommunityVerified = /uitm\s+community\s+verified/i.test(String(academicCalendar?.semesterLabel ?? ''));
+      const needsHea = !isCommunityVerified && (!calComplete || !hasPeriods || groupChanged);
 
       if (shouldSync && needsHea) {
         const today = new Date().toISOString().slice(0, 10);
@@ -231,4 +232,3 @@ function styles(theme: ReturnType<typeof useTheme>) {
     saveText: { color: theme.textInverse, fontSize: 15, fontWeight: '900' },
   });
 }
-

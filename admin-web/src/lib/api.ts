@@ -1149,6 +1149,43 @@ export type CrowdsourcedCalendarRow = AdminCalendarOfferRow & {
   } | null;
 };
 
+export type UitmCalendarContributionRow = {
+  id: string;
+  group_code: 'A' | 'B';
+  calendar_variant: 'standard' | 'kkt';
+  term_code: string | null;
+  semester_label: string;
+  start_date: string;
+  end_date: string;
+  total_weeks: number;
+  break_start_date: string | null;
+  break_end_date: string | null;
+  periods_json: unknown | null;
+  source_url: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewer_note: string | null;
+  created_at: string;
+  user_profile?: { id: string; full_name: string | null; email: string | null } | null;
+};
+
+export async function listUitmCalendarContributions(): Promise<UitmCalendarContributionRow[]> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'uitm_calendar_contributions_list' }, headers);
+  return unwrapFunctionData<{ items: UitmCalendarContributionRow[] }>(data, error).items;
+}
+
+export async function reviewUitmCalendarContribution(id: string, status: 'approved' | 'rejected'): Promise<void> {
+  const contributionId = String(id || '').trim();
+  if (!contributionId) throw new Error('Missing contribution id');
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'uitm_calendar_contribution_review', id: contributionId, status },
+    headers,
+  );
+  unwrapFunctionData<{ ok: true }>(data, error);
+}
+
 export async function listCrowdsourcedCalendarOffers(): Promise<CrowdsourcedCalendarRow[]> {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(

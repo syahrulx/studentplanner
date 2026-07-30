@@ -19,6 +19,7 @@ import { useApp } from "@/src/context/AppContext";
 import { supabase } from "@/src/lib/supabase";
 import { TextInput } from "react-native-gesture-handler";
 import { getUniversityById } from "@/src/lib/universities";
+import { submitUitmCalendarContribution } from "@/src/lib/uitmCalendarContributionsDb";
 
 export default function AddAcademicCalendarScreen() {
   const theme = useTheme();
@@ -135,7 +136,8 @@ export default function AddAcademicCalendarScreen() {
   };
 
   const submitCalendar = async () => {
-    if (!user.universityId) {
+    const userId = user.id;
+    if (!user.universityId || !userId) {
       Alert.alert("Error", "You must have a university set in your profile.");
       return;
     }
@@ -156,6 +158,33 @@ export default function AddAcademicCalendarScreen() {
         throw new Error("Periods JSON is invalid.");
       }
 
+      const isUitm = user.universityId === "uitm";
+      const start = startDate.trim().slice(0, 10);
+      const end = endDate.trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+        throw new Error("Enter valid dates in YYYY-MM-DD format.");
+      }
+
+      if (isUitm) {
+        await submitUitmCalendarContribution({
+          userId,
+          groupCode: user.academicLevel === "Foundation" ? "A" : "B",
+          semesterLabel: semesterLabel.trim(),
+          startDate: start,
+          endDate: end,
+          totalWeeks: parseInt(totalWeeks, 10) || 14,
+          ...(breakStart.trim() ? { breakStartDate: breakStart.trim() } : {}),
+          ...(breakEnd.trim() ? { breakEndDate: breakEnd.trim() } : {}),
+          periods,
+        });
+        Alert.alert(
+          "Sent for review",
+          "Your UiTM calendar was sent to the admin team. It will not change anyone’s planner unless an admin approves it and each student chooses to apply it.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+        return;
+      }
+
       let resolvedCampusId = null;
       if (user.campus && user.campus !== "-" && user.campus.length > 2) {
         const { data: campusData } = await supabase
@@ -173,14 +202,14 @@ export default function AddAcademicCalendarScreen() {
         university_id: user.universityId,
         campus_id: resolvedCampusId, // Ensure campus matches user's profile as a valid UUID
         semester_label: semesterLabel.trim(),
-        start_date: startDate.trim(),
-        end_date: endDate.trim(),
+        start_date: start,
+        end_date: end,
         total_weeks: parseInt(totalWeeks) || 14,
         break_start_date: breakStart.trim() || null,
         break_end_date: breakEnd.trim() || null,
         periods_json: periods,
         source: "crowdsourced",
-        created_by: user.id,
+        created_by: userId,
       };
 
       const { error } = await supabase
@@ -226,9 +255,9 @@ export default function AddAcademicCalendarScreen() {
 
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.desc}>
-          Upload your university's official academic calendar as a PDF or image,
-          and we'll extract the dates automatically! You can also enter the
-          details manually.
+          {user.universityId === "uitm"
+            ? "Submit a UiTM calendar update for admin review. It will never automatically change anyone’s planner. Upload an official calendar where possible, or enter the details manually."
+            : "Upload your university's official academic calendar as a PDF or image, and we'll extract the dates automatically! You can also enter the details manually."}
         </Text>
 
         {!formVisible && (
@@ -395,7 +424,7 @@ export default function AddAcademicCalendarScreen() {
                 <ActivityIndicator color={theme.textInverse} />
               ) : (
                 <Text style={[s.submitText, { color: theme.textInverse }]}>
-                  Publish Calendar
+                  {user.universityId === "uitm" ? "Send for admin review" : "Publish Calendar"}
                 </Text>
               )}
             </Pressable>
