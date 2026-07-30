@@ -92,7 +92,7 @@ import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
-import { initPurchases, logOutPurchases, getCurrentPlan, onCustomerInfoUpdate, planFromCustomerInfo } from '../lib/purchases';
+import { initPurchases, logOutPurchases, getCurrentPlanOrNull, onCustomerInfoUpdate } from '../lib/purchases';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -376,6 +376,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const calendarAutoSyncedRef = useRef(false);
   const academicCalendarRef = useRef<AcademicCalendar | null>(null);
   const loadRemoteDataRef = useRef<(uid: string, authFallbackName?: string) => Promise<void>>(async () => {});
+  /** Unsubscribe for the current session's RevenueCat live-update listener. */
+  const revenueCatUnsubscribeRef = useRef<() => void>(() => {});
   const homeWidgetInputsRef = useRef({
     tasks,
     courses,
@@ -981,12 +983,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // ── Initialize RevenueCat & sync subscription plan from the store ──
         try {
           await initPurchases(uid);
-          const rcPlan = await getCurrentPlan();
-          // RevenueCat is the source of truth — override the DB value.
-          // This handles cases where the webhook hasn't fired yet (e.g. offline).
-          if (rcPlan !== 'free') {
-            setUserState((prev) => ({ ...prev, subscriptionPlan: rcPlan }));
+          // RevenueCat is the source of truth — override the DB value whenever
+          // we can actually determine it (getCurrentPlanOrNull returns null,
+          // not 'free', if the fetch failed — see its doc comment — so a
+          // transient RC error never falsely downgrades a paying user, but a
+          // genuine lapse/cancellation now correctly syncs down too, not just
+          // upgrades). This handles cases where the webhook hasn't fired yet
+          // (e.g. offline).
+          const rcPlan = await getCurrentPlanOrNull();
+          if (rcPlan !== null && gen === remoteLoadGeneration && remoteUserIdRef.current === uid) {
+            setUserState((prev) => (prev.subscriptionPlan === rcPlan ? prev : { ...prev, subscriptionPlan: rcPlan }));
           }
+
+          // Live-update the plan on renewals/expirations/upgrades/downgrades
+          // without waiting for the next cold start. Replace any listener
+          // from a previous session first so re-logins never stack duplicate
+          // subscriptions.
+          revenueCatUnsubscribeRef.current();
+          revenueCatUnsubscribeRef.current = onCustomerInfoUpdate((plan) => {
+            if (remoteUserIdRef.current !== uid) return; // stale callback from a previous session
+            setUserState((prev) => (prev.subscriptionPlan === plan ? prev : { ...prev, subscriptionPlan: plan }));
+          });
         } catch (e) {
           if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
           // Non-fatal: the user just keeps whatever plan is in the DB.
@@ -1072,6 +1089,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setAcademicCalendar(null);
           setTimetable([]);
           cancelAllAttendanceNotifications().catch(() => {});
+          revenueCatUnsubscribeRef.current();
+          revenueCatUnsubscribeRef.current = () => {};
           logOutPurchases().catch(() => {});
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
@@ -1089,10 +1108,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       remoteLoadGeneration += 1;
       subscription.unsubscribe();
       removePushTokenListener();
+      revenueCatUnsubscribeRef.current();
     };
   }, []);
-
-  // RevenueCat listener will be registered below updateProfile
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack, customThemeColors };
 

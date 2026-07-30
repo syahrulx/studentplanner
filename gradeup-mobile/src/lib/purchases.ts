@@ -151,6 +151,29 @@ export async function getCurrentPlan(): Promise<SubscriptionPlan> {
   }
 }
 
+/**
+ * Get the current plan from RevenueCat, or `null` if it couldn't be
+ * determined (SDK not configured yet, or the fetch failed). Unlike
+ * `getCurrentPlan`, this never silently substitutes 'free' for "unknown" —
+ * callers should treat `null` as "don't touch whatever plan is already
+ * known" so a transient RevenueCat error can never falsely downgrade a
+ * paying user. Use this (not `getCurrentPlan`) whenever the result will be
+ * used to override an existing plan value, e.g. syncing AppContext state.
+ */
+export async function getCurrentPlanOrNull(): Promise<SubscriptionPlan | null> {
+  if (!_configured) {
+    console.warn(`${TAG} getCurrentPlanOrNull() — not configured, returning null`);
+    return null;
+  }
+  try {
+    const info = await Purchases.getCustomerInfo();
+    return planFromCustomerInfo(info);
+  } catch (error: any) {
+    console.error(`${TAG} ❌ getCurrentPlanOrNull() FAILED: ${error?.message} (code: ${error?.code})`);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Offerings (for the paywall UI)
 // ---------------------------------------------------------------------------
