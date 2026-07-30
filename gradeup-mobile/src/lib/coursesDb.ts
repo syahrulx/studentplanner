@@ -19,6 +19,7 @@ function rowToCourse(row: Record<string, unknown>): Course {
     name: String(row.name ?? ''),
     creditHours: Number(row.credit_hours ?? 3) || 3,
     workload,
+    sortOrder: Number(row.sort_order ?? 0) || 0,
   };
 }
 
@@ -27,6 +28,7 @@ export async function getCourses(userId: string): Promise<Course[]> {
     .from(TABLE)
     .select('*')
     .eq('user_id', userId)
+    .order('sort_order', { ascending: true })
     .order('subject_id', { ascending: true });
 
   if (error) return [];
@@ -44,6 +46,7 @@ export async function addCourse(
       name: course.name,
       credit_hours: course.creditHours,
       workload: course.workload,
+      sort_order: course.sortOrder ?? 2147483647,
     },
     { onConflict: 'user_id,subject_id' }
   );
@@ -51,13 +54,15 @@ export async function addCourse(
 }
 
 export async function updateCourse(userId: string, course: Course): Promise<void> {
+  const updates: Record<string, unknown> = {
+    name: course.name,
+    credit_hours: course.creditHours,
+    workload: course.workload,
+  };
+  if (course.sortOrder != null) updates.sort_order = course.sortOrder;
   await supabase
     .from(TABLE)
-    .update({
-      name: course.name,
-      credit_hours: course.creditHours,
-      workload: course.workload,
-    })
+    .update(updates)
     .eq('user_id', userId)
     .eq('subject_id', course.id);
 }
