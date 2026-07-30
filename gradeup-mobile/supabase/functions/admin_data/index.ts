@@ -737,10 +737,12 @@ serve(async (req) => {
     if (action === 'calendar_offers_list') {
       const universityId = String(payload.universityId || '').trim();
       const lim = Math.max(1, Math.min(300, Number(payload.limit || 120)));
+      const orderBy = payload.orderBy === 'end_date' ? 'end_date' : 'created_at';
+      const ascending = payload.ascending === true;
       let q = admin
         .from('university_calendar_offers')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order(orderBy, { ascending })
         .limit(lim);
       if (universityId) q = q.eq('university_id', universityId);
       const { data, error: e } = await q;
@@ -839,6 +841,66 @@ serve(async (req) => {
         meta: { action, id },
       });
       return json(200, { ok: true });
+    }
+
+    if (action === 'crowdsourced_calendars_delete_expired') {
+      const rawIds = Array.isArray(payload.ids) ? payload.ids : [];
+      const ids = Array.from(new Set(rawIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))))
+        .slice(0, 500);
+      if (!ids.length) return json(400, { error: 'missing_valid_ids' });
+
+      // `end_date` is a DATE column. Comparing its ISO form keeps today's
+      // calendar intact; only calendars that ended before today are eligible.
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: deleted, error: e } = await admin
+        .from('university_calendar_offers')
+        .delete()
+        .in('id', ids)
+        .eq('source', 'crowdsourced')
+        .lt('end_date', today)
+        .select('id');
+      if (e) return json(400, { error: e.message });
+
+      const deletedCount = (deleted ?? []).length;
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, requestedCount: ids.length, deletedCount, beforeDate: today },
+      });
+      return json(200, { deletedCount });
+    }
+
+    if (action === 'calendar_offers_delete_expired_admin') {
+      const rawIds = Array.isArray(payload.ids) ? payload.ids : [];
+      const deleteAllExpired = payload.deleteAllExpired === true;
+      const ids = Array.from(new Set(rawIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))))
+        .slice(0, 500);
+      if (!ids.length && !deleteAllExpired) return json(400, { error: 'missing_valid_ids' });
+
+      // An old admin offer must have both dates before today. Crowdsourced
+      // calendars deliberately remain in their separate moderation workflow.
+      const today = new Date().toISOString().slice(0, 10);
+      let query = admin
+        .from('university_calendar_offers')
+        .delete()
+        .eq('source', 'admin')
+        .lt('start_date', today)
+        .lt('end_date', today);
+      if (!deleteAllExpired) query = query.in('id', ids);
+      const { data: deleted, error: e } = await query.select('id');
+      if (e) return json(400, { error: e.message });
+
+      const deletedCount = (deleted ?? []).length;
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, deleteAllExpired, requestedCount: ids.length, deletedCount, beforeDate: today },
+      });
+      return json(200, { deletedCount });
     }
 
     if (action === 'subscription_plan_features_save') {

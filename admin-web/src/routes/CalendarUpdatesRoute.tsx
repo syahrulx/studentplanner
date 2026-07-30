@@ -3,6 +3,7 @@ import {
   extractCalendarFromUrl,
   extractCalendarFromPdf,
   extractCalendarFromImage,
+  deleteExpiredAdminCalendarOffers,
   deleteUniversityCalendarOffer,
   insertUniversityCalendarOffers,
   listUniversities,
@@ -82,6 +83,9 @@ export function CalendarUpdatesRoute() {
   const [offersOpen, setOffersOpen] = useState(true);
   const [offersSearch, setOffersSearch] = useState("");
   const [offersUni, setOffersUni] = useState("");
+  const [offersAge, setOffersAge] = useState<"all" | "expired">("all");
+  const [selectedExpiredOfferIds, setSelectedExpiredOfferIds] = useState<string[]>([]);
+  const [selectAllExpiredAdminOffers, setSelectAllExpiredAdminOffers] = useState(false);
   const [openOfferGroups, setOpenOfferGroups] = useState<
     Record<string, boolean>
   >({});
@@ -122,6 +126,7 @@ export function CalendarUpdatesRoute() {
   >([]);
   const [extractCandidateIdx, setExtractCandidateIdx] = useState(0);
   const [deletingOfferId, setDeletingOfferId] = useState<string>("");
+  const [deletingExpiredOffers, setDeletingExpiredOffers] = useState(false);
 
   // ── PDF extract state ──
   const [pdfExtracting, setPdfExtracting] = useState(false);
@@ -218,7 +223,9 @@ export function CalendarUpdatesRoute() {
   };
 
   const refreshHistory = async () => {
-    const items = await listUniversityCalendarOffers({ limit: 150 });
+    // End-date ordering brings expired offers to the top, rather than hiding
+    // them behind the newest 150 publication records.
+    const items = await listUniversityCalendarOffers({ limit: 300, orderBy: "end_date", ascending: true });
     setHistory(items);
   };
 
@@ -249,8 +256,10 @@ export function CalendarUpdatesRoute() {
     const qTop = searchQuery.trim();
     const qLocal = offersSearch.trim();
     const uni = offersUni.trim();
+    const today = new Date().toISOString().slice(0, 10);
     return history.filter((h) => {
       if (uni && h.university_id !== uni) return false;
+      if (offersAge === "expired" && !(h.source === "admin" && h.start_date < today && h.end_date < today)) return false;
       if (qTop) {
         const ok = matchesAdminSearch(
           qTop,
@@ -274,8 +283,60 @@ export function CalendarUpdatesRoute() {
         if (!ok) return false;
       }
       return true;
-    });
-  }, [history, offersSearch, offersUni, searchQuery, universityNameById]);
+    }).sort((a, b) => a.end_date.localeCompare(b.end_date) || a.start_date.localeCompare(b.start_date));
+  }, [history, offersAge, offersSearch, offersUni, searchQuery, universityNameById]);
+
+  const expiredAdminOffers = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return history.filter((h) => h.source === "admin" && h.start_date < today && h.end_date < today);
+  }, [history]);
+
+  const expiredAdminOfferIds = useMemo(
+    () => new Set(expiredAdminOffers.map((offer) => offer.id)),
+    [expiredAdminOffers],
+  );
+
+  useEffect(() => {
+    setSelectedExpiredOfferIds((ids) => ids.filter((id) => expiredAdminOfferIds.has(id)));
+  }, [expiredAdminOfferIds]);
+
+  const allExpiredAdminOffersSelected = selectAllExpiredAdminOffers || (expiredAdminOffers.length > 0 && expiredAdminOffers.every((offer) => selectedExpiredOfferIds.includes(offer.id)));
+
+  const toggleExpiredAdminOffer = (id: string) => {
+    setSelectAllExpiredAdminOffers(false);
+    setSelectedExpiredOfferIds((ids) => ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]);
+  };
+
+  const toggleAllExpiredAdminOffers = () => {
+    const nextSelected = !allExpiredAdminOffersSelected;
+    setSelectAllExpiredAdminOffers(nextSelected);
+    setSelectedExpiredOfferIds(nextSelected ? expiredAdminOffers.map((offer) => offer.id) : []);
+  };
+
+  const deleteSelectedExpiredAdminOffers = async () => {
+    if (!selectedExpiredOfferIds.length && !selectAllExpiredAdminOffers) return;
+    const count = selectedExpiredOfferIds.length;
+    const ok = window.confirm(
+      selectAllExpiredAdminOffers
+        ? "Delete every old academic calendar offer?\n\nThis includes expired offers outside the currently loaded list. Only admin offers where both the start and end date have passed will be removed. This cannot be undone."
+        : `Delete ${count} old academic calendar offer${count === 1 ? "" : "s"}?\n\nOnly admin offers where both the start and end date have passed will be removed. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setErr("");
+    setOkMsg("");
+    setDeletingExpiredOffers(true);
+    try {
+      const deletedCount = await deleteExpiredAdminCalendarOffers(selectedExpiredOfferIds, selectAllExpiredAdminOffers);
+      setSelectedExpiredOfferIds([]);
+      setSelectAllExpiredAdminOffers(false);
+      await refreshHistory();
+      setOkMsg(`${deletedCount} old academic calendar offer${deletedCount === 1 ? "" : "s"} deleted.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not delete old academic calendars");
+    } finally {
+      setDeletingExpiredOffers(false);
+    }
+  };
 
   const offerUniOptions = useMemo(() => {
     const set = new Set<string>();
@@ -1177,7 +1238,7 @@ export function CalendarUpdatesRoute() {
               Existing offers
             </div>
             <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Newest first. Each row shows the university, semester span, and a
+              Ordered by calendar end date. Each row shows the university, semester span, and a
               visual timeline (phases from periods JSON when present).
             </div>
           </div>
@@ -1187,6 +1248,9 @@ export function CalendarUpdatesRoute() {
               onClick={() => {
                 setOffersUni("");
                 setOffersSearch("");
+                setOffersAge("all");
+                setSelectedExpiredOfferIds([]);
+                setSelectAllExpiredAdminOffers(false);
               }}
               className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
             >
@@ -1206,7 +1270,7 @@ export function CalendarUpdatesRoute() {
       {offersOpen ? (
         <>
           <div className="mt-4 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Label className="block">
                 <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
                   University
@@ -1234,14 +1298,50 @@ export function CalendarUpdatesRoute() {
                   placeholder="Search semester, note, url…"
                 />
               </Label>
+              <Label className="block">
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Calendar status
+                </span>
+                <select
+                  value={offersAge}
+                  onChange={(e) => setOffersAge(e.target.value as "all" | "expired")}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <option value="all">All admin offers</option>
+                  <option value="expired">Old academic calendars</option>
+                </select>
+              </Label>
             </div>
             <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
               Showing{" "}
               <span className="font-black">{filteredHistory.length}</span>{" "}
               offer(s)
               {searchQuery.trim() ? " (also filtered by top search bar)" : ""}.
+              {expiredAdminOffers.length ? ` ${expiredAdminOffers.length} old academic calendar${expiredAdminOffers.length === 1 ? "" : "s"} can be cleaned up.` : ""}
             </div>
           </div>
+
+          {expiredAdminOffers.length ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/30">
+              <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
+                <input
+                  type="checkbox"
+                  checked={allExpiredAdminOffersSelected}
+                  onChange={toggleAllExpiredAdminOffers}
+                  disabled={deletingExpiredOffers}
+                />
+                <span>Select all old academic calendars (including unloaded offers)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => void deleteSelectedExpiredAdminOffers()}
+                disabled={(selectedExpiredOfferIds.length === 0 && !selectAllExpiredAdminOffers) || deletingExpiredOffers}
+                className="h-10 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {deletingExpiredOffers ? "Deleting…" : selectAllExpiredAdminOffers ? "Delete all old calendars" : `Delete selected (${selectedExpiredOfferIds.length})`}
+              </button>
+            </div>
+          ) : null}
 
           <div className="mt-4 space-y-4">
             {groupedAdminHistory.map((group) => (
@@ -1280,6 +1380,17 @@ export function CalendarUpdatesRoute() {
                   ).map((h) => (
                     <Card key={h.id}>
                       <CardContent className="space-y-4 py-4">
+                        {h.source === "admin" && h.start_date < new Date().toISOString().slice(0, 10) && h.end_date < new Date().toISOString().slice(0, 10) ? (
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-amber-800 dark:text-amber-200">
+                            <input
+                              type="checkbox"
+                              checked={selectedExpiredOfferIds.includes(h.id)}
+                              onChange={() => toggleExpiredAdminOffer(h.id)}
+                              disabled={deletingExpiredOffers}
+                            />
+                            <span>Old calendar · {h.start_date} to {h.end_date}</span>
+                          </label>
+                        ) : null}
                         <AcademicCalendarOfferGraphic
                           offer={h}
                           universityName={
@@ -1331,7 +1442,7 @@ export function CalendarUpdatesRoute() {
                           <button
                             type="button"
                             className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                            disabled={Boolean(deletingOfferId)}
+                            disabled={Boolean(deletingOfferId) || deletingExpiredOffers}
                             onClick={async () => {
                               const uni =
                                 universityNameById.get(h.university_id) ??

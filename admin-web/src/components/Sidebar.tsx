@@ -54,7 +54,7 @@ const nav: NavItem[] = [
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <aside className="h-full w-[280px] shrink-0 border-r border-slate-200 bg-white/80 px-3 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/40">
+    <aside className="h-full w-[280px] shrink-0 overflow-y-auto overscroll-contain border-r border-slate-200 bg-white/80 px-3 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/40">
       <div className="px-2 pb-3">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 text-white shadow-elev1">
@@ -103,4 +103,3 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     </aside>
   );
 }
-

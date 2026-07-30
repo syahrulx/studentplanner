@@ -2,14 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  Switch,
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -26,12 +30,15 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withDecay,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import ColorPicker from 'react-native-wheel-color-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PDFDocument } from 'pdf-lib';
 import HandwritingCanvas from '@/src/components/handwriting/HandwritingCanvas';
 import { useApp } from '@/src/context/AppContext';
@@ -55,8 +62,43 @@ import {
 import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
 import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
+import { invokeAiGenerate, type AiGenerateChatResult } from '@/src/lib/invokeAiGenerate';
 
 const COLORS = ['#111827', '#2563eb', '#dc2626', '#16a34a', '#7c3aed', '#f59e0b'];
+const FIXED_INK_COLORS = COLORS.slice(0, -2);
+const FALLBACK_SAVED_COLORS = COLORS.slice(-2);
+const SAVED_INK_COLORS_KEY = 'rencana_handwriting_saved_ink_colours_v1';
+const AUTO_RETURN_ERASER_KEY = 'rencana_handwriting_auto_return_eraser_v1';
+type InkColorTool = 'pen' | 'pencil' | 'highlighter';
+type SavedInkColors = Record<InkColorTool, string[]>;
+
+const EMPTY_SAVED_INK_COLORS: SavedInkColors = {
+  pen: [],
+  pencil: [],
+  highlighter: [],
+};
+
+function isSavedInkColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function parseSavedInkColors(value: unknown): SavedInkColors {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const colorsFor = (tool: InkColorTool) => (
+    Array.isArray(source[tool])
+      ? [...new Set(source[tool].filter(isSavedInkColor))].slice(-2)
+      : []
+  );
+  return {
+    pen: colorsFor('pen'),
+    pencil: colorsFor('pencil'),
+    highlighter: colorsFor('highlighter'),
+  };
+}
+
+function inkColorTool(tool: HandwritingTool): InkColorTool {
+  return tool === 'eraser' ? 'pen' : tool;
+}
 const TEMPLATES: Array<{ id: HandwritingTemplate; label: string; pro?: boolean }> = [
   { id: 'blank', label: 'Blank' },
   { id: 'ruled', label: 'Ruled' },
@@ -77,11 +119,13 @@ interface ContinuousPageProps {
   fingerDrawing: boolean;
   settings: HandwritingToolSettings;
   documentGestures: GestureType[];
+  horizontalOffset: SharedValue<number>;
   primaryColor: string;
   secondaryTextColor: string;
   loadPdfPage: (pageNumber: number) => Promise<string | null>;
   onChange: (pageId: string, strokes: HandwritingStroke[]) => void;
   onCommit: (pageId: string, previous: HandwritingStroke[]) => void;
+  onToolGestureEnd: (tool: HandwritingTool) => void;
 }
 
 function ContinuousPage({
@@ -95,14 +139,21 @@ function ContinuousPage({
   fingerDrawing,
   settings,
   documentGestures,
+  horizontalOffset,
   primaryColor,
   secondaryTextColor,
   loadPdfPage,
   onChange,
   onCommit,
+  onToolGestureEnd,
 }: ContinuousPageProps) {
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(page.pdfPageNumber != null);
+  const horizontalPanStyle = useAnimatedStyle(() => ({
+    // Move the paper inside the clipped list viewport. Moving the viewport
+    // itself leaves its clip area behind and makes a zoomed page feel stuck.
+    transform: [{ translateX: horizontalOffset.value }],
+  }));
 
   useEffect(() => {
     let active = true;
@@ -121,7 +172,7 @@ function ContinuousPage({
   }, [documentVersion, loadPdfPage, page.pdfPageNumber]);
 
   return (
-    <View style={styles.continuousPageWrap}>
+    <Animated.View style={[styles.continuousPageWrap, horizontalPanStyle]}>
       <View style={[styles.continuousPaper, { width: pageWidth, aspectRatio }]}>
         {pdfUri ? (
           <WebView
@@ -152,10 +203,11 @@ function ContinuousPage({
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
             onChange={(strokes) => onChange(page.id, strokes)}
             onCommit={(previous) => onCommit(page.id, previous)}
+            onToolGestureEnd={onToolGestureEnd}
           />
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -241,6 +293,8 @@ export default function HandwritingEditor() {
   const { notes, user, handleSaveNote } = useApp();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
+  const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
   const note = notes.find((candidate) => candidate.id === noteId);
   const premium = isAtLeastPlus(user?.subscriptionPlan);
   const pro = isPro(user?.subscriptionPlan);
@@ -249,6 +303,7 @@ export default function HandwritingEditor() {
   const [pages, setPages] = useState<HandwritingPage[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [tool, setTool] = useState<HandwritingTool>('pen');
+  const [autoReturnAfterErasing, setAutoReturnAfterErasing] = useState(true);
   const [color, setColor] = useState(COLORS[0]);
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [fingerDrawing, setFingerDrawing] = useState(false);
@@ -260,6 +315,7 @@ export default function HandwritingEditor() {
   const [showColors, setShowColors] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [customColor, setCustomColor] = useState(color);
+  const [savedInkColors, setSavedInkColors] = useState<SavedInkColors>(EMPTY_SAVED_INK_COLORS);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageRatios, setPdfPageRatios] = useState<Record<number, number>>({});
   const [exporting, setExporting] = useState(false);
@@ -273,11 +329,56 @@ export default function HandwritingEditor() {
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const [redoStacks, setRedoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
 
+  // ── AI Chat Side Panel state ──
+  type AiChatMessage = { role: 'ai' | 'user'; text: string };
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([
+    { role: 'ai', text: 'Hi! I\'m your AI study assistant. Ask me anything about your notes — summarize, explain, or quiz you!' },
+  ]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const aiScrollRef = useRef<ScrollView>(null);
+  const AI_PANEL_WIDTH = Dimensions.get('window').width * 0.55;
+
+  const sendAiMessage = useCallback(async () => {
+    const text = aiInput.trim();
+    if (!text || aiProcessing) return;
+    const userMsg: AiChatMessage = { role: 'user', text };
+    setAiMessages((prev) => [...prev, userMsg]);
+    setAiInput('');
+    setAiProcessing(true);
+    setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    try {
+      const chatHistory = [...aiMessages, userMsg].map((m) => ({
+        role: m.role === 'ai' ? 'assistant' as const : 'user' as const,
+        content: m.text,
+      }));
+      const { data, error } = await invokeAiGenerate<AiGenerateChatResult>({
+        kind: 'chat',
+        content: text,
+        chat_history: chatHistory,
+        subject_id: subjectId,
+        question: text,
+      });
+      if (error) {
+        setAiMessages((prev) => [...prev, { role: 'ai', text: `Sorry, something went wrong: ${error}` }]);
+      } else if (data?.response) {
+        setAiMessages((prev) => [...prev, { role: 'ai', text: data.response }]);
+      }
+    } catch {
+      setAiMessages((prev) => [...prev, { role: 'ai', text: 'Could not reach AI. Please try again.' }]);
+    } finally {
+      setAiProcessing(false);
+      setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 150);
+    }
+  }, [aiInput, aiProcessing, aiMessages, subjectId]);
+
   const pagesRef = useRef(pages);
   const pdfDocumentRef = useRef<PDFDocument | null>(null);
   const pdfPageFilesRef = useRef<Map<number, string>>(new Map());
   const pdfPagePromisesRef = useRef<Map<number, Promise<string | null>>>(new Map());
   const uidRef = useRef<string | null>(null);
+  const lastWritingToolRef = useRef<InkColorTool>('pen');
   const dirtyRef = useRef(false);
   const revisionRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,10 +391,47 @@ export default function HandwritingEditor() {
   const horizontalLimit = useSharedValue(0);
   const committedZoom = useSharedValue(1);
   const pinchStartZoom = useSharedValue(1);
-  const pinchPreview = useSharedValue(1);
+  const liveZoom = useSharedValue(1);
+  const activeInkColorTool = inkColorTool(tool);
+  const visibleInkColors = useMemo(() => {
+    const saved = savedInkColors[activeInkColorTool];
+    const trailing = [...FALLBACK_SAVED_COLORS];
+    const start = trailing.length - saved.length;
+    saved.forEach((savedColor, index) => { trailing[start + index] = savedColor; });
+    return [...FIXED_INK_COLORS, ...trailing];
+  }, [activeInkColorTool, savedInkColors]);
 
   useEffect(() => { pagesRef.current = pages; }, [pages]);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  useEffect(() => {
+    if (tool !== 'eraser') lastWritingToolRef.current = tool;
+  }, [tool]);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(savedInkColorsKey).then((stored) => {
+      if (!active || !stored) return;
+      try {
+        setSavedInkColors(parseSavedInkColors(JSON.parse(stored)));
+      } catch {
+        // Keep the default swatches if an older local value cannot be read.
+      }
+    }).catch(() => {
+      // A custom colour is optional; drawing should never be blocked by storage.
+    });
+    return () => { active = false; };
+  }, [savedInkColorsKey]);
+
+  useEffect(() => {
+    let active = true;
+    setAutoReturnAfterErasing(true);
+    void AsyncStorage.getItem(autoReturnEraserKey).then((stored) => {
+      if (active && stored != null) setAutoReturnAfterErasing(stored !== 'off');
+    }).catch(() => {
+      // Keep the default enabled setting if the preference cannot be read.
+    });
+    return () => { active = false; };
+  }, [autoReturnEraserKey]);
 
   useEffect(() => {
     let active = true;
@@ -504,6 +642,17 @@ export default function HandwritingEditor() {
     setRedoStacks((current) => ({ ...current, [pageId]: [] }));
   }, []);
 
+  const handleToolGestureEnd = useCallback((completedTool: HandwritingTool) => {
+    if (completedTool === 'eraser' && autoReturnAfterErasing) {
+      setTool(lastWritingToolRef.current);
+    }
+  }, [autoReturnAfterErasing]);
+
+  const updateAutoReturnAfterErasing = useCallback((enabled: boolean) => {
+    setAutoReturnAfterErasing(enabled);
+    void AsyncStorage.setItem(autoReturnEraserKey, enabled ? 'on' : 'off');
+  }, [autoReturnEraserKey]);
+
   const undo = () => {
     if (!activePage) return;
     const stack = undoStacks[activePage.id] ?? [];
@@ -643,6 +792,26 @@ export default function HandwritingEditor() {
     }
   };
 
+  const useCustomColor = useCallback(() => {
+    setColor(customColor);
+    if (tool === 'eraser') setTool('pen');
+    setShowColors(false);
+  }, [customColor, tool]);
+
+  const saveCustomColor = useCallback(() => {
+    if (!isSavedInkColor(customColor)) return;
+    const colorTool = inkColorTool(tool);
+    const next: SavedInkColors = {
+      ...savedInkColors,
+      [colorTool]: [...savedInkColors[colorTool].filter((saved) => saved !== customColor), customColor].slice(-2),
+    };
+    setSavedInkColors(next);
+    setColor(customColor);
+    if (tool === 'eraser') setTool('pen');
+    setShowColors(false);
+    void AsyncStorage.setItem(savedInkColorsKey, JSON.stringify(next));
+  }, [customColor, savedInkColors, savedInkColorsKey, tool]);
+
   const tools = useMemo<Array<{ id: HandwritingTool; icon: keyof typeof Feather.glyphMap; label: string }>>(
     () => [
       { id: 'pen', icon: 'edit-3', label: 'Pen' },
@@ -656,6 +825,9 @@ export default function HandwritingEditor() {
   const pageWidth = basePageWidth * zoomScale;
   useEffect(() => {
     committedZoom.value = zoomScale;
+    // The layout now owns this zoom level, so the temporary transform can
+    // return to 1 without applying the scale a second time.
+    liveZoom.value = zoomScale;
     const nextLimit = Math.max(0, (pageWidth - basePageWidth) / 2);
     horizontalLimit.value = nextLimit;
     horizontalOffset.value = Math.max(-nextLimit, Math.min(nextLimit, horizontalOffset.value));
@@ -698,25 +870,32 @@ export default function HandwritingEditor() {
     .onEnd((event) => {
       const projectedOffset = Math.max(0, scrollOffset.value - event.velocityY * 0.16);
       scrollTo(documentListRef, 0, projectedOffset, true);
+      if (horizontalLimit.value > 0 && Math.abs(event.velocityX) > 40) {
+        horizontalOffset.value = withDecay({
+          velocity: event.velocityX,
+          clamp: [-horizontalLimit.value, horizontalLimit.value],
+        });
+      }
     }), [fingerDrawing]);
   const commitDocumentZoom = useCallback((value: number) => {
     const next = Math.max(1, Math.min(3, value));
-    setZoomScale(Math.round(next * 20) / 20);
+    setZoomScale(Math.round(next * 100) / 100);
   }, []);
   const documentPinchGesture = useMemo(() => Gesture.Pinch()
     .onStart(() => {
       pinchStartZoom.value = committedZoom.value;
-      pinchPreview.value = 1;
+      liveZoom.value = committedZoom.value;
     })
     .onUpdate((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
-      pinchPreview.value = next / Math.max(0.01, pinchStartZoom.value);
+      liveZoom.value = next;
     })
     .onEnd((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
-      committedZoom.value = next;
       runOnJS(commitDocumentZoom)(next);
-      pinchPreview.value = withTiming(1, { duration: 120 });
+    })
+    .onFinalize((_event, success) => {
+      if (!success) liveZoom.value = withTiming(committedZoom.value, { duration: 120 });
     }), [commitDocumentZoom]);
   const documentGesture = useMemo(
     () => Gesture.Simultaneous(documentScrollGesture, documentPinchGesture),
@@ -728,8 +907,7 @@ export default function HandwritingEditor() {
   );
   const documentTransformStyle = useAnimatedStyle(() => ({
     transform: [
-      { scale: pinchPreview.value },
-      { translateX: horizontalOffset.value },
+      { scale: liveZoom.value / Math.max(0.01, committedZoom.value) },
     ],
   }));
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
@@ -803,7 +981,7 @@ export default function HandwritingEditor() {
         <Pressable
           onPress={() => Alert.alert(
             'Writing controls',
-            'Pinch with two fingers to zoom. Drag to move around the document. Apple Pencil and tablet styluses write. With Finger ink off, one finger navigates; turn it on for one-finger drawing.',
+            'Pinch with two fingers to zoom. Once zoomed, drag in any direction to move around the page. Apple Pencil and tablet styluses write. With Finger ink off, one finger navigates; turn it on for one-finger drawing.',
           )}
           style={styles.headerBtn}
         >
@@ -840,9 +1018,9 @@ export default function HandwritingEditor() {
           </Pressable>
         ))}
         <View style={[styles.separator, { backgroundColor: theme.border }]} />
-        {COLORS.map((ink) => (
+        {visibleInkColors.map((ink, index) => (
           <Pressable
-            key={ink}
+            key={`${activeInkColorTool}-${ink}-${index}`}
             onPress={() => { setColor(ink); if (tool === 'eraser') setTool('pen'); }}
             style={[styles.colorDotWrap, color === ink && { borderColor: theme.primary, backgroundColor: `${theme.primary}18` }]}
           >
@@ -855,66 +1033,75 @@ export default function HandwritingEditor() {
         </Pressable>
       </ScrollView>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[styles.actionBarScroll, { backgroundColor: theme.card, borderBottomColor: theme.border }]}
-        contentContainerStyle={styles.actionBar}
-      >
-        <Pressable
-          onPress={undo}
-          disabled={!(undoStacks[activePage.id]?.length)}
-          style={styles.actionBtn}
+      <View style={[styles.actionBarRow, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.actionBarScrollInner}
+          contentContainerStyle={styles.actionBar}
         >
-          <Feather name="corner-up-left" size={18} color={undoStacks[activePage.id]?.length ? theme.text : theme.border} />
-          <Text style={[styles.actionLabel, { color: theme.text }, !(undoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Undo</Text>
-        </Pressable>
-        <Pressable
-          onPress={redo}
-          disabled={!(redoStacks[activePage.id]?.length)}
-          style={styles.actionBtn}
-        >
-          <Feather name="corner-up-right" size={18} color={redoStacks[activePage.id]?.length ? theme.text : theme.border} />
-          <Text style={[styles.actionLabel, { color: theme.text }, !(redoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Redo</Text>
-        </Pressable>
-        {!isPdfAnnotation ? (
-          <Pressable onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
-            <Feather name="grid" size={18} color={theme.text} />
-            <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
+          <Pressable
+            onPress={undo}
+            disabled={!(undoStacks[activePage.id]?.length)}
+            style={styles.actionBtn}
+          >
+            <Feather name="corner-up-left" size={18} color={undoStacks[activePage.id]?.length ? theme.text : theme.border} />
+            <Text style={[styles.actionLabel, { color: theme.text }, !(undoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Undo</Text>
           </Pressable>
-        ) : null}
-        <Pressable
-          onPress={() => setFingerDrawing((value) => !value)}
-          style={[
-            styles.fingerModeBtn,
-            {
-              backgroundColor: fingerDrawing ? `${theme.primary}18` : theme.background,
-              borderColor: fingerDrawing ? `${theme.primary}55` : theme.border,
-            },
-          ]}
-        >
-          <Feather name="edit-3" size={17} color={fingerDrawing ? theme.primary : theme.text} />
-          <View>
-            <Text style={[styles.fingerModeLabel, { color: fingerDrawing ? theme.primary : theme.text }]}>Finger ink</Text>
-            <Text style={[styles.fingerModeState, { color: fingerDrawing ? theme.primary : theme.textSecondary }]}>
-              {fingerDrawing ? 'On' : 'Off'}
+          <Pressable
+            onPress={redo}
+            disabled={!(redoStacks[activePage.id]?.length)}
+            style={styles.actionBtn}
+          >
+            <Feather name="corner-up-right" size={18} color={redoStacks[activePage.id]?.length ? theme.text : theme.border} />
+            <Text style={[styles.actionLabel, { color: theme.text }, !(redoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Redo</Text>
+          </Pressable>
+          {!isPdfAnnotation ? (
+            <Pressable onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
+              <Feather name="grid" size={18} color={theme.text} />
+              <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={() => setFingerDrawing((value) => !value)}
+            style={[
+              styles.fingerModeBtn,
+              {
+                backgroundColor: fingerDrawing ? `${theme.primary}18` : theme.background,
+                borderColor: fingerDrawing ? `${theme.primary}55` : theme.border,
+              },
+            ]}
+          >
+            <Feather name="edit-3" size={17} color={fingerDrawing ? theme.primary : theme.text} />
+            <View>
+              <Text style={[styles.fingerModeLabel, { color: fingerDrawing ? theme.primary : theme.text }]}>Finger ink</Text>
+              <Text style={[styles.fingerModeState, { color: fingerDrawing ? theme.primary : theme.textSecondary }]}>
+                {fingerDrawing ? 'On' : 'Off'}
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setZoomScale(1);
+              horizontalOffset.value = 0;
+            }}
+            disabled={zoomScale === 1}
+            style={styles.actionBtn}
+          >
+            <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
+            <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
+              {Math.round(zoomScale * 100)}%
             </Text>
-          </View>
-        </Pressable>
+          </Pressable>
+        </ScrollView>
         <Pressable
-          onPress={() => {
-            setZoomScale(1);
-            horizontalOffset.value = 0;
-          }}
-          disabled={zoomScale === 1}
-          style={styles.actionBtn}
+          onPress={() => setShowAiPanel(true)}
+          style={[styles.aiActionBtn, showAiPanel && { backgroundColor: `${theme.primary}18` }]}
         >
-          <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
-          <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
-            {Math.round(zoomScale * 100)}%
-          </Text>
+          <Feather name="message-circle" size={17} color={showAiPanel ? theme.primary : theme.text} />
+          <Text style={[styles.actionLabel, { color: showAiPanel ? theme.primary : theme.text }]}>Ask AI</Text>
         </Pressable>
-      </ScrollView>
+      </View>
 
       <View
         style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace]}
@@ -955,17 +1142,104 @@ export default function HandwritingEditor() {
                   fingerDrawing={fingerDrawing}
                   settings={toolSettings}
                   documentGestures={documentExternalGestures}
+                  horizontalOffset={horizontalOffset}
                   primaryColor={theme.primary}
                   secondaryTextColor={theme.textSecondary}
                   loadPdfPage={loadPdfPage}
                   onChange={updatePageStrokes}
                   onCommit={commitPageGesture}
+                  onToolGestureEnd={handleToolGestureEnd}
                 />
               )}
             />
           </Animated.View>
         </GestureDetector>
       </View>
+
+      {/* ── AI Chat Side Panel ── */}
+      <Modal visible={showAiPanel} transparent animationType="fade" onRequestClose={() => setShowAiPanel(false)}>
+        <View style={[styles.aiOverlay, { paddingTop: insets.top + 164 }]}>
+          <Pressable style={styles.aiOverlayDismiss} onPress={() => setShowAiPanel(false)} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[styles.aiPanel, { width: AI_PANEL_WIDTH, backgroundColor: theme.card }]}
+          >
+            {/* Header */}
+            <View style={[styles.aiPanelHeader, { borderBottomColor: theme.border }]}>
+              <View style={[styles.aiPanelHeaderIcon, { backgroundColor: `${theme.primary}14` }]}>
+                <Feather name="message-circle" size={18} color={theme.primary} />
+              </View>
+              <Text style={[styles.aiPanelTitle, { color: theme.text }]}>Ask AI</Text>
+              <Pressable onPress={() => setShowAiPanel(false)} style={styles.aiPanelCloseBtn}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            {/* Messages */}
+            <ScrollView
+              ref={aiScrollRef}
+              style={styles.aiMessages}
+              contentContainerStyle={styles.aiMessagesContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => aiScrollRef.current?.scrollToEnd({ animated: true })}
+            >
+              {aiMessages.map((msg, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.aiBubble,
+                    msg.role === 'user'
+                      ? [styles.aiUserBubble, { backgroundColor: theme.primary }]
+                      : [styles.aiAssistantBubble, { backgroundColor: theme.background }],
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.aiBubbleText,
+                      { color: msg.role === 'user' ? theme.textInverse : theme.text },
+                    ]}
+                  >
+                    {msg.text}
+                  </Text>
+                </View>
+              ))}
+              {aiProcessing ? (
+                <View style={[styles.aiBubble, styles.aiAssistantBubble, { backgroundColor: theme.background }]}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                </View>
+              ) : null}
+            </ScrollView>
+
+            {/* Input Bar */}
+            <View style={[styles.aiInputBar, { borderTopColor: theme.border, backgroundColor: theme.card, paddingBottom: Math.max(8, insets.bottom) }]}>
+              <TextInput
+                style={[styles.aiTextInput, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
+                value={aiInput}
+                onChangeText={setAiInput}
+                placeholder="Ask about your notes…"
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                maxLength={2000}
+                editable={!aiProcessing}
+                onSubmitEditing={() => { void sendAiMessage(); }}
+                blurOnSubmit
+              />
+              <Pressable
+                onPress={() => { void sendAiMessage(); }}
+                disabled={!aiInput.trim() || aiProcessing}
+                style={[
+                  styles.aiSendBtn,
+                  {
+                    backgroundColor: aiInput.trim() && !aiProcessing ? theme.primary : theme.border,
+                  },
+                ]}
+              >
+                <Feather name="arrow-up" size={18} color={aiInput.trim() && !aiProcessing ? theme.textInverse : theme.textSecondary} />
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       <Modal visible={showMoreMenu} transparent animationType="fade" onRequestClose={() => setShowMoreMenu(false)}>
         <Pressable style={styles.moreMenuBackdrop} onPress={() => setShowMoreMenu(false)}>
@@ -1008,6 +1282,21 @@ export default function HandwritingEditor() {
                 <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Delete this page and its writing</Text>
               </View>
             </Pressable>
+            <View style={[styles.moreMenuRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}> 
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}> 
+                <Feather name="rotate-ccw" size={17} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Return after erasing</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Switch back after one erase touch</Text>
+              </View>
+              <Switch
+                value={autoReturnAfterErasing}
+                onValueChange={updateAutoReturnAfterErasing}
+                trackColor={{ false: theme.border, true: `${theme.primary}99` }}
+                thumbColor={autoReturnAfterErasing ? theme.primary : theme.card}
+              />
+            </View>
             <Pressable
               disabled={exporting}
               onPress={() => {
@@ -1338,6 +1627,9 @@ export default function HandwritingEditor() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.colorModal, { backgroundColor: theme.card }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Custom ink colour</Text>
+            <Text style={[styles.colorSaveHint, { color: theme.textSecondary }]}>
+              Save up to two colours for {activeInkColorTool === 'highlighter' ? 'Marker' : activeInkColorTool === 'pen' ? 'Pen' : 'Pencil'}. They replace the two rightmost swatches.
+            </Text>
             <View style={{ height: 280 }}>
               <ColorPicker
                 color={customColor}
@@ -1352,11 +1644,11 @@ export default function HandwritingEditor() {
               <Pressable onPress={() => setShowColors(false)} style={styles.modalBtn}>
                 <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>Cancel</Text>
               </Pressable>
-              <Pressable
-                onPress={() => { setColor(customColor); setTool('pen'); setShowColors(false); }}
-                style={[styles.modalBtn, { backgroundColor: theme.primary }]}
-              >
-                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Use colour</Text>
+              <Pressable onPress={useCustomColor} style={styles.modalBtn}>
+                <Text style={{ color: theme.primary, fontWeight: '800' }}>Use once</Text>
+              </Pressable>
+              <Pressable onPress={saveCustomColor} style={[styles.modalBtn, { backgroundColor: theme.primary }]}>
+                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Save colour</Text>
               </Pressable>
             </View>
           </View>
@@ -1404,8 +1696,20 @@ const styles = StyleSheet.create({
   savePillSaved: { backgroundColor: '#059669' },
   saveText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   actionBarScroll: { flexGrow: 0, height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
+  actionBarRow: { flexDirection: 'row', height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
+  actionBarScrollInner: { flex: 1, height: 46 },
   actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 8, gap: 3 },
   actionBtn: { height: 38, minWidth: 52, paddingHorizontal: 7, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  aiActionBtn: {
+    height: 46,
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'rgba(128,128,128,0.2)',
+  },
   actionLabel: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   fingerModeBtn: {
     height: 34,
@@ -1507,6 +1811,7 @@ const styles = StyleSheet.create({
   optionSymbol: { minHeight: 18, fontSize: 16, lineHeight: 18, fontWeight: '800' },
   clearPageBtn: { marginTop: 16, height: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   colorModal: { width: '100%', maxWidth: 430, borderRadius: 22, padding: 20 },
+  colorSaveHint: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
   templateModal: { width: '100%', maxWidth: 430, borderRadius: 22, padding: 20 },
   modalTitle: { fontSize: 19, fontWeight: '900', marginBottom: 8 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
@@ -1516,4 +1821,99 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8, marginTop: 2, marginBottom: 4 },
   templateRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 12 },
   proBadge: { fontSize: 10, fontWeight: '900' },
+  // ── AI Chat Side Panel styles ──
+  aiOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  aiOverlayDismiss: {
+    flex: 1,
+  },
+  aiPanel: {
+    height: '100%',
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    shadowOffset: { width: -4, height: 0 },
+    elevation: 12,
+  },
+  aiPanelHeader: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  aiPanelHeaderIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiPanelTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  aiPanelCloseBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiMessages: {
+    flex: 1,
+  },
+  aiMessagesContent: {
+    padding: 12,
+    gap: 10,
+  },
+  aiBubble: {
+    maxWidth: '92%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+  },
+  aiUserBubble: {
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 4,
+  },
+  aiAssistantBubble: {
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 4,
+  },
+  aiBubbleText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+  aiInputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  aiTextInput: {
+    flex: 1,
+    minHeight: 38,
+    maxHeight: 100,
+    borderRadius: 19,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingTop: 9,
+    paddingBottom: 9,
+    fontSize: 14,
+  },
+  aiSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

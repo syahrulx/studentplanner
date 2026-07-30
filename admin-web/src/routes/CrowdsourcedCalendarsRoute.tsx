@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
+  deleteExpiredCrowdsourcedCalendarOffers,
   listCrowdsourcedCalendarOffers,
   deleteUniversityCalendarOffer,
   type CrowdsourcedCalendarRow,
 } from '../lib/api';
 import { Card, CardContent } from '../ui/Card';
-import { Label, TextInput } from '../ui/Input';
+import { Label, Select, TextInput } from '../ui/Input';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
@@ -17,7 +18,10 @@ export function CrowdsourcedCalendarsRoute() {
   const [okMsg, setOkMsg] = useState('');
   const [offers, setOffers] = useState<CrowdsourcedCalendarRow[]>([]);
   const [offersSearch, setOffersSearch] = useState('');
+  const [calendarAge, setCalendarAge] = useState<'all' | 'expired'>('all');
+  const [selectedExpiredIds, setSelectedExpiredIds] = useState<string[]>([]);
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
+  const [deletingExpired, setDeletingExpired] = useState(false);
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -36,11 +40,23 @@ export function CrowdsourcedCalendarsRoute() {
     void refreshHistory();
   }, []);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const isExpired = (offer: CrowdsourcedCalendarRow) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(offer.end_date) && offer.end_date < today;
+
+  const expiredOffers = useMemo(() => offers.filter(isExpired), [offers, today]);
+  const expiredIdSet = useMemo(() => new Set(expiredOffers.map((offer) => offer.id)), [expiredOffers]);
+
+  useEffect(() => {
+    setSelectedExpiredIds((ids) => ids.filter((id) => expiredIdSet.has(id)));
+  }, [expiredIdSet]);
+
   const filteredOffers = useMemo(() => {
     const qTop = searchQuery.trim().toLowerCase();
     const qLocal = offersSearch.trim().toLowerCase();
     
     return offers.filter((h) => {
+      if (calendarAge === 'expired' && !isExpired(h)) return false;
       const texts = [
         h.university_id,
         h.semester_label,
@@ -58,7 +74,40 @@ export function CrowdsourcedCalendarsRoute() {
       }
       return true;
     });
-  }, [offers, offersSearch, searchQuery]);
+  }, [calendarAge, offers, offersSearch, searchQuery, today]);
+
+  const allExpiredSelected = expiredOffers.length > 0 && expiredOffers.every((offer) => selectedExpiredIds.includes(offer.id));
+
+  const toggleExpiredOffer = (id: string) => {
+    setSelectedExpiredIds((ids) => (ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]));
+  };
+
+  const toggleAllExpired = () => {
+    setSelectedExpiredIds(allExpiredSelected ? [] : expiredOffers.map((offer) => offer.id));
+  };
+
+  const deleteSelectedExpired = async () => {
+    if (!selectedExpiredIds.length) return;
+    const count = selectedExpiredIds.length;
+    const ok = window.confirm(
+      `Delete ${count} expired crowdsourced academic calendar${count === 1 ? '' : 's'}?\n\nOnly calendars with an end date before today will be removed. This cannot be undone.`,
+    );
+    if (!ok) return;
+
+    setErr('');
+    setOkMsg('');
+    setDeletingExpired(true);
+    try {
+      const deletedCount = await deleteExpiredCrowdsourcedCalendarOffers(selectedExpiredIds);
+      setSelectedExpiredIds([]);
+      await refreshHistory();
+      setOkMsg(`${deletedCount} expired crowdsourced calendar${deletedCount === 1 ? '' : 's'} deleted.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not delete expired calendars');
+    } finally {
+      setDeletingExpired(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -77,6 +126,8 @@ export function CrowdsourcedCalendarsRoute() {
               type="button"
               onClick={() => {
                 setOffersSearch('');
+                setCalendarAge('all');
+                setSelectedExpiredIds([]);
                 void refreshHistory();
               }}
               className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -105,7 +156,7 @@ export function CrowdsourcedCalendarsRoute() {
 
       <MotionSection delay={0.1}>
         <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-1">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Label className="block">
               <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
                 Search
@@ -117,12 +168,44 @@ export function CrowdsourcedCalendarsRoute() {
                 className="border-blue-200 focus:border-blue-500"
               />
             </Label>
+            <Label className="block">
+              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                Calendar status
+              </span>
+              <Select value={calendarAge} onChange={(e) => setCalendarAge(e.target.value as 'all' | 'expired')} className="border-blue-200 focus:border-blue-500">
+                <option value="all">All calendars</option>
+                <option value="expired">Old academic calendars</option>
+              </Select>
+            </Label>
           </div>
           <div className="mt-2 text-xs font-semibold text-blue-500 dark:text-blue-400">
             Showing <span className="font-black">{filteredOffers.length}</span> crowdsourced offer(s)
             {searchQuery.trim() ? ' (also filtered by top search bar)' : ''}.
+            {expiredOffers.length ? ` ${expiredOffers.length} old calendar${expiredOffers.length === 1 ? '' : 's'} can be cleaned up.` : ''}
           </div>
         </div>
+
+        {expiredOffers.length ? (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/30">
+            <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
+              <input
+                type="checkbox"
+                checked={allExpiredSelected}
+                onChange={toggleAllExpired}
+                disabled={deletingExpired}
+              />
+              <span>Select all old calendars ({expiredOffers.length})</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => void deleteSelectedExpired()}
+              disabled={selectedExpiredIds.length === 0 || deletingExpired}
+              className="h-10 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {deletingExpired ? 'Deleting…' : `Delete selected (${selectedExpiredIds.length})`}
+            </button>
+          </div>
+        ) : null}
 
         <div className="mt-6 space-y-6">
           {filteredOffers.map((h) => (
@@ -130,6 +213,15 @@ export function CrowdsourcedCalendarsRoute() {
               <CardContent className="space-y-4 py-5">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
                   <div className="flex items-center gap-4">
+                    {isExpired(h) ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedExpiredIds.includes(h.id)}
+                        onChange={() => toggleExpiredOffer(h.id)}
+                        disabled={deletingExpired}
+                        aria-label={`Select expired calendar ${h.semester_label}`}
+                      />
+                    ) : null}
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-xl dark:bg-blue-900/50">
                       👤
                     </div>
@@ -144,6 +236,11 @@ export function CrowdsourcedCalendarsRoute() {
                       <div className="mt-1 text-[10px] font-black uppercase tracking-wide text-blue-600 dark:text-blue-400">
                         Submitted: {new Date(h.created_at).toLocaleString()}
                       </div>
+                      {isExpired(h) ? (
+                        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                          Old calendar · ended {h.end_date}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   
@@ -156,7 +253,7 @@ export function CrowdsourcedCalendarsRoute() {
                     <button
                       type="button"
                       className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900/60 transition-colors"
-                      disabled={Boolean(deletingOfferId)}
+                      disabled={Boolean(deletingOfferId) || deletingExpired}
                       onClick={async () => {
                         const ok = window.confirm(
                           `Delete this crowdsourced offer from ${h.user_profile?.full_name || 'this user'}?\n\n${h.university_id}\n${h.semester_label}\n\nThis cannot be undone.`,
