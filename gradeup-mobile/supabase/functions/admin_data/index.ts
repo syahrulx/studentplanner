@@ -786,6 +786,54 @@ serve(async (req) => {
       return json(200, { items });
     }
 
+    if (action === 'uitm_calendar_contributions_list') {
+      const { data: rows, error: e } = await admin
+        .from('uitm_calendar_contributions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (e) return json(400, { error: e.message });
+
+      const items = await Promise.all((rows ?? []).map(async (item) => {
+        let user_profile = null;
+        try {
+          const { data: userData, error: userErr } = await admin.auth.admin.getUserById(item.created_by);
+          if (!userErr && userData?.user) {
+            const u = userData.user;
+            user_profile = {
+              id: u.id,
+              full_name: String(u.user_metadata?.full_name || u.user_metadata?.name || '').trim() || null,
+              email: u.email ?? null,
+            };
+          }
+        } catch {
+          // A deleted auth user is permitted by the migration's foreign key; keep the submission visible to admins.
+        }
+        return { ...item, user_profile };
+      }));
+      return json(200, { items });
+    }
+
+    if (action === 'uitm_calendar_contribution_review') {
+      const id = String(payload.id || '').trim();
+      const status = String(payload.status || '').trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+        return json(400, { error: 'invalid_id' });
+      }
+      if (status !== 'approved' && status !== 'rejected') return json(400, { error: 'invalid_status' });
+      const { error: e } = await admin
+        .from('uitm_calendar_contributions')
+        .update({ status, reviewed_by: auth.adminUserId, reviewed_at: new Date().toISOString() })
+        .eq('id', id);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id, reviewStatus: status },
+      });
+      return json(200, { ok: true });
+    }
+
     if (action === 'calendar_offers_insert') {
       const raw = payload.rows;
       if (!Array.isArray(raw) || raw.length === 0) return json(400, { error: 'missing_rows' });

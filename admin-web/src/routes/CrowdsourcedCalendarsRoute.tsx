@@ -2,8 +2,11 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   deleteExpiredCrowdsourcedCalendarOffers,
   listCrowdsourcedCalendarOffers,
+  listUitmCalendarContributions,
+  reviewUitmCalendarContribution,
   deleteUniversityCalendarOffer,
   type CrowdsourcedCalendarRow,
+  type UitmCalendarContributionRow,
 } from '../lib/api';
 import { Card, CardContent } from '../ui/Card';
 import { Label, Select, TextInput } from '../ui/Input';
@@ -17,11 +20,13 @@ export function CrowdsourcedCalendarsRoute() {
   const [err, setErr] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [offers, setOffers] = useState<CrowdsourcedCalendarRow[]>([]);
+  const [uitmContributions, setUitmContributions] = useState<UitmCalendarContributionRow[]>([]);
   const [offersSearch, setOffersSearch] = useState('');
   const [calendarAge, setCalendarAge] = useState<'all' | 'expired'>('all');
   const [selectedExpiredIds, setSelectedExpiredIds] = useState<string[]>([]);
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
   const [deletingExpired, setDeletingExpired] = useState(false);
+  const [reviewingUitmId, setReviewingUitmId] = useState('');
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -29,6 +34,13 @@ export function CrowdsourcedCalendarsRoute() {
     try {
       const items = await listCrowdsourcedCalendarOffers();
       setOffers(items);
+      // Keep the existing crowdsourced moderation page usable during a staged
+      // rollout if the new UiTM migration has not reached the backend yet.
+      try {
+        setUitmContributions(await listUitmCalendarContributions());
+      } catch {
+        setUitmContributions([]);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -109,6 +121,26 @@ export function CrowdsourcedCalendarsRoute() {
     }
   };
 
+  const reviewUitmContribution = async (row: UitmCalendarContributionRow, status: 'approved' | 'rejected') => {
+    const action = status === 'approved' ? 'Approve' : 'Reject';
+    const ok = window.confirm(
+      `${action} this UiTM community calendar?\n\n${row.semester_label}\n${row.start_date} to ${row.end_date}\nGroup ${row.group_code} · ${row.calendar_variant}\n\nApproval only makes it available as an opt-in calendar. It will not update any student automatically.`,
+    );
+    if (!ok) return;
+    setErr('');
+    setOkMsg('');
+    setReviewingUitmId(row.id);
+    try {
+      await reviewUitmCalendarContribution(row.id, status);
+      await refreshHistory();
+      setOkMsg(`UiTM contribution ${status}.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : `Could not ${status} UiTM contribution`);
+    } finally {
+      setReviewingUitmId('');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <MotionSection>
@@ -145,7 +177,7 @@ export function CrowdsourcedCalendarsRoute() {
           </div>
         </MotionPanel>
       ) : null}
-      
+
       {okMsg ? (
         <MotionPanel>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
@@ -153,6 +185,47 @@ export function CrowdsourcedCalendarsRoute() {
           </div>
         </MotionPanel>
       ) : null}
+
+      <MotionSection delay={0.05}>
+        <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/50 dark:bg-violet-950/20">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <div className="text-base font-black text-slate-900 dark:text-slate-100">UiTM community submissions</div>
+              <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Pending submissions never change a student’s calendar. Approved submissions are shown as an opt-in alternative to HEA.
+              </div>
+            </div>
+            <span className="rounded-full bg-violet-200 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-violet-900 dark:bg-violet-500/20 dark:text-violet-100">
+              {uitmContributions.filter((row) => row.status === 'pending').length} pending
+            </span>
+          </div>
+          <div className="mt-4 space-y-3">
+            {uitmContributions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-violet-200 px-4 py-5 text-sm font-semibold text-violet-900 dark:border-violet-900/60 dark:text-violet-100">No UiTM community submissions yet.</div>
+            ) : uitmContributions.map((row) => (
+              <div key={row.id} className="rounded-2xl border border-violet-100 bg-white p-4 dark:border-violet-900/40 dark:bg-slate-950/40">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="font-black text-slate-900 dark:text-slate-100">{row.semester_label}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{row.start_date} to {row.end_date} · {row.total_weeks} weeks · Group {row.group_code} · {row.calendar_variant === 'kkt' ? 'Kedah/Kelantan/Terengganu' : 'Standard'}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Submitted by {row.user_profile?.full_name || row.user_profile?.email || 'Unknown user'} · {new Date(row.created_at).toLocaleString()}</div>
+                  </div>
+                  <span className={`self-start rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${row.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' : row.status === 'rejected' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'}`}>{row.status}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-black">
+                  {row.source_url ? <a href={row.source_url} target="_blank" rel="noreferrer" className="text-brand-700 underline underline-offset-2 dark:text-brand-300">Open source</a> : null}
+                  {row.status === 'pending' ? (
+                    <>
+                      <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'approved')} className="rounded-xl bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-40">{reviewingUitmId === row.id ? 'Saving…' : 'Approve'}</button>
+                      <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'rejected')} className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-40 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">Reject</button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </MotionSection>
 
       <MotionSection delay={0.1}>
         <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">

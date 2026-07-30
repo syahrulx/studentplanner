@@ -18,6 +18,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/src/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
+import { supabase } from "@/src/lib/supabase";
 import { useTranslations } from "@/src/i18n";
 import {
   getAcademicProgressFromCalendar,
@@ -41,6 +42,11 @@ import {
   offerToCalendarPatch,
   type UniversityCalendarOffer,
 } from "@/src/lib/universityCalendarOffersDb";
+import {
+  contributionToCalendarPatch,
+  fetchApprovedUitmCalendarContributions,
+  type UitmCalendarContribution,
+} from "@/src/lib/uitmCalendarContributionsDb";
 
 const SCREEN_W = Dimensions.get("window").width;
 const GRID_GAP = 6;
@@ -106,6 +112,9 @@ export default function AcademicCalendarScreen() {
   const [adminOffers, setAdminOffers] = useState<UniversityCalendarOffer[]>([]);
   const [cfgSelectedOfferId, setCfgSelectedOfferId] = useState("");
   const [offersLoading, setOffersLoading] = useState(false);
+  const [uitmCommunityOffers, setUitmCommunityOffers] = useState<UitmCalendarContribution[]>([]);
+  const [cfgSelectedUitmCommunityId, setCfgSelectedUitmCommunityId] = useState("");
+  const [cfgUitmCalendarSource, setCfgUitmCalendarSource] = useState<"official" | "community">("official");
   const [cfgVariant, setCfgVariant] = useState<UitmCalendarVariant>(() => {
     const label = String(academicCalendar?.semesterLabel ?? "");
     if (/kedah\/kelantan\/terengganu/i.test(label)) return "kkt";
@@ -196,9 +205,11 @@ export default function AcademicCalendarScreen() {
 
   useEffect(() => {
     const uniId = user.universityId;
-    if (!configOpen || !uniId || uniId === "uitm") {
+    if (!configOpen || !uniId) {
       setAdminOffers([]);
       setCfgSelectedOfferId("");
+      setUitmCommunityOffers([]);
+      setCfgSelectedUitmCommunityId("");
       setOffersLoading(false);
       return;
     }
@@ -206,6 +217,17 @@ export default function AcademicCalendarScreen() {
     setOffersLoading(true);
     void (async () => {
       try {
+        if (uniId === "uitm") {
+          const group: "A" | "B" = cfgLevel === "Foundation" ? "A" : "B";
+          const list = await fetchApprovedUitmCalendarContributions(group);
+          if (cancelled) return;
+          setAdminOffers([]);
+          setUitmCommunityOffers(list);
+          const currentStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
+          const currentMatch = list.find((item) => item.startDate === currentStart);
+          setCfgSelectedUitmCommunityId((currentMatch ?? list[0])?.id ?? "");
+          return;
+        }
         const list = await fetchAllCalendarOffersForUniversity(uniId);
         if (cancelled) return;
         setAdminOffers(list);
@@ -230,6 +252,7 @@ export default function AcademicCalendarScreen() {
   }, [
     configOpen,
     user.universityId,
+    cfgLevel,
     academicCalendar?.startDate,
     academicCalendar?.semesterLabel,
   ]);
@@ -470,6 +493,17 @@ export default function AcademicCalendarScreen() {
           heaTermCode: null,
           studentId: sid,
         });
+        const community = uitmCommunityOffers.find((item) => item.id === cfgSelectedUitmCommunityId);
+        if (cfgUitmCalendarSource === "community" && community) {
+          await updateAcademicCalendar({
+            ...contributionToCalendarPatch(community),
+            teachingWeekOffset: 0,
+            isActive: true,
+          });
+          setSyncStatus(`Applied community verified calendar: ${community.semesterLabel}`);
+          setConfigOpen(false);
+          return;
+        }
         const official = await fetchUitmAcademicCalendar(groupForHea, {
           targetDateISO: today,
           variant: cfgVariant,
@@ -544,10 +578,13 @@ export default function AcademicCalendarScreen() {
     cfgSelectedOfferId,
     cfgStudentId,
     cfgVariant,
+    cfgUitmCalendarSource,
+    cfgSelectedUitmCommunityId,
     recommendedGroup,
     updateAcademicCalendar,
     updateProfile,
     user.universityId,
+    uitmCommunityOffers,
     T,
   ]);
 
@@ -1175,6 +1212,50 @@ export default function AcademicCalendarScreen() {
                       </Pressable>
                     ))}
                   </View>
+
+                  <View style={s.divider} />
+                  <Text style={[s.fieldLabel, { color: theme.textSecondary }]}>Calendar source</Text>
+                  <Text style={[s.modalSub, { color: theme.textSecondary }]}>HEA remains the recommended source. Community calendars are admin-verified and only apply when you choose one.</Text>
+                  <TouchableOpacity
+                    style={[s.optRow, { borderWidth: 1, borderColor: cfgUitmCalendarSource === "official" ? theme.primary : theme.border, backgroundColor: cfgUitmCalendarSource === "official" ? theme.primary + "1A" : "transparent" }]}
+                    activeOpacity={0.6}
+                    onPress={() => setCfgUitmCalendarSource("official")}
+                  >
+                    <Feather name={cfgUitmCalendarSource === "official" ? "check-circle" : "circle"} size={18} color={cfgUitmCalendarSource === "official" ? theme.primary : theme.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.optText, { color: theme.text }]}>Official UiTM HEA</Text>
+                      <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>Recommended · refreshes from UiTM HEA</Text>
+                    </View>
+                  </TouchableOpacity>
+                  {offersLoading ? (
+                    <ActivityIndicator style={{ marginTop: 10 }} color={theme.primary} />
+                  ) : uitmCommunityOffers.length > 0 ? (
+                    <>
+                      <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 12 }]}>Admin-verified community calendars for Group {cfgLevel === "Foundation" ? "A" : "B"}</Text>
+                      {uitmCommunityOffers.map((offer) => (
+                        <TouchableOpacity
+                          key={offer.id}
+                          style={[s.optRow, { borderWidth: 1, borderColor: cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? theme.primary : theme.border, backgroundColor: cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? theme.primary + "1A" : "transparent" }]}
+                          activeOpacity={0.6}
+                          onPress={() => { setCfgUitmCalendarSource("community"); setCfgSelectedUitmCommunityId(offer.id); }}
+                        >
+                          <Feather name={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? "check-circle" : "circle"} size={18} color={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? theme.primary : theme.textSecondary} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.optText, { color: theme.text }]} numberOfLines={2}>{offer.semesterLabel}</Text>
+                            <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>{offer.startDate} to {offer.endDate} · {offer.calendarVariant === "kkt" ? "Kedah/Kelantan/Terengganu" : "Standard"}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </>
+                  ) : (
+                    <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 10 }]}>No verified community calendar is available for this group yet.</Text>
+                  )}
+                  <Pressable
+                    style={[s.saveBtn, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, marginTop: 12 }]}
+                    onPress={() => { setConfigOpen(false); router.push("/add-academic-calendar"); }}
+                  >
+                    <Text style={[s.saveBtnText, { color: theme.text }]}>Submit a UiTM calendar update</Text>
+                  </Pressable>
                 </>
               ) : null}
 
