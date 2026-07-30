@@ -44,6 +44,7 @@ export interface Course {
   name: string;
   creditHours: number;
   workload: number[];
+  sortOrder?: number;
 }
 
 export interface Task {
