@@ -21,6 +21,18 @@ import { TextInput } from "react-native-gesture-handler";
 import { getUniversityById } from "@/src/lib/universities";
 import { submitUitmCalendarContribution } from "@/src/lib/uitmCalendarContributionsDb";
 
+async function functionErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const response = (error as { context?: { clone?: () => Response } })?.context;
+  try {
+    const body = await response?.clone?.().json();
+    if (body && typeof body.error === "string") return body.error;
+  } catch {
+    // Supabase did not return a JSON error body; use its original message.
+  }
+  return message;
+}
+
 export default function AddAcademicCalendarScreen() {
   const theme = useTheme();
   const s = useMemo(() => styles(theme), [theme]);
@@ -47,7 +59,11 @@ export default function AddAcademicCalendarScreen() {
         copyToCacheDirectory: true,
       });
       if (res.canceled || !res.assets || res.assets.length === 0) return;
-      const fileUri = res.assets[0].uri;
+      const asset = res.assets[0];
+      if (typeof asset.size === "number" && asset.size > 10 * 1024 * 1024) {
+        throw new Error("PDF is too large. Choose a file under 10 MB.");
+      }
+      const fileUri = asset.uri;
 
       setBusy(true);
       const base64 = await FileSystem.readAsStringAsync(fileUri, {
@@ -58,7 +74,11 @@ export default function AddAcademicCalendarScreen() {
         body: { action: "extract_calendar_from_pdf", pdfBase64: base64 },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        throw new Error(
+          await functionErrorMessage(error, "PDF extraction failed."),
+        );
+      }
       if (data?.error) throw new Error(data.error);
 
       applyExtracted(data?.extracted);
@@ -80,6 +100,12 @@ export default function AddAcademicCalendarScreen() {
       });
       if (res.canceled || !res.assets || res.assets.length === 0) return;
       const asset = res.assets[0];
+      if (
+        typeof asset.fileSize === "number" &&
+        asset.fileSize > 10 * 1024 * 1024
+      ) {
+        throw new Error("Image is too large. Choose a file under 10 MB.");
+      }
       if (!asset.base64) throw new Error("Image could not be read.");
 
       setBusy(true);
@@ -90,7 +116,11 @@ export default function AddAcademicCalendarScreen() {
         body: { action: "extract_calendar_from_image", imageBase64: base64Str },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        throw new Error(
+          await functionErrorMessage(error, "Image extraction failed."),
+        );
+      }
       if (data?.error) throw new Error(data.error);
 
       applyExtracted(data?.extracted);
@@ -187,22 +217,56 @@ export default function AddAcademicCalendarScreen() {
         return;
       }
 
-      let resolvedCampusId = null;
-      if (user.campus && user.campus !== "-" && user.campus.length > 2) {
-        const { data: campusData } = await supabase
-          .from("campuses")
-          .select("id")
-          .eq("name", user.campus)
-          .eq("university_id", user.universityId)
-          .single();
-        if (campusData?.id) {
-          resolvedCampusId = campusData.id;
+      // Resolve identity/campus from the authenticated database profile rather
+      // than trusting possibly stale values cached on the device. RLS performs
+      // the same ownership check again when the offer is inserted.
+      const { data: profileRow, error: profileError } = await supabase
+        .from("profiles")
+        .select("university_id,campus")
+        .eq("id", userId)
+        .single();
+      if (profileError || !profileRow) {
+        throw new Error(
+          "Could not verify your university profile. Please sign in again and retry.",
+        );
+      }
+      if (profileRow.university_id !== user.universityId) {
+        throw new Error(
+          "Your university profile changed. Please reopen this screen and retry.",
+        );
+      }
+
+      let resolvedCampusId: string | null = null;
+      const campusName = String(profileRow.campus || user.campus || "").trim();
+      const { data: campusRows, error: campusesError } = await supabase
+        .from("campuses")
+        .select("id,name")
+        .eq("university_id", profileRow.university_id)
+        .limit(500);
+      if (campusesError) {
+        throw new Error("Could not verify your campus. Please retry.");
+      }
+      if (campusName && campusName !== "-") {
+        const normalizeCampus = (value: string) =>
+          value.trim().toLowerCase().replace(/\s+/g, " ");
+        const match = (campusRows ?? []).find(
+          (row) =>
+            normalizeCampus(String(row.name || "")) ===
+            normalizeCampus(campusName),
+        );
+        resolvedCampusId = match?.id ?? null;
+        if (!resolvedCampusId && (campusRows ?? []).length > 0) {
+          throw new Error(
+            "Your campus does not match the university campus list. Please update your profile or contact support.",
+          );
         }
       }
 
       const payload = {
-        university_id: user.universityId,
-        campus_id: resolvedCampusId, // Ensure campus matches user's profile as a valid UUID
+        university_id: profileRow.university_id,
+        // null is intentionally university-wide and is accepted only when no
+        // usable campus mapping exists for this profile (enforced again by RLS).
+        campus_id: resolvedCampusId,
         semester_label: semesterLabel.trim(),
         start_date: start,
         end_date: end,
