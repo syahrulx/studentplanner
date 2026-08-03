@@ -45,6 +45,7 @@ export default function AddAcademicCalendarScreen() {
   // Form Fields
   const [programLevel, setProgramLevel] = useState("General");
   const [semesterLabel, setSemesterLabel] = useState("");
+  const [termType, setTermType] = useState<"regular" | "short">("regular");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [totalWeeks, setTotalWeeks] = useState("");
@@ -150,6 +151,7 @@ export default function AddAcademicCalendarScreen() {
     const cand = extracted.candidates[0]; // Auto-pick the first one
     setProgramLevel(cand.program_level || "General");
     setSemesterLabel(cand.semester_label || "");
+    setTermType(/short|semester khas|special semester/i.test(String(cand.semester_label || "")) ? "short" : "regular");
     setStartDate(cand.start_date || "");
     setEndDate(cand.end_date || "");
     setTotalWeeks(cand.total_weeks ? String(cand.total_weeks) : "");
@@ -173,7 +175,8 @@ export default function AddAcademicCalendarScreen() {
       Alert.alert("Error", "You must have a university set in your profile.");
       return;
     }
-    if (!semesterLabel || !startDate || !endDate) {
+      const normalizedLabel = semesterLabel.trim();
+      if (!normalizedLabel || !startDate || !endDate) {
       Alert.alert(
         "Error",
         "Semester Label, Start Date, and End Date are required.",
@@ -201,7 +204,9 @@ export default function AddAcademicCalendarScreen() {
         await submitUitmCalendarContribution({
           userId,
           groupCode: user.academicLevel === "Foundation" ? "A" : "B",
-          semesterLabel: semesterLabel.trim(),
+          semesterLabel: termType === "short" && !/short|semester khas|special semester/i.test(normalizedLabel)
+            ? `Short Semester — ${normalizedLabel}`
+            : normalizedLabel,
           startDate: start,
           endDate: end,
           totalWeeks: parseInt(totalWeeks, 10) || 14,
@@ -267,7 +272,9 @@ export default function AddAcademicCalendarScreen() {
         // null is intentionally university-wide and is accepted only when no
         // usable campus mapping exists for this profile (enforced again by RLS).
         campus_id: resolvedCampusId,
-        semester_label: semesterLabel.trim(),
+        semester_label: termType === "short" && !/short|semester khas|special semester/i.test(normalizedLabel)
+          ? `Short Semester — ${normalizedLabel}`
+          : normalizedLabel,
         start_date: start,
         end_date: end,
         total_weeks: parseInt(totalWeeks) || 14,
@@ -404,6 +411,25 @@ export default function AddAcademicCalendarScreen() {
             <Text style={[s.formHeader, { color: theme.text }]}>
               Review Calendar Details
             </Text>
+
+            <Text style={[s.label, { color: theme.textSecondary }]}>Calendar type</Text>
+            <View style={s.termChoices}>
+              {(["regular", "short"] as const).map((value) => (
+                <Pressable
+                  key={value}
+                  onPress={() => {
+                    setTermType(value);
+                    if (value === "short" && !semesterLabel.trim()) setSemesterLabel("Short Semester");
+                    if (value === "short" && !totalWeeks.trim()) setTotalWeeks("8");
+                  }}
+                  style={[s.termChoice, { borderColor: termType === value ? theme.primary : theme.border, backgroundColor: termType === value ? `${theme.primary}16` : theme.background }]}
+                >
+                  <Feather name={value === "short" ? "zap" : "calendar"} size={16} color={termType === value ? theme.primary : theme.textSecondary} />
+                  <Text style={{ color: termType === value ? theme.primary : theme.text, fontWeight: "800", fontSize: 13 }}>{value === "short" ? "Short semester" : "Regular semester"}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {termType === "short" ? <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 18 }}>Short semesters are separate from regular terms. Students can choose this calendar without overwriting a different term.</Text> : null}
 
             <Text style={[s.label, { color: theme.textSecondary }]}>
               Semester Label (e.g. Semester 1 2025/2026)
@@ -558,6 +584,8 @@ function styles(theme: any) {
       fontSize: 15,
       fontWeight: "600",
     },
+    termChoices: { flexDirection: "row", gap: 8 },
+    termChoice: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
     submitBtn: {
       height: 50,
       borderRadius: 14,

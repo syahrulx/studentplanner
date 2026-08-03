@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import {
   deleteUserReport,
   listUserReports,
+  listUserReportMessages,
+  replyToUserReport,
   updateUserReportStatus,
+  type AdminSupportReportMessage,
   type AdminUserReportRow,
   type UserReportKind,
   type UserReportStatus,
@@ -172,6 +175,13 @@ export function UserReportsRoute() {
     } catch (e) {
       alert(`Could not delete report: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  async function reply(row: AdminUserReportRow, body: string, status: UserReportStatus) {
+    const res = await replyToUserReport(row.id, body, status);
+    setItems((prev) => prev.map((item) => (item.id === row.id ? res.row : item)));
+    if (selected?.id === row.id) setSelected(res.row);
+    return res.message;
   }
 
   return (
@@ -373,6 +383,7 @@ export function UserReportsRoute() {
               row={selected}
               onClose={() => setSelected(null)}
               onChangeStatus={(s, notes) => changeStatus(selected, s, notes)}
+              onReply={(body, status) => reply(selected, body, status)}
               onDelete={() => removeRow(selected)}
             />,
             document.body,
@@ -386,17 +397,44 @@ function ReportDetailModal({
   row,
   onClose,
   onChangeStatus,
+  onReply,
   onDelete,
 }: {
   row: AdminUserReportRow;
   onClose: () => void;
   onChangeStatus: (status: UserReportStatus, adminNotes: string | null) => void | Promise<void>;
+  onReply: (body: string, status: UserReportStatus) => Promise<AdminSupportReportMessage>;
   onDelete: () => void;
 }) {
   const [notes, setNotes] = useState(row.admin_notes ?? '');
+  const [messages, setMessages] = useState<AdminSupportReportMessage[]>([]);
+  const [reply, setReply] = useState('');
+  const [replyBusy, setReplyBusy] = useState(false);
   useEffect(() => {
     setNotes(row.admin_notes ?? '');
   }, [row.id, row.admin_notes]);
+  useEffect(() => {
+    let active = true;
+    void listUserReportMessages(row.id).then((result) => {
+      if (active) setMessages(result.items);
+    }).catch(() => { if (active) setMessages([]); });
+    return () => { active = false; };
+  }, [row.id]);
+
+  const sendReply = async () => {
+    const body = reply.trim();
+    if (!body || replyBusy) return;
+    setReplyBusy(true);
+    try {
+      const message = await onReply(body, row.status === 'resolved' ? 'in_progress' : row.status);
+      setMessages((current) => [...current, message]);
+      setReply('');
+    } catch (error) {
+      alert(`Could not send reply: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setReplyBusy(false);
+    }
+  };
 
   return (
     <div
@@ -457,6 +495,20 @@ function ReportDetailModal({
             </a>
           </div>
         ) : null}
+
+        <div className="mt-5">
+          <div className="mb-2 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Conversation with user</div>
+          <div className="max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+            {messages.length === 0 ? <div className="text-sm font-semibold text-slate-500">No replies yet.</div> : messages.map((message) => (
+              <div key={message.id} className={`rounded-xl p-3 text-sm ${message.author_role === 'admin' ? 'ml-8 bg-brand-600 text-white' : 'mr-8 bg-white text-slate-800 dark:bg-slate-900 dark:text-slate-100'}`}>
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wide opacity-70">{message.author_role === 'admin' ? 'Admin' : 'User'} · {formatDateTime(message.created_at)}</div>
+                <div className="whitespace-pre-wrap font-medium">{message.body}</div>
+              </div>
+            ))}
+          </div>
+          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={3} maxLength={4000} placeholder="Reply to this user…" className="mt-3 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" />
+          <div className="mt-2 flex justify-end"><button disabled={!reply.trim() || replyBusy} onClick={sendReply} className="rounded-2xl bg-brand-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{replyBusy ? 'Sending…' : 'Send reply'}</button></div>
+        </div>
 
         <div className="mt-5">
           <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">

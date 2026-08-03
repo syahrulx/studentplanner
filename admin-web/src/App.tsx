@@ -3,26 +3,20 @@ import { LoginRoute } from './routes/LoginRoute';
 import { AdminLayout } from './routes/AdminLayout';
 import { DashboardRoute } from './routes/DashboardRoute';
 import { UsersRoute } from './routes/UsersRoute';
-import { UniversitiesRoute } from './routes/UniversitiesRoute';
 import { TimetablesRoute } from './routes/TimetablesRoute';
-import { CalendarUpdatesRoute } from './routes/CalendarUpdatesRoute';
-import { CrowdsourcedCalendarsRoute } from './routes/CrowdsourcedCalendarsRoute';
 import { LogsRoute } from './routes/LogsRoute';
 import { LocationsRoute } from './routes/LocationsRoute';
 import { CirclesRoute } from './routes/CirclesRoute';
 import { EventsRoute } from './routes/EventsRoute';
-import { AuthorityRoute } from './routes/AuthorityRoute';
-import { CampusesRoute } from './routes/CampusesRoute';
-import { OrganizationsRoute } from './routes/OrganizationsRoute';
 import { SubscriptionsRoute } from './routes/SubscriptionsRoute';
-import { SettingsRoute } from './routes/SettingsRoute';
 import { TaskCategoriesRoute } from './routes/TaskCategoriesRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
-import { BroadcastRoute } from './routes/BroadcastRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
 import { UserReportsRoute } from './routes/UserReportsRoute';
-import { WhatsNewRoute } from './routes/WhatsNewRoute';
 import { MinigamesRoute } from './routes/MinigamesRoute';
+import { AcademicCalendarsRoute } from './routes/AcademicCalendarsRoute';
+import { CommunicationsRoute } from './routes/CommunicationsRoute';
+import { InstitutionsRoute } from './routes/InstitutionsRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -37,25 +31,28 @@ export default function App() {
             <Route path="dashboard" element={<DashboardRoute />} />
             <Route path="users" element={<UsersRoute />} />
             <Route path="subscriptions" element={<SubscriptionsRoute />} />
-            <Route path="universities" element={<UniversitiesRoute />} />
+            <Route path="institutions" element={<InstitutionsRoute />} />
+            <Route path="universities" element={<Navigate to="/institutions" replace />} />
             <Route path="timetables" element={<TimetablesRoute />} />
             <Route path="performance" element={<StudentPerformanceRoute />} />
-            <Route path="calendar-updates" element={<CalendarUpdatesRoute />} />
-            <Route path="crowdsourced-calendars" element={<CrowdsourcedCalendarsRoute />} />
+            <Route path="academic-calendars" element={<AcademicCalendarsRoute />} />
+            <Route path="calendar-updates" element={<Navigate to="/academic-calendars" replace />} />
+            <Route path="crowdsourced-calendars" element={<Navigate to="/academic-calendars?tab=community" replace />} />
             <Route path="locations" element={<LocationsRoute />} />
             <Route path="circles" element={<CirclesRoute />} />
             <Route path="events" element={<EventsRoute />} />
-            <Route path="authorities" element={<AuthorityRoute />} />
+            <Route path="authorities" element={<Navigate to="/institutions?tab=authorities" replace />} />
             <Route path="services" element={<ServicesRoute />} />
-            <Route path="campuses" element={<CampusesRoute />} />
-            <Route path="organizations" element={<OrganizationsRoute />} />
-            <Route path="broadcast" element={<BroadcastRoute />} />
+            <Route path="campuses" element={<Navigate to="/institutions?tab=campuses" replace />} />
+            <Route path="organizations" element={<Navigate to="/institutions?tab=organisations" replace />} />
+            <Route path="communications" element={<CommunicationsRoute />} />
+            <Route path="broadcast" element={<Navigate to="/communications" replace />} />
             <Route path="logs" element={<LogsRoute />} />
             <Route path="task-categories" element={<TaskCategoriesRoute />} />
             <Route path="user-reports" element={<UserReportsRoute />} />
-            <Route path="whats-new" element={<WhatsNewRoute />} />
+            <Route path="whats-new" element={<Navigate to="/communications?tab=whats-new" replace />} />
             <Route path="minigames" element={<MinigamesRoute />} />
-            <Route path="settings" element={<SettingsRoute />} />
+            <Route path="settings" element={<Navigate to="/dashboard" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

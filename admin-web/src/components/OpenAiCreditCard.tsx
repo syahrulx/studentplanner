@@ -23,6 +23,11 @@ type UsageData = {
   daysIntoThisMonth: number;
 };
 
+// This is an internal spending guardrail, not the provider's live credit
+// balance. Keeping it as a deployment setting avoids exposing billing details
+// or credentials in the browser.
+const monthlyBudgetUsd = Number(import.meta.env.VITE_OPENAI_MONTHLY_BUDGET_USD || 0);
+
 export function OpenAiCreditCard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +110,23 @@ export function OpenAiCreditCard() {
     { label: 'This Month*', total: data.thisMonthTotal, fill: '#2DD4BF' },
     { label: 'Projected', total: data.projectedMonth, fill: '#f97316' },
   ];
+  const hasBudget = Number.isFinite(monthlyBudgetUsd) && monthlyBudgetUsd > 0;
+  const projectedUsagePct = hasBudget ? (data.projectedMonth / monthlyBudgetUsd) * 100 : 0;
+  const projectedRemaining = hasBudget ? Math.max(0, monthlyBudgetUsd - data.projectedMonth) : 0;
+  const reserveTone = !hasBudget
+    ? 'border-sky-500/30 bg-sky-500/10 text-sky-100'
+    : projectedUsagePct >= 95
+      ? 'border-rose-500/40 bg-rose-500/10 text-rose-100'
+      : projectedUsagePct >= 85
+        ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+        : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-100';
+  const reserveMessage = !hasBudget
+    ? 'No monthly reserve is configured. Add VITE_OPENAI_MONTHLY_BUDGET_USD to enable proactive top-up reminders.'
+    : projectedUsagePct >= 95
+      ? `Critical: projected spend is ${projectedUsagePct.toFixed(0)}% of the monthly reserve. Review billing and top up now.`
+      : projectedUsagePct >= 85
+        ? `Warning: projected spend is ${projectedUsagePct.toFixed(0)}% of the monthly reserve. Plan a top-up soon.`
+        : `Projected reserve remaining: $${projectedRemaining.toFixed(2)} (${Math.max(0, 100 - projectedUsagePct).toFixed(0)}%).`;
 
   return (
     <MotionSection className="mt-8 rounded-3xl border border-slate-700/50 bg-[#0B1120] p-6 text-slate-300">
@@ -132,6 +154,16 @@ export function OpenAiCreditCard() {
           </span>
         </div>
       )}
+
+      <div className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${reserveTone}`}>
+        <div className="font-black">AI budget reserve</div>
+        <div className="mt-1">{reserveMessage}</div>
+        {hasBudget ? (
+          <div className="mt-2 text-xs opacity-80">
+            Monthly reserve: ${monthlyBudgetUsd.toFixed(2)} · projected spend: ${data.projectedMonth.toFixed(2)}
+          </div>
+        ) : null}
+      </div>
 
       {/* Stat Cards */}
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

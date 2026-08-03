@@ -11,8 +11,6 @@ import {
   IconBriefcase,
   IconMapPin,
   IconSchool,
-  IconSettings,
-  IconShield,
   IconSubscription,
   IconUsers,
 } from '../ui/icons';
@@ -25,31 +23,25 @@ const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
   { to: '/users', label: 'Users', Icon: IconUsers },
   { to: '/subscriptions', label: 'Subscriptions', Icon: IconSubscription },
-  { to: '/universities', label: 'Universities', Icon: IconSchool },
+  { to: '/institutions', label: 'Institutions', Icon: IconSchool },
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
-  { to: '/performance', label: 'Performance', Icon: IconBell },
-  { to: '/calendar-updates', label: 'Calendar updates', Icon: IconCalendar },
-  { to: '/crowdsourced-calendars', label: 'Crowdsourced Cals', Icon: IconCalendar },
-  { to: '/locations', label: 'Locations', Icon: IconMapPin },
-  { to: '/circles', label: 'Circles', Icon: IconCircles },
+  { to: '/performance', label: 'Attendance Insights', Icon: IconBell },
+  { to: '/academic-calendars', label: 'Academic Calendars', Icon: IconCalendar },
   
   { header: 'Community' },
   { to: '/events', label: 'Events', Icon: IconClipboard },
   { to: '/services', label: 'Services', Icon: IconBriefcase },
-  { to: '/authorities', label: 'Authorities', Icon: IconShield },
-  { to: '/campuses', label: 'Campuses', Icon: IconMapPin },
-  { to: '/organizations', label: 'Organizations', Icon: IconUsers },
+  { to: '/circles', label: 'Circles', Icon: IconCircles },
+  { to: '/locations', label: 'Locations', Icon: IconMapPin },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
   { to: '/user-reports', label: 'User Reports', Icon: IconFileText },
-  { to: '/whats-new', label: "What's New", Icon: IconBell },
   { to: '/minigames', label: 'Minigames', Icon: IconGrid },
+  { to: '/communications', label: 'Communications', Icon: IconBell },
 
   { header: 'System' },
-  { to: '/broadcast', label: 'Broadcast', Icon: IconBell },
   { to: '/logs', label: 'Logs', Icon: IconFileText },
-  { to: '/settings', label: 'Settings', Icon: IconSettings },
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {

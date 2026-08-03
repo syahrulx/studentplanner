@@ -7,7 +7,9 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
   Alert,
+  Modal,
   Platform,
   Image,
 } from 'react-native';
@@ -111,6 +113,7 @@ export default function InboxScreen() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
+  const [openedNotification, setOpenedNotification] = useState<InAppNotification | null>(null);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -213,6 +216,15 @@ export default function InboxScreen() {
       supabase.from('in_app_notifications').update({ is_read: true }).eq('id', item.id).then();
     }
 
+    // Keep the full message readable before following any optional action.
+    // Broadcasts often contain information that is longer than the preview.
+    setOpenedNotification(item);
+  };
+
+  const openNotificationAction = () => {
+    const item = openedNotification;
+    if (!item) return;
+    setOpenedNotification(null);
     const t = item.data?.type as string | undefined;
     if (t === 'broadcast') {
       const rawRoute = typeof item.data?.route === 'string' ? (item.data.route as string).trim() : '';
@@ -443,6 +455,40 @@ export default function InboxScreen() {
           }}
         />
       )}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!openedNotification}
+        onRequestClose={() => setOpenedNotification(null)}
+      >
+        <View style={styles.detailOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpenedNotification(null)} />
+          <View style={[styles.detailCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.detailHeader}>
+              <IconAvatar
+                icon={openedNotification ? notifIcon(openedNotification) : 'bell'}
+                color={openedNotification ? notifIconColor(openedNotification) : theme.primary}
+              />
+              <Pressable onPress={() => setOpenedNotification(null)} style={styles.detailClose}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={[styles.detailTitle, { color: theme.text }]}>{openedNotification?.title}</Text>
+            <Text style={[styles.detailDate, { color: theme.textSecondary }]}>
+              {openedNotification ? new Date(openedNotification.created_at).toLocaleString() : ''}
+            </Text>
+            <ScrollView style={styles.detailBodyScroll} contentContainerStyle={styles.detailBodyContent}>
+              <Text style={[styles.detailBody, { color: theme.text }]}>{openedNotification?.body}</Text>
+            </ScrollView>
+            {openedNotification?.data?.route || openedNotification?.data?.serviceId || openedNotification?.data?.eventId ? (
+              <Pressable onPress={openNotificationAction} style={[styles.detailAction, { backgroundColor: theme.primary }]}>
+                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Open</Text>
+                <Feather name="arrow-up-right" size={17} color={theme.textInverse} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -525,4 +571,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   clearAllText: { color: '#ef4444', fontSize: 14, fontWeight: '700' },
+  detailOverlay: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(15,23,42,0.55)' },
+  detailCard: { maxHeight: '75%', borderWidth: 1, borderRadius: 24, padding: 20 },
+  detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  detailClose: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  detailTitle: { marginTop: 14, fontSize: 21, fontWeight: '800', letterSpacing: -0.3 },
+  detailDate: { marginTop: 6, fontSize: 12, fontWeight: '600' },
+  detailBodyScroll: { marginTop: 18 },
+  detailBodyContent: { paddingBottom: 4 },
+  detailBody: { fontSize: 15, lineHeight: 23, fontWeight: '500' },
+  detailAction: { marginTop: 20, minHeight: 48, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
 });
