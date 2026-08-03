@@ -2027,6 +2027,15 @@ export interface AdminUserReportRow {
   resolved_at: string | null;
 }
 
+export interface AdminSupportReportMessage {
+  id: string;
+  report_id: string;
+  author_id: string | null;
+  author_role: 'user' | 'admin';
+  body: string;
+  created_at: string;
+}
+
 const USER_REPORTS_COLUMNS =
   'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,screenshot_url,created_at,resolved_at';
 
@@ -2100,6 +2109,30 @@ export async function updateUserReportStatus(
   if (adminNotes !== undefined) body.admin_notes = adminNotes ?? '';
   const { data, error } = await invokeEdgeFunction('admin_data', body, headers);
   return unwrapFunctionData<{ row: AdminUserReportRow }>(data, error);
+}
+
+export async function listUserReportMessages(id: string) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'list_support_report_messages', id },
+    headers,
+  );
+  return unwrapFunctionData<{ items: AdminSupportReportMessage[] }>(data, error);
+}
+
+export async function replyToUserReport(
+  id: string,
+  body: string,
+  status: UserReportStatus = 'in_progress',
+) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'reply_support_report', id, body, status },
+    headers,
+  );
+  return unwrapFunctionData<{ row: AdminUserReportRow; message: AdminSupportReportMessage }>(data, error);
 }
 
 export async function deleteUserReport(id: string) {

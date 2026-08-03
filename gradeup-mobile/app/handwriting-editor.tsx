@@ -117,6 +117,7 @@ interface ContinuousPageProps {
   color: string;
   strokeWidth: number;
   fingerDrawing: boolean;
+  editable: boolean;
   settings: HandwritingToolSettings;
   documentGestures: GestureType[];
   horizontalOffset: SharedValue<number>;
@@ -137,6 +138,7 @@ function ContinuousPage({
   color,
   strokeWidth,
   fingerDrawing,
+  editable,
   settings,
   documentGestures,
   horizontalOffset,
@@ -198,6 +200,7 @@ function ContinuousPage({
             color={color}
             width={strokeWidth}
             fingerDrawing={fingerDrawing}
+            disabled={!editable}
             settings={settings}
             simultaneousGestures={documentGestures}
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
@@ -297,6 +300,7 @@ export default function HandwritingEditor() {
   const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
   const note = notes.find((candidate) => candidate.id === noteId);
   const premium = isAtLeastPlus(user?.subscriptionPlan);
+  const canEdit = premium;
   const pro = isPro(user?.subscriptionPlan);
   const isPdfAnnotation = pdfMode === '1' || (!!note?.attachmentPath && note?.noteType !== 'handwriting');
 
@@ -436,7 +440,7 @@ export default function HandwritingEditor() {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      if (!premium || !noteId) {
+      if (!noteId) {
         setLoading(false);
         return;
       }
@@ -463,7 +467,7 @@ export default function HandwritingEditor() {
     };
     void load();
     return () => { active = false; };
-  }, [isPdfAnnotation, noteId, premium]);
+  }, [isPdfAnnotation, noteId]);
 
   useEffect(() => {
     let active = true;
@@ -566,7 +570,7 @@ export default function HandwritingEditor() {
       await persistPromiseRef.current;
     }
     const uid = uidRef.current;
-    if (!uid || !noteId || !premium || !dirtyRef.current) return;
+    if (!uid || !noteId || !canEdit || !dirtyRef.current) return;
     const savingRevision = revisionRef.current;
     const currentPages = pagesRef.current.map((page, index) => ({
       ...page,
@@ -611,7 +615,7 @@ export default function HandwritingEditor() {
     } finally {
       if (persistPromiseRef.current === run) persistPromiseRef.current = null;
     }
-  }, [handleSaveNote, isPdfAnnotation, note, noteId, premium, title]);
+  }, [canEdit, handleSaveNote, isPdfAnnotation, note, noteId, title]);
 
   useEffect(() => {
     if (!dirty || loading) return;
@@ -851,8 +855,15 @@ export default function HandwritingEditor() {
         stateManager.fail();
         return;
       }
-      const requiredTouches = fingerDrawing ? 2 : 1;
-      if (event.numberOfTouches >= requiredTouches) stateManager.activate();
+      // Do not activate navigation on the first finger yet. Waiting for the
+      // first movement lets a second finger form a true pinch instead of the
+      // pan gesture stealing it and making zoom feel stuck.
+    })
+    .onTouchesMove((event, stateManager) => {
+      const shouldNavigate = fingerDrawing
+        ? event.numberOfTouches >= 2
+        : event.numberOfTouches === 1;
+      if (shouldNavigate) stateManager.activate();
     })
     .onStart(() => {
       panStartOffset.value = scrollOffset.value;
@@ -915,24 +926,6 @@ export default function HandwritingEditor() {
     if (visibleIndex != null) setActiveIndex(visibleIndex);
   }).current;
 
-  if (!premium) {
-    return (
-      <View style={[styles.locked, { backgroundColor: theme.background, paddingTop: insets.top }]}>
-        <View style={[styles.lockIcon, { backgroundColor: `${theme.primary}15` }]}>
-          <Feather name="edit-3" size={34} color={theme.primary} />
-        </View>
-        <Text style={[styles.lockTitle, { color: theme.text }]}>Handwritten Notes</Text>
-        <Text style={[styles.lockBody, { color: theme.textSecondary }]}>
-          Write with Apple Pencil or a tablet stylus, annotate PDFs, and sync editable notebooks with Plus or Pro.
-        </Text>
-        <Pressable style={[styles.upgradeBtn, { backgroundColor: theme.primary }]} onPress={() => router.push('/subscription-plans' as never)}>
-          <Text style={{ color: theme.textInverse, fontWeight: '800' }}>View plans</Text>
-        </Pressable>
-        <Pressable onPress={() => router.back()}><Text style={{ color: theme.primary, fontWeight: '700' }}>Not now</Text></Pressable>
-      </View>
-    );
-  }
-
   if (loading || !activePage) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.background }]}>
@@ -960,6 +953,7 @@ export default function HandwritingEditor() {
           placeholder="Notebook title"
           placeholderTextColor={`${theme.textInverse}99`}
           selectTextOnFocus
+          editable={canEdit}
         />
         <View style={[
           styles.savePill,
@@ -975,7 +969,7 @@ export default function HandwritingEditor() {
             color="#ffffff"
           />
           <Text style={styles.saveText}>
-            {saving ? 'Saving' : dirty ? 'Editing' : syncIssue ? 'On device' : 'Autosaved'}
+            {canEdit ? (saving ? 'Saving' : dirty ? 'Editing' : syncIssue ? 'On device' : 'Autosaved') : 'View only'}
           </Text>
         </View>
         <Pressable
@@ -987,7 +981,10 @@ export default function HandwritingEditor() {
         >
           <Feather name="info" size={20} color={theme.textInverse} />
         </Pressable>
-        <Pressable onPress={() => setShowMoreMenu(true)} style={styles.headerBtn}>
+        <Pressable
+          onPress={() => canEdit ? setShowMoreMenu(true) : Alert.alert('View only', 'Handwriting editing is available with Plus or Pro.', [{ text: 'Not now' }, { text: 'View plans', onPress: () => router.push('/subscription-plans' as never) }])}
+          style={styles.headerBtn}
+        >
           <Feather name="more-vertical" size={21} color={theme.textInverse} />
         </Pressable>
       </View>
@@ -1001,7 +998,9 @@ export default function HandwritingEditor() {
         {tools.map((item) => (
           <Pressable
             key={item.id}
+            disabled={!canEdit}
             onPress={() => {
+              if (!canEdit) return;
               if (tool === item.id) {
                 setShowToolOptions(true);
                 return;
@@ -1042,7 +1041,7 @@ export default function HandwritingEditor() {
         >
           <Pressable
             onPress={undo}
-            disabled={!(undoStacks[activePage.id]?.length)}
+            disabled={!canEdit || !(undoStacks[activePage.id]?.length)}
             style={styles.actionBtn}
           >
             <Feather name="corner-up-left" size={18} color={undoStacks[activePage.id]?.length ? theme.text : theme.border} />
@@ -1050,19 +1049,20 @@ export default function HandwritingEditor() {
           </Pressable>
           <Pressable
             onPress={redo}
-            disabled={!(redoStacks[activePage.id]?.length)}
+            disabled={!canEdit || !(redoStacks[activePage.id]?.length)}
             style={styles.actionBtn}
           >
             <Feather name="corner-up-right" size={18} color={redoStacks[activePage.id]?.length ? theme.text : theme.border} />
             <Text style={[styles.actionLabel, { color: theme.text }, !(redoStacks[activePage.id]?.length) && { color: theme.textSecondary }]}>Redo</Text>
           </Pressable>
           {!isPdfAnnotation ? (
-            <Pressable onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
+            <Pressable disabled={!canEdit} onPress={() => setShowTemplates(true)} style={styles.actionBtn}>
               <Feather name="grid" size={18} color={theme.text} />
               <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
             </Pressable>
           ) : null}
           <Pressable
+            disabled={!canEdit}
             onPress={() => setFingerDrawing((value) => !value)}
             style={[
               styles.fingerModeBtn,
@@ -1095,6 +1095,7 @@ export default function HandwritingEditor() {
           </Pressable>
         </ScrollView>
         <Pressable
+          disabled={!canEdit}
           onPress={() => setShowAiPanel(true)}
           style={[styles.aiActionBtn, showAiPanel && { backgroundColor: `${theme.primary}18` }]}
         >
@@ -1140,6 +1141,7 @@ export default function HandwritingEditor() {
                   color={color}
                   strokeWidth={strokeWidth}
                   fingerDrawing={fingerDrawing}
+                  editable={canEdit}
                   settings={toolSettings}
                   documentGestures={documentExternalGestures}
                   horizontalOffset={horizontalOffset}

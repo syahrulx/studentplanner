@@ -1205,18 +1205,26 @@ export function CalendarUpdatesRoute() {
                 />
               </Label>
 
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Periods JSON (optional, advanced)
-                </span>
-                <textarea
-                  value={periodsJson}
-                  onChange={(e) => setPeriodsJson(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  placeholder='[{"type":"lecture","label":"…","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]'
-                />
-              </Label>
+              <details className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
+                <summary className="cursor-pointer text-sm font-black text-slate-700 dark:text-slate-200">
+                  Advanced timeline data
+                </summary>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Usually not needed. URL, PDF and image extraction fill the student-facing timeline automatically. Keep this only for recovery or a technical correction.
+                </p>
+                <Label className="mt-3 block">
+                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    Timeline JSON (optional)
+                  </span>
+                  <textarea
+                    value={periodsJson}
+                    onChange={(e) => setPeriodsJson(e.target.value)}
+                    rows={4}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                    placeholder='[{"type":"lecture","label":"…","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]'
+                  />
+                </Label>
+              </details>
 
               <Button
                 type="button"
@@ -1239,7 +1247,7 @@ export function CalendarUpdatesRoute() {
             </div>
             <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
               Ordered by calendar end date. Each row shows the university, semester span, and a
-              visual timeline (phases from periods JSON when present).
+              visual timeline (calendar phases are shown when available).
             </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

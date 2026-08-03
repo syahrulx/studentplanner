@@ -307,7 +307,7 @@ export function StudentPerformanceRoute() {
   return (
     <div>
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Student performance</div>
+        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Attendance Insights</div>
         <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
           Attendance check-ins recorded from the mobile notification (and in-app fallback).
         </div>
@@ -774,4 +774,3 @@ export function StudentPerformanceRoute() {
     </div>
   );
 }
-

@@ -251,7 +251,7 @@ serve(async (req) => {
 
     const auth = await authorizeAdminRequest(req);
     if ('error' in auth) return json(auth.status, { error: auth.error });
-    const { admin } = auth;
+    const { admin, adminUserId } = auth;
 
     const payload = (await req.json().catch(() => ({}))) as Json;
     const action = String(payload.action || '');
@@ -1707,6 +1707,65 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
         meta: { action, id, new_status: newStatus },
       });
       return json(200, { row: data });
+    }
+
+    if (action === 'list_support_report_messages') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const { data, error: e } = await admin
+        .from('support_report_messages')
+        .select('id,report_id,author_id,author_role,body,created_at')
+        .eq('report_id', id)
+        .order('created_at', { ascending: true })
+        .limit(200);
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
+    if (action === 'reply_support_report') {
+      const id = String(payload.id || '').trim();
+      const body = String(payload.body || '').trim();
+      const nextStatus = String(payload.status || 'in_progress').trim();
+      if (!id || !body) return json(400, { error: 'missing_id_or_message' });
+      if (body.length > 4000) return json(400, { error: 'message_too_long' });
+      if (!['open', 'in_progress', 'resolved', 'dismissed'].includes(nextStatus)) {
+        return json(400, { error: 'invalid_status' });
+      }
+      const { data: report, error: reportError } = await admin
+        .from('support_reports')
+        .select('id,reporter_id,subject')
+        .eq('id', id)
+        .single();
+      if (reportError || !report?.reporter_id) return json(404, { error: 'report_not_found' });
+      const { data: message, error: messageError } = await admin
+        .from('support_report_messages')
+        .insert({ report_id: id, author_id: adminUserId, author_role: 'admin', body })
+        .select('id,report_id,author_id,author_role,body,created_at')
+        .single();
+      if (messageError) return json(400, { error: messageError.message });
+      const patch: Record<string, unknown> = { status: nextStatus };
+      patch.resolved_at = nextStatus === 'resolved' || nextStatus === 'dismissed'
+        ? new Date().toISOString()
+        : null;
+      const { data: updated, error: updateError } = await admin
+        .from('support_reports')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (updateError) return json(400, { error: updateError.message });
+      await admin.from('in_app_notifications').insert({
+        user_id: report.reporter_id,
+        title: 'Reply to your support report',
+        body: body.slice(0, 500),
+        category: 'support',
+        data: { type: 'support_reply', route: '/support-ticket', params: { reportId: id } },
+      });
+      await admin.from('admin_logs').insert({
+        type: 'api_request', status: 'success',
+        meta: { action, id, status: nextStatus, message_id: message?.id },
+      });
+      return json(200, { row: updated, message });
     }
 
     if (action === 'delete_support_report') {

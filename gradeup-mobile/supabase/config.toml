@@ -39,6 +39,11 @@ verify_jwt = false
 [functions.ai_pdf_extract]
 verify_jwt = false
 
+# Calendar upload extraction validates the caller with auth.getUser() inside
+# the function and never writes calendar/profile data with the service role.
+[functions.user_tools]
+verify_jwt = false
+
 [functions.generate_flashcards]
 verify_jwt = false
 
