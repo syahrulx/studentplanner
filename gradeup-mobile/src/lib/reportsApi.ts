@@ -3,6 +3,19 @@ import Constants from 'expo-constants';
 import { supabase } from './supabase';
 import { decode } from 'base64-arraybuffer';
 
+function reportErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === 'object') {
+    const value = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const message = typeof value.message === 'string' ? value.message.trim() : '';
+    const details = typeof value.details === 'string' ? value.details.trim() : '';
+    const hint = typeof value.hint === 'string' ? value.hint.trim() : '';
+    if (message) return [message, details, hint].filter(Boolean).join('\n');
+    if (typeof value.code === 'string') return `Could not submit the report (${value.code}).`;
+  }
+  return 'Could not submit the report. Please check your connection and try again.';
+}
+
 export async function uploadSupportScreenshot(base64Image: string, ext: string = 'jpeg'): Promise<string> {
   const { data: userRes, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userRes.user) throw new Error('You must be signed in to upload an image.');
@@ -58,8 +71,8 @@ function detectAppVersion(): string | null {
 }
 
 /**
- * Insert a user-submitted report. Requires an authenticated session; RLS only
- * allows the reporter to insert rows where reporter_id = auth.uid().
+ * Submit through a narrowly scoped SQL function. It derives reporter_id from
+ * auth.uid() server-side, so a user cannot create a report for somebody else.
  */
 export async function submitUserReport(input: SubmitUserReportInput): Promise<{ id: string }> {
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -72,49 +85,23 @@ export async function submitUserReport(input: SubmitUserReportInput): Promise<{ 
   if (!subject) throw new Error('Subject is required.');
   if (!message) throw new Error('Message is required.');
 
-  // Best-effort snapshot of the user's current display name (profile row may
-  // not always be loaded yet; we silently fall back to auth metadata).
-  let displayName: string | null = null;
-  try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('name')
-      .eq('id', user.id)
-      .maybeSingle();
-    const name = (profile as { name?: string | null } | null)?.name;
-    if (typeof name === 'string' && name.trim().length > 0) {
-      displayName = name.trim();
-    }
-  } catch {
-    /* swallow — snapshot fields are best-effort */
-  }
-  if (!displayName) {
-    const metaName = (user.user_metadata as Record<string, unknown> | null | undefined)?.name;
-    if (typeof metaName === 'string' && metaName.trim().length > 0) {
-      displayName = metaName.trim();
-    }
-  }
-
   const targetHandle = (input.targetUserHandle ?? '').trim();
 
-  const { data, error } = await supabase
-    .from('support_reports')
-    .insert({
-      reporter_id: user.id,
-      reporter_name_snapshot: displayName,
-      reporter_email_snapshot: user.email ?? null,
-      kind: input.kind,
-      subject,
-      message,
-      target_user_handle: targetHandle.length > 0 ? targetHandle.slice(0, 200) : null,
-      contact_info: input.contactInfo?.trim() || null,
-      screenshot_url: input.screenshotUrl?.trim() || null,
-      app_version: detectAppVersion(),
-      platform: detectPlatform(),
-    })
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('submit_my_support_report', {
+    p_kind: input.kind,
+    p_subject: subject,
+    p_message: message,
+    p_target_user_handle: targetHandle.length > 0 ? targetHandle.slice(0, 200) : null,
+    p_contact_info: input.contactInfo?.trim() || null,
+    p_screenshot_url: input.screenshotUrl?.trim() || null,
+    p_app_version: detectAppVersion(),
+    p_platform: detectPlatform(),
+  });
 
-  if (error) throw error;
-  return { id: String((data as { id?: string } | null)?.id ?? '') };
+  if (error) throw new Error(reportErrorMessage(error));
+  const id = String(data ?? '').trim();
+  if (!id) throw new Error('The report was not saved. Please try again.');
+  return { id };
 }
+
+export { reportErrorMessage };
