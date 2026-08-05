@@ -146,6 +146,28 @@ function RootLayoutNav() {
           );
           break;
         }
+        case 'support_reply': {
+          // Reply to a user's support report. Same generic route/params
+          // dispatch as 'broadcast' — the edge function sends an absolute
+          // pathname (/support-ticket) plus a reportId param.
+          const rawRoute = typeof data.route === 'string' ? data.route.trim() : '';
+          const safeRoute = rawRoute.startsWith('/') ? rawRoute : '/inbox';
+          const rawParams = (data.params && typeof data.params === 'object') ? data.params : null;
+          const params: Record<string, string> = {};
+          if (rawParams) {
+            for (const [k, v] of Object.entries(rawParams)) {
+              if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                params[k] = String(v);
+              }
+            }
+          }
+          nav(() =>
+            Object.keys(params).length > 0
+              ? router.push({ pathname: safeRoute, params } as any)
+              : router.push(safeRoute as any),
+          );
+          break;
+        }
         case 'community_reaction': {
           const msg = String(data.message || '').toLowerCase();
           const isFriendRequestTap = data.reactionType === '👋' && msg.includes('friend request');
@@ -177,6 +199,10 @@ function RootLayoutNav() {
         case 'service_cancel_requested':
         case 'service_review_received':
           if (data.serviceId) nav(() => router.push(`/services/${data.serviceId}` as any));
+          break;
+        case 'event_new':
+          // New event/memo post — same detail screen as service posts.
+          if (data.eventId) nav(() => router.push(`/services/${data.eventId}` as any));
           break;
         case 'service_chat_message':
           if (data.serviceId) {

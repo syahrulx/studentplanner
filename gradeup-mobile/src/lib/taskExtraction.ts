@@ -326,7 +326,7 @@ export async function extractTasksFromMessage(args: ExtractTasksArgs): Promise<E
       error: {
         code: 'MODEL_UNAVAILABLE',
         message: 'Failed to call AI task extraction model',
-        details: e instanceof Error ? e.message : String(e),
+        details: e instanceof Error ? e.message : 'Unknown error calling the AI model.',
       },
     };
   }

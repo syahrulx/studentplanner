@@ -369,7 +369,7 @@ export default function TimetableEditScreen() {
       }
       closeModal();
     } catch (e) {
-      Alert.alert(T('error'), e instanceof Error ? e.message : String(e));
+      Alert.alert(T('error'), e instanceof Error ? e.message : 'Could not save this class.');
     } finally {
       setSaving(false);
     }
@@ -406,7 +406,7 @@ export default function TimetableEditScreen() {
             await removeTimetableEntry(editing.id);
             closeModal();
           } catch (e) {
-            Alert.alert(T('error'), e instanceof Error ? e.message : String(e));
+            Alert.alert(T('error'), e instanceof Error ? e.message : 'Could not delete this class.');
           } finally {
             setSaving(false);
           }

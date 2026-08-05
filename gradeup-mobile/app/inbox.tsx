@@ -28,6 +28,12 @@ import { supabase } from '@/src/lib/supabase';
 
 export type { InAppNotification };
 
+/** Notification types that route to a fixed screen with no id in `data` (see openNotificationAction). */
+const NOTIF_ACTION_TYPES = new Set([
+  'reaction', 'circle_invitation', 'circle_invitation_response',
+  'shared_task', 'shared_task_response', 'shared_task_completed',
+]);
+
 /* ─── Avatar — identical to community/notifications.tsx ─── */
 
 function getInitials(name?: string | null) {
@@ -226,7 +232,7 @@ export default function InboxScreen() {
     if (!item) return;
     setOpenedNotification(null);
     const t = item.data?.type as string | undefined;
-    if (t === 'broadcast') {
+    if (t === 'broadcast' || t === 'support_reply') {
       const rawRoute = typeof item.data?.route === 'string' ? (item.data.route as string).trim() : '';
       if (rawRoute.startsWith('/')) {
         const params = item.data?.params && typeof item.data.params === 'object' ? item.data.params as any : null;
@@ -244,6 +250,16 @@ export default function InboxScreen() {
       else router.push('/(tabs)/community' as any);
     } else if (item.category === 'friend' || t === 'friend_request' || t === 'friend_accepted') {
       router.push('/profile' as any);
+    } else if (t === 'circle_invitation_response' && item.data?.circleId) {
+      router.push({ pathname: '/community/circle-detail', params: { id: item.data.circleId } } as any);
+    } else if (
+      t === 'reaction' ||
+      t === 'circle_invitation' ||
+      t === 'shared_task' ||
+      t === 'shared_task_response' ||
+      t === 'shared_task_completed'
+    ) {
+      router.push('/community/notifications' as any);
     }
   };
 
@@ -480,7 +496,10 @@ export default function InboxScreen() {
             <ScrollView style={styles.detailBodyScroll} contentContainerStyle={styles.detailBodyContent}>
               <Text style={[styles.detailBody, { color: theme.text }]}>{openedNotification?.body}</Text>
             </ScrollView>
-            {openedNotification?.data?.route || openedNotification?.data?.serviceId || openedNotification?.data?.eventId ? (
+            {openedNotification?.data?.route ||
+            openedNotification?.data?.serviceId ||
+            openedNotification?.data?.eventId ||
+            NOTIF_ACTION_TYPES.has(openedNotification?.data?.type as string) ? (
               <Pressable onPress={openNotificationAction} style={[styles.detailAction, { backgroundColor: theme.primary }]}>
                 <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Open</Text>
                 <Feather name="arrow-up-right" size={17} color={theme.textInverse} />
