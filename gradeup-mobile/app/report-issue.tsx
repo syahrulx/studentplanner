@@ -18,7 +18,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
-import { submitUserReport, uploadSupportScreenshot, type UserReportKind } from '@/src/lib/reportsApi';
+import { reportErrorMessage, submitUserReport, uploadSupportScreenshot, type UserReportKind } from '@/src/lib/reportsApi';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -116,8 +116,7 @@ export default function ReportIssueScreen() {
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      Alert.alert(T('error'), msg || T('reportSubmitError'));
+      Alert.alert(T('error'), reportErrorMessage(e) || T('reportSubmitError'));
     } finally {
       setBusy(false);
     }
