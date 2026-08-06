@@ -79,7 +79,14 @@ export default function AuthLayout() {
     return <Redirect href="/(auth)/profile-setup" />;
   }
 
-  // Complete profiles should never stay in auth screens.
-  if (gate === 'ready') return <Redirect href="/(tabs)" />;
+  // Complete profiles should never stay in auth screens — except mid password
+  // reset: the recovery deep link (app/_layout.tsx) establishes a real
+  // session before navigating here, which would otherwise make this gate
+  // race that navigation and bounce an existing user straight to (tabs)
+  // before they ever see the "set a new password" screen.
+  if (gate === 'ready') {
+    if (segments[1] === 'reset-password') return <Stack screenOptions={{ headerShown: false }} />;
+    return <Redirect href="/(tabs)" />;
+  }
   return <Stack screenOptions={{ headerShown: false }} />;
 }
