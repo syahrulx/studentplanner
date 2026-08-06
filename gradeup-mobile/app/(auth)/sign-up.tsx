@@ -233,7 +233,17 @@ export default function SignUp() {
 
     setLoading(true);
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      // Bound the request the same way login.tsx does. On a stalled (not
+      // fully offline) connection a bare signUp never settles, leaving the
+      // spinner running with every field disabled and no way out but a
+      // force-quit.
+      const signUpWithTimeout = <T,>(promise: Promise<T>, timeoutMs = 20000): Promise<T> =>
+        Promise.race([
+          promise,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)),
+        ]);
+
+      const { data, error: signUpError } = await signUpWithTimeout(supabase.auth.signUp({
         email: trimmedEmail,
         password,
         options: {
@@ -244,7 +254,7 @@ export default function SignUp() {
           // then bounces the user back into the app via `rencana://login`.
           emailRedirectTo: EMAIL_VERIFY_REDIRECT,
         },
-      });
+      }));
       if (signUpError) {
         let msg = signUpError.message;
         if (msg.includes('504') || msg.includes('Gateway Timeout') || msg.startsWith('{'))
@@ -280,9 +290,17 @@ export default function SignUp() {
           setError('Check your email to confirm your account, then log in.');
           setEmailConfirmRequired(true);
         }
+      } else {
+        // No error, but no user either — don't leave the form looking like
+        // nothing happened at all.
+        setError('Could not complete sign up. Please try again.');
       }
     } catch (e) {
-      setError('Something went wrong. Please check your connection and try again.');
+      setError(
+        e instanceof Error && e.message === 'TIMEOUT'
+          ? 'That took too long. Check your connection and try again.'
+          : 'Something went wrong. Please check your connection and try again.',
+      );
     } finally {
       setLoading(false);
     }

@@ -1055,6 +1055,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       initialSessionHandled = true;
       void loadRemoteData(uid, getAuthFallbackName(session));
+    }).catch((e) => {
+      // If getSession() itself rejects (e.g. a corrupt persisted auth blob),
+      // dataReady would never flip and the app would sit on "Loading your
+      // data..." forever, across restarts. Let the UI through instead.
+      if (__DEV__) console.warn('[Rencana] getSession failed on cold start:', e);
+      setDataReady(true);
     });
 
     // Load remote data whenever auth state changes.
