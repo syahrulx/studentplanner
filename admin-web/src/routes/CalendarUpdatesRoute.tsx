@@ -24,7 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../ui/Card";
-import { Label, TextInput } from "../ui/Input";
+import { Label, TextInput, Select } from "../ui/Input";
 import { matchesAdminSearch } from "../lib/adminSearch";
 import { useAdminSearch } from "../state/AdminSearchContext";
 import { MotionPanel, MotionSection } from "../ui/motion";
@@ -63,6 +63,180 @@ function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {
   return list
     .filter((u) => u.id !== "uitm")
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ── Timeline period builder ────────────────────────────────────────────────
+// Replaces hand-typed JSON as the primary way an admin enters the semester
+// timeline. This table (via insertUniversityCalendarOffers) publishes
+// directly to every enrolled student's academic calendar with no review
+// step, so a malformed or mistyped raw-JSON entry was a real risk to real
+// user data. This component is a thin structured view over the exact same
+// `periodsJson` string state the raw JSON box (still available below, for
+// power users / recovery) already reads and writes — same shape in, same
+// shape out, so publish()'s existing parse/validate logic needs no changes.
+
+type PeriodRow = { type: string; label: string; startDate: string; endDate: string };
+
+const PERIOD_TYPES: { value: string; label: string }[] = [
+  { value: "orientation", label: "Orientation" },
+  { value: "registration", label: "Registration" },
+  { value: "lecture", label: "Lecture" },
+  { value: "test", label: "Test" },
+  { value: "revision", label: "Revision" },
+  { value: "exam", label: "Exam" },
+  { value: "break", label: "Break" },
+  { value: "special_break", label: "Special Break" },
+  { value: "holiday", label: "Holiday" },
+  { value: "industrial_training", label: "Industrial Training" },
+  { value: "other", label: "Other" },
+];
+
+function periodTypeLabel(type: string): string {
+  return PERIOD_TYPES.find((t) => t.value === type)?.label ?? type;
+}
+
+function parsePeriodsJson(json: string): PeriodRow[] {
+  const trimmed = json.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
+      .map((p) => ({
+        type: String(p.type ?? "other"),
+        label: String(p.label ?? ""),
+        startDate: String(p.startDate ?? "").slice(0, 10),
+        endDate: String(p.endDate ?? "").slice(0, 10),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function PeriodListEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (json: string) => void;
+}) {
+  const rows = useMemo(() => parsePeriodsJson(value), [value]);
+
+  const isMalformed = useMemo(() => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    try {
+      return !Array.isArray(JSON.parse(trimmed));
+    } catch {
+      return true;
+    }
+  }, [value]);
+
+  const [newType, setNewType] = useState("lecture");
+  const [newLabel, setNewLabel] = useState("");
+  const [newStart, setNewStart] = useState("");
+  const [newEnd, setNewEnd] = useState("");
+  const [rowErr, setRowErr] = useState("");
+
+  function commit(next: PeriodRow[]) {
+    onChange(next.length > 0 ? JSON.stringify(next, null, 2) : "");
+  }
+
+  function addRow() {
+    if (!newLabel.trim()) {
+      setRowErr("Enter a label for this period (e.g. \"Orientation Week\").");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newStart) || !/^\d{4}-\d{2}-\d{2}$/.test(newEnd)) {
+      setRowErr("Pick a valid start and end date.");
+      return;
+    }
+    if (newStart > newEnd) {
+      setRowErr("Start date must be on or before end date.");
+      return;
+    }
+    setRowErr("");
+    commit([...rows, { type: newType, label: newLabel.trim(), startDate: newStart, endDate: newEnd }]);
+    setNewLabel("");
+    setNewStart("");
+    setNewEnd("");
+  }
+
+  function removeRow(idx: number) {
+    commit(rows.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      {isMalformed && (
+        <div className="mb-3 rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+          The current timeline data isn't a valid list, so nothing here will publish as periods. Fix it in the raw JSON box below, or clear it and rebuild it here.
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="mb-3 flex flex-col gap-2">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/40"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  {periodTypeLabel(r.type)}{" "}
+                  <span className="font-semibold text-slate-400">
+                    · {r.startDate || "?"} → {r.endDate || "?"}
+                  </span>
+                </div>
+                {r.label && <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{r.label}</div>}
+              </div>
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                className="shrink-0 rounded-xl px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows.length === 0 && !isMalformed && (
+        <div className="mb-3 text-xs font-semibold text-slate-400">
+          No timeline periods yet. Add one below, or leave empty to publish just the semester span (and break, if set).
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
+        {rowErr && <div className="mb-2 text-xs font-bold text-red-600 dark:text-red-400">{rowErr}</div>}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <Select value={newType} onChange={(e) => setNewType(e.target.value)} className="sm:col-span-1">
+            {PERIOD_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+          <TextInput type="date" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
+          <TextInput type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
+          <TextInput
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="Label, e.g. Orientation Week"
+            className="sm:col-span-1"
+          />
+          <button
+            type="button"
+            onClick={addRow}
+            className="h-11 shrink-0 rounded-2xl bg-slate-900 px-3 text-sm font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+          >
+            + Add
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function CalendarUpdatesRoute() {
@@ -1205,12 +1379,24 @@ export function CalendarUpdatesRoute() {
                 />
               </Label>
 
+              <div>
+                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Timeline periods (optional)
+                </span>
+                <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Orientation, lecture weeks, exams, semester break, public holidays, etc. URL, PDF and image
+                  extraction fill this automatically — use this to add, remove, or correct entries by hand.
+                </p>
+                <PeriodListEditor value={periodsJson} onChange={setPeriodsJson} />
+              </div>
+
               <details className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
                 <summary className="cursor-pointer text-sm font-black text-slate-700 dark:text-slate-200">
-                  Advanced timeline data
+                  Raw timeline JSON (advanced)
                 </summary>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Usually not needed. URL, PDF and image extraction fill the student-facing timeline automatically. Keep this only for recovery or a technical correction.
+                  Same data as the period list above, as raw JSON — for bulk edits or a technical correction. Stays
+                  in sync with the list above either way.
                 </p>
                 <Label className="mt-3 block">
                   <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">

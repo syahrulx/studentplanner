@@ -90,12 +90,15 @@ export type SemesterPhase = 'no_calendar' | 'before_start' | 'teaching' | 'break
 
 export type AcademicPeriodType =
   | 'lecture'
+  | 'orientation'
   | 'registration'
   | 'test'
   | 'revision'
   | 'exam'
   | 'break'
   | 'special_break'
+  | 'holiday'
+  | 'industrial_training'
   | 'other';
 
 /** A dated range within a semester (inclusive). */

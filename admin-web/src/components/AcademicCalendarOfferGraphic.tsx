@@ -60,6 +60,9 @@ function periodColor(type: string): string {
   if (t === 'registration') return 'bg-violet-500';
   if (t === 'exam' || t === 'test' || t === 'revision') return 'bg-rose-500';
   if (t === 'break' || t === 'special_break') return 'bg-sky-400';
+  if (t === 'orientation') return 'bg-indigo-500';
+  if (t === 'holiday') return 'bg-pink-500';
+  if (t === 'industrial_training') return 'bg-orange-500';
   return 'bg-slate-400';
 }
 
@@ -145,16 +148,25 @@ export function AcademicCalendarOfferGraphic({ offer, universityName }: Props) {
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-[10px] font-bold dark:border-slate-800">
           <span className="text-slate-500">Legend:</span>
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Lecture
+            <span className="h-2 w-2 rounded-sm bg-indigo-500" /> Orientation
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-violet-500" /> Registration
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Lecture
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-rose-500" /> Exam / test
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-sky-400" /> Break
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-pink-500" /> Holiday
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-orange-500" /> Industrial training
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-slate-400" /> Other

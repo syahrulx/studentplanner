@@ -140,8 +140,8 @@ async function extractScannedPdfText(
 
 const calendarPrompt = `You extract academic calendars for Malaysian universities and polytechnics.
 Return valid JSON only in this shape:
-{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
-Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods. Do not invent or infer dates that are not present. Use null for missing optional values.`;
+{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training|holiday","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
+Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods, including named public holidays that fall within the semester (type "holiday", e.g. "Deepavali", "Hari Raya") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
 
 async function callOpenAI(
   openAiKey: string,
