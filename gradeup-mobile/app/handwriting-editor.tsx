@@ -34,7 +34,8 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import ColorPicker from 'react-native-wheel-color-picker';
@@ -294,6 +295,7 @@ export default function HandwritingEditor() {
     pdfMode?: string;
   }>();
   const { notes, user, handleSaveNote } = useApp();
+  const navigation = useNavigation();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
@@ -778,6 +780,26 @@ export default function HandwritingEditor() {
     await persist(true);
     router.back();
   };
+
+  // The header back button above already flushes via goBack(), but the
+  // Android hardware back button and iOS swipe-back gesture bypass it
+  // entirely — the only thing standing between the user and their last
+  // strokes was the 600ms debounced autosave, so drawing right up to the
+  // moment of a gesture-back could lose whatever hadn't been persisted yet
+  // (same usePreventRemove pattern already used in app/game-2048.tsx).
+  // Silent by design: no confirmation prompt, just make sure the flush
+  // actually happens before the screen is allowed to go away.
+  usePreventRemove(dirty, ({ data }) => {
+    void persist(true).then(() => navigation.dispatch(data.action));
+  });
+
+  // iOS completes a swipe-back natively before usePreventRemove's JS-side
+  // listener can intercept it, so the gesture is disabled while there's
+  // unsaved ink — same workaround as game-2048.tsx. The header back button
+  // and Android hardware back still work normally either way.
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !dirty });
+  }, [navigation, dirty]);
 
   const exportPdf = async () => {
     if (!pages.length || exporting) return;

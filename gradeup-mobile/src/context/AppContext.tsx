@@ -3,6 +3,7 @@ import { Alert, AppState as RNAppState } from 'react-native';
 import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
+import { isAtLeastPlus } from '../lib/flashcardGenerationLimits';
 import {
   initialUser,
   initialCourses,
@@ -607,19 +608,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     getTheme().then(setThemeState);
+    // Load exactly what's stored — do NOT strip an expired trial here. At
+    // this point (mount-time, local storage only) we don't yet know the
+    // user's subscription plan, so a since-upgraded Plus/Pro user whose old
+    // free-trial expiry simply hasn't been cleared yet would have their
+    // theme silently wiped before the plan check below ever gets a chance to
+    // run. See the effect below, which re-evaluates once the plan is known
+    // and stays reactive to plan changes.
     Promise.all([getThemePack(), getThemePreviewExpiry(), getCustomThemeColors()]).then(([pack, expiry, customColors]) => {
-      // Check if preview expired
-      if (pack !== 'none' && expiry !== null && Date.now() > expiry) {
-        setThemePackState('none');
-        persistThemePack('none');
-        setThemePreviewExpiryState(null);
-        persistThemePreviewExpiry(null);
-      } else {
-        setThemePackState(pack);
-        setThemePreviewExpiryState(expiry);
-        setCustomThemeColorsState(customColors);
-        setThemePreviewExpiryState(expiry);
-      }
+      setThemePackState(pack);
+      setThemePreviewExpiryState(expiry);
+      setCustomThemeColorsState(customColors);
     });
     getSpiderBlueAccents().then(setSpiderBlueAccentsState);
     getCompletedStudyKeys().then(setCompletedStudyKeys);
@@ -1195,6 +1194,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setThemePreviewExpiryState(timestamp);
     void persistThemePreviewExpiry(timestamp);
   }, []);
+
+  // Strip an expired FREE-TRIAL theme pack, but only once we actually know
+  // the plan and only while it's still free. A Plus/Pro subscriber who
+  // upgraded mid-trial without reopening the theme screen (which is what
+  // clears themePreviewExpiry — see in-app-themes.tsx) would otherwise have
+  // their theme wiped the moment that old timestamp passes, even though
+  // paying users aren't on a trial at all. Reactive to plan changes, so an
+  // upgrade that lands after this already ran corrects itself immediately.
+  useEffect(() => {
+    if (themePack === 'none' || themePreviewExpiry === null) return;
+    if (isAtLeastPlus(user.subscriptionPlan)) return;
+    if (Date.now() <= themePreviewExpiry) return;
+    setThemePackState('none');
+    void persistThemePack('none');
+    setThemePreviewExpiryState(null);
+    void persistThemePreviewExpiry(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.subscriptionPlan, themePack, themePreviewExpiry]);
 
   const setSpiderBlueAccents = useCallback((enabled: boolean) => {
     setSpiderBlueAccentsState(enabled);

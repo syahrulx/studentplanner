@@ -57,37 +57,49 @@ export default function SnapViewer() {
   const [viewBlocked, setViewBlocked] = useState(false);
 
   const loadSnap = useCallback(async () => {
-    if (!snapId) return;
-
-    // Fetch the snap first — don't count a "view" until we know it exists.
-    const data = await getSnapById(snapId);
-
-    if (!data) {
-      setSnap(null);
+    if (!snapId) {
+      // Without this, loading stays true forever — a bare spinner on a black
+      // screen with no header/back button. Fall through to the existing
+      // "Snap not found" state instead, which has a way out.
       setLoading(false);
       return;
     }
 
-    // Free tier: check view limit AFTER confirming the snap exists, so a
-    // failed/expired snap doesn't waste one of the user's limited daily views.
-    if (!isAtLeastPlus(plan)) {
-      const viewCount = await getViewCountToday();
-      if (viewCount >= SNAP_VIEW_LIMIT_FREE) {
-        setViewBlocked(true);
-        setLoading(false);
+    try {
+      // Fetch the snap first — don't count a "view" until we know it exists.
+      const data = await getSnapById(snapId);
+
+      if (!data) {
+        setSnap(null);
         return;
       }
-      await incrementViewCount();
+
+      // Free tier: check view limit AFTER confirming the snap exists, so a
+      // failed/expired snap doesn't waste one of the user's limited daily views.
+      if (!isAtLeastPlus(plan)) {
+        const viewCount = await getViewCountToday();
+        if (viewCount >= SNAP_VIEW_LIMIT_FREE) {
+          setViewBlocked(true);
+          return;
+        }
+        await incrementViewCount();
+      }
+
+      setSnap(data);
+
+      const rx = await getSnapReactions(data.id);
+      setReactions(rx);
+      const mine = rx.find(r => r.userId === user.id);
+      setMyReaction(mine?.emoji || null);
+    } catch (e) {
+      // Any unexpected failure (e.g. AsyncStorage read for the view count)
+      // must not leave `loading` stuck true forever — fall through to the
+      // "Snap not found" state, which has a way back out.
+      console.warn('[snap-viewer] loadSnap failed:', e);
+      setSnap(null);
+    } finally {
+      setLoading(false);
     }
-
-    setSnap(data);
-
-    const rx = await getSnapReactions(data.id);
-    setReactions(rx);
-    const mine = rx.find(r => r.userId === user.id);
-    setMyReaction(mine?.emoji || null);
-
-    setLoading(false);
   }, [snapId, plan, user.id]);
 
   useEffect(() => {

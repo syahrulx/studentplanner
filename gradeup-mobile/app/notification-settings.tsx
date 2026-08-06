@@ -88,8 +88,15 @@ export default function NotificationSettings() {
         if (
           'tasksEnabled' in patch ||
           'taskLeadDays' in patch ||
-          'taskOverdueEnabled' in patch
+          'taskOverdueEnabled' in patch ||
+          'taskReminderTime' in patch
         ) {
+          // rescheduleAllTaskNotifications re-reads prefs fresh from storage,
+          // and setNotificationPrefs(next) above already persisted the new
+          // time, so this picks it up immediately. Previously a reminder-time
+          // change wasn't in this list at all — the UI showed the new time
+          // but every already-scheduled notification kept firing at the old
+          // one until the next full app restart.
           rescheduleAllTaskNotifications(tasks).catch(() => {});
         }
         if ('attendanceCheckinPopup' in patch) {
