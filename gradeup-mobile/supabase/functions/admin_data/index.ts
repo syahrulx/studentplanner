@@ -1781,6 +1781,147 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       return json(200, { ok: true });
     }
 
+    // ── Crossword puzzles (admin-authored levels, id >= 31) ──────────────────
+    // The mobile app reads published rows directly under RLS; every write goes
+    // through here with the service role, and every write is fully
+    // re-validated server-side (grid bounds, letter conflicts, and clue
+    // numbering are all recomputed from scratch — never trust a client-sent
+    // grid/number as authoritative for something that ships to every player).
+    if (action === 'crossword_puzzles_list') {
+      const { data, error: e } = await admin
+        .from('crossword_puzzles')
+        .select('id,title,size,solution,clues,bonus_word,bonus_hint,is_published,created_at,updated_at')
+        .order('id', { ascending: true });
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
+    if (action === 'crossword_puzzle_upsert') {
+      const id = payload.id != null ? Number(payload.id) : null;
+      const title = String(payload.title || '').trim().slice(0, 100);
+      const bonusWord = String(payload.bonusWord || '').trim();
+      const bonusHint = String(payload.bonusHint || '').trim();
+      const isPublished = payload.isPublished === undefined ? true : !!payload.isPublished;
+      const size = Math.max(5, Math.min(15, Math.trunc(Number(payload.size)) || 7));
+      const words = Array.isArray(payload.words) ? payload.words : [];
+
+      if (!title) return json(400, { error: 'Title is required.' });
+      if (!bonusWord) return json(400, { error: 'Bonus word is required.' });
+      if (!bonusHint) return json(400, { error: 'Bonus hint is required.' });
+      if (words.length === 0) return json(400, { error: 'At least one word is required.' });
+      if (id != null && (!Number.isInteger(id) || id < 31)) {
+        return json(400, { error: 'Invalid puzzle id.' });
+      }
+
+      // Build the solution grid from the raw word list, checking bounds and
+      // letter conflicts at every intersection.
+      const solution: (string | null)[][] = Array.from({ length: size }, () => Array(size).fill(null));
+      type WordInput = { answer: string; clue: string; direction: 'across' | 'down'; row: number; col: number };
+      const parsedWords: WordInput[] = [];
+      for (const w of words) {
+        const raw = w as Record<string, unknown>;
+        const answer = String(raw?.answer || '').toUpperCase().replace(/[^A-Z]/g, '');
+        const clue = String(raw?.clue || '').trim();
+        const direction = raw?.direction === 'down' ? 'down' : 'across';
+        const row = Math.trunc(Number(raw?.row));
+        const col = Math.trunc(Number(raw?.col));
+        if (!answer || answer.length < 2) {
+          return json(400, { error: `Word "${String(raw?.answer ?? '')}" must be at least 2 letters.` });
+        }
+        if (!clue) return json(400, { error: `Clue text is required for "${answer}".` });
+        if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0) {
+          return json(400, { error: `Invalid grid position for "${answer}".` });
+        }
+        const [dr, dc] = direction === 'across' ? [0, 1] : [1, 0];
+        const endRow = row + dr * (answer.length - 1);
+        const endCol = col + dc * (answer.length - 1);
+        if (endRow >= size || endCol >= size) {
+          return json(400, { error: `"${answer}" runs off the ${size}×${size} grid.` });
+        }
+        for (let i = 0; i < answer.length; i++) {
+          const r = row + dr * i;
+          const c = col + dc * i;
+          const ch = answer[i];
+          const existing = solution[r][c];
+          if (existing != null && existing !== ch) {
+            return json(400, {
+              error: `"${answer}" conflicts with another word at row ${r + 1}, col ${c + 1} (${existing} vs ${ch}).`,
+            });
+          }
+          solution[r][c] = ch;
+        }
+        parsedWords.push({ answer, clue, direction, row, col });
+      }
+
+      // Standard crossword numbering, recomputed from the merged grid — a
+      // cell gets a number iff it starts an across run and/or a down run of
+      // 2+ letters. Numbered in reading order, top-to-bottom / left-to-right.
+      const startsAcross = (r: number, c: number) =>
+        solution[r][c] != null && (c === 0 || solution[r][c - 1] == null) &&
+        c + 1 < size && solution[r][c + 1] != null;
+      const startsDown = (r: number, c: number) =>
+        solution[r][c] != null && (r === 0 || solution[r - 1][c] == null) &&
+        r + 1 < size && solution[r + 1][c] != null;
+
+      const numberAt = new Map<string, number>();
+      let nextNumber = 1;
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (startsAcross(r, c) || startsDown(r, c)) numberAt.set(`${r},${c}`, nextNumber++);
+        }
+      }
+
+      const clues: Array<{ number: number; direction: string; clue: string; answer: string; row: number; col: number }> = [];
+      for (const w of parsedWords) {
+        const num = numberAt.get(`${w.row},${w.col}`);
+        if (num == null) {
+          return json(400, {
+            error: `"${w.answer}" doesn't start a numbered cell — it likely runs straight into another word with no gap. Check its position.`,
+          });
+        }
+        clues.push({ number: num, direction: w.direction, clue: w.clue, answer: w.answer, row: w.row, col: w.col });
+      }
+
+      const row: Record<string, unknown> = {
+        title, size, solution, clues,
+        bonus_word: bonusWord, bonus_hint: bonusHint,
+        is_published: isPublished,
+        updated_at: new Date().toISOString(),
+      };
+
+      let result;
+      if (id != null) {
+        const { data, error: e } = await admin.from('crossword_puzzles').update(row).eq('id', id).select().single();
+        if (e) return json(400, { error: e.message });
+        result = data;
+      } else {
+        row.created_by = adminUserId;
+        const { data, error: e } = await admin.from('crossword_puzzles').insert(row).select().single();
+        if (e) return json(400, { error: e.message });
+        result = data;
+      }
+
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id: result?.id },
+      });
+      return json(200, { row: result });
+    }
+
+    if (action === 'crossword_puzzle_delete') {
+      const id = Number(payload.id);
+      if (!Number.isInteger(id) || id < 31) return json(400, { error: 'Invalid puzzle id.' });
+      const { error: e } = await admin.from('crossword_puzzles').delete().eq('id', id);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id },
+      });
+      return json(200, { ok: true });
+    }
+
     return json(400, { error: 'unknown_action' });
   } catch (e) {
     return json(500, { error: e instanceof Error ? e.message : 'unknown_error' });

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
-import { TOTAL_PUZZLES } from './crosswordEngine';
+import { TOTAL_PUZZLES, type CrosswordPuzzle, type CrosswordClue } from './crosswordEngine';
 import { currentUserId, scopedKey, readScoped } from './scopedStorage';
 import { getTodayISO, getYesterdayISO } from '../utils/date';
 
@@ -127,8 +127,38 @@ export function playsLeftToday(progress: CrosswordProgress): number {
   return Math.max(0, DAILY_LIMIT - progress.playsToday);
 }
 
-export function allCompleted(progress: CrosswordProgress): boolean {
-  return (progress?.results?.length ?? 0) >= TOTAL_PUZZLES;
+export function allCompleted(progress: CrosswordProgress, total: number = TOTAL_PUZZLES): boolean {
+  return (progress?.results?.length ?? 0) >= total;
+}
+
+// ---------------------------------------------------------------------------
+// Admin-authored levels (id >= 31) — see 20260806000003_crossword_puzzles_table.sql.
+// The original 30 puzzles stay hardcoded in crosswordPuzzles.ts; this fetches
+// anything an admin has added since, so new levels ship without an app
+// release. Read-only for the app — all writes go through the admin web app.
+// ---------------------------------------------------------------------------
+
+export async function fetchAdminCrosswordPuzzles(): Promise<CrosswordPuzzle[]> {
+  const { data, error } = await supabase
+    .from('crossword_puzzles')
+    .select('id,title,size,solution,clues,bonus_word,bonus_hint')
+    .eq('is_published', true)
+    .order('id', { ascending: true });
+
+  if (error) {
+    console.warn('[crossword] fetchAdminCrosswordPuzzles error:', error);
+    return [];
+  }
+
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    id: Number(row.id),
+    title: String(row.title ?? ''),
+    size: Number(row.size) || 7,
+    solution: row.solution as (string | null)[][],
+    clues: row.clues as CrosswordClue[],
+    bonusWord: String(row.bonus_word ?? ''),
+    bonusHint: String(row.bonus_hint ?? ''),
+  }));
 }
 
 /** Preview the points a completion would earn (uses the streak it *would* be). */
