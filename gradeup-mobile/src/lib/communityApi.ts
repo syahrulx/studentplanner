@@ -729,11 +729,12 @@ export async function joinCircleByCode(userId: string, inviteCode: string): Prom
     .single();
 
   if (!existing) {
-    await supabase.from('circle_members').insert({
+    const { error: insertError } = await supabase.from('circle_members').insert({
       circle_id: circle.id,
       user_id: userId,
       role: 'member',
     });
+    if (insertError) throw insertError;
   }
 
   return circle;
