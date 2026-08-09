@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Modal, Image, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
@@ -81,7 +82,26 @@ const THEME_PREVIEWS: ThemePreview[] = [
 export default function InAppThemesScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
-  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry, hasUsedThemeTrial, setHasUsedThemeTrial } = useApp();
+  const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry } = useApp();
+
+  // `hasUsedThemeTrial`/`setHasUsedThemeTrial` were destructured from useApp()
+  // but never existed on AppState — calling the setter threw
+  // "setHasUsedThemeTrial is not a function" and crashed the app the moment a
+  // free user tapped "Start Free Trial". Tracked here instead, scoped per user
+  // so one account can't consume another's trial on a shared device.
+  const trialKey = `theme_trial_used_v1:${user.id ?? 'anon'}`;
+  const [hasUsedThemeTrial, setHasUsedThemeTrialState] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(trialKey)
+      .then((v) => { if (alive) setHasUsedThemeTrialState(!!v); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [trialKey]);
+  const setHasUsedThemeTrial = useCallback((used: boolean) => {
+    setHasUsedThemeTrialState(used);
+    (used ? AsyncStorage.setItem(trialKey, '1') : AsyncStorage.removeItem(trialKey)).catch(() => {});
+  }, [trialKey]);
   const isCatApplied = themePack === 'cat';
   const isMonoApplied = themePack === 'mono';
   const isSpiderApplied = themePack === 'spider';

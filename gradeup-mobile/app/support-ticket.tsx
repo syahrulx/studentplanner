@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/src/lib/supabase';
+import { reportErrorMessage } from '@/src/lib/reportsApi';
 
 type Ticket = { id: string; subject: string; message: string; kind: string; status: string; created_at: string };
 type Message = { id: string; author_role: 'user' | 'admin'; body: string; created_at: string };
@@ -26,7 +27,7 @@ export default function SupportTicketScreen() {
       supabase.from('support_report_messages').select('id,author_role,body,created_at').eq('report_id', reportId).order('created_at', { ascending: true }),
     ]);
     if (ticketError || !ticketRows?.[0]) throw new Error('This support ticket could not be opened.');
-    if (messageError) throw messageError;
+    if (messageError) throw new Error(reportErrorMessage(messageError));
     setTicket(ticketRows[0] as Ticket);
     setMessages((messageRows ?? []) as Message[]);
   }, [reportId]);
@@ -41,7 +42,7 @@ export default function SupportTicketScreen() {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) throw new Error('Please sign in again.');
       const { data, error } = await supabase.from('support_report_messages').insert({ report_id: reportId, author_id: auth.user.id, author_role: 'user', body }).select('id,author_role,body,created_at').single();
-      if (error) throw error;
+      if (error) throw new Error(reportErrorMessage(error));
       setMessages((current) => [...current, data as Message]);
       setReply('');
     } catch (error) {

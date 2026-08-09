@@ -2145,6 +2145,72 @@ export async function deleteUserReport(id: string) {
   return unwrapFunctionData<{ ok: boolean }>(data, error);
 }
 
+// ─── Admin-authored crossword levels ─────────────────────────────────────────
+//
+// Backed by `public.crossword_puzzles` (ids >= 31 — ids 1-30 are hardcoded in
+// the mobile app's src/lib/crosswordPuzzles.ts and never live in this table).
+// All writes go through admin_data (service role); the edge function
+// recomputes the solution grid and clue numbers server-side from the raw
+// word list, so this is always the source of truth over anything computed
+// client-side for preview purposes.
+
+export type AdminCrosswordClue = {
+  number: number;
+  direction: 'across' | 'down';
+  clue: string;
+  answer: string;
+  row: number;
+  col: number;
+};
+
+export type AdminCrosswordPuzzle = {
+  id: number;
+  title: string;
+  size: number;
+  solution: (string | null)[][];
+  clues: AdminCrosswordClue[];
+  bonus_word: string;
+  bonus_hint: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One row of the word-list builder in the editor UI, before server-side validation. */
+export type CrosswordWordInput = {
+  answer: string;
+  clue: string;
+  direction: 'across' | 'down';
+  row: number;
+  col: number;
+};
+
+export async function listAdminCrosswordPuzzles() {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'crossword_puzzles_list' }, headers);
+  return unwrapFunctionData<{ items: AdminCrosswordPuzzle[] }>(data, error).items;
+}
+
+export async function upsertAdminCrosswordPuzzle(input: {
+  id?: number;
+  title: string;
+  size: number;
+  bonusWord: string;
+  bonusHint: string;
+  isPublished: boolean;
+  words: CrosswordWordInput[];
+}) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'crossword_puzzle_upsert', ...input }, headers);
+  return unwrapFunctionData<{ row: AdminCrosswordPuzzle }>(data, error).row;
+}
+
+export async function deleteAdminCrosswordPuzzle(id: number) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'crossword_puzzle_delete', id }, headers);
+  unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
 // ─── What's New Prompts ──────────────────────────────────────────────────────
 
 export type WhatsNewPromptRow = {

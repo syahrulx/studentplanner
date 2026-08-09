@@ -5,8 +5,23 @@ import { matchesAdminSearch } from '../lib/adminSearch';
 import { supabase } from '../lib/supabase';
 import { CROSSWORD_PUZZLES, type CrosswordPuzzle, type CrosswordClue } from '../data/crosswordPuzzles';
 import { CONNECTIONS_PUZZLES, type ConnectionsPuzzle } from '../data/connectionsPuzzles';
+import { listAdminCrosswordPuzzles, type AdminCrosswordPuzzle } from '../lib/api';
+import { CrosswordPuzzleEditor } from '../components/CrosswordPuzzleEditor';
 
 const PUZZLES = CROSSWORD_PUZZLES;
+
+/** Admin-created levels (ids >= 31) reshaped to the same display type as the hardcoded ones. */
+function adminPuzzleToDisplay(p: AdminCrosswordPuzzle): CrosswordPuzzle {
+  return {
+    id: p.id,
+    title: p.title,
+    size: p.size,
+    solution: p.solution,
+    clues: p.clues,
+    bonusWord: p.bonus_word,
+    bonusHint: p.bonus_hint,
+  };
+}
 
 type GameTab = 'crossword' | 'word' | 'g2048';
 
@@ -196,18 +211,66 @@ function GameLeaderboard({ title, unit, load }: { title: string; unit: string; l
 
 // ───────────────────────── Crossword ─────────────────────────
 
+/** Admin-created level ids always start at 31 — see 20260806000003_crossword_puzzles_table.sql. */
+const FIRST_ADMIN_PUZZLE_ID = 31;
+
 function CrosswordSection() {
   const { searchQuery } = useAdminSearch();
+  const [adminPuzzles, setAdminPuzzles] = useState<AdminCrosswordPuzzle[]>([]);
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null); // null while adding a new level
   const [selectedId, setSelectedId] = useState<number>(PUZZLES[0]?.id ?? 1);
 
+  async function refreshAdminPuzzles() {
+    setLoadingAdmin(true);
+    setLoadError(null);
+    try {
+      setAdminPuzzles(await listAdminCrosswordPuzzles());
+    } catch (e: any) {
+      setLoadError(e?.message || 'Could not load admin-created levels.');
+    } finally {
+      setLoadingAdmin(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshAdminPuzzles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const combined = useMemo(
+    () => [...PUZZLES, ...adminPuzzles.map(adminPuzzleToDisplay)],
+    [adminPuzzles],
+  );
+
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return PUZZLES;
-    return PUZZLES.filter((p) =>
+    if (!searchQuery.trim()) return combined;
+    return combined.filter((p) =>
       matchesAdminSearch(searchQuery, p.title, `#${p.id}`, p.bonusWord, ...p.clues.map((c) => `${c.answer} ${c.clue}`)),
     );
-  }, [searchQuery]);
+  }, [combined, searchQuery]);
 
-  const selected = PUZZLES.find((p) => p.id === selectedId) ?? PUZZLES[0];
+  const selected = combined.find((p) => p.id === selectedId) ?? combined[0];
+  const editingPuzzle = editingId != null ? adminPuzzles.find((p) => p.id === editingId) ?? null : null;
+
+  function openNewEditor() {
+    setEditingId(null);
+    setEditorOpen(true);
+  }
+  function openEditEditor(id: number) {
+    setEditingId(id);
+    setEditorOpen(true);
+  }
+  function closeEditor() {
+    setEditorOpen(false);
+    setEditingId(null);
+  }
+  async function handleSaved() {
+    closeEditor();
+    await refreshAdminPuzzles();
+  }
 
   return (
     <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px] lg:items-start">
@@ -215,17 +278,30 @@ function CrosswordSection() {
       <div className="flex min-w-0 flex-col gap-5">
         <MotionPanel>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="text-sm font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Crossword rules</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Crossword rules</div>
+              <button
+                onClick={openNewEditor}
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+              >
+                <span className="text-sm leading-none">+</span> Add level
+              </button>
+            </div>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Puzzles" value={`${PUZZLES.length}`} />
+              <Stat label="Puzzles" value={`${combined.length}`} />
               <Stat label="Per day" value="2 (in order)" />
               <Stat label="Base points" value="100" />
               <Stat label="Hidden bonus" value="+25 if guessed" />
               <Stat label="Streak bonus" value="+5/day (max +35)" />
               <Stat label="Hints" value="2 per puzzle" />
-              <Stat label="Grid" value="7 × 7" />
+              <Stat label="Grid" value="Admin-defined (5–15)" />
               <Stat label="Ranking" value="Total points" />
             </div>
+            {loadError && (
+              <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                {loadError}
+              </div>
+            )}
           </div>
         </MotionPanel>
 
@@ -236,6 +312,7 @@ function CrosswordSection() {
               <div className="max-h-[70vh] overflow-y-auto">
                 {filtered.map((p) => {
                   const active = selected?.id === p.id;
+                  const isAdmin = p.id >= FIRST_ADMIN_PUZZLE_ID;
                   return (
                     <button
                       key={p.id}
@@ -247,12 +324,18 @@ function CrosswordSection() {
                           : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
                       }
                     >
-                      <span className="font-bold">#{p.id} · {p.title}</span>
+                      <span className="font-bold">
+                        #{p.id} · {p.title}
+                        {isAdmin && <span className="ml-1.5 opacity-60">★</span>}
+                      </span>
                       <span className={active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400'}>{p.clues.length}w</span>
                     </button>
                   );
                 })}
-                {filtered.length === 0 && (
+                {loadingAdmin && (
+                  <div className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Loading admin levels…</div>
+                )}
+                {filtered.length === 0 && !loadingAdmin && (
                   <div className="px-4 py-6 text-center text-sm font-semibold text-slate-400">No puzzles match your search.</div>
                 )}
               </div>
@@ -261,7 +344,13 @@ function CrosswordSection() {
 
           {/* Detail: grid + answers */}
           <MotionPanel>
-            {selected && <PuzzleDetail puzzle={selected} />}
+            {selected && (
+              <PuzzleDetail
+                puzzle={selected}
+                isAdminPuzzle={selected.id >= FIRST_ADMIN_PUZZLE_ID}
+                onEdit={() => openEditEditor(selected.id)}
+              />
+            )}
           </MotionPanel>
         </div>
       </div>
@@ -270,11 +359,23 @@ function CrosswordSection() {
       <MotionPanel>
         <GameLeaderboard title="Crossword leaders" unit="pts" load={loadCrosswordLb} />
       </MotionPanel>
+
+      {editorOpen && (
+        <CrosswordPuzzleEditor puzzle={editingPuzzle} onClose={closeEditor} onSaved={handleSaved} />
+      )}
     </div>
   );
 }
 
-function PuzzleDetail({ puzzle }: { puzzle: CrosswordPuzzle }) {
+function PuzzleDetail({
+  puzzle,
+  isAdminPuzzle,
+  onEdit,
+}: {
+  puzzle: CrosswordPuzzle;
+  isAdminPuzzle?: boolean;
+  onEdit?: () => void;
+}) {
   const numberAt = new Map<string, number>();
   for (const clue of puzzle.clues) {
     numberAt.set(`${clue.row},${clue.col}`, clue.number);
@@ -285,7 +386,21 @@ function PuzzleDetail({ puzzle }: { puzzle: CrosswordPuzzle }) {
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-lg font-black text-slate-900 dark:text-slate-100">#{puzzle.id} · {puzzle.title}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-lg font-black text-slate-900 dark:text-slate-100">#{puzzle.id} · {puzzle.title}</div>
+        {isAdminPuzzle ? (
+          <button
+            onClick={onEdit}
+            className="shrink-0 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Edit
+          </button>
+        ) : (
+          <span className="shrink-0 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+            Built-in
+          </span>
+        )}
+      </div>
 
       {/* Hidden bonus word — not part of the grid */}
       <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">

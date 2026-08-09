@@ -7,6 +7,7 @@ import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 
 // Must be called at the root level so OAuth redirects (rencana://oauth2redirect)
 // are caught by expo-auth-session BEFORE Expo Router tries to match them to a screen.
@@ -35,6 +36,7 @@ import UpdatePrompt from '@/src/components/UpdatePrompt';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
+import { supabase } from '@/src/lib/supabase';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -293,6 +295,36 @@ function RootLayoutNav() {
         handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined);
       })();
     });
+    return () => sub.remove();
+  }, []);
+
+  // Password-recovery deep link. "Forgot password" sends the user through the
+  // same HTTPS bridge page used for signup email verification
+  // (app/(auth)/forgot-password.tsx), which reopens the app via
+  // `rencana://...#access_token=...&refresh_token=...&type=recovery`. This
+  // listener is on the ALWAYS-mounted root layout (not the (auth) group)
+  // because the app could be sitting on any screen, signed in or out, when
+  // the link is tapped. On a match it establishes the recovery session itself
+  // and routes to the dedicated screen, rather than letting the normal
+  // (auth) profile gate redirect an already-signed-in user straight to
+  // (tabs) before they ever see it.
+  useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      const hashIndex = url.indexOf('#');
+      if (hashIndex === -1) return;
+      const params = new URLSearchParams(url.slice(hashIndex + 1));
+      if (params.get('type') !== 'recovery') return;
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      if (!access_token || !refresh_token) return;
+      void supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+        if (!error) router.replace('/(auth)/reset-password');
+      });
+    };
+
+    void Linking.getInitialURL().then(handleUrl);
+    const sub = Linking.addEventListener('url', (e) => handleUrl(e.url));
     return () => sub.remove();
   }, []);
 

@@ -174,11 +174,17 @@ export default function ConfessionsScreen() {
 
   const handleReaction = async (item: Confession, reaction: string | null) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const oldReaction = item.my_reaction;
-    const wasReacted = !!oldReaction;
-    const isAdding = !!reaction;
+    // Derive the delta and rollback snapshot from live state (inside the
+    // updater), not the `item` closure — a rapid double-tap before re-render
+    // would otherwise apply the same stale my_reaction/like_count twice.
+    let prevReaction: string | null = item.my_reaction ?? null;
+    let prevLikeCount = item.like_count;
     setItems((prev) => prev.map((c) => {
       if (c.id !== item.id) return c;
+      prevReaction = c.my_reaction ?? null;
+      prevLikeCount = c.like_count;
+      const wasReacted = !!c.my_reaction;
+      const isAdding = !!reaction;
       let n = c.like_count;
       if (wasReacted && !isAdding) n = Math.max(0, n - 1);
       if (!wasReacted && isAdding) n += 1;
@@ -188,7 +194,7 @@ export default function ConfessionsScreen() {
     try { await confessionsApi.setConfessionReaction(item.id, reaction); }
     catch (e: any) {
       Alert.alert('Error', e.message || 'Failed');
-      setItems((prev) => prev.map((c) => c.id === item.id ? { ...c, my_reaction: oldReaction, like_count: item.like_count } : c));
+      setItems((prev) => prev.map((c) => c.id === item.id ? { ...c, my_reaction: prevReaction, like_count: prevLikeCount } : c));
     }
   };
 

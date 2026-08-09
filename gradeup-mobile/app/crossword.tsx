@@ -14,13 +14,13 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { contrastText } from '@/src/lib/contrast';
 import { getTodayISO } from '@/src/utils/date';
 import {
-  CROSSWORD_PUZZLES, TOTAL_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
+  CROSSWORD_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
   type CrosswordPuzzle, type CrosswordClue,
 } from '@/src/lib/crosswordEngine';
 import {
   loadProgress, saveResult, saveBonusAttempt, isCompleted, getResult, completedCount, getTotalPoints,
   playsLeftToday, previewPoints, allCompleted, hasBonusAttempt, bonusWasFound, BASE_POINTS, BONUS_WORD_POINTS,
-  getCrosswordLeaderboard,
+  getCrosswordLeaderboard, fetchAdminCrosswordPuzzles,
   type CrosswordProgress, type CrosswordLeaderboardEntry,
 } from '@/src/lib/crosswordStorage';
 
@@ -115,14 +115,21 @@ export default function CrosswordScreen() {
     return () => sub.remove();
   }, [reload]);
 
-  const activePuzzle = activeId != null ? CROSSWORD_PUZZLES.find((p) => p.id === activeId) : null;
+  // Admin-created levels (id >= 31) fetched once and merged with the
+  // hardcoded set — the static list is the safe default so the hub isn't
+  // blocked/empty while this is in flight.
+  const [remotePuzzles, setRemotePuzzles] = useState<CrosswordPuzzle[]>([]);
+  useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
+  const allPuzzles = useMemo(() => [...CROSSWORD_PUZZLES, ...remotePuzzles], [remotePuzzles]);
+
+  const activePuzzle = activeId != null ? allPuzzles.find((p) => p.id === activeId) : null;
 
   // Lowest-numbered puzzle the player hasn't solved yet — the only one that can
   // be started next (puzzles unlock strictly in order: 1 → 2 → 3 …).
   const firstUnsolvedId = useMemo(() => {
     if (!progress) return 1;
-    return CROSSWORD_PUZZLES.find((p) => !isCompleted(progress, p.id))?.id ?? null;
-  }, [progress]);
+    return allPuzzles.find((p) => !isCompleted(progress, p.id))?.id ?? null;
+  }, [progress, allPuzzles]);
 
   // Must be computed before the early return below (Solve mode) so this hook
   // always runs, regardless of whether a puzzle is currently open.
@@ -198,11 +205,11 @@ export default function CrosswordScreen() {
           {/* Daily banner */}
           <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.banner, { shadowColor: theme.primary }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress) ? 'All puzzles solved! 🎉' : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
+              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress, allPuzzles.length) ? 'All puzzles solved! 🎉' : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
               <Text style={[styles.bannerSub, { color: onPrimary, opacity: 0.85 }]}>Solve up to 2 crosswords a day · keep your streak alive</Text>
             </View>
             <View style={[styles.bannerBadge, { backgroundColor: onPrimary }]}>
-              <Text style={[styles.bannerBadgeText, { color: theme.primary }]}>{solved}/{TOTAL_PUZZLES}</Text>
+              <Text style={[styles.bannerBadgeText, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
             </View>
           </LinearGradient>
 
@@ -216,17 +223,17 @@ export default function CrosswordScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={[styles.setTitle, { color: theme.text }]}>Starter Pack</Text>
-              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{TOTAL_PUZZLES} puzzles · unlock 2 a day, in order</Text>
+              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{allPuzzles.length} puzzles · unlock 2 a day, in order</Text>
             </View>
             <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
-              <Text style={[styles.setCount, { color: theme.primary }]}>{solved}/{TOTAL_PUZZLES}</Text>
+              <Text style={[styles.setCount, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
             </View>
             <Feather name={set1Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
           </Pressable>
 
           {set1Open && (
           <View style={[styles.grid, { marginTop: 14 }]}>
-            {CROSSWORD_PUZZLES.map((p) => {
+            {allPuzzles.map((p) => {
               const done = progress ? isCompleted(progress, p.id) : false;
               const result = progress ? getResult(progress, p.id) : undefined;
               const isNext = p.id === firstUnsolvedId;
@@ -280,7 +287,7 @@ export default function CrosswordScreen() {
           </View>
         </ScrollView>
       ) : (
-        <RankingsTab theme={theme} userId={userId} friendIds={friends.map((f) => f.id)} progress={progress} />
+        <RankingsTab theme={theme} userId={userId} friendIds={friends.map((f) => f.id)} progress={progress} totalPuzzles={allPuzzles.length} />
       )}
     </View>
   );
@@ -758,12 +765,13 @@ function SolveView({
 // ───────────────────────────── Rankings ─────────────────────────────
 
 function RankingsTab({
-  theme, userId, friendIds, progress,
+  theme, userId, friendIds, progress, totalPuzzles,
 }: {
   theme: ReturnType<typeof useTheme>;
   userId: string | null;
   friendIds: string[];
   progress: CrosswordProgress | null;
+  totalPuzzles: number;
 }) {
   const [view, setView] = useState<RankView>('stats');
   const [entries, setEntries] = useState<CrosswordLeaderboardEntry[]>([]);
@@ -812,7 +820,7 @@ function RankingsTab({
               <Text style={[styles.myScoreVal, { color: onPrimary }]}>{total} <Text style={{ fontSize: 16, fontWeight: '700' }}>pts</Text></Text>
             </View>
             <View style={[styles.myScoreBadge, { backgroundColor: onPrimary }]}>
-              <Text style={[styles.myScoreBadgeText, { color: theme.primary }]}>{solved}/{TOTAL_PUZZLES}</Text>
+              <Text style={[styles.myScoreBadgeText, { color: theme.primary }]}>{solved}/{totalPuzzles}</Text>
             </View>
           </LinearGradient>
 

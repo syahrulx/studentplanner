@@ -179,7 +179,12 @@ export default function NotesEditor() {
   };
 
   const doSave = useCallback((showAlert: boolean) => {
-    if (!title.trim() && !content.trim() && !attachmentPath) return;
+    // Only skip saving a genuinely blank NEW note (nothing to create yet —
+    // matches the auto-save guard above). For an EXISTING note, this must
+    // NOT bail out: clearing a note's title and content is a legitimate edit
+    // and has to actually persist, or the "old" content silently reappears
+    // next time the note is opened, as if the edit never happened.
+    if (isNew && !title.trim() && !content.trim() && !attachmentPath) return;
     const note = {
       id: currentNoteId ?? existing?.id ?? `n${Date.now()}`,
       subjectId: subjectId!,

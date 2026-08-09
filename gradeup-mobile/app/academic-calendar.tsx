@@ -733,6 +733,9 @@ export default function AcademicCalendarScreen() {
       if (type === "exam" || type === "test" || type === "revision")
         return "#ef4444";
       if (type === "break" || type === "special_break") return "#22d3ee";
+      if (type === "orientation") return "#6366f1";
+      if (type === "holiday") return "#f43f5e";
+      if (type === "industrial_training") return "#f97316";
       return theme.textSecondary;
     },
     [theme.textSecondary],
@@ -746,17 +749,33 @@ export default function AcademicCalendarScreen() {
       return "rgba(239, 68, 68, 0.15)";
     if (type === "break" || type === "special_break")
       return "rgba(34, 211, 238, 0.15)";
+    if (type === "orientation") return "rgba(99, 102, 241, 0.15)";
+    if (type === "holiday") return "rgba(244, 63, 94, 0.15)";
+    if (type === "industrial_training") return "rgba(249, 115, 22, 0.15)";
     return "transparent";
   }, []);
 
   const categoryForType = useCallback(
-    (t: string): "registration" | "lecture" | "exam" | "break" | "other" => {
+    (
+      t: string,
+    ):
+      | "registration"
+      | "lecture"
+      | "exam"
+      | "break"
+      | "orientation"
+      | "holiday"
+      | "industrial_training"
+      | "other" => {
       const type = String(t || "");
       if (type === "registration") return "registration";
       if (type === "lecture") return "lecture";
       if (type === "break" || type === "special_break") return "break";
       if (type === "exam" || type === "test" || type === "revision")
         return "exam";
+      if (type === "orientation") return "orientation";
+      if (type === "holiday") return "holiday";
+      if (type === "industrial_training") return "industrial_training";
       return "other";
     },
     [],
@@ -765,12 +784,23 @@ export default function AcademicCalendarScreen() {
   const primaryCategory = useCallback(
     (
       hits: { type: string }[],
-    ): "registration" | "lecture" | "exam" | "break" | "other" => {
+    ):
+      | "registration"
+      | "lecture"
+      | "exam"
+      | "break"
+      | "orientation"
+      | "holiday"
+      | "industrial_training"
+      | "other" => {
       const cats = new Set(hits.map((h) => categoryForType(h.type)));
       if (cats.has("exam")) return "exam";
+      if (cats.has("holiday")) return "holiday";
       if (cats.has("break")) return "break";
+      if (cats.has("orientation")) return "orientation";
       if (cats.has("lecture")) return "lecture";
       if (cats.has("registration")) return "registration";
+      if (cats.has("industrial_training")) return "industrial_training";
       return "other";
     },
     [categoryForType],
@@ -808,13 +838,24 @@ export default function AcademicCalendarScreen() {
 
   const selectedDayGrouped = useMemo(() => {
     const groupDefs: {
-      id: "registration" | "lecture" | "exam" | "break" | "other";
+      id:
+        | "registration"
+        | "lecture"
+        | "exam"
+        | "break"
+        | "orientation"
+        | "holiday"
+        | "industrial_training"
+        | "other";
       title: string;
     }[] = [
+      { id: "orientation", title: "Orientation" },
       { id: "registration", title: "Registration" },
       { id: "lecture", title: "Lecture" },
       { id: "exam", title: "Examination" },
       { id: "break", title: "Break" },
+      { id: "holiday", title: "Holiday" },
+      { id: "industrial_training", title: "Industrial Training" },
       { id: "other", title: "Other" },
     ];
     const byCat = new Map<string, typeof selectedDayItems>();

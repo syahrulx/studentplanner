@@ -45,6 +45,11 @@ export default function StudyTimerScreen() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [secondsLeft, setSecondsLeft] = useState(PRESETS[0].focus * 60);
   const [completedSessions, setCompletedSessions] = useState(0);
+  // Real state, not derived from timerRef.current — a ref change doesn't
+  // trigger a re-render, so reading the ref at render time made the button
+  // freeze on "Pause" forever after the first pause (pressing it again was a
+  // silent no-op, and there was no way to reach the "Resume" branch below).
+  const [isRunning, setIsRunning] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -122,6 +127,7 @@ export default function StudyTimerScreen() {
       clearTimer();
       let secs = initialSecs;
       setSecondsLeft(secs);
+      setIsRunning(true);
       startPulse();
 
       timerRef.current = setInterval(() => {
@@ -131,6 +137,7 @@ export default function StudyTimerScreen() {
         if (secs <= 0) {
           clearInterval(timerRef.current!);
           timerRef.current = null;
+          setIsRunning(false);
           stopPulse();
 
           if (currentPhase === 'focus') {
@@ -162,14 +169,27 @@ export default function StudyTimerScreen() {
         const detail = course?.id || slotLabel || 'Studying';
         await updateActivity('studying', detail, course?.id || slotLabel || undefined);
       }
-    } else if (phase === 'break') {
-      startTimer(breakSecs, 'break');
-      startOrReplaceLiveActivity('studyTimer', buildStudyLiveActivity('break', breakSecs)).catch(() => {});
+    } else if (phase === 'break' && !isRunning) {
+      // secondsLeft already holds the right value whether this is a fresh
+      // break (just set to breakSecs when focus completed) or a paused one.
+      startTimer(secondsLeft, 'break');
+      // Replacing the activity rebuilds its countdown window from the time
+      // actually left, which also clears the paused state handlePause set.
+      startOrReplaceLiveActivity('studyTimer', buildStudyLiveActivity('break', secondsLeft)).catch(() => {});
+    } else if (phase === 'focus' && !isRunning) {
+      // Resume a paused focus session from where it left off, not from the
+      // top — and re-schedule the completion notification for the actual
+      // remaining time, since handlePause cancelled the original one.
+      startTimer(secondsLeft, 'focus');
+      const remainingMinutes = Math.max(1, Math.ceil(secondsLeft / 60));
+      scheduleStudyTimerComplete(remainingMinutes, selectedCourseId || undefined).catch(() => {});
+      startOrReplaceLiveActivity('studyTimer', buildStudyLiveActivity('focus', secondsLeft)).catch(() => {});
     }
-  }, [phase, startTimer, focusSecs, breakSecs, broadcastEnabled, courses, selectedCourseId, timetable, updateActivity, preset.focus, buildStudyLiveActivity]);
+  }, [phase, isRunning, startTimer, focusSecs, secondsLeft, broadcastEnabled, courses, selectedCourseId, timetable, updateActivity, preset.focus, buildStudyLiveActivity]);
 
   const handlePause = useCallback(() => {
     clearTimer();
+    setIsRunning(false);
     stopPulse();
     cancelStudyTimerNotification().catch(() => {});
     updateLiveActivity('studyTimer', { pauseAtMs: Date.now() }).catch(() => {});
@@ -177,6 +197,7 @@ export default function StudyTimerScreen() {
 
   const handleReset = useCallback(async () => {
     clearTimer();
+    setIsRunning(false);
     stopPulse();
     cancelStudyTimerNotification().catch(() => {});
     endLiveActivity('studyTimer').catch(() => {});
@@ -187,16 +208,34 @@ export default function StudyTimerScreen() {
     }
   }, [clearTimer, stopPulse, focusSecs, broadcastEnabled, clearMyActivity]);
 
-  // Clean up on unmount
+  // Latest phase/broadcastEnabled for the unmount cleanup below — read via
+  // ref so the cleanup (which must stay mount-once to only fire on a real
+  // unmount, not every phase change) always sees the current values instead
+  // of whatever they were when the effect was first set up.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const broadcastEnabledRef = useRef(broadcastEnabled);
+  useEffect(() => { broadcastEnabledRef.current = broadcastEnabled; }, [broadcastEnabled]);
+
+  // Clean up on unmount. Navigating away mid-session (back button / swipe)
+  // used to only clear the interval — the scheduled "session complete"
+  // notification still fired for an abandoned session, and Community
+  // presence stayed stuck on "studying" indefinitely since only handleReset
+  // used to clear either of those.
   useEffect(() => {
     return () => {
       clearTimer();
       stopPulse();
+      if (phaseRef.current !== 'idle') {
+        cancelStudyTimerNotification().catch(() => {});
+        if (broadcastEnabledRef.current) {
+          void clearMyActivity().catch(() => {});
+        }
+      }
     };
-  }, [clearTimer, stopPulse]);
+  }, [clearTimer, stopPulse, clearMyActivity]);
 
   // Derived colors
-  const isRunning = timerRef.current !== null;
   const accentColor = phase === 'break' ? '#10b981' : theme.primary;
   const bgGradientColor = phase === 'break' ? '#10b98118' : (theme.primary + '14');
 

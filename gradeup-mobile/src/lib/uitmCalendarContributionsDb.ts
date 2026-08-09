@@ -94,7 +94,11 @@ export async function fetchApprovedUitmCalendarContributions(groupCode: 'A' | 'B
     .eq('group_code', groupCode)
     .order('start_date', { ascending: false })
     .limit(50);
-  if (error || !Array.isArray(data)) return [];
+  if (error) {
+    console.warn('[uitmCalendarContributionsDb] fetchApprovedUitmCalendarContributions error:', error);
+    return [];
+  }
+  if (!Array.isArray(data)) return [];
   return data.map((row) => rowToContribution(row as Record<string, unknown>));
 }
 
