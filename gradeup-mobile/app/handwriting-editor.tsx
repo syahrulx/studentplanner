@@ -346,6 +346,27 @@ export default function HandwritingEditor() {
   const aiScrollRef = useRef<ScrollView>(null);
   const AI_PANEL_WIDTH = Dimensions.get('window').width * 0.55;
 
+  // Build notes context for AI from all notes in this subject
+  const aiNotesContext = useMemo(() => {
+    const subjectNotes = notes.filter((n) => n.subjectId === subjectId);
+    const extractedCount = subjectNotes.filter((n) => n.extractedText && n.extractedText.trim().length > 0).length;
+    console.log(`[AskAI] subjectId="${subjectId}", notes in subject: ${subjectNotes.length}, with extractedText: ${extractedCount}`);
+    subjectNotes.forEach((n, i) => {
+      console.log(`[AskAI]   Note[${i}]: title="${n.title}", contentLen=${(n.content || '').length}, extractedTextLen=${(n.extractedText || '').length}`);
+    });
+    const parts = subjectNotes.map((n) => {
+      const segments = [`[Note: ${n.title}]`];
+      if (n.content && n.content.trim()) segments.push(n.content);
+      if (n.extractedText && n.extractedText.trim()) segments.push(`[Extracted PDF Text]\n${n.extractedText}`);
+      return segments.join('\n');
+    });
+    const raw = parts.join('\n\n');
+    const systemInstruction = `You are the student's AI study assistant. Answer based on the notes provided below. If the answer is not in the notes, say so politely.\n\nSTUDENT NOTES:\n`;
+    const ctx = systemInstruction + raw.slice(0, 180000);
+    console.log(`[AskAI] Total context length: ${ctx.length}`);
+    return ctx;
+  }, [notes, subjectId]);
+
   const sendAiMessage = useCallback(async () => {
     const text = aiInput.trim();
     if (!text || aiProcessing) return;
@@ -361,7 +382,7 @@ export default function HandwritingEditor() {
       }));
       const { data, error } = await invokeAiGenerate<AiGenerateChatResult>({
         kind: 'chat',
-        content: text,
+        content: aiNotesContext,
         chat_history: chatHistory,
         subject_id: subjectId,
         question: text,
@@ -377,7 +398,7 @@ export default function HandwritingEditor() {
       setAiProcessing(false);
       setTimeout(() => aiScrollRef.current?.scrollToEnd({ animated: true }), 150);
     }
-  }, [aiInput, aiProcessing, aiMessages, subjectId]);
+  }, [aiInput, aiProcessing, aiMessages, subjectId, aiNotesContext]);
 
   const pagesRef = useRef(pages);
   const pdfDocumentRef = useRef<PDFDocument | null>(null);
