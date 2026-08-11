@@ -1,9 +1,10 @@
 /**
  * RevenueCat SDK wrapper — centralizes all in-app purchase logic.
  *
- * RevenueCat is the single source of truth for the *client*; the Supabase
- * `profiles.subscription_plan` column is kept in sync via webhooks and is
- * the source of truth for *server-side* Edge Functions (AI limits, etc.).
+ * RevenueCat reports App Store / Play Store purchases. The unified server
+ * entitlement in `profiles.subscription_plan` is the access source of truth,
+ * because the same account may instead be paid through Curlec/Razorpay or have
+ * an explicit admin grant.
  */
 import Purchases, {
   LOG_LEVEL,

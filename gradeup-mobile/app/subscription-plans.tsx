@@ -248,11 +248,9 @@ export default function SubscriptionPlansScreen() {
     setPurchasing(true);
     try {
       const newPlan = await purchasePackage(pkg);
-      // Explicitly write the plan to Supabase to keep admin/backend in sync instantly
-      await updateProfile({ subscriptionPlan: newPlan }).catch((err) => {
-        console.warn('[SubscriptionPlans] Sync to DB failed:', err);
-      });
-      
+      // RevenueCat updates the client entitlement immediately. Server access is
+      // updated only by the authenticated webhook; the mobile client must never
+      // self-assert that a purchase was paid.
       Alert.alert(
         '🎉 Welcome!',
         `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
@@ -278,11 +276,6 @@ export default function SubscriptionPlansScreen() {
     setRestoring(true);
     try {
       const restoredPlan = await restorePurchases();
-      // Explicitly write the restored plan to Supabase
-      await updateProfile({ subscriptionPlan: restoredPlan }).catch((err) => {
-        console.warn('[SubscriptionPlans] Sync to DB failed:', err);
-      });
-
       if (restoredPlan !== 'free') {
         Alert.alert(
           'Purchases Restored',

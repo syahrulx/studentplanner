@@ -44,6 +44,11 @@ verify_jwt = false
 [functions.user_tools]
 verify_jwt = false
 
+# RevenueCat is an external webhook sender and cannot supply a Supabase JWT.
+# The function validates the dedicated REVENUECAT_WEBHOOK_SECRET itself.
+[functions.revenuecat-webhook]
+verify_jwt = false
+
 [functions.generate_flashcards]
 verify_jwt = false
 
