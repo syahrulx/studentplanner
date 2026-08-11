@@ -60,6 +60,17 @@ function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
+function formatBillingStatus(status: AdminUserRow['subscription_status']): string {
+  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function billingTone(status: AdminUserRow['subscription_status']): 'green' | 'amber' | 'rose' | 'slate' {
+  if (status === 'active' || status === 'prepaid') return 'green';
+  if (status === 'trial' || status === 'introductory' || status === 'promotional' || status === 'temporary') return 'amber';
+  if (status === 'expired' || status === 'refunded' || status === 'billing_issue') return 'rose';
+  return 'slate';
+}
+
 function UserRowDetailPanel({
   u,
   usedThisMonth,
@@ -80,6 +91,18 @@ function UserRowDetailPanel({
     { label: 'Device', value: u.device_platform ?? '—' },
     { label: 'Status', value: u.status },
     { label: 'Plan', value: u.subscription_plan },
+    { label: 'Billing state', value: formatBillingStatus(u.subscription_status) },
+    { label: 'Billing source', value: u.subscription_store || '—' },
+    { label: 'Environment', value: u.subscription_environment || '—' },
+    { label: 'Product', value: u.subscription_product_id || '—' },
+    {
+      label: 'Recorded price',
+      value: u.subscription_price == null
+        ? '—'
+        : `${u.subscription_currency || ''} ${u.subscription_price.toFixed(2)}`.trim(),
+    },
+    { label: 'Subscription expires', value: formatDateTime(u.subscription_expires_at) },
+    { label: 'Billing last synced', value: formatDateTime(u.subscription_updated_at) },
     {
       label: 'AI limit override',
       value:
@@ -834,7 +857,14 @@ export function UsersRoute() {
                             {u.university_id || '-'}
                           </td>
                           <td className="px-4 py-3">
-                            <Chip tone={planTone}>{u.subscription_plan}</Chip>
+                            <div className="flex flex-col items-start gap-1">
+                              <Chip tone={planTone}>{u.subscription_plan}</Chip>
+                              {u.subscription_status !== 'free' && (
+                                <Chip tone={billingTone(u.subscription_status)}>
+                                  {formatBillingStatus(u.subscription_status)}
+                                </Chip>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <Chip tone={tone}>{u.status}</Chip>

@@ -206,6 +206,21 @@ export async function getAiTokenUsageSeriesLast14Days(): Promise<AiTokenUsagePoi
 
 export type SubscriptionPlan = 'free' | 'plus' | 'pro';
 
+export type SubscriptionBillingStatus =
+  | 'free'
+  | 'trial'
+  | 'introductory'
+  | 'active'
+  | 'promotional'
+  | 'prepaid'
+  | 'cancelled'
+  | 'billing_issue'
+  | 'paused'
+  | 'temporary'
+  | 'expired'
+  | 'refunded'
+  | 'unknown';
+
 export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = ['free', 'plus', 'pro'] as const;
 
 /**
@@ -272,6 +287,15 @@ export type AdminUserRow = {
   device_platform: 'ios' | 'android' | null;
   status: 'active' | 'disabled' | 'banned';
   subscription_plan: SubscriptionPlan;
+  subscription_status: SubscriptionBillingStatus;
+  subscription_period_type: string | null;
+  subscription_product_id: string | null;
+  subscription_expires_at: string | null;
+  subscription_store: string | null;
+  subscription_environment: string | null;
+  subscription_price: number | null;
+  subscription_currency: string | null;
+  subscription_updated_at: string | null;
   ai_token_limit_override: number | null;
   created_at: string;
   updated_at?: string | null;
@@ -281,10 +305,18 @@ function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
   return (rows as Array<
     Partial<AdminUserRow> & {
       subscription_plan?: string | null;
+      subscription_status?: string | null;
+      subscription_price?: number | string | null;
       ai_token_limit_override?: number | string | null;
     }
   >).map((r) => {
     const rawOverride = r.ai_token_limit_override;
+    const rawPrice = r.subscription_price;
+    const priceNum = rawPrice == null ? null : Number(rawPrice);
+    const allowedBillingStatuses: SubscriptionBillingStatus[] = [
+      'free', 'trial', 'introductory', 'active', 'promotional', 'prepaid',
+      'cancelled', 'billing_issue', 'paused', 'temporary', 'expired', 'refunded', 'unknown',
+    ];
     const overrideNum =
       rawOverride == null
         ? null
@@ -299,6 +331,17 @@ function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
       device_platform: r.device_platform === 'ios' || r.device_platform === 'android' ? r.device_platform : null,
       status: (r.status as AdminUserRow['status']) ?? 'active',
       subscription_plan: normalizeSubscriptionPlan(r.subscription_plan),
+      subscription_status: allowedBillingStatuses.includes(r.subscription_status as SubscriptionBillingStatus)
+        ? (r.subscription_status as SubscriptionBillingStatus)
+        : 'unknown',
+      subscription_period_type: r.subscription_period_type ?? null,
+      subscription_product_id: r.subscription_product_id ?? null,
+      subscription_expires_at: r.subscription_expires_at ?? null,
+      subscription_store: r.subscription_store ?? null,
+      subscription_environment: r.subscription_environment ?? null,
+      subscription_price: typeof priceNum === 'number' && Number.isFinite(priceNum) ? priceNum : null,
+      subscription_currency: r.subscription_currency ?? null,
+      subscription_updated_at: r.subscription_updated_at ?? null,
       ai_token_limit_override:
         typeof overrideNum === 'number' && Number.isFinite(overrideNum) && overrideNum > 0
           ? Math.floor(overrideNum)
@@ -323,7 +366,7 @@ export async function listUsers(opts: {
     let query = supabase
       .from('profiles')
       .select(
-        'id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,ai_token_limit_override',
+        'id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override',
         { count: 'exact' },
       )
       .order('created_at', { ascending: false })

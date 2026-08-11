@@ -65,7 +65,7 @@ serve(async (req) => {
 
       let query = admin
         .from('profiles')
-        .select('id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan', { count: 'exact' })
+        .select('id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -105,8 +105,37 @@ serve(async (req) => {
       if (!userId) return J(400, { error: 'missing_userId' });
       if (!['free', 'plus', 'pro'].includes(subscription_plan)) return J(400, { error: 'invalid_subscription_plan' });
 
-      const { error: e } = await admin.from('profiles').update({ subscription_plan }).eq('id', userId);
-      if (e) return J(400, { error: e.message });
+      // A manual admin grant is its own provider fact, not proof of payment.
+      // Removing it must not erase valid RevenueCat or Curlec access.
+      if (subscription_plan === 'free') {
+        const { error: e } = await admin
+          .from('subscription_entitlements')
+          .delete()
+          .eq('user_id', userId)
+          .eq('provider', 'admin');
+        if (e) return J(400, { error: e.message });
+      } else {
+        const { error: e } = await admin.from('subscription_entitlements').upsert({
+          user_id: userId,
+          provider: 'admin',
+          external_id: userId,
+          plan: subscription_plan,
+          status: 'promotional',
+          period_type: 'PROMOTIONAL',
+          store: 'ADMIN',
+          environment: 'INTERNAL',
+          expires_at: null,
+          price: 0,
+          currency: null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,provider' });
+        if (e) return J(400, { error: e.message });
+      }
+
+      const { error: recomputeError } = await admin.rpc('recompute_subscription_access', {
+        p_user_id: userId,
+      });
+      if (recomputeError) return J(400, { error: recomputeError.message });
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
