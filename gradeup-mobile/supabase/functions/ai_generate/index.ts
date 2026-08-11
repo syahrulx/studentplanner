@@ -21,6 +21,8 @@ interface RequestBody {
   question?: string;
   /** For chat RAG: the subject to search embeddings within. */
   subject_id?: string;
+  /** Human-readable subject name used to disambiguate short terms and acronyms. */
+  subject_name?: string;
   /** Number of items to generate. */
   count?: number;
   /** Quiz-specific fields. */
@@ -208,7 +210,12 @@ Rules:
   };
 }
 
-function buildChatPrompt(fullNotes: string, ragHighlights?: string, hasImage?: boolean): { system: string } {
+function buildChatPrompt(
+  fullNotes: string,
+  ragHighlights?: string,
+  hasImage?: boolean,
+  subjectName?: string,
+): { system: string } {
   // Always include full notes. If RAG found relevant chunks, prepend them
   // as highlighted sections so the model prioritises them but still has
   // access to everything.
@@ -233,9 +240,18 @@ The student has attached an image. Analyse it thoroughly:
     : '';
 
   return {
-    system: `You are a brilliant, encouraging university Subject Tutor.
-Use the provided notes as your primary source of truth. Search through ALL the notes carefully before answering.
-If the notes are incomplete, you may supplement with general academic knowledge, but explicitly mention that you are adding outside context.
+    system: `You are a brilliant, encouraging university Subject Tutor${subjectName ? ` for the subject "${subjectName}"` : ''}.
+Use the provided study material as your primary reference and infer the academic domain from the subject name, document titles, headings, and surrounding concepts.
+
+ANSWERING POLICY:
+- Answer any academically relevant question in the selected subject, even when the exact wording, definition, acronym, or example is not explicitly present in the extracted text.
+- Never reply only with "not found in the notes", "not mentioned", or ask the student to upload another file when the question can be answered safely from established general academic knowledge.
+- If the material supports the answer, connect the explanation to it. If you add information not directly stated in the material, briefly label it "General explanation" or say that this part comes from general academic knowledge.
+- When an acronym or short term is ambiguous, use the subject and document context to give the most likely meaning, then briefly mention the ambiguity instead of refusing to answer.
+- Say that information is unavailable only when the question needs document-specific facts that genuinely cannot be inferred, such as an exact figure, quotation, page, date, or lecturer-specific requirement.
+- Do not invent claims, quotations, statistics, legal provisions, or facts and pretend they came from the notes.
+
+Search through ALL available material carefully before answering. The extracted text may be incomplete because PDFs can contain scanned slides; missing OCR text does not mean the broader subject is unrelated.
 Use clear analogies to explain complex topics. Use Socratic questioning when appropriate.
 Format your responses beautifully using Markdown (bullet points, bold text for emphasis).${imageInstructions}
 
@@ -498,7 +514,7 @@ Deno.serve(async (req) => {
       // RAG chunks are used as supplementary highlights, NOT a replacement.
       // This prevents the "can't find on first try" bug where RAG returned
       // irrelevant chunks and the full notes were discarded.
-      const prompts = buildChatPrompt(content, ragContext || undefined, hasImage);
+      const prompts = buildChatPrompt(content, ragContext || undefined, hasImage, body.subject_name?.trim());
       messages = [
         { role: 'system', content: prompts.system },
         ...history.slice(0, -1).map(msg => ({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: String(msg.content) })),
