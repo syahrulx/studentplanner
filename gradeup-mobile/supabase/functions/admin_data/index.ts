@@ -17,6 +17,11 @@ function looksLikePdfUrl(url: URL): boolean {
   return /\.pdf($|[?#&/])/i.test(full) || full.includes('.pdf');
 }
 
+/** Whether a university's ISO 3166-1 alpha-2 country code is Malaysia (or unset, matching every pre-existing university row). */
+function isMalaysiaCountry(country: unknown): boolean {
+  return String(country ?? 'MY').trim().toUpperCase() === 'MY';
+}
+
 function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -339,7 +344,7 @@ serve(async (req) => {
     if (action === 'universities_list') {
       const { data, error: e } = await admin
         .from('universities')
-        .select('id,name,api_endpoint,login_method,request_method,required_params,response_sample')
+        .select('id,name,country,api_endpoint,login_method,request_method,required_params,response_sample')
         .order('name', { ascending: true });
       if (e) return json(400, { error: e.message });
       return json(200, { items: data ?? [] });
@@ -880,18 +885,20 @@ serve(async (req) => {
 
     if (action === 'calendar_offer_delete') {
       const id = String(payload.id || '').trim();
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       if (!id) return json(400, { error: 'missing_id' });
       const { error: e } = await admin.from('university_calendar_offers').delete().eq('id', id);
       if (e) return json(400, { error: e.message });
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, id },
+        meta: { action, id, reason: reason || null, actor: adminUserId ?? null },
       });
       return json(200, { ok: true });
     }
 
     if (action === 'crowdsourced_calendars_delete_expired') {
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       const rawIds = Array.isArray(payload.ids) ? payload.ids : [];
       const ids = Array.from(new Set(rawIds
         .map((id) => String(id || '').trim())
@@ -915,12 +922,13 @@ serve(async (req) => {
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, requestedCount: ids.length, deletedCount, beforeDate: today },
+        meta: { action, requestedCount: ids.length, deletedCount, beforeDate: today, reason: reason || null, actor: adminUserId ?? null },
       });
       return json(200, { deletedCount });
     }
 
     if (action === 'calendar_offers_delete_expired_admin') {
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       const rawIds = Array.isArray(payload.ids) ? payload.ids : [];
       const deleteAllExpired = payload.deleteAllExpired === true;
       const ids = Array.from(new Set(rawIds
@@ -946,7 +954,7 @@ serve(async (req) => {
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, deleteAllExpired, requestedCount: ids.length, deletedCount, beforeDate: today },
+        meta: { action, deleteAllExpired, requestedCount: ids.length, deletedCount, beforeDate: today, reason: reason || null, actor: adminUserId ?? null },
       });
       return json(200, { deletedCount });
     }
@@ -1139,7 +1147,8 @@ serve(async (req) => {
         return json(400, { error: 'OPENAI_API_KEY is not set in Edge Function secrets.' });
       }
 
-      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities.
+      const isMY = isMalaysiaCountry(payload.country);
+      const systemPrompt = `You are an academic calendar data extractor for ${isMY ? 'Malaysian universities' : 'universities worldwide'}.
 Given the text content from a university's academic calendar webpage, extract structured semester/session information.
 
 IMPORTANT:
@@ -1172,7 +1181,7 @@ Return VALID JSON ONLY with this exact shape:
 
 Rules:
 - If there is only ONE program level/calendar, still return a single-item candidates array.
-- Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
+- Dates must be in YYYY-MM-DD format. Convert whatever date format appears in the source (e.g. "24 Mei 2026", "24/05/2026", "May 24, 2026").
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
 - For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
@@ -1336,7 +1345,8 @@ Rules:
       const truncatedText = pdfText.trim().slice(0, 18000);
 
       // Call OpenAI to extract calendar data (same prompt as URL extraction)
-      const systemPrompt = `You are an academic calendar data extractor for Malaysian universities and polytechnics.
+      const isMY = isMalaysiaCountry(payload.country);
+      const systemPrompt = `You are an academic calendar data extractor for ${isMY ? 'Malaysian universities and polytechnics' : 'universities worldwide'}.
 Given the text content from a university's academic calendar PDF, extract structured semester/session information.
 
 CRITICAL RULES:
@@ -1378,7 +1388,7 @@ Return VALID JSON ONLY with this exact shape:
 }
 
 Rules:
-- Dates must be in YYYY-MM-DD format. Convert any Malaysian date formats (e.g. "24 Mei 2026", "24/05/2026").
+- Dates must be in YYYY-MM-DD format. Convert whatever date format appears in the source (e.g. "24 Mei 2026", "24/05/2026", "May 24, 2026").
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
 - For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
@@ -1523,7 +1533,8 @@ Rules:
 
       const imageDataUrl = `data:${detectedMime};base64,${rawBase64}`;
 
-      const imgSystemPrompt = `You are an academic calendar data extractor for Malaysian universities and polytechnics.
+      const isMY = isMalaysiaCountry(payload.country);
+      const imgSystemPrompt = `You are an academic calendar data extractor for ${isMY ? 'Malaysian universities and polytechnics' : 'universities worldwide'}.
 Given an image of a university's academic calendar (screenshot, photo, or scan), extract structured semester/session information.
 
 CRITICAL RULES:
@@ -1636,33 +1647,88 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       return json(200, { extracted: parsedImg, text_preview: `[Image: ${String(payload.fileName || 'upload')}]` });
     }
 
+    if (action === 'operational_dashboard') {
+      const now = new Date();
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const supportTarget = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const today = now.toISOString().slice(0, 10);
+      const alerts: Array<Record<string, unknown>> = [];
+      const addCount = (key: string, title: string, severity: string, detail: string, route: string, result: { count: number | null; error: { message: string } | null }) => {
+        alerts.push({ key, title, severity, detail, route, count: result.count ?? 0, available: !result.error, error: result.error?.message ?? null });
+      };
+
+      const [paidFree, premiumInvalid, webhookFailures, backendErrors, pdfFailures, pushFailures, calendarsExpiring, supportOverdue] = await Promise.all([
+        admin.from('profiles').select('id', { count: 'exact', head: true }).eq('subscription_plan', 'free').in('subscription_status', ['trial', 'introductory', 'active', 'promotional', 'prepaid', 'cancelled', 'billing_issue', 'temporary']),
+        admin.from('profiles').select('id', { count: 'exact', head: true }).in('subscription_plan', ['plus', 'pro']).in('subscription_status', ['free', 'expired', 'refunded', 'unknown']),
+        admin.from('revenuecat_webhook_events').select('event_id', { count: 'exact', head: true }).in('processing_status', ['unmatched', 'conflict', 'rejected']),
+        admin.from('admin_logs').select('id', { count: 'exact', head: true }).eq('status', 'failed').gte('created_at', dayAgo),
+        admin.from('notes').select('id', { count: 'exact', head: true }).not('extraction_error', 'is', null),
+        admin.from('admin_logs').select('id', { count: 'exact', head: true }).eq('status', 'failed').contains('meta', { action: 'community_broadcast' }).gte('created_at', dayAgo),
+        admin.from('university_calendar_offers').select('id', { count: 'exact', head: true }).gte('end_date', today).lte('end_date', inThirtyDays),
+        admin.from('support_reports').select('id', { count: 'exact', head: true }).is('first_admin_response_at', null).lt('created_at', supportTarget).in('status', ['open', 'in_progress']),
+      ]);
+
+      addCount('paid_showing_free', 'Paid access showing Free', 'critical', 'Profile billing state indicates access, but the effective plan is Free.', '/users', paidFree);
+      addCount('premium_without_valid_state', 'Premium plan with invalid billing state', 'critical', 'Plus/Pro profiles marked expired, refunded, Free or unknown.', '/subscriptions', premiumInvalid);
+      addCount('payment_webhook_failures', 'Payment webhook failures', 'critical', 'RevenueCat events that are unmatched, conflicting or rejected.', '/subscriptions', webhookFailures);
+      addCount('backend_failures', 'Backend failures (24h)', 'warning', 'Failed backend/admin operations recorded in the last 24 hours.', '/logs', backendErrors);
+      addCount('pdf_extraction_failures', 'PDF/note extraction failures', 'warning', 'Notes currently carrying an extraction error.', '/logs', pdfFailures);
+      addCount('push_failures', 'Push notification failures (24h)', 'warning', 'Failed community broadcast push operations.', '/logs', pushFailures);
+      addCount('calendars_expiring', 'Calendars ending within 30 days', 'warning', 'Published academic calendars approaching their end date.', '/academic-calendars', calendarsExpiring);
+      addCount('support_response_overdue', 'Support first response overdue', 'critical', 'Open reports older than 24 hours without an admin response.', '/user-reports', supportOverdue);
+      alerts.push({ key: 'unsynced_client_changes', title: 'Unsynced client changes', severity: 'info', detail: 'Client outbox telemetry is not collected server-side yet.', route: '/dashboard', count: null, available: false, error: null });
+      return json(200, { generatedAt: now.toISOString(), alerts });
+    }
+
     // ── Support reports (Settings -> Report a Problem) ───────────────────────
     // Mobile users insert their own rows under RLS into public.support_reports;
     // admins use these actions (service-role) to list + manage them from the
     // admin web app. Distinct from public.user_reports (App Store UGC).
+    if (action === 'support_admins_list') {
+      const { data, error: e } = await admin
+        .from('admin_users')
+        .select('user_id,email')
+        .eq('disabled', false)
+        .order('email', { ascending: true });
+      if (e) return json(400, { error: e.message });
+      return json(200, { items: data ?? [] });
+    }
+
     if (action === 'list_support_reports') {
       const statusFilter = String(payload.status || 'all');
       const kindFilter = String(payload.kind || 'all');
       const queryStr = String(payload.query || '').trim();
       const lim = Math.max(1, Math.min(500, Number(payload.limit || 200)));
       const offset = Math.max(0, Number(payload.offset || 0));
+      const workflowState = String(payload.workflowState || 'all');
+      const assignedAdminId = String(payload.assignedAdminId || 'all');
+      const dateFrom = String(payload.dateFrom || '').trim();
+      const dateTo = String(payload.dateTo || '').trim();
+      const sort = String(payload.sort || 'newest');
 
       let q = admin
         .from('support_reports')
-        .select(
-          'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,screenshot_url,created_at,resolved_at',
-          { count: 'exact' },
-        )
-        .order('created_at', { ascending: false })
+        .select('*', { count: 'exact' })
+        .order(sort === 'last_user_reply' ? 'last_user_reply_at' : 'created_at', {
+          ascending: sort === 'oldest',
+          nullsFirst: false,
+        })
         .range(offset, offset + lim - 1);
 
       if (statusFilter !== 'all') q = q.eq('status', statusFilter);
       if (kindFilter !== 'all') q = q.eq('kind', kindFilter);
+      if (workflowState !== 'all') q = q.eq('workflow_state', workflowState);
+      if (assignedAdminId === 'unassigned') q = q.is('assigned_admin_id', null);
+      else if (assignedAdminId !== 'all') q = q.eq('assigned_admin_id', assignedAdminId);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) q = q.gte('created_at', `${dateFrom}T00:00:00.000Z`);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) q = q.lte('created_at', `${dateTo}T23:59:59.999Z`);
       if (queryStr.length > 0) {
         // Match against subject / message / reporter snapshot fields.
         const like = `%${queryStr.replace(/[%_]/g, '\\$&')}%`;
         q = q.or(
           [
+            ...(/^[0-9a-f-]{36}$/i.test(queryStr) ? [`id.eq.${queryStr}`, `reporter_id.eq.${queryStr}`] : []),
             `subject.ilike.${like}`,
             `message.ilike.${like}`,
             `reporter_name_snapshot.ilike.${like}`,
@@ -1675,6 +1741,50 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       const { data, error: e, count } = await q;
       if (e) return json(400, { error: e.message });
       return json(200, { items: data ?? [], count: count ?? 0, offset, limit: lim });
+    }
+
+    if (action === 'update_support_report_workflow') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const patch: Record<string, unknown> = {};
+      if (payload.workflowState !== undefined) {
+        const state = String(payload.workflowState);
+        if (!['new', 'assigned', 'in_progress', 'waiting_user', 'waiting_engineering', 'resolved', 'closed'].includes(state)) {
+          return json(400, { error: 'invalid_workflow_state' });
+        }
+        patch.workflow_state = state;
+      }
+      if (payload.assignedAdminId !== undefined) {
+        const assigned = payload.assignedAdminId == null ? null : String(payload.assignedAdminId).trim() || null;
+        if (assigned) {
+          const { data: adminRow } = await admin.from('admin_users').select('user_id').eq('user_id', assigned).eq('disabled', false).maybeSingle();
+          if (!adminRow) return json(400, { error: 'invalid_assigned_admin' });
+        }
+        patch.assigned_admin_id = assigned;
+      }
+      if (payload.internalTags !== undefined) {
+        if (!Array.isArray(payload.internalTags)) return json(400, { error: 'invalid_internal_tags' });
+        patch.internal_tags = [...new Set(payload.internalTags.map((tag: unknown) => String(tag).trim().toLowerCase()).filter(Boolean))].slice(0, 20);
+      }
+      if (payload.escalationLevel !== undefined) {
+        const level = String(payload.escalationLevel);
+        if (!['none', 'normal', 'urgent'].includes(level)) return json(400, { error: 'invalid_escalation_level' });
+        patch.escalation_level = level;
+        patch.escalated_at = level === 'none' ? null : new Date().toISOString();
+      }
+      if (payload.escalationReason !== undefined) {
+        patch.escalation_reason = payload.escalationReason == null
+          ? null
+          : String(payload.escalationReason).trim().slice(0, 1000) || null;
+      }
+      if (Object.keys(patch).length === 0) return json(400, { error: 'empty_patch' });
+      const { data, error: e } = await admin.from('support_reports').update(patch).eq('id', id).select().single();
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request', status: 'success',
+        meta: { action, id, actor: adminUserId ?? null, fields: Object.keys(patch) },
+      });
+      return json(200, { row: data });
     }
 
     if (action === 'update_support_report_status') {
@@ -1770,13 +1880,15 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
 
     if (action === 'delete_support_report') {
       const id = String(payload.id || '').trim();
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       if (!id) return json(400, { error: 'missing_id' });
+      if (reason.length < 5) return json(400, { error: 'reason_required' });
       const { error: e } = await admin.from('support_reports').delete().eq('id', id);
       if (e) return json(400, { error: e.message });
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, id },
+        meta: { action, id, reason, actor: adminUserId ?? null },
       });
       return json(200, { ok: true });
     }

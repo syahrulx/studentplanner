@@ -2,17 +2,23 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   deleteUserReport,
+  listSupportAdmins,
   listUserReports,
   listUserReportMessages,
   replyToUserReport,
   updateUserReportStatus,
+  updateUserReportWorkflow,
   type AdminSupportReportMessage,
   type AdminUserReportRow,
   type UserReportKind,
   type UserReportStatus,
+  type SupportAdminOption,
+  type SupportEscalationLevel,
+  type SupportWorkflowState,
 } from '../lib/api';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
+import { useSafeActionDialog } from '../components/SafeActionDialog';
 
 const KIND_LABEL: Record<UserReportKind, string> = {
   bug: 'Bug / crash',
@@ -44,6 +50,11 @@ const STATUS_TONE: Record<UserReportStatus, 'amber' | 'blue' | 'green' | 'slate'
   in_progress: 'blue',
   resolved: 'green',
   dismissed: 'slate',
+};
+
+const WORKFLOW_LABEL: Record<SupportWorkflowState, string> = {
+  new: 'New', assigned: 'Assigned', in_progress: 'In progress', waiting_user: 'Waiting for user',
+  waiting_engineering: 'Waiting for engineering', resolved: 'Resolved', closed: 'Closed',
 };
 
 type ChipTone = 'rose' | 'amber' | 'blue' | 'violet' | 'pink' | 'green' | 'slate';
@@ -92,7 +103,15 @@ function shortId(id: string | null | undefined): string {
   return id.slice(0, 8);
 }
 
-type RowLimit = 50 | 100 | 200 | 500;
+function responseDuration(createdAt: string, respondedAt: string | null | undefined): string {
+  if (!respondedAt) return 'Waiting for first response';
+  const minutes = Math.max(0, Math.round((new Date(respondedAt).getTime() - new Date(createdAt).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${(minutes / 60).toFixed(1)} hr`;
+  return `${(minutes / 1440).toFixed(1)} days`;
+}
+
+type RowLimit = 25 | 50 | 100 | 200;
 
 export function UserReportsRoute() {
   const { searchQuery: globalSearch } = useAdminSearch();
@@ -105,11 +124,19 @@ export function UserReportsRoute() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<UserReportStatus | 'all'>('open');
   const [kindFilter, setKindFilter] = useState<UserReportKind | 'all'>('all');
+  const [workflowFilter, setWorkflowFilter] = useState<SupportWorkflowState | 'all'>('all');
+  const [assignedFilter, setAssignedFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'last_user_reply'>('newest');
   const [rowLimit, setRowLimit] = useState<RowLimit>(100);
+  const [page, setPage] = useState(0);
+  const [admins, setAdmins] = useState<SupportAdminOption[]>([]);
 
   const [selected, setSelected] = useState<AdminUserReportRow | null>(null);
+  const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
 
-  async function refresh() {
+  async function refresh(targetPage = page) {
     setBusy(true);
     setErr(null);
     try {
@@ -118,10 +145,16 @@ export function UserReportsRoute() {
         kind: kindFilter,
         query: query.trim(),
         limit: Number(rowLimit),
-        offset: 0,
+        offset: targetPage * rowLimit,
+        workflowState: workflowFilter,
+        assignedAdminId: assignedFilter as 'all' | 'unassigned',
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        sort,
       });
       setItems(res.items);
       setCount(res.count);
+      setPage(targetPage);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -130,9 +163,13 @@ export function UserReportsRoute() {
   }
 
   useEffect(() => {
-    refresh();
+    void refresh(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, kindFilter, rowLimit]);
+  }, [statusFilter, kindFilter, workflowFilter, assignedFilter, rowLimit]);
+
+  useEffect(() => {
+    void listSupportAdmins().then(setAdmins).catch(() => setAdmins([]));
+  }, []);
 
   const filteredItems = useMemo(() => {
     const q = (globalSearch || '').trim().toLowerCase();
@@ -160,22 +197,39 @@ export function UserReportsRoute() {
       setItems((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
       if (selected?.id === row.id) setSelected(updated);
     } catch (e) {
-      alert(`Could not update status: ${e instanceof Error ? e.message : String(e)}`);
+      setErr(`Could not update status: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  async function removeRow(row: AdminUserReportRow) {
-    if (!confirm(`Permanently delete this report from ${row.reporter_name_snapshot || 'unknown user'}?`)) {
-      return;
-    }
-    try {
-      await deleteUserReport(row.id);
-      setItems((prev) => prev.filter((r) => r.id !== row.id));
-      if (selected?.id === row.id) setSelected(null);
-    } catch (e) {
-      alert(`Could not delete report: ${e instanceof Error ? e.message : String(e)}`);
-    }
+  function removeRow(row: AdminUserReportRow) {
+    requestSafeAction({
+      title: 'Permanently delete support report', operation: 'Delete report', affectedCount: 1,
+      subject: `${row.id} · ${row.subject}`, confirmationText: row.id.slice(0, 8), requireReason: true,
+      irreversible: true, warning: 'This permanently removes the report and conversation. Undo is unavailable.',
+      onConfirm: async (reason) => {
+        await deleteUserReport(row.id, reason);
+        setItems((prev) => prev.filter((report) => report.id !== row.id));
+        if (selected?.id === row.id) setSelected(null);
+        return { affected: 1 };
+      },
+    });
   }
+
+  async function changeWorkflow(row: AdminUserReportRow, patch: Parameters<typeof updateUserReportWorkflow>[1]) {
+    const res = await updateUserReportWorkflow(row.id, patch);
+    setItems((prev) => prev.map((item) => item.id === row.id ? res.row : item));
+    if (selected?.id === row.id) setSelected(res.row);
+  }
+
+  const pageCount = Math.max(1, Math.ceil(count / rowLimit));
+  const queueMetrics = useMemo(() => {
+    const now = Date.now();
+    return {
+      unassigned: items.filter((row) => !row.assigned_admin_id).length,
+      newReplies: items.filter((row) => row.last_user_reply_at && (!row.last_admin_reply_at || row.last_user_reply_at > row.last_admin_reply_at)).length,
+      responseOverdue: items.filter((row) => !row.first_admin_response_at && now - new Date(row.created_at).getTime() > 24 * 60 * 60 * 1000).length,
+    };
+  }, [items]);
 
   async function reply(row: AdminUserReportRow, body: string, status: UserReportStatus) {
     const res = await replyToUserReport(row.id, body, status);
@@ -195,6 +249,10 @@ export function UserReportsRoute() {
         </div>
       </MotionSection>
 
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {[['Unassigned on this page', queueMetrics.unassigned], ['New user replies', queueMetrics.newReplies], ['First response >24h', queueMetrics.responseOverdue]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="text-xs font-black uppercase text-slate-500">{label}</div><div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{value}</div></div>)}
+      </div>
+
       <MotionSection delay={0.05} className="mt-6">
         <MotionPanel>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
@@ -210,7 +268,7 @@ export function UserReportsRoute() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') refresh();
                     }}
-                    placeholder="Subject, message, reporter name/email…"
+                    placeholder="Report ID, user ID, subject, name or email…"
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </label>
@@ -231,6 +289,27 @@ export function UserReportsRoute() {
                     <option value="dismissed">Dismissed</option>
                   </select>
                 </label>
+
+                <label className="block lg:w-52">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Workflow</div>
+                  <select value={workflowFilter} onChange={(e) => setWorkflowFilter(e.target.value as SupportWorkflowState | 'all')} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <option value="all">All workflow states</option>
+                    {Object.entries(WORKFLOW_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+
+                <label className="block lg:w-52">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Assigned admin</div>
+                  <select value={assignedFilter} onChange={(e) => setAssignedFilter(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <option value="all">All assignments</option><option value="unassigned">Unassigned</option>
+                    {admins.map((admin) => <option key={admin.user_id} value={admin.user_id}>{admin.email}</option>)}
+                  </select>
+                </label>
+
+                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">From</div><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
+                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">To</div><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
+
+                <label className="block lg:w-48"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Sort</div><select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950"><option value="newest">Newest report</option><option value="oldest">Oldest report</option><option value="last_user_reply">Latest user reply</option></select></label>
 
                 <label className="block lg:w-44">
                   <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
@@ -260,16 +339,16 @@ export function UserReportsRoute() {
                     onChange={(e) => setRowLimit(Number(e.target.value) as RowLimit)}
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   >
+                    <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                     <option value={200}>200</option>
-                    <option value={500}>500</option>
                   </select>
                 </label>
               </div>
 
               <button
-                onClick={refresh}
+                onClick={() => void refresh(0)}
                 disabled={busy}
                 className="h-11 shrink-0 rounded-2xl bg-brand-600 px-5 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
               >
@@ -284,7 +363,7 @@ export function UserReportsRoute() {
             ) : null}
 
             <div className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Showing {filteredItems.length} of {count}
+              Showing {filteredItems.length} of {count} · page {page + 1} of {pageCount}
             </div>
 
             <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -297,6 +376,7 @@ export function UserReportsRoute() {
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Subject</th>
                       <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Owner</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -304,7 +384,7 @@ export function UserReportsRoute() {
                     {filteredItems.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-4 py-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
                         >
                           {busy ? 'Loading…' : 'No reports match these filters.'}
@@ -354,7 +434,10 @@ export function UserReportsRoute() {
                           </td>
                           <td className="px-4 py-3 align-top">
                             <Chip tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Chip>
+                            <div className="mt-1 text-[11px] font-bold text-slate-500">{WORKFLOW_LABEL[r.workflow_state ?? 'new']}</div>
+                            {r.last_user_reply_at && (!r.last_admin_reply_at || r.last_user_reply_at > r.last_admin_reply_at) ? <div className="mt-1 text-[10px] font-black uppercase text-rose-600">New user reply</div> : null}
                           </td>
+                          <td className="px-4 py-3 align-top text-xs font-semibold text-slate-600 dark:text-slate-300">{admins.find((admin) => admin.user_id === r.assigned_admin_id)?.email ?? 'Unassigned'}</td>
                           <td className="px-4 py-3 text-right align-top">
                             <button
                               onClick={(e) => {
@@ -373,6 +456,11 @@ export function UserReportsRoute() {
                 </table>
               </div>
             </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <button type="button" disabled={busy || page === 0} onClick={() => void refresh(page - 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950">Previous</button>
+              <span className="text-xs font-bold text-slate-500">Page {page + 1} of {pageCount}</span>
+              <button type="button" disabled={busy || page + 1 >= pageCount} onClick={() => void refresh(page + 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950">Next</button>
+            </div>
           </div>
         </MotionPanel>
       </MotionSection>
@@ -385,10 +473,13 @@ export function UserReportsRoute() {
               onChangeStatus={(s, notes) => changeStatus(selected, s, notes)}
               onReply={(body, status) => reply(selected, body, status)}
               onDelete={() => removeRow(selected)}
+              admins={admins}
+              onWorkflow={(patch) => changeWorkflow(selected, patch)}
             />,
             document.body,
           )
         : null}
+      {safeActionDialog}
     </div>
   );
 }
@@ -399,17 +490,24 @@ function ReportDetailModal({
   onChangeStatus,
   onReply,
   onDelete,
+  admins,
+  onWorkflow,
 }: {
   row: AdminUserReportRow;
   onClose: () => void;
   onChangeStatus: (status: UserReportStatus, adminNotes: string | null) => void | Promise<void>;
   onReply: (body: string, status: UserReportStatus) => Promise<AdminSupportReportMessage>;
   onDelete: () => void;
+  admins: SupportAdminOption[];
+  onWorkflow: (patch: Parameters<typeof updateUserReportWorkflow>[1]) => void | Promise<void>;
 }) {
   const [notes, setNotes] = useState(row.admin_notes ?? '');
   const [messages, setMessages] = useState<AdminSupportReportMessage[]>([]);
   const [reply, setReply] = useState('');
   const [replyBusy, setReplyBusy] = useState(false);
+  const [replyError, setReplyError] = useState('');
+  const [tags, setTags] = useState((row.internal_tags ?? []).join(', '));
+  const [escalationReason, setEscalationReason] = useState(row.escalation_reason ?? '');
   useEffect(() => {
     setNotes(row.admin_notes ?? '');
   }, [row.id, row.admin_notes]);
@@ -425,12 +523,13 @@ function ReportDetailModal({
     const body = reply.trim();
     if (!body || replyBusy) return;
     setReplyBusy(true);
+    setReplyError('');
     try {
       const message = await onReply(body, row.status === 'resolved' ? 'in_progress' : row.status);
       setMessages((current) => [...current, message]);
       setReply('');
     } catch (error) {
-      alert(`Could not send reply: ${error instanceof Error ? error.message : String(error)}`);
+      setReplyError(`Could not send reply: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setReplyBusy(false);
     }
@@ -474,6 +573,18 @@ function ReportDetailModal({
           <Detail label="Reported user handle">{row.target_user_handle || '—'}</Detail>
           <Detail label="Platform">{row.platform || '—'}</Detail>
           <Detail label="App version">{row.app_version || '—'}</Detail>
+          <Detail label="Report ID" mono>{row.id}</Detail>
+          <Detail label="First response">{responseDuration(row.created_at, row.first_admin_response_at)}</Detail>
+          <Detail label="Last user reply">{formatDateTime(row.last_user_reply_at)}</Detail>
+          <Detail label="Reopened">{String(row.reopened_count ?? 0)}</Detail>
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 dark:border-slate-800 dark:bg-slate-950/50">
+          <label><div className="mb-1 text-xs font-black uppercase text-slate-600 dark:text-slate-300">Assigned admin</div><select value={row.assigned_admin_id ?? ''} onChange={(e) => void onWorkflow({ assignedAdminId: e.target.value || null, workflowState: e.target.value && (row.workflow_state ?? 'new') === 'new' ? 'assigned' : undefined })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900"><option value="">Unassigned</option>{admins.map((admin) => <option key={admin.user_id} value={admin.user_id}>{admin.email}</option>)}</select></label>
+          <label><div className="mb-1 text-xs font-black uppercase text-slate-600 dark:text-slate-300">Workflow state</div><select value={row.workflow_state ?? 'new'} onChange={(e) => void onWorkflow({ workflowState: e.target.value as SupportWorkflowState })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900">{Object.entries(WORKFLOW_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="sm:col-span-2"><div className="mb-1 text-xs font-black uppercase text-slate-600 dark:text-slate-300">Internal tags</div><div className="flex gap-2"><input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="payment, urgent, pdf" className="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900" /><button onClick={() => void onWorkflow({ internalTags: tags.split(',').map((tag) => tag.trim()).filter(Boolean) })} className="rounded-xl bg-slate-900 px-4 text-xs font-black text-white dark:bg-slate-100 dark:text-slate-900">Save tags</button></div></label>
+          <label><div className="mb-1 text-xs font-black uppercase text-slate-600 dark:text-slate-300">Escalation</div><select value={row.escalation_level ?? 'none'} onChange={(e) => void onWorkflow({ escalationLevel: e.target.value as SupportEscalationLevel, escalationReason })} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900"><option value="none">Not escalated</option><option value="normal">Escalated</option><option value="urgent">Urgent escalation</option></select></label>
+          <label><div className="mb-1 text-xs font-black uppercase text-slate-600 dark:text-slate-300">Escalation reason</div><input value={escalationReason} onChange={(e) => setEscalationReason(e.target.value)} onBlur={() => { if ((row.escalation_level ?? 'none') !== 'none') void onWorkflow({ escalationReason }); }} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900" /></label>
         </div>
 
         <div className="mt-5">
@@ -507,6 +618,7 @@ function ReportDetailModal({
             ))}
           </div>
           <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={3} maxLength={4000} placeholder="Reply to this user…" className="mt-3 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" />
+          {replyError ? <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 p-2 text-xs font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">{replyError}</div> : null}
           <div className="mt-2 flex justify-end"><button disabled={!reply.trim() || replyBusy} onClick={sendReply} className="rounded-2xl bg-brand-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{replyBusy ? 'Sending…' : 'Send reply'}</button></div>
         </div>
 

@@ -465,8 +465,9 @@ export default function Planner() {
     d.setDate(d.getDate() + 7);
     setActiveDate(toLocalISO(d));
   };
-  const hasTaskOnDay = (dateISO: string) => tasks.some((t) => taskOccursOn(t, dateISO));
-  const getTaskCountOnDay = (dateISO: string) => tasks.reduce((n, t) => (taskOccursOn(t, dateISO) ? n + 1 : n), 0);
+  // Breakdown steps live under their parent and must not inflate calendar workload badges.
+  const hasTaskOnDay = (dateISO: string) => tasks.some((t) => !t.parentTaskId && taskOccursOn(t, dateISO));
+  const getTaskCountOnDay = (dateISO: string) => tasks.reduce((n, t) => (!t.parentTaskId && taskOccursOn(t, dateISO) ? n + 1 : n), 0);
   const monthGridCells = useMemo(() => getMonthGrid(activeYear, activeMonth), [activeYear, activeMonth]);
 
   const goToPrevMonth = () => {
@@ -494,7 +495,7 @@ export default function Planner() {
   // Count total items (tasks + study sessions) on a given date. Recurring tasks
   // count once per scheduled weekday.
   const getItemCountOnDay = (dateISO: string) => {
-    const taskCount = tasks.reduce((n, t) => (taskOccursOn(t, dateISO) ? n + 1 : n), 0);
+    const taskCount = tasks.reduce((n, t) => (!t.parentTaskId && taskOccursOn(t, dateISO) ? n + 1 : n), 0);
     const studyCount = studyItemsForPlanner.filter((s) => s.date === dateISO).length;
     return taskCount + studyCount;
   };
@@ -666,9 +667,33 @@ export default function Planner() {
 
   const pinnedSet = useMemo(() => new Set(pinnedTaskIds), [pinnedTaskIds]);
   const displayList = useMemo((): PlannerItem[] => {
+    const groupBreakdownSteps = (ordered: PlannerItem[]): PlannerItem[] => {
+      const childIds = new Set<string>();
+      const childrenByParent = new Map<string, PlannerTaskItem[]>();
+      ordered.forEach((item) => {
+        if (item.itemType !== 'task' || !item.parentTaskId || item.isSharedTask) return;
+        childIds.add(item.id);
+        const children = childrenByParent.get(item.parentTaskId) ?? [];
+        children.push(item);
+        childrenByParent.set(item.parentTaskId, children);
+      });
+      childrenByParent.forEach((children) => children.sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0)));
+      const grouped: PlannerItem[] = [];
+      ordered.forEach((item) => {
+        if (item.itemType === 'task' && childIds.has(item.id)) return;
+        grouped.push(item);
+        if (item.itemType === 'task') grouped.push(...(childrenByParent.get(item.id) ?? []));
+      });
+      // Keep orphaned steps visible if a filtered view contains the step but not its parent.
+      const emitted = new Set(grouped.filter((item) => item.itemType === 'task').map((item) => (item as PlannerTaskItem).id));
+      ordered.forEach((item) => {
+        if (item.itemType === 'task' && childIds.has(item.id) && !emitted.has(item.id)) grouped.push(item);
+      });
+      return grouped;
+    };
     // In "all" view, keep strict date grouping: no pinning, just combined sorted list.
     if (view === 'all') {
-      return combinedList;
+      return groupBreakdownSteps(combinedList);
     }
     const raw = combinedList;
     const isPinned = (item: PlannerItem): item is PlannerTaskItem =>
@@ -721,7 +746,7 @@ export default function Planner() {
       return timeA.localeCompare(timeB);
     });
 
-    return [...pinned, ...unpinned];
+    return groupBreakdownSteps([...pinned, ...unpinned]);
   }, [combinedList, pinnedSet, pinnedTaskIds, sortMode]);
 
   /** Week grid: scroll to first hour that has items (tasks default to 23:59 and sit at the bottom). */
@@ -748,7 +773,7 @@ export default function Planner() {
   }, [view, activeDate, displayList, weekDays]);
 
   const listCount = displayList.length;
-  const pendingShareCount = useMemo(() => tasks.filter((t) => !t.isDone).length, [tasks]);
+  const pendingShareCount = useMemo(() => tasks.filter((t) => !t.parentTaskId && !t.isDone).length, [tasks]);
   const shareAllRecipientId = shareAllTab === 'friend' ? shareAllFriendId : shareAllCircleId;
   const shareAllAutoOn = useMemo(() => {
     if (shareAllTab === 'friend' && shareAllFriendId) {
@@ -823,6 +848,7 @@ export default function Planner() {
               currentWeek: user.currentWeek,
               userId: user.id,
               semesterStartISO: academicCalendar?.startDate,
+              country: user.country,
             });
 
             if (extractedTasks.length === 0) {
@@ -1145,14 +1171,19 @@ export default function Planner() {
         );
         return;
       }
+      const hasBreakdown = !pt.parentTaskId && tasks.some((task) => task.parentTaskId === pt.id);
       Alert.alert(
-        T('deleteTask'),
-        `"${item.title}" ${T('deleteTaskDesc')}`,
+        hasBreakdown ? 'Task options' : T('deleteTask'),
+        hasBreakdown ? `Manage the steps for "${item.title}" or delete the task.` : `"${item.title}" ${T('deleteTaskDesc')}`,
         [
           { text: T('cancel'), style: 'cancel' },
+          ...(hasBreakdown ? [{
+            text: 'Edit breakdown',
+            onPress: () => router.push({ pathname: '/task-breakdown', params: { taskId: pt.id } } as any),
+          }] : []),
           {
             text: T('delete'),
-            style: 'destructive',
+            style: 'destructive' as const,
             onPress: () => deleteTask(item.id),
           },
         ]
@@ -1181,6 +1212,11 @@ export default function Planner() {
     const subjectColor = resolveSubjectColor(subject);
     const daysUntil = item.itemType === 'task' ? getDaysUntilDue(item.dueDate) : 99;
     const taskRow = item.itemType === 'task' ? (item as PlannerTaskItem) : null;
+    const isBreakdownStep = !!taskRow?.parentTaskId;
+    const breakdownSteps = taskRow && !isBreakdownStep
+      ? tasks.filter((task) => task.parentTaskId === taskRow.id)
+      : [];
+    const completedBreakdownSteps = breakdownSteps.filter((task) => task.isDone).length;
     const isOverdue =
       item.itemType === 'task' &&
       !item.isDone &&
@@ -1212,7 +1248,9 @@ export default function Planner() {
               : `${daysUntil} ${T('daysLeft')}`;
     const secondaryLabel = item.itemType === 'study'
       ? (item.topic ? `${item.durationMinutes} min • ${item.topic}` : `${item.durationMinutes} min`)
-      : `${item.type} • ${getCardSubject(item)}`;
+      : isBreakdownStep
+        ? `Step ${(taskRow?.stepOrder ?? 0) + 1} • ${getCardSubject(item)}`
+        : `${item.type} • ${getCardSubject(item)}${breakdownSteps.length ? ` • ${completedBreakdownSteps}/${breakdownSteps.length} steps` : ''}`;
     const statusTextStyle = item.isDone
       ? s.taskInlineStatusDone
       : item.itemType === 'study'
@@ -1236,7 +1274,7 @@ export default function Planner() {
             ? 'rgba(245,158,11,0.22)'
             : theme.border;
     return (
-      <View key={`card-${idx}`} style={s.taskCardShell}>
+      <View key={`card-${idx}`} style={[s.taskCardShell, isBreakdownStep && s.breakdownStepShell]}>
         <Pressable
           onPress={(e) => { e.stopPropagation(); handleItemAction(item); }}
           style={[
@@ -3106,6 +3144,10 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     alignSelf: 'stretch',
     alignItems: 'stretch',
     justifyContent: 'center',
+  },
+  breakdownStepShell: {
+    width: '92%',
+    alignSelf: 'flex-end',
   },
   taskCard: {
     borderRadius: 18,

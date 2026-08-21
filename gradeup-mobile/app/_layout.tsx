@@ -33,6 +33,7 @@ import {
   handleAttendanceNotificationResponse,
 } from '@/src/attendanceRecording';
 import UpdatePrompt from '@/src/components/UpdatePrompt';
+import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
@@ -335,6 +336,7 @@ function RootLayoutNav() {
           <WhatsNewPromptModal />
         </QuizProvider>
       </CommunityProvider>
+      <OfflineSyncBanner />
     </AppProvider>
   );
 }

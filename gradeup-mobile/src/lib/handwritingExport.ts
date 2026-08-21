@@ -84,14 +84,23 @@ function drawStroke(page: PDFPage, stroke: HandwritingStroke): void {
     const previous = stroke.points[index - 1];
     const current = stroke.points[index];
     const pressure = Math.max(0.25, ((previous.pressure ?? 0.55) + (current.pressure ?? 0.55)) / 2);
+    const penStyle = stroke.penStyle ?? 'fountain';
+    const pressureSensitivity = penStyle === 'ball' ? 0 : (stroke.pressureSensitivity ?? 0.5);
+    const pressureWidth = 1 + (pressure - 0.5) * pressureSensitivity * (penStyle === 'brush' ? 1.8 : 1);
+    const thickness = stroke.tool === 'highlighter'
+      ? stroke.width * 2.8
+      : stroke.tool === 'pencil'
+        ? Math.max(0.65, stroke.width * (0.5 + (stroke.pencilSoftness ?? 0.5) * 0.22))
+        : stroke.width * (penStyle === 'ball' ? 0.82 : penStyle === 'brush' ? 1.35 : 1) * pressureWidth;
+    const opacity = stroke.tool === 'pencil'
+      ? Math.max(0.2, stroke.opacity * 0.76)
+      : stroke.opacity;
     page.drawLine({
       start: { x: previous.x * width, y: height - previous.y * height },
       end: { x: current.x * width, y: height - current.y * height },
       color,
-      opacity: stroke.opacity,
-      thickness: stroke.tool === 'highlighter'
-        ? stroke.width * 1.9
-        : stroke.width * (0.72 + pressure * 0.55),
+      opacity,
+      thickness,
       lineCap: 1,
     });
   }

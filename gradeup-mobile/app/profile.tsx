@@ -36,6 +36,7 @@ import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerG
 import { pickAvatarImage } from '@/src/lib/pickAvatarImage';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
 import { fetchCampusFaculties, addCampusFaculty } from '@/src/lib/campusRoomsApi';
+import { COUNTRIES, getCountryByCode } from '@/src/lib/countries';
 
 export default function Profile() {
   const {
@@ -85,6 +86,9 @@ export default function Profile() {
     if (!q) return campuses;
     return campuses.filter(c => c.name.toLowerCase().includes(q));
   }, [campuses, campusSearchQuery]);
+
+  const [countryModalVisible, setCountryModalVisible] = useState(false);
+  const currentCountry = getCountryByCode(user.country);
 
   const [facultyListModalVisible, setFacultyListModalVisible] = useState(false);
   const [facultyOptions, setFacultyOptions] = useState<string[]>([]);
@@ -270,6 +274,19 @@ export default function Profile() {
       await updateProfile({ campus: campusName });
     } catch {
       Alert.alert(T('error'), T('campusUpdateFailed'));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSelectCountry = async (code: string) => {
+    setCountryModalVisible(false);
+    if (code === (user.country || 'MY')) return;
+    setIsUpdating(true);
+    try {
+      await updateProfile({ country: code });
+    } catch {
+      Alert.alert(T('error'), 'Failed to update country');
     } finally {
       setIsUpdating(false);
     }
@@ -469,6 +486,20 @@ export default function Profile() {
 
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACADEMIC INFO</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <Pressable
+          style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
+          onPress={() => setCountryModalVisible(true)}
+          disabled={isUpdating}
+        >
+          <Text style={[styles.cardLabel, { color: theme.text }]}>Country</Text>
+          <View style={styles.cardValueWrap}>
+            <Text style={[styles.cardValue, { color: theme.textSecondary }]}>
+              {currentCountry.flag} {currentCountry.name}
+            </Text>
+            <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
+          </View>
+        </Pressable>
+        <View style={styles.divider} />
         <Pressable
           style={({ pressed }) => [styles.cardRowPressable, pressed && { opacity: 0.85 }]}
           onPress={handleEditProgram}
@@ -776,6 +807,54 @@ export default function Profile() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Country Modal */}
+      <Modal
+        visible={countryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCountryModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setCountryModalVisible(false)} />
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Select Country</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>
+              Changing your country updates the universities and language shown to you. Your saved university stays as-is.
+            </Text>
+
+            <ScrollView style={{ marginVertical: 12, borderTopWidth: 1, borderTopColor: theme.border }}>
+              {COUNTRIES.map((c) => (
+                <Pressable
+                  key={c.code}
+                  style={({ pressed }) => [
+                    { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  onPress={() => handleSelectCountry(c.code)}
+                  disabled={isUpdating}
+                >
+                  <Text style={{ fontSize: 20, marginRight: 12 }}>{c.flag}</Text>
+                  <Text style={{ fontSize: 16, color: theme.text, flex: 1 }}>{c.name}</Text>
+                  {c.code === (user.country || 'MY') && (
+                    <Feather name="check" size={18} color={theme.primary} />
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnCancel, { borderColor: theme.border, flex: 1 }]}
+                onPress={() => setCountryModalVisible(false)}
+                disabled={isUpdating}
+              >
+                <Text style={[styles.modalBtnCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Faculty List Modal */}

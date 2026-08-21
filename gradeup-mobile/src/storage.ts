@@ -490,6 +490,8 @@ export interface NotificationPrefs {
    * still record their attendance from there. Only the popup is suppressed.
    */
   attendanceCheckinPopup: boolean;
+  /** Skip class check-ins on holidays, breaks, exams and other non-lecture periods. */
+  pauseAttendanceOutsideLecturePeriods: boolean;
   weeklySummaryEnabled: boolean;
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
@@ -505,6 +507,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   classroomSyncEnabled: true,
   sharedTasksEnabled: true,
   attendanceCheckinPopup: true,
+  pauseAttendanceOutsideLecturePeriods: true,
   weeklySummaryEnabled: false,
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
@@ -530,6 +533,10 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           typeof parsed.attendanceCheckinPopup === 'boolean'
             ? parsed.attendanceCheckinPopup
             : DEFAULT_NOTIFICATION_PREFS.attendanceCheckinPopup,
+        pauseAttendanceOutsideLecturePeriods:
+          typeof parsed.pauseAttendanceOutsideLecturePeriods === 'boolean'
+            ? parsed.pauseAttendanceOutsideLecturePeriods
+            : DEFAULT_NOTIFICATION_PREFS.pauseAttendanceOutsideLecturePeriods,
         todaysFocusPref:
           parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
             ? parsed.todaysFocusPref

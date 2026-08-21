@@ -41,6 +41,13 @@ import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
 import { SpiderHeaderWebOverlay } from '@/components/SpiderHeaderWebOverlay';
 import { PurpleAuroraOverlay } from '@/components/PurpleAuroraOverlay';
+import { RecommendedTodayCard } from '@/src/components/RecommendedTodayCard';
+import type { RecommendationFeedback } from '@/src/lib/recommendationDb';
+import {
+  getRecommendedToday,
+  loadStudyRecommendationFeedback,
+  recordStudyRecommendationFeedback,
+} from '@/src/lib/studyRecommendations';
 const DASHBOARD_LIST = [{ key: 'home' as const }];
 
 /** Home header: darker base + stronger waves (only these themes; blush/emerald unchanged). */
@@ -1014,11 +1021,65 @@ export default function Dashboard() {
   );
   /** Same teaching-week index as Planner (HEA / UITM periods + fallbacks); not only profile currentWeek */
   const [todayISO, setTodayISO] = useState(() => getTodayISO());
+  const [recommendationFeedback, setRecommendationFeedback] = useState<RecommendationFeedback[]>([]);
   useFocusEffect(
     useCallback(() => {
       setTodayISO(getTodayISO());
     }, []),
   );
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      if (!user.id) {
+        setRecommendationFeedback([]);
+        return () => { active = false; };
+      }
+      void loadStudyRecommendationFeedback(user.id).then((items) => {
+        if (active) setRecommendationFeedback(items);
+      });
+      return () => { active = false; };
+    }, [user.id]),
+  );
+  const recommendedToday = useMemo(
+    () => getRecommendedToday({ tasks, feedback: recommendationFeedback, today: todayISO }),
+    [tasks, recommendationFeedback, todayISO],
+  );
+  const dismissRecommendation = useCallback(() => {
+    if (!recommendedToday || !user.id) return;
+    const feedback: RecommendationFeedback = {
+      recommendationKey: recommendedToday.key,
+      ruleId: recommendedToday.ruleId,
+      relatedTaskId: recommendedToday.taskId,
+      status: 'dismissed',
+      shownForDate: recommendedToday.shownForDate,
+      updatedAt: new Date().toISOString(),
+    };
+    setRecommendationFeedback((current) => [
+      feedback,
+      ...current.filter((item) => item.recommendationKey !== feedback.recommendationKey),
+    ]);
+    void recordStudyRecommendationFeedback({
+      userId: user.id,
+      recommendationKey: recommendedToday.key,
+      ruleId: recommendedToday.ruleId,
+      relatedTaskId: recommendedToday.taskId,
+      status: 'dismissed',
+      shownForDate: recommendedToday.shownForDate,
+    });
+  }, [recommendedToday, user.id]);
+  const openRecommendationBreakdown = useCallback(() => {
+    if (!recommendedToday) return;
+    router.push({
+      pathname: '/task-breakdown',
+      params: {
+        taskId: recommendedToday.taskId,
+        suggestedCount: String(recommendedToday.suggestedStepCount),
+        recommendationKey: recommendedToday.key,
+        ruleId: recommendedToday.ruleId,
+        shownForDate: recommendedToday.shownForDate,
+      },
+    } as any);
+  }, [recommendedToday]);
   const [refreshingHome, setRefreshingHome] = useState(false);
   const [themeLoadingHold, setThemeLoadingHold] = useState(false);
   const themeLoadingStartedAtRef = useRef<number | null>(null);
@@ -1689,6 +1750,14 @@ export default function Dashboard() {
         {isSpiderTheme ? <SpiderLottie style={catStyles.spiderBelowPeakLottie} /> : null}
         </View>
       </View>
+
+      {recommendedToday ? (
+        <RecommendedTodayCard
+          recommendation={recommendedToday}
+          onBreakdown={openRecommendationBreakdown}
+          onDismiss={dismissRecommendation}
+        />
+      ) : null}
 
       {/* Today's focus */}
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst]}>

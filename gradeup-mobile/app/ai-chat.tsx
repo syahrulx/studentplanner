@@ -85,6 +85,7 @@ export default function AiChat() {
             currentWeek: user.currentWeek,
             userId: user.id,
             semesterStartISO: academicCalendar?.startDate,
+            country: user.country,
           });
 
           if (tasks.length === 0) {

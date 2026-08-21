@@ -80,7 +80,9 @@ export function getWeekDatesFor(isoDate: string): { label: string; dateISO: stri
   return labels.map((label, i) => {
     const x = new Date(d);
     x.setDate(x.getDate() + i);
-    const dateISO = x.toISOString().slice(0, 10);
+    // Build from local y/m/d, not toISOString() (which converts through UTC
+    // and can roll to the wrong calendar day at UTC+12..+14 offsets).
+    const dateISO = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
     return { label, dateISO, dayNum: x.getDate() };
   });
 }

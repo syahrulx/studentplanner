@@ -80,6 +80,12 @@ export interface Task {
   excludeFromFocus?: boolean;
   /** If true, hide this generic to-do from Semester Pulse and workload maps. */
   excludeFromPulse?: boolean;
+  /** Parent task id when this row is a user-authored breakdown step. */
+  parentTaskId?: string;
+  /** Zero-based order under parentTaskId. */
+  stepOrder?: number;
+  /** Planning estimate only; never interpreted as measured study time. */
+  estimatedMinutes?: number;
 }
 
 /** Academic level for SOW/calendar (diploma, bachelor, etc.) */
@@ -146,6 +152,8 @@ export interface UserProfile {
   university?: string;
   /** University portal ID (e.g. 'uitm') — set when user connects once */
   universityId?: string;
+  /** ISO 3166-1 alpha-2 country code (e.g. 'MY', 'US'). Defaults to 'MY' for every existing user; editable in Settings. */
+  country?: string;
   /** Diploma, Bachelor, Master, etc. – affects semester length and SOW intelligence */
   academicLevel?: AcademicLevel;
   /** From MyStudent profile / CDN when linked */
@@ -321,7 +329,7 @@ export interface TaskShareStream {
   updated_at: string;
 }
 
-export type GradingScheme = 'UiTM' | 'uitm' | 'generic' | 'generic_4' | 'generic_5';
+export type GradingScheme = 'uitm' | 'generic_4' | 'generic_5';
 
 export interface GradeAssessment {
   id: string;

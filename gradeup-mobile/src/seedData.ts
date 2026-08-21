@@ -9,6 +9,8 @@ export const initialUser: UserProfile = {
   part: 0,
   currentWeek: 1,
   subscriptionPlan: 'free',
+  /** Safe default before the profile loads — matches every existing user's actual value. */
+  country: 'MY',
   /** Default semester start: keep “teaching week 1” plausible for late March 2026 (avoids instant week 5 on cold start). */
   startDate: '2026-03-24',
 };

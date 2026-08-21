@@ -13,7 +13,7 @@ import { useTheme } from '@/hooks/useTheme';
 import type { SubjectGradeConfig, GradeAssessment, GradingScheme, GradeRow } from '@/src/types';
 import {
   calculateGrade, validateAssessmentWeights, gradeColor,
-  UITM_GRADE_TABLE,
+  UITM_GRADE_TABLE, GENERIC_4_GRADE_TABLE, GENERIC_5_GRADE_TABLE,
   SCHEME_LABELS, getGradeTable,
 } from '@/src/lib/gradeCalculator';
 import { getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
@@ -22,16 +22,22 @@ import { getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeSt
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function fmt(n: number, dp = 1) { return isNaN(n) ? '0' : n.toFixed(dp); }
 
-function makeDefault(subjectId: string): SubjectGradeConfig {
+function makeDefault(subjectId: string, country?: string): SubjectGradeConfig {
   return {
-    subjectId, gradingScheme: 'uitm', hasFinalExam: true,
+    subjectId,
+    // UiTM's scheme only makes sense for Malaysian students; everyone else
+    // starts on the generic 4.0 GPA scale (still fully editable below).
+    gradingScheme: (country || 'MY') === 'MY' ? 'uitm' : 'generic_4',
+    hasFinalExam: true,
     carryWeight: 40, finalWeight: 60, assessments: [],
     finalExamScored: null, finalExamMaxScore: 100,
   };
 }
 
 const PRESETS: { key: GradingScheme; label: string; rows: GradeRow[] }[] = [
-  { key: 'uitm',      label: 'UiTM Malaysia',  rows: UITM_GRADE_TABLE },
+  { key: 'uitm',      label: 'UiTM Malaysia',    rows: UITM_GRADE_TABLE },
+  { key: 'generic_4', label: 'Generic 4.0 GPA',  rows: GENERIC_4_GRADE_TABLE },
+  { key: 'generic_5', label: 'Generic 5.0 GPA',  rows: GENERIC_5_GRADE_TABLE },
 ];
 
 export default function SubjectGradeScreen() {
@@ -120,7 +126,7 @@ export default function SubjectGradeScreen() {
   useEffect(() => {
     if (!user?.id || !subjectId) { setLoading(false); return; }
     getSubjectGradeConfig(user.id, subjectId).then(c => {
-      const loaded = c ?? makeDefault(subjectId);
+      const loaded = c ?? makeDefault(subjectId, user.country);
       setConfig(loaded);
       setFinalMaxInput(String(loaded.finalExamMaxScore));
       setFinalScoredInput(loaded.finalExamScored !== null ? String(loaded.finalExamScored) : '');

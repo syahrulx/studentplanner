@@ -29,6 +29,7 @@ import { matchesAdminSearch } from "../lib/adminSearch";
 import { useAdminSearch } from "../state/AdminSearchContext";
 import { MotionPanel, MotionSection } from "../ui/motion";
 import { AcademicCalendarOfferGraphic } from "../components/AcademicCalendarOfferGraphic";
+import { useSafeActionDialog } from "../components/SafeActionDialog";
 
 const BUCKET = "academic-calendar-refs";
 
@@ -240,6 +241,7 @@ function PeriodListEditor({
 }
 
 export function CalendarUpdatesRoute() {
+  const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
   const { searchQuery, clearSearch } = useAdminSearch();
   const fileRef = useRef<HTMLInputElement>(null);
   const uniComboRef = useRef<HTMLDivElement>(null);
@@ -335,6 +337,12 @@ export function CalendarUpdatesRoute() {
     if (!id) return "— Select a university —";
     const u = eligible.find((x) => x.id === id);
     return u ? `${u.name} (${u.id})` : id;
+  }, [eligible, selected]);
+
+  const selectedUniversityCountry = useMemo(() => {
+    const id = String(selected || "").trim();
+    const u = eligible.find((x) => x.id === id);
+    return u?.country;
   }, [eligible, selected]);
 
   useEffect(() => {
@@ -487,29 +495,19 @@ export function CalendarUpdatesRoute() {
     setSelectedExpiredOfferIds(nextSelected ? expiredAdminOffers.map((offer) => offer.id) : []);
   };
 
-  const deleteSelectedExpiredAdminOffers = async () => {
+  const deleteSelectedExpiredAdminOffers = () => {
     if (!selectedExpiredOfferIds.length && !selectAllExpiredAdminOffers) return;
     const count = selectedExpiredOfferIds.length;
-    const ok = window.confirm(
-      selectAllExpiredAdminOffers
-        ? "Delete every old academic calendar offer?\n\nThis includes expired offers outside the currently loaded list. Only admin offers where both the start and end date have passed will be removed. This cannot be undone."
-        : `Delete ${count} old academic calendar offer${count === 1 ? "" : "s"}?\n\nOnly admin offers where both the start and end date have passed will be removed. This cannot be undone.`,
-    );
-    if (!ok) return;
-    setErr("");
-    setOkMsg("");
-    setDeletingExpiredOffers(true);
-    try {
-      const deletedCount = await deleteExpiredAdminCalendarOffers(selectedExpiredOfferIds, selectAllExpiredAdminOffers);
-      setSelectedExpiredOfferIds([]);
-      setSelectAllExpiredAdminOffers(false);
-      await refreshHistory();
-      setOkMsg(`${deletedCount} old academic calendar offer${deletedCount === 1 ? "" : "s"} deleted.`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not delete old academic calendars");
-    } finally {
-      setDeletingExpiredOffers(false);
-    }
+    const affected = selectAllExpiredAdminOffers ? expiredAdminOffers.length : count;
+    requestSafeAction({ title: 'Delete expired academic calendars', operation: 'Delete calendars', affectedCount: affected, confirmationText: `DELETE ${affected}`, requireReason: true, irreversible: true, warning: 'Only admin offers whose start and end dates have both passed are eligible. Active calendars are protected server-side.', onConfirm: async (reason) => {
+      setErr(""); setOkMsg(""); setDeletingExpiredOffers(true);
+      try {
+        const deletedCount = await deleteExpiredAdminCalendarOffers(selectedExpiredOfferIds, selectAllExpiredAdminOffers, reason);
+        setSelectedExpiredOfferIds([]); setSelectAllExpiredAdminOffers(false); await refreshHistory();
+        setOkMsg(`${deletedCount} old academic calendar offer${deletedCount === 1 ? "" : "s"} deleted.`);
+        return { affected: deletedCount, failed: Math.max(0, affected - deletedCount) };
+      } finally { setDeletingExpiredOffers(false); }
+    } });
   };
 
   const offerUniOptions = useMemo(() => {
@@ -886,7 +884,7 @@ export function CalendarUpdatesRoute() {
                       }
                       setExtracting(true);
                       try {
-                        const res = await extractCalendarFromUrl(url);
+                        const res = await extractCalendarFromUrl(url, selectedUniversityCountry);
                         const d = res.extracted;
                         const candidates = Array.isArray((d as any)?.candidates)
                           ? ((d as any).candidates as any[])
@@ -1154,6 +1152,7 @@ export function CalendarUpdatesRoute() {
                         const res = await extractCalendarFromPdf(
                           base64,
                           file.name,
+                          selectedUniversityCountry,
                         );
                         const d = res.extracted;
                         const candidates = Array.isArray((d as any)?.candidates)
@@ -1291,6 +1290,7 @@ export function CalendarUpdatesRoute() {
                         const res = await extractCalendarFromImage(
                           `data:${file.type};base64,${base64}`,
                           file.name,
+                          selectedUniversityCountry,
                         );
                         const d = res.extracted;
                         const candidates = Array.isArray((d as any)?.candidates)
@@ -1680,6 +1680,7 @@ export function CalendarUpdatesRoute() {
           </div>
         </>
       ) : null}
+      {safeActionDialog}
     </div>
   );
 }

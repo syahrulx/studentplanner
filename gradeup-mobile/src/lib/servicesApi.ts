@@ -1272,12 +1272,16 @@ export async function acceptOffer(offerId: string): Promise<ServicePost> {
  * Rules:
  *  • If the raw input starts with `+`, we trust the user's country code and
  *    just return the digits — this preserves SG/ID/US numbers etc.
- *  • Otherwise we treat it as a Malaysian local number (the app is
- *    Malaysia-first), strip a leading 0, and prepend `60`.
+ *  • Otherwise we treat it as a local number in `dialingCode` (defaults to
+ *    Malaysia's `60`, matching every existing user), strip a leading 0, and
+ *    prepend that code.
  *
  * Returns null when the input doesn't look like a valid phone.
  */
-export function normalizeWhatsAppNumber(raw: string | null | undefined): string | null {
+export function normalizeWhatsAppNumber(
+  raw: string | null | undefined,
+  dialingCode: string = '60',
+): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -1291,20 +1295,23 @@ export function normalizeWhatsAppNumber(raw: string | null | undefined): string 
     return digits;
   }
 
-  // No + prefix → assume Malaysian local. Drop leading zeros and require
-  // at least 9 digits (typical mobile is 9–10 after stripping the 0).
+  const cc = (dialingCode || '60').replace(/\D/g, '') || '60';
+  // No + prefix → assume a local number in the caller's country. Drop
+  // leading zeros and require at least 9 digits (typical mobile is 9–10
+  // after stripping the 0).
   if (digits.startsWith('0')) digits = digits.replace(/^0+/, '');
   if (digits.length < 9) return null;
-  // Already starts with the MY country code? Keep as-is; otherwise prepend it.
-  if (digits.startsWith('60') && digits.length >= 10) return digits;
-  return `60${digits}`;
+  // Already starts with the country code? Keep as-is; otherwise prepend it.
+  if (digits.startsWith(cc) && digits.length >= cc.length + 8) return digits;
+  return `${cc}${digits}`;
 }
 
 export function buildWhatsAppLink(
   rawNumber: string | null | undefined,
   message?: string,
+  dialingCode?: string,
 ): string | null {
-  const norm = normalizeWhatsAppNumber(rawNumber);
+  const norm = normalizeWhatsAppNumber(rawNumber, dialingCode);
   if (!norm) return null;
   const text = message ? `?text=${encodeURIComponent(message)}` : '';
   return `https://wa.me/${norm}${text}`;

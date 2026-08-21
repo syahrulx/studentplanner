@@ -154,7 +154,14 @@ export function UniversitiesRoute() {
                         onClick={() => setEditing(u)}
                       >
                         <td className="px-4 py-3">
-                          <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name}</div>
+                          <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                            {u.name}
+                            {u.country && u.country !== 'MY' ? (
+                              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                {u.country}
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{u.id}</div>
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -255,6 +262,7 @@ function UniEditor({
 }) {
   const [id, setId] = useState(initial.id);
   const [name, setName] = useState(initial.name);
+  const [country, setCountry] = useState(initial.country ?? 'MY');
   const [api, setApi] = useState(initial.api_endpoint ?? '');
   const [loginMethod, setLoginMethod] = useState<UniversityRow['login_method']>(initial.login_method);
   const [reqMethod, setReqMethod] = useState<UniversityRow['request_method']>(initial.request_method);
@@ -286,6 +294,21 @@ function UniEditor({
       <Input label="University ID" value={id} onChange={setId} placeholder="e.g. uitm" />
       <Input label="Name" value={name} onChange={setName} placeholder="UiTM" />
       <Input label="API endpoint" value={api} onChange={setApi} placeholder="https://example.com/api" />
+
+      <label className="block">
+        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Country</div>
+        <select
+          value={country}
+          onChange={(e) => setCountry(e.target.value)}
+          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+        >
+          <option value="MY">🇲🇾 Malaysia</option>
+          <option value="US">🇺🇸 United States</option>
+          <option value="GB">🇬🇧 United Kingdom</option>
+          <option value="CA">🇨🇦 Canada</option>
+          <option value="AU">🇦🇺 Australia</option>
+        </select>
+      </label>
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="block">
@@ -340,6 +363,7 @@ function UniEditor({
               await upsertUniversity({
                 id: id.trim(),
                 name: name.trim(),
+                country: country.trim().toUpperCase() || 'MY',
                 api_endpoint: api.trim() || null,
                 login_method: loginMethod,
                 request_method: reqMethod,

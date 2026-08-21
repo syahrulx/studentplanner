@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Dimensions,
   FlatList,
   KeyboardAvoidingView,
@@ -26,6 +27,7 @@ import {
 import Animated, {
   runOnJS,
   scrollTo,
+  useAnimatedReaction,
   useAnimatedRef,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -41,11 +43,14 @@ import { WebView } from 'react-native-webview';
 import ColorPicker from 'react-native-wheel-color-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PDFDocument } from 'pdf-lib';
-import HandwritingCanvas from '@/src/components/handwriting/HandwritingCanvas';
+import HandwritingCanvas, { HandwritingInkPreview } from '@/src/components/handwriting/HandwritingCanvas';
 import { useApp } from '@/src/context/AppContext';
 import { isAtLeastPlus, isPro } from '@/src/lib/flashcardGenerationLimits';
 import {
   loadHandwritingPages,
+  flushHandwritingOutbox,
+  hasPendingHandwritingSync,
+  saveHandwritingDraft,
   saveHandwritingPages,
 } from '@/src/lib/handwritingDb';
 import { exportHandwritingPdf } from '@/src/lib/handwritingExport';
@@ -70,6 +75,7 @@ const FIXED_INK_COLORS = COLORS.slice(0, -2);
 const FALLBACK_SAVED_COLORS = COLORS.slice(-2);
 const SAVED_INK_COLORS_KEY = 'rencana_handwriting_saved_ink_colours_v1';
 const AUTO_RETURN_ERASER_KEY = 'rencana_handwriting_auto_return_eraser_v1';
+const TOOL_SETTINGS_KEY = 'rencana_handwriting_tool_settings_v2';
 type InkColorTool = 'pen' | 'pencil' | 'highlighter';
 type SavedInkColors = Record<InkColorTool, string[]>;
 
@@ -98,7 +104,7 @@ function parseSavedInkColors(value: unknown): SavedInkColors {
 }
 
 function inkColorTool(tool: HandwritingTool): InkColorTool {
-  return tool === 'eraser' ? 'pen' : tool;
+  return tool === 'eraser' || tool === 'lasso' ? 'pen' : tool;
 }
 const TEMPLATES: Array<{ id: HandwritingTemplate; label: string; pro?: boolean }> = [
   { id: 'blank', label: 'Blank' },
@@ -215,6 +221,32 @@ function ContinuousPage({
   );
 }
 
+function PageThumbnailPreview({
+  page,
+  loadPdfPage,
+}: {
+  page: HandwritingPage;
+  loadPdfPage: (pageNumber: number) => Promise<string | null>;
+}) {
+  const [pdfUri, setPdfUri] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (page.pdfPageNumber == null) return () => { active = false; };
+    void loadPdfPage(page.pdfPageNumber).then((uri) => {
+      if (active) setPdfUri(uri);
+    });
+    return () => { active = false; };
+  }, [loadPdfPage, page.pdfPageNumber]);
+  return (
+    <View style={styles.thumbnailPreview} pointerEvents="none">
+      {pdfUri ? (
+        <WebView source={{ uri: pdfUri }} style={StyleSheet.absoluteFill} pointerEvents="none" scrollEnabled={false} allowFileAccess />
+      ) : null}
+      <HandwritingInkPreview page={page} width={92} height={118} transparentBackground={page.pdfPageNumber != null} />
+    </View>
+  );
+}
+
 function ToolOptionRow<T extends string | number>({
   label,
   hint,
@@ -300,6 +332,7 @@ export default function HandwritingEditor() {
   const insets = useSafeAreaInsets();
   const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
   const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
+  const toolSettingsKey = `${TOOL_SETTINGS_KEY}:${user?.id ?? 'local'}`;
   const note = notes.find((candidate) => candidate.id === noteId);
   const premium = isAtLeastPlus(user?.subscriptionPlan);
   const canEdit = premium;
@@ -320,6 +353,7 @@ export default function HandwritingEditor() {
   const [title, setTitle] = useState(note?.title ?? 'Handwritten note');
   const [showColors, setShowColors] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showPageThumbnails, setShowPageThumbnails] = useState(false);
   const [customColor, setCustomColor] = useState(color);
   const [savedInkColors, setSavedInkColors] = useState<SavedInkColors>(EMPTY_SAVED_INK_COLORS);
   const [pdfPageCount, setPdfPageCount] = useState(0);
@@ -330,6 +364,7 @@ export default function HandwritingEditor() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [insertPosition, setInsertPosition] = useState<'before' | 'after'>('after');
   const [toolSettings, setToolSettings] = useState<HandwritingToolSettings>(DEFAULT_HANDWRITING_TOOL_SETTINGS);
+  const [toolSettingsLoaded, setToolSettingsLoaded] = useState(false);
   const [workspaceSize, setWorkspaceSize] = useState({ width: 1, height: 1 });
   const [zoomScale, setZoomScale] = useState(1);
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
@@ -410,15 +445,21 @@ export default function HandwritingEditor() {
   const revisionRef = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistPromiseRef = useRef<Promise<void> | null>(null);
+  const draftWriteRef = useRef<Promise<void>>(Promise.resolve());
   const documentListRef = useAnimatedRef<FlatList<HandwritingPage>>();
   const scrollOffset = useSharedValue(0);
   const panStartOffset = useSharedValue(0);
   const horizontalOffset = useSharedValue(0);
   const panStartHorizontalOffset = useSharedValue(0);
   const horizontalLimit = useSharedValue(0);
+  const verticalLimit = useSharedValue(0);
   const committedZoom = useSharedValue(1);
   const pinchStartZoom = useSharedValue(1);
+  const pinchStartScroll = useSharedValue(0);
+  const pinchStartHorizontalOffset = useSharedValue(0);
   const liveZoom = useSharedValue(1);
+  const pinchVisualX = useSharedValue(0);
+  const pinchVisualY = useSharedValue(0);
   const activeInkColorTool = inkColorTool(tool);
   const visibleInkColors = useMemo(() => {
     const saved = savedInkColors[activeInkColorTool];
@@ -431,7 +472,7 @@ export default function HandwritingEditor() {
   useEffect(() => { pagesRef.current = pages; }, [pages]);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
   useEffect(() => {
-    if (tool !== 'eraser') lastWritingToolRef.current = tool;
+    if (tool !== 'eraser' && tool !== 'lasso') lastWritingToolRef.current = tool;
   }, [tool]);
 
   useEffect(() => {
@@ -462,6 +503,30 @@ export default function HandwritingEditor() {
 
   useEffect(() => {
     let active = true;
+    void AsyncStorage.getItem(toolSettingsKey).then((stored) => {
+      if (!active) return;
+      try {
+        if (stored) {
+          const parsed = JSON.parse(stored) as Partial<HandwritingToolSettings>;
+          setToolSettings({ ...DEFAULT_HANDWRITING_TOOL_SETTINGS, ...parsed });
+        }
+      } catch {
+        // Keep safe defaults if an older preference is malformed.
+      }
+      setToolSettingsLoaded(true);
+    }).catch(() => {
+      if (active) setToolSettingsLoaded(true);
+    });
+    return () => { active = false; };
+  }, [toolSettingsKey]);
+
+  useEffect(() => {
+    if (!toolSettingsLoaded) return;
+    void AsyncStorage.setItem(toolSettingsKey, JSON.stringify(toolSettings)).catch(() => {});
+  }, [toolSettings, toolSettingsKey, toolSettingsLoaded]);
+
+  useEffect(() => {
+    let active = true;
     const load = async () => {
       if (!noteId) {
         setLoading(false);
@@ -487,6 +552,12 @@ export default function HandwritingEditor() {
       setPages(prepared);
       pagesRef.current = prepared;
       setLoading(false);
+      void hasPendingHandwritingSync(session.user.id, noteId).then((pending) => {
+        if (active) setSyncIssue(pending);
+      });
+      void flushHandwritingOutbox(session.user.id).then(async () => {
+        if (active) setSyncIssue(await hasPendingHandwritingSync(session.user.id, noteId));
+      });
     };
     void load();
     return () => { active = false; };
@@ -549,6 +620,12 @@ export default function HandwritingEditor() {
           encoding: FileSystem.EncodingType.Base64,
         });
         pdfPageFilesRef.current.set(pageNumber, fileUri);
+        while (pdfPageFilesRef.current.size > 10) {
+          const oldest = pdfPageFilesRef.current.entries().next().value as [number, string] | undefined;
+          if (!oldest) break;
+          pdfPageFilesRef.current.delete(oldest[0]);
+          void FileSystem.deleteAsync(oldest[1], { idempotent: true }).catch(() => {});
+        }
         return fileUri;
       } catch {
         return null;
@@ -559,6 +636,15 @@ export default function HandwritingEditor() {
     pdfPagePromisesRef.current.set(pageNumber, task);
     return task;
   }, [noteId]);
+
+  useEffect(() => () => {
+    const cachedFiles = [...pdfPageFilesRef.current.values()];
+    pdfPageFilesRef.current.clear();
+    cachedFiles.forEach((uri) => {
+      void FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+    });
+    pdfDocumentRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!isPdfAnnotation || loading || pdfPageCount < 1) return;
@@ -587,6 +673,14 @@ export default function HandwritingEditor() {
       return normalized;
     });
   }, [isPdfAnnotation, loading, pdfPageCount]);
+
+  const queueLocalDraft = useCallback((nextPages: HandwritingPage[]) => {
+    const uid = uidRef.current;
+    if (!uid || !noteId || !canEdit) return;
+    draftWriteRef.current = draftWriteRef.current
+      .catch(() => {})
+      .then(() => saveHandwritingDraft(uid, noteId, nextPages));
+  }, [canEdit, noteId]);
 
   const persist = useCallback(async (showError = false) => {
     if (persistPromiseRef.current) {
@@ -641,6 +735,33 @@ export default function HandwritingEditor() {
   }, [canEdit, handleSaveNote, isPdfAnnotation, note, noteId, title]);
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        const uid = uidRef.current;
+        if (uid) void flushHandwritingOutbox(uid).then((synced) => {
+          if (synced > 0) setSyncIssue(false);
+        });
+      } else if (dirtyRef.current) {
+        queueLocalDraft(pagesRef.current);
+        void persist();
+      }
+    });
+    return () => subscription.remove();
+  }, [persist, queueLocalDraft]);
+
+  useEffect(() => {
+    if (!syncIssue) return;
+    const retry = setInterval(() => {
+      const uid = uidRef.current;
+      if (!uid) return;
+      void flushHandwritingOutbox(uid).then((synced) => {
+        if (synced > 0) setSyncIssue(false);
+      });
+    }, 15000);
+    return () => clearInterval(retry);
+  }, [syncIssue]);
+
+  useEffect(() => {
     if (!dirty || loading) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { void persist(); }, 600);
@@ -657,12 +778,13 @@ export default function HandwritingEditor() {
         page.id === pageId ? { ...page, strokes, updatedAt: new Date().toISOString() } : page
       ));
       pagesRef.current = next;
+      queueLocalDraft(next);
       return next;
     });
     revisionRef.current += 1;
     setDirty(true);
     dirtyRef.current = true;
-  }, []);
+  }, [queueLocalDraft]);
 
   const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
     setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
@@ -721,9 +843,11 @@ export default function HandwritingEditor() {
       isInsertedBlank: true,
       pdfDocumentInitialized: isPdfAnnotation || undefined,
     });
-    const normalized = next.map((page, index) => ({ ...page, index }));
+    const operationTime = new Date().toISOString();
+    const normalized = next.map((page, index) => ({ ...page, index, updatedAt: operationTime }));
     setPages(normalized);
     pagesRef.current = normalized;
+    queueLocalDraft(normalized);
     setActiveIndex(insertionIndex);
     revisionRef.current += 1;
     setDirty(true);
@@ -751,11 +875,13 @@ export default function HandwritingEditor() {
           text: 'Remove',
           style: 'destructive',
           onPress: () => {
+            const operationTime = new Date().toISOString();
             const next = pagesRef.current
               .filter((page) => page.id !== currentPage.id)
-              .map((page, index) => ({ ...page, index }));
+              .map((page, index) => ({ ...page, index, updatedAt: operationTime }));
             pagesRef.current = next;
             setPages(next);
+            queueLocalDraft(next);
             setActiveIndex(Math.min(activeIndex, next.length - 1));
             setUndoStacks((current) => {
               const updated = { ...current };
@@ -785,8 +911,11 @@ export default function HandwritingEditor() {
       return;
     }
     setPages((current) => {
-      const next = current.map((page, index) => index === activeIndex ? { ...page, template } : page);
+      const next = current.map((page, index) => index === activeIndex
+        ? { ...page, template, updatedAt: new Date().toISOString() }
+        : page);
       pagesRef.current = next;
+      queueLocalDraft(next);
       return next;
     });
     revisionRef.current += 1;
@@ -865,6 +994,7 @@ export default function HandwritingEditor() {
       { id: 'pencil', icon: 'edit-2', label: 'Pencil' },
       { id: 'highlighter', icon: 'minus', label: 'Marker' },
       { id: 'eraser', icon: 'delete', label: 'Eraser' },
+      { id: 'lasso', icon: 'mouse-pointer', label: 'Lasso' },
     ],
     [],
   );
@@ -885,6 +1015,12 @@ export default function HandwritingEditor() {
       scrollOffset.value = event.contentOffset.y;
     },
   });
+  useAnimatedReaction(
+    () => scrollOffset.value,
+    (offset) => {
+      scrollTo(documentListRef, 0, offset, false);
+    },
+  );
   const documentScrollGesture = useMemo(() => Gesture.Pan()
     .minDistance(1)
     .maxPointers(2)
@@ -905,7 +1041,9 @@ export default function HandwritingEditor() {
     .onTouchesMove((event, stateManager) => {
       const shouldNavigate = fingerDrawing
         ? event.numberOfTouches >= 2
-        : event.numberOfTouches === 1;
+        : tool === 'lasso'
+          ? event.numberOfTouches >= 2
+          : event.numberOfTouches === 1;
       if (shouldNavigate) stateManager.activate();
     })
     .onStart(() => {
@@ -913,44 +1051,67 @@ export default function HandwritingEditor() {
       panStartHorizontalOffset.value = horizontalOffset.value;
     })
     .onUpdate((event) => {
-      const offset = Math.max(0, panStartOffset.value - event.translationY);
+      const offset = Math.max(0, Math.min(verticalLimit.value, panStartOffset.value - event.translationY));
       scrollOffset.value = offset;
-      scrollTo(documentListRef, 0, offset, false);
       horizontalOffset.value = Math.max(
         -horizontalLimit.value,
         Math.min(horizontalLimit.value, panStartHorizontalOffset.value + event.translationX),
       );
     })
     .onEnd((event) => {
-      const projectedOffset = Math.max(0, scrollOffset.value - event.velocityY * 0.16);
-      scrollTo(documentListRef, 0, projectedOffset, true);
+      scrollOffset.value = withDecay({
+        velocity: -event.velocityY,
+        clamp: [0, verticalLimit.value],
+        deceleration: 0.995,
+      });
       if (horizontalLimit.value > 0 && Math.abs(event.velocityX) > 40) {
         horizontalOffset.value = withDecay({
           velocity: event.velocityX,
           clamp: [-horizontalLimit.value, horizontalLimit.value],
         });
       }
-    }), [fingerDrawing]);
-  const commitDocumentZoom = useCallback((value: number) => {
+    }), [fingerDrawing, tool]);
+  const commitDocumentZoom = useCallback((value: number, targetScroll: number, targetHorizontal: number) => {
     const next = Math.max(1, Math.min(3, value));
     setZoomScale(Math.round(next * 100) / 100);
-  }, []);
+    horizontalOffset.value = targetHorizontal;
+    setTimeout(() => {
+      scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, targetScroll));
+      pinchVisualX.value = withTiming(0, { duration: 80 });
+      pinchVisualY.value = withTiming(0, { duration: 80 });
+    }, 32);
+  }, [horizontalOffset, pinchVisualX, pinchVisualY, scrollOffset, verticalLimit]);
   const documentPinchGesture = useMemo(() => Gesture.Pinch()
     .onStart(() => {
       pinchStartZoom.value = committedZoom.value;
+      pinchStartScroll.value = scrollOffset.value;
+      pinchStartHorizontalOffset.value = horizontalOffset.value;
       liveZoom.value = committedZoom.value;
     })
     .onUpdate((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
       liveZoom.value = next;
+      const ratio = next / Math.max(0.01, pinchStartZoom.value);
+      pinchVisualX.value = (workspaceSize.width / 2 - event.focalX) * (ratio - 1);
+      pinchVisualY.value = (workspaceSize.height / 2 - event.focalY) * (ratio - 1);
     })
     .onEnd((event) => {
       const next = Math.max(1, Math.min(3, pinchStartZoom.value * event.scale));
-      runOnJS(commitDocumentZoom)(next);
+      const ratio = next / Math.max(0.01, pinchStartZoom.value);
+      const targetScroll = (pinchStartScroll.value + event.focalY) * ratio - event.focalY;
+      const nextHorizontalLimit = Math.max(0, (basePageWidth * next - basePageWidth) / 2);
+      const targetHorizontal = Math.max(
+        -nextHorizontalLimit,
+        Math.min(
+          nextHorizontalLimit,
+          pinchStartHorizontalOffset.value - (event.focalX - workspaceSize.width / 2) * (ratio - 1),
+        ),
+      );
+      runOnJS(commitDocumentZoom)(next, targetScroll, targetHorizontal);
     })
     .onFinalize((_event, success) => {
       if (!success) liveZoom.value = withTiming(committedZoom.value, { duration: 120 });
-    }), [commitDocumentZoom]);
+    }), [basePageWidth, commitDocumentZoom, workspaceSize.height, workspaceSize.width]);
   const documentGesture = useMemo(
     () => Gesture.Simultaneous(documentScrollGesture, documentPinchGesture),
     [documentPinchGesture, documentScrollGesture],
@@ -961,6 +1122,8 @@ export default function HandwritingEditor() {
   );
   const documentTransformStyle = useAnimatedStyle(() => ({
     transform: [
+      { translateX: pinchVisualX.value },
+      { translateY: pinchVisualY.value },
       { scale: liveZoom.value / Math.max(0.01, committedZoom.value) },
     ],
   }));
@@ -1045,6 +1208,7 @@ export default function HandwritingEditor() {
             onPress={() => {
               if (!canEdit) return;
               if (tool === item.id) {
+                if (item.id === 'lasso') return;
                 setShowToolOptions(true);
                 return;
               }
@@ -1104,6 +1268,10 @@ export default function HandwritingEditor() {
               <Text style={[styles.actionLabel, { color: theme.text }]}>Paper</Text>
             </Pressable>
           ) : null}
+          <Pressable onPress={() => setShowPageThumbnails(true)} style={styles.actionBtn}>
+            <Feather name="sidebar" size={18} color={theme.text} />
+            <Text style={[styles.actionLabel, { color: theme.text }]}>Pages</Text>
+          </Pressable>
           <Pressable
             disabled={!canEdit}
             onPress={() => setFingerDrawing((value) => !value)}
@@ -1147,6 +1315,17 @@ export default function HandwritingEditor() {
         </Pressable>
       </View>
 
+      {!canEdit ? (
+        <Pressable
+          onPress={() => router.push('/subscription-plans' as never)}
+          style={[styles.viewOnlyBanner, { backgroundColor: `${theme.primary}12`, borderBottomColor: theme.border }]}
+        >
+          <Feather name="eye" size={15} color={theme.primary} />
+          <Text style={[styles.viewOnlyText, { color: theme.text }]}>Free plan · PDF and notes are view only</Text>
+          <Text style={[styles.viewOnlyUpgrade, { color: theme.primary }]}>Upgrade to edit</Text>
+        </Pressable>
+      ) : null}
+
       <View
         style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace]}
         onLayout={(event) => setWorkspaceSize({
@@ -1164,13 +1343,18 @@ export default function HandwritingEditor() {
               contentContainerStyle={styles.documentContent}
               showsVerticalScrollIndicator
               scrollEnabled={false}
-              initialNumToRender={2}
-              maxToRenderPerBatch={3}
-              windowSize={5}
-              removeClippedSubviews={false}
+              initialNumToRender={1}
+              maxToRenderPerBatch={2}
+              updateCellsBatchingPeriod={40}
+              windowSize={3}
+              removeClippedSubviews
               viewabilityConfig={viewabilityConfig}
               onViewableItemsChanged={onViewableItemsChanged}
               onScroll={documentScrollHandler}
+              onContentSizeChange={(_width, height) => {
+                verticalLimit.value = Math.max(0, height - workspaceSize.height);
+                if (scrollOffset.value > verticalLimit.value) scrollOffset.value = verticalLimit.value;
+              }}
               scrollEventThrottle={16}
               renderItem={({ item }) => (
                 <ContinuousPage
@@ -1364,6 +1548,59 @@ export default function HandwritingEditor() {
         </Pressable>
       </Modal>
 
+      <Modal visible={showPageThumbnails} transparent animationType="slide" onRequestClose={() => setShowPageThumbnails(false)}>
+        <Pressable style={styles.toolSheetBackdrop} onPress={() => setShowPageThumbnails(false)}>
+          <View style={[styles.thumbnailSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
+            <View style={[styles.toolSheetHandle, { backgroundColor: theme.border }]} />
+            <View style={styles.toolSheetHeader}>
+              <View style={[styles.toolSheetIcon, { backgroundColor: `${theme.primary}14` }]}>
+                <Feather name="sidebar" size={20} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toolSheetTitle, { color: theme.text }]}>Pages</Text>
+                <Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>{pages.length} pages · tap to jump</Text>
+              </View>
+              <Pressable onPress={() => setShowPageThumbnails(false)} style={styles.sheetCloseBtn}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={pages}
+              keyExtractor={(page) => page.id}
+              numColumns={3}
+              initialNumToRender={6}
+              maxToRenderPerBatch={6}
+              windowSize={3}
+              contentContainerStyle={styles.thumbnailGrid}
+              renderItem={({ item, index }) => (
+                <Pressable
+                  onPress={() => {
+                    setActiveIndex(index);
+                    setShowPageThumbnails(false);
+                    setTimeout(() => documentListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 }), 30);
+                  }}
+                  style={[
+                    styles.thumbnailItem,
+                    { borderColor: index === activeIndex ? theme.primary : theme.border },
+                    index === activeIndex && { backgroundColor: `${theme.primary}12` },
+                  ]}
+                >
+                  <View style={styles.thumbnailPreview}>
+                    <PageThumbnailPreview page={item} loadPdfPage={loadPdfPage} />
+                    {item.pdfPageNumber != null ? (
+                      <View style={styles.thumbnailPdfBadge}>
+                        <Text style={styles.thumbnailPdfText}>PDF {item.pdfPageNumber}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.thumbnailLabel, { color: index === activeIndex ? theme.primary : theme.text }]}>Page {index + 1}</Text>
+                </Pressable>
+              )}
+            />
+          </View>
+        </Pressable>
+      </Modal>
+
       <Modal visible={showInsertPage} transparent animationType="fade" onRequestClose={() => setShowInsertPage(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setShowInsertPage(false)}>
           <View style={[styles.templateModal, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
@@ -1464,6 +1701,52 @@ export default function HandwritingEditor() {
                   primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
                 />
               )}
+
+              {(tool === 'pen' || tool === 'pencil') ? (
+                <>
+                  <ToolOptionRow
+                    label="Handwriting helper"
+                    hint="Keeps your own handwriting, with different levels of stabilization."
+                    options={[
+                      { label: 'Natural', value: 'natural', symbol: '✍' },
+                      { label: 'Neat', value: 'neat', symbol: '∿' },
+                      { label: 'Precise', value: 'precise', symbol: '〜' },
+                    ]}
+                    value={toolSettings.writingStyle}
+                    onChange={(writingStyle) => setToolSettings((current) => ({
+                      ...current,
+                      writingStyle,
+                      smoothing: writingStyle === 'natural' ? 0.3 : writingStyle === 'neat' ? 0.56 : 0.72,
+                      stabilization: writingStyle === 'natural' ? 0.2 : writingStyle === 'neat' ? 0.48 : 0.68,
+                    }))}
+                    primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
+                  />
+                  <ToolOptionRow
+                    label="Writing guide"
+                    hint="A temporary guide only; it is not included when exporting."
+                    options={[
+                      { label: 'Off', value: 'off', symbol: '□' },
+                      { label: 'Baseline', value: 'baseline', symbol: '≡' },
+                      { label: 'Slant', value: 'slant', symbol: '╱' },
+                    ]}
+                    value={toolSettings.writingGuide}
+                    onChange={(writingGuide) => setToolSettings((current) => ({ ...current, writingGuide }))}
+                    primary={theme.primary} text={theme.text} secondary={theme.textSecondary} border={theme.border}
+                  />
+                  <View style={[styles.settingSwitchRow, { borderBottomColor: theme.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionLabel, { color: theme.text }]}>Straight-line assist</Text>
+                      <Text style={[styles.optionHint, { color: theme.textSecondary }]}>Hold a nearly straight stroke briefly to snap it cleanly.</Text>
+                    </View>
+                    <Switch
+                      value={toolSettings.shapeAssist}
+                      onValueChange={(shapeAssist) => setToolSettings((current) => ({ ...current, shapeAssist }))}
+                      trackColor={{ false: theme.border, true: `${theme.primary}99` }}
+                      thumbColor={toolSettings.shapeAssist ? theme.primary : theme.card}
+                    />
+                  </View>
+                </>
+              ) : null}
 
               {tool === 'pen' ? (
                 <>
@@ -1780,6 +2063,9 @@ const styles = StyleSheet.create({
   customColorBtn: { width: 52, height: 53, borderRadius: 10, gap: 3 },
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
+  viewOnlyBanner: { minHeight: 36, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  viewOnlyText: { flex: 1, fontSize: 11, fontWeight: '700' },
+  viewOnlyUpgrade: { fontSize: 11, fontWeight: '900' },
   pdfWorkspace: { padding: 0, backgroundColor: '#17191d' },
   documentViewport: { flex: 1, width: '100%' },
   documentList: { flex: 1, width: '100%' },
@@ -1823,6 +2109,13 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   toolSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', justifyContent: 'flex-end' },
   toolSheet: { maxHeight: '78%', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', paddingBottom: 10 },
+  thumbnailSheet: { height: '68%', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', paddingBottom: 10 },
+  thumbnailGrid: { paddingHorizontal: 12, paddingBottom: 28, gap: 10 },
+  thumbnailItem: { width: '31.5%', alignItems: 'center', borderRadius: 12, borderWidth: 1.5, padding: 6, margin: 3 },
+  thumbnailPreview: { width: 92, height: 118, overflow: 'hidden', borderRadius: 3, backgroundColor: '#fff' },
+  thumbnailLabel: { fontSize: 10, fontWeight: '800', marginTop: 6 },
+  thumbnailPdfBadge: { position: 'absolute', left: 3, bottom: 3, borderRadius: 5, paddingHorizontal: 4, paddingVertical: 2, backgroundColor: 'rgba(15,23,42,0.76)' },
+  thumbnailPdfText: { color: '#fff', fontSize: 7, fontWeight: '800' },
   toolSheetHandle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8, marginBottom: 4 },
   toolSheetHeader: { minHeight: 62, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 11 },
   toolSheetIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -1831,6 +2124,7 @@ const styles = StyleSheet.create({
   sheetCloseBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   toolSheetContent: { paddingHorizontal: 16, paddingBottom: 24 },
   optionSection: { paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  settingSwitchRow: { minHeight: 66, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 12 },
   optionLabel: { fontSize: 13, fontWeight: '900', marginBottom: 3 },
   optionHint: { fontSize: 11, lineHeight: 16, marginBottom: 9 },
   optionChoices: {

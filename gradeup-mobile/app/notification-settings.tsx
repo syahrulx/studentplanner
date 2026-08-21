@@ -24,7 +24,7 @@ const PAD = 20;
 const RADIUS = 14;
 
 export default function NotificationSettings() {
-  const { language, tasks, timetable } = useApp();
+  const { language, tasks, timetable, academicCalendar } = useApp();
   const theme = useTheme();
   const themePack = useThemePack();
   const isMonoTheme = themePack === 'mono';
@@ -83,7 +83,7 @@ export default function NotificationSettings() {
       setNotifPrefs((prev) => {
         if (!prev) return prev;
         const next = { ...prev, ...patch };
-        setNotificationPrefs(next).catch(() => {});
+        const persisted = setNotificationPrefs(next).catch(() => {});
 
         if (
           'tasksEnabled' in patch ||
@@ -97,19 +97,21 @@ export default function NotificationSettings() {
           // change wasn't in this list at all — the UI showed the new time
           // but every already-scheduled notification kept firing at the old
           // one until the next full app restart.
-          rescheduleAllTaskNotifications(tasks).catch(() => {});
+          void persisted.then(() => rescheduleAllTaskNotifications(tasks)).catch(() => {});
         }
-        if ('attendanceCheckinPopup' in patch) {
-          void supabase.auth.getSession().then(({ data: { session } }) => {
-            const uid = session?.user?.id;
-            if (!uid) return;
-            rescheduleAttendanceNotifications(uid, timetable).catch(() => {});
-          });
+        if ('attendanceCheckinPopup' in patch || 'pauseAttendanceOutsideLecturePeriods' in patch) {
+          void persisted.then(() => (
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              const uid = session?.user?.id;
+              if (!uid) return;
+              return rescheduleAttendanceNotifications(uid, timetable, { academicCalendar });
+            })
+          )).catch(() => {});
         }
         return next;
       });
     },
-    [tasks, timetable],
+    [academicCalendar, tasks, timetable],
   );
 
   return (
@@ -337,6 +339,27 @@ export default function NotificationSettings() {
               <Switch
                 value={notifPrefs.attendanceCheckinPopup}
                 onValueChange={(v) => updateNotifPref({ attendanceCheckinPopup: v })}
+                trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                thumbColor={switchThumb}
+                ios_backgroundColor={switchTrackOff}
+              />
+            </View>
+
+            <View style={styles.dividerList} />
+
+            <View style={styles.menuRow}>
+              <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
+                <Feather name="calendar" size={18} color={themedIconFg('#fff')} />
+              </View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.menuLabel, { color: theme.text }]}>Pause outside lecture weeks</Text>
+                <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={2}>
+                  Skip class check-ins during holidays, semester breaks, revision and exam periods in your academic calendar.
+                </Text>
+              </View>
+              <Switch
+                value={notifPrefs.pauseAttendanceOutsideLecturePeriods}
+                onValueChange={(v) => updateNotifPref({ pauseAttendanceOutsideLecturePeriods: v })}
                 trackColor={{ false: switchTrackOff, true: switchTrackOn }}
                 thumbColor={switchThumb}
                 ios_backgroundColor={switchTrackOff}

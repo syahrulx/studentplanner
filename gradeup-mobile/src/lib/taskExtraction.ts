@@ -37,6 +37,8 @@ export interface ExtractTasksArgs {
   userId?: string;
   /** Semester start date — used to resolve 'Week N' references to concrete dates. */
   semesterStartISO?: string;
+  /** ISO 3166-1 alpha-2 country code. Defaults to 'MY' (Malaysian phrasing) when omitted. */
+  country?: string;
 }
 
 export interface ExtractTasksResult {
@@ -249,8 +251,11 @@ function resolveWeekReferences(
 
 function buildPrompt(args: ExtractTasksArgs): string {
   const courseList = args.courses.map((c) => `${c.id} = ${c.name}`).join('\\n');
+  const isMY = (args.country || 'MY') === 'MY';
   return [
-    'You are an academic task extraction assistant for a Malaysian university student.',
+    isMY
+      ? 'You are an academic task extraction assistant for a Malaysian university student.'
+      : 'You are an academic task extraction assistant for a university student studying abroad.',
     'Extract all assessment tasks from the message as strict JSON ONLY, no extra text.',
     '',
     'IMPORTANT DATE RULE: Only populate "due_date" when a specific, real calendar date can be determined',

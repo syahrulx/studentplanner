@@ -17,7 +17,8 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase';
-import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
+import { getUniversitiesForCountry, type UniversityItem } from '@/src/lib/universities';
+import { COUNTRIES, DEFAULT_COUNTRY_CODE, getCountryByCode } from '@/src/lib/countries';
 import { useApp } from '@/src/context/AppContext';
 
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
@@ -34,6 +35,8 @@ const ACADEMIC_LEVELS = [
 export default function ProfileSetup() {
   const { updateProfile } = useApp();
   const [name, setName] = useState('');
+  const [country, setCountry] = useState(DEFAULT_COUNTRY_CODE);
+  const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [university, setUniversity] = useState<UniversityItem | null>(null);
   const [academicLevel, setAcademicLevel] = useState<string>('');
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
@@ -56,11 +59,12 @@ export default function ProfileSetup() {
   useEffect(() => {
     let cancelled = false;
     setUniversitiesLoading(true);
-    getMalaysianUniversities()
+    setUniversity(null);
+    getUniversitiesForCountry(country)
       .then((list) => { if (!cancelled) setUniversities(list); })
       .finally(() => { if (!cancelled) setUniversitiesLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [country]);
 
   useEffect(() => {
     if (!universityModalVisible) setUniversitySearch('');
@@ -91,6 +95,7 @@ export default function ProfileSetup() {
       // Update the local AppContext and Supabase concurrently to ensure instant UI sync
       await updateProfile({
         name: name.trim(),
+        country,
         university: university.name,
         universityId: university.id,
         academicLevel: academicLevel as any,
@@ -175,6 +180,20 @@ export default function ProfileSetup() {
           />
         </View>
 
+        {/* Country */}
+        <Text style={styles.fieldLabel}>Country</Text>
+        <Pressable
+          style={styles.inputWrap}
+          onPress={() => setCountryModalVisible(true)}
+          disabled={saving}
+        >
+          <Text style={{ fontSize: 18, marginRight: 10 }}>{getCountryByCode(country).flag}</Text>
+          <Text style={[styles.input, { paddingVertical: 15, color: '#0f172a' }]} numberOfLines={1}>
+            {getCountryByCode(country).name}
+          </Text>
+          <Feather name="chevron-down" size={18} color="#94a3b8" />
+        </Pressable>
+
         {/* University */}
         <Text style={styles.fieldLabel}>University</Text>
         <Pressable
@@ -187,7 +206,7 @@ export default function ProfileSetup() {
             <ActivityIndicator size="small" color="#94a3b8" style={{ paddingVertical: 15 }} />
           ) : (
             <Text style={[styles.input, { paddingVertical: 15, color: university ? '#0f172a' : '#94a3b8' }]} numberOfLines={1}>
-              {university ? university.name : 'Select your university'}
+              {university ? university.name : universities.length === 0 ? 'No universities yet for this country' : 'Select your university'}
             </Text>
           )}
           <Feather name="chevron-down" size={18} color="#94a3b8" />
@@ -241,6 +260,39 @@ export default function ProfileSetup() {
           <Text style={styles.skipText}>Skip for now</Text>
         </Pressable>
       </View>
+
+      {/* ── Country Modal ── */}
+      <Modal visible={countryModalVisible} transparent animationType="slide" onRequestClose={() => setCountryModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCountryModalVisible(false)}>
+          <Pressable style={styles.modalContent} onPress={() => {}}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country</Text>
+              <Pressable onPress={() => setCountryModalVisible(false)} hitSlop={12}>
+                <Feather name="x" size={22} color="#0f172a" />
+              </Pressable>
+            </View>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={(item) => item.code}
+              style={styles.modalList}
+              renderItem={({ item }) => {
+                const isSel = country === item.code;
+                return (
+                  <Pressable
+                    style={[styles.uniRow, isSel && { backgroundColor: '#f0f9ff', borderColor: '#0f172a' }]}
+                    onPress={() => { setCountry(item.code); setCountryModalVisible(false); }}
+                  >
+                    <Text style={[styles.uniRowText, isSel && { color: '#0f172a', fontWeight: '700' }]}>
+                      {item.flag}  {item.name}
+                    </Text>
+                    {isSel && <Feather name="check" size={18} color="#0f172a" />}
+                  </Pressable>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── University Modal ── */}
       <Modal visible={universityModalVisible} transparent animationType="slide" onRequestClose={() => setUniversityModalVisible(false)}>

@@ -1,6 +1,8 @@
-export type HandwritingTool = 'pen' | 'pencil' | 'highlighter' | 'eraser';
+export type HandwritingTool = 'pen' | 'pencil' | 'highlighter' | 'eraser' | 'lasso';
 export type PenStyle = 'fountain' | 'ball' | 'brush';
 export type EraserStyle = 'precision' | 'segment' | 'stroke';
+export type WritingStyle = 'natural' | 'neat' | 'precise';
+export type WritingGuide = 'off' | 'baseline' | 'slant';
 
 export interface HandwritingToolSettings {
   penStyle: PenStyle;
@@ -16,6 +18,12 @@ export interface HandwritingToolSettings {
   eraserStyle: EraserStyle;
   eraserSize: number;
   eraseHighlighterOnly: boolean;
+  /** Hold a nearly straight stroke briefly to snap it into a clean line. */
+  shapeAssist: boolean;
+  /** A friendly stabilization preset; it never converts handwriting into typed text. */
+  writingStyle: WritingStyle;
+  /** Optional non-exported guide shown over the paper while writing. */
+  writingGuide: WritingGuide;
 }
 
 export type HandwritingTemplate =
@@ -37,7 +45,7 @@ export interface HandwritingPoint {
 
 export interface HandwritingStroke {
   id: string;
-  tool: Exclude<HandwritingTool, 'eraser'>;
+  tool: 'pen' | 'pencil' | 'highlighter';
   color: string;
   width: number;
   opacity: number;
@@ -48,6 +56,7 @@ export interface HandwritingStroke {
   tipSharpness?: number;
   taperedEnds?: boolean;
   pencilSoftness?: number;
+  writingStyle?: WritingStyle;
   points: HandwritingPoint[];
 }
 
@@ -84,6 +93,9 @@ export const DEFAULT_HANDWRITING_TOOL_SETTINGS: HandwritingToolSettings = {
   eraserStyle: 'stroke',
   eraserSize: 0.025,
   eraseHighlighterOnly: false,
+  shapeAssist: true,
+  writingStyle: 'natural',
+  writingGuide: 'off',
 };
 
 export function handwritingNoteSummary(pageCount: number): string {

@@ -95,6 +95,7 @@ export default function TimetableEditScreen() {
   const {
     language,
     timetable,
+    courses,
     weekStartsOn,
     updateTimetableEntry,
     addTimetableEntry,
@@ -395,25 +396,44 @@ export default function TimetableEditScreen() {
 
   const confirmDelete = useCallback(() => {
     if (!editing) return;
-    Alert.alert(T('timetableDeleteClass'), T('timetableDeleteClassConfirm'), [
+    const subjectUpper = editing.subjectCode.trim().toUpperCase();
+    const matchingClasses = timetable.filter(
+      (entry) => entry.subjectCode.trim().toUpperCase() === subjectUpper,
+    );
+    const linkedCourse = courses.find((course) => course.id.trim().toUpperCase() === subjectUpper);
+    const runDelete = async (deleteStudySubject: boolean) => {
+      setSaving(true);
+      try {
+        await removeTimetableEntry(editing.id, { deleteStudySubject });
+        closeModal();
+      } catch (e) {
+        Alert.alert(T('error'), e instanceof Error ? e.message : 'Could not delete this class.');
+      } finally {
+        setSaving(false);
+      }
+    };
+    Alert.alert(
+      T('timetableDeleteClass'),
+      linkedCourse
+        ? `This class belongs to ${linkedCourse.id} — ${linkedCourse.name}. Choose whether to keep its Study folder. Deleting the subject everywhere removes ${matchingClasses.length} timetable class${matchingClasses.length === 1 ? '' : 'es'}, its reminders, folder, notes and tasks.`
+        : T('timetableDeleteClassConfirm'),
+      [
       { text: T('cancel'), style: 'cancel' },
       {
-        text: T('timetableDeleteClass'),
+        text: 'Delete class only',
         style: 'destructive',
-        onPress: async () => {
-          setSaving(true);
-          try {
-            await removeTimetableEntry(editing.id);
-            closeModal();
-          } catch (e) {
-            Alert.alert(T('error'), e instanceof Error ? e.message : 'Could not delete this class.');
-          } finally {
-            setSaving(false);
-          }
-        },
+        onPress: () => void runDelete(false),
       },
-    ]);
-  }, [editing, T, removeTimetableEntry, closeModal]);
+      ...(linkedCourse
+        ? [{
+            text: 'Delete subject everywhere',
+            style: 'destructive' as const,
+            onPress: () => void runDelete(true),
+          }]
+        : []),
+      ],
+    );
+  }, [closeModal, courses, editing, removeTimetableEntry, T, timetable]);
 
   const sheetTitle = isCreating ? T('timetableAddClassTitle') : T('timetableEditTitle');
 

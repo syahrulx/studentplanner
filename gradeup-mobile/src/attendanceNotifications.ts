@@ -1,9 +1,9 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { IosAuthorizationStatus } from 'expo-notifications';
-import type { TimetableEntry } from './types';
+import type { AcademicCalendar, TimetableEntry } from './types';
 import { attendanceOccurrenceKey, ensureAttendanceCategory, getAnsweredOccurrenceSet } from './attendanceRecording';
-import { getAttendanceCheckinPopupEnabled } from './storage';
+import { getNotificationPrefs } from './storage';
 
 // Android channel importance cannot be changed once created.
 // Bump the channel id so existing installs get a fresh HIGH-importance channel (restores popup/banner).
@@ -118,6 +118,38 @@ function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * 864e5);
 }
 
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dateInRange(date: string, start: string | undefined, end: string | undefined): boolean {
+  if (!start || !end) return false;
+  return date >= start.slice(0, 10) && date <= end.slice(0, 10);
+}
+
+/**
+ * Conservative calendar gate: suppress only when the user's own active
+ * calendar clearly identifies the date as outside teaching. If calendar data
+ * is absent or incomplete, reminders continue instead of guessing.
+ */
+function isLectureDate(date: Date, calendar: AcademicCalendar | null | undefined): boolean {
+  if (!calendar) return true;
+  const key = localDateKey(date);
+  if (calendar.startDate && key < calendar.startDate.slice(0, 10)) return false;
+  if (calendar.endDate && key > calendar.endDate.slice(0, 10)) return false;
+  if (dateInRange(key, calendar.breakStartDate, calendar.breakEndDate)) return false;
+
+  const periods = Array.isArray(calendar.periods) ? calendar.periods : [];
+  if (periods.length === 0) return true;
+  const matching = periods.filter((period) => dateInRange(key, period.startDate, period.endDate));
+  if (matching.some((period) => period.type !== 'lecture')) return false;
+  const hasLecturePeriods = periods.some((period) => period.type === 'lecture');
+  return !hasLecturePeriods || matching.some((period) => period.type === 'lecture');
+}
+
 export async function ensureAttendanceChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(CHANNEL_ATTENDANCE, {
@@ -154,6 +186,30 @@ export async function cancelAllAttendanceNotifications(): Promise<void> {
       await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
     }),
   );
+}
+
+/** Remove pending and already-presented check-ins for exact timetable rows. */
+export async function cancelAttendanceNotificationsForEntries(entryIds: string[]): Promise<void> {
+  const ids = new Set(entryIds.map((id) => String(id).trim()).filter(Boolean));
+  if (ids.size === 0) return;
+  const [scheduled, presented] = await Promise.all([
+    Notifications.getAllScheduledNotificationsAsync().catch(() => []),
+    Notifications.getPresentedNotificationsAsync().catch(() => []),
+  ]);
+  await Promise.all([
+    ...(scheduled ?? []).map(async (entry) => {
+      const request = requestFromScheduledEntry(entry);
+      const timetableEntryId = String(request.data?.timetableEntryId ?? '');
+      if (!request.id || !ids.has(timetableEntryId)) return;
+      await Notifications.cancelScheduledNotificationAsync(request.id).catch(() => {});
+    }),
+    ...(presented ?? []).map(async (notification) => {
+      const request = notification.request;
+      const timetableEntryId = String(request.content.data?.timetableEntryId ?? '');
+      if (!request.identifier || !ids.has(timetableEntryId)) return;
+      await Notifications.dismissNotificationAsync(request.identifier).catch(() => {});
+    }),
+  ]);
 }
 
 /** One Expo id per reminder fire + visible subject so duplicate rows cannot stack. */
@@ -197,7 +253,7 @@ type PlannedOccurrence = {
 export async function rescheduleAttendanceNotifications(
   userId: string,
   timetable: TimetableEntry[],
-  opts?: { horizonDays?: number },
+  opts?: { horizonDays?: number; academicCalendar?: AcademicCalendar | null },
 ): Promise<void> {
   rescheduleQueue = rescheduleQueue
     .catch(() => {})
@@ -221,7 +277,9 @@ export async function rescheduleAttendanceNotifications(
       // OS delivers it silently — no banner, no sound — but the request stays
       // pending so it appears in the in-app Notification Manager and the OS
       // notification center where the user can still tap it to record attendance.
-      const popupEnabled = await getAttendanceCheckinPopupEnabled().catch(() => true);
+      const prefs = await getNotificationPrefs().catch(() => null);
+      const popupEnabled = prefs?.attendanceCheckinPopup ?? true;
+      const pauseOutsideLecturePeriods = prefs?.pauseAttendanceOutsideLecturePeriods ?? true;
       const androidChannelId = popupEnabled ? CHANNEL_ATTENDANCE : CHANNEL_ATTENDANCE_SILENT;
 
       const horizonDays = Math.max(1, Math.min(31, Number(opts?.horizonDays ?? 14)));
@@ -253,6 +311,7 @@ export async function rescheduleAttendanceNotifications(
           const scheduledStartAt = new Date(
             d.getFullYear(), d.getMonth(), d.getDate(), time.hour, time.minute, 0, 0,
           );
+          if (pauseOutsideLecturePeriods && !isLectureDate(scheduledStartAt, opts?.academicCalendar)) continue;
           // Exact wall-clock offset: trigger fires when (now >= classStart - 5min), i.e. at T−5 minutes.
           const fireAt = new Date(scheduledStartAt.getTime() - 5 * 60_000);
           if (fireAt.getTime() <= Date.now()) continue;

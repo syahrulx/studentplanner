@@ -162,6 +162,23 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   return unwrapFunctionData<DashboardOverview>(data, error);
 }
 
+export interface OperationalAlert {
+  key: string;
+  title: string;
+  severity: 'critical' | 'warning' | 'info';
+  detail: string;
+  route: string;
+  count: number | null;
+  available: boolean;
+  error: string | null;
+}
+
+export async function getOperationalDashboard(): Promise<{ generatedAt: string; alerts: OperationalAlert[] }> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'operational_dashboard' }, headers);
+  return unwrapFunctionData<{ generatedAt: string; alerts: OperationalAlert[] }>(data, error);
+}
+
 export type CourseUsageRow = {
   course_id: string;
   course_name: string | null;
@@ -356,6 +373,10 @@ export async function listUsers(opts: {
   query?: string;
   universityId?: string;
   plan?: 'all' | SubscriptionPlan;
+  status?: 'all' | AdminUserRow['status'];
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'newest' | 'oldest' | 'name_az' | 'name_za';
   limit?: number;
   offset?: number;
 }) {
@@ -363,18 +384,25 @@ export async function listUsers(opts: {
     const limit = Math.max(1, Math.min(200, Number(opts.limit ?? 50)));
     const offset = Math.max(0, Number(opts.offset ?? 0));
     const plan = opts.plan ?? 'all';
+    const status = opts.status ?? 'all';
+    const sort = opts.sort ?? 'newest';
+    const sortColumn = sort === 'name_az' || sort === 'name_za' ? 'name' : 'created_at';
+    const ascending = sort === 'oldest' || sort === 'name_az';
     let query = supabase
       .from('profiles')
       .select(
         'id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override',
         { count: 'exact' },
       )
-      .order('created_at', { ascending: false })
+      .order(sortColumn, { ascending, nullsFirst: false })
       .range(offset, offset + limit - 1);
     const q = (opts.query ?? '').trim();
     const universityId = (opts.universityId ?? '').trim();
     if (universityId) query = query.eq('university_id', universityId);
     if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
+    if (status !== 'all') query = query.eq('status', status);
+    if (opts.dateFrom) query = query.gte('created_at', `${opts.dateFrom}T00:00:00.000Z`);
+    if (opts.dateTo) query = query.lte('created_at', `${opts.dateTo}T23:59:59.999Z`);
     if (q) {
       // Strip PostgREST `or(...)` control chars so users can't break out of
       // the grouped filter and inject additional clauses (e.g. `),email.ilike.%`).
@@ -397,12 +425,12 @@ export async function listUsers(opts: {
   return { ...res, items: mapAdminUserRows(res.items as unknown[]) };
 }
 
-export async function setUserStatus(userId: string, status: AdminUserRow['status']) {
+export async function setUserStatus(userId: string, status: AdminUserRow['status'], reason?: string) {
   // Always route through the Edge Function so the audit row is written
   // server-side with the acting admin's uid (prevents self-reported logs
   // from the browser).
   const headers = await adminInvokeHeaders();
-  const { data, error } = await invokeEdgeFunction('admin_users', { action: 'set_status', userId, status }, headers);
+  const { data, error } = await invokeEdgeFunction('admin_users', { action: 'set_status', userId, status, reason }, headers);
   return unwrapFunctionData<{ ok: boolean }>(data, error);
 }
 
@@ -438,13 +466,13 @@ export async function setUserTokenLimit(
   if (error) throw toError(error);
 }
 
-export async function setUserSubscriptionPlan(userId: string, subscription_plan: SubscriptionPlan) {
+export async function setUserSubscriptionPlan(userId: string, subscription_plan: SubscriptionPlan, reason?: string) {
   // Always route through the Edge Function so the audit row is written
   // server-side with the acting admin's uid.
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_users',
-    { action: 'set_subscription_plan', userId, subscription_plan },
+    { action: 'set_subscription_plan', userId, subscription_plan, reason },
     headers,
   );
   return unwrapFunctionData<{ ok: boolean }>(data, error);
@@ -542,15 +570,17 @@ export async function saveAllSubscriptionPlanFeatures(
   return { ok: true as const };
 }
 
-export async function deleteUser(userId: string) {
+export async function deleteUser(userId: string, reason: string) {
   const headers = await adminInvokeHeaders();
-  const { data, error } = await invokeEdgeFunction('admin_users', { action: 'delete', userId }, headers);
+  const { data, error } = await invokeEdgeFunction('admin_users', { action: 'delete', userId, reason }, headers);
   return unwrapFunctionData<{ ok: boolean }>(data, error);
 }
 
 export type UniversityRow = {
   id: string;
   name: string;
+  /** ISO 3166-1 alpha-2 country code. Defaults to 'MY' for every pre-existing row. */
+  country?: string;
   api_endpoint: string | null;
   login_method: 'manual' | 'api';
   request_method: 'GET' | 'POST';
@@ -562,7 +592,7 @@ export async function listUniversities() {
   if (await hasSessionJwt()) {
     const { data, error } = await supabase
       .from('universities')
-      .select('id,name,api_endpoint,login_method,request_method,required_params,response_sample')
+      .select('id,name,country,api_endpoint,login_method,request_method,required_params,response_sample')
       .order('name', { ascending: true });
     if (error) throw toError(error);
     return (data ?? []) as UniversityRow[];
@@ -1263,16 +1293,11 @@ export async function insertUniversityCalendarOffers(rows: AdminCalendarOfferIns
   return res.items;
 }
 
-export async function deleteUniversityCalendarOffer(id: string): Promise<void> {
+export async function deleteUniversityCalendarOffer(id: string, reason = 'Admin calendar cleanup'): Promise<void> {
   const offerId = String(id || '').trim();
   if (!offerId) throw new Error('Missing offer id');
-  if (await hasSessionJwt()) {
-    const { error } = await supabase.from('university_calendar_offers').delete().eq('id', offerId);
-    if (error) throw toError(error);
-    return;
-  }
   const headers = await adminInvokeHeaders();
-  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'calendar_offer_delete', id: offerId }, headers);
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'calendar_offer_delete', id: offerId, reason }, headers);
   unwrapFunctionData<{ ok: true }>(data, error);
 }
 
@@ -1281,14 +1306,14 @@ export async function deleteUniversityCalendarOffer(id: string): Promise<void> {
  * The Edge Function repeats these constraints server-side so the bulk control
  * can never remove active or admin-published calendars.
  */
-export async function deleteExpiredCrowdsourcedCalendarOffers(ids: string[]): Promise<number> {
+export async function deleteExpiredCrowdsourcedCalendarOffers(ids: string[], reason = 'Expired crowdsourced calendar cleanup'): Promise<number> {
   const offerIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 500);
   if (!offerIds.length) return 0;
 
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'crowdsourced_calendars_delete_expired', ids: offerIds },
+    { action: 'crowdsourced_calendars_delete_expired', ids: offerIds, reason },
     headers,
   );
   const res = unwrapFunctionData<{ deletedCount: number }>(data, error);
@@ -1296,14 +1321,14 @@ export async function deleteExpiredCrowdsourcedCalendarOffers(ids: string[]): Pr
 }
 
 /** Removes expired admin-published calendar offers; crowdsourced offers use their own review flow. */
-export async function deleteExpiredAdminCalendarOffers(ids: string[], deleteAllExpired = false): Promise<number> {
+export async function deleteExpiredAdminCalendarOffers(ids: string[], deleteAllExpired = false, reason = 'Expired admin calendar cleanup'): Promise<number> {
   const offerIds = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))).slice(0, 500);
   if (!offerIds.length && !deleteAllExpired) return 0;
 
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'calendar_offers_delete_expired_admin', ids: offerIds, deleteAllExpired },
+    { action: 'calendar_offers_delete_expired_admin', ids: offerIds, deleteAllExpired, reason },
     headers,
   );
   const res = unwrapFunctionData<{ deletedCount: number }>(data, error);
@@ -1374,7 +1399,7 @@ export async function sendBroadcast(opts: SendBroadcastArgs): Promise<SendBroadc
   return unwrapFunctionData<SendBroadcastResult>(data, error);
 }
 
-export async function extractCalendarFromUrl(extractUrl: string): Promise<{
+export async function extractCalendarFromUrl(extractUrl: string, country?: string): Promise<{
   extracted: ExtractedCalendarData;
   source_url: string;
   text_preview: string;
@@ -1382,33 +1407,33 @@ export async function extractCalendarFromUrl(extractUrl: string): Promise<{
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'extract_calendar_from_url', extractUrl },
+    { action: 'extract_calendar_from_url', extractUrl, country },
     headers,
   );
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; source_url: string; text_preview: string }>(data, error);
 }
 
-export async function extractCalendarFromPdf(pdfBase64: string, fileName?: string): Promise<{
+export async function extractCalendarFromPdf(pdfBase64: string, fileName?: string, country?: string): Promise<{
   extracted: ExtractedCalendarData;
   text_preview: string;
 }> {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'extract_calendar_from_pdf', pdfBase64, fileName: fileName ?? 'upload.pdf' },
+    { action: 'extract_calendar_from_pdf', pdfBase64, fileName: fileName ?? 'upload.pdf', country },
     headers,
   );
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; text_preview: string }>(data, error);
 }
 
-export async function extractCalendarFromImage(imageBase64: string, fileName?: string): Promise<{
+export async function extractCalendarFromImage(imageBase64: string, fileName?: string, country?: string): Promise<{
   extracted: ExtractedCalendarData;
   text_preview: string;
 }> {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'extract_calendar_from_image', imageBase64, fileName: fileName ?? 'upload.png' },
+    { action: 'extract_calendar_from_image', imageBase64, fileName: fileName ?? 'upload.png', country },
     headers,
   );
   return unwrapFunctionData<{ extracted: ExtractedCalendarData; text_preview: string }>(data, error);
@@ -2049,6 +2074,15 @@ export type UserReportKind =
   | 'other';
 
 export type UserReportStatus = 'open' | 'in_progress' | 'resolved' | 'dismissed';
+export type SupportWorkflowState =
+  | 'new'
+  | 'assigned'
+  | 'in_progress'
+  | 'waiting_user'
+  | 'waiting_engineering'
+  | 'resolved'
+  | 'closed';
+export type SupportEscalationLevel = 'none' | 'normal' | 'urgent';
 
 export interface AdminUserReportRow {
   id: string;
@@ -2068,6 +2102,22 @@ export interface AdminUserReportRow {
   screenshot_url: string | null;
   created_at: string;
   resolved_at: string | null;
+  assigned_admin_id: string | null;
+  workflow_state: SupportWorkflowState;
+  first_admin_response_at: string | null;
+  last_user_reply_at: string | null;
+  last_admin_reply_at: string | null;
+  internal_tags: string[];
+  escalation_level: SupportEscalationLevel;
+  escalation_reason: string | null;
+  escalated_at: string | null;
+  reopened_count: number;
+  last_reopened_at: string | null;
+}
+
+export interface SupportAdminOption {
+  user_id: string;
+  email: string;
 }
 
 export interface AdminSupportReportMessage {
@@ -2079,8 +2129,7 @@ export interface AdminSupportReportMessage {
   created_at: string;
 }
 
-const USER_REPORTS_COLUMNS =
-  'id,reporter_id,reporter_name_snapshot,reporter_email_snapshot,contact_info,kind,subject,message,target_user_handle,target_user_id,app_version,platform,status,admin_notes,screenshot_url,created_at,resolved_at';
+const USER_REPORTS_COLUMNS = '*';
 
 export async function listUserReports(opts: {
   status?: UserReportStatus | 'all';
@@ -2088,26 +2137,41 @@ export async function listUserReports(opts: {
   query?: string;
   limit?: number;
   offset?: number;
+  workflowState?: SupportWorkflowState | 'all';
+  assignedAdminId?: string | 'all' | 'unassigned';
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'newest' | 'oldest' | 'last_user_reply';
 }) {
   const limit = Math.max(1, Math.min(500, Number(opts.limit ?? 100)));
   const offset = Math.max(0, Number(opts.offset ?? 0));
   const status = opts.status ?? 'all';
   const kind = opts.kind ?? 'all';
   const q = (opts.query ?? '').trim();
+  const workflowState = opts.workflowState ?? 'all';
+  const assignedAdminId = opts.assignedAdminId ?? 'all';
+  const sort = opts.sort ?? 'newest';
 
   if (await hasSessionJwt()) {
     let query = supabase
       .from('support_reports')
       .select(USER_REPORTS_COLUMNS, { count: 'exact' })
-      .order('created_at', { ascending: false })
+      .order(sort === 'last_user_reply' ? 'last_user_reply_at' : 'created_at', { ascending: sort === 'oldest', nullsFirst: false })
       .range(offset, offset + limit - 1);
     if (status !== 'all') query = query.eq('status', status);
     if (kind !== 'all') query = query.eq('kind', kind);
+    if (workflowState !== 'all') query = query.eq('workflow_state', workflowState);
+    if (assignedAdminId === 'unassigned') query = query.is('assigned_admin_id', null);
+    else if (assignedAdminId !== 'all') query = query.eq('assigned_admin_id', assignedAdminId);
+    if (opts.dateFrom) query = query.gte('created_at', `${opts.dateFrom}T00:00:00.000Z`);
+    if (opts.dateTo) query = query.lte('created_at', `${opts.dateTo}T23:59:59.999Z`);
     if (q) {
       const safe = q.replace(/[,():*\\%]/g, ' ').trim();
       if (safe) {
+        const uuidFilters = /^[0-9a-f-]{36}$/i.test(safe) ? [`id.eq.${safe}`, `reporter_id.eq.${safe}`] : [];
         query = query.or(
           [
+            ...uuidFilters,
             `subject.ilike.%${safe}%`,
             `message.ilike.%${safe}%`,
             `reporter_name_snapshot.ilike.%${safe}%`,
@@ -2131,7 +2195,10 @@ export async function listUserReports(opts: {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'list_support_reports', status, kind, query: q, limit, offset },
+    {
+      action: 'list_support_reports', status, kind, query: q, limit, offset,
+      workflowState, assignedAdminId, dateFrom: opts.dateFrom, dateTo: opts.dateTo, sort,
+    },
     headers,
   );
   return unwrapFunctionData<{
@@ -2140,6 +2207,31 @@ export async function listUserReports(opts: {
     offset: number;
     limit: number;
   }>(data, error);
+}
+
+export async function listSupportAdmins(): Promise<SupportAdminOption[]> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'support_admins_list' }, headers);
+  return unwrapFunctionData<{ items: SupportAdminOption[] }>(data, error).items;
+}
+
+export async function updateUserReportWorkflow(
+  id: string,
+  patch: {
+    workflowState?: SupportWorkflowState;
+    assignedAdminId?: string | null;
+    internalTags?: string[];
+    escalationLevel?: SupportEscalationLevel;
+    escalationReason?: string | null;
+  },
+) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'update_support_report_workflow', id, ...patch },
+    headers,
+  );
+  return unwrapFunctionData<{ row: AdminUserReportRow }>(data, error);
 }
 
 export async function updateUserReportStatus(
@@ -2178,11 +2270,11 @@ export async function replyToUserReport(
   return unwrapFunctionData<{ row: AdminUserReportRow; message: AdminSupportReportMessage }>(data, error);
 }
 
-export async function deleteUserReport(id: string) {
+export async function deleteUserReport(id: string, reason: string) {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(
     'admin_data',
-    { action: 'delete_support_report', id },
+    { action: 'delete_support_report', id, reason },
     headers,
   );
   return unwrapFunctionData<{ ok: boolean }>(data, error);
