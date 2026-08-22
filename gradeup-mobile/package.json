@@ -21,6 +21,7 @@
     "@react-native-community/datetimepicker": "8.6.0",
     "@react-navigation/native": "^7.1.8",
     "@rnmapbox/maps": "^10.1.36",
+    "@sentry/react-native": "~7.11.0",
     "@supabase/supabase-js": "^2.98.0",
     "base64-arraybuffer": "^1.0.2",
     "expo": "^55.0.14",

@@ -1,4 +1,8 @@
 import '@/src/notificationsForeground';
+import { initMonitoring } from '@/src/lib/monitoring';
+
+// Init crash reporting before anything else can throw. No-op without a DSN.
+initMonitoring();
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { ThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
