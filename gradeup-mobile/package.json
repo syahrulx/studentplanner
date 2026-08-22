@@ -1,15 +1,20 @@
 {
   "name": "gradeup-mobile",
   "main": "expo-router/entry",
-  "version": "1.6.6",
+  "version": "1.6.7",
   "scripts": {
     "start": "expo start",
+    "prestart": "npm run validate:release",
     "start:go": "expo start --go",
     "android": "expo run:android",
+    "preandroid": "npm run validate:release",
     "ios": "expo run:ios",
+    "preios": "npm run validate:release",
     "web": "expo start --web",
     "web:export": "expo export --platform web",
     "typecheck": "tsc --noEmit",
+    "validate:release": "node scripts/validate-release-version.js",
+    "eas-build-pre-install": "npm run validate:release",
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts",
     "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
   },

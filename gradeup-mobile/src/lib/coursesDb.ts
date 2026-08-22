@@ -98,7 +98,12 @@ export async function updateCourse(userId: string, course: Course): Promise<void
 }
 
 export async function deleteCourse(userId: string, subjectId: string): Promise<void> {
-  await supabase.from(TABLE).delete().eq('user_id', userId).eq('subject_id', subjectId);
+  const { error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq('user_id', userId)
+    .eq('subject_id', subjectId);
+  if (error) throw new Error(error.message || 'Failed to delete subject');
 }
 
 export async function deleteAllCoursesForUser(userId: string): Promise<void> {

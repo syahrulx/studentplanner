@@ -71,12 +71,13 @@ import {
 } from '../notificationManager';
 import {
   cancelAllAttendanceNotifications,
+  cancelAttendanceNotificationsForEntries,
   rescheduleAttendanceNotifications,
 } from '../attendanceNotifications';
 import { ensureAttendanceCategory, flushPendingAttendanceEvents } from '../attendanceRecording';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
-import { deleteHandwritingCache } from '../lib/handwritingDb';
+import { deleteHandwritingCache, flushHandwritingOutbox } from '../lib/handwritingDb';
 import * as taskDb from '../lib/taskDb';
 import * as studyTimeDb from '../lib/studyTimeDb';
 import * as coursesDb from '../lib/coursesDb';
@@ -94,6 +95,8 @@ import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 import { initPurchases, logOutPurchases, onCustomerInfoUpdate } from '../lib/purchases';
+import * as offlineSync from '../lib/offlineSync';
+import type { OfflineSyncStatus } from '../lib/offlineSync';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -128,6 +131,7 @@ type AppState = {
     mystudentEmail?: string;
     portalTeachingAnchoredSemester?: number | null;
     subscriptionPlan?: import('../types').SubscriptionPlan;
+    country?: string;
   }) => Promise<void>;
   updateAcademicCalendar: (calendar: Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'>) => Promise<void>;
   clearAcademicCalendar: () => Promise<void>;
@@ -135,7 +139,7 @@ type AppState = {
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
   renameCourse: (subjectId: string, newName: string) => void;
-  deleteCourse: (subjectId: string) => void;
+  deleteCourse: (subjectId: string, options?: { deleteTimetable?: boolean }) => Promise<void>;
   tasks: Task[];
   tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -189,6 +193,10 @@ type AppState = {
         | 'needsDate'
         | 'repeatDays'
         | 'repeatNotify'
+        | 'excludeFromFocus'
+        | 'excludeFromPulse'
+        | 'stepOrder'
+        | 'estimatedMinutes'
       >
     >,
   ) => void;
@@ -248,14 +256,16 @@ type AppState = {
   ) => Promise<void>;
   /** Append one timetable slot and persist (replaces rows for this user). */
   addTimetableEntry: (entry: TimetableEntry) => Promise<void>;
-  /** Remove a slot by id and persist. */
-  removeTimetableEntry: (entryId: string) => Promise<void>;
+  /** Remove one slot, or the matching subject everywhere when explicitly requested. */
+  removeTimetableEntry: (entryId: string, options?: { deleteStudySubject?: boolean }) => Promise<void>;
   /** Wipes timetable, subjects, tasks, academic calendar, study times, SOW imports (DB + storage). Triple-confirm in UI. */
   clearSemesterData: () => Promise<void>;
   /** Re-fetch profile, tasks, calendar, study settings, courses, timetable from Supabase (same as cold start). */
   refreshRemoteData: () => Promise<void>;
   /** @internal Manually mark data as ready (e.g. after sign-up completes profile save). */
   markDataReady: () => void;
+  offlineSyncStatus: OfflineSyncStatus;
+  retryOfflineSync: () => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -313,6 +323,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [taskCompletionKeys, setTaskCompletionKeys] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
+  const [offlineSyncStatus, setOfflineSyncStatus] = useState<OfflineSyncStatus>({
+    userId: null,
+    pendingCount: 0,
+    syncing: false,
+    lastError: null,
+    lastSyncedAt: null,
+  });
 
   const [pendingExtraction, setPendingExtraction] = useState('');
   const [pendingClassroomTasks, setPendingClassroomTasks] = useState<import('../lib/googleClassroom').PendingNewTask[]>([]);
@@ -343,6 +360,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     return () => sub.remove();
   }, [bumpActivity]);
+
+  useEffect(() => offlineSync.subscribeOfflineSync((status) => {
+    // Never surface or apply another account's pending state after sign-out or
+    // a fast account switch. Its outbox remains safely stored under its UID.
+    if (!status.userId || status.userId === remoteUserIdRef.current) {
+      setOfflineSyncStatus(status);
+    }
+  }), []);
+
+  const retryOfflineSync = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await Promise.all([
+      offlineSync.flushOfflineSync(uid),
+      flushHandwritingOutbox(uid),
+    ]);
+  }, []);
+
+  useEffect(() => {
+    const retry = () => { void retryOfflineSync(); };
+    const appStateSub = RNAppState.addEventListener('change', (state) => {
+      if (state === 'active') retry();
+    });
+    const timer = setInterval(() => {
+      if (offlineSyncStatus.pendingCount > 0 && !offlineSyncStatus.syncing) retry();
+    }, 20000);
+    return () => {
+      appStateSub.remove();
+      clearInterval(timer);
+    };
+  }, [offlineSyncStatus.pendingCount, offlineSyncStatus.syncing, retryOfflineSync]);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
   const [customThemeColors, setCustomThemeColorsState] = useState<CustomThemeColors | null>(null);
@@ -373,6 +422,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const tasksRef = useRef<Task[]>([]);
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
+  const offlineMutationVersionRef = useRef(0);
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
   const academicCalendarRef = useRef<AcademicCalendar | null>(null);
@@ -435,7 +485,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const scheduleAttendanceNotifications = useCallback((uid: string, entries: TimetableEntry[]) => {
-    return rescheduleAttendanceNotifications(uid, entries).catch(() => {});
+    return rescheduleAttendanceNotifications(uid, entries, {
+      academicCalendar: academicCalendarRef.current,
+    }).catch(() => {});
   }, []);
 
 
@@ -531,6 +583,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     timetableForAttendanceRef.current = timetable;
   }, [timetable]);
+  useEffect(() => {
+    if (!timetable.length) return;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      rescheduleAttendanceNotifications(uid, timetable, { academicCalendar }).catch(() => {});
+    });
+  }, [academicCalendar, timetable]);
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
@@ -650,19 +710,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Helper to load all remote data for a given user id (including profile, calendar, subjects)
     const loadRemoteData = (uid: string, authFallbackName?: string) => {
       const gen = ++remoteLoadGeneration;
+      const mutationVersionAtStart = offlineMutationVersionRef.current;
       remoteUserIdRef.current = uid;
-      return Promise.allSettled([
-        studyDb.getNotes(uid),
+      // Show the last confirmed local snapshot immediately. Remote results are
+      // merged over it only when the request actually succeeds, so an offline
+      // relaunch never turns a user's planner or notes into an empty screen.
+      const cachedReady = Promise.all([
+        offlineSync.loadCachedTasks(uid),
+        offlineSync.loadCachedNotes(uid),
+        offlineSync.loadCachedTaskCompletions(uid),
+      ]).then(([cachedTasks, cachedNotes, cachedCompletions]) => {
+        if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+        setTasks(cachedTasks);
+        setNotes(cachedNotes);
+        setTaskCompletionKeys(new Set(cachedCompletions));
+      });
+      // Finish any queued write first. Otherwise a stale fetch could race a
+      // successful flush and briefly overwrite the just-synced local version.
+      return Promise.all([cachedReady, retryOfflineSync().catch(() => {})]).then(() => Promise.allSettled([
+        studyDb.getNotesStrict(uid),
         studyDb.getFlashcards(uid),
-        taskDb.getTasks(uid),
+        taskDb.getTasksStrict(uid),
         studyTimeDb.getAllStudySettings(uid),
         coursesDb.getCourses(uid),
         profileDb.getProfile(uid),
         academicCalendarDb.getActiveCalendar(uid),
         timetableDb.getTimetable(uid),
         timetableDb.getUniversityConnection(uid),
-      ]).then(async (results) => {
+      ])).then(async (results) => {
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+        const localMutatedDuringLoad = offlineMutationVersionRef.current !== mutationVersionAtStart;
 
         const r0 = results[0];
         const r1 = results[1];
@@ -686,13 +763,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let validCourseIds: Set<string> | null = null;
         if (r4.status === 'fulfilled') {
           loadedCourses = r4.value;
-          validCourseIds = new Set(loadedCourses.map((c) => c.id.toUpperCase()));
-          setCourses(loadedCourses);
+          // An empty course response is ambiguous when the transport layer
+          // cannot expose its error. Preserve the last local course/note view
+          // rather than hiding every note during a connection problem.
+          if (loadedCourses.length > 0) {
+            validCourseIds = new Set(loadedCourses.map((c) => c.id.toUpperCase()));
+            setCourses(loadedCourses);
+          }
         }
 
         let loadedNotes: import('../types').Note[] = [];
-        if (r0.status === 'fulfilled') {
-          loadedNotes = r0.value;
+        if (r0.status === 'fulfilled' && !localMutatedDuringLoad) {
+          loadedNotes = await offlineSync.mergePendingNotes(uid, r0.value);
           if (validCourseIds) {
             // Soft-hide notes whose subject isn't in the user's current course
             // list. We previously auto-deleted them from Supabase here, but
@@ -703,9 +785,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             loadedNotes = loadedNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
           }
           setNotes(loadedNotes);
+          void offlineSync.cacheNotes(uid, loadedNotes);
         }
 
-        if (r1.status === 'fulfilled') {
+        if (r1.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedCards = r1.value;
           const validNoteIds = new Set(loadedNotes.map((n) => n.id));
 
@@ -715,18 +798,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
           setFlashcards(validCards);
         }
-        if (r2.status === 'fulfilled') {
-          setTasks(r2.value);
-          rescheduleAllTaskNotifications(r2.value).catch(() => {});
+        if (r2.status === 'fulfilled' && !localMutatedDuringLoad) {
+          const loadedTasks = await offlineSync.mergePendingTasks(uid, r2.value);
+          setTasks(loadedTasks);
+          void offlineSync.cacheTasks(uid, loadedTasks);
+          rescheduleAllTaskNotifications(loadedTasks).catch(() => {});
         }
 
         // Load this user's recurring-task completion history so the planner
         // can correctly show today's "done" state for repeating to-dos.
         taskDb
-          .getTaskCompletions(uid)
-          .then((keys) => {
-            if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
-            setTaskCompletionKeys(new Set(keys));
+          .getTaskCompletionsStrict(uid)
+          .then(async (keys) => {
+            if (
+              gen !== remoteLoadGeneration ||
+              remoteUserIdRef.current !== uid ||
+              offlineMutationVersionRef.current !== mutationVersionAtStart
+            ) return;
+            const mergedKeys = await offlineSync.mergePendingTaskCompletions(uid, keys);
+            setTaskCompletionKeys(new Set(mergedKeys));
+            void offlineSync.cacheTaskCompletions(uid, mergedKeys);
           })
           .catch((err) => {
             if (__DEV__) console.warn('[Rencana] failed to load task_completions:', err);
@@ -740,7 +831,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (r7.status === 'fulfilled') {
           const tt = r7.value ?? [];
           setTimetable(tt);
-          scheduleAttendanceNotifications(uid, tt).catch(() => {});
+          rescheduleAttendanceNotifications(uid, tt, { academicCalendar: academicCalendarRef.current }).catch(() => {});
         }
 
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
@@ -885,6 +976,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
                 subscriptionPlan: profile.subscriptionPlan ?? 'free',
+                country: profile.country ?? 'MY',
               };
             }
           } else if ((authFallbackName || '').trim()) {
@@ -1066,7 +1158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void flushPendingAttendanceEvents();
           // Ensure attendance notifications are scheduled only after permission is granted.
           // This avoids silent failures when timetable loads before the permission prompt resolves.
-          scheduleAttendanceNotifications(uid, timetable).catch(() => {});
+          rescheduleAttendanceNotifications(uid, timetable, { academicCalendar: academicCalendarRef.current }).catch(() => {});
         }
       })
       .catch(() => {});
@@ -1105,6 +1197,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_OUT') {
           remoteLoadGeneration += 1;
           remoteUserIdRef.current = null;
+          setOfflineSyncStatus({
+            userId: null,
+            pendingCount: 0,
+            syncing: false,
+            lastError: null,
+            lastSyncedAt: null,
+          });
           calendarAutoSyncedRef.current = false;
           setDataReady(false);
           setUserState(() => {
@@ -1392,6 +1491,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       mystudentEmail?: string;
       portalTeachingAnchoredSemester?: number | null;
       subscriptionPlan?: import('../types').SubscriptionPlan;
+      country?: string;
     }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
@@ -1430,6 +1530,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             }
           : {}),
         ...(updates.subscriptionPlan !== undefined ? { subscriptionPlan: updates.subscriptionPlan } : {}),
+        ...(updates.country !== undefined ? { country: updates.country } : {}),
       }));
     },
     [],
@@ -1467,51 +1568,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addTask = useCallback((task: Task, options?: { skipRemote?: boolean }) => {
-    setTasks((prev) => [task, ...prev]);
-    scheduleTaskNotifications(task).catch(() => {});
+    offlineMutationVersionRef.current += 1;
+    const uid = remoteUserIdRef.current;
+    setTasks((prev) => {
+      const next = [task, ...prev.filter((candidate) => candidate.id !== task.id)];
+      if (uid) void offlineSync.cacheTasks(uid, next);
+      return next;
+    });
+    if (!task.parentTaskId) scheduleTaskNotifications(task).catch(() => {});
     if (options?.skipRemote) return;
-
-    // Persist to Supabase. If it fails (no session, RLS denial, network drop,
-    // schema mismatch, etc.) we MUST surface that — historically we just
-    // console.warn'd, which meant the task lived in memory only and quietly
-    // vanished on the next app launch.
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
-        if (!uid) {
-          setTasks((prev) => prev.filter((t) => t.id !== task.id));
-          cancelTaskNotifications(task.id).catch(() => {});
-          Alert.alert(
-            'Task not saved',
-            'You appear to be signed out. Please sign in again and re-add the task so it is saved to your account.',
-          );
-          return;
+    if (!uid) {
+      Alert.alert('Saved on this device', 'Sign in again to sync this task to your account.');
+      return;
+    }
+    void offlineSync.queueTaskUpsert(uid, task)
+      .then(() => offlineSync.flushOfflineSync(uid))
+      .then((status) => {
+        if (status.pendingCount === 0 && !task.parentTaskId) {
+          void syncNewTaskToStreams(task.id, uid).catch(() => {});
         }
-        const { error } = await taskDb.upsertTask(uid, task);
-        if (error) {
-          console.warn('[Rencana] Failed to sync task to Supabase:', error.message);
-          setTasks((prev) => prev.filter((t) => t.id !== task.id));
-          cancelTaskNotifications(task.id).catch(() => {});
-          Alert.alert(
-            'Task not saved',
-            `We could not save this task to your account. Please try again.\n\n(${error.message})`,
-          );
-          return;
-        }
-        syncNewTaskToStreams(task.id, uid).catch((err) => {
-          console.warn('[Rencana] Failed to auto-sync task to streams:', err);
-        });
-      } catch (e) {
-        console.warn('[Rencana] Unexpected error while saving task:', e);
-        setTasks((prev) => prev.filter((t) => t.id !== task.id));
-        cancelTaskNotifications(task.id).catch(() => {});
-        Alert.alert(
-          'Task not saved',
-          'Something went wrong while saving your task. Please check your connection and try again.',
-        );
-      }
-    })();
+      })
+      .catch(() => {});
   }, []);
 
   const updateTask = useCallback(
@@ -1529,9 +1606,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           | 'needsDate'
           | 'repeatDays'
           | 'repeatNotify'
+          | 'excludeFromFocus'
+          | 'excludeFromPulse'
+          | 'stepOrder'
+          | 'estimatedMinutes'
         >
       >,
     ) => {
+    offlineMutationVersionRef.current += 1;
     const id = String(taskId).trim();
     setTasks((prev) => {
       const task = prev.find((t) => String(t.id).trim() === id);
@@ -1547,6 +1629,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? { repeatDays: Array.isArray(updates.repeatDays) ? updates.repeatDays : [] }
           : {}),
         ...(updates.repeatNotify !== undefined ? { repeatNotify: updates.repeatNotify } : {}),
+        ...(updates.excludeFromFocus !== undefined ? { excludeFromFocus: updates.excludeFromFocus } : {}),
+        ...(updates.excludeFromPulse !== undefined ? { excludeFromPulse: updates.excludeFromPulse } : {}),
+        ...(updates.stepOrder !== undefined ? { stepOrder: updates.stepOrder } : {}),
+        ...(updates.estimatedMinutes !== undefined ? { estimatedMinutes: updates.estimatedMinutes } : {}),
       };
       const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : mergedBase.dueDate;
       const dueDate = (rawDueDate ?? '').trim().slice(0, 10);
@@ -1572,45 +1658,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deadlineRisk,
         suggestedWeek,
       };
-      cancelTaskNotifications(updated.id).then(() => scheduleTaskNotifications(updated)).catch(() => {});
-      // Snapshot the pre-update task so we can roll back the local state if the
-      // remote write fails — otherwise the edit lives in memory only and is
-      // silently lost on the next app launch.
-      const previousTask = task;
-      (async () => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const uid = session?.user?.id;
-          if (!uid) {
-            setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
-            Alert.alert(
-              'Changes not saved',
-              'You appear to be signed out. Please sign in again to save your changes.',
-            );
-            return;
-          }
-          const { error } = await taskDb.upsertTask(uid, updated);
-          if (error) {
-            console.warn('[Rencana] Failed to sync task update:', error.message);
-            setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
-            Alert.alert(
-              'Changes not saved',
-              `We could not save your changes. Please try again.\n\n(${error.message})`,
-            );
-          }
-        } catch (e) {
-          console.warn('[Rencana] Unexpected error while updating task:', e);
-          setTasks((cur) => cur.map((t) => (String(t.id).trim() === id ? { ...previousTask } : t)));
-          Alert.alert(
-            'Changes not saved',
-            'Something went wrong while saving your changes. Please check your connection and try again.',
-          );
-        }
-      })();
+      if (!updated.parentTaskId) {
+        cancelTaskNotifications(updated.id).then(() => scheduleTaskNotifications(updated)).catch(() => {});
+      }
       // Return a new array with new object refs so React and list consumers see the update
       const next: Task[] = prev.map((t) =>
         String(t.id).trim() === id ? { ...updated } : { ...t }
       );
+      const uid = remoteUserIdRef.current;
+      if (uid) {
+        void offlineSync.cacheTasks(uid, next);
+        void offlineSync.queueTaskUpsert(uid, updated)
+          .then(() => offlineSync.flushOfflineSync(uid))
+          .catch(() => {});
+      }
       setTasksVersion((v) => v + 1);
       return next;
     });
@@ -1634,6 +1695,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     const task = captured;
     if (!task) return;
+    offlineMutationVersionRef.current += 1;
 
     const isRecurring = Array.isArray(task.repeatDays) && task.repeatDays.length > 0;
 
@@ -1647,49 +1709,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const next = new Set(prev);
         if (wasDone) next.delete(key);
         else next.add(key);
+        const uid = remoteUserIdRef.current;
+        if (uid) void offlineSync.cacheTaskCompletions(uid, [...next]);
         return next;
       });
-      (async () => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const uid = session?.user?.id;
-          if (!uid) {
-            setTaskCompletionKeys((prev) => {
-              const rb = new Set(prev);
-              if (wasDone) rb.add(key);
-              else rb.delete(key);
-              return rb;
-            });
-            return;
-          }
-          const { error } = wasDone
-            ? await taskDb.unmarkTaskDoneOnDate(uid, taskId, dateISO)
-            : await taskDb.markTaskDoneOnDate(uid, taskId, dateISO);
-          if (error) {
-            console.warn('[Rencana] Failed to sync recurring completion:', error.message);
-            setTaskCompletionKeys((prev) => {
-              const rb = new Set(prev);
-              if (wasDone) rb.add(key);
-              else rb.delete(key);
-              return rb;
-            });
-          }
-        } catch (e) {
-          console.warn('[Rencana] Unexpected error toggling recurring task:', e);
-          setTaskCompletionKeys((prev) => {
-            const rb = new Set(prev);
-            if (wasDone) rb.add(key);
-            else rb.delete(key);
-            return rb;
-          });
-        }
-      })();
+      const uid = remoteUserIdRef.current;
+      if (uid) {
+        void offlineSync.queueTaskCompletion(uid, taskId, dateISO, !wasDone)
+          .then(() => offlineSync.flushOfflineSync(uid))
+          .catch(() => {});
+      }
       return;
     }
 
     // ── One-off path: unchanged legacy behaviour ───────────────────────────
     setTasks((prev) => {
-      const previous = prev.find((t) => t.id === taskId);
       const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
       const updated = next.find((t) => t.id === taskId);
       if (updated) {
@@ -1698,36 +1732,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } else {
           scheduleTaskNotifications(updated).catch(() => {});
         }
-        (async () => {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const uid = session?.user?.id;
-            if (!uid) {
-              if (previous) {
-                setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
+        const uid = remoteUserIdRef.current;
+        if (uid) {
+          void offlineSync.cacheTasks(uid, next);
+          void offlineSync.queueTaskUpsert(uid, updated)
+            .then(() => offlineSync.flushOfflineSync(uid))
+            .then(async (status) => {
+              if (status.pendingCount > 0) return;
+              const shared = await getAcceptedSharedTasks();
+              const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
+              for (const st of asRecipient) {
+                void updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
               }
-              return;
-            }
-            const { error } = await taskDb.upsertTask(uid, updated);
-            if (error) {
-              console.warn('[Rencana] Failed to sync task:', error.message);
-              if (previous) {
-                setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
-              }
-              return;
-            }
-            const shared = await getAcceptedSharedTasks();
-            const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
-            for (const st of asRecipient) {
-              updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
-            }
-          } catch (e) {
-            console.warn('[Rencana] Unexpected error while toggling task:', e);
-            if (previous) {
-              setTasks((cur) => cur.map((t) => (t.id === taskId ? previous : t)));
-            }
-          }
-        })();
+            })
+            .catch(() => {});
+        }
       }
       return next;
     });
@@ -1749,20 +1768,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const deleteTask = useCallback((taskId: string) => {
+    offlineMutationVersionRef.current += 1;
     cancelTaskNotifications(taskId).catch(() => {});
-    // Snapshot for rollback: if the remote delete fails we must restore the task,
-    // otherwise it stays gone locally but resurrects on the next refresh/relogin
-    // (local and DB drift out of sync).
-    let removedTask: Task | undefined;
+    const uid = remoteUserIdRef.current;
     setTasks((prev) => {
-      removedTask = prev.find((t) => t.id === taskId);
-      return prev.filter((t) => t.id !== taskId);
+      const next = prev.filter((t) => t.id !== taskId && t.parentTaskId !== taskId);
+      if (uid) void offlineSync.cacheTasks(uid, next);
+      return next;
     });
-    let wasPinned = false;
     setPinnedTaskIds((prev) => {
       const next = prev.filter((id) => id !== taskId);
       if (next.length !== prev.length) {
-        wasPinned = true;
         persistPinnedTaskIds(next);
       }
       return next;
@@ -1790,29 +1806,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })();
     }
 
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-      if (!uid) return;
-      try {
-        await taskDb.deleteTask(uid, taskId);
-      } catch (e) {
-        if (__DEV__) console.warn('[AppContext] Remote task delete failed, rolling back:', e);
-        // Restore so local state matches the DB (the task still exists remotely).
-        if (removedTask) {
-          const restored = removedTask;
-          setTasks((cur) => (cur.some((t) => t.id === taskId) ? cur : [...cur, restored]));
-        }
-        if (wasPinned) {
-          setPinnedTaskIds((cur) => {
-            if (cur.includes(taskId)) return cur;
-            const next = [...cur, taskId];
-            persistPinnedTaskIds(next);
-            return next;
-          });
-        }
-      }
-    })();
+    if (uid) {
+      void offlineSync.queueTaskDelete(uid, taskId)
+        .then(() => offlineSync.flushOfflineSync(uid))
+        .catch(() => {});
+    }
   }, []);
 
   const pinTask = useCallback((taskId: string): boolean => {
@@ -1898,64 +1896,113 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const deleteCourse = useCallback((subjectId: string) => {
+  const deleteCourse = useCallback(async (subjectId: string, options?: { deleteTimetable?: boolean }) => {
+    offlineMutationVersionRef.current += 1;
     const upper = subjectId.toUpperCase();
+    const subjectNoteIds = new Set(
+      notes.filter((note) => note.subjectId.toUpperCase() === upper).map((note) => note.id),
+    );
+    const subjectTaskIds = tasks
+      .filter((task) => task.courseId.toUpperCase() === upper)
+      .map((task) => task.id);
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to delete a subject.');
+
+    // Resolve every affected row from this user's in-memory timetable, then
+    // delete those exact ids with a second user_id guard in timetableDb.
+    const timetableIds = options?.deleteTimetable
+      ? timetable
+          .filter((entry) => entry.subjectCode.trim().toUpperCase() === upper)
+          .map((entry) => entry.id)
+      : [];
+
+    // Every delete is doubly scoped (authenticated uid + exact subject id).
+    // Remove child data before the folder row so a failed child write leaves a
+    // visible folder the user can safely retry instead of hidden orphan data.
+    await studyDb.deleteSubjectStudyData(uid, subjectId);
+    await taskDb.deleteTasksForCourse(uid, subjectId);
+    await coursesDb.deleteCourse(uid, subjectId);
+    await Promise.all([
+      ...subjectTaskIds.map((taskId) => offlineSync.queueTaskDelete(uid, taskId)),
+      ...[...subjectNoteIds].map(async (noteId) => {
+        await offlineSync.queueNoteDelete(uid, noteId);
+        await deleteHandwritingCache(uid, noteId).catch(() => {});
+      }),
+    ]);
+    void offlineSync.flushOfflineSync(uid);
+    if (remoteUserIdRef.current && remoteUserIdRef.current !== uid) {
+      throw new Error('The signed-in account changed during deletion. Refresh before trying again.');
+    }
     setCourses((prev) => {
       const next = prev.filter((c) => c.id.toUpperCase() !== upper);
       persistCourses(next);
       return next;
     });
-    setTasks((prev) => prev.filter((t) => t.courseId.toUpperCase() !== upper));
-    setNotes((prev) => prev.filter((n) => n.subjectId.toUpperCase() !== upper)); // Cascade drop notes locally
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id;
-      if (!uid) return;
-      await coursesDb.deleteCourse(uid, subjectId);
-      const { data: relatedTasks } = await supabase
-        .from('tasks')
-        .select('id')
-        .eq('user_id', uid)
-        .eq('course_id', subjectId);
-      if (relatedTasks && relatedTasks.length > 0) {
-        for (const row of relatedTasks) {
-          await taskDb.deleteTask(uid, String(row.id));
+    setTasks((prev) => {
+      const next = prev.filter((task) => task.courseId.toUpperCase() !== upper);
+      void offlineSync.cacheTasks(uid, next);
+      return next;
+    });
+    setNotes((prev) => {
+      const next = prev.filter((note) => note.subjectId.toUpperCase() !== upper);
+      void offlineSync.cacheNotes(uid, next);
+      return next;
+    });
+    setFlashcards((prev) => prev.filter((card) => !card.noteId || !subjectNoteIds.has(card.noteId)));
+
+    if (timetableIds.length > 0) {
+      try {
+        await timetableDb.deleteTimetableEntries(uid, timetableIds);
+        await cancelAttendanceNotificationsForEntries(timetableIds);
+        if (remoteUserIdRef.current && remoteUserIdRef.current !== uid) {
+          throw new Error('The signed-in account changed during deletion. Refresh before trying again.');
         }
+        const remaining = timetable.filter((entry) => !timetableIds.includes(entry.id));
+        setTimetable(remaining);
+        setUserState((prev) => ({ ...prev, timetable: remaining }));
+        await rescheduleAttendanceNotifications(uid, remaining, { academicCalendar: academicCalendarRef.current });
+      } catch (error) {
+        throw new Error(
+          `The Study folder was deleted, but its timetable classes could not be removed. ${error instanceof Error ? error.message : ''}`.trim(),
+        );
       }
-    })();
-  }, []);
+    }
+  }, [notes, tasks, timetable]);
 
   const handleSaveNote = useCallback((note: Note) => {
+    offlineMutationVersionRef.current += 1;
+    const uid = remoteUserIdRef.current;
     setNotes((prev) => {
       const exists = prev.find((n) => n.id === note.id);
-      if (exists) return prev.map((n) => (n.id === note.id ? note : n));
-      return [note, ...prev];
+      const next = exists ? prev.map((n) => (n.id === note.id ? note : n)) : [note, ...prev];
+      if (uid) void offlineSync.cacheNotes(uid, next);
+      return next;
     });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) {
-        studyDb.upsertNote(session.user.id, note).catch((err) => {
-          if (__DEV__) console.error('[Note] persist failed (save):', err);
-        });
-      }
-    });
+    if (uid) {
+      void offlineSync.queueNoteUpsert(uid, note)
+        .then(() => offlineSync.flushOfflineSync(uid))
+        .catch(() => {});
+    }
   }, []);
 
 
 
   const deleteNote = useCallback((noteId: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId));
-    setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId)); // Also remove associated flashcards locally
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) {
-        void deleteHandwritingCache(session.user.id, noteId);
-        studyDb.deleteNote(session.user.id, noteId).catch((err) => {
-          if (__DEV__) console.error('[Note] persist failed (delete):', err);
-        });
-        studyDb.deleteFlashcardsForNote(session.user.id, noteId).catch((err) => {
-          if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
-        });
-      }
+    offlineMutationVersionRef.current += 1;
+    const uid = remoteUserIdRef.current;
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.id !== noteId);
+      if (uid) void offlineSync.cacheNotes(uid, next);
+      return next;
     });
+    setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId)); // Also remove associated flashcards locally
+    if (uid) {
+      void deleteHandwritingCache(uid, noteId);
+      void offlineSync.queueNoteDelete(uid, noteId)
+        .then(() => offlineSync.flushOfflineSync(uid))
+        .catch(() => {});
+    }
   }, []);
 
 
@@ -2258,20 +2305,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     scheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 
-  const removeTimetableEntry = useCallback(async (entryId: string) => {
+  const removeTimetableEntry = useCallback(async (entryId: string, options?: { deleteStudySubject?: boolean }) => {
+    offlineMutationVersionRef.current += 1;
     const {
       data: { session },
     } = await supabase.auth.getSession();
     const uid = session?.user?.id;
     if (!uid) throw new Error('Sign in required to save timetable.');
-    let merged: TimetableEntry[] = [];
-    setTimetable((prev) => {
-      merged = prev.filter((e) => e.id !== entryId);
-      return merged;
-    });
-    await timetableDb.saveTimetable(uid, merged);
-    scheduleAttendanceNotifications(uid, merged).catch(() => {});
-  }, []);
+    const target = timetable.find((entry) => entry.id === entryId);
+    if (!target) throw new Error('This timetable class no longer exists.');
+    const subjectCode = target.subjectCode.trim();
+    const subjectUpper = subjectCode.toUpperCase();
+    const idsToDelete = options?.deleteStudySubject
+      ? timetable.filter((entry) => entry.subjectCode.trim().toUpperCase() === subjectUpper).map((entry) => entry.id)
+      : [entryId];
+
+    await timetableDb.deleteTimetableEntries(uid, idsToDelete);
+    await cancelAttendanceNotificationsForEntries(idsToDelete);
+    if (remoteUserIdRef.current && remoteUserIdRef.current !== uid) {
+      throw new Error('The signed-in account changed during deletion. Refresh before trying again.');
+    }
+    const merged = timetable.filter((entry) => !idsToDelete.includes(entry.id));
+    setTimetable(merged);
+    setUserState((prev) => ({ ...prev, timetable: merged }));
+    await rescheduleAttendanceNotifications(uid, merged, { academicCalendar: academicCalendarRef.current });
+
+    if (options?.deleteStudySubject && subjectCode) {
+      const linkedCourse = courses.find((course) => course.id.trim().toUpperCase() === subjectUpper);
+      if (linkedCourse) {
+        try {
+          await deleteCourse(linkedCourse.id, { deleteTimetable: false });
+        } catch (error) {
+          throw new Error(
+            `The timetable subject and its reminders were deleted, but the Study folder could not be removed. ${error instanceof Error ? error.message : ''}`.trim(),
+          );
+        }
+      }
+    }
+  }, [courses, deleteCourse, timetable]);
 
   const markDataReady = useCallback(() => setDataReady(true), []);
 
@@ -2364,6 +2435,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearSemesterData,
       refreshRemoteData,
       markDataReady,
+      offlineSyncStatus,
+      retryOfflineSync,
     }),
     [
       dataReady,
@@ -2448,6 +2521,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearSemesterData,
       refreshRemoteData,
       markDataReady,
+      offlineSyncStatus,
+      retryOfflineSync,
     ],
   );
 

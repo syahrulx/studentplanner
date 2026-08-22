@@ -616,24 +616,43 @@ export default function StudyHub() {
           }
         } catch {}
 
-        const baseMsg = `Delete "${course.id} — ${course.name}"? This will also remove its notes, tasks, and flashcards.`;
+        const linkedTimetableCount = timetable.filter(
+          (entry) => entry.subjectCode.trim().toUpperCase() === course.id.trim().toUpperCase(),
+        ).length;
+        const baseMsg = `Delete "${course.id} — ${course.name}"? This removes its Study folder, notes, tasks, and flashcards.`;
         const warningMsg = mappedCount > 0
           ? `${baseMsg}\n\n⚠️ ${mappedCount} Google Classroom course${mappedCount !== 1 ? 's are' : ' is'} linked to this subject. Tasks from Classroom will create a new separate subject on next auto-sync.`
           : baseMsg;
 
+        const runDelete = async (deleteTimetable: boolean) => {
+          try {
+            await deleteCourse(course.id, { deleteTimetable });
+            if (courses.length <= 1) setSubjectsMode('idle');
+          } catch (error) {
+            Alert.alert(
+              'Could not finish deletion',
+              error instanceof Error ? error.message : 'No additional data was assumed deleted.',
+            );
+          }
+        };
+
         Alert.alert(
           tx('deleteSubject', 'Delete subject'),
-          warningMsg,
+          `${warningMsg}\n\nChoose whether to keep or remove ${linkedTimetableCount} linked timetable class${linkedTimetableCount === 1 ? '' : 'es'}.`,
           [
             { text: tx('cancel', 'Cancel'), style: 'cancel' },
             {
-              text: tx('deleteSubject', 'Delete'),
+              text: 'Delete folder only',
               style: 'destructive',
-              onPress: () => {
-                deleteCourse(course.id);
-                if (courses.length <= 1) setSubjectsMode('idle');
-              },
+              onPress: () => void runDelete(false),
             },
+            ...(linkedTimetableCount > 0
+              ? [{
+                  text: `Delete folder + ${linkedTimetableCount} class${linkedTimetableCount === 1 ? '' : 'es'}`,
+                  style: 'destructive' as const,
+                  onPress: () => void runDelete(true),
+                }]
+              : []),
           ],
         );
       })();

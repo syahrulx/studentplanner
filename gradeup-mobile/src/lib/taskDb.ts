@@ -35,10 +35,22 @@ function rowToTask(row: Record<string, unknown>): Task {
     repeatNotify: row.repeat_notify == null ? undefined : Boolean(row.repeat_notify),
     excludeFromFocus: Boolean(row.hide_from_focus),
     excludeFromPulse: Boolean(row.hide_from_pulse),
+    parentTaskId: row.parent_task_id != null ? String(row.parent_task_id) : undefined,
+    stepOrder: row.step_order != null ? Number(row.step_order) : undefined,
+    estimatedMinutes: row.estimated_minutes != null ? Number(row.estimated_minutes) : undefined,
   };
 }
 
 export async function getTasks(userId: string): Promise<Task[]> {
+  try {
+    return await getTasksStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Same query as getTasks, but preserves network/RLS failures for offline-aware callers. */
+export async function getTasksStrict(userId: string): Promise<Task[]> {
   const { data, error } = await supabase
     .from(TASKS_TABLE)
     .select('*')
@@ -47,7 +59,7 @@ export async function getTasks(userId: string): Promise<Task[]> {
     .order('due_time', { ascending: true });
 
   if (error) {
-    return [];
+    throw new Error(error.message || 'Failed to load tasks');
   }
 
   return (data ?? []).map(rowToTask);
@@ -80,6 +92,9 @@ export async function upsertTask(
       repeat_notify: repeatDays.length > 0 ? Boolean(task.repeatNotify) : false,
       hide_from_focus: Boolean(task.excludeFromFocus),
       hide_from_pulse: Boolean(task.excludeFromPulse),
+      parent_task_id: task.parentTaskId ?? null,
+      step_order: task.stepOrder ?? null,
+      estimated_minutes: task.estimatedMinutes ?? null,
     },
     { onConflict: 'id,user_id' }
   );
@@ -87,7 +102,17 @@ export async function upsertTask(
 }
 
 export async function deleteTask(userId: string, taskId: string): Promise<void> {
-  await supabase.from(TASKS_TABLE).delete().eq('user_id', userId).eq('id', taskId);
+  const { error } = await supabase.from(TASKS_TABLE).delete().eq('user_id', userId).eq('id', taskId);
+  if (error) throw new Error(error.message || 'Failed to delete task');
+}
+
+export async function deleteTasksForCourse(userId: string, courseId: string): Promise<void> {
+  const { error } = await supabase
+    .from(TASKS_TABLE)
+    .delete()
+    .eq('user_id', userId)
+    .eq('course_id', courseId);
+  if (error) throw new Error(error.message || 'Failed to delete subject tasks');
 }
 
 export async function deleteAllTasksForUser(userId: string): Promise<void> {
@@ -106,11 +131,21 @@ export function makeCompletionKey(taskId: string, occurrenceDateISO: string): Ta
 
 /** Fetch every (taskId, date) the user has marked done across all recurring tasks. */
 export async function getTaskCompletions(userId: string): Promise<TaskCompletionKey[]> {
+  try {
+    return await getTaskCompletionsStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Completion query that lets offline-aware callers distinguish an error from no rows. */
+export async function getTaskCompletionsStrict(userId: string): Promise<TaskCompletionKey[]> {
   const { data, error } = await supabase
     .from('task_completions')
     .select('task_id, occurrence_date')
     .eq('user_id', userId);
-  if (error || !data) return [];
+  if (error) throw new Error(error.message || 'Failed to load task completions');
+  if (!data) return [];
   return data.map((r: { task_id: string; occurrence_date: string }) =>
     makeCompletionKey(String(r.task_id), String(r.occurrence_date)),
   );
@@ -145,4 +180,3 @@ export async function unmarkTaskDoneOnDate(
     .eq('occurrence_date', occurrenceDateISO);
   return { error: error ? { message: error.message } : null };
 }
-

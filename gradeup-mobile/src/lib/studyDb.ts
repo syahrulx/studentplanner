@@ -37,12 +37,21 @@ function rowToCard(row: Record<string, unknown>): Flashcard {
 }
 
 export async function getNotes(userId: string): Promise<Note[]> {
+  try {
+    return await getNotesStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Same query as getNotes, but preserves network/RLS failures for offline-aware callers. */
+export async function getNotesStrict(userId: string): Promise<Note[]> {
   const { data, error } = await supabase
     .from(NOTES_TABLE)
     .select('*')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
-  if (error) return [];
+  if (error) throw new Error(error.message || 'Failed to load notes');
   return (data ?? []).map(rowToNote);
 }
 
@@ -127,6 +136,31 @@ export async function deleteNote(userId: string, noteId: string): Promise<void> 
     if (__DEV__) console.error('[Note] delete failed:', error);
     throw error;
   }
+}
+
+/** Delete notes and their flashcards for exactly one subject owned by one user. */
+export async function deleteSubjectStudyData(userId: string, subjectId: string): Promise<void> {
+  const { data: noteRows, error: readError } = await supabase
+    .from(NOTES_TABLE)
+    .select('id')
+    .eq('user_id', userId)
+    .eq('subject_id', subjectId);
+  if (readError) throw readError;
+  const noteIds = (noteRows ?? []).map((row) => String(row.id)).filter(Boolean);
+  if (noteIds.length > 0) {
+    const { error: cardsError } = await supabase
+      .from(CARDS_TABLE)
+      .delete()
+      .eq('user_id', userId)
+      .in('note_id', noteIds);
+    if (cardsError) throw cardsError;
+  }
+  const { error: notesError } = await supabase
+    .from(NOTES_TABLE)
+    .delete()
+    .eq('user_id', userId)
+    .eq('subject_id', subjectId);
+  if (notesError) throw notesError;
 }
 
 

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, Area, AreaChart, Tooltip, XAxis, YAxis } from 'recharts';
+import { Link } from 'react-router-dom';
 import {
   getAiTokenUsageSeriesLast14Days,
   getCourseUsageTop,
   getDashboardOverview,
+  getOperationalDashboard,
   type AiTokenUsagePoint,
   type CourseUsageRow,
   type DashboardOverview,
+  type OperationalAlert,
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { OpenAiCreditCard } from '../components/OpenAiCreditCard';
@@ -31,6 +34,8 @@ export function DashboardRoute() {
   const [aiErr, setAiErr] = useState<string>('');
   const [courseUsage, setCourseUsage] = useState<CourseUsageRow[]>([]);
   const [courseUsageErr, setCourseUsageErr] = useState<string>('');
+  const [operationalAlerts, setOperationalAlerts] = useState<OperationalAlert[]>([]);
+  const [operationalErr, setOperationalErr] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +51,14 @@ export function DashboardRoute() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOperationalDashboard()
+      .then((result) => { if (!cancelled) setOperationalAlerts(result.alerts); })
+      .catch((error) => { if (!cancelled) setOperationalErr(error instanceof Error ? error.message : 'Failed to load operational alerts'); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -141,6 +154,29 @@ export function DashboardRoute() {
           ))
         )}
       </MotionStagger>
+
+      <MotionSection delay={0.03}>
+        <MotionPanel>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div><div className="text-lg font-black text-slate-900 dark:text-white">Operational attention</div><div className="mt-1 text-xs font-semibold text-slate-500">Read-only checks for issues that may require an administrator.</div></div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300">No automatic fixes</div>
+            </div>
+            {operationalErr ? <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">{operationalErr}</div> : null}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {operationalAlerts.map((alert) => {
+                const tone = alert.severity === 'critical' ? 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30' : alert.severity === 'warning' ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40';
+                return <Link key={alert.key} to={alert.route} className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 ${tone}`}>
+                  <div className="flex items-center justify-between gap-2"><div className="text-sm font-black text-slate-900 dark:text-white">{alert.title}</div><div className="text-2xl font-black text-slate-900 dark:text-white">{alert.available ? alert.count ?? 0 : '—'}</div></div>
+                  <div className="mt-2 text-xs font-semibold leading-5 text-slate-600 dark:text-slate-300">{alert.available ? alert.detail : alert.error || alert.detail}</div>
+                  <div className="mt-3 text-[10px] font-black uppercase tracking-wide text-brand-600 dark:text-brand-300">Review →</div>
+                </Link>;
+              })}
+              {!operationalErr && operationalAlerts.length === 0 ? <div className="text-sm font-semibold text-slate-500">Loading operational checks…</div> : null}
+            </div>
+          </div>
+        </MotionPanel>
+      </MotionSection>
 
       <OpenAiCreditCard />
 
@@ -284,4 +320,3 @@ export function DashboardRoute() {
     </div>
   );
 }
-

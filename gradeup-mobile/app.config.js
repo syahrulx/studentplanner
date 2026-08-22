@@ -3,6 +3,7 @@
 // where Expo CLI does not auto-load .env for native config evaluation.
 const fs = require('fs');
 const path = require('path');
+const release = require('./release.json');
 try {
   const envPath = path.resolve(__dirname, '.env');
   if (fs.existsSync(envPath)) {
@@ -103,8 +104,10 @@ export default ({ config }) => {
 
   return {
     ...base,
+    version: release.version,
     android: {
       ...baseAndroid,
+      versionCode: release.androidVersionCode,
       intentFilters: [
         ...existingIntentFilters,
         {
@@ -128,6 +131,7 @@ export default ({ config }) => {
     },
     ios: {
       ...ios,
+      buildNumber: release.iosBuildNumber,
       associatedDomains: [
         ...(Array.isArray(ios.associatedDomains) ? ios.associatedDomains : []),
         `applinks:${inviteHost}`,

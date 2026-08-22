@@ -60,17 +60,26 @@ serve(async (req) => {
       const q = String(payload.query || '').trim();
       const universityId = String(payload.universityId || '').trim();
       const plan = String(payload.plan || 'all').trim();
+      const status = String(payload.status || 'all').trim();
+      const dateFrom = String(payload.dateFrom || '').trim();
+      const dateTo = String(payload.dateTo || '').trim();
+      const sort = String(payload.sort || 'newest').trim();
       const limit = Math.max(1, Math.min(200, Number(payload.limit || 50)));
       const offset = Math.max(0, Number(payload.offset || 0));
+      const sortColumn = sort === 'name_az' || sort === 'name_za' ? 'name' : 'created_at';
+      const ascending = sort === 'oldest' || sort === 'name_az';
 
       let query = admin
         .from('profiles')
         .select('id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order(sortColumn, { ascending, nullsFirst: false })
         .range(offset, offset + limit - 1);
 
       if (universityId) query = query.eq('university_id', universityId);
       if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
+      if (['active', 'disabled', 'banned'].includes(status)) query = query.eq('status', status);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) query = query.gte('created_at', `${dateFrom}T00:00:00.000Z`);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
       if (q) {
         // Strip PostgREST `or(...)` control chars so users can't break out of
         // the grouped filter and inject additional clauses.
@@ -86,6 +95,7 @@ serve(async (req) => {
     if (action === 'set_status') {
       const userId = String(payload.userId || '').trim();
       const status = String(payload.status || '').trim();
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       if (!userId) return J(400, { error: 'missing_userId' });
       if (!['active', 'disabled', 'banned'].includes(status)) return J(400, { error: 'invalid_status' });
 
@@ -94,7 +104,7 @@ serve(async (req) => {
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, userId, status, actor: adminUserId ?? null },
+        meta: { action, userId, status, reason: reason || null, actor: adminUserId ?? null },
       });
       return J(200, { ok: true });
     }
@@ -102,6 +112,7 @@ serve(async (req) => {
     if (action === 'set_subscription_plan') {
       const userId = String(payload.userId || '').trim();
       const subscription_plan = String(payload.subscription_plan || '').trim();
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       if (!userId) return J(400, { error: 'missing_userId' });
       if (!['free', 'plus', 'pro'].includes(subscription_plan)) return J(400, { error: 'invalid_subscription_plan' });
 
@@ -139,14 +150,16 @@ serve(async (req) => {
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, userId, subscription_plan, actor: adminUserId ?? null },
+        meta: { action, userId, subscription_plan, reason: reason || null, actor: adminUserId ?? null },
       });
       return J(200, { ok: true });
     }
 
     if (action === 'delete') {
       const userId = String(payload.userId || '').trim();
+      const reason = String(payload.reason || '').trim().slice(0, 500);
       if (!userId) return J(400, { error: 'missing_userId' });
+      if (reason.length < 5) return J(400, { error: 'reason_required' });
 
       // Cascade app-side data first (migration 054 wires on-delete cascades for
       // auth.users, but run a belt-and-braces function in case the migration
@@ -167,7 +180,7 @@ serve(async (req) => {
       await admin.from('admin_logs').insert({
         type: 'api_request',
         status: 'success',
-        meta: { action, userId, actor: adminUserId ?? null },
+        meta: { action, userId, reason, actor: adminUserId ?? null },
       });
 
       return J(200, { ok: true });

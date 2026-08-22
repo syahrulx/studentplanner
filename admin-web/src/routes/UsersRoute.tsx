@@ -16,6 +16,7 @@ import {
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
+import { useSafeActionDialog } from '../components/SafeActionDialog';
 
 function Chip({ children, tone }: { children: string; tone: 'green' | 'amber' | 'rose' | 'slate' }) {
   const cls =
@@ -550,11 +551,15 @@ function TokenActionDialog({
 }
 
 export function UsersRoute() {
-  type RowLimit = 25 | 50 | 100 | 200 | 'all';
-  type SortKey = 'newest' | 'oldest' | 'name_az' | 'name_za' | 'usage_high' | 'usage_low';
+  type RowLimit = 25 | 50 | 100 | 200;
+  type SortKey = 'newest' | 'oldest' | 'name_az' | 'name_za';
   const { searchQuery } = useAdminSearch();
   const [query, setQuery] = useState('');
   const [universityId, setUniversityId] = useState('');
+  const [planFilter, setPlanFilter] = useState<'all' | SubscriptionPlan>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | AdminUserRow['status']>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [rowLimit, setRowLimit] = useState<RowLimit>(50);
   const [sortBy, setSortBy] = useState<SortKey>('newest');
   const [busy, setBusy] = useState(false);
@@ -565,6 +570,8 @@ export function UsersRoute() {
   const [usageLoading, setUsageLoading] = useState(false);
   const [tokenDialog, setTokenDialog] = useState<TokenDialogState | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
   const hasMounted = useRef(false);
 
   const loadUsage = async (users: AdminUserRow[]) => {
@@ -585,36 +592,24 @@ export function UsersRoute() {
     }
   };
 
-  const refresh = async () => {
+  const refresh = async (targetPage = page) => {
     setBusy(true);
     setErr('');
     try {
       const baseArgs = {
         query: query.trim() || undefined,
         universityId: universityId.trim() || undefined,
+        plan: planFilter,
+        status: statusFilter,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        sort: sortBy,
       };
-
-      if (rowLimit === 'all') {
-        const pageSize = 200;
-        let offset = 0;
-        let total = 0;
-        const merged: AdminUserRow[] = [];
-        for (;;) {
-          const res = await listUsers({ ...baseArgs, limit: pageSize, offset });
-          if (offset === 0) total = res.count;
-          merged.push(...res.items);
-          if (res.items.length < pageSize || merged.length >= total) break;
-          offset += res.items.length;
-        }
-        setItems(merged);
-        setCount(total);
-        void loadUsage(merged);
-      } else {
-        const res = await listUsers({ ...baseArgs, limit: rowLimit, offset: 0 });
-        setItems(res.items);
-        setCount(res.count);
-        void loadUsage(res.items);
-      }
+      const res = await listUsers({ ...baseArgs, limit: rowLimit, offset: targetPage * rowLimit });
+      setPage(targetPage);
+      setItems(res.items);
+      setCount(res.count);
+      void loadUsage(res.items);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
@@ -623,7 +618,7 @@ export function UsersRoute() {
   };
 
   useEffect(() => {
-    void refresh();
+    void refresh(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -632,7 +627,7 @@ export function UsersRoute() {
       hasMounted.current = true;
       return;
     }
-    void refresh();
+    void refresh(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowLimit]);
 
@@ -653,28 +648,8 @@ export function UsersRoute() {
     );
   }, [items, searchQuery]);
 
-  const rows = useMemo(() => {
-    const arr = [...filteredRows];
-    arr.sort((a, b) => {
-      if (sortBy === 'newest') {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-      if (sortBy === 'oldest') {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      }
-      if (sortBy === 'name_az') {
-        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-      }
-      if (sortBy === 'name_za') {
-        return (b.name || '').localeCompare(a.name || '', undefined, { sensitivity: 'base' });
-      }
-      if (sortBy === 'usage_high') {
-        return (usageByUser[b.id] ?? 0) - (usageByUser[a.id] ?? 0);
-      }
-      return (usageByUser[a.id] ?? 0) - (usageByUser[b.id] ?? 0);
-    });
-    return arr;
-  }, [filteredRows, sortBy, usageByUser]);
+  const rows = filteredRows;
+  const pageCount = Math.max(1, Math.ceil(count / rowLimit));
 
   return (
     <div>
@@ -725,16 +700,32 @@ export function UsersRoute() {
                   </div>
                   <select
                     value={rowLimit}
-                    onChange={(e) => setRowLimit(e.target.value as RowLimit)}
+                    onChange={(e) => setRowLimit(Number(e.target.value) as RowLimit)}
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   >
                     <option value={25}>25 users</option>
                     <option value={50}>50 users</option>
                     <option value={100}>100 users</option>
                     <option value={200}>200 users</option>
-                    <option value="all">All users</option>
                   </select>
                 </label>
+
+                <label className="block lg:w-36">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Plan</div>
+                  <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value as 'all' | SubscriptionPlan)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <option value="all">All plans</option><option value="free">Free</option><option value="plus">Plus</option><option value="pro">Pro</option>
+                  </select>
+                </label>
+
+                <label className="block lg:w-40">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Status</div>
+                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | AdminUserRow['status'])} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                    <option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option><option value="banned">Banned</option>
+                  </select>
+                </label>
+
+                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Joined from</div><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
+                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Joined to</div><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
 
                 <label className="block lg:w-56">
                   <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
@@ -749,14 +740,12 @@ export function UsersRoute() {
                     <option value="oldest">Oldest joined</option>
                     <option value="name_az">Name A-Z</option>
                     <option value="name_za">Name Z-A</option>
-                    <option value="usage_high">AI usage highest</option>
-                    <option value="usage_low">AI usage lowest</option>
                   </select>
                 </label>
               </div>
 
               <button
-                onClick={refresh}
+                onClick={() => void refresh(0)}
                 disabled={busy}
                 className="h-11 shrink-0 rounded-2xl bg-brand-600 px-5 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
               >
@@ -773,7 +762,7 @@ export function UsersRoute() {
             <div className="mt-4 flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 Showing {rows.length} of {count}
-                {rowLimit === 'all' ? <span className="ml-1">(all loaded)</span> : null}
+                <span className="ml-1">· page {page + 1} of {pageCount}</span>
               </div>
               {usageLoading ? (
                 <div className="text-brand-600 dark:text-brand-400">Loading AI usage…</div>
@@ -884,24 +873,21 @@ export function UsersRoute() {
                                 {
                                   label: 'Activate',
                                   onClick: async () => {
-                                    await setUserStatus(u.id, 'active');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Activate user', operation: 'Activate', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'ACTIVATE', requireReason: true, onConfirm: async (reason) => { await setUserStatus(u.id, 'active', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
                                   label: 'Disable',
                                   variant: 'amber',
                                   onClick: async () => {
-                                    await setUserStatus(u.id, 'disabled');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Disable user', operation: 'Disable', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'DISABLE', requireReason: true, warning: 'The user may lose access until reactivated.', onConfirm: async (reason) => { await setUserStatus(u.id, 'disabled', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
                                   label: 'Ban',
                                   variant: 'rose',
                                   onClick: async () => {
-                                    await setUserStatus(u.id, 'banned');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Ban user', operation: 'Ban', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'BAN', requireReason: true, warning: 'This blocks the user account. It does not delete their data.', onConfirm: async (reason) => { await setUserStatus(u.id, 'banned', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
@@ -909,25 +895,19 @@ export function UsersRoute() {
                                   variant: 'amber',
                                   divider: true,
                                   onClick: async () => {
-                                    if (!window.confirm(`Set ${u.name || u.id} to FREE plan?`)) return;
-                                    await setUserSubscriptionPlan(u.id, 'free');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Change subscription plan', operation: 'Set Free', affectedCount: 1, subject: `${u.name || u.id} → Free`, confirmationText: 'SET FREE', requireReason: true, warning: 'Only the explicit admin grant is removed. Valid RevenueCat or Curlec access remains authoritative.', onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'free', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
                                   label: '⭐ Set Plan → Plus',
                                   onClick: async () => {
-                                    if (!window.confirm(`Set ${u.name || u.id} to PLUS plan?`)) return;
-                                    await setUserSubscriptionPlan(u.id, 'plus');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Grant Plus access', operation: 'Set Plus', affectedCount: 1, subject: `${u.name || u.id} → Plus`, confirmationText: 'SET PLUS', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'plus', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
                                   label: '⭐ Set Plan → Pro',
                                   onClick: async () => {
-                                    if (!window.confirm(`Set ${u.name || u.id} to PRO plan?`)) return;
-                                    await setUserSubscriptionPlan(u.id, 'pro');
-                                    await refresh();
+                                    requestSafeAction({ title: 'Grant Pro access', operation: 'Set Pro', affectedCount: 1, subject: `${u.name || u.id} → Pro`, confirmationText: 'SET PRO', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'pro', reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                                 {
@@ -950,17 +930,7 @@ export function UsersRoute() {
                                   divider: true,
                                   onClick: async () => {
                                     const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
-                                    const typed = window.prompt(
-                                      `This permanently deletes user "${u.name || u.id}" and their auth account.\n\n` +
-                                        `Type the student ID (or first 8 chars of their UUID) to confirm:\n\n${expected}`,
-                                    );
-                                    if (!typed) return;
-                                    if (typed.trim() !== expected) {
-                                      alert('Confirmation did not match. User was NOT deleted.');
-                                      return;
-                                    }
-                                    await deleteUser(u.id);
-                                    await refresh();
+                                    requestSafeAction({ title: 'Permanently delete user', operation: 'Delete user', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: expected, requireReason: true, irreversible: true, warning: 'This permanently deletes the authentication account and associated data. Undo is unavailable.', onConfirm: async (reason) => { await deleteUser(u.id, reason); await refresh(); return { affected: 1 }; } });
                                   },
                                 },
                               ]}
@@ -993,6 +963,11 @@ export function UsersRoute() {
                 </table>
               </div>
             </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <button type="button" disabled={busy || page === 0} onClick={() => void refresh(page - 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-white">Previous</button>
+              <div className="text-xs font-bold text-slate-500">Page {page + 1} of {pageCount}</div>
+              <button type="button" disabled={busy || page + 1 >= pageCount} onClick={() => void refresh(page + 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-white">Next</button>
+            </div>
           </div>
         </MotionPanel>
       </MotionSection>
@@ -1011,6 +986,7 @@ export function UsersRoute() {
           }}
         />
       ) : null}
+      {safeActionDialog}
     </div>
   );
 }

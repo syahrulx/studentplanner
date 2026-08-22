@@ -10,6 +10,14 @@ import {
 
 const CACHE_PREFIX = 'rencana.handwriting.v1';
 const STORAGE_FILE = '_handwriting-v1.json';
+const OUTBOX_KEY = 'rencana.handwriting.outbox.v1';
+
+interface HandwritingOutboxItem {
+  userId: string;
+  noteId: string;
+  queuedAt: string;
+}
+let outboxWriteQueue: Promise<void> = Promise.resolve();
 
 function cacheKey(userId: string, noteId: string): string {
   return `${CACHE_PREFIX}:${userId}:${noteId}`;
@@ -77,6 +85,41 @@ async function writeCache(userId: string, noteId: string, pages: HandwritingPage
   await AsyncStorage.setItem(cacheKey(userId, noteId), JSON.stringify(pages));
 }
 
+async function readOutbox(): Promise<HandwritingOutboxItem[]> {
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is HandwritingOutboxItem => (
+      item && typeof item.userId === 'string' && typeof item.noteId === 'string' && typeof item.queuedAt === 'string'
+    ));
+  } catch {
+    return [];
+  }
+}
+
+async function writeOutbox(items: HandwritingOutboxItem[]): Promise<void> {
+  await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+}
+
+async function enqueueSync(userId: string, noteId: string): Promise<void> {
+  outboxWriteQueue = outboxWriteQueue.then(async () => {
+    const items = await readOutbox();
+    const next = items.filter((item) => !(item.userId === userId && item.noteId === noteId));
+    next.push({ userId, noteId, queuedAt: new Date().toISOString() });
+    await writeOutbox(next);
+  });
+  await outboxWriteQueue;
+}
+
+async function removeFromOutbox(userId: string, noteId: string): Promise<void> {
+  outboxWriteQueue = outboxWriteQueue.then(async () => {
+    const items = await readOutbox();
+    await writeOutbox(items.filter((item) => !(item.userId === userId && item.noteId === noteId)));
+  });
+  await outboxWriteQueue;
+}
+
 function latestTimestamp(pages: HandwritingPage[]): number {
   return pages.reduce((latest, page) => Math.max(latest, Date.parse(page.updatedAt) || 0), 0);
 }
@@ -133,20 +176,26 @@ export async function loadHandwritingPages(
   return remote;
 }
 
-export async function saveHandwritingPages(
+/** Immediately preserves a crash-safe local draft and queues cloud delivery. */
+export async function saveHandwritingDraft(
   userId: string,
   noteId: string,
   pages: HandwritingPage[],
 ): Promise<void> {
   const normalized = pages.map((page, index) => ({ ...page, index }));
-
-  // Local persistence happens first so a network interruption never loses ink.
   await writeCache(userId, noteId, normalized);
+  await enqueueSync(userId, noteId);
+}
 
+async function uploadHandwritingPages(
+  userId: string,
+  noteId: string,
+  pages: HandwritingPage[],
+): Promise<void> {
   const payload = JSON.stringify({
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
-    pages: normalized,
+    pages,
   });
   const { error } = await supabase.storage
     .from(NOTE_ATTACHMENTS_BUCKET)
@@ -155,6 +204,50 @@ export async function saveHandwritingPages(
       upsert: true,
     });
   if (error) throw error;
+}
+
+export async function saveHandwritingPages(
+  userId: string,
+  noteId: string,
+  pages: HandwritingPage[],
+): Promise<void> {
+  const normalized = pages.map((page, index) => ({ ...page, index }));
+
+  // Local persistence happens first so a network interruption never loses ink.
+  await saveHandwritingDraft(userId, noteId, normalized);
+  await uploadHandwritingPages(userId, noteId, normalized);
+  const latestLocal = await readCache(userId, noteId);
+  if (latestTimestamp(latestLocal) <= latestTimestamp(normalized)) {
+    await removeFromOutbox(userId, noteId);
+  }
+}
+
+/** Retries pending notes after reconnect/relaunch. Each note remains queued until confirmed. */
+export async function flushHandwritingOutbox(userId: string): Promise<number> {
+  const items = (await readOutbox()).filter((item) => item.userId === userId);
+  let synced = 0;
+  for (const item of items) {
+    const pages = await readCache(item.userId, item.noteId);
+    if (!pages.length) {
+      await removeFromOutbox(item.userId, item.noteId);
+      continue;
+    }
+    try {
+      await uploadHandwritingPages(item.userId, item.noteId, pages);
+      const latestLocal = await readCache(item.userId, item.noteId);
+      if (latestTimestamp(latestLocal) <= latestTimestamp(pages)) {
+        await removeFromOutbox(item.userId, item.noteId);
+        synced += 1;
+      }
+    } catch {
+      // Keep the item queued. A later app-active event will retry it.
+    }
+  }
+  return synced;
+}
+
+export async function hasPendingHandwritingSync(userId: string, noteId: string): Promise<boolean> {
+  return (await readOutbox()).some((item) => item.userId === userId && item.noteId === noteId);
 }
 
 export async function deleteHandwritingPage(
@@ -171,8 +264,14 @@ export async function deleteHandwritingPage(
 
 export async function deleteHandwritingCache(userId: string, noteId: string): Promise<void> {
   await AsyncStorage.removeItem(cacheKey(userId, noteId));
-  await supabase.storage
+  await removeFromOutbox(userId, noteId);
+  await deleteHandwritingRemote(userId, noteId).catch(() => {});
+}
+
+/** Remote-only delete used by the durable note deletion outbox. */
+export async function deleteHandwritingRemote(userId: string, noteId: string): Promise<void> {
+  const { error } = await supabase.storage
     .from(NOTE_ATTACHMENTS_BUCKET)
-    .remove([storagePath(userId, noteId)])
-    .catch(() => {});
+    .remove([storagePath(userId, noteId)]);
+  if (error) throw new Error(error.message || 'Failed to delete handwriting attachment');
 }

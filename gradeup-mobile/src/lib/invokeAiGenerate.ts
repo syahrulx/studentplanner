@@ -41,7 +41,14 @@ export type AiGenerateQuizResult = {
     options: string[];
     correctIndex: number;
     expectedAnswer?: string;
+    proof?: string;
   }[];
+  quality?: {
+    requested: number;
+    generated: number;
+    repaired: boolean;
+    partial: boolean;
+  };
   error?: string;
 };
 
@@ -143,7 +150,15 @@ export async function invokeAiGenerate<T = unknown>(
         if (isMonthlyLimitError(data.error)) {
           showMonthlyLimitAlert();
         }
-        return { data: null, error: data.error.message };
+        const edgeCode = String(data.error.code ?? '');
+        const edgeMessage = String(data.error.message);
+        const retryableProviderFailure = edgeCode === 'OPENAI_ERROR' && /temporarily|busy|took too long|try again/i.test(edgeMessage);
+        if (retryableProviderFailure && attempt < MAX_ATTEMPTS) {
+          console.log(`[invokeAiGenerate] AI provider unavailable on attempt ${attempt}; retrying…`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+        return { data: null, error: edgeMessage };
       }
 
       return { data: data as T };

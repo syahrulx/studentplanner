@@ -170,13 +170,16 @@ export default function SubscriptionPlansScreen() {
         return `${pkg.product.priceString}/month`;
       }
       
-      // Fallbacks if RevenueCat is loading or fails
-      if (plan === 'plus') return 'RM 4.99/month';
-      if (plan === 'pro') return 'RM 10.99/month';
-      
+      // Fallbacks if RevenueCat is loading or fails. Keep showing a price
+      // rather than a bare "Loading..." (avoids a layout jump), but don't
+      // flash a Malaysian Ringgit price at an overseas user.
+      const isMY = (user.country || 'MY') === 'MY';
+      if (plan === 'plus') return isMY ? 'RM 4.99/month' : '$3.90/month';
+      if (plan === 'pro') return isMY ? 'RM 10.99/month' : '$4.99/month';
+
       return 'Loading...';
     },
-    [packageForTier],
+    [packageForTier, user.country],
   );
 
   const ctaGradient = useMemo(() => [theme.primary, theme.accent2] as [string, string], [theme.primary, theme.accent2]);

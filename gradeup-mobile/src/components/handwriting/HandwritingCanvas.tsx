@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Gesture,
   GestureDetector,
@@ -134,6 +134,23 @@ function averagePressure(points: PixelPoint[]): number {
   return points.reduce((sum, point) => sum + point.pressure, 0) / points.length;
 }
 
+function pressureSegments(
+  points: PixelPoint[],
+  color: string,
+  baseWidth: number,
+  opacity: number,
+  sensitivity: number,
+  widthBoost = 1,
+): string {
+  if (points.length < 2) return '';
+  return points.slice(1).map((point, index) => {
+    const previous = points[index];
+    const pressure = Math.max(0.08, (previous.pressure + point.pressure) / 2);
+    const width = Math.max(0.6, baseWidth * widthBoost * (1 + (pressure - 0.5) * sensitivity));
+    return `<path d="M ${number(previous.x)} ${number(previous.y)} L ${number(point.x)} ${number(point.y)}" fill="none" stroke="${color}" stroke-width="${number(width)}" stroke-opacity="${number(opacity)}" stroke-linecap="round"/>`;
+  }).join('');
+}
+
 function svgAttribute(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -155,12 +172,13 @@ function strokeSvgMarkup(
   const first = points[0];
   const last = points[points.length - 1];
   const strokeColor = svgAttribute(stroke.color);
+  const strokeId = svgAttribute(stroke.id);
 
   if (stroke.tool === 'highlighter') {
     const markerWidth = Math.max(5, stroke.width * 2.8);
     return points.length === 1
-      ? `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(markerWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/>`
-      : `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(markerWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="square" stroke-linejoin="round"/>`;
+      ? `<g id="stroke-${strokeId}"><circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(markerWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/></g>`
+      : `<g id="stroke-${strokeId}"><path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(markerWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="square" stroke-linejoin="round"/></g>`;
   }
 
   if (stroke.tool === 'pencil') {
@@ -168,12 +186,13 @@ function strokeSvgMarkup(
     const pencilWidth = Math.max(0.8, stroke.width * (0.58 + softness * 0.28));
     const opacity = Math.max(0.2, stroke.opacity);
     if (points.length === 1) {
-      return `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(pencilWidth / 2)}" fill="${strokeColor}" opacity="${number(opacity * 0.78)}"/>`;
+      return `<g id="stroke-${strokeId}"><circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(pencilWidth / 2)}" fill="${strokeColor}" opacity="${number(opacity * 0.78)}"/></g>`;
     }
     return [
-      '<g>',
-      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(pencilWidth)}" stroke-opacity="${number(opacity * 0.78)}" stroke-linecap="round" stroke-linejoin="round"/>`,
-      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(Math.max(0.45, pencilWidth * 0.45))}" stroke-opacity="${number(Math.min(0.34, opacity * (0.18 + softness * 0.12)))}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${number(0.9 + softness)} ${number(1.8 + (1 - softness) * 1.8)}" transform="translate(0.35 0.25)"/>`,
+      `<g id="stroke-${strokeId}">`,
+      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(pencilWidth * 1.35)}" stroke-opacity="${number(opacity * (0.08 + softness * 0.08))}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(pencilWidth)}" stroke-opacity="${number(opacity * 0.66)}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(Math.max(0.35, pencilWidth * 0.38))}" stroke-opacity="${number(Math.min(0.38, opacity * (0.2 + softness * 0.15)))}" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.28 0.18)"/>`,
       '</g>',
     ].join('');
   }
@@ -187,11 +206,13 @@ function strokeSvgMarkup(
   const lineCap = roundEndpoints ? 'round' : 'butt';
 
   return [
-    '<g>',
+    `<g id="stroke-${strokeId}">`,
     style === 'brush'
-      ? `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(penWidth * 1.32)}" stroke-opacity="0.16" stroke-linecap="round" stroke-linejoin="round"/>`
+      ? pressureSegments(points, strokeColor, stroke.width, 0.16, sensitivity * 1.8, 1.7)
       : '',
-    `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(penWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="${lineCap}" stroke-linejoin="${style === 'fountain' && (stroke.tipSharpness ?? 0.5) > 0.65 ? 'bevel' : 'round'}"/>`,
+    style === 'ball'
+      ? `<path d="${path}" fill="none" stroke="${strokeColor}" stroke-width="${number(penWidth)}" stroke-opacity="${stroke.opacity}" stroke-linecap="round" stroke-linejoin="round"/>`
+      : pressureSegments(points, strokeColor, stroke.width * styleMultiplier, stroke.opacity, sensitivity * (style === 'brush' ? 1.9 : 1.05)),
     roundEndpoints
       ? `<circle cx="${number(first.x)}" cy="${number(first.y)}" r="${number(penWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/><circle cx="${number(last.x)}" cy="${number(last.y)}" r="${number(penWidth / 2)}" fill="${strokeColor}" opacity="${stroke.opacity}"/>`
       : '',
@@ -280,6 +301,124 @@ function PageTemplate({
   );
 }
 
+function WritingGuideOverlay({
+  guide,
+  width,
+  height,
+}: {
+  guide: HandwritingToolSettings['writingGuide'];
+  width: number;
+  height: number;
+}) {
+  if (guide === 'off') return null;
+  const marks = [];
+  if (guide === 'baseline') {
+    for (let y = 44; y < height; y += 44) {
+      marks.push(
+        <View
+          key={`guide-${y}`}
+          style={{ position: 'absolute', left: 12, right: 12, top: y, borderTopWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(37,99,235,0.2)' }}
+        />,
+      );
+    }
+  } else {
+    for (let x = -height; x < width; x += 54) {
+      marks.push(
+        <View
+          key={`slant-${x}`}
+          style={{ position: 'absolute', left: x, top: 0, width: 1, height: height * 1.5, backgroundColor: 'rgba(37,99,235,0.13)', transform: [{ rotate: '-12deg' }] }}
+        />,
+      );
+    }
+  }
+  return <View style={StyleSheet.absoluteFill} pointerEvents="none">{marks}</View>;
+}
+
+interface NormalizedBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function boundsFromPoints(a: HandwritingPoint, b: HandwritingPoint): NormalizedBounds {
+  return {
+    left: Math.min(a.x, b.x),
+    top: Math.min(a.y, b.y),
+    right: Math.max(a.x, b.x),
+    bottom: Math.max(a.y, b.y),
+  };
+}
+
+function boundsForSelected(strokes: HandwritingStroke[], ids: Set<string>): NormalizedBounds | null {
+  const points = strokes.filter((stroke) => ids.has(stroke.id)).flatMap((stroke) => stroke.points);
+  if (!points.length) return null;
+  return points.reduce<NormalizedBounds>((bounds, point) => ({
+    left: Math.min(bounds.left, point.x),
+    top: Math.min(bounds.top, point.y),
+    right: Math.max(bounds.right, point.x),
+    bottom: Math.max(bounds.bottom, point.y),
+  }), { left: 1, top: 1, right: 0, bottom: 0 });
+}
+
+function strokeIntersectsBounds(stroke: HandwritingStroke, bounds: NormalizedBounds): boolean {
+  return stroke.points.some((point) => (
+    point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom
+  ));
+}
+
+function pointInsideBounds(point: HandwritingPoint, bounds: NormalizedBounds): boolean {
+  return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
+}
+
+function clampStrokePoint(point: HandwritingPoint): HandwritingPoint {
+  return { ...point, x: clampPoint(point.x), y: clampPoint(point.y) };
+}
+
+export function HandwritingInkPreview({
+  page,
+  width,
+  height,
+  transparentBackground = false,
+}: {
+  page: HandwritingPage;
+  width: number;
+  height: number;
+  transparentBackground?: boolean;
+}) {
+  const markup = useMemo(
+    () => page.strokes.map((stroke) => strokeSvgMarkup(stroke, width, height)).join(''),
+    [height, page.strokes, width],
+  );
+  const source = useMemo(() => ({ html: INK_DOCUMENT.replace(
+    '<svg id="ink" xmlns="http://www.w3.org/2000/svg"></svg>',
+    `<svg id="ink" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${markup}</svg>`,
+  ) }), [height, markup, width]);
+  return (
+    <View style={{ width, height, overflow: 'hidden', backgroundColor: transparentBackground ? 'transparent' : page.template === 'dark' ? '#151922' : '#fff' }} pointerEvents="none">
+      <PageTemplate template={page.template} width={width} height={height} transparent={transparentBackground} />
+      <WebView source={source} style={StyleSheet.absoluteFill} pointerEvents="none" scrollEnabled={false} />
+    </View>
+  );
+}
+
+function isNearlyStraight(points: HandwritingPoint[]): boolean {
+  if (points.length < 3) return false;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const length = Math.hypot(last.x - first.x, last.y - first.y);
+  if (length < 0.035) return false;
+  const denominator = Math.max(0.0001, length);
+  const meanDistance = points.reduce((sum, point) => (
+    sum + Math.abs(
+      (last.y - first.y) * point.x -
+      (last.x - first.x) * point.y +
+      last.x * first.y - last.y * first.x
+    ) / denominator
+  ), 0) / points.length;
+  return meanDistance < 0.008;
+}
+
 export default function HandwritingCanvas({
   page,
   tool,
@@ -302,11 +441,26 @@ export default function HandwritingCanvas({
   const activeStrokeIdRef = useRef<string | null>(null);
   const gestureAcceptedRef = useRef(false);
   const beforeGestureRef = useRef<HandwritingStroke[]>([]);
+  const gestureStartedAtRef = useRef(0);
+  const lassoStartRef = useRef<HandwritingPoint | null>(null);
+  const selectionOriginRef = useRef<HandwritingStroke[]>([]);
+  const selectionModeRef = useRef<'select' | 'move' | 'resize'>('select');
+  const [selectedStrokeIds, setSelectedStrokeIds] = useState<Set<string>>(new Set());
+  const [selectionBounds, setSelectionBounds] = useState<NormalizedBounds | null>(null);
+  const [lassoBounds, setLassoBounds] = useState<NormalizedBounds | null>(null);
+  const pendingLiveStrokeRef = useRef<HandwritingStroke | null>(null);
+  const liveFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     strokesRef.current = page.strokes;
     setDisplayStrokes(page.strokes);
   }, [page.strokes]);
+
+  useEffect(() => {
+    setSelectedStrokeIds(new Set());
+    setSelectionBounds(null);
+    setLassoBounds(null);
+  }, [page.id]);
 
   const renderInk = useCallback(() => {
     const markup = displayStrokes
@@ -323,13 +477,41 @@ export default function HandwritingCanvas({
     `);
   }, [canvasSize.height, canvasSize.width, displayStrokes]);
 
+  const renderLiveStroke = useCallback((stroke: HandwritingStroke) => {
+    pendingLiveStrokeRef.current = stroke;
+    if (liveFrameRef.current != null) return;
+    liveFrameRef.current = requestAnimationFrame(() => {
+      liveFrameRef.current = null;
+      const latest = pendingLiveStrokeRef.current;
+      if (!latest) return;
+      const markup = strokeSvgMarkup(latest, sizeRef.current.width, sizeRef.current.height);
+      inkWebViewRef.current?.injectJavaScript(`
+        (function () {
+          var ink = document.getElementById('ink');
+          if (!ink) return;
+          var previous = document.getElementById(${JSON.stringify(`stroke-${latest.id}`)});
+          var holder = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          holder.innerHTML = ${JSON.stringify(markup)};
+          var next = holder.firstElementChild;
+          if (!next) return;
+          if (previous) previous.replaceWith(next); else ink.appendChild(next);
+        })();
+        true;
+      `);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (liveFrameRef.current != null) cancelAnimationFrame(liveFrameRef.current);
+  }, []);
+
   useEffect(() => {
     renderInk();
   }, [renderInk]);
 
   const acceptsPointer = (event: PanEvent): boolean => (
     !disabled &&
-    (event.pointerType === PointerType.STYLUS || fingerDrawing)
+    (event.pointerType === PointerType.STYLUS || fingerDrawing || tool === 'lasso')
   );
 
   const eraseAt = (point: HandwritingPoint) => {
@@ -373,7 +555,22 @@ export default function HandwritingCanvas({
     gestureAcceptedRef.current = acceptsPointer(event);
     if (!gestureAcceptedRef.current) return;
     beforeGestureRef.current = strokesRef.current;
+    gestureStartedAtRef.current = Date.now();
     const point = pointFromEvent(event, sizeRef.current.width, sizeRef.current.height);
+    if (tool === 'lasso') {
+      lassoStartRef.current = point;
+      selectionOriginRef.current = strokesRef.current;
+      if (selectionBounds && pointInsideBounds(point, selectionBounds)) {
+        const nearResize = Math.hypot(point.x - selectionBounds.right, point.y - selectionBounds.bottom) < 0.055;
+        selectionModeRef.current = nearResize ? 'resize' : 'move';
+      } else {
+        selectionModeRef.current = 'select';
+        setSelectedStrokeIds(new Set());
+        setSelectionBounds(null);
+        setLassoBounds(boundsFromPoints(point, point));
+      }
+      return;
+    }
     if (tool === 'eraser') {
       eraseAt(point);
       return;
@@ -396,17 +593,52 @@ export default function HandwritingCanvas({
       tipSharpness: settings.tipSharpness,
       taperedEnds: settings.taperedEnds,
       pencilSoftness: settings.pencilSoftness,
+      writingStyle: settings.writingStyle,
       points: [point],
     };
     activeStrokeIdRef.current = stroke.id;
     const next = [...strokesRef.current, stroke];
     strokesRef.current = next;
-    setDisplayStrokes(next);
+    renderLiveStroke(stroke);
   };
 
   const updateGesture = (event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
     if (!gestureAcceptedRef.current) return;
     const rawPoint = pointFromEvent(event, sizeRef.current.width, sizeRef.current.height);
+    if (tool === 'lasso') {
+      const start = lassoStartRef.current;
+      if (!start) return;
+      if (selectionModeRef.current === 'select') {
+        setLassoBounds(boundsFromPoints(start, rawPoint));
+        return;
+      }
+      if (!selectionBounds || !selectedStrokeIds.size) return;
+      const dx = rawPoint.x - start.x;
+      const dy = rawPoint.y - start.y;
+      const selectionWidth = Math.max(0.001, selectionBounds.right - selectionBounds.left);
+      const selectionHeight = Math.max(0.001, selectionBounds.bottom - selectionBounds.top);
+      const scaleX = selectionModeRef.current === 'resize' ? Math.max(0.2, (selectionWidth + dx) / selectionWidth) : 1;
+      const scaleY = selectionModeRef.current === 'resize' ? Math.max(0.2, (selectionHeight + dy) / selectionHeight) : 1;
+      const next = selectionOriginRef.current.map((stroke) => {
+        if (!selectedStrokeIds.has(stroke.id)) return stroke;
+        return {
+          ...stroke,
+          points: stroke.points.map((candidate) => clampStrokePoint({
+            ...candidate,
+            x: selectionModeRef.current === 'move'
+              ? candidate.x + dx
+              : selectionBounds.left + (candidate.x - selectionBounds.left) * scaleX,
+            y: selectionModeRef.current === 'move'
+              ? candidate.y + dy
+              : selectionBounds.top + (candidate.y - selectionBounds.top) * scaleY,
+          })),
+        };
+      });
+      strokesRef.current = next;
+      setDisplayStrokes(next);
+      setSelectionBounds(boundsForSelected(next, selectedStrokeIds));
+      return;
+    }
     if (tool === 'eraser') {
       eraseAt(rawPoint);
       return;
@@ -438,11 +670,30 @@ export default function HandwritingCanvas({
       stroke.id === activeId ? { ...stroke, points: [...stroke.points, point] } : stroke
     ));
     strokesRef.current = next;
-    setDisplayStrokes(next);
+    const liveStroke = next.find((stroke) => stroke.id === activeId);
+    if (liveStroke) renderLiveStroke(liveStroke);
   };
 
   const finishGesture = () => {
     const acceptedTool = gestureAcceptedRef.current ? tool : null;
+    if (gestureAcceptedRef.current && tool === 'lasso') {
+      if (selectionModeRef.current === 'select' && lassoBounds) {
+        const ids = new Set(
+          strokesRef.current
+            .filter((stroke) => strokeIntersectsBounds(stroke, lassoBounds))
+            .map((stroke) => stroke.id),
+        );
+        setSelectedStrokeIds(ids);
+        setSelectionBounds(boundsForSelected(strokesRef.current, ids));
+        setLassoBounds(null);
+      } else if (beforeGestureRef.current !== strokesRef.current) {
+        onCommit(beforeGestureRef.current);
+        onChange(strokesRef.current);
+      }
+      lassoStartRef.current = null;
+      gestureAcceptedRef.current = false;
+      return;
+    }
     if (gestureAcceptedRef.current && beforeGestureRef.current !== strokesRef.current) {
       if (tool === 'highlighter' && settings.straightMarker && activeStrokeIdRef.current) {
         strokesRef.current = strokesRef.current.map((stroke) => {
@@ -451,6 +702,19 @@ export default function HandwritingCanvas({
         });
         setDisplayStrokes(strokesRef.current);
       }
+      if (
+        tool !== 'eraser' &&
+        tool !== 'highlighter' &&
+        settings.shapeAssist &&
+        Date.now() - gestureStartedAtRef.current >= 260 &&
+        activeStrokeIdRef.current
+      ) {
+        strokesRef.current = strokesRef.current.map((stroke) => {
+          if (stroke.id !== activeStrokeIdRef.current || !isNearlyStraight(stroke.points)) return stroke;
+          return { ...stroke, points: [stroke.points[0], stroke.points[stroke.points.length - 1]] };
+        });
+      }
+      setDisplayStrokes(strokesRef.current);
       onCommit(beforeGestureRef.current);
       onChange(strokesRef.current);
     }
@@ -465,6 +729,8 @@ export default function HandwritingCanvas({
       setDisplayStrokes(beforeGestureRef.current);
     }
     activeStrokeIdRef.current = null;
+    lassoStartRef.current = null;
+    setLassoBounds(null);
     gestureAcceptedRef.current = false;
   };
 
@@ -477,7 +743,11 @@ export default function HandwritingCanvas({
       .maxPointers(1)
       .manualActivation(true)
       .onTouchesDown((event, stateManager) => {
-        if (event.pointerType === PointerType.STYLUS || fingerDrawing) {
+        if (tool === 'lasso' && selectedStrokeIds.size > 0 && event.allTouches[0]?.y != null && event.allTouches[0].y <= 52) {
+          stateManager.fail();
+          return;
+        }
+        if (event.pointerType === PointerType.STYLUS || fingerDrawing || tool === 'lasso') {
           stateManager.activate();
           return;
         }
@@ -498,7 +768,58 @@ export default function HandwritingCanvas({
       .cancelsTouchesInView(false);
     if (simultaneousGestures?.length) gesture.simultaneousWithExternalGesture(...simultaneousGestures);
     return gesture;
-  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onToolGestureEnd]);
+  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onToolGestureEnd, selectedStrokeIds, selectionBounds, lassoBounds, renderLiveStroke]);
+
+  const updateSelection = (kind: 'left' | 'right' | 'up' | 'down' | 'smaller' | 'larger' | 'duplicate' | 'delete') => {
+    if (!selectedStrokeIds.size || !selectionBounds) return;
+    const previous = strokesRef.current;
+    if (kind === 'delete') {
+      const next = previous.filter((stroke) => !selectedStrokeIds.has(stroke.id));
+      strokesRef.current = next;
+      setDisplayStrokes(next);
+      setSelectedStrokeIds(new Set());
+      setSelectionBounds(null);
+      onCommit(previous);
+      onChange(next);
+      return;
+    }
+    if (kind === 'duplicate') {
+      const created = previous
+        .filter((stroke) => selectedStrokeIds.has(stroke.id))
+        .map((stroke) => ({
+          ...stroke,
+          id: `hs_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          points: stroke.points.map((point) => clampStrokePoint({ ...point, x: point.x + 0.025, y: point.y + 0.025 })),
+        }));
+      const ids = new Set(created.map((stroke) => stroke.id));
+      const next = [...previous, ...created];
+      strokesRef.current = next;
+      setDisplayStrokes(next);
+      setSelectedStrokeIds(ids);
+      setSelectionBounds(boundsForSelected(next, ids));
+      onCommit(previous);
+      onChange(next);
+      return;
+    }
+    const dx = kind === 'left' ? -0.012 : kind === 'right' ? 0.012 : 0;
+    const dy = kind === 'up' ? -0.012 : kind === 'down' ? 0.012 : 0;
+    const scale = kind === 'smaller' ? 0.9 : kind === 'larger' ? 1.1 : 1;
+    const centerX = (selectionBounds.left + selectionBounds.right) / 2;
+    const centerY = (selectionBounds.top + selectionBounds.bottom) / 2;
+    const next = previous.map((stroke) => selectedStrokeIds.has(stroke.id) ? {
+      ...stroke,
+      points: stroke.points.map((point) => clampStrokePoint({
+        ...point,
+        x: centerX + (point.x - centerX) * scale + dx,
+        y: centerY + (point.y - centerY) * scale + dy,
+      })),
+    } : stroke);
+    strokesRef.current = next;
+    setDisplayStrokes(next);
+    setSelectionBounds(boundsForSelected(next, selectedStrokeIds));
+    onCommit(previous);
+    onChange(next);
+  };
 
   return (
     <GestureDetector gesture={pan}>
@@ -519,6 +840,7 @@ export default function HandwritingCanvas({
           height={canvasSize.height}
           transparent={transparentBackground}
         />
+        <WritingGuideOverlay guide={settings.writingGuide} width={canvasSize.width} height={canvasSize.height} />
         <WebView
           ref={inkWebViewRef}
           source={{ html: INK_DOCUMENT }}
@@ -534,6 +856,32 @@ export default function HandwritingCanvas({
           javaScriptEnabled
           onLoadEnd={renderInk}
         />
+        {tool === 'lasso' && (lassoBounds || selectionBounds) ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.selectionBox,
+              {
+                left: (lassoBounds ?? selectionBounds)!.left * canvasSize.width,
+                top: (lassoBounds ?? selectionBounds)!.top * canvasSize.height,
+                width: Math.max(8, ((lassoBounds ?? selectionBounds)!.right - (lassoBounds ?? selectionBounds)!.left) * canvasSize.width),
+                height: Math.max(8, ((lassoBounds ?? selectionBounds)!.bottom - (lassoBounds ?? selectionBounds)!.top) * canvasSize.height),
+              },
+            ]}
+          />
+        ) : null}
+        {tool === 'lasso' && selectedStrokeIds.size > 0 ? (
+          <View style={styles.selectionActions}>
+            {([
+              ['←', 'left'], ['↑', 'up'], ['↓', 'down'], ['→', 'right'],
+              ['−', 'smaller'], ['＋', 'larger'], ['⧉', 'duplicate'], ['×', 'delete'],
+            ] as const).map(([label, action]) => (
+              <Pressable key={action} onPress={() => updateSelection(action)} style={styles.selectionActionButton}>
+                <Text style={[styles.selectionActionText, action === 'delete' && styles.selectionDeleteText]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
     </GestureDetector>
   );
@@ -545,4 +893,28 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
+  selectionBox: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#2563eb',
+    backgroundColor: 'rgba(37,99,235,0.05)',
+  },
+  selectionActions: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    top: 8,
+    minHeight: 38,
+    borderRadius: 12,
+    padding: 4,
+    backgroundColor: 'rgba(15,23,42,0.92)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  selectionActionButton: { width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
+  selectionActionText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+  selectionDeleteText: { color: '#f87171' },
 });

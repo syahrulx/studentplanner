@@ -22,7 +22,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
-import { getMalaysianUniversities, type UniversityItem } from '@/src/lib/universities';
+import { getUniversitiesForCountry, type UniversityItem } from '@/src/lib/universities';
+import { COUNTRIES, DEFAULT_COUNTRY_CODE, getCountryByCode } from '@/src/lib/countries';
 import { openPrivacyPolicy, openTermsOfUse } from '@/src/constants/legal';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -58,6 +59,8 @@ export default function SignUp() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [country, setCountry] = useState(DEFAULT_COUNTRY_CODE);
+  const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [university, setUniversity] = useState<UniversityItem | null>(null);
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
@@ -72,11 +75,14 @@ export default function SignUp() {
   useEffect(() => {
     let cancelled = false;
     setUniversitiesLoading(true);
-    getMalaysianUniversities()
+    // A previously selected university from a different country is no longer
+    // valid — clear it so the form can't submit a mismatched country/university.
+    setUniversity(null);
+    getUniversitiesForCountry(country)
       .then((list) => { if (!cancelled) setUniversities(list); })
       .finally(() => { if (!cancelled) setUniversitiesLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [country]);
 
   useEffect(() => {
     if (!universityModalVisible) setUniversitySearch('');
@@ -319,6 +325,7 @@ export default function SignUp() {
               name: trimmedName,
               university: university.name,
               university_id: university.id,
+              country,
               updated_at: new Date().toISOString(),
             },
             { onConflict: 'id' }
@@ -409,6 +416,19 @@ export default function SignUp() {
           </View>
 
 
+          {/* Country */}
+          <Pressable
+            style={styles.inputWrap}
+            onPress={() => setCountryModalVisible(true)}
+            disabled={isLoading}
+          >
+            <Text style={{ fontSize: 18, marginRight: 10 }}>{getCountryByCode(country).flag}</Text>
+            <Text style={[styles.input, { paddingVertical: 15, color: '#0f172a' }]} numberOfLines={1}>
+              {getCountryByCode(country).name}
+            </Text>
+            <Feather name="chevron-down" size={18} color="#94a3b8" />
+          </Pressable>
+
           {/* University */}
           <Pressable
             style={[styles.inputWrap, university && { borderColor: '#0f172a' }]}
@@ -420,7 +440,7 @@ export default function SignUp() {
               <ActivityIndicator size="small" color="#94a3b8" />
             ) : (
               <Text style={[styles.input, { paddingVertical: 15, color: university ? '#0f172a' : '#94a3b8' }]} numberOfLines={1}>
-                {university ? university.name : 'Select your university'}
+                {university ? university.name : universities.length === 0 ? 'No universities yet for this country' : 'Select your university'}
               </Text>
             )}
             <Feather name="chevron-down" size={18} color="#94a3b8" />
@@ -555,6 +575,39 @@ export default function SignUp() {
         </View>
 
       </ScrollView>
+
+      {/* ── Country Modal ── */}
+      <Modal visible={countryModalVisible} transparent animationType="slide" onRequestClose={() => setCountryModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setCountryModalVisible(false)}>
+          <Pressable style={styles.modalContent} onPress={() => {}}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country</Text>
+              <Pressable onPress={() => setCountryModalVisible(false)} hitSlop={12}>
+                <Feather name="x" size={22} color="#0f172a" />
+              </Pressable>
+            </View>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={(item) => item.code}
+              style={styles.modalList}
+              renderItem={({ item }) => {
+                const isSel = country === item.code;
+                return (
+                  <Pressable
+                    style={[styles.uniRow, isSel && { backgroundColor: '#f0f9ff', borderColor: '#0f172a' }]}
+                    onPress={() => { setCountry(item.code); setCountryModalVisible(false); }}
+                  >
+                    <Text style={[styles.uniRowText, isSel && { color: '#0f172a', fontWeight: '700' }]}>
+                      {item.flag}  {item.name}
+                    </Text>
+                    {isSel && <Feather name="check" size={18} color="#0f172a" />}
+                  </Pressable>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── University Modal ── */}
       <Modal visible={universityModalVisible} transparent animationType="slide" onRequestClose={() => setUniversityModalVisible(false)}>

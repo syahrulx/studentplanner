@@ -70,7 +70,7 @@ export default function AddAcademicCalendarScreen() {
       const base64 = await readUriAsBase64(fileUri);
 
       const { data, error } = await supabase.functions.invoke("user_tools", {
-        body: { action: "extract_calendar_from_pdf", pdfBase64: base64 },
+        body: { action: "extract_calendar_from_pdf", pdfBase64: base64, country: user.country },
       });
 
       if (error) {
@@ -89,7 +89,7 @@ export default function AddAcademicCalendarScreen() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [user.country]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -112,7 +112,7 @@ export default function AddAcademicCalendarScreen() {
       const base64Str = `data:${mime};base64,${asset.base64}`;
 
       const { data, error } = await supabase.functions.invoke("user_tools", {
-        body: { action: "extract_calendar_from_image", imageBase64: base64Str },
+        body: { action: "extract_calendar_from_image", imageBase64: base64Str, country: user.country },
       });
 
       if (error) {
@@ -131,7 +131,7 @@ export default function AddAcademicCalendarScreen() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [user.country]);
 
   const applyExtracted = (extracted: any) => {
     if (

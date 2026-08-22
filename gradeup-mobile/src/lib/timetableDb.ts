@@ -206,6 +206,27 @@ export async function updateTimetableEntry(
   if (error) throw new Error(error.message || 'Failed to update timetable entry');
 }
 
+/**
+ * Delete only the requested timetable rows owned by this user.
+ * Keeping both predicates is deliberate: an entry id copied from another
+ * account can never be used to remove that account's class.
+ */
+export async function deleteTimetableEntries(
+  userId: string,
+  entryIds: string[],
+): Promise<number> {
+  const ids = [...new Set(entryIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (ids.length === 0) return 0;
+  const { data, error } = await supabase
+    .from('timetable_entries')
+    .delete()
+    .eq('user_id', userId)
+    .in('id', ids)
+    .select('id');
+  if (error) throw new Error(error.message || 'Failed to delete timetable entries');
+  return data?.length ?? 0;
+}
+
 export async function deleteTimetable(userId: string): Promise<void> {
   await supabase.from('timetable_entries').delete().eq('user_id', userId);
 }

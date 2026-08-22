@@ -13,8 +13,10 @@ import { Label, Select, TextInput } from '../ui/Input';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
+import { useSafeActionDialog } from '../components/SafeActionDialog';
 
 export function CrowdsourcedCalendarsRoute() {
+  const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
   const { searchQuery } = useAdminSearch();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -98,27 +100,18 @@ export function CrowdsourcedCalendarsRoute() {
     setSelectedExpiredIds(allExpiredSelected ? [] : expiredOffers.map((offer) => offer.id));
   };
 
-  const deleteSelectedExpired = async () => {
+  const deleteSelectedExpired = () => {
     if (!selectedExpiredIds.length) return;
     const count = selectedExpiredIds.length;
-    const ok = window.confirm(
-      `Delete ${count} expired crowdsourced academic calendar${count === 1 ? '' : 's'}?\n\nOnly calendars with an end date before today will be removed. This cannot be undone.`,
-    );
-    if (!ok) return;
-
-    setErr('');
-    setOkMsg('');
-    setDeletingExpired(true);
-    try {
-      const deletedCount = await deleteExpiredCrowdsourcedCalendarOffers(selectedExpiredIds);
-      setSelectedExpiredIds([]);
-      await refreshHistory();
-      setOkMsg(`${deletedCount} expired crowdsourced calendar${deletedCount === 1 ? '' : 's'} deleted.`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not delete expired calendars');
-    } finally {
-      setDeletingExpired(false);
-    }
+    requestSafeAction({ title: 'Delete expired crowdsourced calendars', operation: 'Delete calendars', affectedCount: count, confirmationText: `DELETE ${count}`, requireReason: true, irreversible: true, warning: 'The server deletes only crowdsourced calendars whose end date is before today. Active calendars are protected.', onConfirm: async (reason) => {
+      setErr(''); setOkMsg(''); setDeletingExpired(true);
+      try {
+        const deletedCount = await deleteExpiredCrowdsourcedCalendarOffers(selectedExpiredIds, reason);
+        setSelectedExpiredIds([]); await refreshHistory();
+        setOkMsg(`${deletedCount} expired crowdsourced calendar${deletedCount === 1 ? '' : 's'} deleted.`);
+        return { affected: deletedCount, failed: Math.max(0, count - deletedCount) };
+      } finally { setDeletingExpired(false); }
+    } });
   };
 
   const reviewUitmContribution = async (row: UitmCalendarContributionRow, status: 'approved' | 'rejected') => {
@@ -399,6 +392,7 @@ export function CrowdsourcedCalendarsRoute() {
           ) : null}
         </div>
       </MotionSection>
+      {safeActionDialog}
     </div>
   );
 }

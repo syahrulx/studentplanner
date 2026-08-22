@@ -52,6 +52,117 @@ export type SavedQuizItem = {
 export type QuizType = 'mcq' | 'true_false' | 'mixed' | 'short_answer';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
+function buildBalancedQuizSource(noteContents: string[], maxChars = 14500): string {
+  const sources = noteContents
+    .map((content) => String(content ?? '').replace(/\u0000/g, '').replace(/[ \t]+/g, ' ').trim())
+    .filter((content) => content.length >= 20);
+  if (sources.length === 0) return '';
+
+  // Round-robin chunks stop the first large PDF from consuming the complete
+  // context window while later selected notes contribute nothing.
+  const cursors = sources.map(() => 0);
+  const pieces: string[] = [];
+  let remaining = maxChars;
+  let madeProgress = true;
+  while (remaining > 80 && madeProgress) {
+    madeProgress = false;
+    for (let index = 0; index < sources.length && remaining > 80; index++) {
+      if (cursors[index] >= sources[index].length) continue;
+      const label = `\n\n[Study source ${index + 1}]\n`;
+      const take = Math.min(1400, sources[index].length - cursors[index], remaining - label.length);
+      if (take <= 0) continue;
+      pieces.push(label, sources[index].slice(cursors[index], cursors[index] + take));
+      cursors[index] += take;
+      remaining -= label.length + take;
+      madeProgress = true;
+    }
+  }
+  return pieces.join('').slice(0, maxChars).trim();
+}
+
+function normalizeGeneratedQuizQuestions(
+  raw: GeneratedQuizQuestion[],
+  quizType: QuizType,
+  requestedCount: number,
+): GeneratedQuizQuestion[] {
+  const accepted: GeneratedQuizQuestion[] = [];
+  const seen = new Set<string>();
+  let trueAnswers = 0;
+  let falseAnswers = 0;
+  const kindCounts = { mcq: 0, true_false: 0, short_answer: 0 };
+  const mcqOffset = Math.floor(Math.random() * 4);
+
+  for (const candidate of Array.isArray(raw) ? raw : []) {
+    if (accepted.length >= requestedCount) break;
+    if (!candidate || typeof candidate !== 'object') continue;
+    const question = String(candidate.question ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    const key = question.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (question.length < 8 || !key || seen.has(key)) continue;
+    const proof = candidate.proof ? String(candidate.proof).replace(/\s+/g, ' ').trim().slice(0, 160) : undefined;
+    if (!proof || proof.length < 3) continue;
+    const options = Array.isArray(candidate.options)
+      ? candidate.options.map((option) => String(option ?? '').replace(/\s+/g, ' ').trim().slice(0, 250))
+      : [];
+    const correctIndex = Number(candidate.correctIndex);
+
+    if (options.length === 0) {
+      const expectedAnswer = String(candidate.expectedAnswer ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if ((quizType !== 'short_answer' && quizType !== 'mixed') || !expectedAnswer) continue;
+      accepted.push({ question, options: [], correctIndex: -1, expectedAnswer, proof });
+      kindCounts.short_answer += 1;
+      seen.add(key);
+      continue;
+    }
+
+    const trueIndex = options.findIndex((option) => option.toLowerCase() === 'true');
+    const falseIndex = options.findIndex((option) => option.toLowerCase() === 'false');
+    if (options.length === 2 && trueIndex >= 0 && falseIndex >= 0) {
+      if ((quizType !== 'true_false' && quizType !== 'mixed') || !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 1) continue;
+      const normalizedCorrect = options[correctIndex].toLowerCase() === 'true' ? 0 : 1;
+      if (normalizedCorrect === 0) trueAnswers += 1;
+      else falseAnswers += 1;
+      accepted.push({ question, options: ['True', 'False'], correctIndex: normalizedCorrect, proof });
+      kindCounts.true_false += 1;
+      seen.add(key);
+      continue;
+    }
+
+    if ((quizType !== 'mcq' && quizType !== 'mixed') || !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) continue;
+    const correct = options[correctIndex];
+    const wrongSeen = new Set<string>();
+    const uniqueWrong = options.filter((option, index) => {
+      const normalized = option.toLowerCase();
+      if (index === correctIndex || !option || normalized === correct.toLowerCase() || wrongSeen.has(normalized)) return false;
+      wrongSeen.add(normalized);
+      return true;
+    });
+    if (!correct || uniqueWrong.length < 3) continue;
+    for (let index = uniqueWrong.length - 1; index > 0; index--) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [uniqueWrong[index], uniqueWrong[swap]] = [uniqueWrong[swap], uniqueWrong[index]];
+    }
+    const finalOptions = uniqueWrong.slice(0, 3);
+    const target = (mcqOffset + accepted.length) % 4;
+    finalOptions.splice(target, 0, correct);
+    accepted.push({ question, options: finalOptions, correctIndex: target, proof });
+    kindCounts.mcq += 1;
+    seen.add(key);
+  }
+
+  const trueFalseTotal = trueAnswers + falseAnswers;
+  if (trueFalseTotal >= 4 && Math.max(trueAnswers, falseAnswers) / trueFalseTotal > 0.75) {
+    throw new Error('The generated True/False answers were too one-sided. Please regenerate for a fairer quiz.');
+  }
+  if (quizType === 'mixed' && requestedCount >= 6 && Object.values(kindCounts).some((count) => count === 0)) {
+    throw new Error('The generated quiz did not contain a balanced mix of question types. Please regenerate it.');
+  }
+  const minimumUsable = Math.min(requestedCount, Math.max(1, Math.ceil(requestedCount * 0.7)));
+  if (accepted.length < minimumUsable) {
+    throw new Error(`Only ${accepted.length} of ${requestedCount} questions passed quality checks. Please try again.`);
+  }
+  return accepted;
+}
+
 // ---------------------------------------------------------------------------
 // Flashcard generation — unified single-call via Edge Function
 // ---------------------------------------------------------------------------
@@ -105,8 +216,7 @@ export async function generateQuizFromNotes(
   difficulty: QuizDifficulty = 'medium',
   _userId?: string,
 ): Promise<GeneratedQuizQuestion[]> {
-  const MAX_CONTENT_CHARS = 12000;
-  const combined = noteContents.join('\n\n---\n\n').slice(0, MAX_CONTENT_CHARS);
+  const combined = buildBalancedQuizSource(noteContents);
   if (!combined.trim()) return [];
 
   const { data, error } = await invokeAiGenerate<AiGenerateQuizResult>({
@@ -118,17 +228,13 @@ export async function generateQuizFromNotes(
   });
 
   if (error) {
-    if (
-      error.includes('timed out') ||
-      error.includes('RATE_LIMIT') ||
-      /monthly ai token limit|MONTHLY_TOKEN_LIMIT/i.test(error)
-    ) {
-      throw new Error(error);
-    }
-    return [];
+    // Do not turn a server failure into an empty quiz. That hid the actual
+    // reason (for example a temporary AI-provider issue) behind a misleading
+    // "try different notes" message.
+    throw new Error(error);
   }
 
-  return data?.questions ?? [];
+  return normalizeGeneratedQuizQuestions(data?.questions ?? [], quizType, questionCount);
 }
 
 // ---------------------------------------------------------------------------

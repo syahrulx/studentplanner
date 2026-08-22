@@ -316,14 +316,50 @@ export function resolveUniversityIdForCalendar(opts: {
 
 export type UniversityItem = UniversityConfig;
 
+/** ISO 3166-1 alpha-2 country code all universities live under before country was introduced. */
+const HOME_COUNTRY = 'MY';
+
 export async function getMalaysianUniversities(): Promise<UniversityItem[]> {
+  return getUniversitiesForCountry(HOME_COUNTRY);
+}
+
+/**
+ * Universities for a given ISO 3166-1 alpha-2 country. For Malaysia this is
+ * byte-for-byte the same behavior as the original getMalaysianUniversities()
+ * (merges with the hardcoded UNIVERSITIES array, caches into
+ * universitiesCache for searchUniversities()/getUniversityById()) — nothing
+ * changes for existing Malaysian users. Other countries have no hardcoded
+ * local list to merge with (there isn't one), so this is a straight read of
+ * admin-added rows from the `universities` table, with no local cache
+ * pollution — a Malaysia-context screen calling getMalaysianUniversities()
+ * right after a non-Malaysia lookup must still see the Malaysian list, not
+ * whatever was cached last.
+ */
+export async function getUniversitiesForCountry(country: string): Promise<UniversityItem[]> {
+  const cc = (country || HOME_COUNTRY).toUpperCase();
   const { data, error } = await supabase
     .from('universities')
     .select('id,name,api_endpoint,login_method')
+    .eq('country', cc)
     .order('name', { ascending: true });
-  if (error || !data) return universitiesCache;
-  const rows = (data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>);
-  if (rows.length === 0) return universitiesCache;
-  universitiesCache = mergeRemoteUniversities(rows);
-  return universitiesCache;
+
+  if (cc === HOME_COUNTRY) {
+    if (error || !data) return universitiesCache;
+    const rows = data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>;
+    if (rows.length === 0) return universitiesCache;
+    universitiesCache = mergeRemoteUniversities(rows);
+    return universitiesCache;
+  }
+
+  if (error || !data) return [];
+  return (data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>)
+    .filter((row) => row.id && row.name)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      shortName: inferShortName(row.name, row.id),
+      loginUrl: String(row.api_endpoint || '').trim() || 'https://example.com/',
+      mode: row.login_method === 'api' ? ('api' as const) : ('webview' as const),
+      logoEmoji: '🏫',
+    }));
 }

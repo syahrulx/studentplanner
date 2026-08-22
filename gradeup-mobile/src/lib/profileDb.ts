@@ -61,11 +61,12 @@ export async function getProfile(userId: string): Promise<{
   subscriptionPlan?: SubscriptionPlan;
   hasUsedThemeTrial?: boolean;
   themePreferences?: ThemePreferencesRow | null;
+  country?: string;
 } | null> {
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial, theme_preferences',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial, theme_preferences, country',
     )
     .eq('id', userId)
     .single();
@@ -91,6 +92,7 @@ export async function getProfile(userId: string): Promise<{
     subscription_plan: string | null;
     has_used_theme_trial: boolean | null;
     theme_preferences: ThemePreferencesRow | null;
+    country: string | null;
   };
   const level = row.academic_level as AcademicLevel | undefined;
   return {
@@ -120,6 +122,7 @@ export async function getProfile(userId: string): Promise<{
     subscriptionPlan: normalizeSubscriptionPlan(row.subscription_plan),
     hasUsedThemeTrial: row.has_used_theme_trial ?? false,
     themePreferences: row.theme_preferences ?? null,
+    country: row.country ? String(row.country).toUpperCase() : undefined,
   };
 }
 
@@ -145,6 +148,7 @@ export async function updateProfile(
     subscriptionPlan?: SubscriptionPlan;
     hasUsedThemeTrial?: boolean;
     themePreferences?: ThemePreferencesRow | null;
+    country?: string;
   },
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
@@ -179,6 +183,10 @@ export async function updateProfile(
   }
   if (updates.themePreferences !== undefined) {
     payload.theme_preferences = updates.themePreferences;
+  }
+  if (updates.country !== undefined) {
+    const cc = String(updates.country || '').trim().toUpperCase();
+    payload.country = /^[A-Z]{2}$/.test(cc) ? cc : 'MY';
   }
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.from(TABLE).update(payload).eq('id', userId);
