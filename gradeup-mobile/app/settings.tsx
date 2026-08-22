@@ -17,6 +17,7 @@ import { router, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
+import { captureError } from '@/src/lib/monitoring';
 import { useClassroomSync } from '@/hooks/useClassroomSync';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { ThemeIcon } from '@/components/ThemeIcon';
@@ -788,6 +789,40 @@ export default function Settings() {
             {deleteAccountBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
           </Pressable>
         </View>
+
+        {__DEV__ ? (
+          <View style={{ paddingHorizontal: 16, marginTop: 24 }}>
+            <Pressable
+              onPress={() => {
+                const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+                if (!dsn) {
+                  Alert.alert(
+                    'Sentry not configured',
+                    'EXPO_PUBLIC_SENTRY_DSN is empty in this bundle. Restart Metro with --clear after editing .env.'
+                  );
+                  return;
+                }
+                captureError(new Error('Sentry test from settings'), { triggeredBy: 'dev button' });
+                Alert.alert(
+                  'Test error sent',
+                  `DSN loaded (…${dsn.slice(-12)}). Check sentry.io → Issues in ~30s.`
+                );
+              }}
+              style={{
+                padding: 14,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderStyle: 'dashed',
+                borderColor: theme.textSecondary,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontWeight: '600' }}>
+                Dev: send test error to Sentry
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={{ height: 60 }} />
       </ScrollView>
