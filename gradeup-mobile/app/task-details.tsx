@@ -101,6 +101,26 @@ export default function TaskDetails() {
   const task = ownTask ?? sharedTaskRecord?.task ?? undefined;
   const isReadOnlySharedTask = !ownTask && !!task;
 
+  // ── Breakdown context ───────────────────────────────────────────────────────
+  // Steps belonging to this task, or the parent this task is a step of. Shared
+  // tasks are excluded: a breakdown belongs to the owner, not the recipient.
+  const breakdownSteps = useMemo(
+    () => (!task || isReadOnlySharedTask
+      ? []
+      : tasks
+        .filter((candidate) => candidate.parentTaskId === task.id)
+        .sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0))),
+    [tasks, task, isReadOnlySharedTask],
+  );
+  const parentOfThisStep = useMemo(
+    () => (task?.parentTaskId ? tasks.find((candidate) => candidate.id === task.parentTaskId) ?? null : null),
+    [tasks, task],
+  );
+  /** Only offer a breakdown on an editable parent task that has no steps yet. */
+  const canBreakIntoSteps = Boolean(
+    task && !isReadOnlySharedTask && !task.parentTaskId && breakdownSteps.length === 0,
+  );
+
   // ── Local edit state ────────────────────────────────────────────────────────
   const [localTitle, setLocalTitle] = useState('');
   const [localNotes, setLocalNotes] = useState('');
@@ -646,6 +666,97 @@ export default function TaskDetails() {
           )}
         </View>
 
+        {/* ── Steps ─────────────────────────────────────────────────────────────
+            Both halves of the breakdown story live here: a parent shows its
+            steps (or an offer to create them), and a step shows what it belongs
+            to. Before this, opening a step gave no hint it was part of anything. */}
+        {breakdownSteps.length > 0 ? (
+          <View style={s.sourceSection}>
+            <View style={s.sourceHeaderRow}>
+              <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>Steps</Text>
+              <Text style={[s.stepsProgress, { color: theme.textSecondary }]}>
+                {`${breakdownSteps.filter((step) => step.isDone).length} of ${breakdownSteps.length} done`}
+              </Text>
+            </View>
+            <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+              {breakdownSteps.map((step, index) => (
+                <Pressable
+                  key={step.id}
+                  onPress={() => router.push({ pathname: '/task-details', params: { id: step.id } } as any)}
+                  style={({ pressed }) => [s.stepRow, pressed && { opacity: 0.6 }]}
+                >
+                  <Feather
+                    name={step.isDone ? 'check-circle' : 'circle'}
+                    size={16}
+                    color={step.isDone ? theme.success : theme.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      s.stepRowTitle,
+                      { color: theme.text },
+                      step.isDone && { textDecorationLine: 'line-through', color: theme.textSecondary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {`${index + 1}. ${step.title}`}
+                  </Text>
+                  <Text style={[s.stepRowDate, { color: theme.textSecondary }]}>
+                    {formatDisplayDate(step.dueDate)}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable
+                onPress={() => router.push({ pathname: '/task-breakdown', params: { taskId: task.id } } as any)}
+                style={({ pressed }) => [s.stepsCta, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+              >
+                <Feather name="edit-3" size={15} color={theme.primary} />
+                <Text style={[s.stepsCtaText, { color: theme.primary }]}>Edit breakdown</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : parentOfThisStep ? (
+          <View style={s.sourceSection}>
+            <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>Part of</Text>
+            <Pressable
+              onPress={() => router.push({ pathname: '/task-details', params: { id: parentOfThisStep.id } } as any)}
+              style={({ pressed }) => [
+                s.sourceCard,
+                { backgroundColor: theme.card, borderColor: theme.cardBorder },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View style={s.stepRow}>
+                <Feather name="corner-left-up" size={16} color={theme.textSecondary} />
+                <Text style={[s.stepRowTitle, { color: theme.text }]} numberOfLines={1}>
+                  {parentOfThisStep.title}
+                </Text>
+                <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+              </View>
+            </Pressable>
+          </View>
+        ) : canBreakIntoSteps ? (
+          <View style={s.sourceSection}>
+            <Text style={[s.sourceSectionTitle, { color: theme.textSecondary }]}>Steps</Text>
+            <Pressable
+              onPress={() => router.push({ pathname: '/task-breakdown', params: { taskId: task.id } } as any)}
+              style={({ pressed }) => [
+                s.sourceCard,
+                { backgroundColor: theme.card, borderColor: theme.cardBorder },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View style={s.stepRow}>
+                <Feather name="layers" size={16} color={theme.primary} />
+                <Text style={[s.stepRowTitle, { color: theme.text }]}>Break into steps</Text>
+                <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+              </View>
+              <Text style={[s.stepsHint, { color: theme.textSecondary }]}>
+                Split this into smaller pieces spread across the days before it's due.
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {/* ── Source Section ────────────────────────────────────────────────── */}
         {task.id.startsWith('gc-') ? (
           <View style={s.sourceSection}>
@@ -1162,6 +1273,13 @@ const s = StyleSheet.create({
   emptyShareText: { fontSize: 14, fontStyle: 'italic', textAlign: 'center', padding: 24 },
 
   sourceSection: { marginBottom: 24 },
+  stepsProgress: { fontSize: 12, fontWeight: '700' },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  stepRowTitle: { flex: 1, fontSize: 14, fontWeight: '600' },
+  stepRowDate: { fontSize: 11, fontWeight: '700' },
+  stepsCta: { marginTop: 6, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  stepsCtaText: { fontSize: 13, fontWeight: '800' },
+  stepsHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   sourceHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sourceSectionTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   verifiedPill: { flexDirection: 'row', alignItems: 'center', gap: 5 },

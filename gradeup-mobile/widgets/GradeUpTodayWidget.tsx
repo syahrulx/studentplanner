@@ -45,7 +45,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   }
 
   const fallbackTheme: HomeWidgetProps['theme'] = { themeId: 'light', background: '#ffffff', backgroundSecondary: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', primary: '#2563eb', text: '#0f172a', textSecondary: '#64748b', danger: '#dc2626', warning: '#d97706' };
-  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [], theme: fallbackTheme };
+  const fallback: HomeWidgetProps = { dateISO: '', greeting: 'Hi', signedIn: false, tasks: [], classes: [], theme: fallbackTheme, breakdown: null, recommendation: null };
   
   const p = props
     ? {
@@ -55,6 +55,10 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         tasks: Array.isArray(props.tasks) ? props.tasks : [],
         classes: Array.isArray(props.classes) ? props.classes : [],
         theme: props.theme || fallbackTheme,
+        // Older snapshots predate these fields; treat missing as absent rather
+        // than letting the widget crash reading them.
+        breakdown: props.breakdown || null,
+        recommendation: props.recommendation || null,
       }
     : fallback;
 
@@ -296,6 +300,49 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
       </HStack>
 
       <Divider modifiers={[...fg(line), opacity(0.2)]} />
+
+      {/* Next step from an active breakdown, else today's suggestion. A step is
+          the single most actionable thing we can put on a home screen, so it
+          outranks the suggestion when both exist. */}
+      {p.breakdown && p.breakdown.nextStepTitle ? (
+        <VStack spacing={1} alignment="leading" modifiers={[padding({ leading: 6, trailing: 6 })]}>
+          <HStack spacing={4}>
+            <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>NEXT STEP</Text>
+            <Spacer />
+            <Text modifiers={[font({ size: 8, weight: 'bold' }), ...fg(muted)]}>
+              {String(p.breakdown.doneCount)}/{String(p.breakdown.totalCount)}
+            </Text>
+          </HStack>
+          <HStack spacing={5} alignment="center">
+            <Text modifiers={[font({ size: 12, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
+              {p.breakdown.nextStepTitle}
+            </Text>
+            <Spacer />
+            {p.breakdown.nextStepWhen ? (
+              <Text modifiers={[font({ size: 9, weight: 'bold' }), ...fg(accent), lineLimit(1)]}>
+                {p.breakdown.nextStepWhen}
+              </Text>
+            ) : null}
+          </HStack>
+          <Text modifiers={[font({ size: 8 }), ...fg(muted), lineLimit(1)]}>
+            {p.breakdown.parentTitle}
+          </Text>
+        </VStack>
+      ) : p.recommendation ? (
+        <VStack spacing={1} alignment="leading" modifiers={[padding({ leading: 6, trailing: 6 })]}>
+          <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>RECOMMENDED</Text>
+          <Text modifiers={[font({ size: 12, weight: 'bold' }), ...fg(title), lineLimit(1)]}>
+            {p.recommendation.title}
+          </Text>
+          <Text modifiers={[font({ size: 8 }), ...fg(muted), lineLimit(2)]}>
+            {p.recommendation.summary}
+          </Text>
+        </VStack>
+      ) : null}
+
+      {p.breakdown?.nextStepTitle || p.recommendation ? (
+        <Divider modifiers={[...fg(line), opacity(0.2)]} />
+      ) : null}
 
       {/* Two-column content */}
       <HStack spacing={0} alignment="top">

@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,6 +46,7 @@ import { SpiderLottie } from '@/components/SpiderLottie';
 import { SpiderHeaderWebOverlay } from '@/components/SpiderHeaderWebOverlay';
 import { PurpleAuroraOverlay } from '@/components/PurpleAuroraOverlay';
 import { RecommendedTodayCard } from '@/src/components/RecommendedTodayCard';
+import { HomeHeroCarousel } from '@/src/components/HomeHeroCarousel';
 import type { RecommendationFeedback } from '@/src/lib/recommendationDb';
 import {
   getRecommendedToday,
@@ -537,6 +540,29 @@ function createDashboardStyles(
 
     sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
     sectionWrapperFirst: { marginTop: 24 },
+    heroCarouselWrap: { marginTop: 24, marginBottom: 32 },
+    // 2 lines at lineHeight 19 — see sectionSubcopy.
+    heroSubcopy: { height: 38, marginBottom: 16 },
+    suggestAgainButton: { marginTop: 12, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, minHeight: 38 },
+    suggestAgainText: { fontSize: 13, fontWeight: '700' },
+    planPickerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    planPickerSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, paddingBottom: 30, maxHeight: '75%' },
+    planPickerTitle: { fontSize: 17, fontWeight: '800' },
+    planPickerSubtitle: { fontSize: 13, marginTop: 3 },
+    planPickerList: { marginTop: 14, marginBottom: 12 },
+    planPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
+    planPickerRowTitle: { fontSize: 15, fontWeight: '700' },
+    planPickerRowMeta: { fontSize: 12, marginTop: 2 },
+    planPickerEmpty: { fontSize: 13, textAlign: 'center', paddingVertical: 28 },
+    planPickerCancel: { borderWidth: 1, borderRadius: 14, minHeight: 46, alignItems: 'center', justifyContent: 'center' },
+    planPickerCancelText: { fontSize: 14, fontWeight: '700' },
+    plannedCard: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 8 },
+    plannedTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    plannedProgress: { fontSize: 12, fontWeight: '700' },
+    plannedNextLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 2 },
+    plannedNextTitle: { fontSize: 17, fontWeight: '800' },
+    plannedBar: { flexDirection: 'row', gap: 4, marginTop: 6 },
+    plannedBarSegment: { flex: 1, height: 4, borderRadius: 2 },
     // Tablet: Today's focus + Upcoming side by side, filling the width.
     dashRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, gap: 20, marginTop: 24 },
     dashColLeft: { flex: 1, minWidth: 0, marginHorizontal: 0, marginTop: 0 },
@@ -1061,12 +1087,99 @@ export default function Dashboard() {
       return () => { active = false; };
     }, [user.id]),
   );
-  const recommendedToday = useMemo(
-    () => getRecommendedToday({ tasks, feedback: recommendationFeedback, today: todayISO }),
-    [tasks, recommendationFeedback, todayISO],
+  /**
+   * Lets the user pull a dismissed suggestion back without waiting for
+   * tomorrow. Only the local view of the feedback is filtered — the dismissal
+   * stays recorded, so it returns to being suppressed on the next cold start
+   * rather than silently undoing a choice the user made.
+   */
+  const [ignoreDismissals, setIgnoreDismissals] = useState(false);
+  const effectiveRecommendationFeedback = useMemo(
+    () => (ignoreDismissals
+      ? recommendationFeedback.filter((item) => item.status !== 'dismissed')
+      : recommendationFeedback),
+    [recommendationFeedback, ignoreDismissals],
   );
+  const recommendedToday = useMemo(
+    () => getRecommendedToday({ tasks, feedback: effectiveRecommendationFeedback, today: todayISO }),
+    [tasks, effectiveRecommendationFeedback, todayISO],
+  );
+  /**
+   * The breakdown the user accepted today, if any.
+   *
+   * getRecommendedToday() deliberately returns null for the rest of the day
+   * once a suggestion is accepted, so without this the hero would go blank the
+   * moment the user followed its advice — the app giving *less* for taking the
+   * suggestion. Instead the slot shows what was planned and the next step.
+   */
+  /**
+   * Every task that has unfinished steps, newest deadline first.
+   *
+   * This used to show only the breakdown accepted from today's suggestion,
+   * which meant a plan made yesterday — or made manually from the task screen —
+   * was invisible here. Carrying the whole list also lets the user page between
+   * subjects from the card.
+   */
+  const activeBreakdowns = useMemo(() => {
+    const stepsByParent = new Map<string, typeof tasks>();
+    tasks.forEach((task) => {
+      if (!task.parentTaskId) return;
+      const siblings = stepsByParent.get(task.parentTaskId) ?? [];
+      siblings.push(task);
+      stepsByParent.set(task.parentTaskId, siblings);
+    });
+    const list: Array<{
+      parent: (typeof tasks)[number];
+      total: number;
+      doneCount: number;
+      nextStep: (typeof tasks)[number] | null;
+    }> = [];
+    stepsByParent.forEach((steps, parentId) => {
+      const parent = tasks.find((task) => task.id === parentId);
+      if (!parent || parent.isDone) return;
+      const ordered = [...steps].sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0));
+      const nextStep = ordered.find((step) => !step.isDone) ?? null;
+      if (!nextStep) return; // Fully done: nothing left to show.
+      list.push({
+        parent,
+        total: ordered.length,
+        doneCount: ordered.filter((step) => step.isDone).length,
+        nextStep,
+      });
+    });
+    return list.sort((a, b) => (a.nextStep?.dueDate ?? '').localeCompare(b.nextStep?.dueDate ?? ''));
+    // Subject naming happens at render time — formatSubjectName is declared
+    // further down and cannot be referenced from here.
+  }, [tasks]);
+
+  /**
+   * Tasks with no plan yet. The pager only cycles breakdowns that already
+   * exist, so without this there was no route from the plan card to starting
+   * one for a different subject.
+   */
+  const planCandidates = useMemo(() => {
+    const parentsWithSteps = new Set(
+      tasks.filter((task) => task.parentTaskId).map((task) => task.parentTaskId),
+    );
+    return tasks
+      .filter((task) => (
+        !task.parentTaskId
+        && !task.isDone
+        && !task.needsDate
+        && !(task.repeatDays?.length)
+        && !parentsWithSteps.has(task.id)
+      ))
+      .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+  }, [tasks]);
+  const [planPickerOpen, setPlanPickerOpen] = useState(false);
+
+  // Clamp rather than store out of range: finishing a plan shrinks the list.
+
   const dismissRecommendation = useCallback(() => {
     if (!recommendedToday || !user.id) return;
+    // Otherwise the filter above would swallow this dismissal instantly and
+    // the card could never be put away.
+    setIgnoreDismissals(false);
     const feedback: RecommendationFeedback = {
       recommendationKey: recommendedToday.key,
       ruleId: recommendedToday.ruleId,
@@ -1559,6 +1672,80 @@ export default function Dashboard() {
     );
   }
 
+  /**
+   * The Today's focus card body. Shared by the phone hero carousel and the
+   * tablet two-column dashboard so the two can't drift apart.
+   */
+  const renderFocusCard = () => (
+    <Pressable
+      style={({ pressed }) => [styles.focusCard, pressed && styles.pressed]}
+      onPress={() => {
+        if (focusCard) {
+          focusCard.onPress();
+        } else {
+          router.push('/(tabs)/planner' as any);
+        }
+      }}
+    >
+      {focusCard ? (
+        <>
+          <View style={styles.focusCardHeader}>
+            <View style={styles.focusPillsRow}>
+              <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
+                <Text
+                  style={[
+                    styles.focusCoursePillText,
+                    { color: themeId === 'dark' || themeId === 'midnight' ? theme.text : focusCard.accentColor },
+                  ]}
+                >
+                  {focusCard.code}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.focusStatusPill,
+                  { backgroundColor: focusCard.badgeBackground, borderColor: hexToRgba(focusCard.statusColor, 0.3) },
+                ]}
+              >
+                <Text style={[styles.focusStatusPillText, { color: focusCard.statusColor }]}>{focusCard.label}</Text>
+              </View>
+            </View>
+            <View style={styles.focusArrowButton}>
+              <Feather name="arrow-up-right" size={17} color={themePack === 'custom' ? theme.text : theme.primary} />
+            </View>
+          </View>
+          <Text style={styles.focusTitle} numberOfLines={2}>{focusCard.title}</Text>
+          <Text style={styles.focusSupportText} numberOfLines={1}>{focusCard.subtitle}</Text>
+          <View style={styles.focusMetaRow}>
+            <View style={styles.focusMetaLeft}>
+              <View style={styles.focusMetaPill}>
+                <Feather name="calendar" size={13} color={theme.textSecondary} />
+                <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
+              </View>
+              <View style={styles.focusMetaPill}>
+                <Feather name="clock" size={13} color={theme.textSecondary} />
+                <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
+              </View>
+            </View>
+            {focusCard.isSharedTask ? (
+              <View style={styles.focusMetaAvatarWrap}>
+                <Avatar name={focusCard.sharedBy} avatarUrl={focusCard.sharedByAvatar} size={22} />
+              </View>
+            ) : null}
+          </View>
+        </>
+      ) : (
+        <View style={styles.focusEmptyWrap}>
+          <View style={styles.focusEmptyIcon}>
+            <Feather name="sun" size={22} color={theme.primary} />
+          </View>
+          <Text style={styles.focusEmpty}>{T('noTasksToday')}</Text>
+          <Text style={styles.focusEmptySub}>{T('youreAllSet')}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {isCatTheme ? (
@@ -1849,102 +2036,150 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {recommendedToday ? (
-        <RecommendedTodayCard
-          recommendation={recommendedToday}
-          onBreakdown={openRecommendationBreakdown}
-          onDismiss={dismissRecommendation}
-        />
-      ) : null}
+      {/* Hero: recommendation + today's focus swipe as one card. On tablet the
+          two-column dashboard already has room for both, so they stay stacked. */}
+      {!isTablet && (
+        <View style={styles.heroCarouselWrap}>
+          <HomeHeroCarousel
+            dotColor={hexToRgba(theme.textSecondary, 0.3)}
+            dotActiveColor={theme.primary}
+            pages={[
+              <View key="focus">
+                <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('todaysFocus')}</Text>
+                <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                  {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
+                </Text>
+                {renderFocusCard()}
+              </View>,
+
+              recommendedToday ? (
+                <View key="rec">
+                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
+                    Recommended today
+                  </Text>
+                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                    A plan for the deadline that needs it most, ready in one tap.
+                  </Text>
+                  <RecommendedTodayCard
+                    recommendation={recommendedToday}
+                    onBreakdown={openRecommendationBreakdown}
+                    onDismiss={dismissRecommendation}
+                    embedded
+                  />
+                </View>
+              ) : null,
+
+              // One page per active plan, so every broken-down task is
+              // reachable by swiping. Paging arrows on a single card hid all
+              // but the most urgent plan.
+              ...activeBreakdowns.map((plan) => (
+                <View key={`plan-${plan.parent.id}`}>
+                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
+                    Your plan
+                  </Text>
+                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                    {`${formatSubjectName(plan.parent.courseId)} · ${plan.parent.title}`}
+                  </Text>
+                  <Pressable
+                    style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+                    onPress={() => router.push({
+                      pathname: '/task-details',
+                      params: { id: (plan.nextStep ?? plan.parent).id },
+                    } as any)}
+                  >
+                    <View style={styles.plannedTopRow}>
+                      <Feather name="check-circle" size={18} color={theme.primary} />
+                      <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>
+                        {`${plan.doneCount} of ${plan.total} steps done`}
+                      </Text>
+                    </View>
+                    <Text style={[styles.plannedNextLabel, { color: theme.textSecondary }]}>NEXT STEP</Text>
+                    <Text style={[styles.plannedNextTitle, { color: theme.text }]} numberOfLines={2}>
+                      {plan.nextStep?.title ?? 'Every step is done. Nice work.'}
+                    </Text>
+                    <View style={styles.plannedBar}>
+                      {Array.from({ length: plan.total }, (_, stepIndex) => (
+                        <View
+                          key={stepIndex}
+                          style={[
+                            styles.plannedBarSegment,
+                            {
+                              backgroundColor: stepIndex < plan.doneCount
+                                ? theme.primary
+                                : hexToRgba(theme.textSecondary, 0.2),
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setPlanPickerOpen(true)}
+                    style={({ pressed }) => [
+                      styles.suggestAgainButton,
+                      { borderColor: theme.border },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Feather name="plus" size={14} color={theme.primary} />
+                    <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Plan another task</Text>
+                  </Pressable>
+                </View>
+              )),
+
+              // Only when there is genuinely nothing else, so the hero always
+              // has a second page to swipe to.
+              !recommendedToday && activeBreakdowns.length === 0 ? (
+                <View key="no-rec">
+                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
+                    Recommended today
+                  </Text>
+                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                    Nothing needs breaking down right now.
+                  </Text>
+                  <View style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <View style={styles.plannedTopRow}>
+                      <Feather name="coffee" size={18} color={theme.primary} />
+                      <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>All clear</Text>
+                    </View>
+                    <Text style={[styles.plannedNextTitle, { color: theme.text }]}>
+                      Your deadlines look manageable
+                    </Text>
+                    <Text style={[styles.sectionSubcopy, { marginTop: 2, marginBottom: 0 }]}>
+                      When a deadline starts looking heavy, a plan to split it into steps shows up here.
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setIgnoreDismissals(true)}
+                      style={({ pressed }) => [
+                        styles.suggestAgainButton,
+                        { borderColor: theme.border },
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Feather name="refresh-cw" size={14} color={theme.primary} />
+                      <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Suggest again</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null,
+            ]}
+          />
+        </View>
+      )}
 
       {/* Today's focus + Upcoming — side by side on tablet */}
       <View style={isTablet ? styles.dashRow : undefined}>
+      {isTablet ? (
       <View style={[styles.sectionWrapper, styles.sectionWrapperFirst, isTablet && styles.dashColLeft]}>
         <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('todaysFocus')}</Text>
         <Text style={styles.sectionSubcopy}>
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
         </Text>
-        <Pressable
-          style={({ pressed }) => [
-            styles.focusCard,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => {
-            if (focusCard) {
-              focusCard.onPress();
-            } else {
-              router.push('/(tabs)/planner' as any);
-            }
-          }}
-        >
-          {focusCard ? (
-            <>
-              <View style={styles.focusCardHeader}>
-                <View style={styles.focusPillsRow}>
-                  <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
-                    <Text
-                      style={[
-                        styles.focusCoursePillText,
-                        {
-                          color:
-                            themeId === 'dark' || themeId === 'midnight' ? theme.text : focusCard.accentColor,
-                        },
-                      ]}
-                    >
-                      {focusCard.code}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.focusStatusPill,
-                      {
-                        backgroundColor: focusCard.badgeBackground,
-                        borderColor: hexToRgba(focusCard.statusColor, 0.3),
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.focusStatusPillText, { color: focusCard.statusColor }]}>
-                      {focusCard.label}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.focusArrowButton}>
-                  <Feather name="arrow-up-right" size={17} color={themePack === 'custom' ? theme.text : theme.primary} />
-                </View>
-              </View>
-              <Text style={styles.focusTitle} numberOfLines={2}>{focusCard.title}</Text>
-              <Text style={styles.focusSupportText} numberOfLines={1}>
-                {focusCard.subtitle}
-              </Text>
-              <View style={styles.focusMetaRow}>
-                <View style={styles.focusMetaLeft}>
-                  <View style={styles.focusMetaPill}>
-                    <Feather name="calendar" size={13} color={theme.textSecondary} />
-                    <Text style={styles.focusMetaText}>{formatDisplayDate(focusCard.date)}</Text>
-                  </View>
-                  <View style={styles.focusMetaPill}>
-                    <Feather name="clock" size={13} color={theme.textSecondary} />
-                    <Text style={styles.focusMetaText}>{(focusCard.time || '').slice(0, 5)}</Text>
-                  </View>
-                </View>
-                {focusCard.isSharedTask ? (
-                  <View style={styles.focusMetaAvatarWrap}>
-                    <Avatar name={focusCard.sharedBy} avatarUrl={focusCard.sharedByAvatar} size={22} />
-                  </View>
-                ) : null}
-              </View>
-            </>
-          ) : (
-            <View style={styles.focusEmptyWrap}>
-              <View style={styles.focusEmptyIcon}>
-                <Feather name="sun" size={22} color={theme.primary} />
-              </View>
-              <Text style={styles.focusEmpty}>{T('noTasksToday')}</Text>
-              <Text style={styles.focusEmptySub}>{T('youreAllSet')}</Text>
-            </View>
-          )}
-        </Pressable>
+        {renderFocusCard()}
       </View>
+      ) : null}
 
 
 
@@ -2126,6 +2361,61 @@ export default function Dashboard() {
           )}
         </View>
       ) : null}
+
+      {/* Pick a task to plan. Listing only tasks without a breakdown keeps the
+          choice to ones this action can actually act on. */}
+      <Modal
+        visible={planPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPlanPickerOpen(false)}
+      >
+        <View style={styles.planPickerBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setPlanPickerOpen(false)} />
+          <View style={[styles.planPickerSheet, { backgroundColor: theme.card }]}>
+            <Text style={[styles.planPickerTitle, { color: theme.text }]}>Plan another task</Text>
+            <Text style={[styles.planPickerSubtitle, { color: theme.textSecondary }]}>
+              Pick a task to break into steps.
+            </Text>
+            <ScrollView style={styles.planPickerList}>
+              {planCandidates.length === 0 ? (
+                <Text style={[styles.planPickerEmpty, { color: theme.textSecondary }]}>
+                  Every task already has a plan.
+                </Text>
+              ) : planCandidates.map((task) => (
+                <Pressable
+                  key={task.id}
+                  onPress={() => {
+                    setPlanPickerOpen(false);
+                    router.push({ pathname: '/task-breakdown', params: { taskId: task.id } } as any);
+                  }}
+                  style={({ pressed }) => [
+                    styles.planPickerRow,
+                    { borderBottomColor: theme.border },
+                    pressed && { opacity: 0.6 },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.planPickerRowTitle, { color: theme.text }]} numberOfLines={1}>
+                      {task.title}
+                    </Text>
+                    <Text style={[styles.planPickerRowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {`${formatSubjectName(task.courseId)} · ${formatDisplayDate(task.dueDate)}`}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={[styles.planPickerCancel, { borderColor: theme.border }]}
+              onPress={() => setPlanPickerOpen(false)}
+            >
+              <Text style={[styles.planPickerCancelText, { color: theme.textSecondary }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

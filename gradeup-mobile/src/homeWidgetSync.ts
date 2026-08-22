@@ -53,6 +53,8 @@ export interface WidgetSyncInputs {
   themePack?: string;
   spiderBlueAccents?: boolean;
   maxTasks?: number;
+  /** Omit to suppress the widget's recommendation — see buildHomeWidgetProps. */
+  recommendationFeedback?: import('./lib/recommendationDb').RecommendationFeedback[];
 }
 
 /** Returns YYYY-MM-DD that's `n` days after the given ISO date (local time). */
