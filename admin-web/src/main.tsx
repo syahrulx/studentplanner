@@ -1,7 +1,20 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as Sentry from '@sentry/react';
 import './index.css';
 import App from './App.tsx';
+
+// Error reporting is a silent no-op until VITE_SENTRY_DSN is configured.
+// Errors only — no tracing/replay, and no PII beyond what the error carries.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: import.meta.env.DEV ? 'development' : 'production',
+    tracesSampleRate: 0,
+    sendDefaultPii: false,
+  });
+}
 
 // Defense in depth: if a production bundle is ever built with the admin-auth
 // bypass on, refuse to boot. `RequireAdmin` already gates on DEV===true, but
