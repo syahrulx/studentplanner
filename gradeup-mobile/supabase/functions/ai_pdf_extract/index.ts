@@ -5,6 +5,7 @@ import {
   formatMonthlyLimitMessage,
   MONTHLY_LIMIT_ERROR_CODE,
 } from '../_shared/tokenLimit.ts';
+import { logOpsEvent } from '../_shared/opsLog.ts';
 
 // ---------------------------------------------------------------------------
 // CORS & Response helpers
@@ -304,6 +305,12 @@ Deno.serve(async (req) => {
       .createSignedUrl(storagePath, 600); // 10 min expiry
 
     if (signedError || !signedData?.signedUrl) {
+      logOpsEvent(supabaseAdmin, {
+        source: 'ai_pdf_extract',
+        code: 'STORAGE',
+        message: signedError?.message || 'Could not generate signed URL for PDF.',
+        userId,
+      });
       return errorJson(
         signedError?.message || 'Could not generate signed URL for PDF.',
         'STORAGE',
@@ -314,6 +321,12 @@ Deno.serve(async (req) => {
     const result = await extractViaGemini(signedData.signedUrl, geminiKey);
 
     if (result.error || !result.text) {
+      logOpsEvent(supabaseAdmin, {
+        source: 'ai_pdf_extract',
+        code: 'EXTRACTION_FAILED',
+        message: result.error || 'Could not extract text from PDF.',
+        userId,
+      });
       return errorJson(result.error || 'Could not extract text from PDF.', 'EXTRACTION_FAILED');
     }
 
@@ -335,6 +348,16 @@ Deno.serve(async (req) => {
     return json({ text: result.text, stage: 'done' });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    try {
+      const url = Deno.env.get('SUPABASE_URL') ?? '';
+      const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      if (url && key) {
+        logOpsEvent(
+          createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }),
+          { source: 'ai_pdf_extract', code: 'INTERNAL', message },
+        );
+      }
+    } catch {}
     return errorJson(message, 'INTERNAL');
   }
 });

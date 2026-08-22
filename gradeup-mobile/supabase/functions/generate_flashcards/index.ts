@@ -6,6 +6,7 @@ import {
   formatMonthlyLimitMessage,
   MONTHLY_LIMIT_ERROR_CODE,
 } from '../_shared/tokenLimit.ts';
+import { logOpsEvent } from '../_shared/opsLog.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -991,6 +992,12 @@ Deno.serve(async (req) => {
 
     // ── Return ──
     if (allCards.length === 0 && errors.length > 0) {
+      logOpsEvent(supabaseAdmin, {
+        source: 'generate_flashcards',
+        code: 'GENERATION_FAILED',
+        message: errors[0],
+        userId,
+      });
       return errorJson(
         `Failed to generate flashcards: ${errors[0]}`,
         'GENERATION_FAILED',
@@ -1009,6 +1016,16 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    try {
+      const url = Deno.env.get('SUPABASE_URL') ?? '';
+      const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      if (url && key) {
+        logOpsEvent(
+          createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }),
+          { source: 'generate_flashcards', code: 'INTERNAL', message },
+        );
+      }
+    } catch {}
     return errorJson(message, 'INTERNAL');
   }
 });
