@@ -839,6 +839,138 @@ serve(async (req) => {
       return json(200, { ok: true });
     }
 
+    if (action === 'social_share_claims_list') {
+      const status = String(payload.status || '').trim();
+      let query = admin
+        .from('social_share_claims')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (status === 'pending' || status === 'approved' || status === 'rejected') {
+        query = query.eq('status', status);
+      }
+      const { data: rows, error: e } = await query;
+      if (e) return json(400, { error: e.message });
+
+      const claims = (rows ?? []).sort((a, b) =>
+        a.status === b.status ? 0 : a.status === 'pending' ? -1 : b.status === 'pending' ? 1 : 0);
+
+      const paths = claims.map((c) => String(c.screenshot_path || '')).filter(Boolean);
+      const signedByPath: Record<string, string> = {};
+      if (paths.length > 0) {
+        try {
+          const { data: signed } = await admin.storage.from('share-proof').createSignedUrls(paths, 3600);
+          for (const s of signed ?? []) {
+            if (s?.path && s?.signedUrl && !s.error) signedByPath[s.path] = s.signedUrl;
+          }
+        } catch (err) {
+          console.error('share-proof signed URLs failed:', err);
+        }
+      }
+
+      // Promo days start counting the moment they are granted, so awarding them
+      // to someone who already has paid access burns the reward on days they
+      // would have had anyway. Surface their current access so the reviewer can
+      // decide (there is no banking of days).
+      const userIds = [...new Set(claims.map((c) => String(c.user_id)))];
+      const accessByUser: Record<string, {
+        current_plan: string;
+        current_store: string | null;
+        current_expires_at: string | null;
+        has_non_promo_access: boolean;
+      }> = {};
+      if (userIds.length > 0) {
+        const [profilesRes, entitlementsRes] = await Promise.all([
+          admin
+            .from('profiles')
+            .select('id, subscription_plan, subscription_store, subscription_expires_at')
+            .in('id', userIds),
+          admin
+            .from('subscription_entitlements')
+            .select('user_id, provider, plan, status, expires_at')
+            .in('user_id', userIds)
+            .neq('provider', 'promo'),
+        ]);
+        for (const p of profilesRes.data ?? []) {
+          accessByUser[String(p.id)] = {
+            current_plan: String(p.subscription_plan ?? 'free'),
+            current_store: p.subscription_store ?? null,
+            current_expires_at: p.subscription_expires_at ?? null,
+            has_non_promo_access: false,
+          };
+        }
+        const LIVE_STATUSES = new Set([
+          'trial', 'introductory', 'active', 'promotional', 'prepaid',
+          'cancelled', 'billing_issue', 'temporary',
+        ]);
+        for (const ent of entitlementsRes.data ?? []) {
+          const key = String(ent.user_id);
+          const live =
+            (ent.plan === 'plus' || ent.plan === 'pro') &&
+            LIVE_STATUSES.has(String(ent.status)) &&
+            (!ent.expires_at || new Date(ent.expires_at).getTime() > Date.now());
+          if (live && accessByUser[key]) accessByUser[key].has_non_promo_access = true;
+        }
+      }
+
+      const items = await Promise.all(claims.map(async (item) => {
+        let user_email = null;
+        try {
+          const { data: userData, error: userErr } = await admin.auth.admin.getUserById(item.user_id);
+          if (!userErr && userData?.user) user_email = userData.user.email ?? null;
+        } catch {
+          // A deleted auth user should not hide the claim from admins.
+        }
+        const access = accessByUser[String(item.user_id)];
+        return {
+          ...item,
+          user_email,
+          screenshot_signed_url: signedByPath[String(item.screenshot_path || '')] ?? null,
+          current_plan: access?.current_plan ?? 'free',
+          current_store: access?.current_store ?? null,
+          current_expires_at: access?.current_expires_at ?? null,
+          has_non_promo_access: access?.has_non_promo_access ?? false,
+        };
+      }));
+      return json(200, { items });
+    }
+
+    if (action === 'social_share_claim_review') {
+      const id = String(payload.id || '').trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+        return json(400, { error: 'invalid_id' });
+      }
+      const approve = payload.approve === true;
+      const approvedLikes = Number.isInteger(payload.approvedLikes) && payload.approvedLikes >= 0
+        ? payload.approvedLikes : null;
+      const awardedDays = Number.isInteger(payload.awardedDays) ? payload.awardedDays : null;
+      const note = String(payload.note || '').trim();
+      if (approve && (awardedDays == null || awardedDays < 1 || awardedDays > 180)) {
+        return json(400, { error: 'invalid_days' });
+      }
+      if (!approve && note.length < 3) {
+        return json(400, { error: 'note_required' });
+      }
+
+      const { data, error: e } = await admin.rpc('review_social_share_claim', {
+        p_claim_id: id,
+        p_reviewer: auth.adminUserId ?? null,
+        p_approve: approve,
+        p_approved_likes: approve ? approvedLikes : null,
+        p_awarded_days: approve ? awardedDays : null,
+        p_note: note || null,
+      });
+      if (e) return json(400, { error: e.message });
+      if (!data?.ok) return json(400, data ?? { error: 'review_failed' });
+
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id, approve, awardedDays, approvedLikes, actor: auth.adminUserId ?? null },
+      });
+      return json(200, data);
+    }
+
     if (action === 'calendar_offers_insert') {
       const raw = payload.rows;
       if (!Array.isArray(raw) || raw.length === 0) return json(400, { error: 'missing_rows' });

@@ -1259,6 +1259,87 @@ export async function reviewUitmCalendarContribution(id: string, status: 'approv
   unwrapFunctionData<{ ok: true }>(data, error);
 }
 
+export type SocialSharePlatform = 'threads' | 'x' | 'facebook' | 'instagram' | 'tiktok';
+
+export type SocialShareClaimRow = {
+  id: string;
+  user_id: string;
+  platform: SocialSharePlatform;
+  post_url: string;
+  post_url_key: string;
+  claimed_likes: number;
+  screenshot_path: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approved_likes: number | null;
+  awarded_days: number | null;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  user_email: string | null;
+  screenshot_signed_url: string | null;
+  /** Claimant's effective plan right now, for the overlap warning. */
+  current_plan: string;
+  current_store: string | null;
+  current_expires_at: string | null;
+  /** True when paid/admin access is already live — promo days would overlap it. */
+  has_non_promo_access: boolean;
+};
+
+/** Likes → suggested free-Plus days ladder. Mirrors the mobile app's copy of the same table. */
+export const SOCIAL_SHARE_TIERS: ReadonlyArray<{ likes: number; days: number }> = [
+  { likes: 50, days: 7 },
+  { likes: 200, days: 14 },
+  { likes: 1000, days: 30 },
+  { likes: 2000, days: 60 },
+];
+
+export function socialShareDaysForLikes(likes: number): number {
+  let days = 0;
+  for (const tier of SOCIAL_SHARE_TIERS) {
+    if (likes >= tier.likes) days = tier.days;
+  }
+  return days;
+}
+
+export async function listSocialShareClaims(
+  status?: 'pending' | 'approved' | 'rejected',
+): Promise<SocialShareClaimRow[]> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    { action: 'social_share_claims_list', status: status ?? '' },
+    headers,
+  );
+  return unwrapFunctionData<{ items: SocialShareClaimRow[] }>(data, error).items;
+}
+
+export async function reviewSocialShareClaim(input: {
+  id: string;
+  approve: boolean;
+  approvedLikes?: number | null;
+  awardedDays?: number | null;
+  note?: string;
+}): Promise<{ ok: true; status: 'approved' | 'rejected' }> {
+  const claimId = String(input.id || '').trim();
+  if (!claimId) throw new Error('Missing claim id');
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction(
+    'admin_data',
+    {
+      action: 'social_share_claim_review',
+      id: claimId,
+      approve: input.approve,
+      approvedLikes: input.approvedLikes ?? null,
+      awardedDays: input.awardedDays ?? null,
+      note: input.note ?? '',
+    },
+    headers,
+  );
+  return unwrapFunctionData<{ ok: true; status: 'approved' | 'rejected' }>(data, error);
+}
+
 export async function listCrowdsourcedCalendarOffers(): Promise<CrowdsourcedCalendarRow[]> {
   const headers = await adminInvokeHeaders();
   const { data, error } = await invokeEdgeFunction(

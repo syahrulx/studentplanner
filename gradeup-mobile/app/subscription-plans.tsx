@@ -429,6 +429,16 @@ export default function SubscriptionPlansScreen() {
 
           <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
 
+          <Pressable
+            onPress={() => router.push('/free-premium' as any)}
+            style={({ pressed }) => [styles.supportBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Feather name="gift" size={16} color={theme.primary} />
+            <Text style={[styles.supportBtnText, { color: theme.primary }]}>
+              Or get Plus free by sharing Rencana
+            </Text>
+          </Pressable>
+
           {/* Restore Purchases — Apple requires this button */}
           <Pressable
             onPress={onRestore}

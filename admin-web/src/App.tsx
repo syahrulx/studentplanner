@@ -13,6 +13,7 @@ import { TaskCategoriesRoute } from './routes/TaskCategoriesRoute';
 import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
 import { UserReportsRoute } from './routes/UserReportsRoute';
+import { ShareRewardsRoute } from './routes/ShareRewardsRoute';
 import { MinigamesRoute } from './routes/MinigamesRoute';
 import { AcademicCalendarsRoute } from './routes/AcademicCalendarsRoute';
 import { CommunicationsRoute } from './routes/CommunicationsRoute';
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="dashboard" element={<DashboardRoute />} />
             <Route path="users" element={<UsersRoute />} />
             <Route path="subscriptions" element={<SubscriptionsRoute />} />
+            <Route path="share-rewards" element={<ShareRewardsRoute />} />
             <Route path="institutions" element={<InstitutionsRoute />} />
             <Route path="universities" element={<Navigate to="/institutions" replace />} />
             <Route path="timetables" element={<TimetablesRoute />} />

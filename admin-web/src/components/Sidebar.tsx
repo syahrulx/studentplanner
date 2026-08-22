@@ -23,6 +23,7 @@ const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
   { to: '/users', label: 'Users', Icon: IconUsers },
   { to: '/subscriptions', label: 'Subscriptions', Icon: IconSubscription },
+  { to: '/share-rewards', label: 'Share Rewards', Icon: IconSubscription },
   { to: '/institutions', label: 'Institutions', Icon: IconSchool },
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
   { to: '/performance', label: 'Attendance Insights', Icon: IconBell },

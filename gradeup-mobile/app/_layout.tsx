@@ -441,6 +441,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="profile" />
         <Stack.Screen name="subscription-plans" />
+        <Stack.Screen name="free-premium" />
         <Stack.Screen name="settings" />
         <Stack.Screen
           name="timetable-import"

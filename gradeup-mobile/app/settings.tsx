@@ -454,6 +454,22 @@ export default function Settings() {
           <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/free-premium' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#10b981') }]}>
+              <Feather name="gift" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Get Premium for free</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                Post about Rencana, earn free Plus days.
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setThemePickerOpen(true)}
           >
             <View style={[styles.iconBox, { backgroundColor: theme.accent3 }]}>
