@@ -27,6 +27,34 @@ function errorJson(message: string, code = 'ERROR') {
   return json({ error: { message, code } });
 }
 
+/**
+ * Turn a raw provider failure into something safe to show a student. The
+ * verbatim text still reaches ops_events for debugging; it must never reach the
+ * client, since it can carry our billing state, project URLs and quota detail.
+ */
+function friendlyExtractionError(raw: string): string {
+  const text = (raw || '').toLowerCase();
+  if (
+    text.includes('credits are depleted') ||
+    text.includes('quota') ||
+    text.includes('billing') ||
+    text.includes('(429)')
+  ) {
+    return 'PDF reading is temporarily unavailable. Please try again later, or paste the text directly.';
+  }
+  if (text.includes('timed out') || text.includes('timeout')) {
+    return 'Reading this PDF took too long. Try a smaller file, or split it into parts.';
+  }
+  if (text.includes('too large')) {
+    // Size messages are already user-facing and carry no provider detail.
+    return raw;
+  }
+  if (text.includes('(401)') || text.includes('(403)') || text.includes('api key')) {
+    return 'PDF reading is temporarily unavailable. Please try again later.';
+  }
+  return 'Could not read text from this PDF. Try another file, or paste the text directly.';
+}
+
 // ---------------------------------------------------------------------------
 // Gemini extraction via signed URL (edge function never holds PDF in memory)
 // ---------------------------------------------------------------------------
@@ -321,13 +349,14 @@ Deno.serve(async (req) => {
     const result = await extractViaGemini(signedData.signedUrl, geminiKey);
 
     if (result.error || !result.text) {
+      const rawError = result.error || 'Could not extract text from PDF.';
       logOpsEvent(supabaseAdmin, {
         source: 'ai_pdf_extract',
         code: 'EXTRACTION_FAILED',
-        message: result.error || 'Could not extract text from PDF.',
+        message: rawError,
         userId,
       });
-      return errorJson(result.error || 'Could not extract text from PDF.', 'EXTRACTION_FAILED');
+      return errorJson(friendlyExtractionError(rawError), 'EXTRACTION_FAILED');
     }
 
     // Log usage (best-effort)

@@ -57,6 +57,32 @@ function errorJson(message: string, code = 'ERROR', status = 200) {
   return json({ error: { message, code } }, status);
 }
 
+/**
+ * Turn a raw provider failure into something safe to show a student. The
+ * verbatim text still reaches ops_events for debugging; it must never reach the
+ * client, since it can carry our billing state, project URLs and quota detail.
+ */
+function friendlyProviderError(raw: string, action: 'read this PDF' | 'make flashcards'): string {
+  const text = (raw || '').toLowerCase();
+  if (
+    text.includes('credits are depleted') ||
+    text.includes('insufficient_quota') ||
+    text.includes('quota') ||
+    text.includes('billing') ||
+    text.includes('rate limit') ||
+    text.includes('(429)')
+  ) {
+    return `Could not ${action} right now — the service is busy. Please try again later.`;
+  }
+  if (text.includes('timed out') || text.includes('timeout')) {
+    return `Could not ${action} in time. Try a smaller file, or split it into parts.`;
+  }
+  if (text.includes('too large') || text.includes('too short')) {
+    return raw; // Already user-facing, carries no provider detail.
+  }
+  return `Could not ${action}. Please try again, or paste the text directly.`;
+}
+
 // ---------------------------------------------------------------------------
 // Rate limiting — operation-level (1 per user tap, not per chunk)
 // ---------------------------------------------------------------------------
@@ -887,10 +913,14 @@ Deno.serve(async (req) => {
           pdfPageFilterActive ? pdfPagesRaw : undefined,
         );
         if (extraction.error || !extraction.text.trim()) {
-          return errorJson(
-            extraction.error || 'Could not extract text from PDF.',
-            'PDF_EXTRACT_FAILED',
-          );
+          const rawError = extraction.error || 'Could not extract text from PDF.';
+          logOpsEvent(supabaseAdmin, {
+            source: 'generate_flashcards',
+            code: 'PDF_EXTRACT_FAILED',
+            message: rawError,
+            userId,
+          });
+          return errorJson(friendlyProviderError(rawError, 'read this PDF'), 'PDF_EXTRACT_FAILED');
         }
         textContent = extraction.text;
         if (body.note_id && !pdfPageFilterActive) {
@@ -999,7 +1029,7 @@ Deno.serve(async (req) => {
         userId,
       });
       return errorJson(
-        `Failed to generate flashcards: ${errors[0]}`,
+        friendlyProviderError(errors[0], 'make flashcards'),
         'GENERATION_FAILED',
       );
     }
