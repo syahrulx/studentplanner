@@ -182,7 +182,9 @@ export default ({ config }) => {
     eas: {
       projectId: '29240ff0-6a41-4552-bd3e-9b6b6ddf6b38',
     },
-    geminiApiKey: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '',
+    // geminiApiKey removed — nothing client-side reads it, and Gemini calls run
+    // in Edge Functions with server-side secrets. Keeping it here would embed
+    // the key in the app bundle whenever GEMINI_API_KEY is set at build time.
     supabaseUrl: cleanEnvString(
       process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujxrtuogdialsrzxkcey.supabase.co'
     ),
