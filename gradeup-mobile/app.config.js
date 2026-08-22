@@ -176,6 +176,16 @@ export default ({ config }) => {
         }
       }
     ],
+    [
+      '@sentry/react-native/expo',
+      {
+        organization: 'aizz-tech-solutions',
+        project: 'react-native',
+        // Source map / debug symbol upload runs only when SENTRY_AUTH_TOKEN is
+        // present at build time (EAS secret); without it the build proceeds
+        // and the upload is skipped, so local dev is unaffected.
+      },
+    ],
   ],
   extra: {
     ...base?.extra,
