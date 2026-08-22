@@ -9,6 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "web:export": "expo export --platform web",
+    "typecheck": "tsc --noEmit",
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts",
     "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
   },
@@ -45,6 +46,7 @@
     "expo-notifications": "~55.0.18",
     "expo-router": "~55.0.12",
     "expo-screen-capture": "~55.0.13",
+    "expo-secure-store": "~55.0.17",
     "expo-sharing": "~55.0.18",
     "expo-splash-screen": "~55.0.17",
     "expo-status-bar": "~55.0.5",

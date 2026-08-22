@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { THEME_IDS, type ThemeId } from '@/constants/Themes';
 import type { Course } from './types';
 import type { ParticipantAnswer } from './lib/quizApi';
@@ -403,12 +405,33 @@ export interface ClassroomPrefs {
   courseMapping?: Record<string, string>;
 }
 
+// OAuth tokens (the cache includes the long-lived refresh token) belong in the
+// Keychain/Keystore, not plaintext AsyncStorage. SecureStore is unavailable on
+// web, so web keeps the old AsyncStorage path.
+const secureStoreAvailable = Platform.OS !== 'web';
+
+function parseClassroomToken(raw: string | null): ClassroomTokenCache | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.accessToken && typeof parsed.expiresAt === 'number') return parsed;
+  } catch {}
+  return null;
+}
+
 export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {
   try {
-    const raw = await AsyncStorage.getItem(KEY_CLASSROOM_TOKEN);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed?.accessToken && typeof parsed.expiresAt === 'number') return parsed;
+    if (!secureStoreAvailable) {
+      return parseClassroomToken(await AsyncStorage.getItem(KEY_CLASSROOM_TOKEN));
+    }
+    const secure = parseClassroomToken(await SecureStore.getItemAsync(KEY_CLASSROOM_TOKEN));
+    if (secure) return secure;
+    // Migrate a token stored by older builds out of AsyncStorage.
+    const legacy = parseClassroomToken(await AsyncStorage.getItem(KEY_CLASSROOM_TOKEN));
+    if (legacy) {
+      await SecureStore.setItemAsync(KEY_CLASSROOM_TOKEN, JSON.stringify(legacy));
+      await AsyncStorage.removeItem(KEY_CLASSROOM_TOKEN);
+      return legacy;
     }
   } catch {}
   return null;
@@ -416,12 +439,20 @@ export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {
 
 export async function setClassroomToken(token: ClassroomTokenCache): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY_CLASSROOM_TOKEN, JSON.stringify(token));
+    if (secureStoreAvailable) {
+      await SecureStore.setItemAsync(KEY_CLASSROOM_TOKEN, JSON.stringify(token));
+    } else {
+      await AsyncStorage.setItem(KEY_CLASSROOM_TOKEN, JSON.stringify(token));
+    }
   } catch {}
 }
 
 export async function clearClassroomToken(): Promise<void> {
   try {
+    if (secureStoreAvailable) {
+      await SecureStore.deleteItemAsync(KEY_CLASSROOM_TOKEN);
+    }
+    // Always clear the legacy location too so a pre-migration copy can't linger.
     await AsyncStorage.removeItem(KEY_CLASSROOM_TOKEN);
   } catch {}
 }
