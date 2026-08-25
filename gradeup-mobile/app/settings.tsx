@@ -291,6 +291,38 @@ export default function Settings() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('semesterConfig').toUpperCase()}
+        </Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/academic-calendar' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#e0e7ff') }]}>
+              <ThemeIcon name="calendar" size={18} color={themedIconFg('#4f46e5')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
+                Group A: Foundation/Professional • Group B: Diploma/Bachelor/Master/PhD
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/upload-sow' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fef3c7') }]}>
+              <Feather name="trending-up" size={18} color={themedIconFg('#d97706')} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           {T('appearanceSection').toUpperCase()}
         </Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
@@ -355,6 +387,41 @@ export default function Settings() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('notificationsSection').toUpperCase()}
+        </Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/notification-settings' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f43f5e') }]}>
+              <Feather name="bell" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>Notifications</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          {Platform.OS === 'ios' ? (
+            <>
+              <View style={styles.dividerList} />
+              <Pressable
+                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+                onPress={() => router.push('/live-activities' as any)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+                  <Feather name="activity" size={18} color={themedIconFg('#fff')} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>{T('liveActivitiesTitle')}</Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           {T('plannerSection').toUpperCase()}
         </Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
@@ -398,73 +465,6 @@ export default function Settings() {
               ios_backgroundColor={switchTrackOff}
             />
           </View>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-          {T('notificationsSection').toUpperCase()}
-        </Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/notification-settings' as any)}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#f43f5e') }]}>
-              <Feather name="bell" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Notifications</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-          {Platform.OS === 'ios' ? (
-            <>
-              <View style={styles.dividerList} />
-              <Pressable
-                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-                onPress={() => router.push('/live-activities' as any)}
-              >
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
-                  <Feather name="activity" size={18} color={themedIconFg('#fff')} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>{T('liveActivitiesTitle')}</Text>
-                </View>
-                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-              </Pressable>
-            </>
-          ) : null}
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-          {T('semesterConfig').toUpperCase()}
-        </Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/academic-calendar' as any)}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#e0e7ff') }]}>
-              <ThemeIcon name="calendar" size={18} color={themedIconFg('#4f46e5')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
-                Group A: Foundation/Professional • Group B: Diploma/Bachelor/Master/PhD
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-          <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => router.push('/upload-sow' as any)}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fef3c7') }]}>
-              <Feather name="trending-up" size={18} color={themedIconFg('#d97706')} />
-            </View>
-            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configWorkload')}</Text>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
