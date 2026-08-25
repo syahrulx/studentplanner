@@ -348,6 +348,14 @@ export function statusMeta(status: ServiceStatus) {
 
 // ─── List ──────────────────────────────────────────────────────────────────
 
+/**
+ * Quote a value for use inside a PostgREST `or(...)` filter. Campus names such as
+ * “Shah Alam (Main Campus)” contain commas/parentheses that otherwise break the logic tree.
+ */
+function orValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 export async function fetchServices(filters: ServiceFilters = {}): Promise<ServicePost[]> {
   const { kind, status, category, universityId, campus, search, scope = 'all', limit = 60 } = filters;
 
@@ -373,8 +381,8 @@ export async function fetchServices(filters: ServiceFilters = {}): Promise<Servi
   if (kind) query = query.eq('service_kind', kind);
   if (status) query = query.eq('service_status', status);
   if (category) query = query.eq('service_category', category);
-  if (universityId) query = query.or(`university_id.eq.${universityId},university_id.is.null`);
-  if (campus) query = query.or(`campus.eq.${campus},campus.is.null`);
+  if (universityId) query = query.or(`university_id.eq.${orValue(universityId)},university_id.is.null`);
+  if (campus) query = query.or(`campus.eq.${orValue(campus)},campus.is.null`);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
   let userOfferData: any[] | null = null;
@@ -1658,8 +1666,8 @@ export async function fetchSurveys(filters: SurveyFilters = {}): Promise<Service
     query = query.eq('service_status', 'open');
   }
 
-  if (universityId) query = query.or(`university_id.eq.${universityId},university_id.is.null`);
-  if (campus)       query = query.or(`campus.eq.${campus},campus.is.null`);
+  if (universityId) query = query.or(`university_id.eq.${orValue(universityId)},university_id.is.null`);
+  if (campus)       query = query.or(`campus.eq.${orValue(campus)},campus.is.null`);
   if (course?.trim()) query = query.ilike('survey_course', `%${course.trim()}%`);
   if (search?.trim()) query = query.ilike('title', `%${search.trim()}%`);
 
