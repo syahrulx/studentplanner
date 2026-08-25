@@ -249,6 +249,15 @@ export default function Planner() {
   const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  /** Parent task ids whose breakdown steps are collapsed out of the list. */
+  const [collapsedBreakdowns, setCollapsedBreakdowns] = useState<Set<string>>(() => new Set());
+  const toggleBreakdown = useCallback((parentId: string) => {
+    setCollapsedBreakdowns((current) => {
+      const next = new Set(current);
+      if (next.has(parentId)) next.delete(parentId); else next.add(parentId);
+      return next;
+    });
+  }, []);
   const [sortMode, setSortMode] = useState<'nearest' | 'subject'>('nearest');
   const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
     { role: 'ai', text: '' },
@@ -340,6 +349,35 @@ export default function Planner() {
     }
     return Boolean(user.isBreak);
   }, [activeDate, academicCalendar?.periods, user.isBreak]);
+  /**
+   * Same rule as activeDateIsInAcademicCalendar, for any date. Needed because
+   * teachingWeekNumberForDate clamps to the week cap, so a date past the end of
+   * semester still reports the final week — a task in September showed
+   * "Week 14 of 14" rather than admitting it sits outside the calendar.
+   */
+  const dateIsInAcademicCalendar = useCallback((dateISO: string) => {
+    const iso = (dateISO || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const periods = academicCalendar?.periods;
+    if (!periods || !Array.isArray(periods) || periods.length === 0) {
+      return user.semesterPhase !== 'no_calendar';
+    }
+    for (const p of periods) {
+      const start = String((p as any)?.startDate ?? '').slice(0, 10);
+      const end = String((p as any)?.endDate ?? '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+      if (iso >= start && iso <= end) return true;
+    }
+    return false;
+  }, [academicCalendar?.periods, user.semesterPhase]);
+
+  /** "Week 7 of 14", or "Week -" when the date falls outside the calendar. */
+  const weekLabelForDate = useCallback((dateISO: string) => (
+    dateIsInAcademicCalendar(dateISO)
+      ? `Week ${getWeekNumberForDate(dateISO)} of ${totalWeeks}`
+      : 'Week -'
+  ), [dateIsInAcademicCalendar, getWeekNumberForDate, totalWeeks]);
+
   const activeDateIsInAcademicCalendar = useMemo(() => {
     const iso = (activeDate || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
@@ -683,12 +721,22 @@ export default function Planner() {
       ordered.forEach((item) => {
         if (item.itemType === 'task' && childIds.has(item.id)) return;
         grouped.push(item);
-        if (item.itemType === 'task') grouped.push(...(childrenByParent.get(item.id) ?? []));
+        if (item.itemType === 'task' && !collapsedBreakdowns.has(item.id)) {
+          grouped.push(...(childrenByParent.get(item.id) ?? []));
+        }
       });
-      // Keep orphaned steps visible if a filtered view contains the step but not its parent.
-      const emitted = new Set(grouped.filter((item) => item.itemType === 'task').map((item) => (item as PlannerTaskItem).id));
+      // Keep orphaned steps visible if a filtered view contains the step but
+      // not its parent. Checked against the *parent* rather than the step, so
+      // a deliberately collapsed group isn't re-appended at the bottom.
+      const emittedIds = new Set(
+        grouped.filter((item) => item.itemType === 'task').map((item) => (item as PlannerTaskItem).id),
+      );
       ordered.forEach((item) => {
-        if (item.itemType === 'task' && childIds.has(item.id) && !emitted.has(item.id)) grouped.push(item);
+        if (item.itemType !== 'task' || !childIds.has(item.id)) return;
+        if (emittedIds.has(item.id)) return;
+        const parentId = (item as PlannerTaskItem).parentTaskId as string;
+        if (emittedIds.has(parentId)) return; // parent is shown; group is just collapsed
+        grouped.push(item);
       });
       return grouped;
     };
@@ -748,7 +796,7 @@ export default function Planner() {
     });
 
     return groupBreakdownSteps([...pinned, ...unpinned]);
-  }, [combinedList, pinnedSet, pinnedTaskIds, sortMode]);
+  }, [combinedList, pinnedSet, pinnedTaskIds, sortMode, view, collapsedBreakdowns]);
 
   /** Week grid: scroll to first hour that has items (tasks default to 23:59 and sit at the bottom). */
   useEffect(() => {
@@ -1172,14 +1220,28 @@ export default function Planner() {
         );
         return;
       }
-      const hasBreakdown = !pt.parentTaskId && tasks.some((task) => task.parentTaskId === pt.id);
+      const isParentTask = !pt.parentTaskId;
+      const hasBreakdown = isParentTask && tasks.some((task) => task.parentTaskId === pt.id);
+      // A breakdown used to be reachable only when the home screen happened to
+      // recommend one. Offer it on any parent task so the user can plan a task
+      // whenever they decide to, not when the app decides to ask.
+      const canBreakDown = isParentTask && !hasBreakdown;
+      const hasStepAction = hasBreakdown || canBreakDown;
       Alert.alert(
-        hasBreakdown ? 'Task options' : T('deleteTask'),
-        hasBreakdown ? `Manage the steps for "${item.title}" or delete the task.` : `"${item.title}" ${T('deleteTaskDesc')}`,
+        hasStepAction ? 'Task options' : T('deleteTask'),
+        hasBreakdown
+          ? `Manage the steps for "${item.title}" or delete the task.`
+          : canBreakDown
+            ? `Split "${item.title}" into smaller steps across the days before it's due, or delete it.`
+            : `"${item.title}" ${T('deleteTaskDesc')}`,
         [
           { text: T('cancel'), style: 'cancel' },
           ...(hasBreakdown ? [{
             text: 'Edit breakdown',
+            onPress: () => router.push({ pathname: '/task-breakdown', params: { taskId: pt.id } } as any),
+          }] : []),
+          ...(canBreakDown ? [{
+            text: 'Break into steps',
             onPress: () => router.push({ pathname: '/task-breakdown', params: { taskId: pt.id } } as any),
           }] : []),
           {
@@ -1299,6 +1361,7 @@ export default function Planner() {
         <Pressable
           style={[
             s.taskCard,
+            isBreakdownStep && s.breakdownStepCard,
             { borderColor },
             item.itemType === 'study' && s.taskCardStudy,
             item.isDone && s.taskCardDone,
@@ -1350,6 +1413,25 @@ export default function Planner() {
                   </View>
                 ) : null}
               </View>
+              {breakdownSteps.length > 0 && taskRow ? (
+                <Pressable
+                  style={s.taskMenuBtn}
+                  hitSlop={8}
+                  accessibilityLabel={
+                    collapsedBreakdowns.has(taskRow.id) ? 'Show steps' : 'Hide steps'
+                  }
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    toggleBreakdown(taskRow.id);
+                  }}
+                >
+                  <Feather
+                    name={collapsedBreakdowns.has(taskRow.id) ? 'chevron-down' : 'chevron-up'}
+                    size={16}
+                    color={theme.textSecondary}
+                  />
+                </Pressable>
+              ) : null}
               <Pressable
                 style={s.taskMenuBtn}
                 hitSlop={8}
@@ -2360,7 +2442,7 @@ export default function Planner() {
                     {showHeader && (
                       <View style={s.allDateRow}>
                         <Text style={s.allDateHeader}>
-                          {formatDisplayDate(itemDate)}  •  Week {getWeekNumberForDate(itemDate)} of {totalWeeks}
+                          {formatDisplayDate(itemDate)}  •  {weekLabelForDate(itemDate)}
                         </Text>
                         <View style={s.allDateLine} />
                       </View>
@@ -3153,9 +3235,28 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     alignItems: 'stretch',
     justifyContent: 'center',
   },
+  // Steps are deliberately smaller than their parent: spreading them across
+  // days means a 4-step breakdown lands in 4 separate date groups, and at full
+  // card size that reads as four unrelated tasks rather than one plan.
+  breakdownStepCard: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
   breakdownStepShell: {
-    width: '92%',
+    width: '88%',
     alignSelf: 'flex-end',
+    // Connector rail so steps read as belonging to the task above them rather
+    // than as four sibling cards that happen to be indented.
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(127,127,127,0.28)',
+    borderRadius: 0,
+    paddingLeft: 10,
+    marginTop: -2,
   },
   taskCard: {
     borderRadius: 18,

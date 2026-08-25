@@ -1305,16 +1305,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void supabase.auth.getSession().then(({ data: { session } }) => {
         if (cancelled) return;
         const signedIn = Boolean(session?.user?.id);
-        syncHomeScreenWidget({
-          tasks,
-          courses,
-          timetable,
-          pinnedTaskIds,
-          userName: user.name,
-          signedIn,
-          themeId: theme,
-          themePack,
-          maxTasks: 3,
+        const uid = session?.user?.id;
+        // Local cache read only — the widget must not show a suggestion the
+        // user already dismissed in the app.
+        const feedbackPromise = uid
+          ? offlineSync.loadCachedRecommendationFeedback(uid).catch(() => [])
+          : Promise.resolve([]);
+        void feedbackPromise.then((recommendationFeedback) => {
+          if (cancelled) return;
+          syncHomeScreenWidget({
+            tasks,
+            courses,
+            timetable,
+            pinnedTaskIds,
+            userName: user.name,
+            signedIn,
+            themeId: theme,
+            themePack,
+            maxTasks: 3,
+            recommendationFeedback,
+          });
         });
       });
     }, 500); // Debounce to prevent JSI pressure
@@ -1330,16 +1340,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const r = homeWidgetInputsRef.current;
       void supabase.auth.getSession().then(({ data: { session } }) => {
         const signedIn = Boolean(session?.user?.id);
-        syncHomeScreenWidget({
-          tasks: r.tasks,
-          courses: r.courses,
-          timetable: r.timetable,
-          pinnedTaskIds: r.pinnedTaskIds,
-          userName: r.userName,
-          signedIn,
-          themeId: r.theme,
-          themePack: r.themePack,
-          maxTasks: 3,
+        const uid = session?.user?.id;
+        const feedbackPromise = uid
+          ? offlineSync.loadCachedRecommendationFeedback(uid).catch(() => [])
+          : Promise.resolve([]);
+        void feedbackPromise.then((recommendationFeedback) => {
+          syncHomeScreenWidget({
+            tasks: r.tasks,
+            courses: r.courses,
+            timetable: r.timetable,
+            pinnedTaskIds: r.pinnedTaskIds,
+            userName: r.userName,
+            signedIn,
+            themeId: r.theme,
+            themePack: r.themePack,
+            maxTasks: 3,
+            recommendationFeedback,
+          });
         });
       });
     });

@@ -14,6 +14,10 @@ export interface StudyRecommendation {
   affectedTaskIds: string[];
   affectedTaskTitles: string[];
   taskId: string;
+  /** The task's own title, so a card can lead with the work rather than the advice. */
+  taskTitle: string;
+  /** yyyy-mm-dd of the task's deadline. */
+  taskDueDate: string;
   estimatedMinutes: number;
   suggestedStepCount: number;
   score: number;
@@ -79,9 +83,13 @@ export function getRecommendedToday(input: {
   today?: string;
 }): StudyRecommendation | null {
   const today = input.today ?? localDateISO(new Date());
-  // Keep the feature calm: after one accepted or dismissed suggestion, do not
-  // immediately replace it with another recommendation on the same day.
-  if (input.feedback.some((item) => item.shownForDate === today)) return null;
+  // Only the exact suggestion the user acted on is suppressed — see the
+  // feedbackKeys check below, where the key is today + rule + task + due date.
+  // This used to blank the whole day after a single accept or dismiss, which
+  // meant a student who followed one suggestion got nothing else until
+  // tomorrow: the opposite of helpful. A task that already has steps is
+  // filtered out separately via existingParentIds, so acting on a suggestion
+  // still can't cause it to reappear.
   const feedbackKeys = new Set(input.feedback.map((item) => item.recommendationKey));
   const mainTasks = input.tasks.filter((task) => (
     !task.parentTaskId &&
@@ -134,6 +142,8 @@ export function getRecommendedToday(input: {
       affectedTaskIds: affectedTasks.map((item) => item.id),
       affectedTaskTitles: affectedTasks.map((item) => item.title),
       taskId: task.id,
+      taskTitle: task.title,
+      taskDueDate: task.dueDate.slice(0, 10),
       estimatedMinutes: estimate,
       suggestedStepCount: stepCount,
       score,

@@ -112,8 +112,22 @@ export function selectTodaysFocusTask(
   pinnedTaskIds: string[],
   todayISO: string = getTodayISO()
 ): { task: Task; reason: FocusReason; daysUntilDue: number } | null {
+  // A broken-down task shows its next *step* in focus, not the parent — the
+  // point of a breakdown is to surface one small action. The parent stays
+  // visible everywhere else (planner, pulse); it's only hidden from focus, and
+  // only while it still has unfinished steps.
+  // Only hide the parent when a step can actually take its place. Breakdowns
+  // made before step scheduling have excludeFromFocus:true on every step, so
+  // hiding the parent as well would drop the task out of focus entirely.
+  const parentsWithOpenSteps = new Set(
+    tasks
+      .filter((task) => task.parentTaskId && !task.isDone && !task.excludeFromFocus)
+      .map((task) => task.parentTaskId as string),
+  );
+
   const pending = tasks.filter((task) => {
     if (task.isDone || task.excludeFromFocus) return false;
+    if (parentsWithOpenSteps.has(task.id)) return false;
     // For recurring tasks, only consider them if they occur today
     if (Array.isArray(task.repeatDays) && task.repeatDays.length > 0) {
       // Use taskOccursOn to check if it's active today. We also need to import it, but we can just check the days manually if we can't import easily.

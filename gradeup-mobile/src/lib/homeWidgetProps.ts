@@ -3,6 +3,8 @@ import { THEMES, CAT_THEME_OVERRIDE, MONO_THEME_OVERRIDE, PURPLE_THEME_OVERRIDE,
 import type { Course, DayOfWeek, Task, TimetableEntry } from '../types';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { compareTasksByDueDate, getDaysUntilTaskDue } from './taskUtils';
+import { getRecommendedToday } from './studyRecommendations';
+import type { RecommendationFeedback } from './recommendationDb';
 
 const JS_TO_DAY: DayOfWeek[] = [
   'Sunday',
@@ -45,6 +47,29 @@ export type HomeWidgetTheme = {
   focusCardText?: string;
 };
 
+/**
+ * Progress on a task the user has broken into steps.
+ *
+ * The widget shows the *next* step rather than the parent: the whole point of
+ * a breakdown is to surface one small action, and "Find references" is a far
+ * more useful thing to see on a home screen than "Research paper".
+ */
+export type HomeWidgetBreakdown = {
+  parentTitle: string;
+  doneCount: number;
+  totalCount: number;
+  /** Null once every step is finished. */
+  nextStepTitle: string | null;
+  /** Short label for the next step's own date, e.g. "Today" or "Mon 25". */
+  nextStepWhen: string | null;
+};
+
+/** Today's suggestion, mirroring the home hero card. */
+export type HomeWidgetRecommendation = {
+  title: string;
+  summary: string;
+};
+
 export type HomeWidgetProps = {
   dateISO: string;
   greeting: string;
@@ -53,6 +78,10 @@ export type HomeWidgetProps = {
   classes: HomeWidgetClassRow[];
   spiderWebImageUri?: string;
   theme: HomeWidgetTheme;
+  /** Absent when nothing is broken down, or every step is done. */
+  breakdown?: HomeWidgetBreakdown | null;
+  /** Absent when there is nothing worth suggesting today. */
+  recommendation?: HomeWidgetRecommendation | null;
 };
 
 export function homeWidgetThemeFromId(
@@ -116,6 +145,13 @@ export function buildHomeWidgetProps(input: {
   maxTasks?: number;
   maxClasses?: number;
   customThemeColors?: import('../storage').CustomThemeColors | null;
+  /**
+   * Feedback on past suggestions. Without it a recommendation the user already
+   * dismissed would keep showing on the home screen after it disappeared from
+   * the app, so an absent list suppresses the widget's recommendation entirely
+   * rather than risking that mismatch.
+   */
+  recommendationFeedback?: RecommendationFeedback[];
 }): HomeWidgetProps {
   const todayISO = input.todayISO ?? getTodayISO();
   const maxTasks = input.maxTasks ?? 5;
@@ -131,6 +167,8 @@ export function buildHomeWidgetProps(input: {
       classes: [],
       spiderWebImageUri: input.spiderWebImageUri,
       theme,
+      breakdown: null,
+      recommendation: null,
     };
   }
 
@@ -189,5 +227,78 @@ export function buildHomeWidgetProps(input: {
     classes,
     spiderWebImageUri: input.spiderWebImageUri,
     theme,
+    breakdown: buildWidgetBreakdown(input.tasks, todayISO),
+    recommendation: input.recommendationFeedback
+      ? summariseRecommendation(input.tasks, input.recommendationFeedback, todayISO)
+      : null,
+  };
+}
+
+/**
+ * The most urgent unfinished breakdown, reduced to what fits a widget.
+ *
+ * "Most urgent" is decided by the next unfinished step's date, not the
+ * parent's deadline — the step is the thing being asked for today.
+ */
+function buildWidgetBreakdown(tasks: Task[], todayISO: string): HomeWidgetBreakdown | null {
+  const stepsByParent = new Map<string, Task[]>();
+  tasks.forEach((task) => {
+    if (!task.parentTaskId) return;
+    const siblings = stepsByParent.get(task.parentTaskId) ?? [];
+    siblings.push(task);
+    stepsByParent.set(task.parentTaskId, siblings);
+  });
+  if (stepsByParent.size === 0) return null;
+
+  let best: { breakdown: HomeWidgetBreakdown; sortKey: string } | null = null;
+  const pick = (candidate: { breakdown: HomeWidgetBreakdown; sortKey: string }) => {
+    if (!best || candidate.sortKey < best.sortKey) best = candidate;
+  };
+
+  stepsByParent.forEach((steps, parentId) => {
+    const parent = tasks.find((task) => task.id === parentId);
+    if (!parent || parent.isDone) return;
+    const ordered = [...steps].sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0));
+    const nextStep = ordered.find((step) => !step.isDone);
+    if (!nextStep) return; // Fully done: nothing left to nudge about.
+
+    const breakdown: HomeWidgetBreakdown = {
+      parentTitle: parent.title.trim().slice(0, 60),
+      doneCount: ordered.filter((step) => step.isDone).length,
+      totalCount: ordered.length,
+      nextStepTitle: nextStep.title.trim().slice(0, 60),
+      nextStepWhen: shortWhenLabel(nextStep.dueDate, todayISO),
+    };
+    pick({ breakdown, sortKey: (nextStep.dueDate ?? '').slice(0, 10) });
+  });
+
+  return best ? (best as { breakdown: HomeWidgetBreakdown }).breakdown : null;
+}
+
+/** "Today" / "Tomorrow" / "Mon 25" — short enough for a widget row. */
+function shortWhenLabel(iso: string, todayISO: string): string | null {
+  const clean = (iso ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null;
+  if (clean === todayISO) return 'Today';
+  const date = new Date(`${clean}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date(`${todayISO}T12:00:00`);
+  const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+  if (days === 1) return 'Tomorrow';
+  if (days < 0) return 'Overdue';
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return `${names[date.getDay()]} ${date.getDate()}`;
+}
+
+function summariseRecommendation(
+  tasks: Task[],
+  feedback: RecommendationFeedback[],
+  todayISO: string,
+): HomeWidgetRecommendation | null {
+  const recommendation = getRecommendedToday({ tasks, feedback, today: todayISO });
+  if (!recommendation) return null;
+  return {
+    title: recommendation.title.trim().slice(0, 60),
+    summary: recommendation.summary.trim().slice(0, 140),
   };
 }
