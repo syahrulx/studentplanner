@@ -61,6 +61,16 @@ function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
+function formatCountry(code: string | null | undefined): string {
+  const normalized = code?.trim().toUpperCase();
+  if (!normalized || !/^[A-Z]{2}$/.test(normalized)) return 'Unknown';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(normalized) || normalized;
+  } catch {
+    return normalized === 'MY' ? 'Malaysia' : normalized;
+  }
+}
+
 function formatBillingStatus(status: AdminUserRow['subscription_status']): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -89,6 +99,7 @@ function UserRowDetailPanel({
     { label: 'Display name', value: u.name?.trim() || '—' },
     { label: 'Student ID', value: u.student_id?.trim() || '—' },
     { label: 'University', value: u.university_id?.trim() || '—' },
+    { label: 'Country', value: formatCountry(u.country) },
     { label: 'Device', value: u.device_platform ?? '—' },
     { label: 'Status', value: u.status },
     { label: 'Plan', value: u.subscription_plan },
@@ -640,6 +651,7 @@ export function UsersRoute() {
         u.name,
         u.student_id,
         u.university_id,
+        u.country,
         u.status,
         u.subscription_plan,
         u.device_platform,
@@ -677,7 +689,7 @@ export function UsersRoute() {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Name or Student ID"
+                    placeholder="Name, Student ID or User ID"
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </label>
@@ -771,12 +783,13 @@ export function UsersRoute() {
 
             <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px]">
+                <table className="w-full min-w-[1080px]">
                   <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Student ID</th>
                       <th className="px-4 py-3">University</th>
+                      <th className="px-4 py-3">Country</th>
                       <th className="px-4 py-3">Plan</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Joined</th>
@@ -844,6 +857,9 @@ export function UsersRoute() {
                           </td>
                           <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
                             {u.university_id || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            {formatCountry(u.country)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col items-start gap-1">
@@ -939,7 +955,7 @@ export function UsersRoute() {
                         </tr>
                         {expanded ? (
                           <tr className="bg-slate-50/50 dark:bg-slate-950/30">
-                            <td colSpan={8} className="p-0">
+                            <td colSpan={9} className="p-0">
                               <UserRowDetailPanel u={u} usedThisMonth={used} />
                             </td>
                           </tr>
@@ -950,7 +966,7 @@ export function UsersRoute() {
                     {rows.length === 0 && !busy ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={9}
                           className="px-4 py-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
                         >
                           {searchQuery.trim() && items.length > 0
