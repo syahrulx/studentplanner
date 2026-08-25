@@ -443,6 +443,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="subscription-plans" />
         <Stack.Screen name="free-premium" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="account-legal" />
         <Stack.Screen
           name="timetable-import"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}

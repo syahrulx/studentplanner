@@ -8,13 +8,11 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Switch,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { captureError } from '@/src/lib/monitoring';
@@ -27,16 +25,7 @@ import { THEME_DISPLAY_ICON_KEY } from '@/constants/ThemeIcons';
 import { THEME_IDS, THEMES, type ThemeId } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
-import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
 import { isTaskPastDueNow } from '@/src/utils/date';
-import { cancelAllTaskNotifications } from '@/src/notificationManager';
-import { cancelAllAttendanceNotifications } from '@/src/attendanceNotifications';
-import { cancelAllRevisionNotifications } from '@/src/revisionNotifications';
-import {
-  openPrivacyPolicy,
-  openTermsOfUse,
-  openCommunityGuidelines,
-} from '@/src/constants/legal';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -56,22 +45,6 @@ const THEME_LABEL_KEY: Record<
   emerald: 'themeOptionEmerald',
 };
 
-const CLEAR_DATA_PHRASE = 'delete data';
-const DELETE_ACCOUNT_PHRASE = 'delete my account';
-
-// Keep in sync with app/(auth)/profile-setup.tsx and app/(tabs)/_layout.tsx.
-const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
-
-async function clearAllProfileSetupSkipFlags(): Promise<void> {
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const stale = keys.filter((k) => k.startsWith(PROFILE_SETUP_SKIPPED_KEY_PREFIX));
-    if (stale.length) await AsyncStorage.multiRemove(stale);
-  } catch {
-    /* non-fatal */
-  }
-}
-
 export default function Settings() {
   const {
     user,
@@ -79,7 +52,6 @@ export default function Settings() {
     theme: themeId,
     setTheme,
     setTasks,
-    clearSemesterData,
     tasks,
     timetable,
     autoDeletePastTasks,
@@ -98,12 +70,6 @@ export default function Settings() {
   const themedIconFg = (color: string) => (isMonoTheme ? monoIconFg : color);
   const T = useTranslations(language);
 
-  const [clearDataModalOpen, setClearDataModalOpen] = useState(false);
-  const [clearDataPhrase, setClearDataPhrase] = useState('');
-  const [clearDataBusy, setClearDataBusy] = useState(false);
-  const [deleteAccountModalOpen, setDeleteAccountModalOpen] = useState(false);
-  const [deleteAccountPhrase, setDeleteAccountPhrase] = useState('');
-  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
 
@@ -180,131 +146,6 @@ export default function Settings() {
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert(T('logOutConfirmTitle'), T('logOutConfirmBody'), [
-      { text: T('cancel'), style: 'cancel' },
-      {
-        text: T('logOut'),
-        onPress: () => {
-          void (async () => {
-            try {
-              const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
-              await disconnectClassroom().catch(() => {});
-            } catch {}
-            await cancelAllTaskNotifications().catch(() => {});
-            await cancelAllRevisionNotifications().catch(() => {});
-            await cancelAllAttendanceNotifications().catch(() => {});
-            await clearAllProfileSetupSkipFlags();
-            await supabase.auth.signOut();
-            router.replace('/(auth)/login' as any);
-          })();
-        },
-      },
-    ]);
-  };
-
-  const openDeleteAccountStep1 = () => {
-    Alert.alert(T('deleteAccountStep1Title'), T('deleteAccountStep1Body'), [
-      { text: T('cancel'), style: 'cancel' },
-      {
-        text: T('continue'),
-        style: 'destructive',
-        onPress: () => {
-          setDeleteAccountPhrase('');
-          setDeleteAccountModalOpen(true);
-        },
-      },
-    ]);
-  };
-
-  const openDeleteAccountAfterPhrase = () => {
-    const typed = deleteAccountPhrase.trim().toLowerCase();
-    if (typed !== DELETE_ACCOUNT_PHRASE) return;
-    setDeleteAccountModalOpen(false);
-    setTimeout(() => {
-      Alert.alert(T('deleteAccountStep2Title'), T('deleteAccountStep2Body'), [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: T('deleteAccountDelete'),
-          style: 'destructive',
-          onPress: () => {
-            void runDeleteAccount();
-          },
-        },
-      ]);
-    }, 320);
-  };
-
-  const runDeleteAccount = async () => {
-    setDeleteAccountBusy(true);
-    try {
-      const result = await invokeDeleteAccount();
-      if (result.ok) {
-        try {
-          const { disconnectClassroom } = await import('@/src/lib/googleClassroom');
-          await disconnectClassroom().catch(() => {});
-        } catch {}
-        await cancelAllTaskNotifications().catch(() => {});
-        await cancelAllRevisionNotifications().catch(() => {});
-        await cancelAllAttendanceNotifications().catch(() => {});
-        await clearAllProfileSetupSkipFlags();
-        await supabase.auth.signOut().catch(() => {});
-        router.replace('/(auth)/login' as any);
-        return;
-      }
-      Alert.alert(T('error'), result.message || T('deleteAccountError'));
-    } catch (e) {
-      Alert.alert(T('error'), e instanceof Error ? e.message : T('deleteAccountError'));
-    } finally {
-      setDeleteAccountBusy(false);
-      setDeleteAccountPhrase('');
-    }
-  };
-
-  const openClearDataStep1 = () => {
-    Alert.alert(T('clearDataStep1Title'), T('clearDataStep1Body'), [
-      { text: T('cancel'), style: 'cancel' },
-      {
-        text: T('continue'),
-        style: 'destructive',
-        onPress: () => {
-          setClearDataPhrase('');
-          setClearDataModalOpen(true);
-        },
-      },
-    ]);
-  };
-
-  const openClearDataStep3 = () => {
-    const typed = clearDataPhrase.trim().toLowerCase();
-    if (typed !== CLEAR_DATA_PHRASE) return;
-    setClearDataModalOpen(false);
-    setTimeout(() => {
-      Alert.alert(T('clearDataStep3Title'), T('clearDataStep3Body'), [
-        { text: T('cancel'), style: 'cancel' },
-        {
-          text: T('clearDataDeleteAll'),
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setClearDataBusy(true);
-              try {
-                await clearSemesterData();
-                setClearDataPhrase('');
-                Alert.alert(T('clearData'), T('clearDataSuccess'));
-              } catch (e) {
-                Alert.alert(T('error'), e instanceof Error ? e.message : T('clearDataError'));
-              } finally {
-                setClearDataBusy(false);
-              }
-            })();
-          },
-        },
-      ]);
-    }, 320);
-  };
-
-
   const profileClassroomItems: {
     icon: ThemeIconKey;
     label: string;
@@ -346,26 +187,6 @@ export default function Settings() {
         },
       ];
 
-  const toolsMenuItems: {
-    icon: ThemeIconKey;
-    label: string;
-    onPress: () => void;
-    color: string;
-  }[] = [
-    {
-      icon: 'settings',
-      label: T('subjectColours'),
-      onPress: () => router.push('/subject-colors' as any),
-      color: '#3b82f6',
-    },
-    {
-      icon: 'stressMap',
-      label: T('stressMap'),
-      onPress: () => router.push('/stress-map' as any),
-      color: '#ec4899',
-    },
-  ];
-
   return (
     <>
       <ScrollView
@@ -399,7 +220,7 @@ export default function Settings() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-          {T('preferencesSection').toUpperCase()}
+          {T('planSection').toUpperCase()}
         </Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
@@ -467,7 +288,12 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
-          <View style={styles.dividerList} />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('appearanceSection').toUpperCase()}
+        </Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => setThemePickerOpen(true)}
@@ -518,12 +344,39 @@ export default function Settings() {
           <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/subject-colors' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#3b82f6') }]}>
+              <Feather name="droplet" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('subjectColours')}</Text>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('plannerSection').toUpperCase()}
+        </Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/week-start-preference' as any)}
           >
             <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
               <Feather name="calendar" size={18} color={themedIconFg('#fff')} />
             </View>
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('weekStartPref')}</Text>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/stress-map' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#ec4899') }]}>
+              <ThemeIcon name="stressMap" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('stressMap')}</Text>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={styles.dividerList} />
@@ -545,7 +398,12 @@ export default function Settings() {
               ios_backgroundColor={switchTrackOff}
             />
           </View>
-          <View style={styles.dividerList} />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('notificationsSection').toUpperCase()}
+        </Text>
+        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/notification-settings' as any)}
@@ -609,7 +467,9 @@ export default function Settings() {
           </Pressable>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>GOOGLE CLASSROOM</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('integrationsSection').toUpperCase()}
+        </Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           {classroomLoading ? (
             <View style={{ paddingVertical: 24, alignItems: 'center' }}>
@@ -655,26 +515,9 @@ export default function Settings() {
             : 'Using your student email allows one-tap sync with Google Classroom.'}
         </Text>
 
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>INTEGRATIONS & TOOLS</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          {toolsMenuItems.map((item, i) => (
-            <React.Fragment key={item.label}>
-              <Pressable
-                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-                onPress={item.onPress}
-              >
-                <View style={[styles.iconBox, { backgroundColor: themedIconBg(item.color) }]}>
-                  <ThemeIcon name={item.icon} size={18} color={themedIconFg('#fff')} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
-                <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-              </Pressable>
-              {i < toolsMenuItems.length - 1 && <View style={styles.dividerList} />}
-            </React.Fragment>
-          ))}
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{T('reportSection')}</Text>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          {T('supportAccountSection').toUpperCase()}
+        </Text>
         <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
@@ -689,120 +532,21 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LEGAL</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={() => void openPrivacyPolicy()}
-            accessibilityRole="link"
-            accessibilityLabel="Open Privacy Policy"
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
-              <Feather name="shield" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Privacy Policy</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                How Rencana collects, uses, and protects your data
-              </Text>
-            </View>
-            <Feather name="external-link" size={18} color={theme.textSecondary} />
-          </Pressable>
           <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={openTermsOfUse}
-            accessibilityRole="button"
-            accessibilityLabel="Open Terms of Use"
+            onPress={() => router.push('/account-legal' as any)}
           >
             <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
-              <Feather name="file-text" size={18} color={themedIconFg('#fff')} />
+              <Feather name="user" size={18} color={themedIconFg('#fff')} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Terms of Use (EULA)</Text>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('accountLegalSection')}</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                The agreement you accept to use Rencana
+                {T('accountLegalDesc')}
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-          <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={openCommunityGuidelines}
-            accessibilityRole="button"
-            accessibilityLabel="Open Community Guidelines"
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
-              <Feather name="users" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>Community Guidelines</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                Rules for reactions, shared tasks, and study circles
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>ACCOUNT</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
-            onPress={handleLogout}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#64748b') }]}>
-              <Feather name="log-out" size={18} color={themedIconFg('#fff')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('logOut')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('logOutDesc')}</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-          </Pressable>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>DANGER ZONE</Text>
-        <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.menuRow,
-              pressed && { backgroundColor: 'rgba(254, 226, 226, 0.6)' },
-              clearDataBusy && { opacity: 0.6 },
-            ]}
-            onPress={openClearDataStep1}
-            disabled={clearDataBusy}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fecaca') }]}>
-              <Feather name="trash-2" size={18} color={themedIconFg('#dc2626')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('clearData')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('clearDataDesc')}</Text>
-            </View>
-            {clearDataBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
-          </Pressable>
-          <View style={styles.dividerList} />
-          <Pressable
-            style={({ pressed }) => [
-              styles.menuRow,
-              pressed && { backgroundColor: 'rgba(254, 226, 226, 0.6)' },
-              deleteAccountBusy && { opacity: 0.6 },
-            ]}
-            onPress={openDeleteAccountStep1}
-            disabled={deleteAccountBusy}
-          >
-            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#fecaca') }]}>
-              <Feather name="user-x" size={18} color={themedIconFg('#b91c1c')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '700' }]}>{T('deleteAccount')}</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>{T('deleteAccountDesc')}</Text>
-            </View>
-            {deleteAccountBusy ? <ActivityIndicator size="small" color="#b91c1c" /> : null}
           </Pressable>
         </View>
 
@@ -842,124 +586,6 @@ export default function Settings() {
 
         <View style={{ height: 60 }} />
       </ScrollView>
-
-      <Modal
-        visible={clearDataModalOpen}
-        animationType="fade"
-        transparent
-        onRequestClose={() => !clearDataBusy && setClearDataModalOpen(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.syncBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable
-            style={StyleSheet.absoluteFillObject}
-            onPress={() => !clearDataBusy && setClearDataModalOpen(false)}
-          />
-          <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
-            <Text style={[styles.syncTitle, { color: '#b91c1c' }]}>{T('clearDataStep2Title')}</Text>
-            <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>{T('clearDataStep2Body')}</Text>
-            <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 14 }]}>
-              {T('clearDataPhraseHint')}
-            </Text>
-            <TextInput
-              value={clearDataPhrase}
-              onChangeText={setClearDataPhrase}
-              placeholder={CLEAR_DATA_PHRASE}
-              placeholderTextColor={theme.textSecondary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!clearDataBusy}
-              style={[
-                styles.syncInput,
-                { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
-              ]}
-            />
-            <View style={styles.syncActions}>
-              <Pressable
-                style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
-                onPress={() => !clearDataBusy && setClearDataModalOpen(false)}
-                disabled={clearDataBusy}
-              >
-                <Text style={{ color: theme.text, fontWeight: '600' }}>{T('cancel')}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.syncBtnPrimary,
-                  {
-                    backgroundColor:
-                      clearDataPhrase.trim().toLowerCase() === CLEAR_DATA_PHRASE ? '#b91c1c' : theme.border,
-                  },
-                ]}
-                onPress={openClearDataStep3}
-                disabled={clearDataBusy || clearDataPhrase.trim().toLowerCase() !== CLEAR_DATA_PHRASE}
-              >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>{T('continue')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={deleteAccountModalOpen}
-        animationType="fade"
-        transparent
-        onRequestClose={() => !deleteAccountBusy && setDeleteAccountModalOpen(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.syncBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable
-            style={StyleSheet.absoluteFillObject}
-            onPress={() => !deleteAccountBusy && setDeleteAccountModalOpen(false)}
-          />
-          <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
-            <Text style={[styles.syncTitle, { color: '#b91c1c' }]}>{T('deleteAccountModalTitle')}</Text>
-            <Text style={[styles.syncDesc, { color: theme.textSecondary }]}>{T('deleteAccountModalBody')}</Text>
-            <Text style={[styles.syncFieldLabel, { color: theme.text, marginTop: 14 }]}>
-              {T('deleteAccountPhraseHint')}
-            </Text>
-            <TextInput
-              value={deleteAccountPhrase}
-              onChangeText={setDeleteAccountPhrase}
-              placeholder={DELETE_ACCOUNT_PHRASE}
-              placeholderTextColor={theme.textSecondary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!deleteAccountBusy}
-              style={[
-                styles.syncInput,
-                { color: theme.text, borderColor: theme.border, backgroundColor: theme.background },
-              ]}
-            />
-            <View style={styles.syncActions}>
-              <Pressable
-                style={[styles.syncBtnSecondary, { borderColor: theme.border }]}
-                onPress={() => !deleteAccountBusy && setDeleteAccountModalOpen(false)}
-                disabled={deleteAccountBusy}
-              >
-                <Text style={{ color: theme.text, fontWeight: '600' }}>{T('cancel')}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.syncBtnPrimary,
-                  {
-                    backgroundColor:
-                      deleteAccountPhrase.trim().toLowerCase() === DELETE_ACCOUNT_PHRASE ? '#b91c1c' : theme.border,
-                  },
-                ]}
-                onPress={openDeleteAccountAfterPhrase}
-                disabled={deleteAccountBusy || deleteAccountPhrase.trim().toLowerCase() !== DELETE_ACCOUNT_PHRASE}
-              >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>{T('continue')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       <Modal visible={themePickerOpen} animationType="fade" transparent onRequestClose={() => setThemePickerOpen(false)}>
         <KeyboardAvoidingView style={styles.syncBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -1010,7 +636,7 @@ export default function Settings() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingVertical: 56 },
+  content: { paddingTop: 52, paddingBottom: 40 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1025,7 +651,7 @@ const styles = StyleSheet.create({
   backText: { fontSize: 17, fontWeight: '500', marginLeft: -4 },
   titleWrap: {
     paddingHorizontal: PAD,
-    marginBottom: 16,
+    marginBottom: 4,
   },
   largeTitle: {
     fontSize: 34,
@@ -1041,8 +667,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginHorizontal: PAD,
-    marginBottom: 8,
-    marginTop: 24,
+    marginBottom: 6,
+    marginTop: 16,
     letterSpacing: -0.2,
   },
   cardGroup: {
