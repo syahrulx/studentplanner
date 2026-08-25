@@ -61,7 +61,13 @@ import {
   type WeekStartsOn,
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
-import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
+import {
+  scheduleRevisionNotification,
+  cancelAllRevisionNotifications,
+  cancelRevisionNotification,
+  rescheduleAllRevisionNotifications,
+  requestRevisionPermissions,
+} from '../revisionNotifications';
 import {
   requestNotificationPermissions,
   scheduleTaskNotifications,
@@ -826,6 +832,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const studyList = r3.value;
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
+          // Re-derive the OS schedules from what the DB actually holds. This is
+          // what clears reminders for study times deleted on another device —
+          // and, on upgrade, the stale legacy single-slot daily notification.
+          void rescheduleAllRevisionNotifications(studyList).catch(() => {});
         }
         // (r4 is already processed and set above)
         if (r7.status === 'fulfilled') {
@@ -1416,12 +1426,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const fallback = { ...settings, enabled: false };
         setRevisionState(fallback);
         await persistRevision(fallback);
-        await cancelAllRevisionNotifications();
+        await cancelRevisionNotification(settings.id);
         return;
       }
-      await scheduleRevisionNotification(settings);
-    } else {
-      await cancelAllRevisionNotifications();
     }
     setRevisionState(settings);
     await persistRevision(settings);
@@ -1433,6 +1440,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await studyTimeDb.upsertStudySettings(uid, settings);
       const list = await studyTimeDb.getAllStudySettings(uid);
       setRevisionSettingsList(list);
+      // Rebuild from the saved list, not from `settings`: the row was just
+      // inserted, so only the list carries the DB id each reminder is keyed to.
+      await rescheduleAllRevisionNotifications(list);
+    } else if (settings.enabled) {
+      // Signed out — no DB id to key on, so this one keeps the local slot.
+      await scheduleRevisionNotification(settings);
+    } else {
+      await cancelRevisionNotification(settings.id);
     }
   }, []);
 
@@ -1441,19 +1456,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const uid = session?.user?.id;
     if (!uid) return;
     await studyTimeDb.deleteStudySetting(uid, id);
+    // Kill this one's reminder up front, so a failed list refresh can't leave it firing.
+    await cancelRevisionNotification(id);
     const list = await studyTimeDb.getAllStudySettings(uid);
     setRevisionSettingsList(list);
-    if (list.length > 0) {
-      setRevisionState(list[0]);
-      if (list[0].enabled) {
-        await scheduleRevisionNotification(list[0]);
-      } else {
-        await cancelAllRevisionNotifications();
-      }
-    } else {
-      setRevisionState(defaultRevision);
-      await cancelAllRevisionNotifications();
-    }
+    const next = list.length > 0 ? list[0] : defaultRevision;
+    setRevisionState(next);
+    // Previously skipped, so local storage kept handing back the deleted study time.
+    await persistRevision(next);
+    await rescheduleAllRevisionNotifications(list);
   }, []);
 
   const markStudyDone = useCallback((key: string) => {

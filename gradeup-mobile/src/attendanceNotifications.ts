@@ -2,7 +2,12 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { IosAuthorizationStatus } from 'expo-notifications';
 import type { AcademicCalendar, TimetableEntry } from './types';
-import { attendanceOccurrenceKey, ensureAttendanceCategory, getAnsweredOccurrenceSet } from './attendanceRecording';
+import {
+  attendanceOccurrenceKey,
+  ensureAttendanceCategory,
+  getAnsweredOccurrenceSet,
+  isAttendanceCheckinExpired,
+} from './attendanceRecording';
 import { getAcademicProgressFromCalendar } from './lib/academicUtils';
 import { getNotificationPrefs } from './storage';
 
@@ -228,6 +233,34 @@ export async function cancelAllAttendanceNotifications(): Promise<void> {
   );
 }
 
+/**
+ * Clear check-ins whose class day has already passed. A check-in is only
+ * answerable on the day, so a stale one sitting in the notification shade is
+ * dead weight — and tapping it used to still record attendance days later.
+ * Runs on every reschedule trigger (app load, foreground resume, timetable edit).
+ */
+export async function dismissExpiredAttendanceCheckins(): Promise<void> {
+  const [presented, scheduled] = await Promise.all([
+    Notifications.getPresentedNotificationsAsync().catch(() => []),
+    Notifications.getAllScheduledNotificationsAsync().catch(() => []),
+  ]);
+  await Promise.all([
+    ...(presented ?? []).map(async (notification) => {
+      const request = notification.request;
+      const data = request.content?.data as Record<string, unknown> | undefined;
+      if (data?.type !== 'attendance_checkin') return;
+      if (!isAttendanceCheckinExpired(String(data.scheduledStartAt ?? ''))) return;
+      await Notifications.dismissNotificationAsync(request.identifier).catch(() => {});
+    }),
+    ...(scheduled ?? []).map(async (entry) => {
+      const { id, data } = requestFromScheduledEntry(entry as any);
+      if (!id || data?.type !== 'attendance_checkin') return;
+      if (!isAttendanceCheckinExpired(String(data.scheduledStartAt ?? ''))) return;
+      await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+    }),
+  ]);
+}
+
 /** Remove pending and already-presented check-ins for exact timetable rows. */
 export async function cancelAttendanceNotificationsForEntries(entryIds: string[]): Promise<void> {
   const ids = new Set(entryIds.map((id) => String(id).trim()).filter(Boolean));
@@ -298,9 +331,11 @@ export async function rescheduleAttendanceNotifications(
   rescheduleQueue = rescheduleQueue
     .catch(() => {})
     .then(async () => {
-      // Runs ahead of the early returns below so the legacy silent channel is
-      // retired even for users who never schedule another check-in.
+      // Both run ahead of the early returns below, so the legacy silent channel
+      // is retired and yesterday's check-ins are swept even for users whose
+      // check-ins are switched off or who are on semester break.
       await ensureAttendanceChannel().catch(() => {});
+      await dismissExpiredAttendanceCheckins().catch(() => {});
 
       // Read prefs before anything else: both switches below are hard stops
       // that must also clear whatever is already pending.

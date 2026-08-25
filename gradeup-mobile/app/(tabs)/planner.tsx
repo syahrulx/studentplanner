@@ -1198,7 +1198,14 @@ export default function Planner() {
           {
             text: T('delete'),
             style: 'destructive',
-            onPress: () => deleteStudySetting(item.revisionId!),
+            onPress: () => {
+              deleteStudySetting(item.revisionId!).catch((e) => {
+                Alert.alert(
+                  T('error'),
+                  e instanceof Error ? e.message : 'Could not delete this study time.',
+                );
+              });
+            },
           },
         ]
       );

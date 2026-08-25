@@ -61,11 +61,14 @@ export async function upsertStudySettings(userId: string, settings: RevisionSett
 }
 
 export async function deleteStudySetting(userId: string, id: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from(STUDY_TABLE)
     .delete()
     .eq('user_id', userId)
     .eq('id', id);
+  // Was swallowed: a delete blocked by RLS or lost offline looked like success,
+  // the row stayed, and its reminder was rebuilt on the next refresh.
+  if (error) throw new Error(error.message || 'Failed to delete study time');
 }
 
 export async function deleteAllStudyTimesForUser(userId: string): Promise<void> {
