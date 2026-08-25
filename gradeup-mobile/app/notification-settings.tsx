@@ -335,11 +335,11 @@ export default function NotificationSettings() {
                 <Feather name="check-square" size={18} color={themedIconFg('#fff')} />
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>Class Check-in Popup</Text>
+                <Text style={[styles.menuLabel, { color: theme.text }]}>Class Check-in Reminders</Text>
                 <Text style={[styles.notifRowFootnote, { color: theme.textSecondary }]} numberOfLines={2}>
                   {notifPrefs.attendanceCheckinPopup
-                    ? 'Banner 5 minutes before class — turn off to stay quiet.'
-                    : 'Silent — still appears in the in-app Notification Manager.'}
+                    ? 'Asks if you attended, 5 minutes before each class.'
+                    : 'Off — no check-in reminders. Mark attendance from Timetable.'}
                 </Text>
               </View>
               <Switch

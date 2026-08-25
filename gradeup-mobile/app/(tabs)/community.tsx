@@ -672,16 +672,38 @@ export default function CommunityMap() {
     [sendBump]
   );
 
-  const handleCenterOnMe = useCallback(() => {
-    if (hasValidMyCoords && cameraRef.current) {
-      cameraRef.current.setCamera({
-        centerCoordinate: [myLongitude, myLatitude],
-        zoomLevel: 15,
-        animationDuration: 500,
-        padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
-      });
-    }
+  /** Returns false when there is nothing to centre on yet (no fix, or map not mounted). */
+  const handleCenterOnMe = useCallback((): boolean => {
+    if (!hasValidMyCoords || !cameraRef.current) return false;
+    cameraRef.current.setCamera({
+      centerCoordinate: [myLongitude, myLatitude],
+      zoomLevel: 15,
+      animationDuration: 500,
+      padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+    });
+    return true;
   }, [hasValidMyCoords, myLatitude, myLongitude]);
+
+  // Mapbox reads `Camera.defaultSettings` once, at mount. `mapCenterLat/Lng`
+  // recompute when the GPS fix lands, but the camera never picks that up — so
+  // after "Tap to Check In" the map sat on the fallback campus coordinate while
+  // the "me" pin appeared somewhere else entirely. Fly there the first time we
+  // get real coords; the ref makes it a one-shot so later GPS ticks can't yank
+  // the camera back while the user is panning around the map.
+  const autoCenteredRef = useRef(false);
+  useEffect(() => {
+    if (autoCenteredRef.current) return;
+    if (handleCenterOnMe()) autoCenteredRef.current = true;
+  }, [handleCenterOnMe]);
+
+  const handleCheckIn = useCallback(async () => {
+    await grantLocationConsent();
+    // Consent starts the watcher, which resolves a fix asynchronously — the
+    // effect above catches that. When we already have coords (ghost-mode
+    // hydrate, earlier session) nothing re-renders, so centre right now.
+    autoCenteredRef.current = false;
+    if (handleCenterOnMe()) autoCenteredRef.current = true;
+  }, [grantLocationConsent, handleCenterOnMe]);
 
   const handleToggleGhostMode = useCallback(async () => {
     const targetVisibility = locationVisibility === 'off' ? 'friends' : 'off';
@@ -1015,7 +1037,7 @@ export default function CommunityMap() {
                   },
                   pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
                 ]}
-                onPress={grantLocationConsent}
+                onPress={handleCheckIn}
               >
                 <Feather name="navigation" size={16} color={isMonoOnly ? '#000000' : '#ffffff'} />
                 <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '800', color: isMonoOnly ? '#000000' : '#ffffff' }}>

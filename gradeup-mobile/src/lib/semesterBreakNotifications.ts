@@ -1,6 +1,6 @@
 import { cancelAllAttendanceNotifications } from '@/src/attendanceNotifications';
 import { getPostTeachingKind } from '@/src/lib/academicUtils';
-import { getNotificationPrefs, setNotificationPrefs } from '@/src/storage';
+import { getNotificationPrefs } from '@/src/storage';
 import type { SemesterPhase, UserProfile } from '@/src/types';
 
 /** Week-align picker: study (+1), exam (+2), or semester break (+3). */
@@ -23,12 +23,22 @@ export function isUserInSemesterBreak(
   return w <= cap;
 }
 
-/** Turn off class check-in popup and clear scheduled attendance locals. */
+/**
+ * Clear scheduled class check-ins the moment the user aligns into a
+ * post-teaching week.
+ *
+ * Honours "Pause outside lecture weeks": with that switch off the user has
+ * asked for check-ins regardless of phase, and cancelling here would only be
+ * undone by the next reschedule.
+ *
+ * The `attendanceCheckinPopup` preference is deliberately left alone —
+ * `rescheduleAttendanceNotifications` derives the break from the calendar and
+ * keeps check-ins off for as long as it lasts, so aligning back to a teaching
+ * week restores them instead of leaving the switch silently flipped off forever.
+ */
 export async function disableClassNotificationsForSemesterBreak(): Promise<void> {
-  const prefs = await getNotificationPrefs();
-  if (prefs.attendanceCheckinPopup) {
-    await setNotificationPrefs({ ...prefs, attendanceCheckinPopup: false });
-  }
+  const prefs = await getNotificationPrefs().catch(() => null);
+  if (prefs && !prefs.pauseAttendanceOutsideLecturePeriods) return;
   await cancelAllAttendanceNotifications();
 }
 

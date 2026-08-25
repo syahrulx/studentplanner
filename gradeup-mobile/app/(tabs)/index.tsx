@@ -1264,8 +1264,10 @@ export default function Dashboard() {
     return `${T('week')} ${homeTeachingWeek}`;
   }, [semesterPhase, user.isBreak, user.currentWeek, academicCalendar?.totalWeeks, homeTeachingWeek, T]);
 
-  const showWeekAlignEdit =
-    Boolean(academicCalendar?.startDate) && semesterPhase === 'teaching' && !user.isBreak;
+  // Shown in every phase, not just mid-teaching: break / study / exam weeks are
+  // exactly when the derived week is most likely wrong, and hiding the pencil
+  // there left no way back to the week-align picker from Home.
+  const showWeekAlignEdit = true;
 
   const onWeekAlignPress = useCallback(() => {
     if (!academicCalendar?.startDate) {
