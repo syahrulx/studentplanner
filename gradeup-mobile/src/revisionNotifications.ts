@@ -12,6 +12,8 @@ const REVISION_ID_PREFIX = 'revision-';
 const LEGACY_REVISION_MAIN_ID = 'revision-main';
 const REVISION_POSTPONE_ID = 'revision-postpone';
 const CHANNEL_ID = 'revision';
+/** Share of the 64 pending local notifications iOS allows per app. */
+const MAX_REVISION_NOTIFICATIONS = 4;
 
 /** Settings saved while signed out have no DB id; they still get their own stable slot. */
 function notifIdForSetting(settingId: string | undefined): string {
@@ -83,14 +85,24 @@ export async function cancelRevisionNotification(settingId: string | undefined):
  */
 export async function rescheduleAllRevisionNotifications(list: RevisionSettings[]): Promise<void> {
   await cancelStudyTimeReminders();
+  let used = 0;
   for (const settings of list) {
     if (!settings.enabled) continue;
-    await scheduleRevisionNotification(settings);
+    // Share of the 64 pending-notification limit iOS enforces. The list is
+    // newest-first, so the most recently created study times win. The busiest
+    // account in production has 3, so this bites nobody today — it just stops
+    // study times from crowding out class check-ins and task reminders.
+    if (used >= MAX_REVISION_NOTIFICATIONS) break;
+    // Count only what actually took a slot. A "once" study time whose date has
+    // passed schedules nothing, and the DB is full of them — counting those
+    // would have spent the whole budget on dead rows and dropped the live
+    // recurring reminder underneath them.
+    if (await scheduleRevisionNotification(settings)) used += 1;
   }
 }
 
 /** Schedule notification from revision settings (once = single date, repeated = daily or weekly). */
-export async function scheduleRevisionNotification(settings: RevisionSettings): Promise<void> {
+export async function scheduleRevisionNotification(settings: RevisionSettings): Promise<boolean> {
   // Android drops notifications posted to a channel that doesn't exist yet. The
   // channel used to be created only when enabling a study time, so scheduling
   // from any other path — the app-load rebuild, or signing in on a new device —
@@ -125,8 +137,10 @@ export async function scheduleRevisionNotification(settings: RevisionSettings): 
           channelId: CHANNEL_ID,
         },
       });
+      return true;
     }
-    return;
+    // Date already passed — nothing scheduled, so it claims no slot.
+    return false;
   }
   if (settings.day === 'Every day') {
     await Notifications.scheduleNotificationAsync({
@@ -153,6 +167,8 @@ export async function scheduleRevisionNotification(settings: RevisionSettings): 
       },
     });
   }
+  // Daily and weekly reminders recur, so each one holds a slot for good.
+  return true;
 }
 
 /** Schedule a one-time revision reminder (for postpone, minutes from now). */

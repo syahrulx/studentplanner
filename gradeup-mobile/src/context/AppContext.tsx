@@ -611,6 +611,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
+  /**
+   * Re-seed task and study reminders on every return to the foreground.
+   *
+   * Both are now booked only a short way ahead so they fit the 64 pending
+   * notifications iOS allows per app — which means something has to claim the
+   * next batch of slots as time moves on. Kept separate from the attendance
+   * listener above: that one bails out when the timetable is empty, and these
+   * two have nothing to do with having classes.
+   */
+  const tasksForNotifRef = useRef<Task[]>([]);
+  const revisionListForNotifRef = useRef<RevisionSettings[]>([]);
+  useEffect(() => {
+    tasksForNotifRef.current = tasks;
+  }, [tasks]);
+  useEffect(() => {
+    revisionListForNotifRef.current = revisionSettingsList;
+  }, [revisionSettingsList]);
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      // Skip while a list is still empty. Resuming before the first load lands
+      // would otherwise cancel every reminder and re-schedule nothing. An
+      // emptied list is already handled where it is emptied, and the load path
+      // rebuilds both from the database anyway.
+      const pendingTasks = tasksForNotifRef.current;
+      if (pendingTasks.length > 0) {
+        void rescheduleAllTaskNotifications(pendingTasks).catch(() => {});
+      }
+      const pendingRevision = revisionListForNotifRef.current;
+      if (pendingRevision.length > 0) {
+        void rescheduleAllRevisionNotifications(pendingRevision).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   /** Recompute teaching week when the app returns to foreground (e.g. new calendar day). */
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {

@@ -20,11 +20,17 @@ const CHANNEL_ATTENDANCE = 'attendance_checkin_v2';
 const CHANNEL_ATTENDANCE_SILENT = 'attendance_checkin_silent_v1';
 const ID_PREFIX = 'attendance-';
 
-// iOS caps pending local notifications at 64 per app. Leave headroom for task +
-// revision + push schedules so auto-generated (UiTM) timetables — which expand
-// to many occurrences across the horizon — don't silently drop the soonest
-// classes once the budget is exhausted. We keep the NEAREST occurrences.
-const MAX_ATTENDANCE_NOTIFICATIONS = 40;
+// iOS caps pending local notifications at 64 per app and silently drops the
+// overflow, so every module works to a share of that: attendance 24, tasks 24,
+// revision 4, weekly/timer/postpone 3 — 55 of 64, with headroom to spare.
+//
+// A check-in is only answerable on the day of the class, so booking two weeks
+// ahead was pure waste: a 68-row timetable produced ~136 candidates fighting
+// over 40 slots, and today's classes lost to next week's. Two days is enough —
+// the app re-seeds on every foreground, so tomorrow's arrive tomorrow. The
+// busiest timetable in production has 12 classes in a day, which fits exactly.
+const MAX_ATTENDANCE_NOTIFICATIONS = 24;
+const DEFAULT_ATTENDANCE_HORIZON_DAYS = 2;
 
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 type WeekdayLabel = (typeof WEEKDAY_LABELS)[number];
@@ -377,7 +383,10 @@ export async function rescheduleAttendanceNotifications(
 
       const androidChannelId = CHANNEL_ATTENDANCE;
 
-      const horizonDays = Math.max(1, Math.min(31, Number(opts?.horizonDays ?? 14)));
+      const horizonDays = Math.max(
+        1,
+        Math.min(31, Number(opts?.horizonDays ?? DEFAULT_ATTENDANCE_HORIZON_DAYS)),
+      );
       const now = new Date();
       const today = startOfDay(now);
       const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
