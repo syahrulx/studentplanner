@@ -62,6 +62,14 @@ export interface PostFilters {
 
 // ─── Fetch Posts ─────────────────────────────────────────────────────────────
 
+/**
+ * Quote a value for use inside a PostgREST `or(...)` filter — campus names such as
+ * “Shah Alam (Main Campus)” contain characters that otherwise break the logic tree.
+ */
+function orValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPost[]> {
   const { universityId, campus, campusId, organizationId, date, postType, limit = 50, offset = 0 } = filters;
 
@@ -74,14 +82,16 @@ export async function fetchPosts(filters: PostFilters = {}): Promise<CommunityPo
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
+  // A post with no university is open to everyone, and one with no campus is university-wide —
+  // both must survive a narrower filter, the same way the services feed treats them.
   if (universityId) {
-    query = query.eq('university_id', universityId);
+    query = query.or(`university_id.eq.${orValue(universityId)},university_id.is.null`);
   }
   if (campus) {
-    query = query.eq('campus', campus);
+    query = query.or(`campus.eq.${orValue(campus)},campus.is.null`);
   }
   if (campusId) {
-    query = query.eq('campus_id', campusId);
+    query = query.or(`campus_id.eq.${orValue(campusId)},campus_id.is.null`);
   }
   if (organizationId) {
     query = query.eq('organization_id', organizationId);
