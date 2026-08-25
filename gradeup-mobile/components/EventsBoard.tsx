@@ -124,6 +124,8 @@ export default function EventsBoard() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  /** Set when the last fetch failed, so a broken query can't masquerade as an empty feed. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<PostType | null>(null);
   const [authorityStatus, setAuthorityStatus] = useState<string | null>(null);
   const [showIntroModal, setShowIntroModal] = useState(false);
@@ -190,7 +192,10 @@ export default function EventsBoard() {
     explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni);
 
   useEffect(() => {
-    eventsApi.fetchUniversities().then(setUniversities);
+    eventsApi
+      .fetchUniversities()
+      .then(setUniversities)
+      .catch((e) => console.error('[EventsBoard] fetchUniversities error:', e));
   }, []);
 
   const currentUniToFetch = showFilterModal ? tempUni : activeUni;
@@ -201,10 +206,12 @@ export default function EventsBoard() {
       Promise.all([
         eventsApi.fetchCampuses(currentUniToFetch),
         eventsApi.fetchOrganizations(currentUniToFetch)
-      ]).then(([camps, orgs]) => {
-        setCampuses(camps);
-        setOrganizations(orgs);
-      });
+      ])
+        .then(([camps, orgs]) => {
+          setCampuses(camps);
+          setOrganizations(orgs);
+        })
+        .catch((e) => console.error('[EventsBoard] fetchCampuses/Organizations error:', e));
     } else {
       setCampuses([]);
       setOrganizations([]);
@@ -233,7 +240,17 @@ export default function EventsBoard() {
     holdsCampusModalLockRef.current = false;
     let cancelled = false;
     (async () => {
-      const camps = await eventsApi.fetchCampuses(userUni);
+      let camps: eventsApi.Campus[];
+      try {
+        camps = await eventsApi.fetchCampuses(userUni);
+      } catch (e) {
+        // Fail open to “all campuses” — otherwise the feed stays stuck on the spinner.
+        console.error('[EventsBoard] fetchCampuses error:', e);
+        if (cancelled) return;
+        setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+        setBrowseCampusReady(true);
+        return;
+      }
       if (cancelled) return;
       if (camps.length === 0) {
         setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
@@ -285,6 +302,9 @@ export default function EventsBoard() {
 
   useEffect(() => {
     if (!filterCampusId || !campuses.length) return;
+    // While the filter sheet previews another university, `campuses` belongs to that one —
+    // judging the committed campus against it would silently clear the filter.
+    if (campuses[0].university_id !== activeUni) return;
     if (!campuses.some((c) => c.id === filterCampusId)) setFilterCampusId(null);
   }, [activeUni, campuses, filterCampusId]);
 
@@ -380,10 +400,20 @@ export default function EventsBoard() {
     </Pressable>
   );
 
+  /** True while we still have to resolve the saved browse campus before the first fetch. */
+  const waitingForBrowseCampus =
+    !explicitAnyUniversity && !!userUni && !!userId && !browseCampusReady;
+
+  /** Focus-effect runs — only the newest may clear the spinner. */
+  const loadRunRef = useRef(0);
+  /** Fetches — only the newest may write `posts`, whichever order they resolve in. */
+  const fetchRunRef = useRef(0);
+
   const loadPosts = useCallback(async () => {
-    if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) {
+    if (waitingForBrowseCampus) {
       return;
     }
+    const runId = ++fetchRunRef.current;
     try {
       const data = await eventsApi.fetchPosts({
         postType: filter,
@@ -392,40 +422,49 @@ export default function EventsBoard() {
         organizationId: filterOrgId,
         date: filterDate,
       });
+      if (runId !== fetchRunRef.current) return;
       setPosts(data);
       // Fetch like status for all posts
       if (data.length) {
         const ids = data.map((p) => p.id);
         const liked = await eventsApi.getMyLikes(ids);
+        if (runId !== fetchRunRef.current) return;
         setLikedPostIds(liked);
         const counts = new Map(data.map((p) => [p.id, p.like_count ?? 0]));
         setLikeCounts(counts);
       }
+      setLoadError(null);
     } catch (e) {
       console.error('[EventsBoard] fetchPosts error:', e);
+      if (runId !== fetchRunRef.current) return;
+      setLoadError("Couldn't load posts. Check your connection and try again.");
     }
-  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate, explicitAnyUniversity, userUni, userId, browseCampusReady]);
+  }, [filter, activeUni, filterCampusId, filterOrgId, filterDate, waitingForBrowseCampus]);
 
   const loadAuthority = useCallback(async () => {
-    const status = await eventsApi.getMyAuthorityStatus();
-    setAuthorityStatus(status);
+    try {
+      const status = await eventsApi.getMyAuthorityStatus();
+      setAuthorityStatus(status);
+    } catch (e) {
+      console.error('[EventsBoard] getMyAuthorityStatus error:', e);
+    }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      const runId = ++loadRunRef.current;
       setLoading(true);
+      // Still resolving the browse campus — this effect re-runs once it settles.
+      if (waitingForBrowseCampus) return;
       Promise.all([loadPosts(), loadAuthority()]).finally(() => {
-        if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) {
-          setLoading(true);
-        } else {
-          setLoading(false);
-        }
+        if (runId !== loadRunRef.current) return;
+        setLoading(false);
       });
-    }, [loadPosts, loadAuthority, explicitAnyUniversity, userUni, userId, browseCampusReady])
+    }, [loadPosts, loadAuthority, waitingForBrowseCampus])
   );
 
   const handleRefresh = useCallback(async () => {
-    if (!explicitAnyUniversity && userUni && userId && !browseCampusReady) return;
+    if (waitingForBrowseCampus) return;
     const startedAt = Date.now();
     setRefreshing(true);
     try {
@@ -437,9 +476,32 @@ export default function EventsBoard() {
       }
       setRefreshing(false);
     }
-  }, [loadPosts, explicitAnyUniversity, userUni, userId, browseCampusReady]);
+  }, [loadPosts, waitingForBrowseCampus]);
+
+  const retryLoad = useCallback(() => {
+    const runId = ++loadRunRef.current;
+    setLoading(true);
+    loadPosts().finally(() => {
+      if (runId !== loadRunRef.current) return;
+      setLoading(false);
+    });
+  }, [loadPosts]);
 
   // ─── Active filter chips (advanced) ───────────────────────────────────────
+
+  /**
+   * Browse is always scoped to a university — your own whenever you haven't
+   * picked one. That default has no `filterUniversity` behind it, so it can't
+   * be a clearable chip: clearing would fall straight back to `userUni` and the
+   * chip would return. Surface it as a static scope label instead, so the feed
+   * isn't quietly filtered with nothing on screen saying so. Leaving the scope
+   * is done from the sheet ("Any university"), which has its own chip.
+   */
+  const browseScopeLabel = useMemo(() => {
+    if (explicitAnyUniversity || filterUniversity !== null || !userUni) return null;
+    return universities.find((u) => u.id === userUni)?.name?.toUpperCase() ?? String(userUni).toUpperCase();
+  }, [explicitAnyUniversity, filterUniversity, userUni, universities]);
+
   const activeChips = useMemo(() => {
     const chips: { key: string; label: string; onClear: () => void }[] = [];
     if (explicitAnyUniversity) {
@@ -567,12 +629,20 @@ export default function EventsBoard() {
       </View>
 
       {/* Active advanced filter chips */}
-      {activeChips.length > 0 && (
+      {(browseScopeLabel !== null || activeChips.length > 0) && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsRow}
         >
+          {browseScopeLabel !== null && (
+            <View style={[styles.activeChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Feather name="award" size={11} color={theme.textSecondary} />
+              <Text style={[styles.activeChipText, { color: theme.textSecondary }]} numberOfLines={1}>
+                {browseScopeLabel}
+              </Text>
+            </View>
+          )}
           {activeChips.map((c) => (
             <View
               key={c.key}
@@ -792,6 +862,46 @@ export default function EventsBoard() {
     [theme, user, organizations, likedPostIds, likeCounts]
   );
 
+  // ─── Error State ──────────────────────────────────────────────────────────
+  const ErrorState = (
+    <View style={styles.emptyState}>
+      <View
+        style={[
+          styles.emptyIconWrap,
+          { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+        ]}
+      >
+        <Feather name="alert-circle" size={26} color={theme.textSecondary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>Couldn’t load posts</Text>
+      <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>{loadError}</Text>
+      <Pressable
+        onPress={retryLoad}
+        style={({ pressed }) => [
+          styles.retryBtn,
+          { backgroundColor: theme.primary },
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <Feather name="refresh-cw" size={16} color={theme.textInverse} />
+        <Text style={[styles.retryBtnText, { color: theme.textInverse }]}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+
+  /** Shown above posts that are still on screen from an earlier, successful load. */
+  const ErrorBanner = (
+    <View style={[styles.errorBanner, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+      <Feather name="alert-circle" size={15} color={theme.textSecondary} />
+      <Text style={[styles.errorBannerText, { color: theme.textSecondary }]} numberOfLines={2}>
+        {loadError}
+      </Text>
+      <Pressable onPress={retryLoad} hitSlop={8}>
+        <Text style={[styles.errorBannerAction, { color: theme.primary }]}>Retry</Text>
+      </Pressable>
+    </View>
+  );
+
   // ─── Empty State ──────────────────────────────────────────────────────────
   const Empty = (
     <View style={styles.emptyState}>
@@ -838,7 +948,12 @@ export default function EventsBoard() {
           renderItem={renderCard}
           style={{ backgroundColor: theme.background }}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={Header}
+          ListHeaderComponent={
+            <>
+              {Header}
+              {loadError && posts.length > 0 ? ErrorBanner : null}
+            </>
+          }
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical
           overScrollMode="always"
@@ -851,7 +966,7 @@ export default function EventsBoard() {
               progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
             />
           }
-          ListEmptyComponent={Empty}
+          ListEmptyComponent={loadError ? ErrorState : Empty}
         />
       )}
       {refreshing && (
@@ -1321,7 +1436,8 @@ export default function EventsBoard() {
               ]}
               onPress={() => {
                 setExplicitAnyUniversity(tempExplicitAnyUniversity);
-                setFilterUniversity(tempUni || null);
+                // Your own university is the implicit default — keep it out of the chip row.
+                setFilterUniversity(tempUni && tempUni !== userUni ? tempUni : null);
                 setFilterCampusId(tempCampusId || null);
                 setFilterOrgId(tempOrgId || null);
                 setFilterDate(tempDate);
@@ -1684,6 +1800,31 @@ const styles = StyleSheet.create({
     maxWidth: 280,
     letterSpacing: -0.1,
   },
+  retryBtn: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+
+  // Error banner (posts already on screen)
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  errorBannerText: { flex: 1, fontSize: 13, letterSpacing: -0.1 },
+  errorBannerAction: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
 
   // Modal / Sheet
   modalOverlay: {
