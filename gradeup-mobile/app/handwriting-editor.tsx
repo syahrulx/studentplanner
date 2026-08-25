@@ -5,6 +5,7 @@ import {
   AppState,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -68,6 +69,7 @@ import {
   type HandwritingToolSettings,
 } from '@/src/lib/handwritingTypes';
 import { getNoteAttachmentUrl, uploadNoteAttachment } from '@/src/lib/noteStorage';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
 import { invokeAiGenerate, type AiGenerateChatResult, type AiGenerateHandwritingResult } from '@/src/lib/invokeAiGenerate';
@@ -374,6 +376,7 @@ export default function HandwritingEditor() {
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageRatios, setPdfPageRatios] = useState<Record<number, number>>({});
   const [exporting, setExporting] = useState(false);
+  const [addingImage, setAddingImage] = useState(false);
   const [showInsertPage, setShowInsertPage] = useState(false);
   const [showToolOptions, setShowToolOptions] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -925,23 +928,76 @@ export default function HandwritingEditor() {
   }, [activePage, color, textObjectDraft, updatePageElements]);
 
   const addImageObject = useCallback(async () => {
-    if (!activePage || !uidRef.current || !noteId) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    const id = `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const extension = (asset.fileName?.split('.').pop() || 'jpg').replace(/[^a-z0-9]/gi, '');
-    const uploaded = await uploadNoteAttachment(uidRef.current, noteId, asset.uri, `handwriting-${id}.${extension}`, asset.mimeType ?? 'image/jpeg');
-    if (uploaded.error || !uploaded.path) {
-      Alert.alert('Image not added', 'The private image upload failed. Your existing note was not changed.');
+    if (addingImage) return;
+    if (!canEdit) {
+      Alert.alert('Editing unavailable', 'Image insertion is available for Plus and Pro notes.');
       return;
     }
-    updatePageElements(activePage.id, [...(activePage.elements ?? []), {
-      id, type: 'image', x: 0.15, y: 0.15, width: 0.5, height: 0.3,
-      storagePath: uploaded.path, localUri: asset.uri, updatedAt: new Date().toISOString(),
-    }]);
-    setTool('lasso');
-  }, [activePage, noteId, updatePageElements]);
+    if (!activePage || !noteId) {
+      Alert.alert('Image not added', 'The note is still loading. Please try again in a moment.');
+      return;
+    }
+
+    try {
+      const allowed = await ensureImageLibraryAccessForPicker();
+      if (!allowed) {
+        Alert.alert(
+          'Photo permission needed',
+          'Allow Rencana to access your photos so you can insert an image into this note.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => { void Linking.openSettings(); } },
+          ],
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      let uid = uidRef.current;
+      if (!uid) {
+        const { data: { session } } = await supabase.auth.getSession();
+        uid = session?.user?.id ?? null;
+        uidRef.current = uid;
+      }
+      if (!uid) {
+        Alert.alert('Sign in required', 'Sign in again before adding a private image to this note.');
+        return;
+      }
+
+      setAddingImage(true);
+      const asset = result.assets[0];
+      const id = `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const extension = (asset.fileName?.split('.').pop() || asset.mimeType?.split('/').pop() || 'jpg')
+        .replace(/[^a-z0-9]/gi, '') || 'jpg';
+      const uploaded = await uploadNoteAttachment(
+        uid,
+        noteId,
+        asset.uri,
+        `handwriting-${id}.${extension}`,
+        asset.mimeType ?? 'image/jpeg',
+      );
+      if (uploaded.error || !uploaded.path) {
+        Alert.alert('Image not added', 'The private image upload failed. Check your connection and try again. Your existing note was not changed.');
+        return;
+      }
+      updatePageElements(activePage.id, [...(activePage.elements ?? []), {
+        id, type: 'image', x: 0.15, y: 0.15, width: 0.5, height: 0.3,
+        storagePath: uploaded.path, localUri: asset.uri, updatedAt: new Date().toISOString(),
+      }]);
+      setTool('lasso');
+    } catch (error) {
+      if (__DEV__) console.warn('[Handwriting] image insertion failed', error);
+      Alert.alert('Image not added', 'Rencana could not open or upload that image. Please try another image.');
+    } finally {
+      setAddingImage(false);
+    }
+  }, [activePage, addingImage, canEdit, noteId, updatePageElements]);
 
   const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
     setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
@@ -1740,15 +1796,24 @@ export default function HandwritingEditor() {
               </View>
             </Pressable>
             <Pressable
+              disabled={addingImage}
               onPress={() => { setShowMoreMenu(false); void addImageObject(); }}
-              style={[styles.moreMenuRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+              style={[
+                styles.moreMenuRow,
+                { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
+                addingImage && { opacity: 0.55 },
+              ]}
             >
-              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}>
-                <Feather name="image" size={17} color={theme.primary} />
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}> 
+                {addingImage
+                  ? <ActivityIndicator size="small" color={theme.primary} />
+                  : <Feather name="image" size={17} color={theme.primary} />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Add image</Text>
-                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Stored privately with this note</Text>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>{addingImage ? 'Adding image…' : 'Add image'}</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>
+                  {addingImage ? 'Uploading securely' : 'Stored privately with this note'}
+                </Text>
               </View>
             </Pressable>
             <Pressable

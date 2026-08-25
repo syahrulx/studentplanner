@@ -1337,7 +1337,14 @@ export default function Planner() {
             ? 'rgba(245,158,11,0.22)'
             : theme.border;
     return (
-      <View key={`card-${idx}`} style={[s.taskCardShell, isBreakdownStep && s.breakdownStepShell]}>
+      <View
+        key={`card-${idx}`}
+        style={[
+          s.taskCardShell,
+          view !== 'all' && s.taskCardShellSpaced,
+          isBreakdownStep && s.breakdownStepShell,
+        ]}
+      >
         <Pressable
           onPress={(e) => { e.stopPropagation(); handleItemAction(item); }}
           style={[
@@ -3227,6 +3234,11 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     alignSelf: 'stretch',
     alignItems: 'stretch',
     justifyContent: 'center',
+  },
+  taskCardShellSpaced: {
+    // Day/week stacks do not have the outer row spacing used by the All view.
+    // Leave enough air to separate cards without breaking the step connector.
+    marginBottom: 10,
   },
   // Steps are deliberately smaller than their parent: spreading them across
   // days means a 4-step breakdown lands in 4 separate date groups, and at full

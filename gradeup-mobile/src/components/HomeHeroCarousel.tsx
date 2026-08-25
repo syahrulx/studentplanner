@@ -23,20 +23,29 @@ export function HomeHeroCarousel({
   dotColor,
   dotActiveColor,
   horizontalMargin = 20,
+  header,
+  footer,
 }: {
   pages: React.ReactNode[];
   dotColor: string;
   dotActiveColor: string;
   /** Must match the surrounding section margin so pages line up with the page gutter. */
   horizontalMargin?: number;
+  /** Fixed slots may react to the selected page without moving with it. */
+  header?: React.ReactNode | ((index: number) => React.ReactNode);
+  footer?: React.ReactNode | ((index: number) => React.ReactNode);
 }) {
   const { width } = useWindowDimensions();
+  const [measuredWidth, setMeasuredWidth] = useState(0);
   const [index, setIndex] = useState(0);
   const lastIndex = useRef(0);
   // A page is the full screen width with the gutter *inside* it. Insetting the
   // scroll content instead would leave a sliver of the neighbouring page
   // showing at the screen edge, with its text clipped mid-word.
-  const pageWidth = Math.max(1, width);
+  // On phones the carousel fills the screen. On tablets it can also live in a
+  // dashboard column, so measure the actual container instead of always
+  // snapping by the full window width.
+  const pageWidth = Math.max(1, measuredWidth || width);
 
   const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
@@ -48,15 +57,24 @@ export function HomeHeroCarousel({
 
   const visible = pages.filter(Boolean);
   if (visible.length === 0) return null;
+  const fixedHeader = typeof header === 'function' ? header(index) : header;
+  const fixedFooter = typeof footer === 'function' ? footer(index) : footer;
 
   // One page: render it plainly. A paging ScrollView here would add scroll
   // handling and a stray dot for no reason.
   if (visible.length === 1) {
-    return <View style={{ marginHorizontal: horizontalMargin }}>{visible[0]}</View>;
+    return (
+      <View>
+        {fixedHeader}
+        <View style={{ marginHorizontal: horizontalMargin }}>{visible[0]}</View>
+        {fixedFooter}
+      </View>
+    );
   }
 
   return (
-    <View>
+    <View onLayout={(event) => setMeasuredWidth(event.nativeEvent.layout.width)}>
+      {fixedHeader}
       {/* Deliberately not `pagingEnabled`: that snaps to the ScrollView's own
           width (the full screen), but a page here is the screen minus both
           gutters, so the two fight and every swipe drifts. snapToInterval is
@@ -77,6 +95,8 @@ export function HomeHeroCarousel({
           </View>
         ))}
       </ScrollView>
+
+      {fixedFooter}
 
       <View style={styles.dots}>
         {visible.map((_, dotIndex) => (

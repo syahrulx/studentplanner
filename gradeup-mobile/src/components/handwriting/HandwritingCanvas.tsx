@@ -44,6 +44,9 @@ interface Props {
   onConvertSelection?: (captureDataUri: string, bounds: NormalizedBounds, strokes: HandwritingStroke[]) => void;
 }
 
+type ResizeCorner = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+type ElementFrame = { x: number; y: number; width: number; height: number };
+
 function PageElement({
   element,
   selected,
@@ -52,6 +55,7 @@ function PageElement({
   canvasHeight,
   onSelect,
   onMove,
+  onResize,
 }: {
   element: HandwritingElement;
   selected: boolean;
@@ -60,9 +64,11 @@ function PageElement({
   canvasHeight: number;
   onSelect: () => void;
   onMove: (x: number, y: number) => void;
+  onResize: (frame: ElementFrame) => void;
 }) {
   const [remoteUri, setRemoteUri] = useState<string | null>(null);
-  const startRef = useRef({ x: element.x, y: element.y });
+  const [previewFrame, setPreviewFrame] = useState<ElementFrame | null>(null);
+  const startRef = useRef<ElementFrame>({ x: element.x, y: element.y, width: element.width, height: element.height });
   useEffect(() => {
     let active = true;
     if (!element.storagePath) { setRemoteUri(null); return; }
@@ -74,21 +80,75 @@ function PageElement({
   const responder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => editable,
     onMoveShouldSetPanResponder: (_event, gesture) => editable && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 3,
-    onPanResponderGrant: () => { startRef.current = { x: element.x, y: element.y }; onSelect(); },
+    onPanResponderGrant: () => {
+      startRef.current = { x: element.x, y: element.y, width: element.width, height: element.height };
+      onSelect();
+    },
     onPanResponderRelease: (_event, gesture) => {
       onMove(
-        clampPoint(startRef.current.x + gesture.dx / Math.max(1, canvasWidth)),
-        clampPoint(startRef.current.y + gesture.dy / Math.max(1, canvasHeight)),
+        Math.max(0, Math.min(1 - element.width, startRef.current.x + gesture.dx / Math.max(1, canvasWidth))),
+        Math.max(0, Math.min(1 - element.height, startRef.current.y + gesture.dy / Math.max(1, canvasHeight))),
       );
     },
-  }), [canvasHeight, canvasWidth, editable, element.x, element.y, onMove, onSelect]);
+  }), [canvasHeight, canvasWidth, editable, element.height, element.width, element.x, element.y, onMove, onSelect]);
+  const resizeResponders = useMemo(() => {
+    const frameForGesture = (corner: ResizeCorner, dxPixels: number, dyPixels: number): ElementFrame => {
+      const start = startRef.current;
+      const dx = dxPixels / Math.max(1, canvasWidth);
+      const dy = dyPixels / Math.max(1, canvasHeight);
+      const minWidth = 0.06;
+      const minHeight = 0.04;
+      const originalRight = start.x + start.width;
+      const originalBottom = start.y + start.height;
+      const movesLeft = corner === 'topLeft' || corner === 'bottomLeft';
+      const movesTop = corner === 'topLeft' || corner === 'topRight';
+      const left = movesLeft
+        ? Math.max(0, Math.min(originalRight - minWidth, start.x + dx))
+        : start.x;
+      const right = movesLeft
+        ? originalRight
+        : Math.min(1, Math.max(start.x + minWidth, originalRight + dx));
+      const top = movesTop
+        ? Math.max(0, Math.min(originalBottom - minHeight, start.y + dy))
+        : start.y;
+      const bottom = movesTop
+        ? originalBottom
+        : Math.min(1, Math.max(start.y + minHeight, originalBottom + dy));
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    };
+    const create = (corner: ResizeCorner) => PanResponder.create({
+      onStartShouldSetPanResponder: () => editable,
+      onMoveShouldSetPanResponder: () => editable,
+      onPanResponderGrant: () => {
+        startRef.current = { x: element.x, y: element.y, width: element.width, height: element.height };
+        setPreviewFrame(startRef.current);
+        onSelect();
+      },
+      onPanResponderMove: (_event, gesture) => {
+        setPreviewFrame(frameForGesture(corner, gesture.dx, gesture.dy));
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        const next = frameForGesture(corner, gesture.dx, gesture.dy);
+        setPreviewFrame(null);
+        onResize(next);
+      },
+      onPanResponderTerminate: () => setPreviewFrame(null),
+    });
+    return {
+      topLeft: create('topLeft'),
+      topRight: create('topRight'),
+      bottomLeft: create('bottomLeft'),
+      bottomRight: create('bottomRight'),
+    };
+  }, [canvasHeight, canvasWidth, editable, element.height, element.width, element.x, element.y, onResize, onSelect]);
   const uri = remoteUri || element.localUri;
+  const frame = previewFrame ?? element;
   return (
     <View
       {...(editable ? responder.panHandlers : {})}
       style={{
-        position: 'absolute', left: element.x * canvasWidth, top: element.y * canvasHeight,
-        width: element.width * canvasWidth, height: element.height * canvasHeight,
+        position: 'absolute', left: frame.x * canvasWidth, top: frame.y * canvasHeight,
+        width: frame.width * canvasWidth, height: frame.height * canvasHeight,
         transform: [{ rotate: `${element.rotation ?? 0}deg` }],
         borderWidth: selected ? 1.5 : 0, borderColor: '#2563eb', borderStyle: 'dashed',
       }}
@@ -104,6 +164,15 @@ function PageElement({
           <View style={[styles.fill, styles.missingImage]}><Text style={styles.missingImageText}>Image unavailable</Text></View>
         )}
       </Pressable>
+      {selected && editable ? (Object.keys(resizeResponders) as ResizeCorner[]).map((corner) => (
+        <View
+          key={corner}
+          {...resizeResponders[corner].panHandlers}
+          style={[styles.elementResizeHandle, styles[corner]]}
+        >
+          <View style={styles.resizeDot} />
+        </View>
+      )) : null}
     </View>
   );
 }
@@ -593,6 +662,8 @@ export default function HandwritingCanvas({
   const lassoStartRef = useRef<HandwritingPoint | null>(null);
   const selectionOriginRef = useRef<HandwritingStroke[]>([]);
   const selectionModeRef = useRef<'select' | 'move' | 'resize'>('select');
+  const selectionStartBoundsRef = useRef<NormalizedBounds | null>(null);
+  const selectionResizeCornerRef = useRef<ResizeCorner | null>(null);
   const elementMoveRef = useRef<{ id: string; start: HandwritingPoint; x: number; y: number } | null>(null);
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<Set<string>>(new Set());
   const [selectionBounds, setSelectionBounds] = useState<NormalizedBounds | null>(null);
@@ -615,6 +686,48 @@ export default function HandwritingCanvas({
     setLassoBounds(null);
     setSelectedElementId(null);
   }, [page.id]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedStrokeIds(new Set());
+    setSelectionBounds(null);
+    setLassoBounds(null);
+    setSelectedElementId(null);
+    lassoStartRef.current = null;
+    elementMoveRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (tool !== 'lasso') clearSelection();
+  }, [clearSelection, tool]);
+
+  const handleCanvasTap = useCallback((x: number, y: number) => {
+    if (tool !== 'lasso') return;
+
+    // The selection command strip lives at the top of the paper. Let its
+    // Pressables finish without the canvas simultaneously dropping selection.
+    const tappedStrokeActions = selectedStrokeIds.size > 0 && y <= 52;
+    const tappedElementActions = Boolean(selectedElementId) && y <= 52 && x <= 248;
+    if (tappedStrokeActions || tappedElementActions) return;
+
+    const point = {
+      x: clampPoint(x / Math.max(1, sizeRef.current.width)),
+      y: clampPoint(y / Math.max(1, sizeRef.current.height)),
+    };
+    const hitElement = [...displayElements].reverse().find((element) => (
+      point.x >= element.x
+      && point.x <= element.x + element.width
+      && point.y >= element.y
+      && point.y <= element.y + element.height
+    ));
+    if (hitElement) {
+      setSelectedElementId(hitElement.id);
+      setSelectedStrokeIds(new Set());
+      setSelectionBounds(null);
+      return;
+    }
+    if (selectionBounds && selectedStrokeIds.size > 0 && pointInsideBounds(point, selectionBounds)) return;
+    clearSelection();
+  }, [clearSelection, displayElements, selectedElementId, selectedStrokeIds, selectionBounds, tool]);
 
   const updateElement = useCallback((elementId: string, update: Partial<HandwritingElement>) => {
     const next = displayElements.map((element) => element.id === elementId
@@ -758,9 +871,29 @@ export default function HandwritingCanvas({
       setSelectedElementId(null);
       lassoStartRef.current = point;
       selectionOriginRef.current = strokesRef.current;
-      if (selectionBounds && pointInsideBounds(point, selectionBounds)) {
-        const nearResize = Math.hypot(point.x - selectionBounds.right, point.y - selectionBounds.bottom) < 0.055;
-        selectionModeRef.current = nearResize ? 'resize' : 'move';
+      selectionStartBoundsRef.current = selectionBounds;
+      selectionResizeCornerRef.current = null;
+      if (selectionBounds) {
+        const corners: Array<[ResizeCorner, number, number]> = [
+          ['topLeft', selectionBounds.left, selectionBounds.top],
+          ['topRight', selectionBounds.right, selectionBounds.top],
+          ['bottomLeft', selectionBounds.left, selectionBounds.bottom],
+          ['bottomRight', selectionBounds.right, selectionBounds.bottom],
+        ];
+        const nearest = corners
+          .map(([corner, x, y]) => ({ corner, distance: Math.hypot(point.x - x, point.y - y) }))
+          .sort((a, b) => a.distance - b.distance)[0];
+        if (nearest && nearest.distance < 0.05) {
+          selectionModeRef.current = 'resize';
+          selectionResizeCornerRef.current = nearest.corner;
+        } else if (pointInsideBounds(point, selectionBounds)) {
+          selectionModeRef.current = 'move';
+        } else {
+          selectionModeRef.current = 'select';
+          setSelectedStrokeIds(new Set());
+          setSelectionBounds(null);
+          setLassoBounds(boundsFromPoints(point, point));
+        }
       } else {
         selectionModeRef.current = 'select';
         setSelectedStrokeIds(new Set());
@@ -820,13 +953,30 @@ export default function HandwritingCanvas({
         setLassoBounds(boundsFromPoints(start, rawPoint));
         return;
       }
-      if (!selectionBounds || !selectedStrokeIds.size) return;
+      const startBounds = selectionStartBoundsRef.current;
+      if (!startBounds || !selectedStrokeIds.size) return;
       const dx = rawPoint.x - start.x;
       const dy = rawPoint.y - start.y;
-      const selectionWidth = Math.max(0.001, selectionBounds.right - selectionBounds.left);
-      const selectionHeight = Math.max(0.001, selectionBounds.bottom - selectionBounds.top);
-      const scaleX = selectionModeRef.current === 'resize' ? Math.max(0.2, (selectionWidth + dx) / selectionWidth) : 1;
-      const scaleY = selectionModeRef.current === 'resize' ? Math.max(0.2, (selectionHeight + dy) / selectionHeight) : 1;
+      const selectionWidth = Math.max(0.001, startBounds.right - startBounds.left);
+      const selectionHeight = Math.max(0.001, startBounds.bottom - startBounds.top);
+      const corner = selectionResizeCornerRef.current ?? 'bottomRight';
+      const movesLeft = corner === 'topLeft' || corner === 'bottomLeft';
+      const movesTop = corner === 'topLeft' || corner === 'topRight';
+      const minSize = 0.015;
+      const targetLeft = selectionModeRef.current === 'resize' && movesLeft
+        ? Math.max(0, Math.min(startBounds.right - minSize, startBounds.left + dx))
+        : startBounds.left;
+      const targetRight = selectionModeRef.current === 'resize' && !movesLeft
+        ? Math.min(1, Math.max(startBounds.left + minSize, startBounds.right + dx))
+        : startBounds.right;
+      const targetTop = selectionModeRef.current === 'resize' && movesTop
+        ? Math.max(0, Math.min(startBounds.bottom - minSize, startBounds.top + dy))
+        : startBounds.top;
+      const targetBottom = selectionModeRef.current === 'resize' && !movesTop
+        ? Math.min(1, Math.max(startBounds.top + minSize, startBounds.bottom + dy))
+        : startBounds.bottom;
+      const scaleX = (targetRight - targetLeft) / selectionWidth;
+      const scaleY = (targetBottom - targetTop) / selectionHeight;
       const next = selectionOriginRef.current.map((stroke) => {
         if (!selectedStrokeIds.has(stroke.id)) return stroke;
         return {
@@ -835,10 +985,10 @@ export default function HandwritingCanvas({
             ...candidate,
             x: selectionModeRef.current === 'move'
               ? candidate.x + dx
-              : selectionBounds.left + (candidate.x - selectionBounds.left) * scaleX,
+              : targetLeft + (candidate.x - startBounds.left) * scaleX,
             y: selectionModeRef.current === 'move'
               ? candidate.y + dy
-              : selectionBounds.top + (candidate.y - selectionBounds.top) * scaleY,
+              : targetTop + (candidate.y - startBounds.top) * scaleY,
           })),
         };
       });
@@ -905,6 +1055,8 @@ export default function HandwritingCanvas({
         onChange(strokesRef.current);
       }
       lassoStartRef.current = null;
+      selectionStartBoundsRef.current = null;
+      selectionResizeCornerRef.current = null;
       gestureAcceptedRef.current = false;
       return;
     }
@@ -967,6 +1119,8 @@ export default function HandwritingCanvas({
     }
     activeStrokeIdRef.current = null;
     lassoStartRef.current = null;
+    selectionStartBoundsRef.current = null;
+    selectionResizeCornerRef.current = null;
     elementMoveRef.current = null;
     setLassoBounds(null);
     gestureAcceptedRef.current = false;
@@ -985,11 +1139,17 @@ export default function HandwritingCanvas({
           stateManager.fail();
           return;
         }
-        if (event.pointerType === PointerType.STYLUS || fingerDrawing || tool === 'lasso') {
+        // Lasso waits for actual movement. This leaves a stationary touch free
+        // to become the outside-tap gesture that releases a selection.
+        if (tool === 'lasso') return;
+        if (event.pointerType === PointerType.STYLUS || fingerDrawing) {
           stateManager.activate();
           return;
         }
         stateManager.fail();
+      })
+      .onTouchesMove((event, stateManager) => {
+        if (tool === 'lasso' && event.numberOfTouches === 1) stateManager.activate();
       })
       .onStart((event) => {
         runOnJS(startGesture)(event);
@@ -1007,6 +1167,16 @@ export default function HandwritingCanvas({
     if (simultaneousGestures?.length) gesture.simultaneousWithExternalGesture(...simultaneousGestures);
     return gesture;
   }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onElementsChange, onToolGestureEnd, onStylusDoubleTap, selectedStrokeIds, selectionBounds, lassoBounds, displayElements, renderLiveStroke]);
+
+  const tap = useMemo(() => Gesture.Tap()
+    .enabled(!disabled && tool === 'lasso')
+    .maxDistance(8)
+    .maxDuration(300)
+    .onEnd((event, success) => {
+      if (success) runOnJS(handleCanvasTap)(event.x, event.y);
+    }), [disabled, handleCanvasTap, tool]);
+
+  const canvasGesture = useMemo(() => Gesture.Exclusive(pan, tap), [pan, tap]);
 
   const updateSelection = (kind: 'left' | 'right' | 'up' | 'down' | 'smaller' | 'larger' | 'rotateLeft' | 'rotateRight' | 'recolor' | 'thinner' | 'thicker' | 'duplicate' | 'delete') => {
     if (!selectedStrokeIds.size || !selectionBounds) return;
@@ -1092,7 +1262,7 @@ export default function HandwritingCanvas({
   };
 
   return (
-    <GestureDetector gesture={pan}>
+    <GestureDetector gesture={canvasGesture}>
       <View
         ref={canvasRef}
         style={styles.fill}
@@ -1137,6 +1307,7 @@ export default function HandwritingCanvas({
             canvasHeight={canvasSize.height}
             onSelect={() => { setSelectedElementId(element.id); setSelectedStrokeIds(new Set()); setSelectionBounds(null); }}
             onMove={(x, y) => updateElement(element.id, { x, y })}
+            onResize={(frame) => updateElement(element.id, frame)}
           />
         ))}
         {!capturingSelection && tool === 'lasso' && (lassoBounds || selectionBounds) ? (
@@ -1153,6 +1324,25 @@ export default function HandwritingCanvas({
             ]}
           />
         ) : null}
+        {!capturingSelection && tool === 'lasso' && !lassoBounds && selectionBounds && selectedStrokeIds.size > 0
+          ? ([
+            ['topLeft', selectionBounds.left, selectionBounds.top],
+            ['topRight', selectionBounds.right, selectionBounds.top],
+            ['bottomLeft', selectionBounds.left, selectionBounds.bottom],
+            ['bottomRight', selectionBounds.right, selectionBounds.bottom],
+          ] as Array<[ResizeCorner, number, number]>).map(([corner, x, y]) => (
+            <View
+              key={`lasso-${corner}`}
+              pointerEvents="none"
+              style={[
+                styles.lassoResizeHandle,
+                { left: x * canvasSize.width - 15, top: y * canvasSize.height - 15 },
+              ]}
+            >
+              <View style={styles.resizeDot} />
+            </View>
+          ))
+          : null}
         {!capturingSelection && tool === 'lasso' && selectedStrokeIds.size > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectionActions} contentContainerStyle={styles.selectionActionsContent}>
             {([
@@ -1216,6 +1406,41 @@ const styles = StyleSheet.create({
   selectionTextButton: { width: 46 },
   selectionTextLabel: { color: '#93c5fd', fontSize: 11, fontWeight: '900' },
   elementActions: { flexDirection: 'row', right: undefined, width: 224, paddingHorizontal: 6, gap: 4 },
+  elementResizeHandle: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  lassoResizeHandle: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  // Keep most of the touch target inside the element so iOS and Android do
+  // not clip the responder while the visible dot still sits on its corner.
+  topLeft: { left: -8, top: -8 },
+  topRight: { right: -8, top: -8 },
+  bottomLeft: { left: -8, bottom: -8 },
+  bottomRight: { right: -8, bottom: -8 },
+  resizeDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#2563eb',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  },
   missingImage: { backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
   missingImageText: { color: '#64748b', fontSize: 10, fontWeight: '700' },
 });
