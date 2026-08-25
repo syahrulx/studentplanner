@@ -12,9 +12,10 @@ import {
   KeyboardAvoidingView,
   FlatList,
   Switch,
+  useWindowDimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,7 +35,13 @@ import type { SharedTask, Course } from '@/src/types';
 import { TaskType } from '@/src/types';
 import { fetchTaskCategories, type TaskCategory } from '@/src/lib/taskCategoriesApi';
 import { useTranslations } from '@/src/i18n';
-import { getSharedTaskParticipants } from '@/src/lib/communityApi';
+import {
+  getSharedBreakdownSteps,
+  getSharedTaskParticipants,
+  setSharedBreakdownStepCompletion,
+  subscribeToSharedBreakdown,
+} from '@/src/lib/communityApi';
+import type { Task } from '@/src/types';
 
 const NAVY = '#003366';
 const BG = '#f8fafc';
@@ -78,6 +85,7 @@ export default function TaskDetails() {
   const themePack = useThemePack();
   const isNeutralPack = useDarkMinimalThemePack();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const {
     friendsWithStatus: allFriends,
     circles,
@@ -104,7 +112,7 @@ export default function TaskDetails() {
   // ── Breakdown context ───────────────────────────────────────────────────────
   // Steps belonging to this task, or the parent this task is a step of. Shared
   // tasks are excluded: a breakdown belongs to the owner, not the recipient.
-  const breakdownSteps = useMemo(
+  const localBreakdownSteps = useMemo(
     () => (!task || isReadOnlySharedTask
       ? []
       : tasks
@@ -118,7 +126,7 @@ export default function TaskDetails() {
   );
   /** Only offer a breakdown on an editable parent task that has no steps yet. */
   const canBreakIntoSteps = Boolean(
-    task && !isReadOnlySharedTask && !task.parentTaskId && breakdownSteps.length === 0,
+    task && !isReadOnlySharedTask && !task.parentTaskId && localBreakdownSteps.length === 0,
   );
 
   // ── Local edit state ────────────────────────────────────────────────────────
@@ -144,6 +152,8 @@ export default function TaskDetails() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [participants, setParticipants] = useState<SharedTask[]>([]);
+  const [remoteBreakdownSteps, setRemoteBreakdownSteps] = useState<Task[]>([]);
+  const [updatingStepId, setUpdatingStepId] = useState<string | null>(null);
 
   const titleRef = useRef<TextInput>(null);
   const notesRef = useRef<TextInput>(null);
@@ -164,6 +174,26 @@ export default function TaskDetails() {
     setLocalDueDate(task.dueDate);
     setLocalDueTime(task.dueTime || '23:59');
   }, [task?.id]);
+
+  const refreshRemoteBreakdown = useCallback(() => {
+    if (!task?.id || task.parentTaskId) return;
+    getSharedBreakdownSteps(task.id, sharedTaskRecord?.owner_id ?? communityUserId ?? undefined)
+      .then(setRemoteBreakdownSteps)
+      .catch(() => {});
+  }, [communityUserId, sharedTaskRecord?.owner_id, task?.id, task?.parentTaskId]);
+
+  useEffect(() => {
+    if (!task?.id || task.parentTaskId) return;
+    refreshRemoteBreakdown();
+    return subscribeToSharedBreakdown(task.id, refreshRemoteBreakdown);
+  }, [refreshRemoteBreakdown, task?.id, task?.parentTaskId]);
+
+  const breakdownSteps = useMemo(() => {
+    if (isReadOnlySharedTask) return remoteBreakdownSteps;
+    if (remoteBreakdownSteps.length === 0) return localBreakdownSteps;
+    const remoteById = new Map(remoteBreakdownSteps.map((step) => [step.id, step]));
+    return localBreakdownSteps.map((step) => remoteById.get(step.id) ?? step);
+  }, [isReadOnlySharedTask, localBreakdownSteps, remoteBreakdownSteps]);
 
   useEffect(() => {
     if (showDateModal) {
@@ -199,6 +229,35 @@ export default function TaskDetails() {
       : Boolean(task?.isDone);
 
   const isAlreadyShared = participants.length > 0;
+  const contentMaxWidth = Math.min(780, Math.max(320, windowWidth));
+
+  const stepAssigneeLabel = (step: Task) => {
+    if (!step.assignedTo) return 'Unassigned';
+    if (step.assignedTo === communityUserId) return isReadOnlySharedTask ? 'Assigned to you' : 'Assigned to me';
+    return participants.find((participant) => participant.recipient_id === step.assignedTo)?.recipient_profile?.name
+      || 'Assigned to a member';
+  };
+
+  const toggleBreakdownStep = async (step: Task) => {
+    if (isReadOnlySharedTask) {
+      if (step.assignedTo !== communityUserId) {
+        Alert.alert('Assigned step', step.assignedTo ? 'Only the assigned member or group leader can complete this step.' : 'The group leader has not assigned this step yet.');
+        return;
+      }
+      setUpdatingStepId(step.id);
+      try {
+        await setSharedBreakdownStepCompletion(step.id, !step.isDone);
+        setRemoteBreakdownSteps((current) => current.map((item) => item.id === step.id ? { ...item, isDone: !item.isDone } : item));
+      } catch (error) {
+        Alert.alert('Could not update step', error instanceof Error ? error.message : 'Please try again.');
+      } finally {
+        setUpdatingStepId(null);
+        refreshRemoteBreakdown();
+      }
+      return;
+    }
+    toggleTaskDone(step.id);
+  };
 
   const subjectPickerCourses = useMemo(() => {
     const list: Course[] = courses.map((c) => ({ ...c }));
@@ -415,7 +474,7 @@ export default function TaskDetails() {
 
       <ScrollView
         style={s.scroll}
-        contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 100, width: '100%', maxWidth: contentMaxWidth, alignSelf: 'center' }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets={true}
@@ -680,38 +739,36 @@ export default function TaskDetails() {
             </View>
             <View style={[s.sourceCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
               {breakdownSteps.map((step, index) => (
-                <Pressable
-                  key={step.id}
-                  onPress={() => router.push({ pathname: '/task-details', params: { id: step.id } } as any)}
-                  style={({ pressed }) => [s.stepRow, pressed && { opacity: 0.6 }]}
-                >
-                  <Feather
-                    name={step.isDone ? 'check-circle' : 'circle'}
-                    size={16}
-                    color={step.isDone ? theme.success : theme.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      s.stepRowTitle,
-                      { color: theme.text },
-                      step.isDone && { textDecorationLine: 'line-through', color: theme.textSecondary },
-                    ]}
-                    numberOfLines={1}
+                <View key={step.id} style={s.sharedStepWrap}>
+                  <Pressable
+                    disabled={updatingStepId === step.id}
+                    onPress={() => { void toggleBreakdownStep(step); }}
+                    style={({ pressed }) => [s.stepRow, pressed && { opacity: 0.6 }]}
                   >
-                    {`${index + 1}. ${step.title}`}
-                  </Text>
-                  <Text style={[s.stepRowDate, { color: theme.textSecondary }]}>
-                    {formatDisplayDate(step.dueDate)}
-                  </Text>
-                </Pressable>
+                    {updatingStepId === step.id ? <ActivityIndicator size="small" color={theme.primary} /> : (
+                      <Feather name={step.isDone ? 'check-circle' : 'circle'} size={18} color={step.isDone ? theme.success : theme.textSecondary} />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.stepRowTitle, { color: theme.text }, step.isDone && { textDecorationLine: 'line-through', color: theme.textSecondary }]} numberOfLines={2}>
+                        {`${index + 1}. ${step.title}`}
+                      </Text>
+                      <Text style={[s.stepAssignee, { color: step.assignedTo === communityUserId ? theme.primary : theme.textSecondary }]}>{stepAssigneeLabel(step)}</Text>
+                    </View>
+                    <Text style={[s.stepRowDate, { color: theme.textSecondary }]}>{formatDisplayDate(step.dueDate)}</Text>
+                  </Pressable>
+                  {!isReadOnlySharedTask ? (
+                    <Pressable onPress={() => router.push({ pathname: '/task-details', params: { id: step.id } } as any)} hitSlop={8} style={s.stepDetailButton}>
+                      <Feather name="chevron-right" size={17} color={theme.textSecondary} />
+                    </Pressable>
+                  ) : null}
+                </View>
               ))}
-              <Pressable
-                onPress={() => router.push({ pathname: '/task-breakdown', params: { taskId: task.id } } as any)}
-                style={({ pressed }) => [s.stepsCta, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-              >
-                <Feather name="edit-3" size={15} color={theme.primary} />
-                <Text style={[s.stepsCtaText, { color: theme.primary }]}>Edit breakdown</Text>
-              </Pressable>
+              {!isReadOnlySharedTask ? (
+                <Pressable onPress={() => router.push({ pathname: '/task-breakdown', params: { taskId: task.id } } as any)} style={({ pressed }) => [s.stepsCta, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}>
+                  <Feather name="users" size={15} color={theme.primary} />
+                  <Text style={[s.stepsCtaText, { color: theme.primary }]}>Edit steps & assignments</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         ) : parentOfThisStep ? (
@@ -732,6 +789,7 @@ export default function TaskDetails() {
                 </Text>
                 <Feather name="chevron-right" size={16} color={theme.textSecondary} />
               </View>
+              <Text style={[s.parentSubject, { color: theme.textSecondary }]}>Subject: {formatSubjectName(parentOfThisStep.courseId)}</Text>
             </Pressable>
           </View>
         ) : canBreakIntoSteps ? (
@@ -1277,6 +1335,10 @@ const s = StyleSheet.create({
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
   stepRowTitle: { flex: 1, fontSize: 14, fontWeight: '600' },
   stepRowDate: { fontSize: 11, fontWeight: '700' },
+  sharedStepWrap: { flexDirection: 'row', alignItems: 'center' },
+  stepAssignee: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  stepDetailButton: { width: 30, height: 36, alignItems: 'center', justifyContent: 'center' },
+  parentSubject: { fontSize: 12, fontWeight: '600', marginTop: 2, marginLeft: 26 },
   stepsCta: { marginTop: 6, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   stepsCtaText: { fontSize: 13, fontWeight: '800' },
   stepsHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },

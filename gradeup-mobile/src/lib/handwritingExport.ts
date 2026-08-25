@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { PDFDocument, rgb, type PDFPage } from 'pdf-lib';
 import { getNoteAttachmentUrl } from './noteStorage';
-import type { HandwritingPage, HandwritingStroke } from './handwritingTypes';
+import type { HandwritingElement, HandwritingPage, HandwritingStroke } from './handwritingTypes';
 
 const DEFAULT_PAGE_WIDTH = 612;
 const DEFAULT_PAGE_HEIGHT = 816;
@@ -106,6 +106,44 @@ function drawStroke(page: PDFPage, stroke: HandwritingStroke): void {
   }
 }
 
+async function drawElements(document: PDFDocument, page: PDFPage, elements: HandwritingElement[] = []): Promise<void> {
+  const { width, height } = page.getSize();
+  for (const element of elements) {
+    if (element.type === 'text' && element.text) {
+      const size = Math.max(8, (element.fontSize ?? 0.025) * height);
+      const lines = element.text.split('\n');
+      lines.slice(0, 40).forEach((line, index) => {
+        page.drawText(line.slice(0, 500), {
+          x: element.x * width,
+          y: height - element.y * height - size * (index + 1),
+          size,
+          color: colorFromHex(element.color ?? '#111827'),
+          maxWidth: Math.max(20, element.width * width),
+        });
+      });
+      continue;
+    }
+    if (element.type !== 'image' || !element.storagePath) continue;
+    try {
+      const { url, error } = await getNoteAttachmentUrl(element.storagePath);
+      if (error || !url) continue;
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const bytes = await response.arrayBuffer();
+      let embedded;
+      try { embedded = await document.embedPng(bytes); } catch { embedded = await document.embedJpg(bytes); }
+      page.drawImage(embedded, {
+        x: element.x * width,
+        y: height - (element.y + element.height) * height,
+        width: element.width * width,
+        height: element.height * height,
+      });
+    } catch {
+      // A missing optional image must not prevent the rest of the note exporting.
+    }
+  }
+}
+
 function safeFileName(title: string): string {
   const cleaned = title.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
   return `${cleaned || 'Rencana-Notes'}.pdf`;
@@ -138,6 +176,7 @@ export async function exportHandwritingPdf(options: {
         drawTemplate(pdfPage, handwrittenPage.template);
       }
       handwrittenPage.strokes.forEach((stroke) => drawStroke(pdfPage, stroke));
+      await drawElements(document, pdfPage, handwrittenPage.elements);
     }
   } else {
     document = await PDFDocument.create();
@@ -145,6 +184,7 @@ export async function exportHandwritingPdf(options: {
       const pdfPage = document.addPage([DEFAULT_PAGE_WIDTH, DEFAULT_PAGE_HEIGHT]);
       drawTemplate(pdfPage, handwrittenPage.template);
       handwrittenPage.strokes.forEach((stroke) => drawStroke(pdfPage, stroke));
+      await drawElements(document, pdfPage, handwrittenPage.elements);
     }
   }
 
@@ -154,6 +194,7 @@ export async function exportHandwritingPdf(options: {
     if (firstPage) {
       drawTemplate(pdfPage, firstPage.template);
       firstPage.strokes.forEach((stroke) => drawStroke(pdfPage, stroke));
+      await drawElements(document, pdfPage, firstPage.elements);
     }
   }
 
@@ -169,6 +210,16 @@ export async function exportHandwritingPdf(options: {
       dialogTitle: `Export ${title}`,
       UTI: 'com.adobe.pdf',
     });
+  }
+  return outputPath;
+}
+
+export async function exportHandwritingBackup(options: { title: string; pages: HandwritingPage[] }): Promise<string> {
+  const fileName = safeFileName(options.title).replace(/\.pdf$/i, '.rencana-notes.json');
+  const outputPath = `${FileSystem.cacheDirectory}${fileName}`;
+  await FileSystem.writeAsStringAsync(outputPath, JSON.stringify({ version: 3, exportedAt: new Date().toISOString(), pages: options.pages }, null, 2));
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(outputPath, { mimeType: 'application/json', dialogTitle: `Back up ${options.title}` });
   }
   return outputPath;
 }

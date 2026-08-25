@@ -197,6 +197,7 @@ type AppState = {
         | 'excludeFromPulse'
         | 'stepOrder'
         | 'estimatedMinutes'
+        | 'assignedTo'
       >
     >,
   ) => void;
@@ -1627,6 +1628,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           | 'excludeFromPulse'
           | 'stepOrder'
           | 'estimatedMinutes'
+          | 'assignedTo'
         >
       >,
     ) => {
@@ -1650,6 +1652,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...(updates.excludeFromPulse !== undefined ? { excludeFromPulse: updates.excludeFromPulse } : {}),
         ...(updates.stepOrder !== undefined ? { stepOrder: updates.stepOrder } : {}),
         ...(updates.estimatedMinutes !== undefined ? { estimatedMinutes: updates.estimatedMinutes } : {}),
+        ...(updates.assignedTo !== undefined ? { assignedTo: updates.assignedTo || undefined } : {}),
       };
       const rawDueDate = updates.dueDate !== undefined ? updates.dueDate : mergedBase.dueDate;
       const dueDate = (rawDueDate ?? '').trim().slice(0, 10);

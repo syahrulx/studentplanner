@@ -11,7 +11,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-type GenerateKind = 'quiz' | 'task_extract' | 'chat';
+type GenerateKind = 'quiz' | 'task_extract' | 'chat' | 'handwriting_recognize';
 
 interface RequestBody {
   kind: GenerateKind;
@@ -36,6 +36,7 @@ interface RequestBody {
   chat_history?: { role: 'user' | 'assistant'; content: string }[];
   /** Base64-encoded image for vision analysis in chat. */
   image_base64?: string;
+  selection_hint?: { left: number; top: number; right: number; bottom: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -584,14 +585,14 @@ Deno.serve(async (req) => {
     }
 
     const kind = body.kind;
-    if (!kind || !['quiz', 'task_extract', 'chat'].includes(kind)) {
-      return errorJson('Invalid "kind". Must be: quiz, task_extract, or chat.', 'BAD_REQUEST');
+    if (!kind || !['quiz', 'task_extract', 'chat', 'handwriting_recognize'].includes(kind)) {
+      return errorJson('Invalid AI generation kind.', 'BAD_REQUEST');
     }
 
     const content = (body.content ?? '').trim();
 
     // For chat, content is optional (we use RAG). For others, require it.
-    if (kind !== 'chat' && (!content || content.length < 20)) {
+    if (kind !== 'chat' && kind !== 'handwriting_recognize' && (!content || content.length < 20)) {
       return errorJson('Content is too short for AI generation.', 'BAD_REQUEST');
     }
 
@@ -631,7 +632,11 @@ Deno.serve(async (req) => {
     // ── Build prompt & call OpenAI ──
     let messages: { role: string; content: string | unknown[] }[] = [];
     let maxTokens: number;
-    const hasImage = kind === 'chat' && typeof body.image_base64 === 'string' && body.image_base64.length > 100;
+    const hasImage = (kind === 'chat' || kind === 'handwriting_recognize') && typeof body.image_base64 === 'string' && body.image_base64.length > 100;
+
+    if (kind === 'handwriting_recognize' && !hasImage) {
+      return errorJson('A handwriting image is required.', 'BAD_REQUEST');
+    }
 
     if (hasImage) {
       const imgCheck = await checkImageRateLimit(supabaseAdmin, userId, plan);
@@ -645,7 +650,26 @@ Deno.serve(async (req) => {
 
     const count = Math.min(Math.max(1, body.count ?? 10), 30); // 1-30 items
 
-    if (kind === 'task_extract') {
+    if (kind === 'handwriting_recognize') {
+      const bounds = body.selection_hint;
+      const region = bounds
+        ? `Read only the region from ${(bounds.left * 100).toFixed(1)}% to ${(bounds.right * 100).toFixed(1)}% horizontally and ${(bounds.top * 100).toFixed(1)}% to ${(bounds.bottom * 100).toFixed(1)}% vertically.`
+        : 'Read all visible handwriting on the page.';
+      messages = [
+        {
+          role: 'system',
+          content: 'You are a careful handwriting OCR engine. Transcribe only visible handwritten content. Preserve line order and simple maths. Never guess missing words. Return JSON only: {"text":"...","lines":["..."]}.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: region },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${body.image_base64}`, detail: 'high' } },
+          ],
+        },
+      ];
+      maxTokens = 1200;
+    } else if (kind === 'task_extract') {
       const prompts = buildTaskExtractPrompt(truncatedContent);
       messages = [
         { role: 'system', content: prompts.system },
@@ -760,14 +784,14 @@ Deno.serve(async (req) => {
 
     // Quiz & task extraction must stay faithful to the source material, so use a
     // low temperature. Chat stays conversational at the default.
-    const temperature = kind === 'chat' ? 0.7 : 0.2;
+    const temperature = kind === 'chat' ? 0.7 : kind === 'handwriting_recognize' ? 0.1 : 0.2;
     const result = await callOpenAI(
       openAiKey,
       messages,
       maxTokens,
       targetModel,
       temperature,
-      kind === 'quiz' || kind === 'task_extract',
+      kind === 'quiz' || kind === 'task_extract' || kind === 'handwriting_recognize',
     );
 
     if (result.error) {
@@ -780,7 +804,7 @@ Deno.serve(async (req) => {
     // runtime exits after returning the Response.
     await logTokenUsage(supabaseAdmin, {
       user_id: userId,
-      kind: hasImage ? 'chat_vision' : kind,
+      kind: kind === 'handwriting_recognize' ? 'handwriting_recognition' : hasImage ? 'chat_vision' : kind,
       model: targetModel,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
@@ -795,6 +819,15 @@ Deno.serve(async (req) => {
 
     // ── Parse AI response ──
     const parsed = parseAiJson(result.content);
+
+    if (kind === 'handwriting_recognize') {
+      const text = String((parsed as any)?.text ?? '').trim();
+      const lines = Array.isArray((parsed as any)?.lines)
+        ? (parsed as any).lines.map((line: unknown) => String(line).trim()).filter(Boolean)
+        : text.split('\n').filter(Boolean);
+      if (!text) return errorJson('No readable handwriting was found in that selection.', 'OCR_EMPTY');
+      return json({ text, lines });
+    }
 
     if (kind === 'task_extract') {
       const tasks = Array.isArray((parsed as any)?.tasks)

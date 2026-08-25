@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   Gesture,
   GestureDetector,
@@ -11,13 +11,16 @@ import {
 } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { WebView } from 'react-native-webview';
+import { captureRef } from 'react-native-view-shot';
 import type {
   HandwritingPage,
+  HandwritingElement,
   HandwritingPoint,
   HandwritingStroke,
   HandwritingTool,
   HandwritingToolSettings,
 } from '@/src/lib/handwritingTypes';
+import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
 
 type PanEvent =
   | GestureStateChangeEvent<PanGestureHandlerEventPayload>
@@ -34,8 +37,75 @@ interface Props {
   disabled?: boolean;
   transparentBackground?: boolean;
   onChange: (strokes: HandwritingStroke[]) => void;
+  onElementsChange?: (elements: HandwritingElement[]) => void;
   onCommit: (previousStrokes: HandwritingStroke[]) => void;
   onToolGestureEnd?: (tool: HandwritingTool) => void;
+  onStylusDoubleTap?: () => void;
+  onConvertSelection?: (captureDataUri: string, bounds: NormalizedBounds, strokes: HandwritingStroke[]) => void;
+}
+
+function PageElement({
+  element,
+  selected,
+  editable,
+  canvasWidth,
+  canvasHeight,
+  onSelect,
+  onMove,
+}: {
+  element: HandwritingElement;
+  selected: boolean;
+  editable: boolean;
+  canvasWidth: number;
+  canvasHeight: number;
+  onSelect: () => void;
+  onMove: (x: number, y: number) => void;
+}) {
+  const [remoteUri, setRemoteUri] = useState<string | null>(null);
+  const startRef = useRef({ x: element.x, y: element.y });
+  useEffect(() => {
+    let active = true;
+    if (!element.storagePath) { setRemoteUri(null); return; }
+    void getNoteAttachmentUrl(element.storagePath).then(({ url }) => {
+      if (active) setRemoteUri(url ?? null);
+    });
+    return () => { active = false; };
+  }, [element.storagePath]);
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => editable,
+    onMoveShouldSetPanResponder: (_event, gesture) => editable && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 3,
+    onPanResponderGrant: () => { startRef.current = { x: element.x, y: element.y }; onSelect(); },
+    onPanResponderRelease: (_event, gesture) => {
+      onMove(
+        clampPoint(startRef.current.x + gesture.dx / Math.max(1, canvasWidth)),
+        clampPoint(startRef.current.y + gesture.dy / Math.max(1, canvasHeight)),
+      );
+    },
+  }), [canvasHeight, canvasWidth, editable, element.x, element.y, onMove, onSelect]);
+  const uri = remoteUri || element.localUri;
+  return (
+    <View
+      {...(editable ? responder.panHandlers : {})}
+      style={{
+        position: 'absolute', left: element.x * canvasWidth, top: element.y * canvasHeight,
+        width: element.width * canvasWidth, height: element.height * canvasHeight,
+        transform: [{ rotate: `${element.rotation ?? 0}deg` }],
+        borderWidth: selected ? 1.5 : 0, borderColor: '#2563eb', borderStyle: 'dashed',
+      }}
+    >
+      <Pressable style={styles.fill} onPress={editable ? onSelect : undefined}>
+        {element.type === 'text' ? (
+          <Text style={{ color: element.color ?? '#111827', fontSize: Math.max(10, (element.fontSize ?? 0.025) * canvasHeight) }}>
+            {element.text}
+          </Text>
+        ) : uri ? (
+          <Image source={{ uri }} style={styles.fill} resizeMode="contain" accessibilityLabel="Inserted note image" />
+        ) : (
+          <View style={[styles.fill, styles.missingImage]}><Text style={styles.missingImageText}>Image unavailable</Text></View>
+        )}
+      </Pressable>
+    </View>
+  );
 }
 
 function clampPoint(value: number): number {
@@ -398,6 +468,9 @@ export function HandwritingInkPreview({
     <View style={{ width, height, overflow: 'hidden', backgroundColor: transparentBackground ? 'transparent' : page.template === 'dark' ? '#151922' : '#fff' }} pointerEvents="none">
       <PageTemplate template={page.template} width={width} height={height} transparent={transparentBackground} />
       <WebView source={source} style={StyleSheet.absoluteFill} pointerEvents="none" scrollEnabled={false} />
+      {(page.elements ?? []).map((element) => (
+        <PageElement key={element.id} element={element} selected={false} editable={false} canvasWidth={width} canvasHeight={height} onSelect={() => {}} onMove={() => {}} />
+      ))}
     </View>
   );
 }
@@ -419,6 +492,74 @@ function isNearlyStraight(points: HandwritingPoint[]): boolean {
   return meanDistance < 0.008;
 }
 
+function distanceToSegment(point: HandwritingPoint, start: HandwritingPoint, end: HandwritingPoint): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const denominator = dx * dx + dy * dy;
+  if (denominator <= 0.0000001) return Math.hypot(point.x - start.x, point.y - start.y);
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / denominator));
+  return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+}
+
+function simplifyPoints(points: HandwritingPoint[], epsilon = 0.018): HandwritingPoint[] {
+  if (points.length < 3) return points;
+  let largest = 0;
+  let largestIndex = 0;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const distance = distanceToSegment(points[index], points[0], points[points.length - 1]);
+    if (distance > largest) {
+      largest = distance;
+      largestIndex = index;
+    }
+  }
+  if (largest <= epsilon) return [points[0], points[points.length - 1]];
+  const left = simplifyPoints(points.slice(0, largestIndex + 1), epsilon);
+  const right = simplifyPoints(points.slice(largestIndex), epsilon);
+  return [...left.slice(0, -1), ...right];
+}
+
+/** Correct a held gesture while preserving the original stroke as one undoable item. */
+function recognizedShapePoints(points: HandwritingPoint[]): HandwritingPoint[] | null {
+  if (points.length < 3) return null;
+  if (isNearlyStraight(points)) return [points[0], points[points.length - 1]];
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const closed = Math.hypot(first.x - last.x, first.y - last.y) < 0.075;
+  if (!closed) return null;
+
+  const bounds = points.reduce<NormalizedBounds>((value, point) => ({
+    left: Math.min(value.left, point.x), top: Math.min(value.top, point.y),
+    right: Math.max(value.right, point.x), bottom: Math.max(value.bottom, point.y),
+  }), { left: 1, top: 1, right: 0, bottom: 0 });
+  const width = bounds.right - bounds.left;
+  const height = bounds.bottom - bounds.top;
+  if (width < 0.035 || height < 0.035) return null;
+
+  const simplified = simplifyPoints([...points, first], Math.max(0.012, Math.min(width, height) * 0.11));
+  const cornerCount = Math.max(0, simplified.length - 1);
+  if (cornerCount === 3) {
+    const top = { x: (bounds.left + bounds.right) / 2, y: bounds.top };
+    const bottomRight = { x: bounds.right, y: bounds.bottom };
+    const bottomLeft = { x: bounds.left, y: bounds.bottom };
+    return [top, bottomRight, bottomLeft, top];
+  }
+  if (cornerCount === 4) {
+    const topLeft = { x: bounds.left, y: bounds.top };
+    const topRight = { x: bounds.right, y: bounds.top };
+    const bottomRight = { x: bounds.right, y: bounds.bottom };
+    const bottomLeft = { x: bounds.left, y: bounds.bottom };
+    return [topLeft, topRight, bottomRight, bottomLeft, topLeft];
+  }
+
+  const centerX = (bounds.left + bounds.right) / 2;
+  const centerY = (bounds.top + bounds.bottom) / 2;
+  return Array.from({ length: 49 }, (_, index) => {
+    const angle = (Math.PI * 2 * index) / 48;
+    return { x: centerX + Math.cos(angle) * width / 2, y: centerY + Math.sin(angle) * height / 2 };
+  });
+}
+
 export default function HandwritingCanvas({
   page,
   tool,
@@ -431,23 +572,33 @@ export default function HandwritingCanvas({
   transparentBackground = false,
   onChange,
   onCommit,
+  onElementsChange,
   onToolGestureEnd,
+  onStylusDoubleTap,
+  onConvertSelection,
 }: Props) {
+  const canvasRef = useRef<View>(null);
   const inkWebViewRef = useRef<WebView>(null);
   const sizeRef = useRef({ width: 1, height: 1 });
   const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
   const [displayStrokes, setDisplayStrokes] = useState(page.strokes);
+  const [displayElements, setDisplayElements] = useState(page.elements ?? []);
   const strokesRef = useRef(page.strokes);
   const activeStrokeIdRef = useRef<string | null>(null);
   const gestureAcceptedRef = useRef(false);
   const beforeGestureRef = useRef<HandwritingStroke[]>([]);
   const gestureStartedAtRef = useRef(0);
+  const gestureWasStylusRef = useRef(false);
+  const lastStylusTapRef = useRef<{ at: number; before: HandwritingStroke[] } | null>(null);
   const lassoStartRef = useRef<HandwritingPoint | null>(null);
   const selectionOriginRef = useRef<HandwritingStroke[]>([]);
   const selectionModeRef = useRef<'select' | 'move' | 'resize'>('select');
+  const elementMoveRef = useRef<{ id: string; start: HandwritingPoint; x: number; y: number } | null>(null);
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<Set<string>>(new Set());
   const [selectionBounds, setSelectionBounds] = useState<NormalizedBounds | null>(null);
   const [lassoBounds, setLassoBounds] = useState<NormalizedBounds | null>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [capturingSelection, setCapturingSelection] = useState(false);
   const pendingLiveStrokeRef = useRef<HandwritingStroke | null>(null);
   const liveFrameRef = useRef<number | null>(null);
 
@@ -456,11 +607,48 @@ export default function HandwritingCanvas({
     setDisplayStrokes(page.strokes);
   }, [page.strokes]);
 
+  useEffect(() => { setDisplayElements(page.elements ?? []); }, [page.elements]);
+
   useEffect(() => {
     setSelectedStrokeIds(new Set());
     setSelectionBounds(null);
     setLassoBounds(null);
+    setSelectedElementId(null);
   }, [page.id]);
+
+  const updateElement = useCallback((elementId: string, update: Partial<HandwritingElement>) => {
+    const next = displayElements.map((element) => element.id === elementId
+      ? { ...element, ...update, updatedAt: new Date().toISOString() }
+      : element);
+    setDisplayElements(next);
+    onElementsChange?.(next);
+  }, [displayElements, onElementsChange]);
+
+  const elementAction = useCallback((kind: 'smaller' | 'larger' | 'rotateLeft' | 'rotateRight' | 'duplicate' | 'delete') => {
+    if (!selectedElementId || !onElementsChange) return;
+    const elements = displayElements;
+    const selected = elements.find((element) => element.id === selectedElementId);
+    if (!selected) return;
+    if (kind === 'delete') {
+      setDisplayElements(elements.filter((element) => element.id !== selectedElementId));
+      onElementsChange(elements.filter((element) => element.id !== selectedElementId));
+      setSelectedElementId(null);
+      return;
+    }
+    if (kind === 'duplicate') {
+      const copy = { ...selected, id: `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, x: clampPoint(selected.x + 0.03), y: clampPoint(selected.y + 0.03), updatedAt: new Date().toISOString() };
+      setDisplayElements([...elements, copy]);
+      onElementsChange([...elements, copy]);
+      setSelectedElementId(copy.id);
+      return;
+    }
+    const scale = kind === 'smaller' ? 0.9 : kind === 'larger' ? 1.1 : 1;
+    updateElement(selectedElementId, {
+      width: Math.max(0.08, Math.min(0.9, selected.width * scale)),
+      height: Math.max(0.04, Math.min(0.9, selected.height * scale)),
+      rotation: (selected.rotation ?? 0) + (kind === 'rotateLeft' ? -15 : kind === 'rotateRight' ? 15 : 0),
+    });
+  }, [displayElements, onElementsChange, selectedElementId, updateElement]);
 
   const renderInk = useCallback(() => {
     const markup = displayStrokes
@@ -556,8 +744,18 @@ export default function HandwritingCanvas({
     if (!gestureAcceptedRef.current) return;
     beforeGestureRef.current = strokesRef.current;
     gestureStartedAtRef.current = Date.now();
+    gestureWasStylusRef.current = event.pointerType === PointerType.STYLUS;
     const point = pointFromEvent(event, sizeRef.current.width, sizeRef.current.height);
     if (tool === 'lasso') {
+      const hitElement = [...displayElements].reverse().find((element) => point.x >= element.x && point.x <= element.x + element.width && point.y >= element.y && point.y <= element.y + element.height);
+      if (hitElement) {
+        setSelectedElementId(hitElement.id);
+        setSelectedStrokeIds(new Set());
+        setSelectionBounds(null);
+        elementMoveRef.current = { id: hitElement.id, start: point, x: hitElement.x, y: hitElement.y };
+        return;
+      }
+      setSelectedElementId(null);
       lassoStartRef.current = point;
       selectionOriginRef.current = strokesRef.current;
       if (selectionBounds && pointInsideBounds(point, selectionBounds)) {
@@ -607,6 +805,16 @@ export default function HandwritingCanvas({
     const rawPoint = pointFromEvent(event, sizeRef.current.width, sizeRef.current.height);
     if (tool === 'lasso') {
       const start = lassoStartRef.current;
+      const movingElement = elementMoveRef.current;
+      if (movingElement) {
+        const next = displayElements.map((element) => element.id === movingElement.id ? {
+          ...element,
+          x: clampPoint(movingElement.x + rawPoint.x - movingElement.start.x),
+          y: clampPoint(movingElement.y + rawPoint.y - movingElement.start.y),
+        } : element);
+        setDisplayElements(next);
+        return;
+      }
       if (!start) return;
       if (selectionModeRef.current === 'select') {
         setLassoBounds(boundsFromPoints(start, rawPoint));
@@ -677,6 +885,12 @@ export default function HandwritingCanvas({
   const finishGesture = () => {
     const acceptedTool = gestureAcceptedRef.current ? tool : null;
     if (gestureAcceptedRef.current && tool === 'lasso') {
+      if (elementMoveRef.current) {
+        onElementsChange?.(displayElements.map((element) => ({ ...element, updatedAt: element.id === elementMoveRef.current?.id ? new Date().toISOString() : element.updatedAt })));
+        elementMoveRef.current = null;
+        gestureAcceptedRef.current = false;
+        return;
+      }
       if (selectionModeRef.current === 'select' && lassoBounds) {
         const ids = new Set(
           strokesRef.current
@@ -694,6 +908,28 @@ export default function HandwritingCanvas({
       gestureAcceptedRef.current = false;
       return;
     }
+    const activeStroke = activeStrokeIdRef.current
+      ? strokesRef.current.find((stroke) => stroke.id === activeStrokeIdRef.current)
+      : undefined;
+    if (
+      gestureAcceptedRef.current && gestureWasStylusRef.current && settings.stylusDoubleTap &&
+      tool !== 'eraser' && tool !== 'lasso' && activeStroke?.points.length === 1 &&
+      Date.now() - gestureStartedAtRef.current < 220
+    ) {
+      const previousTap = lastStylusTapRef.current;
+      if (previousTap && Date.now() - previousTap.at < 420) {
+        strokesRef.current = previousTap.before;
+        setDisplayStrokes(previousTap.before);
+        onCommit(previousTap.before);
+        onChange(previousTap.before);
+        lastStylusTapRef.current = null;
+        activeStrokeIdRef.current = null;
+        gestureAcceptedRef.current = false;
+        onStylusDoubleTap?.();
+        return;
+      }
+      lastStylusTapRef.current = { at: Date.now(), before: beforeGestureRef.current };
+    }
     if (gestureAcceptedRef.current && beforeGestureRef.current !== strokesRef.current) {
       if (tool === 'highlighter' && settings.straightMarker && activeStrokeIdRef.current) {
         strokesRef.current = strokesRef.current.map((stroke) => {
@@ -710,8 +946,9 @@ export default function HandwritingCanvas({
         activeStrokeIdRef.current
       ) {
         strokesRef.current = strokesRef.current.map((stroke) => {
-          if (stroke.id !== activeStrokeIdRef.current || !isNearlyStraight(stroke.points)) return stroke;
-          return { ...stroke, points: [stroke.points[0], stroke.points[stroke.points.length - 1]] };
+          if (stroke.id !== activeStrokeIdRef.current) return stroke;
+          const corrected = recognizedShapePoints(stroke.points);
+          return corrected ? { ...stroke, points: corrected } : stroke;
         });
       }
       setDisplayStrokes(strokesRef.current);
@@ -730,6 +967,7 @@ export default function HandwritingCanvas({
     }
     activeStrokeIdRef.current = null;
     lassoStartRef.current = null;
+    elementMoveRef.current = null;
     setLassoBounds(null);
     gestureAcceptedRef.current = false;
   };
@@ -768,9 +1006,9 @@ export default function HandwritingCanvas({
       .cancelsTouchesInView(false);
     if (simultaneousGestures?.length) gesture.simultaneousWithExternalGesture(...simultaneousGestures);
     return gesture;
-  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onToolGestureEnd, selectedStrokeIds, selectionBounds, lassoBounds, renderLiveStroke]);
+  }, [disabled, fingerDrawing, tool, color, selectedWidth, settings, simultaneousGestures, onChange, onCommit, onElementsChange, onToolGestureEnd, onStylusDoubleTap, selectedStrokeIds, selectionBounds, lassoBounds, displayElements, renderLiveStroke]);
 
-  const updateSelection = (kind: 'left' | 'right' | 'up' | 'down' | 'smaller' | 'larger' | 'duplicate' | 'delete') => {
+  const updateSelection = (kind: 'left' | 'right' | 'up' | 'down' | 'smaller' | 'larger' | 'rotateLeft' | 'rotateRight' | 'recolor' | 'thinner' | 'thicker' | 'duplicate' | 'delete') => {
     if (!selectedStrokeIds.size || !selectionBounds) return;
     const previous = strokesRef.current;
     if (kind === 'delete') {
@@ -801,17 +1039,31 @@ export default function HandwritingCanvas({
       onChange(next);
       return;
     }
+    if (kind === 'recolor' || kind === 'thinner' || kind === 'thicker') {
+      const next = previous.map((stroke) => selectedStrokeIds.has(stroke.id) ? {
+        ...stroke,
+        ...(kind === 'recolor' ? { color } : {}),
+        ...(kind === 'thinner' ? { width: Math.max(1, stroke.width - 1) } : {}),
+        ...(kind === 'thicker' ? { width: Math.min(14, stroke.width + 1) } : {}),
+      } : stroke);
+      strokesRef.current = next;
+      setDisplayStrokes(next);
+      onCommit(previous);
+      onChange(next);
+      return;
+    }
     const dx = kind === 'left' ? -0.012 : kind === 'right' ? 0.012 : 0;
     const dy = kind === 'up' ? -0.012 : kind === 'down' ? 0.012 : 0;
     const scale = kind === 'smaller' ? 0.9 : kind === 'larger' ? 1.1 : 1;
     const centerX = (selectionBounds.left + selectionBounds.right) / 2;
     const centerY = (selectionBounds.top + selectionBounds.bottom) / 2;
+    const rotation = kind === 'rotateLeft' ? -Math.PI / 12 : kind === 'rotateRight' ? Math.PI / 12 : 0;
     const next = previous.map((stroke) => selectedStrokeIds.has(stroke.id) ? {
       ...stroke,
       points: stroke.points.map((point) => clampStrokePoint({
         ...point,
-        x: centerX + (point.x - centerX) * scale + dx,
-        y: centerY + (point.y - centerY) * scale + dy,
+        x: centerX + ((point.x - centerX) * Math.cos(rotation) - (point.y - centerY) * Math.sin(rotation)) * scale + dx,
+        y: centerY + ((point.x - centerX) * Math.sin(rotation) + (point.y - centerY) * Math.cos(rotation)) * scale + dy,
       })),
     } : stroke);
     strokesRef.current = next;
@@ -821,9 +1073,28 @@ export default function HandwritingCanvas({
     onChange(next);
   };
 
+  const convertSelection = async () => {
+    if (!canvasRef.current || !selectionBounds || !selectedStrokeIds.size || !onConvertSelection) return;
+    try {
+      setCapturingSelection(true);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const capture = await captureRef(canvasRef, { format: 'png', quality: 0.92, result: 'data-uri' });
+      onConvertSelection(
+        capture,
+        selectionBounds,
+        strokesRef.current.filter((stroke) => selectedStrokeIds.has(stroke.id)),
+      );
+    } catch {
+      // The parent shows provider/user-facing errors; capture failures leave ink untouched.
+    } finally {
+      setCapturingSelection(false);
+    }
+  };
+
   return (
     <GestureDetector gesture={pan}>
       <View
+        ref={canvasRef}
         style={styles.fill}
         collapsable={false}
         onLayout={(event) => {
@@ -856,7 +1127,19 @@ export default function HandwritingCanvas({
           javaScriptEnabled
           onLoadEnd={renderInk}
         />
-        {tool === 'lasso' && (lassoBounds || selectionBounds) ? (
+        {displayElements.map((element) => (
+          <PageElement
+            key={element.id}
+            element={element}
+            selected={tool === 'lasso' && element.id === selectedElementId}
+            editable={!disabled && tool === 'lasso'}
+            canvasWidth={canvasSize.width}
+            canvasHeight={canvasSize.height}
+            onSelect={() => { setSelectedElementId(element.id); setSelectedStrokeIds(new Set()); setSelectionBounds(null); }}
+            onMove={(x, y) => updateElement(element.id, { x, y })}
+          />
+        ))}
+        {!capturingSelection && tool === 'lasso' && (lassoBounds || selectionBounds) ? (
           <View
             pointerEvents="none"
             style={[
@@ -870,13 +1153,28 @@ export default function HandwritingCanvas({
             ]}
           />
         ) : null}
-        {tool === 'lasso' && selectedStrokeIds.size > 0 ? (
-          <View style={styles.selectionActions}>
+        {!capturingSelection && tool === 'lasso' && selectedStrokeIds.size > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectionActions} contentContainerStyle={styles.selectionActionsContent}>
             {([
               ['←', 'left'], ['↑', 'up'], ['↓', 'down'], ['→', 'right'],
-              ['−', 'smaller'], ['＋', 'larger'], ['⧉', 'duplicate'], ['×', 'delete'],
+              ['−', 'smaller'], ['＋', 'larger'], ['↶', 'rotateLeft'], ['↷', 'rotateRight'],
+              ['●', 'recolor'], ['╱', 'thinner'], ['━', 'thicker'], ['⧉', 'duplicate'], ['×', 'delete'],
             ] as const).map(([label, action]) => (
               <Pressable key={action} onPress={() => updateSelection(action)} style={styles.selectionActionButton}>
+                <Text style={[styles.selectionActionText, action === 'delete' && styles.selectionDeleteText]}>{label}</Text>
+              </Pressable>
+            ))}
+            {onConvertSelection ? (
+              <Pressable onPress={() => { void convertSelection(); }} style={[styles.selectionActionButton, styles.selectionTextButton]}>
+                <Text style={styles.selectionTextLabel}>Text</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        ) : null}
+        {!capturingSelection && tool === 'lasso' && selectedElementId ? (
+          <View style={[styles.selectionActions, styles.elementActions]}>
+            {([['−', 'smaller'], ['＋', 'larger'], ['↶', 'rotateLeft'], ['↷', 'rotateRight'], ['⧉', 'duplicate'], ['×', 'delete']] as const).map(([label, action]) => (
+              <Pressable key={action} onPress={() => elementAction(action)} style={styles.selectionActionButton}>
                 <Text style={[styles.selectionActionText, action === 'delete' && styles.selectionDeleteText]}>{label}</Text>
               </Pressable>
             ))}
@@ -909,12 +1207,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
     backgroundColor: 'rgba(15,23,42,0.92)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
+    maxHeight: 42,
   },
+  selectionActionsContent: { alignItems: 'center', paddingHorizontal: 2, gap: 3 },
   selectionActionButton: { width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
   selectionActionText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
   selectionDeleteText: { color: '#f87171' },
+  selectionTextButton: { width: 46 },
+  selectionTextLabel: { color: '#93c5fd', fontSize: 11, fontWeight: '900' },
+  elementActions: { flexDirection: 'row', right: undefined, width: 224, paddingHorizontal: 6, gap: 4 },
+  missingImage: { backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
+  missingImageText: { color: '#64748b', fontSize: 10, fontWeight: '700' },
 });
