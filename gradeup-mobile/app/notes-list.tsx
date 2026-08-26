@@ -62,6 +62,8 @@ function createStyles(theme: ThemePalette) {
       fontSize: 34, fontWeight: '800', color: theme.text,
       letterSpacing: -0.8, paddingHorizontal: 20, marginBottom: 16, marginTop: 4,
     },
+    searchWrap: { marginHorizontal: 20, marginBottom: 14, height: 44, borderRadius: 13, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 9 },
+    searchInput: { flex: 1, color: theme.text, fontSize: 14, paddingVertical: 0 },
 
     folderRow: { paddingHorizontal: 20, marginBottom: 14 },
     folderRowContent: { gap: 8, paddingRight: 6 },
@@ -210,6 +212,7 @@ export default function NotesList() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const isImportingRef = useRef(false);
   const [importProgressUi, setImportProgressUi] = useState<{ progress: number; label: string } | null>(null);
@@ -247,9 +250,11 @@ export default function NotesList() {
   }, [allNotes, registeredFolders]);
 
   const list = useMemo(() => {
-    if (!selectedFolder) return allNotes;
-    return allNotes.filter((n) => n.folderId === selectedFolder);
-  }, [allNotes, selectedFolder]);
+    const folderNotes = selectedFolder ? allNotes.filter((n) => n.folderId === selectedFolder) : allNotes;
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return folderNotes;
+    return folderNotes.filter((note) => `${note.title}\n${note.content}\n${note.extractedText ?? ''}`.toLowerCase().includes(query));
+  }, [allNotes, searchQuery, selectedFolder]);
 
   const openNewHandwritingNote = () => {
     if (!isAtLeastPlus(user.subscriptionPlan)) {
@@ -472,6 +477,18 @@ export default function NotesList() {
       </View>
 
       <Text style={styles.pageTitle}>{subjectId} Notes</Text>
+      <View style={styles.searchWrap}>
+        <Feather name="search" size={17} color={theme.textSecondary} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search notes and recognized handwriting"
+          placeholderTextColor={theme.textSecondary}
+          style={styles.searchInput}
+          accessibilityLabel="Search notes and recognized handwriting"
+        />
+        {searchQuery ? <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Clear search"><Feather name="x" size={17} color={theme.textSecondary} /></Pressable> : null}
+      </View>
 
       {/* Folder chips */}
       {(folders.length > 0) && (

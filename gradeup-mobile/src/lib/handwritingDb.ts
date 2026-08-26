@@ -5,6 +5,7 @@ import {
   createHandwritingPage,
   isHandwritingTemplate,
   type HandwritingPage,
+  type HandwritingElement,
   type HandwritingStroke,
 } from './handwritingTypes';
 
@@ -16,6 +17,21 @@ interface HandwritingOutboxItem {
   userId: string;
   noteId: string;
   queuedAt: string;
+}
+
+function safeElements(value: unknown): HandwritingElement[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((element): element is HandwritingElement => {
+    if (!element || typeof element !== 'object') return false;
+    const candidate = element as Partial<HandwritingElement>;
+    return typeof candidate.id === 'string' &&
+      (candidate.type === 'text' || candidate.type === 'image') &&
+      typeof candidate.x === 'number' && typeof candidate.y === 'number' &&
+      typeof candidate.width === 'number' && typeof candidate.height === 'number';
+  }).map((element) => ({
+    ...element,
+    updatedAt: typeof element.updatedAt === 'string' ? element.updatedAt : new Date().toISOString(),
+  }));
 }
 let outboxWriteQueue: Promise<void> = Promise.resolve();
 
@@ -52,6 +68,8 @@ function toPage(value: unknown, fallbackIndex: number): HandwritingPage | null {
     index: typeof page.index === 'number' ? page.index : fallbackIndex,
     template: isHandwritingTemplate(page.template) ? page.template : 'ruled',
     strokes: safeStrokes(page.strokes),
+    elements: safeElements(page.elements),
+    recognizedText: typeof page.recognizedText === 'string' ? page.recognizedText : undefined,
     pdfPageNumber: typeof page.pdfPageNumber === 'number' ? page.pdfPageNumber : undefined,
     isInsertedBlank: page.isInsertedBlank === true,
     pdfDocumentInitialized: page.pdfDocumentInitialized === true,
@@ -193,7 +211,7 @@ async function uploadHandwritingPages(
   pages: HandwritingPage[],
 ): Promise<void> {
   const payload = JSON.stringify({
-    version: 2,
+    version: 3,
     updatedAt: new Date().toISOString(),
     pages,
   });

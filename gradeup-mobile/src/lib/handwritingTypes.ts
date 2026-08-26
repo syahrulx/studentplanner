@@ -24,6 +24,8 @@ export interface HandwritingToolSettings {
   writingStyle: WritingStyle;
   /** Optional non-exported guide shown over the paper while writing. */
   writingGuide: WritingGuide;
+  /** Double-tap the paper with a stylus to switch between eraser and the last writing tool. */
+  stylusDoubleTap: boolean;
 }
 
 export type HandwritingTemplate =
@@ -60,11 +62,35 @@ export interface HandwritingStroke {
   points: HandwritingPoint[];
 }
 
+export interface HandwritingElement {
+  id: string;
+  type: 'text' | 'image';
+  /** Normalized page frame so objects survive rotation, tablets and PDF export. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  text?: string;
+  color?: string;
+  /** Normalized against page height. */
+  fontSize?: number;
+  /** Private note-attachment path. Never persist a short-lived signed URL. */
+  storagePath?: string;
+  /** Keeps a newly inserted image visible until its private upload is available. */
+  localUri?: string;
+  updatedAt: string;
+}
+
 export interface HandwritingPage {
   id: string;
   index: number;
   template: HandwritingTemplate;
   strokes: HandwritingStroke[];
+  /** Movable text and image objects layered above the paper. */
+  elements?: HandwritingElement[];
+  /** OCR index for this page. Ink remains the source of truth. */
+  recognizedText?: string;
   /**
    * When set, this page is an annotation layer for the matching PDF page.
    * The original PDF remains in the private note attachment bucket.
@@ -96,6 +122,7 @@ export const DEFAULT_HANDWRITING_TOOL_SETTINGS: HandwritingToolSettings = {
   shapeAssist: true,
   writingStyle: 'natural',
   writingGuide: 'off',
+  stylusDoubleTap: true,
 };
 
 export function handwritingNoteSummary(pageCount: number): string {
@@ -122,6 +149,7 @@ export function createHandwritingPage(
     index,
     template,
     strokes: [],
+    elements: [],
     pdfPageNumber,
     updatedAt: new Date().toISOString(),
   };

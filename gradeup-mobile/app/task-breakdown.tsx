@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -19,8 +20,11 @@ import { useTheme } from '@/hooks/useTheme';
 import { estimateTaskMinutes, recordStudyRecommendationFeedback } from '@/src/lib/studyRecommendations';
 import { clampStepDate, daysBetweenISO, maxStepDate, stepsNeedSpreading, suggestStepDates } from '@/src/lib/breakdownSchedule';
 import { getTodayISO } from '@/src/utils/date';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { SharedTask } from '@/src/types';
+import { getSharedTaskParticipants, removeTaskCollaborator } from '@/src/lib/communityApi';
 
-type DraftStep = { id: string; title: string; existing: boolean; dueDate: string };
+type DraftStep = { id: string; title: string; existing: boolean; dueDate: string; assigneeId?: string };
 
 /** "Sat 22 Aug" — short enough for the inline chip on a step row. */
 function shortDateLabel(iso: string, todayISO: string): string {
@@ -39,7 +43,9 @@ function draftId(index: number): string {
 
 export default function TaskBreakdownScreen() {
   const theme = useTheme();
-  const { tasks, user, addTask, updateTask, deleteTask } = useApp();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const { tasks, courses, user, addTask, updateTask, deleteTask } = useApp();
   const params = useLocalSearchParams<{
     taskId?: string;
     suggestedCount?: string;
@@ -66,6 +72,7 @@ export default function TaskBreakdownScreen() {
         title: step.title,
         existing: true,
         dueDate: clampStepDate((step.dueDate || parentDue).slice(0, 10), parentDue, todayISO),
+        assigneeId: step.assignedTo,
       }));
     }
     const dates = suggestStepDates(suggestedCount, parentDue, todayISO);
@@ -81,6 +88,30 @@ export default function TaskBreakdownScreen() {
   // when steps are added or removed.
   const [datesTouched, setDatesTouched] = useState(false);
   const [pickerStepId, setPickerStepId] = useState<string | null>(null);
+  const [assignmentStepId, setAssignmentStepId] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<SharedTask[]>([]);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const maxContentWidth = Math.min(760, Math.max(320, windowWidth));
+
+  useEffect(() => {
+    if (!parent?.id) return;
+    getSharedTaskParticipants(parent.id).then(setParticipants).catch(() => setParticipants([]));
+  }, [parent?.id]);
+
+  const acceptedMembers = useMemo(
+    () => participants.filter((participant) => participant.status === 'accepted' && participant.recipient_id),
+    [participants],
+  );
+  const subjectName = useMemo(
+    () => courses.find((course) => course.id === parent?.courseId)?.name || parent?.courseId || 'General',
+    [courses, parent?.courseId],
+  );
+
+  const assigneeName = (assigneeId?: string) => {
+    if (!assigneeId) return 'Unassigned';
+    if (assigneeId === user.id) return 'Me (leader)';
+    return acceptedMembers.find((member) => member.recipient_id === assigneeId)?.recipient_profile?.name || 'Member';
+  };
 
   /**
    * Old breakdowns (made before step scheduling) have every step on the
@@ -151,6 +182,41 @@ export default function TaskBreakdownScreen() {
     )));
   };
 
+  const setStepAssignee = (id: string, assigneeId?: string) => {
+    setSteps((current) => current.map((step) => step.id === id ? { ...step, assigneeId } : step));
+    setAssignmentStepId(null);
+  };
+
+  const confirmRemoveMember = (participant: SharedTask) => {
+    const memberId = participant.recipient_id;
+    if (!memberId) return;
+    const name = participant.recipient_profile?.name || 'this member';
+    Alert.alert(
+      'Remove member?',
+      `${name} will lose access to this task. Their assigned steps will become unassigned. No task or step will be deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: () => {
+            setRemovingMemberId(memberId);
+            void removeTaskCollaborator(parent.id, memberId)
+              .then(() => {
+                setParticipants((current) => current.filter((item) => item.recipient_id !== memberId));
+                steps
+                  .filter((step) => step.existing && step.assigneeId === memberId)
+                  .forEach((step) => updateTask(step.id, { assignedTo: '' }));
+                setSteps((current) => current.map((step) => step.assigneeId === memberId
+                  ? { ...step, assigneeId: undefined }
+                  : step));
+              })
+              .catch((error) => Alert.alert('Could not remove member', error instanceof Error ? error.message : 'Please try again.'))
+              .finally(() => setRemovingMemberId(null));
+          },
+        },
+      ],
+    );
+  };
+
   /** Opt-in for old breakdowns — never rewrites dates without the user asking. */
   const spreadDates = () => {
     const dates = suggestStepDates(steps.length, parentDue, todayISO);
@@ -178,6 +244,7 @@ export default function TaskBreakdownScreen() {
             title: step.title,
             stepOrder: index,
             estimatedMinutes: perStepEstimate,
+            assignedTo: step.assigneeId ?? '',
             dueDate: stepDue,
             // Older steps were created hidden from focus; now that a step has
             // its own date it should be able to surface as the next action.
@@ -199,6 +266,7 @@ export default function TaskBreakdownScreen() {
           parentTaskId: parent.id,
           stepOrder: index,
           estimatedMinutes: perStepEstimate,
+          assignedTo: step.assigneeId,
           // Steps are the actionable unit, so they belong in Today's focus —
           // the parent is hidden instead (see selectTodaysFocusTask).
           excludeFromFocus: false,
@@ -231,20 +299,32 @@ export default function TaskBreakdownScreen() {
       style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+      <View style={[styles.header, { borderBottomColor: theme.border, paddingTop: insets.top + 10 }]}>
         <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={styles.iconButton}>
           <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>Break into steps</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>{parent.title}</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>{subjectName} · {parent.title}</Text>
         </View>
         <Pressable disabled={saving} onPress={() => { void save(); }} style={[styles.saveTop, { opacity: saving ? 0.5 : 1 }]}>
           <Text style={[styles.saveTopText, { color: theme.primary }]}>{saving ? 'Saving…' : 'Save'}</Text>
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.content, { width: '100%', maxWidth: maxContentWidth, alignSelf: 'center' }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.taskContext, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.taskContextIcon, { backgroundColor: `${theme.primary}14` }]}>
+            <Feather name="book-open" size={18} color={theme.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.taskContextSubject, { color: theme.primary }]} numberOfLines={1}>{subjectName}</Text>
+            <Text style={[styles.taskContextTitle, { color: theme.text }]} numberOfLines={2}>{parent.title}</Text>
+          </View>
+        </View>
         <View style={[styles.infoCard, { backgroundColor: `${theme.primary}10`, borderColor: `${theme.primary}28` }]}>
           <Feather name="edit-3" size={19} color={theme.primary} />
           <Text style={[styles.infoText, { color: theme.text }]}>We suggested {suggestedCount} steps. You choose the titles and can add or remove any step.</Text>
@@ -290,6 +370,17 @@ export default function TaskBreakdownScreen() {
                 </Text>
                 <Feather name="chevron-down" size={13} color={theme.textSecondary} />
               </Pressable>
+              <Pressable
+                accessibilityLabel={`Assign step ${index + 1}`}
+                onPress={() => setAssignmentStepId(step.id)}
+                style={[styles.assigneeChip, { borderColor: theme.border }]}
+              >
+                <Feather name="user" size={13} color={step.assigneeId ? theme.primary : theme.textSecondary} />
+                <Text style={[styles.dateChipText, { color: step.assigneeId ? theme.primary : theme.textSecondary }]} numberOfLines={1}>
+                  {assigneeName(step.assigneeId)}
+                </Text>
+                <Feather name="chevron-down" size={13} color={theme.textSecondary} />
+              </Pressable>
             </View>
           ))}
         </View>
@@ -298,6 +389,41 @@ export default function TaskBreakdownScreen() {
           <Feather name="plus" size={19} color={theme.primary} />
           <Text style={[styles.addButtonText, { color: theme.primary }]}>Add another step</Text>
         </Pressable>
+
+        <View style={styles.memberSection}>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>GROUP MEMBERS</Text>
+            <Text style={[styles.memberCount, { color: theme.textSecondary }]}>{participants.length + 1}</Text>
+          </View>
+          <View style={[styles.memberCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.memberRow}>
+              <View style={[styles.memberAvatar, { backgroundColor: `${theme.primary}14` }]}><Text style={{ color: theme.primary, fontWeight: '800' }}>ME</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.memberName, { color: theme.text }]}>You</Text>
+                <Text style={[styles.memberRole, { color: theme.textSecondary }]}>Leader · can manage this task</Text>
+              </View>
+            </View>
+            {participants.map((member) => (
+              <View key={member.id} style={[styles.memberRow, styles.memberDivider, { borderTopColor: theme.border }]}>
+                <View style={[styles.memberAvatar, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Text style={{ color: theme.text, fontWeight: '800' }}>{(member.recipient_profile?.name || 'M').slice(0, 1).toUpperCase()}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.memberName, { color: theme.text }]}>{member.recipient_profile?.name || 'Member'}</Text>
+                  <Text style={[styles.memberRole, { color: theme.textSecondary }]}>
+                    {member.status === 'accepted' ? 'Can update assigned steps' : 'Invitation pending'}
+                  </Text>
+                </View>
+                <Pressable disabled={removingMemberId === member.recipient_id} onPress={() => confirmRemoveMember(member)} hitSlop={10} style={styles.removeMemberButton}>
+                  <Feather name="user-minus" size={17} color="#dc2626" />
+                </Pressable>
+              </View>
+            ))}
+            {participants.length === 0 ? (
+              <Text style={[styles.emptyMembers, { color: theme.textSecondary }]}>Share this task from Task details. After a member accepts, you can assign steps here.</Text>
+            ) : null}
+          </View>
+        </View>
 
         <Text style={[styles.footnote, { color: theme.textSecondary }]}>
           {hasRunway
@@ -316,7 +442,34 @@ export default function TaskBreakdownScreen() {
           theme={theme}
         />
       )}
+      <Modal visible={assignmentStepId !== null} transparent animationType="fade" onRequestClose={() => setAssignmentStepId(null)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setAssignmentStepId(null)}>
+          <Pressable style={[styles.assignSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+            <Text style={[styles.pickerTitle, { color: theme.text }]}>Assign this step</Text>
+            <Text style={[styles.assignHint, { color: theme.textSecondary }]}>Only accepted members of this task are shown.</Text>
+            {assignmentStepId ? (
+              <>
+                <AssignOption label="Unassigned" icon="user-x" selected={!steps.find((step) => step.id === assignmentStepId)?.assigneeId} theme={theme} onPress={() => setStepAssignee(assignmentStepId)} />
+                <AssignOption label="Me (leader)" icon="star" selected={steps.find((step) => step.id === assignmentStepId)?.assigneeId === user.id} theme={theme} onPress={() => setStepAssignee(assignmentStepId, user.id)} />
+                {acceptedMembers.map((member) => (
+                  <AssignOption key={member.id} label={member.recipient_profile?.name || 'Member'} icon="user" selected={steps.find((step) => step.id === assignmentStepId)?.assigneeId === member.recipient_id} theme={theme} onPress={() => setStepAssignee(assignmentStepId, member.recipient_id || undefined)} />
+                ))}
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
+  );
+}
+
+function AssignOption({ label, icon, selected, theme, onPress }: { label: string; icon: keyof typeof Feather.glyphMap; selected: boolean; theme: ReturnType<typeof useTheme>; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.assignOption, { borderColor: theme.border, backgroundColor: selected ? `${theme.primary}12` : theme.card }]}>
+      <Feather name={icon} size={17} color={selected ? theme.primary : theme.textSecondary} />
+      <Text style={[styles.assignOptionText, { color: theme.text }]}>{label}</Text>
+      {selected ? <Feather name="check" size={17} color={theme.primary} /> : null}
+    </Pressable>
   );
 }
 
@@ -398,7 +551,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 18 },
   emptyTitle: { fontSize: 20, fontWeight: '800' },
-  header: { paddingTop: 54, paddingHorizontal: 16, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  header: { paddingHorizontal: 16, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10 },
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   headerCopy: { flex: 1 },
   headerTitle: { fontSize: 19, fontWeight: '800' },
@@ -406,6 +559,10 @@ const styles = StyleSheet.create({
   saveTop: { paddingHorizontal: 8, paddingVertical: 10 },
   saveTopText: { fontSize: 15, fontWeight: '800' },
   content: { padding: 20, paddingBottom: 48 },
+  taskContext: { borderWidth: 1, borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  taskContextIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  taskContextSubject: { fontSize: 12, fontWeight: '800', marginBottom: 2 },
+  taskContextTitle: { fontSize: 16, lineHeight: 21, fontWeight: '800' },
   infoCard: { borderWidth: 1, borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginBottom: 24 },
   infoText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600' },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
@@ -421,14 +578,29 @@ const styles = StyleSheet.create({
   deleteButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
   dateChip: { alignSelf: 'flex-start', marginLeft: 40, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   dateChipText: { fontSize: 12.5, fontWeight: '700' },
+  assigneeChip: { alignSelf: 'flex-start', marginLeft: 40, marginTop: 7, maxWidth: '82%', flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   pickerSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 18, paddingBottom: 32, gap: 10 },
   pickerTitle: { fontSize: 16, fontWeight: '800', textAlign: 'center' },
   picker: { height: 200 },
   pickerDone: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   pickerDoneText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  assignSheet: { margin: 18, padding: 18, borderRadius: 22, gap: 9, width: '92%', maxWidth: 520, alignSelf: 'center' },
+  assignHint: { fontSize: 12, lineHeight: 17, textAlign: 'center', marginBottom: 4 },
+  assignOption: { minHeight: 50, paddingHorizontal: 14, borderWidth: 1, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  assignOptionText: { flex: 1, fontSize: 14, fontWeight: '700' },
   addButton: { marginTop: 12, borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   addButtonText: { fontSize: 14, fontWeight: '800' },
+  memberSection: { marginTop: 24 },
+  memberCount: { fontSize: 12, fontWeight: '800' },
+  memberCard: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  memberRow: { minHeight: 62, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  memberDivider: { borderTopWidth: StyleSheet.hairlineWidth },
+  memberAvatar: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  memberName: { fontSize: 14, fontWeight: '800' },
+  memberRole: { fontSize: 11.5, fontWeight: '500', marginTop: 2 },
+  removeMemberButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  emptyMembers: { paddingHorizontal: 14, paddingBottom: 14, fontSize: 12, lineHeight: 18 },
   footnote: { fontSize: 12, lineHeight: 18, marginTop: 18 },
   primaryButton: { paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },

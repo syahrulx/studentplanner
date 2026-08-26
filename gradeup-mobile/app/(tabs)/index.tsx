@@ -541,6 +541,8 @@ function createDashboardStyles(
     sectionWrapper: { marginHorizontal: 20, marginBottom: 32 },
     sectionWrapperFirst: { marginTop: 24 },
     heroCarouselWrap: { marginTop: 24, marginBottom: 32 },
+    heroCarouselHeader: { marginHorizontal: 20, marginBottom: 8 },
+    planCarouselAction: { marginHorizontal: 20 },
     // 2 lines at lineHeight 19 — see sectionSubcopy.
     heroSubcopy: { height: 38, marginBottom: 16 },
     suggestAgainButton: { marginTop: 12, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, minHeight: 38 },
@@ -567,6 +569,9 @@ function createDashboardStyles(
     dashRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, gap: 20, marginTop: 24 },
     dashColLeft: { flex: 1, minWidth: 0, marginHorizontal: 0, marginTop: 0 },
     dashColRight: { flex: 1.4, minWidth: 0, marginHorizontal: 0, marginTop: 0 },
+    tabletPlanWrap: { marginTop: 28 },
+    tabletPlanHeader: { marginBottom: 8 },
+    tabletPlanAction: { marginHorizontal: 0 },
     sectionHeader: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: isPurpleTheme || themePack === 'custom' ? text : primary },
     sectionSubcopy: {
       fontSize: 13,
@@ -1486,7 +1491,11 @@ export default function Dashboard() {
     const d = a.date.localeCompare(b.date);
     return d !== 0 ? d : a.time.localeCompare(b.time);
   });
-  const previewItems = scheduleWithinMonth.slice(0, 15);
+  // A tablet already shows Upcoming beside the focus/plan column. Keeping the
+  // full phone preview here created a very tall, mostly empty dashboard. Four
+  // rows give a useful glance; the remaining items stay one tap away.
+  const upcomingPreviewLimit = isTablet ? 4 : 15;
+  const previewItems = scheduleWithinMonth.slice(0, upcomingPreviewLimit);
   const hiddenUpcomingCount = Math.max(0, scheduleWithinMonth.length - previewItems.length);
 
   const nextStudyItem = useMemo(() => {
@@ -1505,6 +1514,16 @@ export default function Dashboard() {
     }
     return courseId;
   }, [courses]);
+
+  /**
+   * "ITT569 · Essay", or just "Essay" when the task has no subject. Joining
+   * unconditionally left a stray leading "· " for tasks whose courseId is
+   * empty or unrecognised.
+   */
+  const withSubject = useCallback((courseId: string, rest: string) => {
+    const subject = formatSubjectName(courseId ?? '').trim();
+    return subject ? `${subject} · ${rest}` : rest;
+  }, [formatSubjectName]);
 
   const focusCard = useMemo(() => {
     let chosen: 'task' | 'study' | null = null;
@@ -1747,6 +1766,135 @@ export default function Dashboard() {
       )}
     </Pressable>
   );
+
+  type PhoneHeroEntry = {
+    key: string;
+    title: string;
+    isPlan?: boolean;
+    content: React.ReactNode;
+  };
+
+  const renderPlannedCard = (plan: (typeof activeBreakdowns)[number]) => (
+    <Pressable
+      style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+      onPress={() => router.push({
+        pathname: '/task-details',
+        params: { id: (plan.nextStep ?? plan.parent).id },
+      } as any)}
+    >
+      <View style={styles.plannedTopRow}>
+        <Feather name="check-circle" size={18} color={theme.primary} />
+        <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>
+          {`${plan.doneCount} of ${plan.total} steps done`}
+        </Text>
+      </View>
+      <Text style={[styles.plannedNextLabel, { color: theme.textSecondary }]}>NEXT STEP</Text>
+      <Text style={[styles.plannedNextTitle, { color: theme.text }]} numberOfLines={2}>
+        {plan.nextStep?.title ?? 'Every step is done. Nice work.'}
+      </Text>
+      <View style={styles.plannedBar}>
+        {Array.from({ length: plan.total }, (_, stepIndex) => (
+          <View
+            key={stepIndex}
+            style={[
+              styles.plannedBarSegment,
+              {
+                backgroundColor: stepIndex < plan.doneCount
+                  ? theme.primary
+                  : hexToRgba(theme.textSecondary, 0.2),
+              },
+            ]}
+          />
+        ))}
+      </View>
+    </Pressable>
+  );
+
+  const phoneHeroEntries: PhoneHeroEntry[] = [
+    {
+      key: 'focus',
+      title: T('todaysFocus'),
+      content: (
+        <View key="focus">
+          <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+            {focusCard
+              ? 'Your most important next move, ready to open in one tap.'
+              : 'No urgent items right now. Planner and study are in a good place.'}
+          </Text>
+          {renderFocusCard()}
+        </View>
+      ),
+    },
+    ...(recommendedToday
+      ? [{
+          key: 'rec',
+          title: 'Recommended today',
+          content: (
+            <View key="rec">
+              <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                A plan for the deadline that needs it most, ready in one tap.
+              </Text>
+              <RecommendedTodayCard
+                recommendation={recommendedToday}
+                onBreakdown={openRecommendationBreakdown}
+                onDismiss={dismissRecommendation}
+                embedded
+              />
+            </View>
+          ),
+        }]
+      : []),
+    ...activeBreakdowns.map((plan) => ({
+      key: `plan-${plan.parent.id}`,
+      title: 'Your plan',
+      isPlan: true,
+      content: (
+        <View key={`plan-${plan.parent.id}`}>
+          <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+            {withSubject(plan.parent.courseId, plan.parent.title)}
+          </Text>
+          {renderPlannedCard(plan)}
+        </View>
+      ),
+    })),
+    ...(!recommendedToday && activeBreakdowns.length === 0
+      ? [{
+          key: 'no-rec',
+          title: 'Recommended today',
+          content: (
+            <View key="no-rec">
+              <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
+                Nothing needs breaking down right now.
+              </Text>
+              <View style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.plannedTopRow}>
+                  <Feather name="coffee" size={18} color={theme.primary} />
+                  <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>All clear</Text>
+                </View>
+                <Text style={[styles.plannedNextTitle, { color: theme.text }]}>
+                  Your deadlines look manageable
+                </Text>
+                <Text style={[styles.sectionSubcopy, { marginTop: 2, marginBottom: 0 }]}>
+                  When a deadline starts looking heavy, a plan to split it into steps shows up here.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setIgnoreDismissals(true)}
+                  style={({ pressed }) => [
+                    styles.suggestAgainButton,
+                    { borderColor: theme.border },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Feather name="refresh-cw" size={14} color={theme.primary} />
+                  <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Suggest again</Text>
+                </Pressable>
+              </View>
+            </View>
+          ),
+        }]
+      : []),
+  ];
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -2045,128 +2193,33 @@ export default function Dashboard() {
           <HomeHeroCarousel
             dotColor={hexToRgba(theme.textSecondary, 0.3)}
             dotActiveColor={theme.primary}
-            pages={[
-              <View key="focus">
-                <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>{T('todaysFocus')}</Text>
-                <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
-                  {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
-                </Text>
-                {renderFocusCard()}
-              </View>,
-
-              recommendedToday ? (
-                <View key="rec">
-                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
-                    Recommended today
-                  </Text>
-                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
-                    A plan for the deadline that needs it most, ready in one tap.
-                  </Text>
-                  <RecommendedTodayCard
-                    recommendation={recommendedToday}
-                    onBreakdown={openRecommendationBreakdown}
-                    onDismiss={dismissRecommendation}
-                    embedded
-                  />
-                </View>
-              ) : null,
-
-              // One page per active plan, so every broken-down task is
-              // reachable by swiping. Paging arrows on a single card hid all
-              // but the most urgent plan.
-              ...activeBreakdowns.map((plan) => (
-                <View key={`plan-${plan.parent.id}`}>
-                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
-                    Your plan
-                  </Text>
-                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
-                    {`${formatSubjectName(plan.parent.courseId)} · ${plan.parent.title}`}
-                  </Text>
-                  <Pressable
-                    style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-                    onPress={() => router.push({
-                      pathname: '/task-details',
-                      params: { id: (plan.nextStep ?? plan.parent).id },
-                    } as any)}
-                  >
-                    <View style={styles.plannedTopRow}>
-                      <Feather name="check-circle" size={18} color={theme.primary} />
-                      <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>
-                        {`${plan.doneCount} of ${plan.total} steps done`}
-                      </Text>
-                    </View>
-                    <Text style={[styles.plannedNextLabel, { color: theme.textSecondary }]}>NEXT STEP</Text>
-                    <Text style={[styles.plannedNextTitle, { color: theme.text }]} numberOfLines={2}>
-                      {plan.nextStep?.title ?? 'Every step is done. Nice work.'}
-                    </Text>
-                    <View style={styles.plannedBar}>
-                      {Array.from({ length: plan.total }, (_, stepIndex) => (
-                        <View
-                          key={stepIndex}
-                          style={[
-                            styles.plannedBarSegment,
-                            {
-                              backgroundColor: stepIndex < plan.doneCount
-                                ? theme.primary
-                                : hexToRgba(theme.textSecondary, 0.2),
-                            },
-                          ]}
-                        />
-                      ))}
-                    </View>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setPlanPickerOpen(true)}
-                    style={({ pressed }) => [
-                      styles.suggestAgainButton,
-                      { borderColor: theme.border },
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <Feather name="plus" size={14} color={theme.primary} />
-                    <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Plan another task</Text>
-                  </Pressable>
-                </View>
-              )),
-
-              // Only when there is genuinely nothing else, so the hero always
-              // has a second page to swipe to.
-              !recommendedToday && activeBreakdowns.length === 0 ? (
-                <View key="no-rec">
-                  <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>
-                    Recommended today
-                  </Text>
-                  <Text style={[styles.sectionSubcopy, styles.heroSubcopy]} numberOfLines={2}>
-                    Nothing needs breaking down right now.
-                  </Text>
-                  <View style={[styles.plannedCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <View style={styles.plannedTopRow}>
-                      <Feather name="coffee" size={18} color={theme.primary} />
-                      <Text style={[styles.plannedProgress, { color: theme.textSecondary }]}>All clear</Text>
-                    </View>
-                    <Text style={[styles.plannedNextTitle, { color: theme.text }]}>
-                      Your deadlines look manageable
-                    </Text>
-                    <Text style={[styles.sectionSubcopy, { marginTop: 2, marginBottom: 0 }]}>
-                      When a deadline starts looking heavy, a plan to split it into steps shows up here.
-                    </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setIgnoreDismissals(true)}
-                      style={({ pressed }) => [
-                        styles.suggestAgainButton,
-                        { borderColor: theme.border },
-                        pressed && { opacity: 0.7 },
-                      ]}
-                    >
-                      <Feather name="refresh-cw" size={14} color={theme.primary} />
-                      <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Suggest again</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null,
-            ]}
+            header={(pageIndex) => (
+              <Text
+                style={[
+                  styles.sectionHeader,
+                  styles.heroCarouselHeader,
+                  themePack === 'custom' && { color: theme.text },
+                ]}
+              >
+                {phoneHeroEntries[pageIndex]?.title ?? phoneHeroEntries[0].title}
+              </Text>
+            )}
+            footer={(pageIndex) => phoneHeroEntries[pageIndex]?.isPlan ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPlanPickerOpen(true)}
+                style={({ pressed }) => [
+                  styles.suggestAgainButton,
+                  styles.planCarouselAction,
+                  { borderColor: theme.border },
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Feather name="plus" size={14} color={theme.primary} />
+                <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Plan another task</Text>
+              </Pressable>
+            ) : null}
+            pages={phoneHeroEntries.map((entry) => entry.content)}
           />
         </View>
       )}
@@ -2180,6 +2233,44 @@ export default function Dashboard() {
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
         </Text>
         {renderFocusCard()}
+        {activeBreakdowns.length > 0 ? (
+          <View style={styles.tabletPlanWrap}>
+            <HomeHeroCarousel
+              horizontalMargin={0}
+              dotColor={hexToRgba(theme.textSecondary, 0.3)}
+              dotActiveColor={theme.primary}
+              header={(pageIndex) => {
+                const plan = activeBreakdowns[pageIndex] ?? activeBreakdowns[0];
+                return (
+                  <View style={styles.tabletPlanHeader}>
+                    <Text style={[styles.sectionHeader, themePack === 'custom' && { color: theme.text }]}>Your plan</Text>
+                    <Text style={[styles.sectionSubcopy, { marginBottom: 0 }]} numberOfLines={2}>
+                      {withSubject(plan.parent.courseId, plan.parent.title)}
+                    </Text>
+                  </View>
+                );
+              }}
+              footer={(
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPlanPickerOpen(true)}
+                  style={({ pressed }) => [
+                    styles.suggestAgainButton,
+                    styles.tabletPlanAction,
+                    { borderColor: theme.border },
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Feather name="plus" size={14} color={theme.primary} />
+                  <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Plan another task</Text>
+                </Pressable>
+              )}
+              pages={activeBreakdowns.map((plan) => (
+                <View key={`tablet-plan-${plan.parent.id}`}>{renderPlannedCard(plan)}</View>
+              ))}
+            />
+          </View>
+        ) : null}
       </View>
       ) : null}
 
@@ -2402,7 +2493,7 @@ export default function Dashboard() {
                       {task.title}
                     </Text>
                     <Text style={[styles.planPickerRowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {`${formatSubjectName(task.courseId)} · ${formatDisplayDate(task.dueDate)}`}
+                      {withSubject(task.courseId, formatDisplayDate(task.dueDate))}
                     </Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={theme.textSecondary} />

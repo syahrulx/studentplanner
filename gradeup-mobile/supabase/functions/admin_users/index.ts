@@ -71,7 +71,7 @@ serve(async (req) => {
 
       let query = admin
         .from('profiles')
-        .select('id,name,student_id,university_id,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override', { count: 'exact' })
+        .select('id,name,student_id,university_id,country,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override', { count: 'exact' })
         .order(sortColumn, { ascending, nullsFirst: false })
         .range(offset, offset + limit - 1);
 
@@ -84,7 +84,16 @@ serve(async (req) => {
         // Strip PostgREST `or(...)` control chars so users can't break out of
         // the grouped filter and inject additional clauses.
         const safe = q.replace(/[,():*\\%]/g, ' ').trim();
-        if (safe) query = query.or(`name.ilike.%${safe}%,student_id.ilike.%${safe}%`);
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(safe)) {
+          query = query.eq('id', safe.toLowerCase());
+        } else if (/^[0-9a-f]{8}$/i.test(safe)) {
+          const prefix = safe.toLowerCase();
+          query = query
+            .gte('id', `${prefix}-0000-0000-0000-000000000000`)
+            .lte('id', `${prefix}-ffff-ffff-ffff-ffffffffffff`);
+        } else if (safe) {
+          query = query.or(`name.ilike.%${safe}%,student_id.ilike.%${safe}%`);
+        }
       }
 
       const { data, count, error: e } = await query;

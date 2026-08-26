@@ -5,8 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const release = require('./release.json');
 try {
-  const envPath = path.resolve(__dirname, '.env');
-  if (fs.existsSync(envPath)) {
+  // Local Expo development commonly uses `.env.local` (ignored by git),
+  // while CI/EAS may use `.env` or real process variables. Existing process
+  // variables always win, so production profile values cannot be overwritten.
+  for (const envFile of ['.env.local', '.env']) {
+    const envPath = path.resolve(__dirname, envFile);
+    if (!fs.existsSync(envPath)) continue;
     const lines = fs.readFileSync(envPath, 'utf8').split('\n');
     for (const line of lines) {
       const trimmed = line.trim();

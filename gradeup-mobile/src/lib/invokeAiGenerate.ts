@@ -10,7 +10,7 @@ import { showMonthlyLimitAlert, isMonthlyLimitError } from './aiLimitError';
 // Types
 // ---------------------------------------------------------------------------
 
-export type AiGenerateKind = 'flashcards' | 'flashcards_pdf' | 'quiz' | 'task_extract' | 'chat';
+export type AiGenerateKind = 'flashcards' | 'flashcards_pdf' | 'quiz' | 'task_extract' | 'chat' | 'handwriting_recognize';
 
 export interface AiGenerateRequest {
   kind: AiGenerateKind;
@@ -28,6 +28,8 @@ export interface AiGenerateRequest {
   subject_id?: string;
   /** Base64-encoded image for vision analysis in chat. */
   image_base64?: string;
+  /** Optional normalized crop hint for handwriting OCR. */
+  selection_hint?: { left: number; top: number; right: number; bottom: number };
 }
 
 export type AiGenerateFlashcardsResult = {
@@ -76,6 +78,12 @@ export type AiGenerateTaskExtractResult = {
 
 export type AiGenerateChatResult = {
   response: string;
+  error?: string;
+};
+
+export type AiGenerateHandwritingResult = {
+  text: string;
+  lines?: string[];
   error?: string;
 };
 

@@ -38,6 +38,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     parentTaskId: row.parent_task_id != null ? String(row.parent_task_id) : undefined,
     stepOrder: row.step_order != null ? Number(row.step_order) : undefined,
     estimatedMinutes: row.estimated_minutes != null ? Number(row.estimated_minutes) : undefined,
+    assignedTo: row.assigned_to != null ? String(row.assigned_to) : undefined,
   };
 }
 
@@ -95,6 +96,7 @@ export async function upsertTask(
       parent_task_id: task.parentTaskId ?? null,
       step_order: task.stepOrder ?? null,
       estimated_minutes: task.estimatedMinutes ?? null,
+      assigned_to: task.assignedTo ?? null,
     },
     { onConflict: 'id,user_id' }
   );

@@ -86,6 +86,8 @@ export interface Task {
   stepOrder?: number;
   /** Planning estimate only; never interpreted as measured study time. */
   estimatedMinutes?: number;
+  /** User assigned by the task owner to complete this breakdown step. */
+  assignedTo?: string;
 }
 
 /** Academic level for SOW/calendar (diploma, bachelor, etc.) */

@@ -1418,6 +1418,10 @@ function buildTaskMapFromRows(rows: any[]): Map<string, any> {
         suggestedWeek: Number(t.suggested_week || 0),
         needsDate: Boolean(t.needs_date),
         sourceMessage: t.source_message ?? undefined,
+        parentTaskId: t.parent_task_id ?? undefined,
+        stepOrder: t.step_order != null ? Number(t.step_order) : undefined,
+        estimatedMinutes: t.estimated_minutes != null ? Number(t.estimated_minutes) : undefined,
+        assignedTo: t.assigned_to ?? undefined,
       },
     ])
   );
@@ -1683,6 +1687,59 @@ export async function getSharedTaskParticipants(taskId: string): Promise<SharedT
     owner_profile: profileMap.get(s.owner_id),
     recipient_profile: s.recipient_id ? profileMap.get(s.recipient_id) : undefined,
   })) as SharedTask[];
+}
+
+/** Fetch the owner's child steps. RLS exposes them only to the owner and accepted task members. */
+export async function getSharedBreakdownSteps(parentTaskId: string, ownerId?: string): Promise<import('../types').Task[]> {
+  let query = supabase
+    .from('tasks')
+    .select('*')
+    .eq('parent_task_id', parentTaskId);
+  if (ownerId) query = query.eq('user_id', ownerId);
+  const { data, error } = await query.order('step_order', { ascending: true });
+  if (error) throw new Error(error.message || 'Could not load shared steps');
+  return Array.from(buildTaskMapFromRows(data || []).values()) as import('../types').Task[];
+}
+
+/** Owner-only assignment. The database verifies that the assignee accepted this exact task share. */
+export async function setBreakdownStepAssignee(stepTaskId: string, assigneeId: string | null): Promise<void> {
+  const { error } = await supabase.rpc('set_breakdown_step_assignee', {
+    p_step_task_id: stepTaskId,
+    p_assignee_id: assigneeId,
+  });
+  if (error) throw new Error(error.message || 'Could not assign this step');
+}
+
+/** Assigned member (or owner) completes the owner's real step so every member sees one shared state. */
+export async function setSharedBreakdownStepCompletion(stepTaskId: string, completed: boolean): Promise<void> {
+  const { error } = await supabase.rpc('set_shared_breakdown_step_completion', {
+    p_step_task_id: stepTaskId,
+    p_completed: completed,
+  });
+  if (error) throw new Error(error.message || 'Could not update this step');
+}
+
+/** Owner-only removal. It removes the share link and unassigns that member; it never deletes a task. */
+export async function removeTaskCollaborator(parentTaskId: string, memberId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_task_collaborator', {
+    p_parent_task_id: parentTaskId,
+    p_member_id: memberId,
+  });
+  if (error) throw new Error(error.message || 'Could not remove this member');
+}
+
+/** Realtime invalidation for group breakdowns. Callers re-fetch through RLS on each event. */
+export function subscribeToSharedBreakdown(parentTaskId: string, onChange: () => void): () => void {
+  const channel = supabase
+    .channel(`task-breakdown:${parentTaskId}:${Math.random().toString(36).slice(2)}`)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'tasks', filter: `parent_task_id=eq.${parentTaskId}`,
+    }, onChange)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'shared_tasks', filter: `task_id=eq.${parentTaskId}`,
+    }, onChange)
+    .subscribe();
+  return () => { void supabase.removeChannel(channel); };
 }
 
 export async function getSharedTasksBetweenUsers(friendId: string): Promise<SharedTask[]> {

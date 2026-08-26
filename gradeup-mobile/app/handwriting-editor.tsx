@@ -3,9 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
-  Dimensions,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
   Switch,
 } from 'react-native';
@@ -41,6 +42,7 @@ import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import ColorPicker from 'react-native-wheel-color-picker';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PDFDocument } from 'pdf-lib';
 import HandwritingCanvas, { HandwritingInkPreview } from '@/src/components/handwriting/HandwritingCanvas';
@@ -53,22 +55,24 @@ import {
   saveHandwritingDraft,
   saveHandwritingPages,
 } from '@/src/lib/handwritingDb';
-import { exportHandwritingPdf } from '@/src/lib/handwritingExport';
+import { exportHandwritingBackup, exportHandwritingPdf } from '@/src/lib/handwritingExport';
 import {
   createHandwritingPage,
   DEFAULT_HANDWRITING_TOOL_SETTINGS,
   HANDWRITING_PAGE_ASPECT_RATIO,
   handwritingNoteSummary,
   type HandwritingPage,
+  type HandwritingElement,
   type HandwritingStroke,
   type HandwritingTemplate,
   type HandwritingTool,
   type HandwritingToolSettings,
 } from '@/src/lib/handwritingTypes';
-import { getNoteAttachmentUrl } from '@/src/lib/noteStorage';
+import { getNoteAttachmentUrl, uploadNoteAttachment } from '@/src/lib/noteStorage';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
-import { invokeAiGenerate, type AiGenerateChatResult } from '@/src/lib/invokeAiGenerate';
+import { invokeAiGenerate, type AiGenerateChatResult, type AiGenerateHandwritingResult } from '@/src/lib/invokeAiGenerate';
 
 const COLORS = ['#111827', '#2563eb', '#dc2626', '#16a34a', '#7c3aed', '#f59e0b'];
 const FIXED_INK_COLORS = COLORS.slice(0, -2);
@@ -76,6 +80,9 @@ const FALLBACK_SAVED_COLORS = COLORS.slice(-2);
 const SAVED_INK_COLORS_KEY = 'rencana_handwriting_saved_ink_colours_v1';
 const AUTO_RETURN_ERASER_KEY = 'rencana_handwriting_auto_return_eraser_v1';
 const TOOL_SETTINGS_KEY = 'rencana_handwriting_tool_settings_v2';
+const ACCESSIBILITY_SETTINGS_KEY = 'rencana_handwriting_accessibility_v1';
+type HandwritingAccessibility = { largeControls: boolean; leftHanded: boolean; highContrast: boolean; reducedMotion: boolean };
+const DEFAULT_ACCESSIBILITY: HandwritingAccessibility = { largeControls: false, leftHanded: false, highContrast: false, reducedMotion: false };
 type InkColorTool = 'pen' | 'pencil' | 'highlighter';
 type SavedInkColors = Record<InkColorTool, string[]>;
 
@@ -132,8 +139,11 @@ interface ContinuousPageProps {
   secondaryTextColor: string;
   loadPdfPage: (pageNumber: number) => Promise<string | null>;
   onChange: (pageId: string, strokes: HandwritingStroke[]) => void;
+  onElementsChange: (pageId: string, elements: HandwritingElement[]) => void;
+  onConvertSelection: (pageId: string, captureDataUri: string, bounds: { left: number; top: number; right: number; bottom: number }, strokes: HandwritingStroke[]) => void;
   onCommit: (pageId: string, previous: HandwritingStroke[]) => void;
   onToolGestureEnd: (tool: HandwritingTool) => void;
+  onStylusDoubleTap: () => void;
 }
 
 function ContinuousPage({
@@ -153,8 +163,11 @@ function ContinuousPage({
   secondaryTextColor,
   loadPdfPage,
   onChange,
+  onElementsChange,
+  onConvertSelection,
   onCommit,
   onToolGestureEnd,
+  onStylusDoubleTap,
 }: ContinuousPageProps) {
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(page.pdfPageNumber != null);
@@ -212,8 +225,11 @@ function ContinuousPage({
             simultaneousGestures={documentGestures}
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
             onChange={(strokes) => onChange(page.id, strokes)}
+            onElementsChange={(elements) => onElementsChange(page.id, elements)}
             onCommit={(previous) => onCommit(page.id, previous)}
             onToolGestureEnd={onToolGestureEnd}
+            onStylusDoubleTap={onStylusDoubleTap}
+            onConvertSelection={(capture, bounds, strokes) => onConvertSelection(page.id, capture, bounds, strokes)}
           />
         </View>
       </View>
@@ -333,6 +349,7 @@ export default function HandwritingEditor() {
   const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
   const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
   const toolSettingsKey = `${TOOL_SETTINGS_KEY}:${user?.id ?? 'local'}`;
+  const accessibilityKey = `${ACCESSIBILITY_SETTINGS_KEY}:${user?.id ?? 'local'}`;
   const note = notes.find((candidate) => candidate.id === noteId);
   const premium = isAtLeastPlus(user?.subscriptionPlan);
   const canEdit = premium;
@@ -359,9 +376,21 @@ export default function HandwritingEditor() {
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageRatios, setPdfPageRatios] = useState<Record<number, number>>({});
   const [exporting, setExporting] = useState(false);
+  const [addingImage, setAddingImage] = useState(false);
   const [showInsertPage, setShowInsertPage] = useState(false);
   const [showToolOptions, setShowToolOptions] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showAccessibility, setShowAccessibility] = useState(false);
+  const [accessibility, setAccessibility] = useState<HandwritingAccessibility>(DEFAULT_ACCESSIBILITY);
+  const [showAddText, setShowAddText] = useState(false);
+  const [textObjectDraft, setTextObjectDraft] = useState('');
+  const [recognizingInk, setRecognizingInk] = useState(false);
+  const [recognizedDraft, setRecognizedDraft] = useState<null | {
+    pageId: string;
+    text: string;
+    bounds: { left: number; top: number; right: number; bottom: number };
+    strokeIds: string[];
+  }>(null);
   const [insertPosition, setInsertPosition] = useState<'before' | 'after'>('after');
   const [toolSettings, setToolSettings] = useState<HandwritingToolSettings>(DEFAULT_HANDWRITING_TOOL_SETTINGS);
   const [toolSettingsLoaded, setToolSettingsLoaded] = useState(false);
@@ -369,6 +398,7 @@ export default function HandwritingEditor() {
   const [zoomScale, setZoomScale] = useState(1);
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const [redoStacks, setRedoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
+  const { width: windowWidth } = useWindowDimensions();
 
   // ── AI Chat Side Panel state ──
   type AiChatMessage = { role: 'ai' | 'user'; text: string };
@@ -379,7 +409,11 @@ export default function HandwritingEditor() {
   const [aiInput, setAiInput] = useState('');
   const [aiProcessing, setAiProcessing] = useState(false);
   const aiScrollRef = useRef<ScrollView>(null);
-  const AI_PANEL_WIDTH = Dimensions.get('window').width * 0.55;
+  // Respond to iPad rotation, Android tablets and split-screen resizing. A
+  // one-time Dimensions.get() left the panel at its old width after resizing.
+  const AI_PANEL_WIDTH = windowWidth >= 768
+    ? Math.min(600, windowWidth * 0.58)
+    : Math.min(520, Math.max(280, windowWidth - 24));
 
   // Build notes context for AI from all notes in this subject
   const aiNotesContext = useMemo(() => {
@@ -524,6 +558,19 @@ export default function HandwritingEditor() {
     if (!toolSettingsLoaded) return;
     void AsyncStorage.setItem(toolSettingsKey, JSON.stringify(toolSettings)).catch(() => {});
   }, [toolSettings, toolSettingsKey, toolSettingsLoaded]);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(accessibilityKey).then((stored) => {
+      if (stored) setAccessibility({ ...DEFAULT_ACCESSIBILITY, ...JSON.parse(stored) });
+    }).catch(() => {});
+  }, [accessibilityKey]);
+  const updateAccessibility = useCallback((update: Partial<HandwritingAccessibility>) => {
+    setAccessibility((current) => {
+      const next = { ...current, ...update };
+      void AsyncStorage.setItem(accessibilityKey, JSON.stringify(next));
+      return next;
+    });
+  }, [accessibilityKey]);
 
   useEffect(() => {
     let active = true;
@@ -786,6 +833,172 @@ export default function HandwritingEditor() {
     dirtyRef.current = true;
   }, [queueLocalDraft]);
 
+  const updatePageElements = useCallback((pageId: string, elements: HandwritingElement[]) => {
+    setPages((current) => {
+      const next = current.map((page) => page.id === pageId
+        ? { ...page, elements, updatedAt: new Date().toISOString() }
+        : page);
+      pagesRef.current = next;
+      queueLocalDraft(next);
+      return next;
+    });
+    revisionRef.current += 1;
+    dirtyRef.current = true;
+    setDirty(true);
+  }, [queueLocalDraft]);
+
+  const indexRecognizedText = useCallback((nextPages: HandwritingPage[]) => {
+    if (!note) return;
+    const marker = '\n\n[Handwriting recognition]\n';
+    const base = (note.extractedText ?? '').split(marker)[0].trim();
+    const recognized = nextPages.map((page) => page.recognizedText?.trim()).filter(Boolean).join('\n\n');
+    handleSaveNote({ ...note, extractedText: recognized ? `${base}${base ? marker : marker.trimStart()}${recognized}` : base || undefined });
+  }, [handleSaveNote, note]);
+
+  const convertSelectionToText = useCallback(async (
+    pageId: string,
+    captureDataUri: string,
+    bounds: { left: number; top: number; right: number; bottom: number },
+    strokes: HandwritingStroke[],
+  ) => {
+    if (recognizingInk) return;
+    setRecognizingInk(true);
+    try {
+      const imageBase64 = captureDataUri.replace(/^data:image\/\w+;base64,/, '');
+      const { data, error } = await invokeAiGenerate<AiGenerateHandwritingResult>({
+        kind: 'handwriting_recognize', content: 'Transcribe selected handwriting', image_base64: imageBase64, selection_hint: bounds,
+      });
+      if (error || !data?.text) {
+        Alert.alert('Could not recognize writing', error || 'Try selecting the handwriting more closely.');
+        return;
+      }
+      setRecognizedDraft({ pageId, text: data.text, bounds, strokeIds: strokes.map((stroke) => stroke.id) });
+    } finally {
+      setRecognizingInk(false);
+    }
+  }, [recognizingInk]);
+
+  const applyRecognizedText = useCallback((replaceInk: boolean) => {
+    if (!recognizedDraft) return;
+    const now = new Date().toISOString();
+    const sourcePage = pagesRef.current.find((page) => page.id === recognizedDraft.pageId);
+    if (replaceInk && sourcePage) commitPageGesture(sourcePage.id, sourcePage.strokes);
+    const nextPages = pagesRef.current.map((page) => {
+        if (page.id !== recognizedDraft.pageId) return page;
+        const existing = page.recognizedText?.trim();
+        return {
+          ...page,
+          strokes: replaceInk ? page.strokes.filter((stroke) => !recognizedDraft.strokeIds.includes(stroke.id)) : page.strokes,
+          elements: replaceInk ? [...(page.elements ?? []), {
+            id: `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            type: 'text' as const,
+            x: recognizedDraft.bounds.left,
+            y: recognizedDraft.bounds.top,
+            width: Math.max(0.15, recognizedDraft.bounds.right - recognizedDraft.bounds.left),
+            height: Math.max(0.05, recognizedDraft.bounds.bottom - recognizedDraft.bounds.top),
+            text: recognizedDraft.text,
+            color,
+            fontSize: 0.025,
+            updatedAt: now,
+          }] : page.elements,
+          recognizedText: [existing, recognizedDraft.text].filter(Boolean).join('\n'),
+          updatedAt: now,
+        };
+    });
+    pagesRef.current = nextPages;
+    setPages(nextPages);
+    queueLocalDraft(nextPages);
+    indexRecognizedText(nextPages);
+    revisionRef.current += 1;
+    dirtyRef.current = true;
+    setDirty(true);
+    setRecognizedDraft(null);
+  }, [color, commitPageGesture, indexRecognizedText, queueLocalDraft, recognizedDraft]);
+
+  const addTextObject = useCallback(() => {
+    if (!activePage || !textObjectDraft.trim()) return;
+    updatePageElements(activePage.id, [...(activePage.elements ?? []), {
+      id: `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type: 'text', x: 0.12, y: 0.12, width: 0.5, height: 0.1,
+      text: textObjectDraft.trim(), color, fontSize: 0.025, updatedAt: new Date().toISOString(),
+    }]);
+    setTextObjectDraft('');
+    setShowAddText(false);
+    setTool('lasso');
+  }, [activePage, color, textObjectDraft, updatePageElements]);
+
+  const addImageObject = useCallback(async () => {
+    if (addingImage) return;
+    if (!canEdit) {
+      Alert.alert('Editing unavailable', 'Image insertion is available for Plus and Pro notes.');
+      return;
+    }
+    if (!activePage || !noteId) {
+      Alert.alert('Image not added', 'The note is still loading. Please try again in a moment.');
+      return;
+    }
+
+    try {
+      const allowed = await ensureImageLibraryAccessForPicker();
+      if (!allowed) {
+        Alert.alert(
+          'Photo permission needed',
+          'Allow Rencana to access your photos so you can insert an image into this note.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => { void Linking.openSettings(); } },
+          ],
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      let uid = uidRef.current;
+      if (!uid) {
+        const { data: { session } } = await supabase.auth.getSession();
+        uid = session?.user?.id ?? null;
+        uidRef.current = uid;
+      }
+      if (!uid) {
+        Alert.alert('Sign in required', 'Sign in again before adding a private image to this note.');
+        return;
+      }
+
+      setAddingImage(true);
+      const asset = result.assets[0];
+      const id = `he_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const extension = (asset.fileName?.split('.').pop() || asset.mimeType?.split('/').pop() || 'jpg')
+        .replace(/[^a-z0-9]/gi, '') || 'jpg';
+      const uploaded = await uploadNoteAttachment(
+        uid,
+        noteId,
+        asset.uri,
+        `handwriting-${id}.${extension}`,
+        asset.mimeType ?? 'image/jpeg',
+      );
+      if (uploaded.error || !uploaded.path) {
+        Alert.alert('Image not added', 'The private image upload failed. Check your connection and try again. Your existing note was not changed.');
+        return;
+      }
+      updatePageElements(activePage.id, [...(activePage.elements ?? []), {
+        id, type: 'image', x: 0.15, y: 0.15, width: 0.5, height: 0.3,
+        storagePath: uploaded.path, localUri: asset.uri, updatedAt: new Date().toISOString(),
+      }]);
+      setTool('lasso');
+    } catch (error) {
+      if (__DEV__) console.warn('[Handwriting] image insertion failed', error);
+      Alert.alert('Image not added', 'Rencana could not open or upload that image. Please try another image.');
+    } finally {
+      setAddingImage(false);
+    }
+  }, [activePage, addingImage, canEdit, noteId, updatePageElements]);
+
   const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
     setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
     setRedoStacks((current) => ({ ...current, [pageId]: [] }));
@@ -796,6 +1009,10 @@ export default function HandwritingEditor() {
       setTool(lastWritingToolRef.current);
     }
   }, [autoReturnAfterErasing]);
+
+  const handleStylusDoubleTap = useCallback(() => {
+    setTool((current) => current === 'eraser' ? lastWritingToolRef.current : 'eraser');
+  }, []);
 
   const updateAutoReturnAfterErasing = useCallback((enabled: boolean) => {
     setAutoReturnAfterErasing(enabled);
@@ -951,13 +1168,13 @@ export default function HandwritingEditor() {
     navigation.setOptions({ gestureEnabled: !dirty });
   }, [navigation, dirty]);
 
-  const exportPdf = async () => {
+  const exportPdf = async (scope: 'all' | 'current' = 'all') => {
     if (!pages.length || exporting) return;
     setExporting(true);
     try {
       await exportHandwritingPdf({
         title: title.trim() || note?.title || 'Rencana Notes',
-        pages,
+        pages: scope === 'current' && activePage ? [activePage] : pages,
         attachmentPath: isPdfAnnotation ? note?.attachmentPath : undefined,
       });
     } catch (error) {
@@ -966,6 +1183,27 @@ export default function HandwritingEditor() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const exportBackup = async () => {
+    if (!pages.length || exporting) return;
+    setExporting(true);
+    try {
+      await exportHandwritingBackup({ title: title.trim() || note?.title || 'Rencana Notes', pages });
+    } catch {
+      Alert.alert('Backup failed', 'Rencana could not create the editable backup.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const openExportOptions = () => {
+    Alert.alert('Export note', 'Choose a safe export format.', [
+      { text: 'Current page PDF', onPress: () => { void exportPdf('current'); } },
+      { text: 'All pages PDF', onPress: () => { void exportPdf('all'); } },
+      { text: 'Editable backup', onPress: () => { void exportBackup(); } },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const useCustomColor = useCallback(() => {
@@ -1199,7 +1437,7 @@ export default function HandwritingEditor() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={[styles.toolbarScroll, { backgroundColor: theme.card, borderBottomColor: theme.border }]}
-        contentContainerStyle={styles.toolbar}
+        contentContainerStyle={[styles.toolbar, accessibility.leftHanded && { flexDirection: 'row-reverse' }]}
       >
         {tools.map((item) => (
           <Pressable
@@ -1214,7 +1452,9 @@ export default function HandwritingEditor() {
               }
               setTool(item.id);
             }}
-            style={[styles.toolBtn, tool === item.id && { backgroundColor: `${theme.primary}18` }]}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.label}${tool === item.id ? ', selected' : ''}`}
+            style={[styles.toolBtn, accessibility.largeControls && styles.toolBtnLarge, tool === item.id && { backgroundColor: `${theme.primary}18` }]}
           >
             <View style={styles.toolIconRow}>
               <Feather name={item.icon} size={21} color={tool === item.id ? theme.primary : theme.text} />
@@ -1327,7 +1567,7 @@ export default function HandwritingEditor() {
       ) : null}
 
       <View
-        style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace]}
+        style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace, accessibility.highContrast && styles.highContrastWorkspace]}
         onLayout={(event) => setWorkspaceSize({
           width: event.nativeEvent.layout.width,
           height: event.nativeEvent.layout.height,
@@ -1390,8 +1630,11 @@ export default function HandwritingEditor() {
                   secondaryTextColor={theme.textSecondary}
                   loadPdfPage={loadPdfPage}
                   onChange={updatePageStrokes}
+                  onElementsChange={updatePageElements}
                   onCommit={commitPageGesture}
                   onToolGestureEnd={handleToolGestureEnd}
+                  onStylusDoubleTap={handleStylusDoubleTap}
+                  onConvertSelection={convertSelectionToText}
                 />
               )}
             />
@@ -1541,10 +1784,53 @@ export default function HandwritingEditor() {
               />
             </View>
             <Pressable
+              onPress={() => { setShowMoreMenu(false); setShowAddText(true); }}
+              style={[styles.moreMenuRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+            >
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}>
+                <Feather name="type" size={17} color={theme.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Add text box</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Move and resize it with Lasso</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              disabled={addingImage}
+              onPress={() => { setShowMoreMenu(false); void addImageObject(); }}
+              style={[
+                styles.moreMenuRow,
+                { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
+                addingImage && { opacity: 0.55 },
+              ]}
+            >
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}> 
+                {addingImage
+                  ? <ActivityIndicator size="small" color={theme.primary} />
+                  : <Feather name="image" size={17} color={theme.primary} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>{addingImage ? 'Adding image…' : 'Add image'}</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>
+                  {addingImage ? 'Uploading securely' : 'Stored privately with this note'}
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => { setShowMoreMenu(false); setShowAccessibility(true); }}
+              style={[styles.moreMenuRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+            >
+              <View style={[styles.moreMenuIcon, { backgroundColor: `${theme.primary}14` }]}><Feather name="eye" size={17} color={theme.primary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Accessibility</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Control size, handedness, contrast and motion</Text>
+              </View>
+            </Pressable>
+            <Pressable
               disabled={exporting}
               onPress={() => {
                 setShowMoreMenu(false);
-                void exportPdf();
+                openExportOptions();
               }}
               style={styles.moreMenuRow}
             >
@@ -1554,12 +1840,75 @@ export default function HandwritingEditor() {
                   : <Feather name="share" size={17} color={theme.primary} />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Export PDF</Text>
-                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Share a copy with your writing</Text>
+                <Text style={[styles.moreMenuTitle, { color: theme.text }]}>Export</Text>
+                <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Current/all-page PDF or editable backup</Text>
               </View>
             </Pressable>
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal visible={showAccessibility} transparent animationType={accessibility.reducedMotion ? 'none' : 'fade'} onRequestClose={() => setShowAccessibility(false)}>
+        <View style={styles.dialogBackdrop}>
+          <View style={[styles.dialogCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.toolSheetHeader}>
+              <View style={{ flex: 1 }}><Text style={[styles.toolSheetTitle, { color: theme.text }]}>Accessibility</Text><Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>Preferences stay on this device.</Text></View>
+              <Pressable onPress={() => setShowAccessibility(false)} accessibilityLabel="Close accessibility settings"><Feather name="x" size={22} color={theme.textSecondary} /></Pressable>
+            </View>
+            {([
+              ['Large controls', 'Easier toolbar targets on tablets and phones', 'largeControls'],
+              ['Left-handed toolbar', 'Reverse the main toolbar order', 'leftHanded'],
+              ['High-contrast workspace', 'Stronger paper boundary and background contrast', 'highContrast'],
+              ['Reduce motion', 'Remove non-essential dialog animation', 'reducedMotion'],
+            ] as const).map(([label, hint, key]) => (
+              <View key={key} style={[styles.settingSwitchRow, { borderBottomColor: theme.border }]}>
+                <View style={{ flex: 1 }}><Text style={[styles.optionLabel, { color: theme.text }]}>{label}</Text><Text style={[styles.optionHint, { color: theme.textSecondary }]}>{hint}</Text></View>
+                <Switch value={accessibility[key]} onValueChange={(value) => updateAccessibility({ [key]: value })} trackColor={{ false: theme.border, true: `${theme.primary}99` }} thumbColor={accessibility[key] ? theme.primary : theme.card} />
+              </View>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showAddText} transparent animationType="fade" onRequestClose={() => setShowAddText(false)}>
+        <View style={styles.dialogBackdrop}>
+          <View style={[styles.dialogCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.toolSheetTitle, { color: theme.text }]}>Add text box</Text>
+            <TextInput
+              value={textObjectDraft}
+              onChangeText={setTextObjectDraft}
+              placeholder="Type your note…"
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              autoFocus
+              style={[styles.dialogInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+            />
+            <View style={styles.dialogActions}>
+              <Pressable onPress={() => setShowAddText(false)} style={[styles.dialogButton, { borderColor: theme.border }]}><Text style={{ color: theme.text }}>Cancel</Text></Pressable>
+              <Pressable onPress={addTextObject} disabled={!textObjectDraft.trim()} style={[styles.dialogButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}><Text style={{ color: theme.textInverse, fontWeight: '800' }}>Add</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!recognizedDraft} transparent animationType="fade" onRequestClose={() => setRecognizedDraft(null)}>
+        <View style={styles.dialogBackdrop}>
+          <View style={[styles.dialogCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.toolSheetTitle, { color: theme.text }]}>Recognized handwriting</Text>
+            <Text style={[styles.moreMenuHint, { color: theme.textSecondary }]}>Correct the text, then keep the original ink or replace it with editable text.</Text>
+            <TextInput
+              value={recognizedDraft?.text ?? ''}
+              onChangeText={(text) => setRecognizedDraft((current) => current ? { ...current, text } : current)}
+              multiline
+              style={[styles.dialogInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.background }]}
+            />
+            <View style={styles.dialogActions}>
+              <Pressable onPress={() => setRecognizedDraft(null)} style={[styles.dialogButton, { borderColor: theme.border }]}><Text style={{ color: theme.text }}>Cancel</Text></Pressable>
+              <Pressable onPress={() => applyRecognizedText(false)} style={[styles.dialogButton, { borderColor: theme.primary }]}><Text style={{ color: theme.primary, fontWeight: '800' }}>Keep ink</Text></Pressable>
+              <Pressable onPress={() => applyRecognizedText(true)} style={[styles.dialogButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}><Text style={{ color: theme.textInverse, fontWeight: '800' }}>Replace</Text></Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={showPageThumbnails} transparent animationType="slide" onRequestClose={() => setShowPageThumbnails(false)}>
@@ -1749,14 +2098,26 @@ export default function HandwritingEditor() {
                   />
                   <View style={[styles.settingSwitchRow, { borderBottomColor: theme.border }]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionLabel, { color: theme.text }]}>Straight-line assist</Text>
-                      <Text style={[styles.optionHint, { color: theme.textSecondary }]}>Hold a nearly straight stroke briefly to snap it cleanly.</Text>
+                      <Text style={[styles.optionLabel, { color: theme.text }]}>Shape assist</Text>
+                      <Text style={[styles.optionHint, { color: theme.textSecondary }]}>Hold a line, rectangle, triangle or circle briefly to clean it up.</Text>
                     </View>
                     <Switch
                       value={toolSettings.shapeAssist}
                       onValueChange={(shapeAssist) => setToolSettings((current) => ({ ...current, shapeAssist }))}
                       trackColor={{ false: theme.border, true: `${theme.primary}99` }}
                       thumbColor={toolSettings.shapeAssist ? theme.primary : theme.card}
+                    />
+                  </View>
+                  <View style={[styles.settingSwitchRow, { borderBottomColor: theme.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionLabel, { color: theme.text }]}>Stylus double-tap</Text>
+                      <Text style={[styles.optionHint, { color: theme.textSecondary }]}>Double-tap the paper with the stylus to switch to or from the eraser.</Text>
+                    </View>
+                    <Switch
+                      value={toolSettings.stylusDoubleTap}
+                      onValueChange={(stylusDoubleTap) => setToolSettings((current) => ({ ...current, stylusDoubleTap }))}
+                      trackColor={{ false: theme.border, true: `${theme.primary}99` }}
+                      thumbColor={toolSettings.stylusDoubleTap ? theme.primary : theme.card}
                     />
                   </View>
                 </>
@@ -2069,6 +2430,7 @@ const styles = StyleSheet.create({
   toolbarScroll: { flexGrow: 0, height: 64, borderBottomWidth: StyleSheet.hairlineWidth },
   toolbar: { height: 64, alignItems: 'center', paddingHorizontal: 8, gap: 4 },
   toolBtn: { minWidth: 58, height: 52, paddingHorizontal: 7, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  toolBtnLarge: { minWidth: 76, height: 58, paddingHorizontal: 12 },
   toolIconRow: { minHeight: 22, flexDirection: 'row', alignItems: 'center', gap: 2 },
   toolLabel: { color: '#f8fafc', fontSize: 10, fontWeight: '700' },
   separator: { width: 1, height: 38, marginHorizontal: 5, backgroundColor: '#555b64' },
@@ -2077,6 +2439,7 @@ const styles = StyleSheet.create({
   customColorBtn: { width: 52, height: 53, borderRadius: 10, gap: 3 },
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
+  highContrastWorkspace: { backgroundColor: '#05070a', borderTopWidth: 2, borderTopColor: '#ffffff' },
   viewOnlyBanner: { minHeight: 36, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
   viewOnlyText: { flex: 1, fontSize: 11, fontWeight: '700' },
   viewOnlyUpgrade: { fontSize: 11, fontWeight: '900' },
@@ -2121,6 +2484,11 @@ const styles = StyleSheet.create({
   moreMenuTitle: { fontSize: 13, fontWeight: '800' },
   moreMenuHint: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  dialogBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.52)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  dialogCard: { width: '100%', maxWidth: 520, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 18, gap: 12 },
+  dialogInput: { minHeight: 120, maxHeight: 280, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 15, textAlignVertical: 'top' },
+  dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 },
+  dialogButton: { minHeight: 42, paddingHorizontal: 16, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   toolSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', justifyContent: 'flex-end' },
   toolSheet: { maxHeight: '78%', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', paddingBottom: 10 },
   thumbnailSheet: { height: '68%', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden', paddingBottom: 10 },
