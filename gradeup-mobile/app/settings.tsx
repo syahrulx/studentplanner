@@ -26,6 +26,7 @@ import { THEME_IDS, THEMES, type ThemeId } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { isTaskPastDueNow } from '@/src/utils/date';
+import { termStatus } from '@/src/lib/calendarTimeline';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -48,6 +49,7 @@ const THEME_LABEL_KEY: Record<
 export default function Settings() {
   const {
     user,
+    academicCalendar,
     language,
     theme: themeId,
     setTheme,
@@ -72,6 +74,29 @@ export default function Settings() {
 
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
+
+  /**
+   * This line used to explain UiTM's Group A / Group B split to everyone, including the ~470
+   * politeknik and 82 UKM students for whom those groups do not exist. Everyone else is better
+   * served by knowing which calendar they are actually on.
+   */
+  const calendarSubtitle = React.useMemo(() => {
+    if (user.universityId === 'uitm') {
+      return 'Group A: Foundation/Professional • Group B: Diploma/Bachelor/Master/PhD';
+    }
+    const label = academicCalendar?.semesterLabel?.trim();
+    if (!label) return T('configureCalendarHint');
+    const status = termStatus(academicCalendar?.startDate ?? '', academicCalendar?.endDate ?? '');
+    if (status.kind === 'running') return `${label} · ${status.weekLabel}`;
+    if (status.kind === 'ended') return `${label} · ${T('academicCalendarEnded')}`;
+    return label;
+  }, [
+    user.universityId,
+    academicCalendar?.semesterLabel,
+    academicCalendar?.startDate,
+    academicCalendar?.endDate,
+    T,
+  ]);
 
   /** Logged-in email from Supabase auth (shown in Android GC notice). */
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -304,7 +329,7 @@ export default function Settings() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{T('academicCalendar')}</Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
-                Group A: Foundation/Professional • Group B: Diploma/Bachelor/Master/PhD
+                {calendarSubtitle}
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />

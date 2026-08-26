@@ -1527,7 +1527,12 @@ Rules:
 - Every dated row of the table must become its own period. Never merge two rows into one span, and never skip a row because its type is unclear — use "other" rather than dropping it.
 - A mid-semester test ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") is type "test". It is a separate row: do not absorb it into the lecture block or the break next to it.
 - The periods must run continuously from first to last. Apart from short weekend-sized joins there must be no unexplained gap — a gap of a week or more means a row was missed, so re-read the table and add it.
-- These tables usually have one column per semester (Semester 1 / Semester 2 / Semester 3). Read each column separately and emit one candidate per column; never mix dates from two columns into a single candidate.
+- PDF_TEXT is a flattened table: each row is a label followed by one date+duration group per semester, in column order (Semester 1, then Semester 2, then Semester 3). Emit one candidate per semester.
+- A "-" or an empty group still occupies a column position. Count it, do not skip it, or every later date shifts into the wrong semester.
+- Column headings ("Semester 1", "Semester 2") are often missing from the extracted text or appear far away from the rows they label. Rely on the order of the groups within each row.
+- The same date is frequently repeated in Malay and again in English ("14 - 27 Sept. 2026 14th - 27th Sept. 2026"). That is one period, not two.
+- Rows are not in chronological order, and unrelated content (public holidays, the document title) may be interleaved after the table. Sort the periods by date yourself.
+- Source documents contain typos, usually a year that contradicts its neighbours (a revision week dated 2025 between periods in 2026). Prefer the value consistent with the surrounding sequence.
 - If information is unclear or missing, use null for optional fields.
 - Do NOT invent or guess dates. Only extract what is explicitly stated.
 - Return JSON only. No markdown, no explanation, no code fences.`;

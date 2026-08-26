@@ -148,14 +148,23 @@ const PERIOD_TYPES =
   'lecture|test|exam|revision|break|special_break|holiday|registration|orientation|industrial_training|other';
 
 /**
- * Academic calendars are tables where every row is one dated item; the failures worth guarding
- * against are dropping a row and merging adjacent rows into one span.
+ * Rules written against what the extracted text actually looks like. PDF text extraction flattens
+ * these tables into one line per row: the row label, then one date+duration group per semester in
+ * column order, with "-" for a semester the row does not apply to. The column headings are often
+ * missing entirely or land far from the rows they describe, so which semester a date belongs to is
+ * carried by position alone — and getting that wrong is what published a calendar whose semester
+ * "started" on its own mid-semester break date.
  */
 const TIMELINE_RULES = [
+  'The table arrives flattened: each row is a label followed by one date+duration group per semester, in column order (Semester 1, then Semester 2, then Semester 3).',
+  'A "-" or an empty group still occupies a column position — count it, do not skip it, or every later date shifts into the wrong semester.',
+  'Column headings ("Semester 1", "Semester 2") are often missing from the text or appear far away from the rows. Rely on the order of the groups within each row, and emit one candidate per semester.',
+  'The same date is frequently repeated in Malay and again in English ("14 - 27 Sept. 2026 14th - 27th Sept. 2026"). That is one period, not two.',
+  'Rows are not in chronological order, and unrelated content (public holidays, the document title) may be interleaved after the table. Sort periods by date yourself.',
   'Every dated row of the table must become its own period — never merge two rows into one span, and never skip a row because its type is unclear (use "other").',
   'Mid-semester tests ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") are type "test", not "exam" and not part of the lecture block around them.',
   'The periods must run continuously from the first to the last: apart from short weekend-sized joins, there must be no unexplained gap. A gap of a week or more means a row was missed — re-read the table and add it.',
-  'Where a table has one column per semester/session, read each column separately and emit one candidate per column. Never mix dates from two columns into one candidate.',
+  'Source documents contain typos, usually a year that contradicts its neighbours (a revision week dated 2025 between periods in 2026). Prefer the value consistent with the surrounding sequence.',
 ].join(' ');
 
 const calendarPromptMY = `You extract academic calendars for Malaysian universities and polytechnics.
