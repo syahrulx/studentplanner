@@ -1509,7 +1509,7 @@ Return VALID JSON ONLY with this exact shape:
       "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
       "periods": [
         {
-          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation" | "industrial_training",
+          "type": "lecture" | "test" | "exam" | "revision" | "break" | "special_break" | "holiday" | "registration" | "orientation" | "industrial_training" | "other",
           "label": "string (e.g. 'Lectures Week 1-7')",
           "startDate": "YYYY-MM-DD",
           "endDate": "YYYY-MM-DD"
@@ -1524,6 +1524,10 @@ Rules:
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
 - For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
+- Every dated row of the table must become its own period. Never merge two rows into one span, and never skip a row because its type is unclear — use "other" rather than dropping it.
+- A mid-semester test ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") is type "test". It is a separate row: do not absorb it into the lecture block or the break next to it.
+- The periods must run continuously from first to last. Apart from short weekend-sized joins there must be no unexplained gap — a gap of a week or more means a row was missed, so re-read the table and add it.
+- These tables usually have one column per semester (Semester 1 / Semester 2 / Semester 3). Read each column separately and emit one candidate per column; never mix dates from two columns into a single candidate.
 - If information is unclear or missing, use null for optional fields.
 - Do NOT invent or guess dates. Only extract what is explicitly stated.
 - Return JSON only. No markdown, no explanation, no code fences.`;

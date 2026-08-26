@@ -20,6 +20,7 @@ import { supabase } from "@/src/lib/supabase";
 import { TextInput } from "react-native-gesture-handler";
 import { getUniversityById } from "@/src/lib/universities";
 import { submitUitmCalendarContribution } from "@/src/lib/uitmCalendarContributionsDb";
+import { validateCalendarTimeline } from "@/src/lib/calendarTimelineValidation";
 
 async function functionErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
@@ -196,6 +197,17 @@ export default function AddAcademicCalendarScreen() {
       const end = endDate.trim().slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
         throw new Error("Enter valid dates in YYYY-MM-DD format.");
+      }
+
+      // Other students apply what is published here, so an incomplete timeline must not leave
+      // this screen — see `validateCalendarTimeline` for what counts as incomplete.
+      const timelineProblems = validateCalendarTimeline({
+        periods,
+        startDate: start,
+        endDate: end,
+      });
+      if (timelineProblems.length > 0) {
+        throw new Error(timelineProblems.join("\n\n"));
       }
 
       if (isUitm) {

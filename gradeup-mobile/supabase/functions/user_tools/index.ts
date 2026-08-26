@@ -138,15 +138,35 @@ async function extractScannedPdfText(
   }
 }
 
+/**
+ * `test` and `special_break` used to be missing from this list, and a row the model has no type
+ * for gets dropped rather than mapped to the nearest one: a UKM calendar lost its whole
+ * "Peperiksaan Pertengahan Semester" week that way, leaving a hole students saw as a dead month.
+ * Keep this list in sync with `AcademicPeriodType` in src/types.ts.
+ */
+const PERIOD_TYPES =
+  'lecture|test|exam|revision|break|special_break|holiday|registration|orientation|industrial_training|other';
+
+/**
+ * Academic calendars are tables where every row is one dated item; the failures worth guarding
+ * against are dropping a row and merging adjacent rows into one span.
+ */
+const TIMELINE_RULES = [
+  'Every dated row of the table must become its own period — never merge two rows into one span, and never skip a row because its type is unclear (use "other").',
+  'Mid-semester tests ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") are type "test", not "exam" and not part of the lecture block around them.',
+  'The periods must run continuously from the first to the last: apart from short weekend-sized joins, there must be no unexplained gap. A gap of a week or more means a row was missed — re-read the table and add it.',
+  'Where a table has one column per semester/session, read each column separately and emit one candidate per column. Never mix dates from two columns into one candidate.',
+].join(' ');
+
 const calendarPromptMY = `You extract academic calendars for Malaysian universities and polytechnics.
 Return valid JSON only in this shape:
-{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training|holiday","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
-Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods, including named public holidays that fall within the semester (type "holiday", e.g. "Deepavali", "Hari Raya") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
+{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"${PERIOD_TYPES}","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
+Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. ${TIMELINE_RULES} Capture the full timeline in periods, including named public holidays that fall within the semester (type "holiday", e.g. "Deepavali", "Hari Raya") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
 
 const calendarPromptIntl = `You extract academic calendars for universities worldwide.
 Return valid JSON only in this shape:
-{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training|holiday","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
-Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert dates in whatever format they appear to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods, including named public/institutional holidays that fall within the semester (type "holiday") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
+{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"${PERIOD_TYPES}","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
+Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert dates in whatever format they appear to YYYY-MM-DD. total_weeks counts teaching weeks only. ${TIMELINE_RULES} Capture the full timeline in periods, including named public/institutional holidays that fall within the semester (type "holiday") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
 
 function calendarPromptForCountry(country: unknown): string {
   return String(country ?? 'MY').trim().toUpperCase() === 'MY' ? calendarPromptMY : calendarPromptIntl;
