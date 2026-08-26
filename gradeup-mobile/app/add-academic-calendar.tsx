@@ -165,8 +165,17 @@ export default function AddAcademicCalendarScreen() {
 
   const applyCandidate = (cand: any) => {
     setCandidates(null);
-    setProgramLevel(cand.program_level || "General");
-    setSemesterLabel(cand.semester_label || "");
+    const level = String(cand.program_level || "General").trim();
+    setProgramLevel(level || "General");
+    // A document covering several programmes yields the same bare "Semester 1" for each of them.
+    // That is how UKM ended up publishing its foundation and undergraduate calendars — three
+    // months apart — under one name, with no way for a student to tell them apart.
+    const label = String(cand.semester_label || "").trim();
+    const needsPrefix =
+      level &&
+      !/^general$/i.test(level) &&
+      !label.toLowerCase().includes(level.toLowerCase());
+    setSemesterLabel(needsPrefix ? `${level} — ${label}` : label);
     setTermType(/short|semester khas|special semester/i.test(String(cand.semester_label || "")) ? "short" : "regular");
     setStartDate(cand.start_date || "");
     setEndDate(cand.end_date || "");
