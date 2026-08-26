@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import type { AcademicCalendar } from '../types';
+import type { AcademicCalendar, AcademicLevel } from '../types';
+import { normalizeAcademicLevel } from './academicLevel';
 
 const OFFERS = 'university_calendar_offers';
 const RESPONSES = 'user_calendar_offer_responses';
@@ -14,6 +15,8 @@ export type UniversityCalendarOffer = {
   breakStartDate?: string;
   breakEndDate?: string;
   periods?: AcademicCalendar['periods'];
+  /** Programme this calendar is for; `undefined` means it applies to every programme. */
+  programLevel?: AcademicLevel;
   officialUrl?: string;
   referencePdfUrl?: string;
   adminNote?: string;
@@ -44,6 +47,9 @@ function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
     breakStartDate: bs || undefined,
     breakEndDate: be || undefined,
     periods: periods && periods.length > 0 ? (periods as any) : undefined,
+    // Extractions write free text here ("Bachelor Programme", "Asasi"), so it goes through the
+    // same normaliser as `profiles.academic_level` — the picker compares the two.
+    programLevel: normalizeAcademicLevel(row.program_level),
     officialUrl: row.official_url != null ? String(row.official_url).trim() || undefined : undefined,
     referencePdfUrl: row.reference_pdf_url != null ? String(row.reference_pdf_url).trim() || undefined : undefined,
     adminNote: row.admin_note != null ? String(row.admin_note).trim() || undefined : undefined,

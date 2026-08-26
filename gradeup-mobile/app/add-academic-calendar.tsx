@@ -21,6 +21,8 @@ import { TextInput } from "react-native-gesture-handler";
 import { getUniversityById } from "@/src/lib/universities";
 import { submitUitmCalendarContribution } from "@/src/lib/uitmCalendarContributionsDb";
 import { validateCalendarTimeline } from "@/src/lib/calendarTimelineValidation";
+import { parsePeriodsJson, toAcademicPeriods, type PeriodRow } from "@/src/lib/calendarTimeline";
+import { PeriodListEditor } from "@/components/calendar/PeriodListEditor";
 
 async function functionErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
@@ -52,7 +54,11 @@ export default function AddAcademicCalendarScreen() {
   const [totalWeeks, setTotalWeeks] = useState("");
   const [breakStart, setBreakStart] = useState("");
   const [breakEnd, setBreakEnd] = useState("");
-  const [periodsJson, setPeriodsJson] = useState("[]");
+  // Was a `periodsJson` string that nothing on this screen ever rendered an input for, so a manual
+  // entry could not produce a timeline at all — only the AI extraction path ever filled it.
+  const [periods, setPeriods] = useState<PeriodRow[]>([]);
+  /** Set when one document yielded several programmes and the student must say which is theirs. */
+  const [candidates, setCandidates] = useState<any[] | null>(null);
 
   const handlePickDocument = useCallback(async () => {
     try {
@@ -147,7 +153,18 @@ export default function AddAcademicCalendarScreen() {
       setFormVisible(true);
       return;
     }
-    const cand = extracted.candidates[0]; // Auto-pick the first one
+    // One PDF often holds several programmes — UKM's covers both ASASIpintar (June start) and
+    // undergraduate (September start). Taking candidate 0 silently published whichever the model
+    // happened to list first, under a generic label, to every student at the university.
+    if (extracted.candidates.length > 1) {
+      setCandidates(extracted.candidates);
+      return;
+    }
+    applyCandidate(extracted.candidates[0]);
+  };
+
+  const applyCandidate = (cand: any) => {
+    setCandidates(null);
     setProgramLevel(cand.program_level || "General");
     setSemesterLabel(cand.semester_label || "");
     setTermType(/short|semester khas|special semester/i.test(String(cand.semester_label || "")) ? "short" : "regular");
@@ -156,7 +173,7 @@ export default function AddAcademicCalendarScreen() {
     setTotalWeeks(cand.total_weeks ? String(cand.total_weeks) : "");
     setBreakStart(cand.break_start_date || "");
     setBreakEnd(cand.break_end_date || "");
-    setPeriodsJson(JSON.stringify(cand.periods || [], null, 2));
+    setPeriods(parsePeriodsJson(JSON.stringify(cand.periods ?? [])));
     setFormVisible(true);
     Alert.alert(
       "Success",
@@ -166,6 +183,29 @@ export default function AddAcademicCalendarScreen() {
 
   const handleManualEntry = () => {
     setFormVisible(true);
+  };
+
+  /**
+   * For a non-UiTM university this screen writes straight to `university_calendar_offers`, which
+   * every student there picks from — there is no review step. The wording used to read like a
+   * personal setting, which is how one university ended up with a foundation-programme calendar
+   * published under a generic label.
+   */
+  const confirmThenSubmit = () => {
+    if (user.universityId === "uitm") {
+      void submitCalendar();
+      return;
+    }
+    const uniName =
+      getUniversityById(user.universityId ?? "")?.name ?? "your university";
+    Alert.alert(
+      "Publish to everyone at " + uniName + "?",
+      `${semesterLabel.trim() || "This calendar"} (${programLevel}) will become a calendar every student at ${uniName} can apply. Please check the programme and dates match the official calendar.`,
+      [
+        { text: "Review again", style: "cancel" },
+        { text: "Publish", onPress: () => void submitCalendar() },
+      ],
+    );
   };
 
   const submitCalendar = async () => {
@@ -185,13 +225,6 @@ export default function AddAcademicCalendarScreen() {
 
     setBusy(true);
     try {
-      let periods = [];
-      try {
-        periods = JSON.parse(periodsJson);
-      } catch {
-        throw new Error("Periods JSON is invalid.");
-      }
-
       const isUitm = user.universityId === "uitm";
       const start = startDate.trim().slice(0, 10);
       const end = endDate.trim().slice(0, 10);
@@ -222,7 +255,7 @@ export default function AddAcademicCalendarScreen() {
           totalWeeks: parseInt(totalWeeks, 10) || 14,
           ...(breakStart.trim() ? { breakStartDate: breakStart.trim() } : {}),
           ...(breakEnd.trim() ? { breakEndDate: breakEnd.trim() } : {}),
-          periods,
+          periods: toAcademicPeriods(periods),
         });
         Alert.alert(
           "Sent for review",
@@ -290,7 +323,8 @@ export default function AddAcademicCalendarScreen() {
         total_weeks: parseInt(totalWeeks) || 14,
         break_start_date: breakStart.trim() || null,
         break_end_date: breakEnd.trim() || null,
-        periods_json: periods,
+        periods_json: toAcademicPeriods(periods),
+        program_level: programLevel.trim() || null,
         source: "crowdsourced",
         created_by: userId,
       };
@@ -336,6 +370,53 @@ export default function AddAcademicCalendarScreen() {
         <Text style={s.title}>Add Academic Calendar</Text>
       </View>
 
+      {candidates ? (
+        <ScrollView contentContainerStyle={s.content}>
+          <Text style={[s.label, { color: theme.textSecondary, marginTop: 0 }]}>
+            Which programme is yours?
+          </Text>
+          <Text style={s.desc}>
+            This document contains {candidates.length} calendars with different dates. Pick the one
+            for your programme — the others belong to different students.
+          </Text>
+          {candidates.map((cand: any, index: number) => (
+            <Pressable
+              key={`${cand?.semester_label ?? index}-${index}`}
+              onPress={() => applyCandidate(cand)}
+              style={({ pressed }) => [
+                s.candidateCard,
+                { borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Text style={[s.candidateTitle, { color: theme.text }]}>
+                {cand?.program_level || "General"}
+              </Text>
+              <Text style={[s.candidateMeta, { color: theme.textSecondary }]}>
+                {cand?.semester_label || "Unnamed semester"}
+              </Text>
+              <Text style={[s.candidateMeta, { color: theme.textSecondary }]}>
+                {cand?.start_date || "?"} → {cand?.end_date || "?"}
+                {cand?.total_weeks ? ` · ${cand.total_weeks} weeks` : ""}
+              </Text>
+              {cand?.campus_group ? (
+                <Text style={[s.candidateMeta, { color: theme.textSecondary }]}>
+                  {cand.campus_group}
+                  {cand?.campus_group_description ? ` — ${cand.campus_group_description}` : ""}
+                </Text>
+              ) : null}
+            </Pressable>
+          ))}
+          <Pressable
+            style={[
+              s.submitBtn,
+              { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border },
+            ]}
+            onPress={() => setCandidates(null)}
+          >
+            <Text style={[s.submitText, { color: theme.text }]}>Cancel</Text>
+          </Pressable>
+        </ScrollView>
+      ) : (
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.desc}>
           {user.universityId === "uitm"
@@ -517,9 +598,34 @@ export default function AddAcademicCalendarScreen() {
               onChangeText={setBreakEnd}
             />
 
+            <Text style={[s.label, { color: theme.textSecondary }]}>
+              Semester Timeline
+            </Text>
+            <PeriodListEditor
+              rows={periods}
+              onChange={setPeriods}
+              startDate={startDate.trim().slice(0, 10)}
+              endDate={endDate.trim().slice(0, 10)}
+            />
+
+            {user.universityId !== "uitm" ? (
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: theme.textSecondary,
+                  marginTop: 18,
+                }}
+              >
+                Publishing shares this calendar with every student at{" "}
+                {getUniversityById(user.universityId ?? "")?.name ?? "your university"} — it is not
+                a private setting. Make sure the programme and dates match the official calendar.
+              </Text>
+            ) : null}
+
             <Pressable
               style={[s.submitBtn, { backgroundColor: theme.primary }]}
-              onPress={submitCalendar}
+              onPress={confirmThenSubmit}
               disabled={busy}
             >
               {busy ? (
@@ -533,6 +639,7 @@ export default function AddAcademicCalendarScreen() {
           </View>
         )}
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -596,6 +703,21 @@ function styles(theme: any) {
     },
     termChoices: { flexDirection: "row", gap: 8 },
     termChoice: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+    candidateCard: {
+      borderWidth: 1,
+      borderRadius: 16,
+      padding: 14,
+      marginTop: 10,
+    },
+    candidateTitle: {
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    candidateMeta: {
+      marginTop: 3,
+      fontSize: 12,
+      fontWeight: "600",
+    },
     submitBtn: {
       height: 50,
       borderRadius: 14,

@@ -313,7 +313,6 @@ const translations = {
       'Your planner is still running on a semester that has already finished, so week numbers, tasks and reminders no longer line up. Pick your current semester to fix it.',
     staleCalendarEnded: 'Currently applied',
     staleCalendarChoose: 'Calendars for your university',
-    staleCalendarNoTimeline: 'No timeline yet — weeks only, no lecture or exam dates.',
     staleCalendarNone:
       'There is no current calendar published for your university yet. You can add one from the official calendar and it will be shared with everyone at your university.',
     staleCalendarAdd: 'Add a calendar',
@@ -1295,7 +1294,6 @@ const translations = {
       'Perancang anda masih menggunakan semester yang sudah tamat, jadi nombor minggu, tugasan dan peringatan tidak lagi tepat. Pilih semester semasa anda untuk membetulkannya.',
     staleCalendarEnded: 'Sedang digunakan',
     staleCalendarChoose: 'Kalendar untuk universiti anda',
-    staleCalendarNoTimeline: 'Tiada garis masa — minggu sahaja, tiada tarikh kuliah atau peperiksaan.',
     staleCalendarNone:
       'Belum ada kalendar semasa diterbitkan untuk universiti anda. Anda boleh tambah satu daripada kalendar rasmi dan ia akan dikongsi dengan semua pelajar di universiti anda.',
     staleCalendarAdd: 'Tambah kalendar',

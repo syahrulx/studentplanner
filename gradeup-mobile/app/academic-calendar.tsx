@@ -25,6 +25,8 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/src/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
+import { CalendarOfferOption } from "@/components/calendar/CalendarOfferOption";
+import { groupOffersForPicker } from "@/src/lib/calendarTimeline";
 import { supabase } from "@/src/lib/supabase";
 import { useTranslations } from "@/src/i18n";
 import {
@@ -125,6 +127,7 @@ export default function AcademicCalendarScreen() {
   const [syncStatus, setSyncStatus] = useState<string>("");
   const [adminOffers, setAdminOffers] = useState<UniversityCalendarOffer[]>([]);
   const [cfgSelectedOfferId, setCfgSelectedOfferId] = useState("");
+  const [showOtherOffers, setShowOtherOffers] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
   const [uitmCommunityOffers, setUitmCommunityOffers] = useState<UitmCalendarContribution[]>([]);
   const [cfgSelectedUitmCommunityId, setCfgSelectedUitmCommunityId] = useState("");
@@ -525,6 +528,12 @@ export default function AcademicCalendarScreen() {
   }, [academicCalendar?.semesterLabel]);
 
   const periods = academicCalendar?.periods ?? [];
+
+  // Programme + today's date decide what a student sees first; nothing is hidden, only ordered.
+  const groupedOffers = useMemo(
+    () => groupOffersForPicker(adminOffers, { academicLevel: user.academicLevel }),
+    [adminOffers, user.academicLevel],
+  );
 
   const recommendedGroup = useMemo<"A" | "B">(
     () => (cfgLevel === "Foundation" ? "A" : "B"),
@@ -1494,86 +1503,91 @@ export default function AcademicCalendarScreen() {
                   <Text style={[s.modalSub, { color: theme.textSecondary }]}>
                     Select your semester to load dates.
                   </Text>
-                  {adminOffers.map((o) => (
-                    <TouchableOpacity
-                      key={o.id}
-                      style={[
-                        s.optRow,
-                        {
-                          borderWidth: 1,
-                          borderColor: cfgSelectedOfferId === o.id ? theme.primary : theme.border,
-                          backgroundColor: cfgSelectedOfferId === o.id ? theme.primary + "1A" : "transparent",
-                        }
-                      ]}
-                      activeOpacity={0.6}
-                      onPress={() => {
-                        setCfgSelectedOfferId(o.id);
-                        setCfgLevel(
-                          inferAcademicLevelFromOfferLabel(o.semesterLabel),
-                        );
-                      }}
-                    >
-                      <Feather
-                        name={cfgSelectedOfferId === o.id ? "check-circle" : "circle"}
-                        size={18}
-                        color={
-                          cfgSelectedOfferId === o.id
-                            ? theme.primary
-                            : theme.textSecondary
-                        }
-                      />
-                      <Text
-                        style={[s.optText, { color: theme.text }]}
-                        numberOfLines={3}
-                      >
-                        {o.semesterLabel}
-                      </Text>
-                      {o.source === "crowdsourced" ? (
-                        <TouchableOpacity
-                          hitSlop={15}
-                          style={{
-                            paddingLeft: 10,
-                            paddingRight: 4,
-                            paddingVertical: 4,
-                          }}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert(
-                              "Report Calendar",
-                              "Are the dates for this calendar incorrect or fake?",
-                              [
-                                { text: "Cancel", style: "cancel" },
-                                {
-                                  text: "Report",
-                                  style: "destructive",
-                                  onPress: async () => {
-                                    const { error } = await supabase.rpc(
-                                      "increment_calendar_report",
-                                      { offer_id: o.id },
-                                    );
-                                    if (error) {
-                                      Alert.alert("Error", error.message);
-                                    } else {
-                                      Alert.alert(
-                                        "Reported",
-                                        "Thank you. The admin has been notified.",
-                                      );
-                                    }
-                                  },
-                                },
-                              ],
-                            );
-                          }}
+                  {(
+                    [
+                      ["For you now", groupedOffers.forYou],
+                      ["Starting later", groupedOffers.upcoming],
+                      ["Other programmes and past semesters", groupedOffers.others],
+                    ] as const
+                  ).map(([heading, list]) =>
+                    list.length === 0 ? null : (
+                      <View key={heading}>
+                        <Text
+                          style={[
+                            s.fieldLabel,
+                            { color: theme.textSecondary, marginTop: 16 },
+                          ]}
                         >
-                          <Feather
-                            name="flag"
-                            size={16}
-                            color={theme.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      ) : null}
-                    </TouchableOpacity>
-                  ))}
+                          {heading}
+                        </Text>
+                        {heading === "Other programmes and past semesters" &&
+                        !showOtherOffers ? (
+                          <Pressable
+                            onPress={() => setShowOtherOffers(true)}
+                            style={({ pressed }) => [
+                              s.optRow,
+                              {
+                                borderWidth: 1,
+                                borderColor: theme.border,
+                                opacity: pressed ? 0.85 : 1,
+                              },
+                            ]}
+                          >
+                            <Feather
+                              name="chevron-down"
+                              size={18}
+                              color={theme.textSecondary}
+                            />
+                            <Text style={[s.optText, { color: theme.textSecondary }]}>
+                              Show {list.length} more
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          list.map((o) => (
+                            <CalendarOfferOption
+                              key={o.id}
+                              offer={o}
+                              selected={cfgSelectedOfferId === o.id}
+                              onSelect={() => {
+                                setCfgSelectedOfferId(o.id);
+                                setCfgLevel(
+                                  o.programLevel ??
+                                    inferAcademicLevelFromOfferLabel(o.semesterLabel),
+                                );
+                              }}
+                              onReport={() =>
+                                Alert.alert(
+                                  "Report Calendar",
+                                  "Are the dates for this calendar incorrect or fake?",
+                                  [
+                                    { text: "Cancel", style: "cancel" },
+                                    {
+                                      text: "Report",
+                                      style: "destructive",
+                                      onPress: async () => {
+                                        const { error } = await supabase.rpc(
+                                          "increment_calendar_report",
+                                          { offer_id: o.id },
+                                        );
+                                        if (error) {
+                                          Alert.alert("Error", error.message);
+                                        } else {
+                                          Alert.alert(
+                                            "Reported",
+                                            "Thank you. The admin has been notified.",
+                                          );
+                                        }
+                                      },
+                                    },
+                                  ],
+                                )
+                              }
+                            />
+                          ))
+                        )}
+                      </View>
+                    ),
+                  )}
                   <Pressable
                     style={[
                       s.saveBtn,

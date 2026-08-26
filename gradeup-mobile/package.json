@@ -18,6 +18,7 @@
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts",
     "test:calendar-timeline": "npx --yes tsx tests/calendarTimelineValidation.test.ts",
     "test:academic-level": "npx --yes tsx tests/academicLevel.test.ts",
+    "test:calendar-shape": "npx --yes tsx tests/calendarTimeline.test.ts",
     "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
   },
   "dependencies": {

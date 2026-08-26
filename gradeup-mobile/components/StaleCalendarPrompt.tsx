@@ -22,6 +22,7 @@ import {
   type UniversityCalendarOffer,
 } from '@/src/lib/universityCalendarOffersDb';
 import { resolveUniversityIdForCalendar } from '@/src/lib/universities';
+import { CalendarOfferOption } from '@/components/calendar/CalendarOfferOption';
 
 /**
  * An applied calendar is a frozen copy — nothing moves a student to the next semester when the
@@ -199,41 +200,17 @@ export function StaleCalendarPrompt() {
               <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
                 {T('staleCalendarChoose')}
               </Text>
-              <ScrollView style={styles.list} contentContainerStyle={{ gap: 10 }}>
-                {offers.map((offer) => {
-                  const hasTimeline = (offer.periods?.length ?? 0) > 0;
-                  const busy = applyingId === offer.id;
-                  return (
-                    <Pressable
-                      key={offer.id}
-                      onPress={() => void onApply(offer)}
-                      disabled={applyingId != null}
-                      style={({ pressed }) => [
-                        styles.option,
-                        {
-                          borderColor: theme.border,
-                          backgroundColor: theme.backgroundSecondary,
-                          opacity: applyingId != null && !busy ? 0.5 : pressed ? 0.85 : 1,
-                        },
-                      ]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.optionTitle, { color: theme.text }]}>
-                          {offer.semesterLabel}
-                        </Text>
-                        <Text style={[styles.optionMeta, { color: theme.textSecondary }]}>
-                          {offer.startDate} → {offer.endDate}
-                        </Text>
-                        {!hasTimeline ? (
-                          <Text style={[styles.optionWarn, { color: theme.textSecondary }]}>
-                            {T('staleCalendarNoTimeline')}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {busy ? <ActivityIndicator color={theme.primary} /> : null}
-                    </Pressable>
-                  );
-                })}
+              <ScrollView style={styles.list}>
+                {offers.map((offer) => (
+                  <CalendarOfferOption
+                    key={offer.id}
+                    offer={offer}
+                    selected={applyingId === offer.id}
+                    onSelect={() => {
+                      if (applyingId == null) void onApply(offer);
+                    }}
+                  />
+                ))}
               </ScrollView>
             </>
           )}
@@ -334,28 +311,6 @@ const styles = StyleSheet.create({
     marginTop: 18,
     fontSize: 14,
     lineHeight: 20,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 14,
-  },
-  optionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  optionMeta: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  optionWarn: {
-    marginTop: 6,
-    fontSize: 12,
-    fontStyle: 'italic',
   },
   actions: {
     marginTop: 22,
