@@ -1555,8 +1555,8 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   const taskIds = [...new Set(data.map(s => s.task_id))];
 
   const [profilesRes, tasksRes] = await Promise.all([
-    withAuthRetry(() => supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds)),
-    withAuthRetry(() => supabase.from('tasks').select('*').in('id', taskIds)),
+    withAuthRetry(async () => await supabase.from('profiles').select('id, name, avatar_url').in('id', ownerIds)),
+    withAuthRetry(async () => await supabase.from('tasks').select('*').in('id', taskIds)),
   ]);
 
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));
@@ -1595,8 +1595,8 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
   const taskIds = [...new Set(data.map(s => s.task_id))];
 
   const [profilesRes, tasksRes] = await Promise.all([
-    withAuthRetry(() => supabase.from('profiles').select('id, name, avatar_url').in('id', allUserIds)),
-    withAuthRetry(() => supabase.from('tasks').select('*').in('id', taskIds)),
+    withAuthRetry(async () => await supabase.from('profiles').select('id, name, avatar_url').in('id', allUserIds)),
+    withAuthRetry(async () => await supabase.from('tasks').select('*').in('id', taskIds)),
   ]);
 
   const profileMap = new Map((profilesRes.data || []).map((p: any) => [p.id, p]));

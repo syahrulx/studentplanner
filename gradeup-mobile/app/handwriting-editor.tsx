@@ -878,6 +878,14 @@ export default function HandwritingEditor() {
     }
   }, [recognizingInk]);
 
+  // Declared before `applyRecognizedText`, which both calls it and lists it as a dependency —
+  // a `const` referenced from a dependency array further up the component reads it during render,
+  // before its own declaration has run.
+  const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
+    setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
+    setRedoStacks((current) => ({ ...current, [pageId]: [] }));
+  }, []);
+
   const applyRecognizedText = useCallback((replaceInk: boolean) => {
     if (!recognizedDraft) return;
     const now = new Date().toISOString();
@@ -998,11 +1006,6 @@ export default function HandwritingEditor() {
       setAddingImage(false);
     }
   }, [activePage, addingImage, canEdit, noteId, updatePageElements]);
-
-  const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
-    setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
-    setRedoStacks((current) => ({ ...current, [pageId]: [] }));
-  }, []);
 
   const handleToolGestureEnd = useCallback((completedTool: HandwritingTool) => {
     if (completedTool === 'eraser' && autoReturnAfterErasing) {

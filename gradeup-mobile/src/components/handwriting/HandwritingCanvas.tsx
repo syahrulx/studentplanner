@@ -538,7 +538,7 @@ export function HandwritingInkPreview({
       <PageTemplate template={page.template} width={width} height={height} transparent={transparentBackground} />
       <WebView source={source} style={StyleSheet.absoluteFill} pointerEvents="none" scrollEnabled={false} />
       {(page.elements ?? []).map((element) => (
-        <PageElement key={element.id} element={element} selected={false} editable={false} canvasWidth={width} canvasHeight={height} onSelect={() => {}} onMove={() => {}} />
+        <PageElement key={element.id} element={element} selected={false} editable={false} canvasWidth={width} canvasHeight={height} onSelect={() => {}} onMove={() => {}} onResize={() => {}} />
       ))}
     </View>
   );
