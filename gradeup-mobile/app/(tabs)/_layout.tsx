@@ -12,6 +12,7 @@ import { WebSidebar } from '@/components/WebSidebar';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
+import { StaleCalendarPrompt } from '@/components/StaleCalendarPrompt';
 import { supabase } from '@/src/lib/supabase';
 
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
@@ -240,6 +241,7 @@ export default function TabLayout() {
       </Modal>
 
       <ManualWeekPrompt />
+      <StaleCalendarPrompt />
     </TabBarProvider>
   );
 }

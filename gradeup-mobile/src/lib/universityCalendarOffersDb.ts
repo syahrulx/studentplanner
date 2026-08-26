@@ -119,11 +119,24 @@ export async function fetchLatestCalendarForUniversity(
   return rowToOffer(data as Record<string, unknown>);
 }
 
+/**
+ * Two offers are the same calendar when they cover the same dates with the same timeline —
+ * the label is ignored on purpose, because crowdsourced submissions of one calendar arrive
+ * spelled every possible way ("s1 26/27", "Sem 1 26/27") and would otherwise all be listed.
+ */
+function calendarKey(offer: UniversityCalendarOffer): string {
+  const timeline = (offer.periods ?? [])
+    .map((p) => `${p.type}:${p.startDate}:${p.endDate}`)
+    .sort()
+    .join(',');
+  return `${offer.startDate}|${offer.endDate}|${timeline}`;
+}
+
 function dedupeOffersByCalendarKey(offers: UniversityCalendarOffer[]): UniversityCalendarOffer[] {
   const seen = new Set<string>();
   const out: UniversityCalendarOffer[] = [];
   for (const o of offers) {
-    const k = `${o.semesterLabel}|${o.startDate}|${o.endDate}`;
+    const k = calendarKey(o);
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(o);
@@ -131,12 +144,29 @@ function dedupeOffersByCalendarKey(offers: UniversityCalendarOffer[]): Universit
   return out;
 }
 
+/** Grace period after a semester ends before its calendar drops off the picker. */
+const EXPIRED_OFFER_GRACE_DAYS = 30;
+
+function isOfferExpired(offer: UniversityCalendarOffer, todayISO: string): boolean {
+  const end = String(offer.endDate ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) return false;
+  const endDate = new Date(`${end}T00:00:00`);
+  const today = new Date(`${todayISO}T00:00:00`);
+  if (Number.isNaN(endDate.getTime()) || Number.isNaN(today.getTime())) return false;
+  return (today.getTime() - endDate.getTime()) / 864e5 > EXPIRED_OFFER_GRACE_DAYS;
+}
+
 /**
- * All published admin calendars for a university (newest first), deduped by label + term dates.
- * Used so students only see program/term options that actually exist for their chosen university.
+ * Calendars a student can pick for their university (newest first): deduped by term dates +
+ * timeline, and without sessions that ended over a month ago. Both filters exist because the
+ * table accumulates crowdsourced submissions — without them a UKM student was offered fourteen
+ * options, most of them past semesters or re-spellings of the same calendar.
+ *
+ * Pass `includeExpired` to list everything (e.g. an admin view that must show history).
  */
 export async function fetchAllCalendarOffersForUniversity(
   universityId: string,
+  options?: { includeExpired?: boolean; todayISO?: string },
 ): Promise<UniversityCalendarOffer[]> {
   const uni = (universityId ?? '').trim();
   if (!uni) return [];
@@ -149,18 +179,28 @@ export async function fetchAllCalendarOffersForUniversity(
 
   if (error || !data || !Array.isArray(data)) return [];
   const rows = data.map((row) => rowToOffer(row as Record<string, unknown>));
-  return dedupeOffersByCalendarKey(rows);
+  const today = options?.todayISO ?? new Date().toISOString().slice(0, 10);
+  const current = options?.includeExpired ? rows : rows.filter((o) => !isOfferExpired(o, today));
+  // Never leave the picker empty: if every calendar on file has expired, show them all rather
+  // than telling the student their university has no calendar at all.
+  return dedupeOffersByCalendarKey(current.length > 0 ? current : rows);
 }
 
+/**
+ * Picking an offer **replaces** the student's calendar, so every optional field is written
+ * explicitly. `upsertCalendar` keeps existing values for `undefined` fields (so a label-only
+ * patch cannot wipe periods), which would otherwise leave the previous calendar's timeline and
+ * break dates on screen when the newly chosen offer has none of its own.
+ */
 export function offerToCalendarPatch(offer: UniversityCalendarOffer): Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> {
   return {
     semesterLabel: offer.semesterLabel,
     startDate: offer.startDate,
     endDate: offer.endDate,
     totalWeeks: offer.totalWeeks,
-    breakStartDate: offer.breakStartDate,
-    breakEndDate: offer.breakEndDate,
-    periods: offer.periods,
+    breakStartDate: offer.breakStartDate ?? '',
+    breakEndDate: offer.breakEndDate ?? '',
+    periods: offer.periods ?? [],
     isActive: true,
   };
 }

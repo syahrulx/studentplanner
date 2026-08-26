@@ -464,7 +464,7 @@ export default function AcademicCalendarScreen() {
               startDate: official.startDate,
               endDate: official.endDate,
               totalWeeks: official.totalWeeks ?? 14,
-              periods: official.periods,
+              periods: official.periods ?? [],
               teachingWeekOffset: 0,
               isActive: true,
             });
@@ -583,7 +583,7 @@ export default function AcademicCalendarScreen() {
             endDate: official.endDate,
             totalWeeks:
               official.totalWeeks ?? academicCalendar?.totalWeeks ?? 14,
-            periods: official.periods,
+            periods: official.periods ?? [],
             teachingWeekOffset: 0,
             isActive: true,
           });

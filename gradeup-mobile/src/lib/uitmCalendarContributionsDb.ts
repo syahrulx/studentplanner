@@ -108,9 +108,11 @@ export function contributionToCalendarPatch(contribution: UitmCalendarContributi
     startDate: contribution.startDate,
     endDate: contribution.endDate,
     totalWeeks: contribution.totalWeeks,
-    breakStartDate: contribution.breakStartDate,
-    breakEndDate: contribution.breakEndDate,
-    periods: contribution.periods,
+    // Explicit empty values replace (not preserve) the previous calendar's timeline — see
+    // `offerToCalendarPatch` and the `upsertCalendar` merge rules.
+    breakStartDate: contribution.breakStartDate ?? '',
+    breakEndDate: contribution.breakEndDate ?? '',
+    periods: contribution.periods ?? [],
     isActive: true,
   };
 }
