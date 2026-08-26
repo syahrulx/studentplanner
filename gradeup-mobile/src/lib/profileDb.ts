@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { AcademicLevel, SubscriptionPlan } from '../types';
+import { normalizeAcademicLevel } from './academicLevel';
 
 export interface ThemePreferencesRow {
   theme?: string;
@@ -94,12 +95,11 @@ export async function getProfile(userId: string): Promise<{
     theme_preferences: ThemePreferencesRow | null;
     country: string | null;
   };
-  const level = row.academic_level as AcademicLevel | undefined;
   return {
     name: row.name ?? '',
     university: row.university ?? undefined,
     universityId: row.university_id ? String(row.university_id) : undefined,
-    academicLevel: level && ['Diploma', 'Bachelor', 'Master', 'PhD', 'Foundation', 'Other'].includes(level) ? level : undefined,
+    academicLevel: normalizeAcademicLevel(row.academic_level),
     studentId: row.student_id ? String(row.student_id) : undefined,
     program: row.program ? String(row.program) : undefined,
     part: row.part != null && Number.isFinite(Number(row.part)) ? Number(row.part) : undefined,
@@ -155,7 +155,11 @@ export async function updateProfile(
   if (updates.name !== undefined) payload.name = updates.name;
   if (updates.university !== undefined) payload.university = updates.university;
   if (updates.universityId !== undefined) payload.university_id = updates.universityId;
-  if (updates.academicLevel !== undefined) payload.academic_level = updates.academicLevel;
+  // Normalised on write as well as read: callers have passed the old lowercase chip keys through
+  // an `as any` cast before, and an unrecognised value must not be persisted.
+  if (updates.academicLevel !== undefined) {
+    payload.academic_level = normalizeAcademicLevel(updates.academicLevel) ?? null;
+  }
   if (updates.studentId !== undefined) payload.student_id = updates.studentId.trim() || null;
   if (updates.program !== undefined) payload.program = updates.program.trim() || null;
   if (updates.part !== undefined) payload.part = updates.part > 0 ? updates.part : null;
