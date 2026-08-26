@@ -104,4 +104,41 @@ assert.match(
   /no lecture period/,
 );
 
+
+/**
+ * Real extraction output for UKM's ASASIpintar Semester 1: the ten-week lecture block after the
+ * mid-semester test was dropped, but three public holidays fell inside the hole it left. Counting
+ * holidays as coverage split one 77-day gap into sub-threshold pieces and reported 52 days, which
+ * also disagreed with the bar drawn from the same periods.
+ */
+const holidaysMaskingAGap = [
+  { type: 'registration', label: 'Lapor Diri Pelajar Baru dan MMP', startDate: '2026-06-22', endDate: '2026-06-24' },
+  { type: 'lecture', label: 'Sesi Pembelajaran', startDate: '2026-06-29', endDate: '2026-08-16' },
+  { type: 'break', label: 'Cuti Pertengahan Semester', startDate: '2026-08-17', endDate: '2026-08-23' },
+  { type: 'test', label: 'Peperiksaan Pertengahan Semester', startDate: '2026-08-24', endDate: '2026-08-30' },
+  { type: 'holiday', label: 'Hari Kebangsaan', startDate: '2026-08-31', endDate: '2026-08-31' },
+  { type: 'holiday', label: 'Hari Malaysia', startDate: '2026-09-16', endDate: '2026-09-16' },
+  { type: 'holiday', label: 'Hari Deepavali', startDate: '2026-11-08', endDate: '2026-11-09' },
+  { type: 'exam', label: 'Peperiksaan Akhir', startDate: '2026-11-16', endDate: '2026-11-22' },
+  { type: 'break', label: 'Cuti Semester', startDate: '2026-11-23', endDate: '2026-12-06' },
+];
+
+const masked = validateCalendarTimeline({
+  periods: holidaysMaskingAGap,
+  startDate: '2026-06-29',
+  endDate: '2026-08-16',
+});
+assert.equal(masked.length, 1);
+assert.match(masked[0], /77 days are missing between 2026-08-30 and 2026-11-16/);
+
+/** Holidays alone are not a semester. */
+assert.match(
+  validateCalendarTimeline({
+    periods: [{ type: 'holiday', label: 'Deepavali', startDate: '2026-11-08', endDate: '2026-11-08' }],
+    startDate: '2026-09-28',
+    endDate: '2027-02-07',
+  })[0],
+  /only lists public holidays/,
+);
+
 console.log('calendarTimelineValidation: all assertions passed');

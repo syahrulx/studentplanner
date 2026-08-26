@@ -57,6 +57,7 @@ export function validateCalendarTimeline(input: {
   }
 
   const entries: Array<{ period: AcademicPeriod; start: Date; end: Date }> = [];
+  const holidays: Array<{ period: AcademicPeriod; start: Date; end: Date }> = [];
   input.periods.forEach((raw, index) => {
     const period = raw as Partial<AcademicPeriod> | null;
     const label = String(period?.label ?? '').trim() || `Entry ${index + 1}`;
@@ -74,10 +75,24 @@ export function validateCalendarTimeline(input: {
       problems.push(`"${label}" ends before it starts.`);
       return;
     }
+    // A public holiday is a marker inside whatever block surrounds it, not coverage of its own.
+    // Counting them here let a scattered handful mask a real hole: a missing ten-week lecture
+    // block read as three sub-threshold gaps because Hari Kebangsaan, Hari Malaysia and Deepavali
+    // happened to fall inside it, and the figure disagreed with the bar drawn from the same data.
+    if (String(period?.type) === 'holiday') {
+      holidays.push({ period: period as AcademicPeriod, start, end });
+      return;
+    }
     entries.push({ period: period as AcademicPeriod, start, end });
   });
 
   if (problems.length > 0) return problems;
+
+  if (entries.length === 0) {
+    return [
+      'This calendar only lists public holidays. Add the lecture, break and exam dates so the planner has a semester to work from.',
+    ];
+  }
 
   entries.sort((a, b) => a.start.getTime() - b.start.getTime());
 
