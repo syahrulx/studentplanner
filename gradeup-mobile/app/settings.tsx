@@ -310,6 +310,24 @@ export default function Settings() {
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
           <View style={styles.dividerList} />
+          {/* Choosing a semester lived behind a sliders icon inside the calendar screen, where
+              students were not finding it — the picker is the thing most of them actually came for. */}
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/academic-calendar?configure=1' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#dcfce7') }]}>
+              <Feather name="sliders" size={18} color={themedIconFg('#16a34a')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{T('configureCalendar')}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 1 }}>
+                {T('configureCalendarHint')}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
+          <View style={styles.dividerList} />
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
             onPress={() => router.push('/upload-sow' as any)}

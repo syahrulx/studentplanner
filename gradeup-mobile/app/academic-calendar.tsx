@@ -355,8 +355,25 @@ export default function AcademicCalendarScreen() {
     presentWeekAlignFlow();
   }, [academicCalendar?.startDate, presentWeekAlignFlow]);
 
-  const { weekAlign: weekAlignParam } = useLocalSearchParams<{ weekAlign?: string }>();
+  const { weekAlign: weekAlignParam, configure: configureParam } = useLocalSearchParams<{
+    weekAlign?: string;
+    configure?: string;
+  }>();
   const weekAlignLaunchRef = useRef(false);
+  const configureLaunchRef = useRef(false);
+
+  // `Settings → Choose your semester` links straight here; the picker used to be reachable only
+  // through an unlabelled sliders icon on this screen.
+  useFocusEffect(
+    useCallback(() => {
+      const requested =
+        configureParam === "1" || configureParam === "true" || configureParam === "yes";
+      if (!requested || configureLaunchRef.current) return;
+      configureLaunchRef.current = true;
+      router.setParams({ configure: undefined });
+      setConfigOpen(true);
+    }, [configureParam]),
+  );
 
   useFocusEffect(
     useCallback(() => {

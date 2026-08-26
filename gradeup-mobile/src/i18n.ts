@@ -294,6 +294,8 @@ const translations = {
     noUniversityCalendarTitle: 'No university calendar',
     noUniversityCalendarBody:
       'There is no academic calendar published for your university in the app yet.\n\nYou can set up your own academic calendar by going to Settings → Academic Calendar and tapping "Add calendar manually".',
+    configureCalendar: 'Choose your semester',
+    configureCalendarHint: 'Pick the calendar that matches your programme and intake',
     calendarOfferTitle: 'Academic calendar update',
     calendarOfferBody:
       'Your university shared a new official semester calendar. Review the dates and optional links, then apply it to your planner only if you agree.',
@@ -1275,6 +1277,8 @@ const translations = {
     noUniversityCalendarTitle: 'Tiada kalendar universiti',
     noUniversityCalendarBody:
       'Tiada kalendar akademik untuk universiti anda diterbitkan dalam aplikasi ini buat masa ini.\n\nAnda boleh muat naik kalendar anda sendiri di bahagian Tetapan → Kalendar Akademik dan tekan "Tambah kalendar secara manual".',
+    configureCalendar: 'Pilih semester anda',
+    configureCalendarHint: 'Pilih kalendar yang sepadan dengan program dan pengambilan anda',
     calendarOfferTitle: 'Kemas kini kalendar akademik',
     calendarOfferBody:
       'Universiti anda berkongsi kalendar semester rasmi yang baharu. Semak tarikh dan pautan pilihan, kemudian gunakannya dalam perancang hanya jika anda setuju.',
