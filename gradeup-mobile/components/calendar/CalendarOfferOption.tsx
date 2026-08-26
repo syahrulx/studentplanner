@@ -41,21 +41,23 @@ export function CalendarOfferOption({
     [offer.startDate, offer.endDate],
   );
 
+  const hasTimeline = periods.length > 0;
+
   const statusText =
     status.kind === 'running'
       ? `Running now · ${status.weekLabel}`
       : status.kind === 'upcoming'
-        ? status.weeksAway === 1
-          ? 'Starts next week'
-          : `Starts in ${status.weeksAway} weeks`
+        ? status.monthLabel
+          ? `Starts ${status.monthLabel}`
+          : status.weeksAway === 1
+            ? 'Starts next week'
+            : `Starts in ${status.weeksAway} weeks`
         : status.kind === 'ended'
           ? `Ended ${status.weeksAgo} week${status.weeksAgo === 1 ? '' : 's'} ago`
           : '';
 
   const statusColor =
     status.kind === 'running' ? '#22c55e' : status.kind === 'ended' ? '#94a3b8' : theme.textSecondary;
-
-  const hasTimeline = periods.length > 0;
 
   return (
     <Pressable
@@ -80,7 +82,11 @@ export function CalendarOfferOption({
             {offer.semesterLabel}
           </Text>
           <Text style={[styles.dates, { color: theme.textSecondary }]}>
-            {offer.startDate} → {offer.endDate} · {offer.totalWeeks} weeks
+            {offer.startDate} → {offer.endDate}
+            {/* The stored `total_weeks` and the weeks the timeline actually spans disagree often
+                enough to look like a bug (17 vs 18 on one UKM calendar). When there is a timeline
+                the summary below counts the real dates, so only fall back to the stored number. */}
+            {hasTimeline ? '' : ` · ${offer.totalWeeks} weeks`}
           </Text>
         </View>
         {onReport && offer.source === 'crowdsourced' ? (

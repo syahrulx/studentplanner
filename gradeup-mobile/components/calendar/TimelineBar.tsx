@@ -13,6 +13,8 @@ import {
  * called out underneath — a calendar that stops at the mid-semester break reads as a long blank
  * band, which is the thing nobody could see until after they had applied it.
  */
+const MIN_NOTABLE_GAP_DAYS = 7;
+
 export function TimelineBar({
   periods,
   showSummary = true,
@@ -30,8 +32,13 @@ export function TimelineBar({
     () => segments.reduce((sum, s) => sum + s.days, 0),
     [segments],
   );
+  // A few days between registration and the first lecture is a weekend, not a missing block.
+  // Only a gap long enough to be a lost week is worth putting in front of a student.
   const biggestGap = useMemo(
-    () => segments.filter((s) => s.type === 'gap').sort((a, b) => b.days - a.days)[0] ?? null,
+    () =>
+      segments
+        .filter((s) => s.type === 'gap' && s.days >= MIN_NOTABLE_GAP_DAYS)
+        .sort((a, b) => b.days - a.days)[0] ?? null,
     [segments],
   );
 

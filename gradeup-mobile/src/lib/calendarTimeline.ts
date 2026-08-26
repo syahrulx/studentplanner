@@ -140,12 +140,32 @@ const SUMMARY_GROUPS: { types: string[]; singular: string; plural: string }[] = 
   { types: ['industrial_training'], singular: 'week training', plural: 'weeks training' },
 ];
 
+/**
+ * The inter-semester break trails the term rather than sitting inside it — UKM's undergraduate
+ * Semester 2 ends with a nine-week "Cuti Semester". Counting it made the summary read
+ * "11 weeks break" for a semester with two one-week breaks in it, and gave the bar a long cyan
+ * tail that made the term look half empty. Anything that starts after the last teaching or
+ * assessment period is after the semester, not part of it.
+ */
+function withoutTrailingBreak<T extends { type: string; startDate: string; endDate: string }>(
+  rows: T[],
+): T[] {
+  const teachingEnd = rows
+    .filter((r) => r.type !== 'break' && r.type !== 'special_break' && !isNested(r.type))
+    .reduce((latest, r) => (r.endDate > latest ? r.endDate : latest), '');
+  if (!teachingEnd) return rows;
+  return rows.filter(
+    (r) => !((r.type === 'break' || r.type === 'special_break') && r.startDate > teachingEnd),
+  );
+}
+
 export function summarizeTimeline(rows: Array<{ type: string; startDate: string; endDate: string }>): TimelineSummary {
   const parts: string[] = [];
   let lectureWeeks = 0;
+  const within = withoutTrailingBreak(rows);
 
   for (const group of SUMMARY_GROUPS) {
-    const days = rows
+    const days = within
       .filter((r) => group.types.includes(r.type))
       .reduce((sum, r) => sum + inclusiveDays(r.startDate, r.endDate), 0);
     if (days <= 0) continue;
@@ -175,7 +195,9 @@ export function timelineSegments(
   rows: Array<{ type: string; label: string; startDate: string; endDate: string }>,
 ): TimelineSegment[] {
   const usable = sortPeriods(
-    rows.filter((r) => !isNested(r.type) && inclusiveDays(r.startDate, r.endDate) > 0),
+    withoutTrailingBreak(rows).filter(
+      (r) => !isNested(r.type) && inclusiveDays(r.startDate, r.endDate) > 0,
+    ),
   );
   if (usable.length === 0) return [];
 
@@ -228,7 +250,7 @@ function isoOf(d: Date): string {
 /** Where today sits relative to a term, for the "running now / starts in N weeks" badge. */
 export type TermStatus =
   | { kind: 'running'; weekLabel: string }
-  | { kind: 'upcoming'; weeksAway: number }
+  | { kind: 'upcoming'; weeksAway: number; monthLabel?: string }
   | { kind: 'ended'; weeksAgo: number }
   | { kind: 'unknown' };
 
@@ -240,7 +262,16 @@ export function termStatus(startISO: string, endISO: string, todayISO?: string):
 
   if (today.getTime() < start.getTime()) {
     const days = Math.round((start.getTime() - today.getTime()) / 864e5);
-    return { kind: 'upcoming', weeksAway: Math.max(1, Math.round(days / 7)) };
+    return {
+      kind: 'upcoming',
+      weeksAway: Math.max(1, Math.round(days / 7)),
+      // "Starts in 46 weeks" is not something anyone counts in; past a couple of months a month
+      // name is what the student is actually thinking in.
+      monthLabel:
+        days > 60
+          ? start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+          : undefined,
+    };
   }
   if (today.getTime() > end.getTime()) {
     const days = Math.round((today.getTime() - end.getTime()) / 864e5);

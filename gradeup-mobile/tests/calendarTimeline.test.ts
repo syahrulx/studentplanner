@@ -69,7 +69,14 @@ assert.deepEqual(termStatus('2026-09-28', '2027-02-07', '2026-10-05'), {
 assert.deepEqual(termStatus('2026-09-28', '2027-02-07', '2026-08-26'), {
   kind: 'upcoming',
   weeksAway: 5,
+  monthLabel: undefined,
 });
+// Far-off terms read as a month, not "starts in 46 weeks".
+assert.equal(termStatus('2027-07-12', '2027-09-05', '2026-08-26').kind, 'upcoming');
+assert.equal(
+  (termStatus('2027-07-12', '2027-09-05', '2026-08-26') as { monthLabel?: string }).monthLabel,
+  'July 2027',
+);
 assert.deepEqual(termStatus('2026-03-09', '2026-06-28', '2026-08-26'), {
   kind: 'ended',
   weeksAgo: 8,
@@ -115,5 +122,22 @@ const unknownLevel = groupOffersForPicker(
   { academicLevel: null, todayISO: '2026-08-26' },
 );
 assert.equal(unknownLevel.forYou.length, 2);
+
+// The inter-semester break trails the term and must not be counted inside it: UKM's undergraduate
+// Semester 2 ends with a nine-week "Cuti Semester" that made the summary read "11 weeks break".
+const withTrailingBreak = [
+  { type: 'lecture', label: 'Lectures', startDate: '2027-03-01', endDate: '2027-04-18' },
+  { type: 'break', label: 'Cuti Pertengahan Semester', startDate: '2027-04-19', endDate: '2027-04-25' },
+  { type: 'lecture', label: 'Lectures', startDate: '2027-04-26', endDate: '2027-06-13' },
+  { type: 'exam', label: 'Peperiksaan', startDate: '2027-06-21', endDate: '2027-07-11' },
+  { type: 'break', label: 'Cuti Semester', startDate: '2027-07-12', endDate: '2027-09-12' },
+];
+assert.match(summarizeTimeline(withTrailingBreak).text, /1 week break/);
+assert.equal(
+  timelineSegments(withTrailingBreak).some((s) => s.label === 'Cuti Semester'),
+  false,
+);
+// A mid-semester break is still counted, and the exam gap before it still shows.
+assert.match(summarizeTimeline(withTrailingBreak).text, /3 weeks exams/);
 
 console.log('calendarTimeline: all assertions passed');
