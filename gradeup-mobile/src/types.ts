@@ -131,6 +131,10 @@ export interface AcademicCalendar {
   periods?: AcademicPeriod[];
   /** Delta applied to calendar-derived teaching week (clamped to 1..totalWeeks). */
   teachingWeekOffset?: number;
+  /** Why this calendar became active. User/manual choices outrank background imports. */
+  selectionSource?: 'automatic' | 'user' | 'manual';
+  /** ISO timestamp of the latest explicit user selection. */
+  selectedAt?: string;
   isActive: boolean;
   createdAt?: string;
 }
@@ -347,7 +351,11 @@ export interface GradeAssessment {
 /** Full grade configuration for one subject. Persisted both locally and in Supabase. */
 export interface SubjectGradeConfig {
   subjectId: string;
+  /** Client edit timestamp used to reconcile offline and cloud copies. */
+  updatedAt?: string;
   gradingScheme: GradingScheme;
+  /** User-edited grade thresholds. A non-empty list overrides gradingScheme. */
+  customGradeRows?: GradeRow[];
   hasFinalExam: boolean;
   /** % of total grade from carry marks (0–100). */
   carryWeight: number;
@@ -369,14 +377,14 @@ export interface GradeRow {
 
 /** Result of the live grade calculation. */
 export interface GradeResult {
-  hasData?: boolean;
+  hasData: boolean;
   carryEarned: number;       // carry mark contribution to final score (out of carryWeight)
   carryPossible: number;     // max possible carry earned so far
   carryPending: number;      // carry % from components not yet entered
   finalContribution: number; // final exam contribution to total (out of finalWeight)
   totalScore: number;        // projected total % (0-100)
-  currentStandingScore?: number;
-  currentStandingGrade?: GradeRow;
+  currentStandingScore: number;
+  currentStandingGrade: GradeRow;
   grade: GradeRow;
   /** What score user needs in final exam to reach each grade threshold. */
   requiredForGrades: {

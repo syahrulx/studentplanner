@@ -103,6 +103,26 @@ export async function upsertTask(
   return { error: error ? { message: error.message, code: error.code } : null };
 }
 
+/**
+ * Update only the completion flag of an existing breakdown step.
+ *
+ * Breakdown assignments are protected by a database trigger. Re-sending the
+ * whole task just to toggle `is_done` can make that trigger reject an old
+ * assignee even though the assignment did not change. The RPC deliberately
+ * updates only `is_done`, and also supports an accepted assignee completing
+ * their own step.
+ */
+export async function setBreakdownStepCompletion(
+  taskId: string,
+  completed: boolean,
+): Promise<{ error: { message: string; code?: string } | null }> {
+  const { error } = await supabase.rpc('set_shared_breakdown_step_completion', {
+    p_step_task_id: taskId,
+    p_completed: completed,
+  });
+  return { error: error ? { message: error.message, code: error.code } : null };
+}
+
 export async function deleteTask(userId: string, taskId: string): Promise<void> {
   const { error } = await supabase.from(TASKS_TABLE).delete().eq('user_id', userId).eq('id', taskId);
   if (error) throw new Error(error.message || 'Failed to delete task');

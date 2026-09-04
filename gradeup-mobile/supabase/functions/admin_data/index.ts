@@ -361,6 +361,30 @@ serve(async (req) => {
     if (action === 'university_delete') {
       const id = String(payload.id || '').trim();
       if (!id) return json(400, { error: 'missing_id' });
+      const dependencies: Record<string, number> = {};
+      for (const [name, table] of [
+        ['profiles', 'profiles'],
+        ['campuses', 'campuses'],
+        ['organizations', 'organizations'],
+        ['calendars', 'university_calendar_offers'],
+        ['mappings', 'university_mappings'],
+        ['courses', 'courses'],
+      ] as const) {
+        const { count, error: countError } = await admin
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .eq('university_id', id);
+        if (countError) return json(400, { error: `dependency_check_failed:${name}:${countError.message}` });
+        dependencies[name] = count ?? 0;
+      }
+      const affected = Object.values(dependencies).reduce((sum, count) => sum + count, 0);
+      if (affected > 0) {
+        return json(409, {
+          error: 'university_still_in_use',
+          affected,
+          dependencies,
+        });
+      }
       const { error: e } = await admin.from('universities').delete().eq('id', id);
       if (e) return json(400, { error: e.message });
       return json(200, { ok: true });
@@ -2003,11 +2027,47 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
         category: 'support',
         data: { type: 'support_reply', route: '/support-ticket', params: { reportId: id } },
       });
+      // Keep the durable in-app record above, and also request an OS-level
+      // banner for installed builds. Push failure must not lose the reply.
+      let pushStatus: Record<string, unknown> = { sent: 0, reason: 'not_attempted' };
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+        if (supabaseUrl && serviceKey) {
+          const pushResponse = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({
+              recipientUserIds: [report.reporter_id],
+              title: 'Reply to your support report',
+              body: body.slice(0, 500),
+              category: 'support',
+              collapseKey: `support-reply:${id}`,
+              data: { type: 'support_reply', route: '/support-ticket', params: { reportId: id } },
+            }),
+          });
+          const pushBody = await pushResponse.json().catch(() => ({}));
+          pushStatus = pushResponse.ok
+            ? (pushBody as Record<string, unknown>)
+            : { sent: 0, error: `push_http_${pushResponse.status}` };
+        } else {
+          pushStatus = { sent: 0, reason: 'missing_push_environment' };
+        }
+      } catch (pushError) {
+        pushStatus = {
+          sent: 0,
+          error: pushError instanceof Error ? pushError.message : 'push_failed',
+        };
+      }
       await admin.from('admin_logs').insert({
         type: 'api_request', status: 'success',
-        meta: { action, id, status: nextStatus, message_id: message?.id },
+        meta: { action, id, status: nextStatus, message_id: message?.id, push: pushStatus },
       });
-      return json(200, { row: updated, message });
+      return json(200, { row: updated, message, push: pushStatus });
     }
 
     if (action === 'delete_support_report') {

@@ -24,6 +24,15 @@ function toError(err: unknown): Error {
   return new Error(typeof err === 'string' ? err : JSON.stringify(err));
 }
 
+function normaliseDataIdentity(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[\s\-_.,()]+/g, ' ')
+    .trim();
+}
+
 function shouldFallbackInvokeOnFetchFailure(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err && typeof err === 'object' && 'name' in err ? String((err as { name: string }).name) : '';
@@ -618,6 +627,16 @@ export async function listUniversities() {
 }
 
 export async function upsertUniversity(row: UniversityRow) {
+  const all = await listUniversities();
+  const duplicate = all.find(
+    (candidate) =>
+      candidate.id !== row.id &&
+      String(candidate.country ?? 'MY').toUpperCase() === String(row.country ?? 'MY').toUpperCase() &&
+      normaliseDataIdentity(candidate.name) === normaliseDataIdentity(row.name),
+  );
+  if (duplicate) {
+    throw new Error(`This university already exists as ${duplicate.name} (${duplicate.id}).`);
+  }
   if (await hasSessionJwt()) {
     const { data, error } = await supabase.from('universities').upsert(row).select().single();
     if (error) throw toError(error);
@@ -630,7 +649,42 @@ export async function upsertUniversity(row: UniversityRow) {
   return res.row;
 }
 
+export type DeleteImpact = {
+  total: number;
+  counts: Record<string, number>;
+};
+
+async function countBy(table: string, column: string, value: string): Promise<number> {
+  const { count, error } = await supabase
+    .from(table)
+    .select('*', { count: 'exact', head: true })
+    .eq(column, value);
+  if (error) throw toError(error);
+  return count ?? 0;
+}
+
+export async function getUniversityDeleteImpact(id: string): Promise<DeleteImpact> {
+  const [profiles, campuses, organizations, calendars, mappings, courses] = await Promise.all([
+    countBy('profiles', 'university_id', id),
+    countBy('campuses', 'university_id', id),
+    countBy('organizations', 'university_id', id),
+    countBy('university_calendar_offers', 'university_id', id),
+    countBy('university_mappings', 'university_id', id),
+    countBy('courses', 'university_id', id),
+  ]);
+  const counts = { profiles, campuses, organizations, calendars, mappings, courses };
+  return { counts, total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
+}
+
 export async function deleteUniversity(id: string) {
+  const impact = await getUniversityDeleteImpact(id);
+  if (impact.total > 0) {
+    const detail = Object.entries(impact.counts)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => `${name}: ${count}`)
+      .join(', ');
+    throw new Error(`Deletion blocked because this university is still in use (${detail}). Reassign related records first.`);
+  }
   if (await hasSessionJwt()) {
     const { error } = await supabase.from('universities').delete().eq('id', id);
     if (error) throw toError(error);
@@ -1991,6 +2045,15 @@ export async function createCampus(
   universityId: string,
   name: string,
 ): Promise<AdminCampusRow> {
+  const { data: existing, error: existingError } = await supabase
+    .from("campuses")
+    .select("id,name")
+    .eq("university_id", universityId);
+  if (existingError) throw toError(existingError);
+  const normalized = normaliseDataIdentity(name);
+  if ((existing ?? []).some((row) => normaliseDataIdentity(row.name) === normalized)) {
+    throw new Error('This campus already exists for the selected university.');
+  }
   const { data, error } = await supabase
     .from("campuses")
     .insert({ university_id: universityId, name })
@@ -2001,6 +2064,22 @@ export async function createCampus(
 }
 
 export async function updateCampus(id: string, name: string): Promise<void> {
+  const { data: current, error: currentError } = await supabase
+    .from("campuses")
+    .select("university_id")
+    .eq("id", id)
+    .single();
+  if (currentError) throw toError(currentError);
+  const { data: existing, error: existingError } = await supabase
+    .from("campuses")
+    .select("id,name")
+    .eq("university_id", current.university_id)
+    .neq("id", id);
+  if (existingError) throw toError(existingError);
+  const normalized = normaliseDataIdentity(name);
+  if ((existing ?? []).some((row) => normaliseDataIdentity(row.name) === normalized)) {
+    throw new Error('This campus already exists for the selected university.');
+  }
   const { error } = await supabase
     .from("campuses")
     .update({ name })
@@ -2008,7 +2087,45 @@ export async function updateCampus(id: string, name: string): Promise<void> {
   if (error) throw toError(error);
 }
 
+export async function getCampusDeleteImpact(id: string): Promise<DeleteImpact> {
+  const { data: campus, error: campusError } = await supabase
+    .from('campuses')
+    .select('id,university_id,name')
+    .eq('id', id)
+    .single();
+  if (campusError) throw toError(campusError);
+
+  const [organizations, posts, authorityRequests, calendars] = await Promise.all([
+    countBy('organizations', 'campus_id', id),
+    countBy('community_posts', 'campus_id', id),
+    countBy('authority_requests', 'campus_id', id),
+    countBy('university_calendar_offers', 'campus_id', id),
+  ]);
+  const { count: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true })
+    .eq('university_id', campus.university_id)
+    .ilike('campus', String(campus.name).trim());
+  if (profileError) throw toError(profileError);
+  const counts = {
+    profiles: profiles ?? 0,
+    organizations,
+    posts,
+    authorityRequests,
+    calendars,
+  };
+  return { counts, total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
+}
+
 export async function deleteCampus(id: string): Promise<void> {
+  const impact = await getCampusDeleteImpact(id);
+  if (impact.total > 0) {
+    const detail = Object.entries(impact.counts)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => `${name}: ${count}`)
+      .join(', ');
+    throw new Error(`Deletion blocked because this campus is still in use (${detail}). Reassign related records first.`);
+  }
   const { error } = await supabase.from("campuses").delete().eq("id", id);
   if (error) throw toError(error);
 }
@@ -2165,6 +2282,10 @@ export type UserReportKind =
   | 'faq'
   | 'app_complaint'
   | 'user_complaint'
+  | 'semester_calendar'
+  | 'campus_request'
+  | 'grading'
+  | 'widget'
   | 'other';
 
 export type UserReportStatus = 'open' | 'in_progress' | 'resolved' | 'dismissed';

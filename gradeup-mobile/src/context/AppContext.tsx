@@ -442,6 +442,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     themePack,
     customThemeColors,
   });
+  const homeWidgetRecommendationFeedbackRef = useRef<import('../lib/recommendationDb').RecommendationFeedback[] | undefined>(undefined);
+
+  /** Push the latest local task state immediately; widget refresh never waits for network sync. */
+  const syncHomeWidgetNow = useCallback((nextTasks: Task[]) => {
+    const current = homeWidgetInputsRef.current;
+    syncHomeScreenWidget({
+      tasks: nextTasks,
+      courses: current.courses,
+      timetable: current.timetable,
+      pinnedTaskIds: current.pinnedTaskIds,
+      userName: current.userName,
+      signedIn: Boolean(remoteUserIdRef.current),
+      themeId: current.theme,
+      themePack: current.themePack,
+      customThemeColors: current.customThemeColors,
+      maxTasks: 3,
+      recommendationFeedback: homeWidgetRecommendationFeedbackRef.current,
+    });
+  }, []);
   const withEffectiveTotalWeeks = useCallback((cal: AcademicCalendar | null | undefined): AcademicCalendar | null => {
     if (!cal) return null;
     const effective = mergeTeachingWeeksForStoredCalendar(cal);
@@ -515,6 +534,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!uid || cancelled || remoteUserIdRef.current !== uid) return;
 
       const cal = academicCalendarRef.current;
+      // An explicit semester/break choice must outrank background provider
+      // refreshes. Users can still choose a different official calendar from
+      // Academic Calendar settings whenever they want.
+      if (cal?.selectionSource === 'user' || cal?.selectionSource === 'manual') return;
       const periodsN = Array.isArray(cal?.periods) ? cal.periods.length : 0;
       if (periodsN >= UITM_HEA_PERIOD_COUNT_MIN) return;
 
@@ -1042,7 +1065,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             universityName: profile?.university,
           });
           const provider = getCalendarProvider(uniId);
-          if (provider && profile) {
+          const hasExplicitCalendarChoice =
+            calendar?.selectionSource === 'user' ||
+            calendar?.selectionSource === 'manual';
+          if (provider && profile && !hasExplicitCalendarChoice) {
             try {
               const profileForSync = {
                 ...initialUser,
@@ -1084,6 +1110,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   const saved = await academicCalendarDb.upsertCalendar(uid, {
                     ...offerToCalendarPatch(adminOffer),
                     teachingWeekOffset: 0,
+                    selectionSource: 'automatic',
                   });
                   const savedEff = withEffectiveTotalWeeks(saved);
                   setAcademicCalendar(savedEff);
@@ -1268,6 +1295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : Promise.resolve([]);
         void feedbackPromise.then((recommendationFeedback) => {
           if (cancelled) return;
+          homeWidgetRecommendationFeedbackRef.current = recommendationFeedback;
           syncHomeScreenWidget({
             tasks,
             courses,
@@ -1277,6 +1305,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             signedIn,
             themeId: theme,
             themePack,
+            customThemeColors,
             maxTasks: 3,
             recommendationFeedback,
           });
@@ -1287,7 +1316,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme, themePack]);
+  }, [dataReady, tasks, tasksVersion, courses, timetable, pinnedTaskIds, user.name, theme, themePack, customThemeColors]);
 
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -1300,6 +1329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? offlineSync.loadCachedRecommendationFeedback(uid).catch(() => [])
           : Promise.resolve([]);
         void feedbackPromise.then((recommendationFeedback) => {
+          homeWidgetRecommendationFeedbackRef.current = recommendationFeedback;
           syncHomeScreenWidget({
             tasks: r.tasks,
             courses: r.courses,
@@ -1309,6 +1339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             signedIn,
             themeId: r.theme,
             themePack: r.themePack,
+            customThemeColors: r.customThemeColors,
             maxTasks: 3,
             recommendationFeedback,
           });
@@ -1706,14 +1737,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    *   row itself is left untouched so every other day still appears.
    */
   const toggleTaskDone = useCallback((taskId: string, occurrenceDate?: string) => {
-    // Look up the task we're toggling without committing a state update yet —
-    // we need to know if it's recurring before deciding what to mutate.
-    let captured: Task | undefined;
-    setTasks((cur) => {
-      captured = cur.find((t) => t.id === taskId);
-      return cur;
-    });
-    const task = captured;
+    const task = tasksRef.current.find((candidate) => candidate.id === taskId);
     if (!task) return;
     offlineMutationVersionRef.current += 1;
 
@@ -1743,34 +1767,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     // ── One-off path: unchanged legacy behaviour ───────────────────────────
-    setTasks((prev) => {
-      const next = prev.map((t) => (t.id === taskId ? { ...t, isDone: !t.isDone } : t));
-      const updated = next.find((t) => t.id === taskId);
-      if (updated) {
-        if (updated.isDone) {
-          cancelTaskNotifications(taskId).catch(() => {});
-        } else {
-          scheduleTaskNotifications(updated).catch(() => {});
-        }
-        const uid = remoteUserIdRef.current;
-        if (uid) {
-          void offlineSync.cacheTasks(uid, next);
-          void offlineSync.queueTaskUpsert(uid, updated)
-            .then(() => offlineSync.flushOfflineSync(uid))
-            .then(async (status) => {
-              if (status.pendingCount > 0) return;
-              const shared = await getAcceptedSharedTasks();
-              const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
-              for (const st of asRecipient) {
-                void updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
-              }
-            })
-            .catch(() => {});
-        }
-      }
-      return next;
-    });
-  }, [taskCompletionKeys]);
+    const next = tasksRef.current.map((candidate) => (
+      candidate.id === taskId ? { ...candidate, isDone: !candidate.isDone } : candidate
+    ));
+    const updated = next.find((candidate) => candidate.id === taskId);
+    if (!updated) return;
+    tasksRef.current = next;
+    setTasks(next);
+    syncHomeWidgetNow(next);
+
+    if (updated.isDone) {
+      cancelTaskNotifications(taskId).catch(() => {});
+    } else {
+      scheduleTaskNotifications(updated).catch(() => {});
+    }
+    const uid = remoteUserIdRef.current;
+    if (uid) {
+      void offlineSync.cacheTasks(uid, next);
+      const queue = updated.parentTaskId
+        ? offlineSync.queueBreakdownCompletion(uid, updated.id, updated.isDone)
+        : offlineSync.queueTaskUpsert(uid, updated);
+      void queue
+        .then(() => offlineSync.flushOfflineSync(uid))
+        .then(async (status) => {
+          if (status.pendingCount > 0 || updated.parentTaskId) return;
+          const shared = await getAcceptedSharedTasks();
+          const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
+          for (const st of asRecipient) {
+            void updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+  }, [taskCompletionKeys, syncHomeWidgetNow]);
 
   /**
    * Helper used by lists to render the right checkbox state for a given

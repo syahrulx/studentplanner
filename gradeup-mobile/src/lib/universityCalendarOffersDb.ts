@@ -1,25 +1,15 @@
 import { supabase } from './supabase';
 import type { AcademicCalendar } from '../types';
+import {
+  prepareCalendarOffers,
+  type UniversityCalendarOffer,
+} from './calendarOfferUtils';
+import { getTodayISO } from '../utils/date';
+
+export type { UniversityCalendarOffer } from './calendarOfferUtils';
 
 const OFFERS = 'university_calendar_offers';
 const RESPONSES = 'user_calendar_offer_responses';
-
-export type UniversityCalendarOffer = {
-  id: string;
-  universityId: string;
-  semesterLabel: string;
-  startDate: string;
-  endDate: string;
-  totalWeeks: number;
-  breakStartDate?: string;
-  breakEndDate?: string;
-  periods?: AcademicCalendar['periods'];
-  officialUrl?: string;
-  referencePdfUrl?: string;
-  adminNote?: string;
-  source: string;
-  createdAt: string;
-};
 
 function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
   const periodsRaw = (row.periods_json as unknown) ?? undefined;
@@ -37,6 +27,7 @@ function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
   return {
     id: String(row.id),
     universityId: String(row.university_id ?? ''),
+    campusId: row.campus_id != null ? String(row.campus_id).trim() || null : null,
     semesterLabel: String(row.semester_label ?? ''),
     startDate: String(row.start_date ?? '').slice(0, 10),
     endDate: String(row.end_date ?? '').slice(0, 10),
@@ -104,31 +95,8 @@ export async function recordCalendarOfferResponse(params: {
 export async function fetchLatestCalendarForUniversity(
   universityId: string,
 ): Promise<UniversityCalendarOffer | null> {
-  const uni = (universityId ?? '').trim();
-  if (!uni) return null;
-
-  const { data, error } = await supabase
-    .from(OFFERS)
-    .select('*')
-    .eq('university_id', uni)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return rowToOffer(data as Record<string, unknown>);
-}
-
-function dedupeOffersByCalendarKey(offers: UniversityCalendarOffer[]): UniversityCalendarOffer[] {
-  const seen = new Set<string>();
-  const out: UniversityCalendarOffer[] = [];
-  for (const o of offers) {
-    const k = `${o.semesterLabel}|${o.startDate}|${o.endDate}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(o);
-  }
-  return out;
+  const offers = await fetchAllCalendarOffersForUniversity(universityId);
+  return offers[0] ?? null;
 }
 
 /**
@@ -149,7 +117,7 @@ export async function fetchAllCalendarOffersForUniversity(
 
   if (error || !data || !Array.isArray(data)) return [];
   const rows = data.map((row) => rowToOffer(row as Record<string, unknown>));
-  return dedupeOffersByCalendarKey(rows);
+  return prepareCalendarOffers(rows, getTodayISO());
 }
 
 export function offerToCalendarPatch(offer: UniversityCalendarOffer): Omit<AcademicCalendar, 'id' | 'userId' | 'createdAt'> {

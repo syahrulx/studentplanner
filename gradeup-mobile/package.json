@@ -2,6 +2,9 @@
   "name": "gradeup-mobile",
   "main": "expo-router/entry",
   "version": "1.6.7",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
   "scripts": {
     "start": "expo start",
     "prestart": "npm run validate:release",
@@ -16,6 +19,9 @@
     "validate:release": "node scripts/validate-release-version.js",
     "eas-build-pre-install": "npm run validate:release",
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts",
+    "test:grade-persistence": "bash scripts/test-grade-persistence.sh",
+    "test:calendar-offers": "bash scripts/test-calendar-offers.sh",
+    "test:rate-limit": "bash scripts/test-rate-limit.sh",
     "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
   },
   "dependencies": {

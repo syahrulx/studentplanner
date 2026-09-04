@@ -6,17 +6,21 @@ import { buildHomeWidgetProps, type HomeWidgetProps } from './lib/homeWidgetProp
 import { updateGradeUpTodayTimelineFromHost } from './iosWidgetTimelineSync';
 import type { Course, Task, TimetableEntry } from './types';
 import type { ThemeId } from '@/constants/Themes';
+import type { CustomThemeColors } from './storage';
 import { getTodayISO } from './utils/date';
+import { captureError } from './lib/monitoring';
 
 const IOS_WIDGET_APP_GROUP_ID = 'group.com.aizztech.rencana';
 const SPIDER_WEB_FILENAME = 'spider-widget-web.png';
 
 function iosWidgetSnapshotModulesAvailable(): boolean {
-  const hasExpoUI = requireOptionalNativeModule('ExpoUI') != null;
   const hasExpoWidgets = requireOptionalNativeModule('ExpoWidgets') != null;
-  // GradeUpTodayWidget imports @expo/ui (ExpoUI) and uses expo-widgets (ExpoWidgets). Loading that
-  // module in Expo Go or other builds without those natives throws synchronously — guard here first.
-  return hasExpoUI && hasExpoWidgets;
+  // Timeline storage belongs to ExpoWidgets. Requiring ExpoUI here caused a
+  // false negative in development clients where SwiftUI views are available
+  // to the extension but ExpoUI is not exposed as a host-app native module.
+  // Widget-module import failures are already caught by iosWidgetTimelineSync,
+  // which can fall back to the ExpoWidgets host handle.
+  return hasExpoWidgets;
 }
 
 function ensureSpiderWebImageUri(): string | undefined {
@@ -51,6 +55,7 @@ export interface WidgetSyncInputs {
   signedIn: boolean;
   themeId: ThemeId;
   themePack?: string;
+  customThemeColors?: CustomThemeColors | null;
   spiderBlueAccents?: boolean;
   maxTasks?: number;
   /** Omit to suppress the widget's recommendation — see buildHomeWidgetProps. */
@@ -92,15 +97,17 @@ export function syncHomeScreenWidget(input: WidgetSyncInputs): void {
   if (Platform.OS === 'android') {
     // Schema: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
     // (renderer back-compat: also accepts a flat HomeWidgetProps for older builds)
-    updateAndroidHomeWidgetSnapshot(JSON.stringify({ today: todayProps, tomorrow: tomorrowProps }));
+    const ok = updateAndroidHomeWidgetSnapshot(JSON.stringify({ today: todayProps, tomorrow: tomorrowProps }));
+    if (!ok) captureError(new Error('Android home widget bridge unavailable'), { operation: 'home_widget_refresh', platform: 'android' });
     return;
   }
 
   if (Platform.OS !== 'ios') return;
   if (!iosWidgetSnapshotModulesAvailable()) return;
 
-  updateGradeUpTodayTimelineFromHost([
+  const ok = updateGradeUpTodayTimelineFromHost([
     { date: new Date(), props: todayProps },
     { date: nextLocalMidnight(), props: tomorrowProps },
   ]);
+  if (!ok) captureError(new Error('iOS home widget timeline unavailable'), { operation: 'home_widget_refresh', platform: 'ios' });
 }

@@ -26,6 +26,10 @@ const KIND_LABEL: Record<UserReportKind, string> = {
   faq: 'Question / FAQ',
   app_complaint: 'App complaint',
   user_complaint: 'User complaint',
+  semester_calendar: 'Semester / calendar',
+  campus_request: 'Campus request',
+  grading: 'Grading',
+  widget: 'Home-screen widget',
   other: 'Other',
 };
 
@@ -35,6 +39,10 @@ const KIND_TONE: Record<UserReportKind, 'rose' | 'amber' | 'blue' | 'violet' | '
   faq: 'blue',
   app_complaint: 'violet',
   user_complaint: 'pink',
+  semester_calendar: 'blue',
+  campus_request: 'blue',
+  grading: 'violet',
+  widget: 'slate',
   other: 'slate',
 };
 
@@ -326,6 +334,10 @@ export function UserReportsRoute() {
                     <option value="faq">Question / FAQ</option>
                     <option value="app_complaint">App complaint</option>
                     <option value="user_complaint">User complaint</option>
+                    <option value="semester_calendar">Semester / calendar</option>
+                    <option value="campus_request">Campus request</option>
+                    <option value="grading">Grading</option>
+                    <option value="widget">Home-screen widget</option>
                     <option value="other">Other</option>
                   </select>
                 </label>

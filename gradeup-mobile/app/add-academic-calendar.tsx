@@ -20,6 +20,12 @@ import { supabase } from "@/src/lib/supabase";
 import { TextInput } from "react-native-gesture-handler";
 import { getUniversityById } from "@/src/lib/universities";
 import { submitUitmCalendarContribution } from "@/src/lib/uitmCalendarContributionsDb";
+import type { AcademicPeriod, AcademicPeriodType } from "@/src/types";
+
+const ACADEMIC_PERIOD_TYPES = new Set<AcademicPeriodType>([
+  "lecture", "orientation", "registration", "test", "revision", "exam",
+  "break", "special_break", "holiday", "industrial_training", "other",
+]);
 
 async function functionErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
@@ -37,7 +43,7 @@ export default function AddAcademicCalendarScreen() {
   const theme = useTheme();
   const s = useMemo(() => styles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const { user } = useApp();
+  const { user, updateAcademicCalendar } = useApp();
 
   const [busy, setBusy] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
@@ -184,9 +190,22 @@ export default function AddAcademicCalendarScreen() {
 
     setBusy(true);
     try {
-      let periods = [];
+      let periods: AcademicPeriod[] = [];
       try {
-        periods = JSON.parse(periodsJson);
+        const parsed = JSON.parse(periodsJson);
+        if (!Array.isArray(parsed)) throw new Error("Periods must be a JSON array.");
+        periods = parsed.map((period, index) => {
+          if (!period || typeof period !== "object") {
+            throw new Error(`Period ${index + 1} must be an object.`);
+          }
+          const rawType = String(period.type || "other").trim() as AcademicPeriodType;
+          return {
+            type: ACADEMIC_PERIOD_TYPES.has(rawType) ? rawType : "other",
+            label: String(period.label || "").trim(),
+            startDate: String(period.startDate || period.start_date || "").trim().slice(0, 10),
+            endDate: String(period.endDate || period.end_date || "").trim().slice(0, 10),
+          };
+        });
       } catch {
         throw new Error("Periods JSON is invalid.");
       }
@@ -196,6 +215,35 @@ export default function AddAcademicCalendarScreen() {
       const end = endDate.trim().slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
         throw new Error("Enter valid dates in YYYY-MM-DD format.");
+      }
+      const weeks = totalWeeks.trim() ? Number(totalWeeks) : 14;
+      if (!Number.isInteger(weeks) || weeks < 1 || weeks > 52) {
+        throw new Error("Total weeks must be a whole number between 1 and 52.");
+      }
+      const breakStartValue = breakStart.trim();
+      const breakEndValue = breakEnd.trim();
+      if (Boolean(breakStartValue) !== Boolean(breakEndValue)) {
+        throw new Error("Enter both break start and break end dates, or leave both blank.");
+      }
+      if (breakStartValue && (
+        !/^\d{4}-\d{2}-\d{2}$/.test(breakStartValue) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(breakEndValue) ||
+        breakStartValue > breakEndValue ||
+        breakStartValue < start ||
+        breakEndValue > end
+      )) {
+        throw new Error("Break dates must be valid, ordered, and inside the semester dates.");
+      }
+      for (const [index, period] of periods.entries()) {
+        if (!period.label ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(period.startDate) ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(period.endDate) ||
+          period.startDate > period.endDate ||
+          period.startDate < start ||
+          period.endDate > end
+        ) {
+          throw new Error(`Period ${index + 1} needs a label and valid dates inside the semester.`);
+        }
       }
 
       if (isUitm) {
@@ -207,9 +255,9 @@ export default function AddAcademicCalendarScreen() {
             : normalizedLabel,
           startDate: start,
           endDate: end,
-          totalWeeks: parseInt(totalWeeks, 10) || 14,
-          ...(breakStart.trim() ? { breakStartDate: breakStart.trim() } : {}),
-          ...(breakEnd.trim() ? { breakEndDate: breakEnd.trim() } : {}),
+          totalWeeks: weeks,
+          ...(breakStartValue ? { breakStartDate: breakStartValue } : {}),
+          ...(breakEndValue ? { breakEndDate: breakEndValue } : {}),
           periods,
         });
         Alert.alert(
@@ -265,40 +313,113 @@ export default function AddAcademicCalendarScreen() {
         }
       }
 
+      const publishedLabel = termType === "short" && !/short|semester khas|special semester/i.test(normalizedLabel)
+        ? `Short Semester — ${normalizedLabel}`
+        : normalizedLabel;
       const payload = {
         university_id: profileRow.university_id,
         // null is intentionally university-wide and is accepted only when no
         // usable campus mapping exists for this profile (enforced again by RLS).
         campus_id: resolvedCampusId,
-        semester_label: termType === "short" && !/short|semester khas|special semester/i.test(normalizedLabel)
-          ? `Short Semester — ${normalizedLabel}`
-          : normalizedLabel,
+        semester_label: publishedLabel,
         start_date: start,
         end_date: end,
-        total_weeks: parseInt(totalWeeks) || 14,
-        break_start_date: breakStart.trim() || null,
-        break_end_date: breakEnd.trim() || null,
+        total_weeks: weeks,
+        break_start_date: breakStartValue || null,
+        break_end_date: breakEndValue || null,
         periods_json: periods,
         source: "crowdsourced",
         created_by: userId,
       };
 
-      const { error } = await supabase
+      // Reuse an identical published semester instead of inserting it again.
+      // The query is deliberately scoped to this university and campus; no
+      // other user's personal academic_calendars row is read or modified.
+      let existingQuery = supabase
         .from("university_calendar_offers")
-        .insert([payload]);
+        .select("*")
+        .eq("university_id", profileRow.university_id)
+        .eq("start_date", start)
+        .eq("end_date", end)
+        .limit(50);
+      existingQuery = resolvedCampusId
+        ? existingQuery.eq("campus_id", resolvedCampusId)
+        : existingQuery.is("campus_id", null);
+      const { data: existingRows, error: existingError } = await existingQuery;
+      if (existingError) throw new Error(existingError.message);
 
-      if (error) {
-        if (error.code === "23505") {
-          throw new Error(
-            "This calendar already exists for your university/campus.",
-          );
+      const normalizeLabel = (value: string) =>
+        value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+      const existingSemester = existingRows?.find(
+        (row) =>
+          normalizeLabel(String(row.semester_label || "")) ===
+          normalizeLabel(publishedLabel),
+      );
+      let reusedExisting = Boolean(existingSemester);
+      let canonicalRow: Record<string, any> | null = existingSemester ?? null;
+      if (!existingSemester) {
+        const { data: inserted, error } = await supabase
+          .from("university_calendar_offers")
+          .insert([payload])
+          .select("*")
+          .single();
+
+        if (error && error.code !== "23505") {
+          throw new Error(error.message);
         }
-        throw new Error(error.message);
+        if (inserted) canonicalRow = inserted as Record<string, any>;
+        if (error?.code === "23505") {
+          reusedExisting = true;
+          let raceQuery = supabase
+            .from("university_calendar_offers")
+            .select("*")
+            .eq("university_id", profileRow.university_id)
+            .eq("start_date", start)
+            .eq("end_date", end)
+            .limit(50);
+          raceQuery = resolvedCampusId
+            ? raceQuery.eq("campus_id", resolvedCampusId)
+            : raceQuery.is("campus_id", null);
+          const { data: raceRows, error: raceError } = await raceQuery;
+          if (raceError) throw new Error(raceError.message);
+          canonicalRow = (raceRows ?? []).find(
+            (row) => normalizeLabel(String(row.semester_label || "")) === normalizeLabel(publishedLabel),
+          ) ?? null;
+          if (!canonicalRow) throw new Error("The existing semester could not be loaded. Please retry.");
+        }
       }
 
+      // A manual calendar is immediately usable by its author. Persisting it
+      // here also makes the previous screen refresh without a restart.
+      // If another user/admin already published this identity, select that
+      // canonical stored row rather than applying possibly different draft
+      // weeks, periods, or break dates from this form.
+      const selectedPeriods = Array.isArray(canonicalRow?.periods_json)
+        ? canonicalRow!.periods_json
+        : periods;
+      await updateAcademicCalendar({
+        semesterLabel: String(canonicalRow?.semester_label || publishedLabel),
+        startDate: String(canonicalRow?.start_date || start).slice(0, 10),
+        endDate: String(canonicalRow?.end_date || end).slice(0, 10),
+        totalWeeks: Number(canonicalRow?.total_weeks) || weeks,
+        breakStartDate: canonicalRow?.break_start_date
+          ? String(canonicalRow.break_start_date).slice(0, 10)
+          : undefined,
+        breakEndDate: canonicalRow?.break_end_date
+          ? String(canonicalRow.break_end_date).slice(0, 10)
+          : undefined,
+        periods: selectedPeriods,
+        teachingWeekOffset: 0,
+        selectionSource: "manual",
+        selectedAt: new Date().toISOString(),
+        isActive: true,
+      });
+
       Alert.alert(
-        "Success",
-        "Calendar published successfully! You and others can now select it in the Academic Calendar settings.",
+        reusedExisting ? "Semester already exists" : "Semester saved",
+        reusedExisting
+          ? "We selected the existing semester instead of adding a duplicate."
+          : "Your semester is selected now and is available in Academic Calendar settings.",
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (e) {

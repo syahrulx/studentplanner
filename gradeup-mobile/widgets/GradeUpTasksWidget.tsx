@@ -203,4 +203,4 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   );
 }
 
-export default createWidget('GradeUpTasks', GradeUpTasksWidgetView);
+export default createWidget<HomeWidgetProps>('GradeUpTasks', GradeUpTasksWidgetView);

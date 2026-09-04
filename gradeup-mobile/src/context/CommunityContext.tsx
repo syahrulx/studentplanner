@@ -37,7 +37,7 @@ const SERVER_COMMUNITY_PUSH_ENABLED = true;
 const shareLimiter = new RateLimiter(10, 60_000); // max 10 share calls / minute
 const shareAllLimiter = new RateLimiter(3, 60_000); // max 3 bulk-share calls / minute
 const toggleStreamCooldown = new Cooldown(2_000); // 2s cooldown per recipient
-const reactionLimiter = new RateLimiter(15, 60_000); // max 15 reactions / minute
+const reactionLimiter = new RateLimiter(5, 60_000); // max 5 reactions/bumps per minute
 const bumpCooldown = new Cooldown(5_000); // 5s cooldown per receiver
 const refreshLimiter = new RateLimiter(5, 10_000); // max 5 manual refreshes / 10s
 
@@ -945,21 +945,37 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   // ─── Reaction actions (rate-limited) ───
   const handleSendReaction = useCallback(async (receiverId: string, type: string, message?: string) => {
     if (!userId) return;
-    if (!reactionLimiter.attempt()) return;
+    if (!reactionLimiter.attempt()) {
+      Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      return;
+    }
     try {
       await communityApi.sendReaction(userId, receiverId, type, message);
     } catch (e) {
       console.warn('Failed to send reaction:', e);
+      if (/reaction limit|5 reactions|rate limit/i.test(e instanceof Error ? e.message : String(e))) {
+        Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      }
     }
   }, [userId]);
 
   const handleSendBump = useCallback(async (receiverId: string) => {
     if (!userId) return;
-    if (!bumpCooldown.attempt(receiverId)) return;
+    if (!bumpCooldown.attempt(receiverId)) {
+      Alert.alert('Please wait', 'Wait a few seconds before bumping the same person again.');
+      return;
+    }
+    if (!reactionLimiter.attempt()) {
+      Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      return;
+    }
     try {
       await communityApi.sendBump(userId, receiverId);
     } catch (e) {
       console.warn('Failed to send bump:', e);
+      if (/reaction limit|5 reactions|rate limit/i.test(e instanceof Error ? e.message : String(e))) {
+        Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      }
     }
   }, [userId]);
 

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { listCampuses, createCampus, updateCampus, deleteCampus, type AdminCampusRow, listUniversities, type UniversityRow } from '../lib/api';
+import { listCampuses, createCampus, updateCampus, deleteCampus, getCampusDeleteImpact, type AdminCampusRow, listUniversities, type UniversityRow } from '../lib/api';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
 import { Label, TextInput } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
+import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
 
 function Input({
   label,
@@ -40,6 +41,12 @@ export function CampusesRoute() {
   const [query, setQuery] = useState('');
   const [universities, setUniversities] = useState<UniversityRow[]>([]);
   const [expandedUnis, setExpandedUnis] = useState<Set<string>>(new Set());
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+
+  const duplicateIds = useMemo(
+    () => duplicateRecordIds(items, (c) => `${c.university_id}|${normaliseRecordName(c.name)}`),
+    [items],
+  );
 
   const toggleUni = (id: string) => {
     setExpandedUnis(prev => {
@@ -90,8 +97,9 @@ export function CampusesRoute() {
         matchesAdminSearch(searchQuery, u.name, u.university_id),
       );
     }
+    if (duplicatesOnly) list = list.filter((c) => duplicateIds.has(c.id));
     return list;
-  }, [items, query, searchQuery]);
+  }, [items, query, searchQuery, duplicatesOnly, duplicateIds]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, AdminCampusRow[]>();
@@ -140,6 +148,10 @@ export function CampusesRoute() {
                     <Label>Search</Label>
                     <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or university" />
                   </div>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                    <input type="checkbox" checked={duplicatesOnly} onChange={(e) => setDuplicatesOnly(e.target.checked)} />
+                    Show redundancy only ({duplicateIds.size})
+                  </label>
 
                   {err ? (
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
@@ -195,7 +207,12 @@ export function CampusesRoute() {
                                   >
                                     <td className="px-4 py-3 pl-8 relative">
                                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-200 dark:bg-brand-900/50" />
-                                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{u.name}</div>
+                                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                        {u.name}
+                                        {duplicateIds.has(u.id) ? (
+                                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Redundant</span>
+                                        ) : null}
+                                      </div>
                                     </td>
                                     <td className="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
                                       {u.university_id.toUpperCase()}
@@ -210,11 +227,25 @@ export function CampusesRoute() {
                                           size="sm"
                                           onClick={async (e) => {
                                             e.stopPropagation();
-                                            const ok = confirm(`Delete ${u.name}?`);
-                                            if (!ok) return;
-                                            await deleteCampus(u.id);
-                                            if (editing?.id === u.id) setEditing(null);
-                                            await refresh();
+                                            setErr('');
+                                            try {
+                                              const impact = await getCampusDeleteImpact(u.id);
+                                              if (impact.total > 0) {
+                                                const detail = Object.entries(impact.counts)
+                                                  .filter(([, count]) => count > 0)
+                                                  .map(([name, count]) => `${name}: ${count}`)
+                                                  .join('\n');
+                                                alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
+                                                return;
+                                              }
+                                              const ok = confirm(`Delete unused campus ${u.name}?\n\nAffected records: 0`);
+                                              if (!ok) return;
+                                              await deleteCampus(u.id);
+                                              if (editing?.id === u.id) setEditing(null);
+                                              await refresh();
+                                            } catch (error) {
+                                              setErr(error instanceof Error ? error.message : 'Campus deletion failed');
+                                            }
                                           }}
                                         >
                                           Delete

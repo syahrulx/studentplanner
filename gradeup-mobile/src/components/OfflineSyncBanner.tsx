@@ -6,7 +6,7 @@ import { useApp } from '@/src/context/AppContext';
 export default function OfflineSyncBanner() {
   const theme = useTheme();
   const { offlineSyncStatus, retryOfflineSync } = useApp();
-  const { pendingCount, syncing } = offlineSyncStatus;
+  const { pendingCount, syncing, lastError } = offlineSyncStatus;
 
   if (pendingCount === 0) return null;
 
@@ -20,9 +20,15 @@ export default function OfflineSyncBanner() {
         )}
         <View style={styles.copy}>
           <Text style={[styles.title, { color: theme.text }]}>
-            {syncing ? 'Syncing saved changes…' : `${pendingCount} change${pendingCount === 1 ? '' : 's'} saved offline`}
+            {syncing
+              ? 'Syncing saved changes…'
+              : lastError
+                ? `${pendingCount} change${pendingCount === 1 ? '' : 's'} couldn’t sync`
+                : `${pendingCount} change${pendingCount === 1 ? '' : 's'} saved offline`}
           </Text>
-          <Text style={[styles.detail, { color: theme.textSecondary }]}>Safe on this device · retries automatically</Text>
+          <Text numberOfLines={2} style={[styles.detail, { color: theme.textSecondary }]}>
+            {lastError || 'Safe on this device · retries automatically'}
+          </Text>
         </View>
         {!syncing && (
           <Pressable

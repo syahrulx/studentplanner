@@ -66,14 +66,15 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
   const contentInsets = {
-    top: small ? 16 : large ? 18 : 17,
+    top: small ? 16 : large ? 18 : 10,
     side: small ? 13 : 14,
-    bottom: small ? 12 : 13,
+    bottom: small ? 12 : large ? 13 : 10,
   };
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
-  // Layout never gets crowded now that columns are capped to 2 — keep the
-  // breathable (non-dense) spacing for medium/large.
-  const dense = false;
+  // A systemMedium widget is much shorter than systemLarge. Keep the two-row
+  // cap, but collapse secondary task labels and section spacing so the header
+  // cannot be pushed beyond WidgetKit's rounded clipping bounds.
+  const dense = !large;
 
   const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -288,7 +289,7 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
 
         {/* Header */}
         <HStack spacing={6} alignment="top">
-          <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
+          <VStack spacing={dense ? 0 : 2} alignment="leading" modifiers={[padding({ leading: dense ? 2 : 6, top: dense ? 0 : 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: dense ? 14 : 17 }), ...fg(title), lineLimit(1), padding({ top: dense ? 2 : 0 })]}>
               Today
             </Text>
@@ -439,4 +440,4 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
   );
 }
 
-export default createWidget('GradeUpToday', GradeUpTodayWidgetView);
+export default createWidget<HomeWidgetProps>('GradeUpToday', GradeUpTodayWidgetView);

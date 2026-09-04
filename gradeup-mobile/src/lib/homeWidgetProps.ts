@@ -95,24 +95,25 @@ export function homeWidgetThemeFromId(
   else if (themePack === 'mono') t = MONO_THEME_OVERRIDE;
   else if (themePack === 'spider') t = resolveSpiderTheme(spiderBlueAccents);
   else if (themePack === 'purple') t = PURPLE_THEME_OVERRIDE;
-  else if (themePack === 'purple') t = PURPLE_THEME_OVERRIDE;
+
+  const custom = themePack === 'custom' ? customThemeColors : null;
 
   // Pass through ALL theme colors directly so the widget fully mirrors
   // the user's chosen app theme — background, text, accents, everything.
   return {
     themeId: t.id,
     themePack,
-    background: t.background,
-    backgroundSecondary: t.backgroundSecondary,
-    card: t.card,
-    border: t.border,
-    primary: t.primary,
-    text: t.text,
-    textSecondary: themePack === 'custom' && customThemeColors?.textSecondary ? customThemeColors.textSecondary : t.textSecondary,
+    background: custom?.background ?? t.background,
+    backgroundSecondary: custom?.background ?? t.backgroundSecondary,
+    card: custom?.card ?? t.card,
+    border: custom?.border ?? t.border,
+    primary: custom?.primary ?? t.primary,
+    text: custom?.text ?? t.text,
+    textSecondary: custom?.textSecondary ?? t.textSecondary,
     danger: t.danger,
     warning: t.warning,
-    focusCard: themePack === 'custom' && customThemeColors?.focusCard ? customThemeColors.focusCard : (t as any).focusCard,
-    focusCardText: themePack === 'custom' && customThemeColors?.focusCardText ? customThemeColors.focusCardText : (t as any).focusCardText,
+    focusCard: custom?.focusCard ?? (t as any).focusCard,
+    focusCardText: custom?.focusCardText ?? (t as any).focusCardText,
   };
 }
 

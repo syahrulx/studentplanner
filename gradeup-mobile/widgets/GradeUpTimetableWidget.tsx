@@ -58,7 +58,10 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
     );
   }
 
-  const maxItems = 6;
+  // WidgetKit's systemSmall and systemMedium families are both short. Capping
+  // their rows prevents the 3–6 class layout from extending below the widget;
+  // the header still reports the full class count.
+  const maxItems = small ? 2 : family === 'systemMedium' ? 4 : 6;
   const cls = p.classes.slice(0, maxItems);
   const isDense = cls.length > 2;
   const denseSmall = small && isDense;
@@ -136,13 +139,12 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
       <VStack
         alignment="leading"
         modifiers={[
-          frame({ maxWidth: 'infinity', maxHeight: 'infinity', alignment: 'topLeading' }),
           padding({ top: contentInsets.top, leading: contentInsets.side, trailing: contentInsets.side, bottom: contentInsets.bottom })
         ]}
         spacing={small ? (denseSmall ? 4 : 8) : denseMedium ? 4 : 10}
       >
         {/* Header */}
-        <HStack spacing={6} alignment="top" modifiers={[frame({ maxWidth: 'infinity' })]}>
+        <HStack spacing={6} alignment="top">
           <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), ...fg(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
@@ -164,7 +166,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
           </VStack>
         </HStack>
 
-        <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.2)]} />
+        <Divider modifiers={[...fg(line), opacity(0.2)]} />
 
         {/* Content Section */}
         {cls.length === 0 ? (
@@ -173,9 +175,13 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
             <Spacer />
           </HStack>
         ) : (denseSmall || denseMedium) ? (
-          <HStack spacing={0} alignment="top" modifiers={[frame({ maxWidth: 'infinity' })]}>
+          <HStack spacing={0} alignment="top">
             {/* Left Column */}
-            <VStack spacing={0} alignment="center" modifiers={[frame({ maxWidth: 'infinity', alignment: 'center' })]}>
+            <VStack
+              spacing={0}
+              alignment="center"
+              modifiers={[containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: 0, alignment: 'center' })]}
+            >
               {/* Cell 1 (Index 0) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
                 <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[0].startTime}</Text>
@@ -183,7 +189,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
                 <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text>
               </VStack>
 
-              <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
+              <Divider modifiers={[...fg(line), opacity(0.18)]} />
 
               {/* Cell 3 (Index 2) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
@@ -198,7 +204,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
               {cls.length > 4 ? (
                 <>
-                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
+                  <Divider modifiers={[...fg(line), opacity(0.18)]} />
                   {/* Cell 5 (Index 4) */}
                   <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
                     <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[4].startTime}</Text>
@@ -215,7 +221,11 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
             </VStack>
 
             {/* Right Column */}
-            <VStack spacing={0} alignment="center" modifiers={[frame({ maxWidth: 'infinity', alignment: 'center' })]}>
+            <VStack
+              spacing={0}
+              alignment="center"
+              modifiers={[containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: 0, alignment: 'center' })]}
+            >
               {/* Cell 2 (Index 1) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
                 {cls[1] ? (
@@ -227,7 +237,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
                 ) : <Spacer />}
               </VStack>
 
-              <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
+              <Divider modifiers={[...fg(line), opacity(0.18)]} />
 
               {/* Cell 4 (Index 3) */}
               <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
@@ -242,7 +252,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
 
               {cls.length > 4 ? (
                 <>
-                  <Divider modifiers={[frame({ maxWidth: 'infinity' }), ...fg(line), opacity(0.18)]} />
+                  <Divider modifiers={[...fg(line), opacity(0.18)]} />
                   {/* Cell 6 (Index 5) */}
                   <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, top: 8 })]}>
                     {cls[5] ? (
@@ -294,4 +304,4 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   );
 }
 
-export default createWidget('GradeUpTimetable', GradeUpTimetableWidgetView);
+export default createWidget<HomeWidgetProps>('GradeUpTimetable', GradeUpTimetableWidgetView);
