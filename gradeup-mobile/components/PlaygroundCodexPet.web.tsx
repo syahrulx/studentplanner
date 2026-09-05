@@ -91,7 +91,6 @@ export function PlaygroundCodexPet({ style, spriteUri, animation, size = 120 }: 
 
   return (
     <View style={[styles.wrap, { width: size, height: size }, style]} pointerEvents="none">
-      {/* @ts-expect-error react-native-web renders DOM; a raw div is valid on web. */}
       <div ref={frameRef} />
     </View>
   );

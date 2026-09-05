@@ -11,7 +11,6 @@ type PdfWebViewProps = {
 export function PdfWebView({ uri, style }: PdfWebViewProps) {
   return (
     <View style={[styles.fill, style]}>
-      {/* @ts-expect-error react-native-web renders DOM; iframe is valid on web. */}
       <iframe
         src={uri}
         title="PDF preview"

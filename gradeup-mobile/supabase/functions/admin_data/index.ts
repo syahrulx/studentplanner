@@ -358,6 +358,80 @@ serve(async (req) => {
       return json(200, { row: data });
     }
 
+    if (action === 'university_delete_impact') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const dependencies: Record<string, number> = {};
+      for (const [name, table] of [
+        ['profiles', 'profiles'],
+        ['campuses', 'campuses'],
+        ['organizations', 'organizations'],
+        ['calendars', 'university_calendar_offers'],
+        ['mappings', 'university_mappings'],
+        ['courses', 'courses'],
+        ['posts', 'community_posts'],
+        ['authorityRequests', 'authority_requests'],
+        ['confessions', 'confessions'],
+        ['rooms', 'campus_rooms'],
+        ['faculties', 'campus_faculties'],
+      ] as const) {
+        const { count, error: countError } = await admin
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .eq('university_id', id);
+        if (countError) return json(400, { error: `dependency_check_failed:${name}:${countError.message}` });
+        dependencies[name] = count ?? 0;
+      }
+      return json(200, {
+        counts: dependencies,
+        total: Object.values(dependencies).reduce((sum, count) => sum + count, 0),
+      });
+    }
+
+    if (action === 'campus_delete_impact') {
+      const id = String(payload.id || '').trim();
+      if (!id) return json(400, { error: 'missing_id' });
+      const { data: campus, error: campusError } = await admin
+        .from('campuses')
+        .select('id,university_id,name')
+        .eq('id', id)
+        .single();
+      if (campusError || !campus) return json(404, { error: 'campus_not_found' });
+
+      const dependencies: Record<string, number> = {};
+      for (const [name, table] of [
+        ['organizations', 'organizations'],
+        ['posts', 'community_posts'],
+        ['authorityRequests', 'authority_requests'],
+        ['calendars', 'university_calendar_offers'],
+      ] as const) {
+        const { count, error: countError } = await admin
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .eq('campus_id', id);
+        if (countError) return json(400, { error: `dependency_check_failed:${name}:${countError.message}` });
+        dependencies[name] = count ?? 0;
+      }
+      for (const [name, table] of [
+        ['profiles', 'profiles'],
+        ['confessions', 'confessions'],
+        ['rooms', 'campus_rooms'],
+        ['faculties', 'campus_faculties'],
+      ] as const) {
+        const { count, error: countError } = await admin
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .eq('university_id', campus.university_id)
+          .ilike('campus', String(campus.name).trim());
+        if (countError) return json(400, { error: `dependency_check_failed:${name}:${countError.message}` });
+        dependencies[name] = count ?? 0;
+      }
+      return json(200, {
+        counts: dependencies,
+        total: Object.values(dependencies).reduce((sum, count) => sum + count, 0),
+      });
+    }
+
     if (action === 'university_delete') {
       const id = String(payload.id || '').trim();
       if (!id) return json(400, { error: 'missing_id' });
@@ -369,6 +443,11 @@ serve(async (req) => {
         ['calendars', 'university_calendar_offers'],
         ['mappings', 'university_mappings'],
         ['courses', 'courses'],
+        ['posts', 'community_posts'],
+        ['authorityRequests', 'authority_requests'],
+        ['confessions', 'confessions'],
+        ['rooms', 'campus_rooms'],
+        ['faculties', 'campus_faculties'],
       ] as const) {
         const { count, error: countError } = await admin
           .from(table)
@@ -1997,36 +2076,28 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       if (!['open', 'in_progress', 'resolved', 'dismissed'].includes(nextStatus)) {
         return json(400, { error: 'invalid_status' });
       }
-      const { data: report, error: reportError } = await admin
-        .from('support_reports')
-        .select('id,reporter_id,subject')
-        .eq('id', id)
-        .single();
-      if (reportError || !report?.reporter_id) return json(404, { error: 'report_not_found' });
-      const { data: message, error: messageError } = await admin
-        .from('support_report_messages')
-        .insert({ report_id: id, author_id: adminUserId, author_role: 'admin', body })
-        .select('id,report_id,author_id,author_role,body,created_at')
-        .single();
-      if (messageError) return json(400, { error: messageError.message });
-      const patch: Record<string, unknown> = { status: nextStatus };
-      patch.resolved_at = nextStatus === 'resolved' || nextStatus === 'dismissed'
-        ? new Date().toISOString()
-        : null;
-      const { data: updated, error: updateError } = await admin
-        .from('support_reports')
-        .update(patch)
-        .eq('id', id)
-        .select()
-        .single();
-      if (updateError) return json(400, { error: updateError.message });
-      await admin.from('in_app_notifications').insert({
-        user_id: report.reporter_id,
-        title: 'Reply to your support report',
-        body: body.slice(0, 500),
-        category: 'support',
-        data: { type: 'support_reply', route: '/support-ticket', params: { reportId: id } },
-      });
+      const { data: transaction, error: transactionError } = await admin.rpc(
+        'admin_reply_support_report',
+        {
+          p_report_id: id,
+          p_admin_id: adminUserId,
+          p_body: body,
+          p_status: nextStatus,
+        },
+      );
+      if (transactionError) {
+        const notFound = transactionError.code === 'P0002';
+        return json(notFound ? 404 : 400, {
+          error: notFound ? 'report_not_found' : transactionError.message,
+        });
+      }
+      const result = (transaction ?? {}) as Record<string, unknown>;
+      const updated = (result.row ?? null) as Record<string, unknown> | null;
+      const message = (result.message ?? null) as Record<string, unknown> | null;
+      const reporterId = String(updated?.reporter_id ?? '').trim();
+      if (!updated || !message || !reporterId) {
+        return json(500, { error: 'support_reply_transaction_invalid_result' });
+      }
       // Keep the durable in-app record above, and also request an OS-level
       // banner for installed builds. Push failure must not lose the reply.
       let pushStatus: Record<string, unknown> = { sent: 0, reason: 'not_attempted' };
@@ -2042,7 +2113,7 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
               Authorization: `Bearer ${serviceKey}`,
             },
             body: JSON.stringify({
-              recipientUserIds: [report.reporter_id],
+              recipientUserIds: [reporterId],
               title: 'Reply to your support report',
               body: body.slice(0, 500),
               category: 'support',
@@ -2065,7 +2136,7 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
       }
       await admin.from('admin_logs').insert({
         type: 'api_request', status: 'success',
-        meta: { action, id, status: nextStatus, message_id: message?.id, push: pushStatus },
+        meta: { action, id, status: nextStatus, message_id: message.id, push: pushStatus },
       });
       return json(200, { row: updated, message, push: pushStatus });
     }

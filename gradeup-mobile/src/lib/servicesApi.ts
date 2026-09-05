@@ -256,7 +256,7 @@ export interface ServicePost {
 
 // ─── Offers (negotiation) ──────────────────────────────────────────────────
 
-export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'submitted' | 'completed';
+export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn' | 'submitted' | 'completed' | 'cancelled';
 
 /** exclusive = one acceptance can win the job. open_listing = reusable; track uses instead of accept. */
 export type OfferKind = 'exclusive' | 'open_listing';

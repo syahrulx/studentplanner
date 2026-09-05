@@ -36,9 +36,9 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
   const contentInsets = {
-    top: small ? 16 : large ? 18 : 17,
+    top: small ? 16 : large ? 18 : 12,
     side: small ? 13 : 14,
-    bottom: small ? 12 : 13,
+    bottom: small ? 12 : large ? 13 : 10,
   };
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
@@ -145,7 +145,7 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
       >
         {/* Header */}
         <HStack spacing={6} alignment="top">
-          <VStack spacing={2} alignment="leading" modifiers={[padding({ leading: 6, top: 6 })]}>
+          <VStack spacing={denseMedium ? 0 : 2} alignment="leading" modifiers={[padding({ leading: 6, top: denseMedium ? 2 : 6 })]}>
             <Text modifiers={[font({ weight: 'heavy', size: small ? 13 : denseMedium ? 15 : 18 }), ...fg(title), lineLimit(1)]}>
               {small ? 'Classes' : "Today's Classes"}
             </Text>
@@ -183,21 +183,21 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
               modifiers={[containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: 0, alignment: 'center' })]}
             >
               {/* Cell 1 (Index 0) */}
-              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: denseMedium ? 4 : 8 })]}>
                 <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[0].startTime}</Text>
                 <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[0].label}</Text>
-                <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text>
+                {!denseMedium ? <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[0].location || '—'}</Text> : null}
               </VStack>
 
               <Divider modifiers={[...fg(line), opacity(0.18)]} />
 
               {/* Cell 3 (Index 2) */}
-              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: denseMedium ? 4 : 8 })]}>
                 {cls[2] ? (
                   <>
                     <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[2].startTime}</Text>
                     <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[2].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[2].location || '—'}</Text>
+                    {!denseMedium ? <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[2].location || '—'}</Text> : null}
                   </>
                 ) : <Spacer />}
               </VStack>
@@ -227,12 +227,12 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
               modifiers={[containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: 0, alignment: 'center' })]}
             >
               {/* Cell 2 (Index 1) */}
-              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: 8 })]}>
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, bottom: denseMedium ? 4 : 8 })]}>
                 {cls[1] ? (
                   <>
                     <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[1].startTime}</Text>
                     <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[1].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[1].location || '—'}</Text>
+                    {!denseMedium ? <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[1].location || '—'}</Text> : null}
                   </>
                 ) : <Spacer />}
               </VStack>
@@ -240,12 +240,12 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
               <Divider modifiers={[...fg(line), opacity(0.18)]} />
 
               {/* Cell 4 (Index 3) */}
-              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: 8 })]}>
+              <VStack spacing={1} alignment="center" modifiers={[padding({ horizontal: 8, vertical: denseMedium ? 4 : 8 })]}>
                 {cls[3] ? (
                   <>
                     <Text modifiers={[font({ size: small ? 10 : 12, weight: 'heavy' }), ...fg(accent), lineLimit(1)]}>{cls[3].startTime}</Text>
                     <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), ...fg(title), lineLimit(1)]}>{cls[3].label}</Text>
-                    <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[3].location || '—'}</Text>
+                    {!denseMedium ? <Text modifiers={[font({ size: small ? 8 : 9 }), ...fg(muted), lineLimit(1)]}>{cls[3].location || '—'}</Text> : null}
                   </>
                 ) : <Spacer />}
               </VStack>

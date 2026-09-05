@@ -54,9 +54,10 @@ const DEBUG_MODE = false; // Toggle to true to show debug info in chat
 
 export default function SubjectChat() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
-  const subjectId = typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
+  const subjectId: string = typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
 
   const { language, notes, user } = useApp();
+  const userId = user.id ?? '';
   const theme = useTheme();
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
@@ -92,7 +93,7 @@ export default function SubjectChat() {
   const [showHistory, setShowHistory] = useState(false);
   
   const loadSessions = async () => {
-    const s = await getChatSessions(user.id, subjectId);
+    const s = await getChatSessions(userId, subjectId);
     setSessions(s);
     if (user.subscriptionPlan !== 'pro' && s.length > 0) {
       // Auto-resume the most recent session for Plus users 
@@ -103,7 +104,7 @@ export default function SubjectChat() {
 
   useEffect(() => {
     loadSessions();
-  }, [user.id, subjectId]);
+  }, [userId, subjectId]);
 
   const startNewChat = () => {
     setCurrentSessionId(null);
@@ -125,7 +126,7 @@ export default function SubjectChat() {
   };
 
   const handleDeleteSession = async (id: string) => {
-    await deleteChatSession(user.id, id);
+    await deleteChatSession(userId, id);
     setSessions(prev => prev.filter(s => s.id !== id));
     if (currentSessionId === id) {
       startNewChat();
@@ -327,7 +328,7 @@ STUDENT NOTES CONTENT:
           let activeSessionId = currentSessionId;
           
           if (!activeSessionId) {
-            const newSess = await createChatSession(user.id, {
+            const newSess = await createChatSession(userId, {
               subjectId,
               title: userText.slice(0, 30) + (userText.length > 30 ? '...' : ''),
               createdAt: new Date().toISOString(),
@@ -465,7 +466,7 @@ STUDENT NOTES CONTENT:
                 {m.role === 'ai' ? (
                   <Markdown
                     style={{
-                      body: [s.bubbleText, { color: theme.text }],
+                      body: { ...StyleSheet.flatten(s.bubbleText), color: theme.text },
                       paragraph: { marginTop: 0, marginBottom: 8 },
                       code_inline: { backgroundColor: theme.border, paddingHorizontal: 4, borderRadius: 4, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
                       code_block: { backgroundColor: theme.border, padding: 8, borderRadius: 8, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },

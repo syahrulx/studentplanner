@@ -425,7 +425,7 @@ function AppUpdateGate() {
   if (result.severity === 'none') return null;
   if (result.severity === 'soft' && dismissed) return null;
 
-  const override = language === 'ms' ? result.messageMs : result.messageEn;
+  const override = result.messageEn;
 
   return (
     <UpdatePrompt

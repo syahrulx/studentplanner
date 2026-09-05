@@ -656,7 +656,8 @@ export default function CommunityMap() {
 
   const handleQuickReact = useCallback(
     async (friendId: string, emoji: string) => {
-      await sendReaction(friendId, emoji);
+      const sent = await sendReaction(friendId, emoji);
+      if (!sent) return;
       setSentReaction(emoji);
       setTimeout(() => setSentReaction(null), 1500);
     },
@@ -665,7 +666,8 @@ export default function CommunityMap() {
 
   const handleBump = useCallback(
     async (friendId: string) => {
-      await sendBump(friendId);
+      const sent = await sendBump(friendId);
+      if (!sent) return;
       setSentBump(true);
       setTimeout(() => setSentBump(false), 1500);
     },

@@ -4,6 +4,7 @@ import {
   Switch, Alert, Modal, Platform, ActivityIndicator,
   KeyboardAvoidingView, AppState
 } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate, withSequence, Easing } from 'react-native-reanimated';
@@ -144,10 +145,16 @@ export default function SubjectGradeScreen() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   async function persistRemote(next: SubjectGradeConfig) {
-    if (!user?.id) return;
+    if (!user?.id) return false;
     setSaveState('saving');
     const result = await saveSubjectGradeConfig(user.id, next);
+    const isLatestSave = pendingConfig.current?.updatedAt === next.updatedAt;
+    if (!isLatestSave) return false;
+    if (!result.error) {
+      pendingConfig.current = null;
+    }
     setSaveState(result.error ? 'error' : 'saved');
+    return !result.error;
   }
 
   function update(partial: Partial<SubjectGradeConfig>) {
@@ -179,6 +186,37 @@ export default function SubjectGradeScreen() {
       if (pendingConfig.current && user?.id) {
         void saveSubjectGradeConfig(user.id, pendingConfig.current);
       }
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let wasOffline = false;
+    let retryInFlight = false;
+    let active = true;
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (!active) return;
+      const online = state.isConnected === true && (
+        state.isInternetReachable === true
+        || (Platform.OS === 'web' && state.isInternetReachable == null)
+      );
+      if (!online) {
+        wasOffline = true;
+        return;
+      }
+      if (wasOffline && !retryInFlight && pendingConfig.current && user?.id) {
+        retryInFlight = true;
+        const retryConfig = pendingConfig.current;
+        void persistRemote(retryConfig).then((saved) => {
+          if (!active) return;
+          if (saved) wasOffline = false;
+        }).finally(() => {
+          retryInFlight = false;
+        });
+      }
+    });
+    return () => {
+      active = false;
+      unsubscribe();
     };
   }, [user?.id]);
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, Animated, Alert } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
+import type { TranslationKey } from '@/src/i18n';
 
 const MUSIC_COLOR = '#FA243C';
 const BAR_COUNT = 3;
@@ -18,7 +19,7 @@ interface NowPlayingCardProps {
   /** If true, shows as the user's own vibe (no add button) */
   isOwnProfile?: boolean;
   /** Optional translation function; falls back to English. */
-  T?: (key: string) => string;
+  T?: (key: TranslationKey) => string;
 }
 
 function EqBar({ delay }: { delay: number }) {
@@ -57,7 +58,7 @@ function EqBar({ delay }: { delay: number }) {
 import { Linking } from 'react-native';
 
 export default function NowPlayingCard({ song, artist, albumArt, trackId, isOwnProfile, T: _T }: NowPlayingCardProps) {
-  const fallback = (key: string) => key;
+  const fallback = (key: TranslationKey) => key;
   const T = _T || fallback;
 
   const handleOpen = () => {

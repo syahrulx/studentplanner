@@ -1,4 +1,4 @@
-import { Redirect, Stack, useSegments } from 'expo-router';
+import { Redirect, Stack, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase';
@@ -8,7 +8,7 @@ import { supabase } from '@/src/lib/supabase';
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
 
 export default function AuthLayout() {
-  const segments = useSegments();
+  const pathname = usePathname();
   const [gate, setGate] = useState<'loading' | 'signed-out' | 'needs-profile' | 'ready'>('loading');
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function AuthLayout() {
 
   // Keep incomplete profiles trapped in the profile setup flow.
   if (gate === 'needs-profile') {
-    if (segments[1] === 'profile-setup') return <Stack screenOptions={{ headerShown: false }} />;
+    if (pathname.endsWith('/profile-setup')) return <Stack screenOptions={{ headerShown: false }} />;
     return <Redirect href="/(auth)/profile-setup" />;
   }
 
@@ -85,7 +85,7 @@ export default function AuthLayout() {
   // race that navigation and bounce an existing user straight to (tabs)
   // before they ever see the "set a new password" screen.
   if (gate === 'ready') {
-    if (segments[1] === 'reset-password') return <Stack screenOptions={{ headerShown: false }} />;
+    if (pathname.endsWith('/reset-password')) return <Stack screenOptions={{ headerShown: false }} />;
     return <Redirect href="/(tabs)" />;
   }
   return <Stack screenOptions={{ headerShown: false }} />;

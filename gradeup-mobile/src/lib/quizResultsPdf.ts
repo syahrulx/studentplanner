@@ -219,7 +219,8 @@ export async function shareQuizResultsPdf(params: {
   });
 
   if (Platform.OS === 'web') {
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const blobBytes = Uint8Array.from(pdfBytes);
+    const blob = new Blob([blobBytes.buffer], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;

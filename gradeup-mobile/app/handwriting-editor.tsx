@@ -878,6 +878,11 @@ export default function HandwritingEditor() {
     }
   }, [recognizingInk]);
 
+  const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
+    setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
+    setRedoStacks((current) => ({ ...current, [pageId]: [] }));
+  }, []);
+
   const applyRecognizedText = useCallback((replaceInk: boolean) => {
     if (!recognizedDraft) return;
     const now = new Date().toISOString();
@@ -998,11 +1003,6 @@ export default function HandwritingEditor() {
       setAddingImage(false);
     }
   }, [activePage, addingImage, canEdit, noteId, updatePageElements]);
-
-  const commitPageGesture = useCallback((pageId: string, previous: HandwritingStroke[]) => {
-    setUndoStacks((current) => ({ ...current, [pageId]: [...(current[pageId] ?? []), previous].slice(-50) }));
-    setRedoStacks((current) => ({ ...current, [pageId]: [] }));
-  }, []);
 
   const handleToolGestureEnd = useCallback((completedTool: HandwritingTool) => {
     if (completedTool === 'eraser' && autoReturnAfterErasing) {

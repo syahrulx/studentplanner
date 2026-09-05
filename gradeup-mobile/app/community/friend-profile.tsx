@@ -230,18 +230,21 @@ export default function FriendProfileScreen() {
   };
   const handleReaction = async (type: string) => {
     if (!friendId) return;
-    await sendReaction(friendId, type);
+    const sent = await sendReaction(friendId, type);
+    if (!sent) return;
     const row = REACTION_EMOJIS.find((r) => r.type === type);
     flashFeedback(row ? `${row.label} sent!` : 'Reaction sent!');
   };
   const handleTemplate = async (msg: string) => {
     if (!friendId) return;
-    await sendReaction(friendId, '💬', msg);
+    const sent = await sendReaction(friendId, '💬', msg);
+    if (!sent) return;
     flashFeedback('Message sent!');
   };
   const handleBump = async () => {
     if (!friendId) return;
-    await sendBump(friendId);
+    const sent = await sendBump(friendId);
+    if (!sent) return;
     flashFeedback('Bump sent!');
   };
 

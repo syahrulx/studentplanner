@@ -654,26 +654,10 @@ export type DeleteImpact = {
   counts: Record<string, number>;
 };
 
-async function countBy(table: string, column: string, value: string): Promise<number> {
-  const { count, error } = await supabase
-    .from(table)
-    .select('*', { count: 'exact', head: true })
-    .eq(column, value);
-  if (error) throw toError(error);
-  return count ?? 0;
-}
-
 export async function getUniversityDeleteImpact(id: string): Promise<DeleteImpact> {
-  const [profiles, campuses, organizations, calendars, mappings, courses] = await Promise.all([
-    countBy('profiles', 'university_id', id),
-    countBy('campuses', 'university_id', id),
-    countBy('organizations', 'university_id', id),
-    countBy('university_calendar_offers', 'university_id', id),
-    countBy('university_mappings', 'university_id', id),
-    countBy('courses', 'university_id', id),
-  ]);
-  const counts = { profiles, campuses, organizations, calendars, mappings, courses };
-  return { counts, total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'university_delete_impact', id }, headers);
+  return unwrapFunctionData<DeleteImpact>(data, error);
 }
 
 export async function deleteUniversity(id: string) {
@@ -2088,33 +2072,9 @@ export async function updateCampus(id: string, name: string): Promise<void> {
 }
 
 export async function getCampusDeleteImpact(id: string): Promise<DeleteImpact> {
-  const { data: campus, error: campusError } = await supabase
-    .from('campuses')
-    .select('id,university_id,name')
-    .eq('id', id)
-    .single();
-  if (campusError) throw toError(campusError);
-
-  const [organizations, posts, authorityRequests, calendars] = await Promise.all([
-    countBy('organizations', 'campus_id', id),
-    countBy('community_posts', 'campus_id', id),
-    countBy('authority_requests', 'campus_id', id),
-    countBy('university_calendar_offers', 'campus_id', id),
-  ]);
-  const { count: profiles, error: profileError } = await supabase
-    .from('profiles')
-    .select('*', { count: 'exact', head: true })
-    .eq('university_id', campus.university_id)
-    .ilike('campus', String(campus.name).trim());
-  if (profileError) throw toError(profileError);
-  const counts = {
-    profiles: profiles ?? 0,
-    organizations,
-    posts,
-    authorityRequests,
-    calendars,
-  };
-  return { counts, total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'campus_delete_impact', id }, headers);
+  return unwrapFunctionData<DeleteImpact>(data, error);
 }
 
 export async function deleteCampus(id: string): Promise<void> {

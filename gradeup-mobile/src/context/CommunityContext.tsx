@@ -70,8 +70,8 @@ interface CommunityState {
   refreshMyActivity: () => Promise<void>;
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
-  sendReaction: (receiverId: string, type: string, message?: string) => Promise<void>;
-  sendBump: (receiverId: string) => Promise<void>;
+  sendReaction: (receiverId: string, type: string, message?: string) => Promise<boolean>;
+  sendBump: (receiverId: string) => Promise<boolean>;
 
   // Accountability Pacts (Shared Goals)
   sharedGoals: SharedGoal[];
@@ -219,6 +219,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // The local guard is per signed-in account. Do not let one user's recent
+  // interactions consume another user's allowance after an account switch.
+  useEffect(() => {
+    reactionLimiter.reset();
+    bumpCooldown.reset();
+  }, [userId]);
 
   // Load circle members when a circle is selected
   useEffect(() => {
@@ -944,38 +951,46 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Reaction actions (rate-limited) ───
   const handleSendReaction = useCallback(async (receiverId: string, type: string, message?: string) => {
-    if (!userId) return;
+    if (!userId) return false;
     if (!reactionLimiter.attempt()) {
       Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
-      return;
+      return false;
     }
     try {
       await communityApi.sendReaction(userId, receiverId, type, message);
+      return true;
     } catch (e) {
       console.warn('Failed to send reaction:', e);
       if (/reaction limit|5 reactions|rate limit/i.test(e instanceof Error ? e.message : String(e))) {
         Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      } else {
+        Alert.alert('Not sent', 'Check your connection and try again.');
       }
+      return false;
     }
   }, [userId]);
 
   const handleSendBump = useCallback(async (receiverId: string) => {
-    if (!userId) return;
+    if (!userId) return false;
     if (!bumpCooldown.attempt(receiverId)) {
       Alert.alert('Please wait', 'Wait a few seconds before bumping the same person again.');
-      return;
+      return false;
     }
     if (!reactionLimiter.attempt()) {
       Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
-      return;
+      return false;
     }
     try {
       await communityApi.sendBump(userId, receiverId);
+      return true;
     } catch (e) {
       console.warn('Failed to send bump:', e);
       if (/reaction limit|5 reactions|rate limit/i.test(e instanceof Error ? e.message : String(e))) {
         Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
+      } else {
+        Alert.alert('Not sent', 'Check your connection and try again.');
       }
+      return false;
     }
   }, [userId]);
 

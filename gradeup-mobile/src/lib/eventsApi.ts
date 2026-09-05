@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { checkContentModeration } from './servicesApi';
+import { uploadPostImage } from './postImageUpload';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
