@@ -7,6 +7,7 @@
  * an explicit admin grant.
  */
 import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
   LOG_LEVEL,
   PURCHASES_ERROR_CODE,
   type PurchasesPackage,
@@ -182,8 +183,85 @@ export async function getCurrentPlanOrNull(): Promise<SubscriptionPlan | null> {
 export interface PlanOfferings {
   plusPackage: PurchasesPackage | null;
   proPackage: PurchasesPackage | null;
+  plusTrial: FreeTrialOffer | null;
+  proTrial: FreeTrialOffer | null;
   /** Raw offerings for debugging / advanced usage */
   raw: PurchasesOfferings | null;
+}
+
+export interface FreeTrialOffer {
+  /** Store-provided ISO 8601 duration, such as P1W or P7D. */
+  durationISO8601: string;
+  /** Human-readable duration for disclosure copy, such as "7 days". */
+  durationText: string;
+  /** Title-case duration for CTA copy, such as "7-Day". */
+  ctaDurationText: string;
+}
+
+function freeTrialDuration(durationISO8601: string): FreeTrialOffer | null {
+  const normalized = durationISO8601.trim().toUpperCase();
+  const match = /^P(\d+)([DWMY])$/.exec(normalized);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  if (!Number.isInteger(value) || value <= 0) return null;
+
+  const unit = match[2];
+  if (unit === 'W' && value === 1) {
+    return { durationISO8601: normalized, durationText: '7 days', ctaDurationText: '7-Day' };
+  }
+
+  const unitName = unit === 'D' ? 'day' : unit === 'W' ? 'week' : unit === 'M' ? 'month' : 'year';
+  const titleUnit = unitName.charAt(0).toUpperCase() + unitName.slice(1);
+  return {
+    durationISO8601: normalized,
+    durationText: `${value} ${unitName}${value === 1 ? '' : 's'}`,
+    ctaDurationText: `${value}-${titleUnit}`,
+  };
+}
+
+async function getEligibleFreeTrials(
+  packages: Array<PurchasesPackage | null>,
+): Promise<Map<string, FreeTrialOffer>> {
+  const available = packages.filter((pkg): pkg is PurchasesPackage => Boolean(pkg));
+  const trials = new Map<string, FreeTrialOffer>();
+
+  if (Platform.OS === 'android') {
+    for (const pkg of available) {
+      // Google Play only returns subscription options that are eligible for the
+      // signed-in Play account. RevenueCat's default option is also the option
+      // purchasePackage() will automatically choose.
+      const duration = pkg.product.defaultOption?.freePhase?.billingPeriod.iso8601;
+      const trial = duration ? freeTrialDuration(duration) : null;
+      if (trial) trials.set(pkg.product.identifier, trial);
+    }
+    return trials;
+  }
+
+  if (Platform.OS !== 'ios') return trials;
+
+  const productsWithFreeIntro = available.filter(
+    (pkg) => pkg.product.introPrice?.price === 0 && Boolean(pkg.product.introPrice.period),
+  );
+  if (productsWithFreeIntro.length === 0) return trials;
+
+  try {
+    const eligibility = await Purchases.checkTrialOrIntroductoryPriceEligibility(
+      productsWithFreeIntro.map((pkg) => pkg.product.identifier),
+    );
+    for (const pkg of productsWithFreeIntro) {
+      const status = eligibility[pkg.product.identifier]?.status;
+      if (status !== INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE) continue;
+      const trial = freeTrialDuration(pkg.product.introPrice?.period ?? '');
+      if (trial) trials.set(pkg.product.identifier, trial);
+    }
+  } catch (error: any) {
+    // Unknown eligibility must render normal pricing so the paywall never
+    // promises a trial the App Store may not grant.
+    console.warn(`${TAG} Could not verify iOS trial eligibility: ${error?.message ?? error}`);
+  }
+
+  return trials;
 }
 
 /** Fetch available packages for the paywall. */
@@ -197,7 +275,7 @@ export async function getOfferings(): Promise<PlanOfferings> {
     // Expected in Expo Go (purchases can't configure there) or before init has
     // finished. Use warn — not error — so it doesn't trigger the red dev overlay.
     console.warn(`${TAG} getOfferings() called before purchases were configured — returning empty offerings.`);
-    return { plusPackage: null, proPackage: null, raw: null };
+    return { plusPackage: null, proPackage: null, plusTrial: null, proTrial: null, raw: null };
   }
 
   try {
@@ -215,7 +293,7 @@ export async function getOfferings(): Promise<PlanOfferings> {
       console.error(`${TAG} This means no offering is marked as 'current' in your RevenueCat dashboard.`);
       console.error(`${TAG} Fix: Go to RevenueCat Dashboard → Your App → Offerings → Set one offering as Current.`);
       console.error(`${TAG} Available offering keys: [${Object.keys(offerings.all).join(', ')}]`);
-      return { plusPackage: null, proPackage: null, raw: offerings };
+      return { plusPackage: null, proPackage: null, plusTrial: null, proTrial: null, raw: offerings };
     }
 
     console.log(`${TAG} Current offering: "${current.identifier}" — "${current.serverDescription}"`);
@@ -282,9 +360,13 @@ export async function getOfferings(): Promise<PlanOfferings> {
       console.error(`${TAG} Fix: Ensure your Google Play product ID or RevenueCat package identifier contains the word "pro".`);
     }
 
-    console.log(`${TAG} getOfferings() FINAL RESULT — plusPackage: ${plusPackage ? 'FOUND' : 'NULL'}, proPackage: ${proPackage ? 'FOUND' : 'NULL'}`);
+    const eligibleTrials = await getEligibleFreeTrials([plusPackage, proPackage]);
+    const plusTrial = plusPackage ? eligibleTrials.get(plusPackage.product.identifier) ?? null : null;
+    const proTrial = proPackage ? eligibleTrials.get(proPackage.product.identifier) ?? null : null;
+
+    console.log(`${TAG} getOfferings() FINAL RESULT — plusPackage: ${plusPackage ? 'FOUND' : 'NULL'}, proPackage: ${proPackage ? 'FOUND' : 'NULL'}, plusTrial: ${plusTrial?.durationISO8601 ?? 'NONE'}, proTrial: ${proTrial?.durationISO8601 ?? 'NONE'}`);
     console.log(`${TAG} ============================================================`);
-    return { plusPackage, proPackage, raw: offerings };
+    return { plusPackage, proPackage, plusTrial, proTrial, raw: offerings };
 
   } catch (error: any) {
     console.error(`${TAG} ❌ getOfferings() threw an exception!`);
@@ -294,7 +376,7 @@ export async function getOfferings(): Promise<PlanOfferings> {
     console.error(`${TAG} Error underlyingErrorMessage: ${error?.underlyingErrorMessage}`);
     console.error(`${TAG} Full error:    ${JSON.stringify(error, null, 2)}`);
     console.error(`${TAG} ============================================================`);
-    return { plusPackage: null, proPackage: null, raw: null };
+    return { plusPackage: null, proPackage: null, plusTrial: null, proTrial: null, raw: null };
   }
 }
 

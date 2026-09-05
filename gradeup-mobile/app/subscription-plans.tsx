@@ -25,6 +25,7 @@ import {
   restorePurchases,
   isPurchaseCancelled,
   type PlanOfferings,
+  type FreeTrialOffer,
 } from '@/src/lib/purchases';
 import type { SubscriptionPlan } from '@/src/types';
 import type { PurchasesPackage } from 'react-native-purchases';
@@ -160,6 +161,17 @@ export default function SubscriptionPlansScreen() {
     [offerings],
   );
 
+  /** Trial terms are returned only when the current store account is eligible. */
+  const trialForTier = useCallback(
+    (plan: SubscriptionPlan): FreeTrialOffer | null => {
+      if (!offerings || staff) return null;
+      if (plan === 'plus') return offerings.plusTrial;
+      if (plan === 'pro') return offerings.proTrial;
+      return null;
+    },
+    [offerings, staff],
+  );
+
   /** Get the display price string from the store (e.g. "RM 9.90" or "$2.49"). */
   const priceForTier = useCallback(
     (plan: SubscriptionPlan): string => {
@@ -181,6 +193,9 @@ export default function SubscriptionPlansScreen() {
     },
     [packageForTier, user.country],
   );
+
+  const selectedTrial = trialForTier(selected);
+  const selectedPrice = priceForTier(selected);
 
   const ctaGradient = useMemo(() => [theme.primary, theme.accent2] as [string, string], [theme.primary, theme.accent2]);
 
@@ -255,8 +270,10 @@ export default function SubscriptionPlansScreen() {
       // updated only by the authenticated webhook; the mobile client must never
       // self-assert that a purchase was paid.
       Alert.alert(
-        '🎉 Welcome!',
-        `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
+        selectedTrial ? '🎉 Free trial started!' : '🎉 Welcome!',
+        selectedTrial
+          ? `Your ${selectedTrial.durationText} ${subscriptionPlanLabel(newPlan)} trial is active. After that, it renews at ${selectedPrice} unless canceled.`
+          : `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
         [{ text: 'Awesome', onPress: () => router.back() }],
       );
     } catch (e: any) {
@@ -309,15 +326,35 @@ export default function SubscriptionPlansScreen() {
   const ctaLabel = useMemo(() => {
     if (!dirty) return 'Done';
     if (selected === 'free') return 'Manage Subscription';
+    if (selectedTrial) return `Start My ${selectedTrial.ctaDurationText} Free Trial`;
     return `Subscribe to ${subscriptionPlanLabel(selected)}`;
-  }, [dirty, selected]);
+  }, [dirty, selected, selectedTrial]);
 
   const footerHint = useMemo(() => {
     if (staff) {
       return 'Staff accounts can switch plans directly for testing.';
     }
+    if (selectedTrial) {
+      return `${selectedTrial.durationText} free, then ${selectedPrice}. Auto-renews monthly until canceled.`;
+    }
     return 'Subscriptions auto-renew monthly. Cancel anytime from your device settings.';
-  }, [staff]);
+  }, [selectedPrice, selectedTrial, staff]);
+
+  const purchaseTerms = useMemo(() => {
+    if (!dirty || selected === 'free' || staff) return null;
+    if (selectedTrial) {
+      return `${selectedTrial.durationText} free, then ${selectedPrice}. Cancel before the trial ends to avoid being charged.`;
+    }
+    return `${selectedPrice}, auto-renewing monthly until canceled.`;
+  }, [dirty, selected, selectedPrice, selectedTrial, staff]);
+
+  const legalDisclosure = useMemo(() => {
+    const storeName = Platform.OS === 'ios' ? 'App Store' : Platform.OS === 'android' ? 'Google Play' : 'billing';
+    const trialTerms = selectedTrial
+      ? `Eligible customers receive ${selectedTrial.durationText} free, then ${selectedPrice}. `
+      : '';
+    return `${trialTerms}Subscriptions automatically renew monthly unless canceled at least 24 hours before the end of the trial or current billing period. Manage or cancel in your ${storeName} subscription settings.`;
+  }, [selectedPrice, selectedTrial]);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -345,6 +382,7 @@ export default function SubscriptionPlansScreen() {
                 const showStaffRibbon = plan === 'pro' && staff;
                 const isCurrent = currentTier === plan;
                 const price = priceForTier(plan);
+                const trial = trialForTier(plan);
 
                 return (
                   <Pressable
@@ -397,8 +435,21 @@ export default function SubscriptionPlansScreen() {
                       <View style={styles.cardTopText}>
                         <View style={styles.cardTitleRow}>
                           <Text style={[styles.cardTitle, { color: theme.text }]}>{subscriptionPlanLabel(plan)}</Text>
+                          {trial ? (
+                            <View style={[styles.trialBadge, { backgroundColor: theme.primary + '20' }]}>
+                              <Feather name="gift" size={11} color={theme.primary} />
+                              <Text style={[styles.trialBadgeText, { color: theme.primary }]}>TRY FREE</Text>
+                            </View>
+                          ) : null}
                         </View>
-                        <Text style={[styles.cardPrice, { color: theme.primary }]}>{price}</Text>
+                        {trial ? (
+                          <>
+                            <Text style={[styles.cardTrial, { color: theme.primary }]}>{trial.durationText} free</Text>
+                            <Text style={[styles.cardPriceAfterTrial, { color: theme.textSecondary }]}>Then {price}</Text>
+                          </>
+                        ) : (
+                          <Text style={[styles.cardPrice, { color: theme.primary }]}>{price}</Text>
+                        )}
                         <Text style={[styles.cardBlurb, { color: theme.textSecondary }]}>
                           {plan === 'free'
                             ? 'The core student planner — free for as long as you study.'
@@ -460,7 +511,7 @@ export default function SubscriptionPlansScreen() {
           {/* Apple IAP Compliance Disclosures */}
           <View style={styles.legalDisclosureContainer}>
             <Text style={[styles.legalDisclosureText, { color: theme.textSecondary }]}>
-              Subscriptions will automatically renew unless canceled at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period. You can manage or cancel your subscription anytime in your iTunes Account Settings.
+              {legalDisclosure}
             </Text>
             <View style={styles.legalLinksRow}>
               <Pressable onPress={() => void openPrivacyPolicy()} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
@@ -476,6 +527,9 @@ export default function SubscriptionPlansScreen() {
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
+          {purchaseTerms ? (
+            <Text style={[styles.purchaseTerms, { color: theme.textSecondary }]}>{purchaseTerms}</Text>
+          ) : null}
           <Pressable
             onPress={() => void onPurchase()}
             disabled={purchasing || loadingStaff || isLoading}
@@ -580,8 +634,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   cardTopText: { flex: 1, minWidth: 0 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   cardTitle: { fontSize: 18, fontWeight: '800' },
+  trialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  trialBadgeText: { fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
+  cardTrial: { marginTop: 5, fontSize: 17, fontWeight: '800' },
+  cardPriceAfterTrial: { marginTop: 2, fontSize: 13, fontWeight: '600' },
   cardPrice: { marginTop: 4, fontSize: 16, fontWeight: '700' },
   cardBlurb: { marginTop: 6, fontSize: 13, fontWeight: '500', lineHeight: 18 },
   bullets: { marginTop: 14, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
@@ -619,6 +684,14 @@ const styles = StyleSheet.create({
   bottomSafe: {
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  purchaseTerms: {
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
   },
   cta: {
     height: 52,

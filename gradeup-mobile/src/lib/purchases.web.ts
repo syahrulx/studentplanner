@@ -40,12 +40,20 @@ export async function getCurrentPlan(): Promise<SubscriptionPlan> {
 export interface PlanOfferings {
   plusPackage: PurchasesPackage | null;
   proPackage: PurchasesPackage | null;
+  plusTrial: FreeTrialOffer | null;
+  proTrial: FreeTrialOffer | null;
   raw: PurchasesOfferings | null;
+}
+
+export interface FreeTrialOffer {
+  durationISO8601: string;
+  durationText: string;
+  ctaDurationText: string;
 }
 
 export async function getOfferings(): Promise<PlanOfferings> {
   // No purchasable packages on web.
-  return { plusPackage: null, proPackage: null, raw: null };
+  return { plusPackage: null, proPackage: null, plusTrial: null, proTrial: null, raw: null };
 }
 
 export async function purchasePackage(_pkg: PurchasesPackage): Promise<SubscriptionPlan> {
