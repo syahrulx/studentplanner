@@ -4,7 +4,6 @@ import {
   Switch, Alert, Modal, Platform, ActivityIndicator,
   KeyboardAvoidingView, AppState
 } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, interpolate, withSequence, Easing } from 'react-native-reanimated';
@@ -18,6 +17,28 @@ import {
   SCHEME_LABELS, getGradeTable,
 } from '@/src/lib/gradeCalculator';
 import { cacheSubjectGradeConfig, getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
+
+type NetInfoStateLike = {
+  isConnected: boolean | null;
+  isInternetReachable: boolean | null;
+};
+
+type OptionalNetInfo = {
+  addEventListener: (listener: (state: NetInfoStateLike) => void) => () => void;
+};
+
+function getOptionalNetInfo(): OptionalNetInfo | null {
+  try {
+    // Some installed development clients predate the NetInfo native module.
+    // Loading it lazily keeps the route usable until that client is rebuilt.
+    const module = require('@react-native-community/netinfo') as {
+      default?: OptionalNetInfo;
+    } & OptionalNetInfo;
+    return module.default ?? module;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -193,7 +214,20 @@ export default function SubjectGradeScreen() {
     let wasOffline = false;
     let retryInFlight = false;
     let active = true;
-    const unsubscribe = NetInfo.addEventListener((state) => {
+    const retryPending = () => {
+      if (!active || retryInFlight || !pendingConfig.current || !user?.id) return;
+      retryInFlight = true;
+      const retryConfig = pendingConfig.current;
+      void persistRemote(retryConfig).then((saved) => {
+        if (!active) return;
+        wasOffline = !saved;
+      }).finally(() => {
+        retryInFlight = false;
+      });
+    };
+
+    const netInfo = getOptionalNetInfo();
+    const unsubscribe = netInfo?.addEventListener((state) => {
       if (!active) return;
       const online = state.isConnected === true && (
         state.isInternetReachable === true
@@ -203,20 +237,17 @@ export default function SubjectGradeScreen() {
         wasOffline = true;
         return;
       }
-      if (wasOffline && !retryInFlight && pendingConfig.current && user?.id) {
-        retryInFlight = true;
-        const retryConfig = pendingConfig.current;
-        void persistRemote(retryConfig).then((saved) => {
-          if (!active) return;
-          if (saved) wasOffline = false;
-        }).finally(() => {
-          retryInFlight = false;
-        });
-      }
+      if (wasOffline) retryPending();
     });
+
+    // Retry pending writes even in an older development client that does not
+    // contain NetInfo. This also covers transient server failures that do not
+    // produce an offline-to-online network event.
+    const retryTimer = setInterval(retryPending, 5000);
     return () => {
       active = false;
-      unsubscribe();
+      clearInterval(retryTimer);
+      unsubscribe?.();
     };
   }, [user?.id]);
 
