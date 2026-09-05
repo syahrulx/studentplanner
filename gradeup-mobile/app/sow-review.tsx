@@ -304,7 +304,7 @@ export default function SowReview() {
           calendarStart: academicCalendar?.startDate,
           sourceMessage: `Imported from SOW: ${pending.fileName}`,
         });
-        task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
+        task.type = Object.values(TaskType).includes(task.type as TaskType) ? task.type : TaskType.Assignment;
         const { error: taskErr } = await taskDb.upsertTask(uid, task);
         if (taskErr) {
           Alert.alert('Could not save tasks', 'Something went wrong. Please try again.');
@@ -740,4 +740,3 @@ const styles = StyleSheet.create({
   weekSyncBannerTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
   weekSyncBannerBody: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
 });
-

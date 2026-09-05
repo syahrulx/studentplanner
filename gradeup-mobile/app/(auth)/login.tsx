@@ -41,9 +41,9 @@ export default function Login() {
   const [appleLoading, setAppleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
+  const withTimeout = async <T,>(promise: PromiseLike<T>, timeoutMs = 20000): Promise<T> => {
     return Promise.race([
-      promise,
+      Promise.resolve(promise),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
       ),

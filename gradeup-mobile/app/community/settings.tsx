@@ -18,6 +18,7 @@ import {
   getCustomFriendLocationVisibility,
   setCustomFriendLocationVisibility,
 } from '@/src/lib/communityApi';
+import type { LocationVisibility } from '@/src/lib/communityApi';
 import {
   getCommunityPushPrefs,
   updateCommunityPushPrefs,
@@ -272,7 +273,7 @@ export default function CommunitySettings() {
                             onPress={() => toggleFriendVisibility(friend.id)}
                           >
                             <View style={{ marginRight: 10 }}>
-                              <Avatar name={friend.name} url={friend.avatar_url} size={28} />
+                              <Avatar name={friend.name} avatarUrl={friend.avatar_url ?? undefined} size={28} />
                             </View>
                             <View style={styles.circleVisibilityBody}>
                               <Text style={[styles.circleVisibilityLabel, { color: theme.text }]}>{friend.name}</Text>

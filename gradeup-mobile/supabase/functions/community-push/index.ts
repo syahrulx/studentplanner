@@ -2,15 +2,14 @@
 // Sends an Expo push to a set of user IDs, honoring per-user & per-category opt-out.
 //
 // Auth:
-//   - Called from Postgres triggers via pg_net with the service-role key (see migration 053).
-//   - Optionally callable from the client with the user's JWT; handled the same way.
+//   - Called only by trusted Postgres/admin services with the service-role key.
 //
 // Body:
 //   {
 //     "recipientUserIds": ["<uuid>", ...],
 //     "title": "string",
 //     "body":  "string",
-//     "category": "reaction" | "friend" | "circle" | "shared_task" | "quiz" | "goal",
+//     "category": "reaction" | "friend" | "circle" | "shared_task" | "quiz" | "goal" | "support",
 //     "data":   { ...arbitrary JSON forwarded to the client },
 //     "collapseKey": "optional group id — Android collapseId / iOS apns-collapse-id"
 //   }
@@ -25,7 +24,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 
-type Category = 'reaction' | 'friend' | 'circle' | 'shared_task' | 'quiz' | 'goal';
+type Category = 'reaction' | 'friend' | 'circle' | 'shared_task' | 'quiz' | 'goal' | 'support';
 
 type PushRequest = {
   recipientUserIds: string[];
@@ -56,6 +55,10 @@ function isCategoryEnabled(p: ProfileRow, category?: Category): boolean {
       return p.push_circle_enabled !== false;
     case 'shared_task':
       return p.push_shared_task_enabled !== false;
+    case 'support':
+      // Support replies are account/service messages. They follow the master
+      // push switch but are not incorrectly hidden by the reaction preference.
+      return true;
     case 'reaction':
     case 'quiz':
     case 'goal':
@@ -119,6 +122,10 @@ serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
+  const authorization = req.headers.get('authorization') ?? '';
+  if (authorization !== `Bearer ${serviceKey}`) {
+    return json(401, { error: 'service_role_required' });
+  }
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const uniqueIds = Array.from(new Set(ids));

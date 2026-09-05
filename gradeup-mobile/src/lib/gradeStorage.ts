@@ -9,53 +9,31 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
-import type { SubjectGradeConfig, GradingScheme, GradeAssessment } from '../types';
+import type { SubjectGradeConfig } from '../types';
+import { captureError } from './monitoring';
+import {
+  gradeConfigLocalKey,
+  gradeConfigToRow,
+  gradeRowToConfig,
+} from './gradeConfigCodec';
 
 const TABLE = 'subject_grade_configs';
-const LOCAL_KEY = (subjectId: string) => `gradeConfig_v1_${subjectId}`;
-
-// ─── Serialise / Deserialise ───────────────────────────────────────────────────
-
-function configToRow(userId: string, c: SubjectGradeConfig) {
-  return {
-    user_id:              userId,
-    subject_id:           c.subjectId,
-    grading_scheme:       c.gradingScheme,
-    has_final_exam:       c.hasFinalExam,
-    carry_weight:         c.carryWeight,
-    final_weight:         c.finalWeight,
-    assessments:          c.assessments,
-    final_exam_scored:    c.finalExamScored,
-    final_exam_max_score: c.finalExamMaxScore,
-  };
-}
-
-function rowToConfig(row: Record<string, unknown>): SubjectGradeConfig {
-  return {
-    subjectId:        String(row.subject_id ?? ''),
-    gradingScheme:    (row.grading_scheme as GradingScheme) ?? 'uitm',
-    hasFinalExam:     Boolean(row.has_final_exam ?? true),
-    carryWeight:      Number(row.carry_weight ?? 40),
-    finalWeight:      Number(row.final_weight ?? 60),
-    assessments:      Array.isArray(row.assessments)
-      ? (row.assessments as GradeAssessment[])
-      : [],
-    finalExamScored:    row.final_exam_scored != null ? Number(row.final_exam_scored) : null,
-    finalExamMaxScore:  Number(row.final_exam_max_score ?? 100),
-  };
-}
-
 // ─── Local cache helpers ───────────────────────────────────────────────────────
 
-async function saveLocal(config: SubjectGradeConfig): Promise<void> {
+export async function cacheSubjectGradeConfig(
+  userId: string,
+  config: SubjectGradeConfig,
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(LOCAL_KEY(config.subjectId), JSON.stringify(config));
-  } catch {}
+    await AsyncStorage.setItem(gradeConfigLocalKey(userId, config.subjectId), JSON.stringify(config));
+  } catch (error) {
+    captureError(error, { operation: 'grade_config_cache_write' });
+  }
 }
 
-async function loadLocal(subjectId: string): Promise<SubjectGradeConfig | null> {
+async function loadLocal(userId: string, subjectId: string): Promise<SubjectGradeConfig | null> {
   try {
-    const raw = await AsyncStorage.getItem(LOCAL_KEY(subjectId));
+    const raw = await AsyncStorage.getItem(gradeConfigLocalKey(userId, subjectId));
     if (!raw) return null;
     return JSON.parse(raw) as SubjectGradeConfig;
   } catch {
@@ -63,9 +41,9 @@ async function loadLocal(subjectId: string): Promise<SubjectGradeConfig | null> 
   }
 }
 
-async function deleteLocal(subjectId: string): Promise<void> {
+async function deleteLocal(userId: string, subjectId: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(LOCAL_KEY(subjectId));
+    await AsyncStorage.removeItem(gradeConfigLocalKey(userId, subjectId));
   } catch {}
 }
 
@@ -79,7 +57,10 @@ export async function getSubjectGradeConfig(
   userId: string,
   subjectId: string,
 ): Promise<SubjectGradeConfig | null> {
-  // 1. Try Supabase
+  const local = await loadLocal(userId, subjectId);
+
+  // Compare the cloud copy with the durable local copy. A newer offline edit
+  // must win after restart and will be retried in the background.
   try {
     const { data, error } = await supabase
       .from(TABLE)
@@ -88,15 +69,27 @@ export async function getSubjectGradeConfig(
       .eq('subject_id', subjectId)
       .maybeSingle();
 
-    if (!error && data) {
-      const config = rowToConfig(data as Record<string, unknown>);
-      void saveLocal(config); // keep cache warm
-      return config;
+    if (!error) {
+      if (data) {
+        const config = gradeRowToConfig(data as Record<string, unknown>);
+        const localEdited = Date.parse(local?.updatedAt ?? '') || 0;
+        const remoteEdited = Date.parse(config.updatedAt ?? '') || 0;
+        if (local && localEdited > remoteEdited) {
+          await saveSubjectGradeConfig(userId, local);
+          return local;
+        }
+        void cacheSubjectGradeConfig(userId, config); // keep cache warm
+        return config;
+      }
+
+      // A successful online lookup with no row means this configuration only
+      // exists in the durable offline cache. Upload it now instead of waiting
+      // for another edit that may never happen.
+      if (local) await saveSubjectGradeConfig(userId, local);
     }
   } catch {}
 
-  // 2. Fall back to local
-  return loadLocal(subjectId);
+  return local;
 }
 
 /**
@@ -108,16 +101,20 @@ export async function saveSubjectGradeConfig(
   config: SubjectGradeConfig,
 ): Promise<{ error: string | null }> {
   // Always save locally first for instant UI feedback
-  await saveLocal(config);
+  await cacheSubjectGradeConfig(userId, config);
 
   try {
     const { error } = await supabase
       .from(TABLE)
-      .upsert(configToRow(userId, config), { onConflict: 'user_id,subject_id' });
+      .upsert(gradeConfigToRow(userId, config), { onConflict: 'user_id,subject_id' });
 
-    if (error) return { error: error.message };
+    if (error) {
+      captureError(error, { operation: 'grade_config_remote_write' });
+      return { error: error.message };
+    }
     return { error: null };
   } catch (e: any) {
+    captureError(e, { operation: 'grade_config_remote_write' });
     return { error: e?.message ?? 'Unknown error' };
   }
 }
@@ -129,7 +126,7 @@ export async function deleteSubjectGradeConfig(
   userId: string,
   subjectId: string,
 ): Promise<void> {
-  await deleteLocal(subjectId);
+  await deleteLocal(userId, subjectId);
   try {
     await supabase
       .from(TABLE)
@@ -152,7 +149,7 @@ export async function getAllSubjectGradeConfigs(
       .eq('user_id', userId);
 
     if (!error && data) {
-      return (data as Record<string, unknown>[]).map(rowToConfig);
+      return (data as Record<string, unknown>[]).map(gradeRowToConfig);
     }
   } catch {}
   return [];

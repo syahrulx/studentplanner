@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 
 import { useTheme } from '@/hooks/useTheme';
+import { isDarkTheme } from '@/constants/Themes';
 import { fetchActiveWhatsNewPrompt, type WhatsNewPrompt } from '../lib/whatsNewApi';
 
 function parseFeatures(content: string): { title: string; body: string }[] {
@@ -31,7 +33,7 @@ function parseFeatures(content: string): { title: string; body: string }[] {
   return features;
 }
 
-const ICONS: Feather.GlyphMap[] = ['zap', 'bell', 'shield', 'star', 'layers', 'sliders', 'check-circle', 'sun'];
+const ICONS = ['zap', 'bell', 'shield', 'star', 'layers', 'sliders', 'check-circle', 'sun'] as const;
 
 export default function WhatsNewPromptModal() {
   const [prompt, setPrompt] = useState<WhatsNewPrompt | null>(null);
@@ -79,7 +81,7 @@ export default function WhatsNewPromptModal() {
   if (!visible || !prompt) return null;
 
   const features = parseFeatures(prompt.content);
-  const isDark = theme.dark;
+  const isDark = isDarkTheme(theme.id);
 
   // ─── Solid surface palette ──────────────────────────────────────────────────
   const sheetBg      = isDark ? '#1C1C1E' : '#FFFFFF';
@@ -106,7 +108,11 @@ export default function WhatsNewPromptModal() {
       <Animated.View
         style={[
           styles.sheet,
-          { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom + 8, 32) },
+          {
+            transform: [{ translateY: slideAnim }],
+            maxHeight: Math.max(320, screenH - Math.max(insets.top, 8) - 8),
+            paddingBottom: Math.max(insets.bottom + 8, 16),
+          },
         ]}
       >
         {/* ── Solid surface ───────────────────────────────────────────────── */}
@@ -115,40 +121,47 @@ export default function WhatsNewPromptModal() {
           {/* Drag handle */}
           <View style={[styles.handle, { backgroundColor: handleColor }]} />
 
-          {/* Title block */}
-          <View style={styles.titleBlock}>
-            <Text style={[styles.eyebrow, { color: textSecondary }]}>
-              {prompt.version_name.toUpperCase()}
-            </Text>
-            <Text style={[styles.headline, { color: textPrimary }]}>
-              {prompt.title}
-            </Text>
-          </View>
+          <ScrollView
+            style={styles.scrollArea}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={features.length > 4}
+            bounces={features.length > 4}
+          >
+            {/* Title block */}
+            <View style={styles.titleBlock}>
+              <Text style={[styles.eyebrow, { color: textSecondary }]}>
+                {prompt.version_name.toUpperCase()}
+              </Text>
+              <Text style={[styles.headline, { color: textPrimary }]}>
+                {prompt.title}
+              </Text>
+            </View>
 
-          {/* Feature rows */}
-          <View style={[styles.featureList, { backgroundColor: featureListBg }]}>
-            {features.map((f, i) => (
-              <View key={i}>
-                {i > 0 && <View style={[styles.divider, { backgroundColor: divider }]} />}
-                <View style={styles.featureRow}>
-                  {/* Icon pill */}
-                  <View style={[styles.iconWrap, { backgroundColor: iconBg, borderColor: iconBorder }]}>
-                    <Feather name={ICONS[i % ICONS.length]} size={18} color={isDark ? '#fff' : '#007AFF'} />
-                  </View>
-                  <View style={styles.featureText}>
-                    <Text style={[styles.featureTitle, { color: textPrimary }]}>
-                      {f.title}
-                    </Text>
-                    {!!f.body && (
-                      <Text style={[styles.featureBody, { color: textSecondary }]}>
-                        {f.body}
+            {/* Feature rows */}
+            <View style={[styles.featureList, { backgroundColor: featureListBg }]}>
+              {features.map((f, i) => (
+                <View key={i}>
+                  {i > 0 && <View style={[styles.divider, { backgroundColor: divider }]} />}
+                  <View style={styles.featureRow}>
+                    {/* Icon pill */}
+                    <View style={[styles.iconWrap, { backgroundColor: iconBg, borderColor: iconBorder }]}>
+                      <Feather name={ICONS[i % ICONS.length]} size={18} color={isDark ? '#fff' : '#007AFF'} />
+                    </View>
+                    <View style={styles.featureText}>
+                      <Text style={[styles.featureTitle, { color: textPrimary }]}>
+                        {f.title}
                       </Text>
-                    )}
+                      {!!f.body && (
+                        <Text style={[styles.featureBody, { color: textSecondary }]}>
+                          {f.body}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          </ScrollView>
 
           {/* CTA */}
           <View style={styles.footer}>
@@ -181,6 +194,7 @@ const styles = StyleSheet.create({
   sheetPane: {
     borderRadius: RADIUS,
     overflow: 'hidden',
+    flexShrink: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.12,
@@ -198,6 +212,12 @@ const styles = StyleSheet.create({
   titleBlock: {
     paddingHorizontal: 24,
     marginBottom: 22,
+  },
+  scrollArea: {
+    flexShrink: 1,
+  },
+  scrollContent: {
+    paddingBottom: 4,
   },
   eyebrow: {
     fontSize: 12,

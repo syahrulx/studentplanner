@@ -1,28 +1,16 @@
 import { supabase } from './supabase';
-import type { AcademicCalendar, AcademicLevel } from '../types';
+import type { AcademicCalendar } from '../types';
 import { normalizeAcademicLevel } from './academicLevel';
+import {
+  prepareCalendarOffers,
+  type UniversityCalendarOffer,
+} from './calendarOfferUtils';
+import { getTodayISO } from '../utils/date';
+
+export type { UniversityCalendarOffer } from './calendarOfferUtils';
 
 const OFFERS = 'university_calendar_offers';
 const RESPONSES = 'user_calendar_offer_responses';
-
-export type UniversityCalendarOffer = {
-  id: string;
-  universityId: string;
-  semesterLabel: string;
-  startDate: string;
-  endDate: string;
-  totalWeeks: number;
-  breakStartDate?: string;
-  breakEndDate?: string;
-  periods?: AcademicCalendar['periods'];
-  /** Programme this calendar is for; `undefined` means it applies to every programme. */
-  programLevel?: AcademicLevel;
-  officialUrl?: string;
-  referencePdfUrl?: string;
-  adminNote?: string;
-  source: string;
-  createdAt: string;
-};
 
 function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
   const periodsRaw = (row.periods_json as unknown) ?? undefined;
@@ -40,6 +28,7 @@ function rowToOffer(row: Record<string, unknown>): UniversityCalendarOffer {
   return {
     id: String(row.id),
     universityId: String(row.university_id ?? ''),
+    campusId: row.campus_id != null ? String(row.campus_id).trim() || null : null,
     semesterLabel: String(row.semester_label ?? ''),
     startDate: String(row.start_date ?? '').slice(0, 10),
     endDate: String(row.end_date ?? '').slice(0, 10),
@@ -110,23 +99,12 @@ export async function recordCalendarOfferResponse(params: {
 export async function fetchLatestCalendarForUniversity(
   universityId: string,
 ): Promise<UniversityCalendarOffer | null> {
-  const uni = (universityId ?? '').trim();
-  if (!uni) return null;
-
-  const { data, error } = await supabase
-    .from(OFFERS)
-    .select('*')
-    .eq('university_id', uni)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return rowToOffer(data as Record<string, unknown>);
+  const offers = await fetchAllCalendarOffersForUniversity(universityId);
+  return offers[0] ?? null;
 }
 
 /**
- * Two offers are the same calendar when they cover the same dates with the same timeline —
+ * Two offers are the same calendar when they cover the same campus, programme, dates, and timeline —
  * the label is ignored on purpose, because crowdsourced submissions of one calendar arrive
  * spelled every possible way ("s1 26/27", "Sem 1 26/27") and would otherwise all be listed.
  */
@@ -135,7 +113,13 @@ function calendarKey(offer: UniversityCalendarOffer): string {
     .map((p) => `${p.type}:${p.startDate}:${p.endDate}`)
     .sort()
     .join(',');
-  return `${offer.startDate}|${offer.endDate}|${timeline}`;
+  return [
+    offer.campusId ?? '',
+    offer.programLevel ?? '',
+    offer.startDate,
+    offer.endDate,
+    timeline,
+  ].join('|');
 }
 
 function dedupeOffersByCalendarKey(offers: UniversityCalendarOffer[]): UniversityCalendarOffer[] {
@@ -185,11 +169,13 @@ export async function fetchAllCalendarOffersForUniversity(
 
   if (error || !data || !Array.isArray(data)) return [];
   const rows = data.map((row) => rowToOffer(row as Record<string, unknown>));
-  const today = options?.todayISO ?? new Date().toISOString().slice(0, 10);
+  const today = options?.todayISO ?? getTodayISO();
   const current = options?.includeExpired ? rows : rows.filter((o) => !isOfferExpired(o, today));
   // Never leave the picker empty: if every calendar on file has expired, show them all rather
   // than telling the student their university has no calendar at all.
-  return dedupeOffersByCalendarKey(current.length > 0 ? current : rows);
+  return dedupeOffersByCalendarKey(
+    prepareCalendarOffers(current.length > 0 ? current : rows, today),
+  );
 }
 
 /**

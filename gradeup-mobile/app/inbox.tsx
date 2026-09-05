@@ -216,21 +216,7 @@ export default function InboxScreen() {
     );
   }, [exitSelectionMode]);
 
-  const handlePress = async (item: InAppNotification) => {
-    if (!item.is_read) {
-      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
-      supabase.from('in_app_notifications').update({ is_read: true }).eq('id', item.id).then();
-    }
-
-    // Keep the full message readable before following any optional action.
-    // Broadcasts often contain information that is longer than the preview.
-    setOpenedNotification(item);
-  };
-
-  const openNotificationAction = () => {
-    const item = openedNotification;
-    if (!item) return;
-    setOpenedNotification(null);
+  const openNotificationAction = (item: InAppNotification): boolean => {
     const t = item.data?.type as string | undefined;
     if (t === 'broadcast' || t === 'support_reply') {
       const rawRoute = typeof item.data?.route === 'string' ? (item.data.route as string).trim() : '';
@@ -241,17 +227,22 @@ export default function InboxScreen() {
         } else {
           router.push(rawRoute as any);
         }
+        return true;
       }
     } else if (t === 'service_chat_message' && item.data?.serviceId) {
       router.push(`/services/chat/${item.data.serviceId}` as any);
+      return true;
     } else if (t?.startsWith('service') || t === 'event_new') {
       const postId = item.data?.serviceId || item.data?.eventId;
       if (postId) router.push(`/services/${postId}` as any);
       else router.push('/(tabs)/community' as any);
+      return true;
     } else if (item.category === 'friend' || t === 'friend_request' || t === 'friend_accepted') {
       router.push('/profile' as any);
+      return true;
     } else if (t === 'circle_invitation_response' && item.data?.circleId) {
       router.push({ pathname: '/community/circle-detail', params: { id: item.data.circleId } } as any);
+      return true;
     } else if (
       t === 'reaction' ||
       t === 'circle_invitation' ||
@@ -260,7 +251,24 @@ export default function InboxScreen() {
       t === 'shared_task_completed'
     ) {
       router.push('/community/notifications' as any);
+      return true;
     }
+    return false;
+  };
+
+  const handlePress = async (item: InAppNotification) => {
+    if (!item.is_read) {
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
+      supabase.from('in_app_notifications').update({ is_read: true }).eq('id', item.id).then();
+    }
+
+    // Actionable notifications now go straight to their destination. The old
+    // flow opened a second notification modal over the notification list and
+    // required another tap on "Open".
+    if (openNotificationAction(item)) return;
+
+    // Non-actionable informational messages still get a full-text view.
+    setOpenedNotification(item);
   };
 
   /* ── render ── */
@@ -448,13 +456,13 @@ export default function InboxScreen() {
                   </View>
 
                   <View style={styles.notifMessageRow}>
-                    <View style={styles.notifLeadSlot}>
+                    {withSender ? <View style={styles.notifLeadSlot}>
                       <Feather
                         name={notifIcon(item)}
                         size={16}
                         color={isRead ? theme.tabIconDefault : notifIconColor(item)}
                       />
-                    </View>
+                    </View> : null}
                     <Text
                       style={[styles.notifMessage, { color: isRead ? theme.tabIconDefault : theme.textSecondary }]}
                       numberOfLines={3}
@@ -500,7 +508,15 @@ export default function InboxScreen() {
             openedNotification?.data?.serviceId ||
             openedNotification?.data?.eventId ||
             NOTIF_ACTION_TYPES.has(openedNotification?.data?.type as string) ? (
-              <Pressable onPress={openNotificationAction} style={[styles.detailAction, { backgroundColor: theme.primary }]}>
+              <Pressable
+                onPress={() => {
+                  if (!openedNotification) return;
+                  const item = openedNotification;
+                  setOpenedNotification(null);
+                  openNotificationAction(item);
+                }}
+                style={[styles.detailAction, { backgroundColor: theme.primary }]}
+              >
                 <Text style={{ color: theme.textInverse, fontWeight: '800' }}>Open</Text>
                 <Feather name="arrow-up-right" size={17} color={theme.textInverse} />
               </Pressable>

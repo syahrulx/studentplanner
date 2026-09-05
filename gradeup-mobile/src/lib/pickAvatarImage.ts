@@ -39,9 +39,10 @@ async function pickWithExpoPicker(): Promise<PickedAvatar | null> {
     quality: 0.9,
     base64: true,
   });
-  if (picked.canceled || !picked.assets?.[0]?.base64) return null;
+  const data = picked.assets?.[0]?.base64;
+  if (picked.canceled || !data) return null;
   const asset = picked.assets[0];
-  return { data: asset.base64, mime: asset.mimeType ?? 'image/jpeg' };
+  return { data, mime: asset.mimeType ?? 'image/jpeg' };
 }
 
 /** Pick a square avatar image. Uses native crop UI when available, Expo picker in Expo Go. */

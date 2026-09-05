@@ -18,6 +18,39 @@
 --   • `collapse_key` groups notifications so repeat events (e.g. multiple reactions in a row)
 --     collapse into a single banner on the device.
 
+-- Some installations originally created this table from the standalone
+-- supabase-community-schema.sql file. Keep the migration chain self-contained
+-- so a fresh database reaches the trigger below without manual prerequisites.
+create table if not exists public.quick_reactions (
+  id uuid not null default gen_random_uuid() primary key,
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  receiver_id uuid not null references auth.users(id) on delete cascade,
+  reaction_type text not null,
+  message text,
+  created_at timestamptz not null default now(),
+  read boolean not null default false
+);
+
+alter table public.quick_reactions enable row level security;
+revoke all on table public.quick_reactions from anon;
+grant select, insert, update, delete on table public.quick_reactions to authenticated;
+
+drop policy if exists "Users can read own reactions" on public.quick_reactions;
+create policy "Users can read own reactions" on public.quick_reactions
+  for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+drop policy if exists "Users can send reactions" on public.quick_reactions;
+create policy "Users can send reactions" on public.quick_reactions
+  for insert with check (auth.uid() = sender_id);
+drop policy if exists "Receiver can update reactions" on public.quick_reactions;
+create policy "Receiver can update reactions" on public.quick_reactions
+  for update using (auth.uid() = receiver_id) with check (auth.uid() = receiver_id);
+drop policy if exists "Users can delete own reactions" on public.quick_reactions;
+create policy "Users can delete own reactions" on public.quick_reactions
+  for delete using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+create index if not exists idx_quick_reactions_receiver on public.quick_reactions(receiver_id, read);
+create index if not exists idx_quick_reactions_sender on public.quick_reactions(sender_id);
+
 -- ─── helper to look up a user's display name for push titles ──────────────────────────────
 create or replace function public._display_name_for(user_id uuid)
 returns text

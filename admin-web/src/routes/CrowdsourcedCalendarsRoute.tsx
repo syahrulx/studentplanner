@@ -14,6 +14,7 @@ import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 import { useSafeActionDialog } from '../components/SafeActionDialog';
+import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
 
 export function CrowdsourcedCalendarsRoute() {
   const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
@@ -24,7 +25,7 @@ export function CrowdsourcedCalendarsRoute() {
   const [offers, setOffers] = useState<CrowdsourcedCalendarRow[]>([]);
   const [uitmContributions, setUitmContributions] = useState<UitmCalendarContributionRow[]>([]);
   const [offersSearch, setOffersSearch] = useState('');
-  const [calendarAge, setCalendarAge] = useState<'all' | 'expired'>('all');
+  const [calendarAge, setCalendarAge] = useState<'all' | 'expired' | 'redundant'>('all');
   const [selectedExpiredIds, setSelectedExpiredIds] = useState<string[]>([]);
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
   const [deletingExpired, setDeletingExpired] = useState(false);
@@ -60,6 +61,16 @@ export function CrowdsourcedCalendarsRoute() {
 
   const expiredOffers = useMemo(() => offers.filter(isExpired), [offers, today]);
   const expiredIdSet = useMemo(() => new Set(expiredOffers.map((offer) => offer.id)), [expiredOffers]);
+  const redundantIds = useMemo(
+    () => duplicateRecordIds(offers, (offer) => [
+      offer.university_id,
+      offer.campus_id ?? 'all',
+      normaliseRecordName(offer.semester_label),
+      offer.start_date,
+      offer.end_date,
+    ].join('|')),
+    [offers],
+  );
 
   useEffect(() => {
     setSelectedExpiredIds((ids) => ids.filter((id) => expiredIdSet.has(id)));
@@ -71,6 +82,7 @@ export function CrowdsourcedCalendarsRoute() {
     
     return offers.filter((h) => {
       if (calendarAge === 'expired' && !isExpired(h)) return false;
+      if (calendarAge === 'redundant' && !redundantIds.has(h.id)) return false;
       const texts = [
         h.university_id,
         h.semester_label,
@@ -88,7 +100,7 @@ export function CrowdsourcedCalendarsRoute() {
       }
       return true;
     });
-  }, [calendarAge, offers, offersSearch, searchQuery, today]);
+  }, [calendarAge, offers, offersSearch, searchQuery, today, redundantIds]);
 
   const allExpiredSelected = expiredOffers.length > 0 && expiredOffers.every((offer) => selectedExpiredIds.includes(offer.id));
 
@@ -238,9 +250,10 @@ export function CrowdsourcedCalendarsRoute() {
               <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
                 Calendar status
               </span>
-              <Select value={calendarAge} onChange={(e) => setCalendarAge(e.target.value as 'all' | 'expired')} className="border-blue-200 focus:border-blue-500">
+              <Select value={calendarAge} onChange={(e) => setCalendarAge(e.target.value as 'all' | 'expired' | 'redundant')} className="border-blue-200 focus:border-blue-500">
                 <option value="all">All calendars</option>
                 <option value="expired">Old academic calendars</option>
+                <option value="redundant">Redundant calendars ({redundantIds.size})</option>
               </Select>
             </Label>
           </div>
@@ -305,6 +318,11 @@ export function CrowdsourcedCalendarsRoute() {
                       {isExpired(h) ? (
                         <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
                           Old calendar · ended {h.end_date}
+                        </div>
+                      ) : null}
+                      {redundantIds.has(h.id) ? (
+                        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                          Redundant · remove only the chosen submission
                         </div>
                       ) : null}
                     </div>

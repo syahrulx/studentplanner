@@ -52,6 +52,16 @@ export const unstable_settings = {
   initialRouteName: '(auth)',
 };
 
+// Expo can deliver the same tap through both the cold-start lookup and the
+// live response listener. Keep a bounded process-local set so one physical tap
+// produces one navigation action.
+const handledNotificationResponseIds = new Set<string>();
+
+function notificationResponseKey(response: Notifications.NotificationResponse): string {
+  const request = response.notification.request;
+  return [request.identifier, response.actionIdentifier, String(response.notification.date)].join('|');
+}
+
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
@@ -279,26 +289,39 @@ function RootLayoutNav() {
       }
     };
 
-    Notifications.getLastNotificationResponseAsync().then(async (response) => {
-      if (!response) return;
-      const attendance = await handleAttendanceNotificationResponse(response).catch(() => ({ handled: false as const }));
-      if (attendance.handled && attendance.defaultTapData) {
-        handleNotificationData(attendance.defaultTapData, true);
-        return;
+    const handleResponseOnce = async (
+      response: Notifications.NotificationResponse,
+      delayed = false,
+    ) => {
+      const key = notificationResponseKey(response);
+      if (handledNotificationResponseIds.has(key)) return;
+      handledNotificationResponseIds.add(key);
+      if (handledNotificationResponseIds.size > 100) {
+        const first = handledNotificationResponseIds.values().next().value;
+        if (first) handledNotificationResponseIds.delete(first);
       }
-      if (!attendance.handled) {
-        handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined, true);
-      }
-    });
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      void (async () => {
+      try {
         const attendance = await handleAttendanceNotificationResponse(response).catch(() => ({ handled: false as const }));
         if (attendance.handled) {
-          if (attendance.defaultTapData) handleNotificationData(attendance.defaultTapData);
+          if (attendance.defaultTapData) handleNotificationData(attendance.defaultTapData, delayed);
           return;
         }
-        handleNotificationData(response.notification.request.content.data as Record<string, any> | undefined);
-      })();
+        handleNotificationData(
+          response.notification.request.content.data as Record<string, any> | undefined,
+          delayed,
+        );
+      } finally {
+        // Do this for every category, not only attendance, so a handled tap
+        // cannot reopen its destination on a later cold start.
+        await Notifications.clearLastNotificationResponseAsync().catch(() => {});
+      }
+    };
+
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) void handleResponseOnce(response, true);
+    });
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      void handleResponseOnce(response);
     });
     return () => sub.remove();
   }, []);
@@ -402,7 +425,7 @@ function AppUpdateGate() {
   if (result.severity === 'none') return null;
   if (result.severity === 'soft' && dismissed) return null;
 
-  const override = language === 'ms' ? result.messageMs : result.messageEn;
+  const override = result.messageEn;
 
   return (
     <UpdatePrompt

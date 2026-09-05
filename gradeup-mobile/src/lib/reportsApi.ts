@@ -41,6 +41,10 @@ export type UserReportKind =
   | 'faq'
   | 'app_complaint'
   | 'user_complaint'
+  | 'semester_calendar'
+  | 'campus_request'
+  | 'grading'
+  | 'widget'
   | 'other';
 
 export interface SubmitUserReportInput {

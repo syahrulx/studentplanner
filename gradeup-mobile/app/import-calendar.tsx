@@ -185,7 +185,7 @@ export default function ImportCalendarScreen() {
 
   const formatEventDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString(language === 'ms' ? 'ms-MY' : 'en-US', {
+    return d.toLocaleDateString('en-US', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',

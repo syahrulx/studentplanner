@@ -263,7 +263,6 @@ export default function Planner() {
     { role: 'ai', text: '' },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showAiCard, setShowAiCard] = useState(false);
   const [calendarStripWidth, setCalendarStripWidth] = useState(0);
   const [showShareAllModal, setShowShareAllModal] = useState(false);
   const [shareAllTab, setShareAllTab] = useState<'friend' | 'circle'>('friend');
@@ -962,36 +961,6 @@ export default function Planner() {
 
   const renderListHeader = () => (
     <>
-      {/* AI Strategist trigger */}
-      <View style={s.aiTriggerRow}>
-        <Pressable
-          style={({ pressed }) => [s.aiTriggerBtn, pressed && s.pressed]}
-          onPress={() => setShowAiCard((prev) => !prev)}
-        >
-          <Feather name="zap" size={16} color={theme.text} />
-          <Text style={s.aiTriggerText}>{T('aiAcademicStrategist')}</Text>
-        </Pressable>
-      </View>
-
-      {/* AI Strategist Card */}
-      {showAiCard && (
-        <View style={s.aiCard}>
-          <View style={s.aiCardHeader}>
-            <View style={s.aiIconWrap}>
-              <Feather name="clock" size={16} color={COLORS.white} />
-            </View>
-            <Text style={s.aiCardTitle}>{T('aiAcademicStrategist')}</Text>
-          </View>
-          <Text style={s.aiCardText}>{messages[messages.length - 1]?.text || T('analysisMsg')}</Text>
-          <View style={s.aiCardFooter}>
-            <View style={s.aiDot} />
-            <Text style={s.aiFooterText}>{T('sowAlignment')}: 94%</Text>
-          </View>
-        </View>
-      )}
-
-
-
       {/* Task list header + filter */}
       <View style={s.taskListHeader}>
         <Text style={s.taskListLabel}>
@@ -3090,46 +3059,6 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     backgroundColor: theme.primary,
     borderRadius: 1,
   },
-
-  // AI Card
-  aiTriggerRow: {
-    marginBottom: 8,
-    alignItems: 'flex-end',
-  },
-  aiTriggerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(12,74,110,0.06)',
-  },
-  aiTriggerText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.primary,
-  },
-  aiCard: {
-    backgroundColor: theme.primary,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
-  },
-  aiCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  aiIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: GOLD,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiCardTitle: { fontSize: 10, fontWeight: '900', color: theme.textInverse, letterSpacing: 2 },
-  aiCardText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 20, fontWeight: '500', marginBottom: 14 },
-  aiCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  aiDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ade80' },
-  aiFooterText: { fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1 },
 
   // Horizontal Calendar Strip
   weekStrip: {

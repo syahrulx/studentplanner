@@ -70,6 +70,36 @@ export function getGradeTable(scheme: GradingScheme): GradeRow[] {
   return UITM_GRADE_TABLE; // 'uitm' is default
 }
 
+function normaliseCustomGradeRows(rows: GradeRow[] | null | undefined): GradeRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row) =>
+      row &&
+      String(row.letter || '').trim().length > 0 &&
+      Number.isFinite(Number(row.minPercent)) &&
+      Number(row.minPercent) >= 0 &&
+      Number(row.minPercent) <= 100 &&
+      Number.isFinite(Number(row.point)) &&
+      Number(row.point) >= 0,
+    )
+    .map((row) => ({
+      letter: String(row.letter).trim(),
+      minPercent: Number(row.minPercent),
+      maxPercent: Number(row.maxPercent),
+      point: Number(row.point),
+    }))
+    .sort((a, b) => b.minPercent - a.minPercent)
+    .map((row, index, sorted) => ({
+      ...row,
+      maxPercent: index === 0 ? 100 : Math.max(row.minPercent, sorted[index - 1].minPercent - 0.01),
+    }));
+}
+
+export function getGradeTableForConfig(config: SubjectGradeConfig): GradeRow[] {
+  const custom = normaliseCustomGradeRows(config.customGradeRows);
+  return custom.length > 0 ? custom : getGradeTable(config.gradingScheme);
+}
+
 // ─── Core Helpers ──────────────────────────────────────────────────────────────
 
 /**
@@ -77,8 +107,9 @@ export function getGradeTable(scheme: GradingScheme): GradeRow[] {
  * Clamps input to [0, 100]. Grade rows are ordered from highest to lowest,
  * so their minimum thresholds form continuous bands that also cover decimals.
  */
-export function percentToGrade(percent: number, scheme: GradingScheme): GradeRow {
-  const table = getGradeTable(scheme);
+export function percentToGrade(percent: number, scheme: GradingScheme, customRows?: GradeRow[]): GradeRow {
+  const custom = normaliseCustomGradeRows(customRows);
+  const table = custom.length > 0 ? custom : getGradeTable(scheme);
   const clamped = Math.max(0, Math.min(100, percent));
   for (const row of table) {
     if (clamped >= row.minPercent) return row;
@@ -132,7 +163,8 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
   }
 
   const totalScore = carryEarned + finalContribution;
-  const grade = percentToGrade(totalScore, gradingScheme);
+  const table = getGradeTableForConfig(config);
+  const grade = percentToGrade(totalScore, gradingScheme, table);
 
   let seatedWeight = carryPossible;
   if (hasFinalExam && finalExamScored !== null && finalExamScored !== undefined
@@ -140,10 +172,9 @@ export function calculateGrade(config: SubjectGradeConfig): GradeResult {
     seatedWeight += finalWeight;
   }
   const currentStandingScore = seatedWeight > 0 ? (totalScore / seatedWeight) * 100 : 0;
-  const currentStandingGrade = percentToGrade(currentStandingScore, gradingScheme);
+  const currentStandingGrade = percentToGrade(currentStandingScore, gradingScheme, table);
 
   // "What do I need in the final exam?" for each grade threshold
-  const table = getGradeTable(gradingScheme);
   const uniqueThresholds = table.filter((g, i, arr) => i === 0 || g.minPercent !== arr[i - 1].minPercent);
 
   const requiredForGrades = uniqueThresholds.map((g) => {

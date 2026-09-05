@@ -16,6 +16,7 @@ type OfflineOperation =
   | 'task_upsert'
   | 'task_delete'
   | 'task_completion_set'
+  | 'breakdown_completion_set'
   | 'note_upsert'
   | 'note_delete'
   | 'recommendation_feedback_upsert';
@@ -73,6 +74,8 @@ function recommendationCacheKey(userId: string): string {
 function operationKey(operation: OfflineOperation, entityId: string): string {
   const domain = operation.startsWith('task_completion')
     ? 'task_completion'
+    : operation.startsWith('breakdown_completion')
+      ? 'breakdown_completion'
     : operation.startsWith('task_')
       ? 'task'
       : operation.startsWith('note_')
@@ -240,6 +243,14 @@ export async function queueTaskCompletion(
   });
 }
 
+export async function queueBreakdownCompletion(
+  userId: string,
+  taskId: string,
+  done: boolean,
+): Promise<void> {
+  await enqueue(userId, 'breakdown_completion_set', taskId, { taskId, done });
+}
+
 export async function queueNoteUpsert(userId: string, note: Note): Promise<void> {
   await enqueue(userId, 'note_upsert', note.id, note);
 }
@@ -269,12 +280,22 @@ export async function mergePendingRecommendationFeedback(
 
 export async function mergePendingTasks(userId: string, remote: Task[]): Promise<Task[]> {
   const items = (await readOutbox())
-    .filter((item) => item.userId === userId && (item.operation === 'task_upsert' || item.operation === 'task_delete'))
+    .filter((item) => item.userId === userId && (
+      item.operation === 'task_upsert' ||
+      item.operation === 'task_delete' ||
+      item.operation === 'breakdown_completion_set'
+    ))
     .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
   const merged = new Map(remote.map((task) => [task.id, task]));
   items.forEach((item) => {
     if (item.operation === 'task_delete') merged.delete(item.entityId);
-    else merged.set(item.entityId, item.payload as Task);
+    else if (item.operation === 'breakdown_completion_set') {
+      const existing = merged.get(item.entityId);
+      if (existing) {
+        const payload = item.payload as { done?: boolean };
+        merged.set(item.entityId, { ...existing, isDone: Boolean(payload.done) });
+      }
+    } else merged.set(item.entityId, item.payload as Task);
   });
   return [...merged.values()];
 }
@@ -307,7 +328,23 @@ export async function mergePendingTaskCompletions(userId: string, remote: string
 async function execute(item: OfflineSyncItem): Promise<void> {
   if (item.operation === 'task_upsert') {
     const { error } = await taskDb.upsertTask(item.userId, item.payload as Task);
-    if (error) throw new Error(error.message);
+    if (error) {
+      const task = item.payload as Task;
+      // Upgrade completion writes queued by older builds. Those builds used a
+      // full-row upsert, so an unrelated stale assignee could permanently
+      // block a completed breakdown step. Only recover already-completed
+      // steps; other validation failures remain visible to the user.
+      if (
+        item.attempts > 0 &&
+        task.parentTaskId &&
+        task.isDone === true &&
+        error.message.includes('Assignee is not an accepted member')
+      ) {
+        const completion = await taskDb.setBreakdownStepCompletion(task.id, true);
+        if (!completion.error) return;
+      }
+      throw new Error(error.message);
+    }
     return;
   }
   if (item.operation === 'task_delete') {
@@ -319,6 +356,12 @@ async function execute(item: OfflineSyncItem): Promise<void> {
     const { error } = payload.done
       ? await taskDb.markTaskDoneOnDate(item.userId, payload.taskId, payload.occurrenceDate)
       : await taskDb.unmarkTaskDoneOnDate(item.userId, payload.taskId, payload.occurrenceDate);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  if (item.operation === 'breakdown_completion_set') {
+    const payload = item.payload as { taskId: string; done: boolean };
+    const { error } = await taskDb.setBreakdownStepCompletion(payload.taskId, payload.done);
     if (error) throw new Error(error.message);
     return;
   }

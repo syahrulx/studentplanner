@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet, TextInput,
   Switch, Alert, Modal, Platform, ActivityIndicator,
-  KeyboardAvoidingView
+  KeyboardAvoidingView, AppState
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -16,7 +16,29 @@ import {
   UITM_GRADE_TABLE, GENERIC_4_GRADE_TABLE, GENERIC_5_GRADE_TABLE,
   SCHEME_LABELS, getGradeTable,
 } from '@/src/lib/gradeCalculator';
-import { getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
+import { cacheSubjectGradeConfig, getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
+
+type NetInfoStateLike = {
+  isConnected: boolean | null;
+  isInternetReachable: boolean | null;
+};
+
+type OptionalNetInfo = {
+  addEventListener: (listener: (state: NetInfoStateLike) => void) => () => void;
+};
+
+function getOptionalNetInfo(): OptionalNetInfo | null {
+  try {
+    // Some installed development clients predate the NetInfo native module.
+    // Loading it lazily keeps the route usable until that client is rebuilt.
+    const module = require('@react-native-community/netinfo') as {
+      default?: OptionalNetInfo;
+    } & OptionalNetInfo;
+    return module.default ?? module;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -90,6 +112,7 @@ export default function SubjectGradeScreen() {
   }));
 
   const [config, setConfig] = useState<SubjectGradeConfig>(makeDefault(subjectId));
+  const configRef = useRef<SubjectGradeConfig>(config);
   const [loading, setLoading] = useState(true);
 
   // Custom grade rows
@@ -127,24 +150,106 @@ export default function SubjectGradeScreen() {
     if (!user?.id || !subjectId) { setLoading(false); return; }
     getSubjectGradeConfig(user.id, subjectId).then(c => {
       const loaded = c ?? makeDefault(subjectId, user.country);
+      configRef.current = loaded;
       setConfig(loaded);
       setFinalMaxInput(String(loaded.finalExamMaxScore));
       setFinalScoredInput(loaded.finalExamScored !== null ? String(loaded.finalExamScored) : '');
-      setCustomRows(getGradeTable(loaded.gradingScheme));
+      const savedCustom = Array.isArray(loaded.customGradeRows) ? loaded.customGradeRows : [];
+      setCustomRows(savedCustom.length > 0 ? savedCustom : getGradeTable(loaded.gradingScheme));
+      setUseCustom(savedCustom.length > 0);
       setLoading(false);
     });
   }, [user?.id, subjectId]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function update(partial: Partial<SubjectGradeConfig>) {
-    const next = { ...config, ...partial };
-    setConfig(next);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      if (!user?.id) return;
-      await saveSubjectGradeConfig(user.id, next);
-    }, 500);
+  const pendingConfig = useRef<SubjectGradeConfig | null>(null);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  async function persistRemote(next: SubjectGradeConfig) {
+    if (!user?.id) return false;
+    setSaveState('saving');
+    const result = await saveSubjectGradeConfig(user.id, next);
+    const isLatestSave = pendingConfig.current?.updatedAt === next.updatedAt;
+    if (!isLatestSave) return false;
+    if (!result.error) {
+      pendingConfig.current = null;
+    }
+    setSaveState(result.error ? 'error' : 'saved');
+    return !result.error;
   }
+
+  function update(partial: Partial<SubjectGradeConfig>) {
+    const next = {
+      ...configRef.current,
+      ...partial,
+      updatedAt: new Date().toISOString(),
+    };
+    configRef.current = next;
+    setConfig(next);
+    pendingConfig.current = next;
+    // The durable local write is immediate. Only the network mirror is
+    // debounced, so closing the app within 500ms cannot reset an edit.
+    if (user?.id) void cacheSubjectGradeConfig(user.id, next);
+    setSaveState('saving');
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => void persistRemote(next), 500);
+  }
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && pendingConfig.current && user?.id) {
+        void saveSubjectGradeConfig(user.id, pendingConfig.current);
+      }
+    });
+    return () => {
+      sub.remove();
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (pendingConfig.current && user?.id) {
+        void saveSubjectGradeConfig(user.id, pendingConfig.current);
+      }
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let wasOffline = false;
+    let retryInFlight = false;
+    let active = true;
+    const retryPending = () => {
+      if (!active || retryInFlight || !pendingConfig.current || !user?.id) return;
+      retryInFlight = true;
+      const retryConfig = pendingConfig.current;
+      void persistRemote(retryConfig).then((saved) => {
+        if (!active) return;
+        wasOffline = !saved;
+      }).finally(() => {
+        retryInFlight = false;
+      });
+    };
+
+    const netInfo = getOptionalNetInfo();
+    const unsubscribe = netInfo?.addEventListener((state) => {
+      if (!active) return;
+      const online = state.isConnected === true && (
+        state.isInternetReachable === true
+        || (Platform.OS === 'web' && state.isInternetReachable == null)
+      );
+      if (!online) {
+        wasOffline = true;
+        return;
+      }
+      if (wasOffline) retryPending();
+    });
+
+    // Retry pending writes even in an older development client that does not
+    // contain NetInfo. This also covers transient server failures that do not
+    // produce an offline-to-online network event.
+    const retryTimer = setInterval(retryPending, 5000);
+    return () => {
+      active = false;
+      clearInterval(retryTimer);
+      unsubscribe?.();
+    };
+  }, [user?.id]);
 
   // ── Calculation ─────────────────────────────────────────────────────────────
   const activeRows = useMemo(() => {
@@ -246,7 +351,7 @@ export default function SubjectGradeScreen() {
   function applyPreset(scheme: GradingScheme) {
     setCustomRows(getGradeTable(scheme));
     setUseCustom(false);
-    update({ gradingScheme: scheme });
+    update({ gradingScheme: scheme, customGradeRows: [] });
     setSchemeSheet(false);
   }
 
@@ -262,11 +367,14 @@ export default function SubjectGradeScreen() {
     }));
     
     setCustomRows(sorted); setUseCustom(true); setEditingRowIdx(null);
+    update({ customGradeRows: sorted });
   }
 
   function deleteGradeRow(idx: number) {
-    setCustomRows(customRows.filter((_, i) => i !== idx));
+    const next = customRows.filter((_, i) => i !== idx);
+    setCustomRows(next);
     setUseCustom(true);
+    update({ customGradeRows: next });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -326,6 +434,11 @@ export default function SubjectGradeScreen() {
             <Text style={[ss.heroScore, { color: sub }]}>
               {result.hasData ? fmt(result.currentStandingScore) : '–'}%  •  {result.hasData ? fmt(result.currentStandingGrade.point, 2) : '–'} GPA
             </Text>
+            {saveState !== 'idle' ? (
+              <Text style={{ marginTop: 8, color: saveState === 'error' ? '#ef4444' : sub, fontSize: 11, fontWeight: '700' }}>
+                {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Saved on this device · cloud sync pending'}
+              </Text>
+            ) : null}
           </View>
 
           {/* ── Carry Marks ── */}
@@ -596,7 +709,7 @@ export default function SubjectGradeScreen() {
                <Text style={[ss.modalNavAction, { color: pri }]}>Back</Text>
              </Pressable>
              <Text style={[ss.modalNavTitle, { color: txt }]}>Custom Grade Table</Text>
-             <Pressable onPress={() => { setUseCustom(true); setGradeEditorOpen(false); }} style={[ss.modalNavBtn, { alignItems: 'flex-end' }]}>
+             <Pressable onPress={() => { setUseCustom(true); update({ customGradeRows: customRows }); setGradeEditorOpen(false); }} style={[ss.modalNavBtn, { alignItems: 'flex-end' }]}>
                <Text style={[ss.modalNavAction, { color: pri, fontWeight: '700' }]}>Done</Text>
              </Pressable>
           </View>

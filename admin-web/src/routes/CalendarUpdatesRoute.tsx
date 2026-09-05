@@ -30,6 +30,7 @@ import { useAdminSearch } from "../state/AdminSearchContext";
 import { MotionPanel, MotionSection } from "../ui/motion";
 import { AcademicCalendarOfferGraphic } from "../components/AcademicCalendarOfferGraphic";
 import { useSafeActionDialog } from "../components/SafeActionDialog";
+import { duplicateRecordIds, normaliseRecordName } from "../lib/dataQuality";
 
 const BUCKET = "academic-calendar-refs";
 
@@ -41,6 +42,7 @@ const APP_UNIVERSITIES: { id: string; name: string }[] = [
   { id: "um", name: "Universiti Malaya" },
   { id: "utm", name: "Universiti Teknologi Malaysia" },
   { id: "ukm", name: "Universiti Kebangsaan Malaysia" },
+  { id: "uts", name: "University of Technology Sarawak" },
   { id: "upm", name: "Universiti Putra Malaysia" },
   { id: "usm", name: "Universiti Sains Malaysia" },
   { id: "uiam", name: "Universiti Islam Antarabangsa Malaysia" },
@@ -259,7 +261,7 @@ export function CalendarUpdatesRoute() {
   const [offersOpen, setOffersOpen] = useState(true);
   const [offersSearch, setOffersSearch] = useState("");
   const [offersUni, setOffersUni] = useState("");
-  const [offersAge, setOffersAge] = useState<"all" | "expired">("all");
+  const [offersAge, setOffersAge] = useState<"all" | "expired" | "redundant">("all");
   const [selectedExpiredOfferIds, setSelectedExpiredOfferIds] = useState<string[]>([]);
   const [selectAllExpiredAdminOffers, setSelectAllExpiredAdminOffers] = useState(false);
   const [openOfferGroups, setOpenOfferGroups] = useState<
@@ -434,6 +436,17 @@ export function CalendarUpdatesRoute() {
     setSelectedCampus("");
   }, [selected, allCampuses]);
 
+  const redundantCalendarIds = useMemo(
+    () => duplicateRecordIds(history, (offer) => [
+      offer.university_id,
+      offer.campus_id ?? 'all',
+      normaliseRecordName(offer.semester_label),
+      offer.start_date,
+      offer.end_date,
+    ].join('|')),
+    [history],
+  );
+
   const filteredHistory = useMemo(() => {
     const qTop = searchQuery.trim();
     const qLocal = offersSearch.trim();
@@ -442,6 +455,7 @@ export function CalendarUpdatesRoute() {
     return history.filter((h) => {
       if (uni && h.university_id !== uni) return false;
       if (offersAge === "expired" && !(h.source === "admin" && h.start_date < today && h.end_date < today)) return false;
+      if (offersAge === "redundant" && !redundantCalendarIds.has(h.id)) return false;
       if (qTop) {
         const ok = matchesAdminSearch(
           qTop,
@@ -466,7 +480,7 @@ export function CalendarUpdatesRoute() {
       }
       return true;
     }).sort((a, b) => a.end_date.localeCompare(b.end_date) || a.start_date.localeCompare(b.start_date));
-  }, [history, offersAge, offersSearch, offersUni, searchQuery, universityNameById]);
+  }, [history, offersAge, offersSearch, offersUni, searchQuery, universityNameById, redundantCalendarIds]);
 
   const expiredAdminOffers = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -576,6 +590,21 @@ export function CalendarUpdatesRoute() {
     const be = breakEnd.trim().slice(0, 10);
     const break_start = /^\d{4}-\d{2}-\d{2}$/.test(bs) ? bs : null;
     const break_end = /^\d{4}-\d{2}-\d{2}$/.test(be) ? be : null;
+
+    const duplicate = history.find(
+      (offer) =>
+        offer.university_id === selected &&
+        (offer.campus_id ?? null) === campId &&
+        normaliseRecordName(offer.semester_label) === normaliseRecordName(label) &&
+        offer.start_date === sd &&
+        offer.end_date === ed,
+    );
+    if (duplicate) {
+      setErr(
+        "This university/campus calendar already exists. Open Existing offers and filter Redundant calendars if cleanup is needed.",
+      );
+      return;
+    }
 
     setBusy(true);
     try {
@@ -1498,11 +1527,12 @@ export function CalendarUpdatesRoute() {
                 </span>
                 <select
                   value={offersAge}
-                  onChange={(e) => setOffersAge(e.target.value as "all" | "expired")}
+                  onChange={(e) => setOffersAge(e.target.value as "all" | "expired" | "redundant")}
                   className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                 >
                   <option value="all">All admin offers</option>
                   <option value="expired">Old academic calendars</option>
+                  <option value="redundant">Redundant calendars ({redundantCalendarIds.size})</option>
                 </select>
               </Label>
             </div>
@@ -1593,6 +1623,11 @@ export function CalendarUpdatesRoute() {
                               : `${group.universityName} (All Campuses)`
                           }
                         />
+                        {redundantCalendarIds.has(h.id) ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                            Redundant calendar · review this duplicate group and delete only the record you choose.
+                          </div>
+                        ) : null}
                         <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
                           <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
                             Published {new Date(h.created_at).toLocaleString()}

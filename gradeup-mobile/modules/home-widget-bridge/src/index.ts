@@ -3,13 +3,14 @@ import { Platform } from 'react-native';
 /**
  * Writes the home-widget JSON snapshot and refreshes Android App Widgets. No-op off Android.
  */
-export function updateAndroidHomeWidgetSnapshot(json: string): void {
-  if (Platform.OS !== 'android') return;
+export function updateAndroidHomeWidgetSnapshot(json: string): boolean {
+  if (Platform.OS !== 'android') return false;
   try {
     const { requireNativeModule } = require('expo-modules-core') as typeof import('expo-modules-core');
     requireNativeModule<{ updateSnapshot: (j: string) => void }>('HomeWidgetBridge').updateSnapshot(json);
+    return true;
   } catch {
-    /* native module missing in old builds */
+    return false;
   }
 }
 

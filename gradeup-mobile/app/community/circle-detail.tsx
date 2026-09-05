@@ -8,6 +8,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
+import type { CircleMember } from '@/src/lib/communityApi';
 import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 
 function getInitials(name?: string) {

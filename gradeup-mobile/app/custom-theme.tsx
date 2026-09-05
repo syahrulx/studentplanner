@@ -7,7 +7,6 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { buildCustomTheme, type ThemePalette } from '@/constants/Themes';
 import { LinearGradient } from 'expo-linear-gradient';
-// @ts-expect-error No type definitions available for this library
 import ColorPicker from 'react-native-wheel-color-picker';
 
 const PRESET_COLORS = [

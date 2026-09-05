@@ -30,7 +30,7 @@ import { Avatar } from '@/components/Avatar';
 import * as dmApi from '@/src/lib/dmApi';
 import type { DmMessage } from '@/src/lib/dmApi';
 import { getSavedQuizzes, type SavedQuizItem } from '@/src/lib/studyApi';
-import { blockUserByUserId, unblockUserByUserId } from '@/src/lib/communityApi';
+import { blockUserByUserId, reportUser, unblockUserByUserId } from '@/src/lib/communityApi';
 import { upsertNote, upsertFlashcard } from '@/src/lib/studyDb';
 import type { Note, Flashcard } from '@/src/types';
 import {
@@ -464,7 +464,7 @@ export default function ChatRoomScreen() {
   const submitReport = async (reason: string) => {
     try {
       if (communityUserId && friendId) {
-        await communityApi.reportUser({
+        await reportUser({
           reporterId: communityUserId,
           reportedUserId: friendId,
           reason,

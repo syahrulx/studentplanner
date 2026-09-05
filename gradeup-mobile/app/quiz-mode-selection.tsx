@@ -23,7 +23,7 @@ export default function QuizModeSelection() {
   const theme = useTheme();
   const T = useTranslations(language);
   const { friendsWithStatus, circles, sendReaction } = useCommunity();
-  const { createQuiz } = useQuiz();
+  const { createQuiz, joinQuiz } = useQuiz();
 
   const {
     noteId, total, fromBuilder, useGenerated,

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { deleteUniversity, getMapping, listUniversities, saveMapping, testFetch, upsertUniversity, type UniversityRow } from '../lib/api';
+import { deleteUniversity, getMapping, getUniversityDeleteImpact, listUniversities, saveMapping, testFetch, upsertUniversity, type UniversityRow } from '../lib/api';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
 import { Label, TextInput } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
+import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
 
 function Input({
   label,
@@ -38,6 +39,12 @@ export function UniversitiesRoute() {
   const [items, setItems] = useState<UniversityRow[]>([]);
   const [editing, setEditing] = useState<UniversityRow | null>(null);
   const [query, setQuery] = useState('');
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+
+  const duplicateIds = useMemo(
+    () => duplicateRecordIds(items, (u) => `${String(u.country ?? 'MY').toUpperCase()}|${normaliseRecordName(u.name)}`),
+    [items],
+  );
 
   const refresh = async () => {
     setBusy(true);
@@ -81,8 +88,9 @@ export function UniversitiesRoute() {
         matchesAdminSearch(searchQuery, u.id, u.name, u.request_method, u.login_method, u.api_endpoint),
       );
     }
+    if (duplicatesOnly) list = list.filter((u) => duplicateIds.has(u.id));
     return list;
-  }, [items, query, searchQuery]);
+  }, [items, query, searchQuery, duplicatesOnly, duplicateIds]);
 
   return (
     <div>
@@ -130,6 +138,10 @@ export function UniversitiesRoute() {
                 <Label>Search</Label>
                 <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by id or name" />
               </div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                <input type="checkbox" checked={duplicatesOnly} onChange={(e) => setDuplicatesOnly(e.target.checked)} />
+                Show redundancy only ({duplicateIds.size})
+              </label>
 
               {err ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
@@ -156,6 +168,9 @@ export function UniversitiesRoute() {
                         <td className="px-4 py-3">
                           <div className="text-sm font-black text-slate-900 dark:text-slate-100">
                             {u.name}
+                            {duplicateIds.has(u.id) ? (
+                              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Redundant</span>
+                            ) : null}
                             {u.country && u.country !== 'MY' ? (
                               <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                 {u.country}
@@ -177,11 +192,25 @@ export function UniversitiesRoute() {
                               size="sm"
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                const ok = confirm(`Delete ${u.id}?`);
-                                if (!ok) return;
-                                await deleteUniversity(u.id);
-                                if (editing?.id === u.id) setEditing(null);
-                                await refresh();
+                                setErr('');
+                                try {
+                                  const impact = await getUniversityDeleteImpact(u.id);
+                                  if (impact.total > 0) {
+                                    const detail = Object.entries(impact.counts)
+                                      .filter(([, count]) => count > 0)
+                                      .map(([name, count]) => `${name}: ${count}`)
+                                      .join('\n');
+                                    alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
+                                    return;
+                                  }
+                                  const ok = confirm(`Delete unused university ${u.name} (${u.id})?\n\nAffected records: 0`);
+                                  if (!ok) return;
+                                  await deleteUniversity(u.id);
+                                  if (editing?.id === u.id) setEditing(null);
+                                  await refresh();
+                                } catch (error) {
+                                  setErr(error instanceof Error ? error.message : 'University deletion failed');
+                                }
                               }}
                             >
                               Delete
@@ -474,4 +503,3 @@ function UniEditor({
     </div>
   );
 }
-

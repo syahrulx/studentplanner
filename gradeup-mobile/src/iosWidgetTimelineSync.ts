@@ -40,7 +40,7 @@ function getWidgetModule(name: string): { default?: { updateTimeline: (entries: 
       return require('../widgets/GradeUpTimetableWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
     }
   } catch (e) {
-    void e;
+    if (__DEV__) console.warn(`[Rencana] Could not load ${name} widget module`, e);
   }
   return null;
 }
@@ -74,26 +74,48 @@ function getNativeWidgetHandle(name: string): ResolvedWidgetHandle | null {
  */
 export function updateGradeUpTodayTimelineFromHost(
   entriesOrProps: JsTimelineEntry[] | HomeWidgetProps,
-): void {
+): boolean {
   try {
-    const entries: JsTimelineEntry[] = Array.isArray(entriesOrProps)
+    const rawEntries: JsTimelineEntry[] = Array.isArray(entriesOrProps)
       ? entriesOrProps
       : [{ date: new Date(), props: entriesOrProps }];
-    if (entries.length === 0) return;
+    if (rawEntries.length === 0) return false;
+
+    // ExpoModules records accept property-list-compatible values only.
+    // Optional theme/image fields are represented as `undefined` in JS, which
+    // can make the native HostFunction reject the whole timeline before Swift
+    // receives it. A JSON round trip strips those absent keys and guarantees a
+    // plain serializable snapshot at this bridge boundary.
+    const entries: JsTimelineEntry[] = rawEntries.map((entry) => ({
+      date: entry.date,
+      // UserDefaults cannot store NSNull either, so omit null as well as
+      // undefined for optional snapshot fields.
+      props: JSON.parse(JSON.stringify(entry.props, (_key, value) => (
+        value == null ? undefined : value
+      ))) as HomeWidgetProps,
+    }));
 
     const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
+    let updated = false;
     for (const name of names) {
       const resolved = getNativeWidgetHandle(name);
       if (!resolved) continue;
-      if (resolved.source === 'module') {
-        resolved.handle.updateTimeline(entries);
-      } else {
-        resolved.handle.updateTimeline(
-          entries.map((e) => ({ timestamp: e.date.getTime(), props: e.props })),
-        );
+      try {
+        if (resolved.source === 'module') {
+          resolved.handle.updateTimeline(entries);
+        } else {
+          resolved.handle.updateTimeline(
+            entries.map((e) => ({ timestamp: e.date.getTime(), props: e.props })),
+          );
+        }
+        updated = true;
+      } catch (error) {
+        if (__DEV__) console.warn(`[Rencana] Could not update ${name} widget timeline`, error);
       }
     }
+    return updated;
   } catch (e) {
-    void e;
+    if (__DEV__) console.warn('[Rencana] Could not update iOS widget timeline', e);
+    return false;
   }
 }

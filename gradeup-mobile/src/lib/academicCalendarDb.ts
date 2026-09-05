@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { AcademicCalendar } from '../types';
+import { captureError } from './monitoring';
 
 const TABLE = 'academic_calendars';
 
@@ -32,6 +33,11 @@ function rowToCalendar(row: Record<string, unknown>): AcademicCalendar {
     breakEndDate: breakEnd || undefined,
     periods: periods && periods.length > 0 ? (periods as any) : undefined,
     teachingWeekOffset,
+    selectionSource:
+      row.selection_source === 'user' || row.selection_source === 'manual'
+        ? row.selection_source
+        : 'automatic',
+    selectedAt: row.selected_at != null ? String(row.selected_at) : undefined,
     isActive: Boolean(row.is_active),
     createdAt: row.created_at != null ? String(row.created_at) : undefined,
   };
@@ -82,6 +88,13 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
         ? Math.trunc(Number(existing.teachingWeekOffset) || 0)
         : 0;
 
+  const selectionSource =
+    calendar.selectionSource ?? existing?.selectionSource ?? 'automatic';
+  const selectedAt =
+    calendar.selectedAt !== undefined
+      ? calendar.selectedAt || null
+      : existing?.selectedAt ?? null;
+
   const row = {
     user_id: userId,
     semester_label: calendar.semesterLabel,
@@ -92,6 +105,8 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     break_end_date: breakEnd,
     periods_json: periodsJson,
     teaching_week_offset: teachingWeekOffset,
+    selection_source: selectionSource,
+    selected_at: selectedAt,
     is_active: calendar.isActive ?? true,
   };
   const { data, error } = await supabase
@@ -100,6 +115,7 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     .select('*')
     .single();
   if (error) {
+    captureError(error, { operation: 'academic_calendar_write' });
     if (__DEV__) console.warn('[Rencana] upsertCalendar', error.message);
     throw new Error(error.message || 'Failed to save academic calendar');
   }
@@ -111,5 +127,8 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
 
 export async function deleteAllCalendarsForUser(userId: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('user_id', userId);
-  if (error) throw new Error(error.message || 'Failed to delete academic calendar');
+  if (error) {
+    captureError(error, { operation: 'academic_calendar_delete' });
+    throw new Error(error.message || 'Failed to delete academic calendar');
+  }
 }

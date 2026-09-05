@@ -41,6 +41,14 @@ export const UNIVERSITIES: UniversityConfig[] = [
     logoEmoji: '📘',
   },
   {
+    id: 'uts',
+    name: 'University of Technology Sarawak',
+    shortName: 'UTS',
+    loginUrl: 'https://www.uts.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
+  {
     id: 'upm',
     name: 'Universiti Putra Malaysia',
     shortName: 'UPM',
@@ -211,6 +219,7 @@ export const UNIVERSITIES: UniversityConfig[] = [
 ];
 
 let universitiesCache: UniversityConfig[] = [...UNIVERSITIES];
+let universitiesCacheHasDatabaseIds = false;
 
 function inferShortName(name: string, fallbackId: string): string {
   const trimmed = String(name || '').trim();
@@ -283,6 +292,29 @@ export function inferUniversityIdFromUniversityName(
   if (/\bum\b/.test(n) || n.includes('universiti malaya') || n.includes('university of malaya')) return 'um';
   if (n.includes('utm') || n.includes('teknologi malaysia')) return 'utm';
   if (n.includes('ukm') || n.includes('kebangsaan malaysia')) return 'ukm';
+  if (
+    /\buts\b/.test(n) ||
+    /\bucts\b/.test(n) ||
+    n.includes('university of technology sarawak') ||
+    n.includes('university college of technology sarawak') ||
+    n.includes('universiti teknologi sarawak')
+  ) {
+    // Some existing databases still use the institution's former UCTS id.
+    // Prefer the id actually loaded from the database so a name-only profile
+    // never resolves to a row that does not exist.
+    const configured = universitiesCache.find((u) => {
+      const id = u.id.trim().toLowerCase();
+      const name = u.name.trim().toLowerCase();
+      return id === 'uts' || id === 'ucts' ||
+        name.includes('university of technology sarawak') ||
+        name.includes('university college of technology sarawak') ||
+        name.includes('universiti teknologi sarawak');
+    });
+    // Before a successful database list we deliberately return no guessed id:
+    // callers can safely skip optional auto-sync, while an explicit profile id
+    // still wins in resolveUniversityIdForCalendar().
+    return universitiesCacheHasDatabaseIds ? configured?.id : undefined;
+  }
   if (n.includes('upm') || n.includes('putra malaysia')) return 'upm';
   if (/\busm\b/.test(n) || n.includes('sains malaysia')) return 'usm';
   return undefined;
@@ -348,6 +380,7 @@ export async function getUniversitiesForCountry(country: string): Promise<Univer
     const rows = data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>;
     if (rows.length === 0) return universitiesCache;
     universitiesCache = mergeRemoteUniversities(rows);
+    universitiesCacheHasDatabaseIds = true;
     return universitiesCache;
   }
 

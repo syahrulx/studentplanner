@@ -211,7 +211,7 @@ export default function ServiceDetailScreen() {
   } catch (e) {}
 
   const myReview = reviews.find((r) => r.reviewer_id === userId);
-  const canReview = isCompleted && !!service.taker_id && (role === 'requester' || role === 'taker') && !myReview;
+  const canReview = isCompleted && !!service.claimed_by && (role === 'requester' || role === 'taker') && !myReview;
 
   // ─── Actions ──────────────────────────────────────────────────────────────
   const wrap = async (label: string, fn: () => Promise<void>, success?: string) => {
@@ -2766,6 +2766,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   offerBtnSolidText: { fontSize: 12, fontWeight: '700', letterSpacing: -0.1 },
+  offerBtnGhostText: { fontSize: 12, fontWeight: '700', letterSpacing: -0.1 },
   openServiceBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',

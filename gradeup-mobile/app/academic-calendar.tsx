@@ -83,6 +83,21 @@ function inferAcademicLevelFromOfferLabel(label: string): AcademicLevel {
   return "Other";
 }
 
+function offerSummary(offer: UniversityCalendarOffer, todayISO: string): string {
+  const details: string[] = [`${offer.startDate} to ${offer.endDate}`];
+  if (offer.startDate <= todayISO && todayISO <= offer.endDate) details.push("Current");
+  if (/short|special|inter.?session/i.test(offer.semesterLabel) || offer.totalWeeks <= 8) {
+    details.push("Short semester");
+  }
+  if (
+    (offer.breakStartDate && offer.breakEndDate) ||
+    offer.periods?.some((period) => /break|holiday/i.test(String(period.type)))
+  ) {
+    details.push("Break dates included");
+  }
+  return details.join(" · ");
+}
+
 export default function AcademicCalendarScreen() {
   const theme = useTheme();
   const s = useMemo(() => styles(theme), [theme]);
@@ -418,6 +433,8 @@ export default function AcademicCalendarScreen() {
       await updateAcademicCalendar({
         ...rest,
         teachingWeekOffset: newOffset,
+        selectionSource: "user",
+        selectedAt: new Date().toISOString(),
         isActive: true,
       });
       const cap = Math.max(1, academicCalendar.totalWeeks ?? 14);
@@ -425,6 +442,7 @@ export default function AcademicCalendarScreen() {
         await disableClassNotificationsForSemesterBreak();
       }
       setWeekAlignOpen(false);
+      Alert.alert("Saved", "Your semester status and week will stay selected after you restart the app.");
     } catch (e) {
       Alert.alert(
         "Error",
@@ -486,6 +504,8 @@ export default function AcademicCalendarScreen() {
               totalWeeks: official.totalWeeks ?? 14,
               periods: official.periods ?? [],
               teachingWeekOffset: 0,
+              selectionSource: "user",
+              selectedAt: new Date().toISOString(),
               isActive: true,
             });
           } else {
@@ -500,6 +520,8 @@ export default function AcademicCalendarScreen() {
             await updateAcademicCalendar({
               ...offerToCalendarPatch(adminOffer),
               teachingWeekOffset: 0,
+              selectionSource: "user",
+              selectedAt: new Date().toISOString(),
               isActive: true,
             });
           } else {
@@ -592,6 +614,8 @@ export default function AcademicCalendarScreen() {
           await updateAcademicCalendar({
             ...contributionToCalendarPatch(community),
             teachingWeekOffset: 0,
+            selectionSource: "user",
+            selectedAt: new Date().toISOString(),
             isActive: true,
           });
           setSyncStatus(`Applied community verified calendar: ${community.semesterLabel}`);
@@ -611,6 +635,8 @@ export default function AcademicCalendarScreen() {
               official.totalWeeks ?? academicCalendar?.totalWeeks ?? 14,
             periods: official.periods ?? [],
             teachingWeekOffset: 0,
+            selectionSource: "user",
+            selectedAt: new Date().toISOString(),
             isActive: true,
           });
           setSyncStatus(`Auto-synced: ${official.semesterLabel}`);
@@ -644,9 +670,12 @@ export default function AcademicCalendarScreen() {
         await updateAcademicCalendar({
           ...offerToCalendarPatch(selected),
           teachingWeekOffset: 0,
+          selectionSource: "user",
+          selectedAt: new Date().toISOString(),
           isActive: true,
         });
         setSyncStatus(`Applied: ${selected.semesterLabel}`);
+        Alert.alert("Semester saved", `${selected.semesterLabel} is now your active calendar.`);
       } else {
         setSyncStatus("No administrator calendar for this university yet.");
         Alert.alert(

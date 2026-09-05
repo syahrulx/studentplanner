@@ -18,6 +18,7 @@ import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
+import type { LocationVisibility } from '@/src/lib/communityApi';
 import { useTheme } from '@/hooks/useTheme';
 import Feather from '@expo/vector-icons/Feather';
 import { DEEP_SEA_PALETTE } from '@/constants/Themes';
@@ -227,7 +228,7 @@ export default function Profile() {
       field: 'program',
       title: T('editPrimaryProgram'),
       message: T('enterPrimaryProgram'),
-      value: user.program,
+      value: user.program ?? '',
     });
   };
 
@@ -237,7 +238,7 @@ export default function Profile() {
         field: 'campus',
         title: T('editCampus'),
         message: T('enterCampus'),
-        value: user.campus,
+        value: user.campus ?? '',
       });
       return;
     }
@@ -251,7 +252,7 @@ export default function Profile() {
           field: 'campus',
           title: T('editCampus'),
           message: T('enterCampus'),
-          value: user.campus,
+          value: user.campus ?? '',
         });
         return;
       }
@@ -262,7 +263,7 @@ export default function Profile() {
         field: 'campus',
         title: T('editCampus'),
         message: T('enterCampus'),
-        value: user.campus,
+        value: user.campus ?? '',
       });
     } finally {
       setIsUpdating(false);
@@ -300,7 +301,7 @@ export default function Profile() {
         field: 'faculty',
         title: T('editFaculty'),
         message: T('enterFaculty'),
-        value: user.faculty,
+        value: user.faculty ?? '',
       });
       return;
     }

@@ -2,6 +2,9 @@
   "name": "gradeup-mobile",
   "main": "expo-router/entry",
   "version": "1.6.8",
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
   "scripts": {
     "start": "expo start",
     "prestart": "npm run validate:release",
@@ -19,6 +22,9 @@
     "test:calendar-timeline": "npx --yes tsx tests/calendarTimelineValidation.test.ts",
     "test:academic-level": "npx --yes tsx tests/academicLevel.test.ts",
     "test:calendar-shape": "npx --yes tsx tests/calendarTimeline.test.ts",
+    "test:grade-persistence": "bash scripts/test-grade-persistence.sh",
+    "test:calendar-offers": "bash scripts/test-calendar-offers.sh",
+    "test:rate-limit": "bash scripts/test-rate-limit.sh",
     "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
   },
   "dependencies": {
@@ -27,6 +33,7 @@
     "@gorhom/bottom-sheet": "^5.2.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
+    "@react-native-community/netinfo": "11.5.2",
     "@react-navigation/native": "^7.1.8",
     "@rnmapbox/maps": "^10.1.36",
     "@sentry/react-native": "~7.11.0",

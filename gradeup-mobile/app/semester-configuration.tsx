@@ -83,6 +83,8 @@ export default function SemesterConfigurationScreen() {
             endDate: official.endDate,
             totalWeeks: official.totalWeeks ?? (academicCalendar?.totalWeeks ?? 14),
             periods: official.periods ?? [],
+            selectionSource: 'user',
+            selectedAt: new Date().toISOString(),
             isActive: true,
           });
         }

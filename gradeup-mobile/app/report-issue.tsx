@@ -25,7 +25,8 @@ const RADIUS = 14;
 
 const KIND_OPTIONS: ReadonlyArray<{
   kind: UserReportKind;
-  labelKey:
+  label?: string;
+  labelKey?:
     | 'reportKindBug'
     | 'reportKindIssue'
     | 'reportKindFaq'
@@ -40,6 +41,10 @@ const KIND_OPTIONS: ReadonlyArray<{
   { kind: 'faq',            labelKey: 'reportKindFaq',            icon: 'help-circle',    color: '#3b82f6' },
   { kind: 'app_complaint',  labelKey: 'reportKindAppComplaint',   icon: 'message-square', color: '#8b5cf6' },
   { kind: 'user_complaint', labelKey: 'reportKindUserComplaint',  icon: 'user-x',         color: '#ec4899' },
+  { kind: 'semester_calendar', label: 'Semester / calendar', icon: 'calendar', color: '#0ea5e9' },
+  { kind: 'campus_request', label: 'Campus request', icon: 'map-pin', color: '#14b8a6' },
+  { kind: 'grading', label: 'Grading', icon: 'award', color: '#6366f1' },
+  { kind: 'widget', label: 'Home-screen widget', icon: 'grid', color: '#64748b' },
   { kind: 'other',          labelKey: 'reportKindOther',          icon: 'more-horizontal',color: '#64748b' },
 ];
 
@@ -171,7 +176,7 @@ export default function ReportIssueScreen() {
                   <View style={[styles.iconBox, { backgroundColor: opt.color }]}>
                     <Feather name={opt.icon} size={16} color="#fff" />
                   </View>
-                  <Text style={[styles.menuLabel, { color: theme.text }]}>{T(opt.labelKey)}</Text>
+                  <Text style={[styles.menuLabel, { color: theme.text }]}>{opt.label ?? T(opt.labelKey!)}</Text>
                   {selected ? (
                     <Feather name="check" size={20} color={theme.accent} />
                   ) : null}

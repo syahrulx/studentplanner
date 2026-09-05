@@ -544,7 +544,7 @@ export default function UploadSOW() {
             sourceMessage: `Imported from SOW: ${extraction.fileName}`,
           }
         );
-        task.type = Object.values(TaskType).includes(task.type) ? task.type : TaskType.Assignment;
+        task.type = Object.values(TaskType).includes(task.type as TaskType) ? task.type : TaskType.Assignment;
         const { error: taskErr } = await taskDb.upsertTask(uid, task);
         if (taskErr) {
           Alert.alert('Could not save tasks', 'Something went wrong while saving your tasks. Please try again.');
