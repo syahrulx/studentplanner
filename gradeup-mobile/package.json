@@ -20,6 +20,7 @@
     "eas-build-pre-install": "npm run validate:release",
     "test:timetable-extraction": "npx --yes tsx tests/timetableExtraction.test.ts",
     "test:smart-capture": "npx --yes tsx tests/smartCapture.test.ts",
+    "test:relative-dates": "npx --yes tsx tests/relativeDates.test.ts",
     "test:calendar-timeline": "npx --yes tsx tests/calendarTimelineValidation.test.ts",
     "test:academic-level": "npx --yes tsx tests/academicLevel.test.ts",
     "test:calendar-shape": "npx --yes tsx tests/calendarTimeline.test.ts",

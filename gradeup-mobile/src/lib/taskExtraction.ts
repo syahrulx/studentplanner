@@ -1,4 +1,7 @@
 import type { Course } from '../types';
+import { resolveRelativeDayReferences } from '../utils/relativeDates';
+
+export { resolveRelativeDayReferences };
 import {
   invokeAiGenerate,
   type AiGenerateTaskExtractResult,
@@ -287,6 +290,11 @@ function buildPrompt(args: ExtractTasksArgs): string {
     'enough context, TBA, "last week of semester", or otherwise unknown, set "due_date" to null and',
     '"needs_date" to true. NEVER invent or guess a date.',
     '',
+    'A date in parentheses after a phrase has already been worked out for you from today\'s date —',
+    'for example "jumaat ni (2026-09-11)" or "esok (2026-09-07)". Treat it as a concrete date and put it',
+    'in "due_date" with "needs_date": false. Malay day words are ordinary dates: isnin, selasa, rabu,',
+    'khamis, jumaat, sabtu, ahad, and esok / lusa / hari ini.',
+    '',
     'IMPORTANT WEEK RULE: "Week N" means a SINGLE task due at end of that week — return ONE due_date,',
     'do NOT expand into 5-7 separate daily dates. Only use "due_dates" array when a task genuinely',
     'recurs on different specific dates (e.g. lab sessions on Mon, Wed, Fri).',
@@ -333,10 +341,9 @@ export async function extractTasksFromMessage(args: ExtractTasksArgs): Promise<E
 
   let rawText = '';
   // Pre-resolve "Week N" references to concrete dates before the AI sees them
-  const resolvedMessage = resolveWeekReferences(
-    args.message,
-    args.currentWeek,
-    args.semesterStartISO,
+  const resolvedMessage = resolveRelativeDayReferences(
+    resolveWeekReferences(args.message, args.currentWeek, args.semesterStartISO),
+    args.todayISO,
   );
   const prompt = buildPrompt({ ...args, message: resolvedMessage });
   try {
