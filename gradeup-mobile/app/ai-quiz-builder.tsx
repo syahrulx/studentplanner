@@ -87,6 +87,15 @@ export default function AIQuizBuilder() {
     };
   }, []);
 
+  // `courses` is empty until AppContext finishes its first load, so the initial
+  // useState above captures ''. Without this the screen renders the subject
+  // chips but selects none, and the notes list stays stuck on "No notes in this
+  // subject yet" even though the subject has notes. Reproduces on any cold start
+  // where the user reaches this screen before the first fetch lands.
+  useEffect(() => {
+    if (!selectedSubject && courses.length > 0) setSelectedSubject(courses[0].id);
+  }, [courses, selectedSubject]);
+
   const topicsForSubject = useMemo(
     () => notes.filter((n) => n.subjectId === selectedSubject),
     [notes, selectedSubject],
