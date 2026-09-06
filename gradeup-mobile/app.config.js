@@ -69,6 +69,21 @@ export default ({ config }) => {
   const existingUrlTypes = Array.isArray(infoPlist.CFBundleURLTypes)
     ? [...infoPlist.CFBundleURLTypes]
     : [];
+
+  // Setting CFBundleURLTypes here makes Expo skip the abstract `scheme`
+  // property entirely, so `rencana://` has to be registered by hand. Without
+  // it the share extension cannot hand a share back to the app, and no
+  // rencana:// deep link opens.
+  const appScheme = base?.scheme ?? 'rencana';
+  const schemeRegistered = existingUrlTypes.some(
+    (t) => Array.isArray(t?.CFBundleURLSchemes) && t.CFBundleURLSchemes.includes(appScheme),
+  );
+  if (!schemeRegistered) {
+    existingUrlTypes.push({
+      CFBundleURLName: 'com.aizztech.rencana',
+      CFBundleURLSchemes: [appScheme],
+    });
+  }
   if (iosGoogleUrlScheme) {
     const already = existingUrlTypes.some((t) =>
       Array.isArray(t?.CFBundleURLSchemes) && t.CFBundleURLSchemes.includes(iosGoogleUrlScheme),
@@ -184,6 +199,28 @@ export default ({ config }) => {
         }
       }
     ],
+    // Share sheet target: text and screenshots from any app land in Smart Capture.
+    [
+      'expo-sharing',
+      {
+        ios: {
+          enabled: true,
+          appGroupId: 'group.com.aizztech.rencana',
+          activationRule: {
+            supportsText: true,
+            supportsWebUrlWithMaxCount: 1,
+            supportsImageWithMaxCount: 1,
+          },
+        },
+        android: {
+          enabled: true,
+          singleShareMimeTypes: ['text/plain', 'image/*'],
+        },
+      },
+    ],
+    // Compiles the "Plan from screenshot" App Intent into the main app target
+    // so Back Tap shortcuts can reach it.
+    './plugins/withSmartCapture',
     [
       '@sentry/react-native/expo',
       {

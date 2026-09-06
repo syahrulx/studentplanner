@@ -1,16 +1,13 @@
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
-import { extractTasksFromMessage as extractTasksFromMessageAI } from '@/src/lib/taskExtraction';
-import { buildTaskFromExtraction } from '@/src/lib/taskUtils';
-import { getTodayISO } from '@/src/utils/date';
 import { useTheme } from '@/hooks/useTheme';
-import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
-
-type Message = { role: 'ai' | 'user'; text: string };
+import { enqueueCapture } from '@/src/lib/smartCapture/captureInboxStore';
+import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 
 function hexLuminance(hex: string): number | null {
   const raw = hex.replace('#', '').trim();
@@ -46,128 +43,53 @@ function onPrimaryChipBg(inverseHex: string): string {
 }
 
 export default function AiChat() {
-  const { language, addTask, courses, user, academicCalendar } = useApp();
+  const { language } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
-  const scrollRef = useRef<ScrollView>(null);
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
   const headerSubColor = useMemo(
     () => onPrimaryMuted(theme.textInverse, theme.primary),
     [theme.textInverse, theme.primary],
   );
   const headerIconBg = useMemo(() => onPrimaryChipBg(theme.textInverse), [theme.textInverse]);
 
+  const scrollRef = useRef<ScrollView>(null);
   const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: '📋 Paste your lecturer\'s WhatsApp message below and I\'ll extract the tasks for you!\n\nI can detect:\n• Assignment deadlines\n• Quiz/test dates\n• Project submissions\n• Lab reports\n\nJust copy-paste the message and tap Send.' },
-  ]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
 
-  const scrollToBottom = () => {
-    setTimeout(() => { if (mountedRef.current) scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
+  // Both entry points hand off to the Smart Capture sheet, which owns
+  // extraction, review and undo for every capture source.
+  const handleSend = () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput('');
+    enqueueCapture({ source: 'paste', text });
+    router.replace('/smart-capture' as never);
   };
 
-  const handleSend = () => {
-    if (!chatInput.trim()) return;
-    const pastedText = chatInput;
-    setMessages(prev => [...prev, { role: 'user', text: pastedText }]);
-    setChatInput('');
-    setIsProcessing(true);
-    scrollToBottom();
-
-    (async () => {
-      try {
-        const todayISO = getTodayISO();
-        const { tasks, error } = await extractTasksFromMessageAI({
-          message: pastedText,
-          courses,
-          todayISO,
-          currentWeek: user.currentWeek,
-          userId: user.id,
-          semesterStartISO: academicCalendar?.startDate,
-          country: user.country,
-        });
-        if (!mountedRef.current) return;
-
-        if (tasks.length === 0) {
-          if (error && handleMonthlyLimit(error, language)) {
-            return;
-          }
-          if (__DEV__ && error?.details != null) {
-            console.log('[AiChat] task extraction error details:', error.details);
-          }
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'ai',
-              text: error
-                ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}`
-                : '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date',
-            },
-          ]);
-          return;
-        }
-
-        for (const task of tasks) {
-          addTask(
-            buildTaskFromExtraction(task, {
-              fallbackCourseId: courses[0]?.id || 'General',
-              user,
-              calendarStart: academicCalendar?.startDate,
-              sourceMessage: pastedText,
-            })
-          );
-        }
-
-        const missingDate = tasks.filter((t) => t.needs_date);
-
-        const taskSummary = tasks
-          .map((t) => {
-            const dateLabel = t.needs_date ? '📅 Date TBA — set manually' : `📅 ${t.due_date}  ⏰ ${t.due_time}`;
-            return `• "${t.title}"\n   ${dateLabel}${t.course_id ? `  📚 ${t.course_id}` : ''}`;
-          })
-          .join('\n\n');
-
-        const warningNote = missingDate.length > 0
-          ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
-          : '';
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'ai',
-            text: `✅ Task extracted and added to your planner!\n\n${taskSummary}${warningNote}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
-          },
-        ]);
-      } catch (e) {
-        if (__DEV__) console.error('[AiChat] task extraction failed:', e);
-        if (!mountedRef.current) return;
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'ai',
-            text:
-              '⚠️ Something went wrong while talking to the AI. Please try again in a moment or enter the task manually.',
-          },
-        ]);
-      } finally {
-        if (mountedRef.current) {
-          setIsProcessing(false);
-          scrollToBottom();
-        }
-      }
-    })();
+  const handlePickScreenshot = async () => {
+    if (isPicking) return;
+    setIsPicking(true);
+    try {
+      if (!(await ensureImageLibraryAccessForPicker())) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 1,
+        allowsMultipleSelection: false,
+      });
+      const uri = result.canceled ? null : result.assets?.[0]?.uri;
+      if (!uri) return;
+      enqueueCapture({ source: 'picker', imageUri: uri });
+      router.replace('/smart-capture' as never);
+    } finally {
+      setIsPicking(false);
+    }
   };
 
   return (
     <View style={s.overlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} />
-      <KeyboardAvoidingView 
-        style={[s.sheetContainer, { backgroundColor: theme.background }]} 
+      <KeyboardAvoidingView
+        style={[s.sheetContainer, { backgroundColor: theme.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={[s.header, { backgroundColor: theme.primary }]}>
@@ -178,49 +100,53 @@ export default function AiChat() {
             <View style={[s.headerIcon, { backgroundColor: headerIconBg }]}>
               <Feather name="clipboard" size={18} color={theme.textInverse} />
             </View>
-            <View>
-              <Text style={[s.headerTitle, { color: theme.textInverse }]}>AI Task Scanner</Text>
-              <Text style={[s.headerSub, { color: headerSubColor }]}>PASTE WHATSAPP MESSAGE</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.headerTitle, { color: theme.textInverse }]}>{T('smartCapture')}</Text>
+              <Text style={[s.headerSub, { color: headerSubColor }]}>
+                {T('smartCaptureSub').toUpperCase()}
+              </Text>
             </View>
           </View>
         </View>
 
-        <ScrollView 
+        <ScrollView
           ref={scrollRef}
-          style={[s.messagesList, { backgroundColor: theme.background }]} 
+          style={[s.messagesList, { backgroundColor: theme.background }]}
           contentContainerStyle={s.messagesContent}
+          keyboardShouldPersistTaps="handled"
         >
-          {messages.map((m, i) => (
-            <View key={i} style={[s.bubbleWrap, m.role === 'user' && s.bubbleRight]}>
-              <View
-                style={[
-                  s.bubble,
-                  m.role === 'user'
-                    ? [s.bubbleUser, { backgroundColor: theme.primary }]
-                    : [s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }],
-                ]}
-              >
-                <Text
-                  style={[
-                    s.bubbleText,
-                    { color: m.role === 'user' ? theme.textInverse : theme.text },
-                  ]}
-                >
-                  {m.text}
-                </Text>
-              </View>
+          <View style={[s.bubble, s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[s.bubbleText, { color: theme.text }]}>{T('aiPlannerIntro')}</Text>
+          </View>
+
+          <Pressable
+            onPress={handlePickScreenshot}
+            disabled={isPicking}
+            style={({ pressed }) => [
+              s.scanRow,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+                opacity: pressed || isPicking ? 0.7 : 1,
+              },
+            ]}
+          >
+            <View style={[s.scanIcon, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="image" size={18} color={theme.primary} />
             </View>
-          ))}
-          {isProcessing && (
-            <View style={s.bubbleWrap}>
-              <View style={[s.bubble, s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <View style={s.processingRow}>
-                  <Feather name="search" size={14} color={theme.primary} />
-                  <Text style={[s.bubbleText, { color: theme.text }]}>Scanning message for tasks...</Text>
-                </View>
-              </View>
-            </View>
-          )}
+            <Text style={[s.scanLabel, { color: theme.text }]}>{T('scScanScreenshot')}</Text>
+            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/smart-automations' as never)}
+            style={({ pressed }) => [s.automationsLink, pressed && { opacity: 0.6 }]}
+          >
+            <Feather name="zap" size={13} color={theme.primary} />
+            <Text style={[s.automationsLinkText, { color: theme.primary }]}>
+              {T('smartAutomations')}
+            </Text>
+          </Pressable>
         </ScrollView>
 
         <View style={[s.inputRow, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
@@ -228,19 +154,15 @@ export default function AiChat() {
             style={[s.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
             value={chatInput}
             onChangeText={setChatInput}
-            placeholder="Paste lecturer's message here..."
+            placeholder={T('aiPlannerPlaceholder')}
             placeholderTextColor={theme.textSecondary}
             multiline
             textAlignVertical="top"
           />
           <Pressable
-            style={[
-              s.sendBtn,
-              { backgroundColor: theme.primary },
-              (!chatInput.trim() || isProcessing) && { opacity: 0.5 },
-            ]}
+            style={[s.sendBtn, { backgroundColor: theme.primary }, !chatInput.trim() && { opacity: 0.5 }]}
             onPress={handleSend}
-            disabled={!chatInput.trim() || isProcessing}
+            disabled={!chatInput.trim()}
           >
             <Feather name="search" size={18} color={theme.textInverse} />
           </Pressable>
@@ -292,6 +214,19 @@ const s = StyleSheet.create({
   bubbleText: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
   processingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   
+  scanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  scanIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  scanLabel: { flex: 1, fontSize: 14, fontWeight: '800' },
+  automationsLink: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingVertical: 6 },
+  automationsLinkText: { fontSize: 12, fontWeight: '800' },
+
   inputRow: {
     flexDirection: 'row',
     padding: 16,

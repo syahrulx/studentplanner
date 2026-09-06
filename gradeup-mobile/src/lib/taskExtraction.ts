@@ -10,6 +10,8 @@ export interface ExtractionError {
   code: ExtractionErrorCode;
   message: string;
   details?: unknown;
+  /** Raw error code from the Edge Function, e.g. 'RATE_LIMIT' | 'SMART_CAPTURE_LIMIT'. */
+  serverCode?: string;
 }
 
 export interface TaskExtractionDTO {
@@ -39,6 +41,13 @@ export interface ExtractTasksArgs {
   semesterStartISO?: string;
   /** ISO 3166-1 alpha-2 country code. Defaults to 'MY' (Malaysian phrasing) when omitted. */
   country?: string;
+  /** Where the text came from — tunes the prompt for OCR noise and chat chrome. */
+  sourceHint?: 'whatsapp_share' | 'screenshot_ocr' | 'paste';
+  /** Tags the request as a Smart Capture so the server applies the daily capture quota. */
+  smartCapture?: boolean;
+  /** Optional original screenshot, sent only when on-device OCR produced too little text. */
+  imageBase64?: string;
+  imageMime?: string;
 }
 
 export interface ExtractTasksResult {
@@ -46,6 +55,21 @@ export interface ExtractTasksResult {
   error?: ExtractionError;
   rawResponseText?: string;
 }
+
+/** Extra instructions appended to the prompt per capture source. */
+const SOURCE_HINTS: Record<NonNullable<ExtractTasksArgs['sourceHint']>, string[]> = {
+  whatsapp_share: [
+    'The text was shared from a chat app. It may include a sender name, a timestamp or quoted replies —',
+    'ignore that chrome and extract only the tasks the message actually announces.',
+  ],
+  screenshot_ocr: [
+    'The text is OCR output from a screenshot, so it is noisy. Ignore interface chrome: sender names,',
+    'timestamps like "10:32 AM", delivery ticks, "Forwarded", reaction counts, and the status bar.',
+    'Rejoin lines that wrapped mid-sentence before reading them. Characters may be misread —',
+    'prefer an obvious reading over a literal one, but never invent a date that is not there.',
+  ],
+  paste: [],
+};
 
 const FALLBACK_EFFORT = 2;
 
@@ -216,7 +240,7 @@ function toDtos(raw: any, args: ExtractTasksArgs): TaskExtractionDTO[] {
  * using the semester start date. This prevents the AI from expanding a single
  * week reference into 7 separate daily dates.
  */
-function resolveWeekReferences(
+export function resolveWeekReferences(
   message: string,
   currentWeek: number,
   semesterStartISO: string | undefined,
@@ -288,6 +312,8 @@ function buildPrompt(args: ExtractTasksArgs): string {
     '  ]',
     '}',
     '',
+    ...(args.sourceHint ? SOURCE_HINTS[args.sourceHint] : []),
+    ...(args.sourceHint && SOURCE_HINTS[args.sourceHint].length ? [''] : []),
     `Today: ${args.todayISO}. Current semester week: ${args.currentWeek}.`,
     'Known course codes for this student:',
     courseList || 'None provided.',
@@ -314,15 +340,29 @@ export async function extractTasksFromMessage(args: ExtractTasksArgs): Promise<E
   );
   const prompt = buildPrompt({ ...args, message: resolvedMessage });
   try {
-    const { data, error } = await invokeAiGenerate<AiGenerateTaskExtractResult>({
+    const { data, error, errorCode } = await invokeAiGenerate<AiGenerateTaskExtractResult>({
       kind: 'task_extract',
       content: prompt,
       today_iso: args.todayISO,
       current_week: args.currentWeek,
       courses: args.courses.map((c) => ({ id: c.id, name: c.name })),
+      ...(args.smartCapture ? { source: 'smart_capture' as const } : {}),
+      ...(args.imageBase64
+        ? { image_base64: args.imageBase64, image_mime: args.imageMime ?? 'image/png' }
+        : {}),
     });
     if (error) {
-      throw new Error(error);
+      // Preserve the server's code (RATE_LIMIT, SMART_CAPTURE_LIMIT, …) so the
+      // caller can show the right recovery UI instead of a generic failure.
+      return {
+        tasks: [],
+        error: {
+          code: 'MODEL_UNAVAILABLE',
+          message: error,
+          details: errorCode ?? undefined,
+          serverCode: errorCode,
+        },
+      };
     }
     rawText = JSON.stringify(data ?? {});
   } catch (e) {

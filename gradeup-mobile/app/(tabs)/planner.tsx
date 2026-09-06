@@ -4,6 +4,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, inte
 import { Swipeable } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
+import SmartCaptureTip from '@/src/components/SmartCaptureTip';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { COLORS, Icons } from '@/src/constants';
 import { TaskType } from '@/src/types';
@@ -245,8 +246,6 @@ export default function Planner() {
   const [activeDate, setActiveDate] = useState<string>(() => getTodayISO());
   const [calendarPreviewDate, setCalendarPreviewDate] = useState<string>(() => getTodayISO());
   const [isCalendarDragging, setIsCalendarDragging] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   /** Parent task ids whose breakdown steps are collapsed out of the list. */
@@ -259,10 +258,6 @@ export default function Planner() {
     });
   }, []);
   const [sortMode, setSortMode] = useState<'nearest' | 'subject'>('nearest');
-  const [messages, setMessages] = useState<{ role: 'ai' | 'user'; text: string }[]>([
-    { role: 'ai', text: '' },
-  ]);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [calendarStripWidth, setCalendarStripWidth] = useState(0);
   const [showShareAllModal, setShowShareAllModal] = useState(false);
   const [shareAllTab, setShareAllTab] = useState<'friend' | 'circle'>('friend');
@@ -870,97 +865,13 @@ export default function Planner() {
     }
   };
 
-  const handleAiSend = () => {
-    if (!chatInput.trim()) return;
-    const userMsg = chatInput.toLowerCase();
-    const originalMsg = chatInput;
-    setMessages((prev) => [...prev, { role: 'user', text: chatInput }]);
-    setChatInput('');
-    setIsProcessing(true);
-
-    const isAddTask =
-      (userMsg.includes('add') && userMsg.includes('task')) ||
-      (userMsg.includes('create') && userMsg.includes('task')) ||
-      userMsg.includes('new task');
-    const isWhatsAppMessage =
-      userMsg.includes('submission') || userMsg.includes('assignment') || userMsg.includes('lab') || userMsg.includes('deadline') || userMsg.includes('hantar');
-
-    setTimeout(() => {
-      void (async () => {
-        try {
-          if (isAddTask || isWhatsAppMessage) {
-            const { tasks: extractedTasks, error } = await extractTasksFromMessageAI({
-              message: originalMsg,
-              courses,
-              todayISO,
-              currentWeek: user.currentWeek,
-              userId: user.id,
-              semesterStartISO: academicCalendar?.startDate,
-              country: user.country,
-            });
-
-            if (extractedTasks.length === 0) {
-              if (error && handleMonthlyLimit(error, language)) {
-                return;
-              }
-              setMessages((prev) => [
-                ...prev,
-                { role: 'ai', text: error ? error.message : T('reOptimizedMsg') },
-              ]);
-              return;
-            }
-
-            for (const task of extractedTasks) {
-              addTask(
-                buildTaskFromExtraction(task, {
-                  fallbackCourseId: courses[0]?.id || 'General',
-                  user,
-                  calendarStart: academicCalendar?.startDate,
-                  sourceMessage: originalMsg,
-                })
-              );
-            }
-
-            const missingDate = extractedTasks.filter((t) => t.needs_date);
-
-            const summary = extractedTasks
-              .map((task) => {
-                const dateLabel = task.needs_date ? 'Date TBA — set manually' : `${task.due_date} ${task.due_time}`;
-                return `${task.title}\nDue: ${dateLabel}\nCourse: ${task.course_id}`;
-              })
-              .join('\n\n');
-
-            const warningNote = missingDate.length > 0
-              ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
-              : '';
-
-            setMessages((prev) => [
-              ...prev,
-              { role: 'ai', text: `${T('taskExtracted')}\n\n${summary}${warningNote}\n\n${T('addedToPlanner')}` },
-            ]);
-          } else {
-            setMessages((prev) => [
-              ...prev,
-              { role: 'ai', text: T('reOptimizedMsg') },
-            ]);
-          }
-        } catch {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'ai', text: T('reOptimizedMsg') },
-          ]);
-        } finally {
-          setIsProcessing(false);
-        }
-      })();
-    }, 1500);
-  };
 
   const activeDateDay = new Date(activeDate + 'T12:00:00').getDate();
   const activeMonthName = new Date(activeDate + 'T12:00:00').toLocaleString('en', { month: 'short' }).toUpperCase();
 
   const renderListHeader = () => (
     <>
+      <SmartCaptureTip />
       {/* Task list header + filter */}
       <View style={s.taskListHeader}>
         <Text style={s.taskListLabel}>
@@ -3525,64 +3436,6 @@ function createPlannerStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
-  },
-
-  // Chat Modal
-  chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  chatSheet: { backgroundColor: theme.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, maxHeight: '80%' },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: theme.primary,
-    padding: 20,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-  },
-  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  chatIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chatTitle: { fontSize: 14, fontWeight: '900', color: theme.textInverse },
-  chatSub: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
-  chatMessages: { maxHeight: 300, backgroundColor: theme.background },
-  chatMessagesContent: { padding: 16, gap: 10 },
-  chatBubbleWrap: { alignItems: 'flex-start' },
-  chatBubbleRight: { alignItems: 'flex-end' },
-  chatBubble: { maxWidth: '85%', padding: 14, borderRadius: 18 },
-  chatBubbleAi: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
-  chatBubbleUser: { backgroundColor: theme.primary, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  chatBubbleText: { fontSize: 13, lineHeight: 19, color: theme.text, fontWeight: '500' },
-  chatInputRow: {
-    flexDirection: 'row',
-    padding: 12,
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    backgroundColor: theme.card,
-  },
-  chatInput: {
-    flex: 1,
-    backgroundColor: theme.background,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.text,
-  },
-  chatSendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: theme.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   // Grid Styles

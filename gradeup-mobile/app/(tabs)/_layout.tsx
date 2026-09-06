@@ -178,8 +178,8 @@ export default function TabLayout() {
                 <ThemeIcon name="sparkles" size={22} color="#fff" />
               </View>
               <View style={styles.addMenuTextContainer}>
-                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('aiPlanner')}</Text>
-                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('pasteMessageExtract')}</Text>
+                <Text style={[styles.addMenuTitle, { color: theme.text }]}>{T('smartCapture')}</Text>
+                <Text style={[styles.addMenuSub, { color: theme.textSecondary }]}>{T('smartCaptureSub')}</Text>
               </View>
             </Pressable>
 

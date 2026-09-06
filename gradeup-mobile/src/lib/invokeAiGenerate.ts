@@ -28,7 +28,9 @@ export interface AiGenerateRequest {
   question?: string;
   /** RAG: the subject ID to scope embedding search. */
   subject_id?: string;
-  /** Base64-encoded image for vision analysis in chat. */
+  /** Tags the request as a Smart Capture (share sheet / Back Tap screenshot) for quota + telemetry. */
+  source?: 'smart_capture';
+  /** Base64-encoded image for vision analysis in chat, or as an OCR fallback for `task_extract`. */
   image_base64?: string;
   /** MIME type of `image_base64` (e.g. 'image/png'). Server defaults to image/jpeg when absent. */
   image_mime?: string;
@@ -114,7 +116,7 @@ export type AiGenerateHandwritingResult = {
 
 export async function invokeAiGenerate<T = unknown>(
   body: AiGenerateRequest,
-): Promise<{ data: T | null; error?: string }> {
+): Promise<{ data: T | null; error?: string; errorCode?: string }> {
   const hasSession = async (): Promise<boolean> => {
     const { data: sessionData } = await supabase.auth.getSession();
     return !!sessionData.session?.access_token;
@@ -187,7 +189,7 @@ export async function invokeAiGenerate<T = unknown>(
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
           continue;
         }
-        return { data: null, error: edgeMessage };
+        return { data: null, error: edgeMessage, errorCode: edgeCode || undefined };
       }
 
       return { data: data as T };

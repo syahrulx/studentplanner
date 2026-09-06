@@ -313,6 +313,24 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/smart-automations' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0891b2') }]}>
+              <Feather name="zap" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>
+                {T('smartAutomations')}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                {T('smartAutomationsSub')}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

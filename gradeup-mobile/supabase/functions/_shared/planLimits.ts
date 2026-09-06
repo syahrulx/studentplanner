@@ -48,6 +48,17 @@ export const VISION_LIMITS: Record<Plan, { count: number; windowDays: number } |
   pro: null, // unlimited
 };
 
+/**
+ * Smart Capture (share-to-app / Back Tap screenshot) extractions per UTC day.
+ * `null` means unlimited. The mobile client mirrors this in
+ * `src/lib/smartCapture/smartCaptureLimits.ts`.
+ */
+export const SMART_CAPTURE_DAILY_LIMITS: Record<Plan, number | null> = {
+  free: 2,
+  plus: null,
+  pro: null,
+};
+
 /** Chat context budget in characters sent to the model per turn. */
 export const CHAT_CONTEXT_CHAR_LIMITS: Record<Plan, number> = {
   free: 60_000,

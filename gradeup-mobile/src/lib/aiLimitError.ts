@@ -49,6 +49,21 @@ export function isMonthlyLimitError(err: ErrorLike): boolean {
   return !!msg && MONTHLY_LIMIT_REGEX.test(msg);
 }
 
+export const SMART_CAPTURE_LIMIT_CODE = 'SMART_CAPTURE_LIMIT';
+
+const SMART_CAPTURE_LIMIT_REGEX = /daily smart capture limit/i;
+
+/**
+ * Returns true when the given error is the exhausted daily Smart Capture quota
+ * (Free tier). Unlike the monthly token limit this is handled inside the Smart
+ * Capture sheet as a paywall card, not as a system Alert.
+ */
+export function isSmartCaptureLimitError(err: ErrorLike): boolean {
+  if (errorCode(err) === SMART_CAPTURE_LIMIT_CODE) return true;
+  const msg = errorString(err);
+  return !!msg && SMART_CAPTURE_LIMIT_REGEX.test(msg);
+}
+
 /**
  * When the monthly budget refills.
  *
