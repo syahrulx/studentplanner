@@ -100,13 +100,29 @@ export default function SubjectChat() {
   const headerSubColor = useMemo(() => onPrimaryMuted(theme.textInverse, theme.primary), [theme.textInverse, theme.primary]);
   const headerIconBg = useMemo(() => onPrimaryChipBg(theme.textInverse), [theme.textInverse]);
 
+  /**
+   * `Course.id` is the course code the student typed (CA266), and `name` is the
+   * free-text label beside it. The Study tab already treats the code as the
+   * heading and the name as the subtitle, so the header follows that: a code is
+   * always recognisable, while the name is often a placeholder.
+   */
+  const subjectLabel = useMemo(() => {
+    const course = courses.find((c) => c.id === subjectId);
+    return subjectId.trim() || course?.name?.trim() || '';
+  }, [courses, subjectId]);
+
+  /**
+   * The model gets both. The code anchors the answer to the right course, and
+   * the name carries the academic domain when the student wrote a real one.
+   */
   const subjectName = useMemo(() => {
     const course = courses.find((c) => c.id === subjectId);
     const name = course?.name?.trim();
-    return name || subjectId;
-  }, [courses, subjectId]);
+    if (!name || name.toLowerCase() === subjectId.trim().toLowerCase()) return subjectLabel;
+    return `${subjectLabel} (${name})`;
+  }, [courses, subjectId, subjectLabel]);
 
-  const greeting = useMemo(() => fmt(T('tutorGreeting'), { subject: subjectName }), [T, subjectName]);
+  const greeting = useMemo(() => fmt(T('tutorGreeting'), { subject: subjectLabel }), [T, subjectLabel]);
   const greetingMessage = useCallback((): Message => ({ role: 'ai', text: greeting, isSystem: true }), [greeting]);
 
   const [chatInput, setChatInput] = useState('');
@@ -627,7 +643,7 @@ export default function SubjectChat() {
               <Text style={{ color: theme.textInverse, fontSize: 12, fontWeight: '700' }}>{T('tutorRecent')}</Text>
             </Pressable>
             <View style={{ flexShrink: 1 }}>
-              <Text style={[s.headerTitle, { color: theme.textInverse }]} numberOfLines={1}>{fmt(T('tutorHeaderTitle'), { subject: subjectName })}</Text>
+              <Text style={[s.headerTitle, { color: theme.textInverse }]} numberOfLines={1}>{fmt(T('tutorHeaderTitle'), { subject: subjectLabel })}</Text>
               <Text style={[s.headerSub, { color: headerSubColor }]}>{headerSub}</Text>
             </View>
           </View>
