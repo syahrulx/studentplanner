@@ -213,7 +213,7 @@ export default function SubjectChat() {
     const post = (text: string) => {
       if (mountedRef.current) setMessages((prev) => [...prev, { role: 'ai', text, isSystem: true }]);
     };
-    post(fmt(T('tutorPreparingPdfs'), { n: targets.length }));
+    post(targets.length === 1 ? T('tutorPreparingPdfOne') : fmt(T('tutorPreparingPdfs'), { n: targets.length }));
 
     (async () => {
       let ready = 0;
@@ -237,8 +237,8 @@ export default function SubjectChat() {
           failed += 1;
         }
       }
-      if (ready > 0) post(fmt(T('tutorPdfsReady'), { n: ready }));
-      if (failed > 0) post(fmt(T('tutorPdfsFailed'), { n: failed }));
+      if (ready > 0) post(ready === 1 ? T('tutorPdfReadyOne') : fmt(T('tutorPdfsReady'), { n: ready }));
+      if (failed > 0) post(failed === 1 ? T('tutorPdfFailedOne') : fmt(T('tutorPdfsFailed'), { n: failed }));
     })();
   }, [subjectId, userId, unpreparedPdfs, handleSaveNote, T]);
 
