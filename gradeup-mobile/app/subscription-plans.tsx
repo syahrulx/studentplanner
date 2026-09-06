@@ -27,6 +27,12 @@ import {
   type PlanOfferings,
   type FreeTrialOffer,
 } from '@/src/lib/purchases';
+import {
+  getTrialState,
+  trialBadgeLabel,
+  trialRenewalNotice,
+} from '@/src/lib/subscriptionStatus';
+import { resetTrialOffers } from '@/src/lib/upgradePrompt';
 import type { SubscriptionPlan } from '@/src/types';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { useTheme } from '@/hooks/useTheme';
@@ -61,7 +67,9 @@ function openRencanaWeb(path: string) {
 
 export default function SubscriptionPlansScreen() {
   const theme = useTheme();
-  const { user, updateProfile } = useApp();
+  const { user, updateProfile, refreshRemoteData } = useApp();
+  /** Non-null while a store free trial is running on the user's current plan. */
+  const activeTrial = getTrialState(user);
   const { userId } = useCommunity();
   const [staff, setStaff] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
@@ -266,6 +274,8 @@ export default function SubscriptionPlansScreen() {
     setPurchasing(true);
     try {
       const newPlan = await purchasePackage(pkg);
+      // The trial has now been consumed — gates must stop advertising it.
+      resetTrialOffers();
       // RevenueCat updates the client entitlement immediately. Server access is
       // updated only by the authenticated webhook; the mobile client must never
       // self-assert that a purchase was paid.
@@ -274,7 +284,19 @@ export default function SubscriptionPlansScreen() {
         selectedTrial
           ? `Your ${selectedTrial.durationText} ${subscriptionPlanLabel(newPlan)} trial is active. After that, it renews at ${selectedPrice} unless canceled.`
           : `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
-        [{ text: 'Awesome', onPress: () => router.back() }],
+        [
+          {
+            text: 'Awesome',
+            onPress: () => {
+              // Pull the webhook-written billing row so the trial countdown is
+              // right on the screen we return to. Dismissing the alert gives the
+              // webhook the moment it needs to land; if it hasn't, the next
+              // foreground refresh picks it up.
+              void refreshRemoteData().catch(() => {});
+              router.back();
+            },
+          },
+        ],
       );
     } catch (e: any) {
       // User cancelled the purchase — not an error
@@ -334,11 +356,17 @@ export default function SubscriptionPlansScreen() {
     if (staff) {
       return 'Staff accounts can switch plans directly for testing.';
     }
+    // Someone already mid-trial needs their own charge date, not an offer they
+    // have already taken. This beats `selectedTrial`, which is null for them
+    // anyway now that the store no longer counts them as eligible.
+    if (activeTrial && !dirty) {
+      return trialRenewalNotice(activeTrial, priceForTier(activeTrial.plan));
+    }
     if (selectedTrial) {
       return `${selectedTrial.durationText} free, then ${selectedPrice}. Auto-renews monthly until canceled.`;
     }
     return 'Subscriptions auto-renew monthly. Cancel anytime from your device settings.';
-  }, [selectedPrice, selectedTrial, staff]);
+  }, [activeTrial, dirty, priceForTier, selectedPrice, selectedTrial, staff]);
 
   const purchaseTerms = useMemo(() => {
     if (!dirty || selected === 'free' || staff) return null;
@@ -416,7 +444,9 @@ export default function SubscriptionPlansScreen() {
 
                     {isCurrent ? (
                       <View style={[styles.currentBadge, { backgroundColor: theme.primary + '20' }]}>
-                        <Text style={[styles.currentBadgeText, { color: theme.primary }]}>Current Plan</Text>
+                        <Text style={[styles.currentBadgeText, { color: theme.primary }]}>
+                          {activeTrial && activeTrial.plan === plan ? trialBadgeLabel(activeTrial) : 'Current Plan'}
+                        </Text>
                       </View>
                     ) : null}
 

@@ -27,6 +27,7 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { isTaskPastDueNow } from '@/src/utils/date';
 import { termStatus } from '@/src/lib/calendarTimeline';
+import { getTrialState, planRowSubtitle, trialBadgeLabel } from '@/src/lib/subscriptionStatus';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -71,6 +72,9 @@ export default function Settings() {
   const themedIconBg = (color: string) => (isMonoTheme ? monoIconBg : color);
   const themedIconFg = (color: string) => (isMonoTheme ? monoIconFg : color);
   const T = useTranslations(language);
+
+  /** Non-null only inside a store free trial; drives the countdown on the plan row. */
+  const trial = getTrialState(user);
 
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
@@ -257,12 +261,8 @@ export default function Settings() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuLabel, { color: theme.text, fontWeight: '700' }]}>Rencana Premium</Text>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                {user.subscriptionPlan === 'pro'
-                  ? 'Active: Pro tier with highest AI limits.'
-                  : user.subscriptionPlan === 'plus'
-                    ? 'Active: Plus tier with daily study snaps.'
-                    : 'Manage plan, unlock AI limits & custom themes.'}
+              <Text style={{ fontSize: 12, color: trial ? theme.primary : theme.textSecondary, marginTop: 2 }}>
+                {planRowSubtitle(user)}
               </Text>
             </View>
             <View
@@ -292,7 +292,7 @@ export default function Settings() {
                   textTransform: 'uppercase',
                 }}
               >
-                {user.subscriptionPlan || 'FREE'}
+                {trial ? trialBadgeLabel(trial) : user.subscriptionPlan || 'FREE'}
               </Text>
             </View>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />

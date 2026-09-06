@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { useApp } from '@/src/context/AppContext';
 import { CatLottie } from '@/components/CatLottie';
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
@@ -82,6 +83,7 @@ const THEME_PREVIEWS: ThemePreview[] = [
 export default function InAppThemesScreen() {
   const theme = useTheme();
   const themePack = useThemePack();
+  const { promptUpgrade } = useUpgradePrompt();
   const { user, setThemePack, spiderBlueAccents, setSpiderBlueAccents, themePreviewExpiry, setThemePreviewExpiry } = useApp();
 
   // `hasUsedThemeTrial`/`setHasUsedThemeTrial` were destructured from useApp()
@@ -118,14 +120,13 @@ export default function InAppThemesScreen() {
     if (isFreePlan) {
 
       if (hasUsedThemeTrial && !activeTrial) {
-        Alert.alert(
-          'Trial Expired',
-          'You have already used your 1-week free premium theme trial. Please upgrade to Plus or Pro to apply themes.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
-          ]
-        );
+        promptUpgrade({
+          plan: 'plus',
+          feature: 'Premium themes',
+          plural: true,
+          detail: "You've already used your 1-week free premium theme preview.",
+          fallbackTitle: 'Theme preview used',
+        });
         return;
       }
       
@@ -153,14 +154,13 @@ export default function InAppThemesScreen() {
         ]
       );
     } else if (!canApplyThemePacks) {
-      Alert.alert(
-        'Plus or Pro required',
-        'In-app theme packs are available on Plus and Pro. Upgrade to apply Cat, Mono, Spider, or Aurora Purple across the app.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
-        ]
-      );
+      promptUpgrade({
+        plan: 'plus',
+        feature: 'In-app theme packs',
+        plural: true,
+        detail: 'Apply Cat, Mono, Spider, or Aurora Purple across the app.',
+        fallbackTitle: 'Plus or Pro required',
+      });
     } else {
       setThemePack(pack);
       setThemePreviewExpiry(null);
@@ -496,14 +496,13 @@ export default function InAppThemesScreen() {
                   <Pressable
                     onPress={() => {
                       if (!canApplyThemePacks) {
-                        Alert.alert(
-                          'Plus or Pro required',
-                          'Spider accent options are available when you can apply the Spider theme (Plus or Pro).',
-                          [
-                            { text: 'OK', style: 'cancel' },
-                            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
-                          ]
-                        );
+                        promptUpgrade({
+                          plan: 'plus',
+                          feature: 'Spider accent options',
+                          plural: true,
+                          detail: 'They unlock together with the Spider theme.',
+                          fallbackTitle: 'Plus or Pro required',
+                        });
                         return;
                       }
                       setSpiderBlueAccents(true);
@@ -522,14 +521,13 @@ export default function InAppThemesScreen() {
                   <Pressable
                     onPress={() => {
                       if (!canApplyThemePacks) {
-                        Alert.alert(
-                          'Plus or Pro required',
-                          'Spider accent options are available when you can apply the Spider theme (Plus or Pro).',
-                          [
-                            { text: 'OK', style: 'cancel' },
-                            { text: 'View plans', onPress: () => router.push('/subscription-plans' as any) },
-                          ]
-                        );
+                        promptUpgrade({
+                          plan: 'plus',
+                          feature: 'Spider accent options',
+                          plural: true,
+                          detail: 'They unlock together with the Spider theme.',
+                          fallbackTitle: 'Plus or Pro required',
+                        });
                         return;
                       }
                       setSpiderBlueAccents(false);

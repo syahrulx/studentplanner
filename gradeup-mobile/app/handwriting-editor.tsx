@@ -72,6 +72,7 @@ import { getNoteAttachmentUrl, uploadNoteAttachment } from '@/src/lib/noteStorag
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 import { supabase } from '@/src/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { invokeAiGenerate, type AiGenerateChatResult, type AiGenerateHandwritingResult } from '@/src/lib/invokeAiGenerate';
 
 const COLORS = ['#111827', '#2563eb', '#dc2626', '#16a34a', '#7c3aed', '#f59e0b'];
@@ -345,6 +346,7 @@ export default function HandwritingEditor() {
   const { notes, user, handleSaveNote } = useApp();
   const navigation = useNavigation();
   const theme = useTheme();
+  const { promptUpgrade, upgradeLabel, openPaywall } = useUpgradePrompt();
   const insets = useSafeAreaInsets();
   const savedInkColorsKey = `${SAVED_INK_COLORS_KEY}:${user?.id ?? 'local'}`;
   const autoReturnEraserKey = `${AUTO_RETURN_ERASER_KEY}:${user?.id ?? 'local'}`;
@@ -1050,10 +1052,12 @@ export default function HandwritingEditor() {
 
   const insertBlankPage = (template: HandwritingTemplate, requiresPro?: boolean) => {
     if (requiresPro && !pro) {
-      Alert.alert('Pro template', 'Cornell and dark paper templates are available with Rencana Pro.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'View Pro', onPress: () => router.push('/subscription-plans' as never) },
-      ]);
+      promptUpgrade({
+        plan: 'pro',
+        feature: 'Cornell and dark paper templates',
+        plural: true,
+        fallbackTitle: 'Pro template',
+      });
       return;
     }
     const insertionIndex = insertPosition === 'before' ? activeIndex : activeIndex + 1;
@@ -1124,10 +1128,12 @@ export default function HandwritingEditor() {
 
   const applyTemplate = (template: HandwritingTemplate, requiresPro?: boolean) => {
     if (requiresPro && !pro) {
-      Alert.alert('Pro template', 'Cornell and dark paper templates are available with Rencana Pro.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'View Pro', onPress: () => router.push('/subscription-plans' as never) },
-      ]);
+      promptUpgrade({
+        plan: 'pro',
+        feature: 'Cornell and dark paper templates',
+        plural: true,
+        fallbackTitle: 'Pro template',
+      });
       return;
     }
     setPages((current) => {
@@ -1429,7 +1435,15 @@ export default function HandwritingEditor() {
           <Feather name="info" size={20} color={theme.textInverse} />
         </Pressable>
         <Pressable
-          onPress={() => canEdit ? setShowMoreMenu(true) : Alert.alert('View only', 'Handwriting editing is available with Plus or Pro.', [{ text: 'Not now' }, { text: 'View plans', onPress: () => router.push('/subscription-plans' as never) }])}
+          onPress={() =>
+            canEdit
+              ? setShowMoreMenu(true)
+              : promptUpgrade({
+                  plan: 'plus',
+                  feature: 'Handwriting editing',
+                  fallbackTitle: 'View only',
+                })
+          }
           style={styles.headerBtn}
         >
           <Feather name="more-vertical" size={21} color={theme.textInverse} />
@@ -1560,12 +1574,12 @@ export default function HandwritingEditor() {
 
       {!canEdit ? (
         <Pressable
-          onPress={() => router.push('/subscription-plans' as never)}
+          onPress={openPaywall}
           style={[styles.viewOnlyBanner, { backgroundColor: `${theme.primary}12`, borderBottomColor: theme.border }]}
         >
           <Feather name="eye" size={15} color={theme.primary} />
           <Text style={[styles.viewOnlyText, { color: theme.text }]}>Free plan · PDF and notes are view only</Text>
-          <Text style={[styles.viewOnlyUpgrade, { color: theme.primary }]}>Upgrade to edit</Text>
+          <Text style={[styles.viewOnlyUpgrade, { color: theme.primary }]}>{upgradeLabel('plus')}</Text>
         </Pressable>
       ) : null}
 

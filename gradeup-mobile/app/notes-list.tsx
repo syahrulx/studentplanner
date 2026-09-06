@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import type { ThemePalette } from '@/constants/Themes';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
@@ -207,6 +208,7 @@ export default function NotesList() {
   const subjectId =
     typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
   const { notes, handleSaveNote, deleteNote, language, user } = useApp();
+  const { promptUpgrade } = useUpgradePrompt();
   const T = useTranslations(language);
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -258,14 +260,12 @@ export default function NotesList() {
 
   const openNewHandwritingNote = () => {
     if (!isAtLeastPlus(user.subscriptionPlan)) {
-      Alert.alert(
-        'Plus feature',
-        'Handwritten notebooks and PDF annotation are available with Rencana Plus or Pro.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View plans', onPress: () => router.push('/subscription-plans' as never) },
-        ],
-      );
+      promptUpgrade({
+        plan: 'plus',
+        feature: 'Handwritten notebooks and PDF annotation',
+        plural: true,
+        fallbackTitle: 'Plus feature',
+      });
       return;
     }
     const noteId = `n${Date.now()}`;
@@ -708,14 +708,12 @@ export default function NotesList() {
         ]}
         onPress={() => {
           if (!isAtLeastPlus(user.subscriptionPlan)) {
-            Alert.alert(
-              'Plus Feature',
-              'AI Subject Tutor is available on Plus and Pro plans. It reads all your notes for this subject and answers your questions.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
-              ]
-            );
+            promptUpgrade({
+              plan: 'plus',
+              feature: 'AI Subject Tutor',
+              detail: 'It reads all your notes for this subject and answers your questions.',
+              fallbackTitle: 'Plus feature',
+            });
             return;
           }
           router.push({ pathname: '/subject-chat' as any, params: { subjectId } });

@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import {
   CALENDAR_IMPORT_MAX_EVENTS,
   calendarEventToTask,
@@ -62,6 +63,7 @@ function parseYMD(s: string): Date | null {
 
 export default function ImportCalendarScreen() {
   const theme = useTheme();
+  const { upgradeLabel, tagline, openPaywall } = useUpgradePrompt();
   const insets = useSafeAreaInsets();
   const { language, addTask, academicCalendar, user } = useApp();
   const T = useTranslations(language);
@@ -256,13 +258,14 @@ export default function ImportCalendarScreen() {
           </Text>
           <Text style={[styles.bodyText, { color: theme.textSecondary, textAlign: 'center' }]}>
             {(T as any)('importCalendarUpgradeBody') || 'Importing tasks directly from your device calendar is exclusively available for Plus and Pro users.'}
+            {tagline('plus') ? ` ${tagline('plus')}` : ''}
           </Text>
           <Pressable
             style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 24 }]}
-            onPress={() => router.push('/subscription-plans' as never)}
+            onPress={openPaywall}
           >
             <Text style={[styles.primaryBtnText, { color: theme.textInverse }]}>
-              {T('aiMonthlyLimitUpgrade') || 'Upgrade'}
+              {upgradeLabel('plus')}
             </Text>
           </Pressable>
         </ScrollView>

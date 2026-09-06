@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { readUriAsBase64 } from '@/src/lib/readUriAsBase64';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
+import { localizedTrialCta, localizedTrialTagline } from '@/src/lib/upgradePrompt';
 import { useTheme } from '@/hooks/useTheme';
 import { invokeAiGenerate, AiGenerateRequest, AiGenerateChatResult, AiGenerateChatCitation } from '@/src/lib/invokeAiGenerate';
 import { canStreamChat, streamAiChat } from '@/src/lib/streamAiChat';
@@ -312,12 +313,22 @@ export default function SubjectChat() {
           Alert.alert(T('tutorLimitReachedTitle'), fmt(T('tutorLimitReachedPro'), { max: maxSessions }));
         } else {
           const planName = user.subscriptionPlan === 'plus' ? 'Plus' : 'Free';
+          // Free users are being sold Plus; Plus users are being sold Pro.
+          const upsellPlan = user.subscriptionPlan === 'plus' ? 'pro' : 'plus';
           Alert.alert(
             T('tutorLimitReachedTitle'),
-            fmt(T('tutorLimitReachedPlan'), { max: maxSessions, plan: planName }),
+            [
+              fmt(T('tutorLimitReachedPlan'), { max: maxSessions, plan: planName }),
+              localizedTrialTagline(language, upsellPlan),
+            ]
+              .filter(Boolean)
+              .join(' '),
             [
               { text: T('cancel'), style: 'cancel' },
-              { text: T('tutorUpgrade'), onPress: () => router.push('/subscription-plans' as any) },
+              {
+                text: localizedTrialCta(language, upsellPlan, T('tutorUpgrade')),
+                onPress: () => router.push('/subscription-plans' as any),
+              },
             ],
           );
         }
@@ -597,10 +608,15 @@ export default function SubjectChat() {
               if (user.subscriptionPlan !== 'pro') {
                 Alert.alert(
                   T('tutorProFeatureTitle'),
-                  T('tutorProFeatureBody'),
+                  [T('tutorProFeatureBody'), localizedTrialTagline(language, 'pro')]
+                    .filter(Boolean)
+                    .join(' '),
                   [
                     { text: T('cancel'), style: 'cancel' },
-                    { text: T('tutorUpgradeToPro'), onPress: () => router.push('/subscription-plans' as any) },
+                    {
+                      text: localizedTrialCta(language, 'pro', T('tutorUpgradeToPro')),
+                      onPress: () => router.push('/subscription-plans' as any),
+                    },
                   ],
                 );
               } else {

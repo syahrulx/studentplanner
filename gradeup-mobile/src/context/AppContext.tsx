@@ -105,6 +105,7 @@ import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 import { initPurchases, logOutPurchases, onCustomerInfoUpdate } from '../lib/purchases';
+import { primeTrialOffers, resetTrialOffers } from '../lib/upgradePrompt';
 import * as offlineSync from '../lib/offlineSync';
 import type { OfflineSyncStatus } from '../lib/offlineSync';
 
@@ -1071,6 +1072,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
                 subscriptionPlan: profile.subscriptionPlan ?? 'free',
+                subscriptionStatus: profile.subscriptionStatus,
+                subscriptionPeriodType: profile.subscriptionPeriodType,
+                subscriptionExpiresAt: profile.subscriptionExpiresAt,
                 country: profile.country ?? 'MY',
               };
             }
@@ -1207,6 +1211,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // ── Initialize RevenueCat; the shared server plan controls access ──
         try {
           await initPurchases(uid);
+          // Warm trial eligibility so the first feature gate the user hits can
+          // already say "try free" rather than a bare "upgrade".
+          void primeTrialOffers();
           // RevenueCat's SDK may expose sandbox or cached store state. It must
           // never override the server because the user may instead be entitled
           // through Curlec/Razorpay or an admin grant. A store update simply
@@ -1216,7 +1223,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (remoteUserIdRef.current !== uid) return; // stale callback from a previous session
             const { data, error } = await supabase
               .from('profiles')
-              .select('subscription_plan')
+              .select('subscription_plan, subscription_status, subscription_period_type, subscription_expires_at')
               .eq('id', uid)
               .maybeSingle();
             if (error || remoteUserIdRef.current !== uid) return;
@@ -1225,7 +1232,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               : data?.subscription_plan === 'plus'
                 ? 'plus'
                 : 'free';
-            setUserState((prev) => (prev.subscriptionPlan === plan ? prev : { ...prev, subscriptionPlan: plan }));
+            // The billing fields travel with the plan: a trial that starts, is
+            // cancelled, or converts changes these without changing the tier, so
+            // refreshing only the plan would leave a stale countdown on screen.
+            const status = data?.subscription_status ? String(data.subscription_status) : undefined;
+            const periodType = data?.subscription_period_type ? String(data.subscription_period_type) : undefined;
+            const expiresAt = data?.subscription_expires_at ? String(data.subscription_expires_at) : undefined;
+            setUserState((prev) =>
+              prev.subscriptionPlan === plan &&
+              prev.subscriptionStatus === status &&
+              prev.subscriptionPeriodType === periodType &&
+              prev.subscriptionExpiresAt === expiresAt
+                ? prev
+                : {
+                    ...prev,
+                    subscriptionPlan: plan,
+                    subscriptionStatus: status,
+                    subscriptionPeriodType: periodType,
+                    subscriptionExpiresAt: expiresAt,
+                  },
+            );
           });
         } catch (e) {
           if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
@@ -1328,6 +1354,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           revenueCatUnsubscribeRef.current();
           revenueCatUnsubscribeRef.current = () => {};
           logOutPurchases().catch(() => {});
+          // Trial eligibility belongs to the store account that just signed out.
+          resetTrialOffers();
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }

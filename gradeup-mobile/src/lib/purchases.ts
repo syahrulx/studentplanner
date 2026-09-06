@@ -189,6 +189,8 @@ export interface PlanOfferings {
   raw: PurchasesOfferings | null;
 }
 
+export type FreeTrialUnit = 'day' | 'week' | 'month' | 'year';
+
 export interface FreeTrialOffer {
   /** Store-provided ISO 8601 duration, such as P1W or P7D. */
   durationISO8601: string;
@@ -196,6 +198,9 @@ export interface FreeTrialOffer {
   durationText: string;
   /** Title-case duration for CTA copy, such as "7-Day". */
   ctaDurationText: string;
+  /** Count paired with `durationUnit`, so translated copy can build its own phrase. */
+  durationValue: number;
+  durationUnit: FreeTrialUnit;
 }
 
 function freeTrialDuration(durationISO8601: string): FreeTrialOffer | null {
@@ -208,15 +213,26 @@ function freeTrialDuration(durationISO8601: string): FreeTrialOffer | null {
 
   const unit = match[2];
   if (unit === 'W' && value === 1) {
-    return { durationISO8601: normalized, durationText: '7 days', ctaDurationText: '7-Day' };
+    // Stores describe a one-week trial as P1W, but every paywall in the wild
+    // says "7 days" — and so does the store's own confirmation sheet.
+    return {
+      durationISO8601: normalized,
+      durationText: '7 days',
+      ctaDurationText: '7-Day',
+      durationValue: 7,
+      durationUnit: 'day',
+    };
   }
 
-  const unitName = unit === 'D' ? 'day' : unit === 'W' ? 'week' : unit === 'M' ? 'month' : 'year';
+  const unitName: FreeTrialUnit =
+    unit === 'D' ? 'day' : unit === 'W' ? 'week' : unit === 'M' ? 'month' : 'year';
   const titleUnit = unitName.charAt(0).toUpperCase() + unitName.slice(1);
   return {
     durationISO8601: normalized,
     durationText: `${value} ${unitName}${value === 1 ? '' : 's'}`,
     ctaDurationText: `${value}-${titleUnit}`,
+    durationValue: value,
+    durationUnit: unitName,
   };
 }
 

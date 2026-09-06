@@ -45,6 +45,7 @@ import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
 import { SpiderHeaderWebOverlay } from '@/components/SpiderHeaderWebOverlay';
 import { PurpleAuroraOverlay } from '@/components/PurpleAuroraOverlay';
+import { TrialStatusBanner } from '@/components/TrialStatusBanner';
 import { RecommendedTodayCard } from '@/src/components/RecommendedTodayCard';
 import { HomeHeroCarousel } from '@/src/components/HomeHeroCarousel';
 import type { RecommendationFeedback } from '@/src/lib/recommendationDb';
@@ -2185,6 +2186,9 @@ export default function Dashboard() {
         {isSpiderTheme ? <SpiderLottie style={catStyles.spiderBelowPeakLottie} /> : null}
         </View>
       </View>
+
+      {/* Trial countdown — renders itself away when the user isn't on a trial. */}
+      <TrialStatusBanner />
 
       {/* Hero: recommendation + today's focus swipe as one card. On tablet the
           two-column dashboard already has room for both, so they stay stacked. */}

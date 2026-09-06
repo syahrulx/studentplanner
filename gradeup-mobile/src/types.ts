@@ -180,6 +180,12 @@ export interface UserProfile {
   timetable?: TimetableEntry[];
   /** Subscription tier; default free when missing from DB */
   subscriptionPlan?: SubscriptionPlan;
+  /** Server-owned billing status: trial | active | cancelled | billing_issue | … */
+  subscriptionStatus?: string;
+  /** Server-owned store period type: TRIAL | INTRO | NORMAL | PROMOTIONAL | PREPAID */
+  subscriptionPeriodType?: string;
+  /** ISO end of the current billing period — the trial's charge date while on TRIAL */
+  subscriptionExpiresAt?: string;
   /** True if the user has ever claimed a premium theme trial */
   hasUsedThemeTrial?: boolean;
 }

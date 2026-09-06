@@ -10,6 +10,7 @@
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
 import { t } from '@/src/i18n';
+import { localizedTrialCta, localizedTrialTagline } from '@/src/lib/upgradePrompt';
 import type { AppLanguage } from '@/src/storage';
 
 export const MONTHLY_TOKEN_LIMIT_CODE = 'MONTHLY_TOKEN_LIMIT';
@@ -61,9 +62,15 @@ export function showMonthlyLimitAlert(language: AppLanguage = 'en'): void {
   if (alertShowing) return;
   alertShowing = true;
 
+  // Only Free users can be sold a Plus trial, and the store already knows that:
+  // an existing subscriber is not eligible, so the tagline comes back empty and
+  // the dialog keeps its original wording. That saves threading the plan through
+  // all eight call sites just to ask a question the store answers better.
+  const tagline = localizedTrialTagline(language, 'plus');
+
   Alert.alert(
     t(language, 'aiMonthlyLimitTitle'),
-    t(language, 'aiMonthlyLimitMessage'),
+    [t(language, 'aiMonthlyLimitMessage'), tagline].filter(Boolean).join(' '),
     [
       {
         text: t(language, 'aiMonthlyLimitLater'),
@@ -73,7 +80,7 @@ export function showMonthlyLimitAlert(language: AppLanguage = 'en'): void {
         },
       },
       {
-        text: t(language, 'aiMonthlyLimitUpgrade'),
+        text: localizedTrialCta(language, 'plus', t(language, 'aiMonthlyLimitUpgrade')),
         style: 'default',
         onPress: () => {
           alertShowing = false;

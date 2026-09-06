@@ -14,6 +14,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
@@ -29,6 +30,7 @@ export default function NotificationSettings() {
   const { language, tasks, timetable, user, academicCalendar } = useApp();
   const theme = useTheme();
   const themePack = useThemePack();
+  const { promptUpgrade } = useUpgradePrompt();
   const isMonoTheme = themePack === 'mono';
   const switchTrackOff = isMonoTheme ? '#262626' : theme.border;
   const switchTrackOn = isMonoTheme ? '#525252' : theme.primary;
@@ -70,7 +72,12 @@ export default function NotificationSettings() {
 
   const handleChooseReminderTime = () => {
     if (!isPremium) {
-      router.push('/subscription-plans' as any);
+      // Was a silent jump to the paywall; say what it unlocks before going there.
+      promptUpgrade({
+        plan: 'plus',
+        feature: 'Choosing your own reminder time',
+        fallbackTitle: 'Plus feature',
+      });
       return;
     }
     setShowReminderTimePicker(true);
