@@ -15,6 +15,8 @@ import { isMonthlyLimitError, showMonthlyLimitAlert } from '@/src/lib/aiLimitErr
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { getChatSessions, getChatMessages, createChatSession, createChatMessage, updateChatSessionTimestamp, deleteChatSession } from '@/src/lib/chatDb';
 import { ensureSubjectEmbeddings } from '@/src/lib/subjectEmbeddings';
+import { noteHasPdfAttachment } from '@/src/lib/studyApi';
+import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import type { ChatSession, Note } from '@/src/types';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
 
@@ -78,7 +80,7 @@ export default function SubjectChat() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
   const subjectId: string = typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
 
-  const { language, notes, user, courses } = useApp();
+  const { language, notes, user, courses, handleSaveNote } = useApp();
   const userId = user.id ?? '';
   const theme = useTheme();
   const T = useTranslations(language);
@@ -122,7 +124,25 @@ export default function SubjectChat() {
     return `${subjectLabel} (${name})`;
   }, [courses, subjectId, subjectLabel]);
 
-  const greeting = useMemo(() => fmt(T('tutorGreeting'), { subject: subjectLabel }), [T, subjectLabel]);
+  /**
+   * PDF notes whose text has not been extracted yet. The tutor cannot read
+   * these, and until now it skipped them silently while the greeting claimed
+   * to have read "all your notes and PDFs". They are prepared on open below.
+   */
+  const unpreparedPdfs = useMemo(
+    () => notes.filter((n) =>
+      n.subjectId === subjectId &&
+      noteHasPdfAttachment(n) &&
+      !(n.extractedText ?? '').trim() &&
+      !n.extractionError,
+    ),
+    [notes, subjectId],
+  );
+
+  const greeting = useMemo(
+    () => fmt(T(unpreparedPdfs.length > 0 ? 'tutorGreetingPreparing' : 'tutorGreeting'), { subject: subjectLabel }),
+    [T, subjectLabel, unpreparedPdfs.length],
+  );
   const greetingMessage = useCallback((): Message => ({ role: 'ai', text: greeting, isSystem: true }), [greeting]);
 
   const [chatInput, setChatInput] = useState('');
@@ -174,6 +194,53 @@ export default function SubjectChat() {
     if (!subjectId || !userId) return;
     void ensureSubjectEmbeddings(subjectId, subjectNotes);
   }, [subjectId, userId, subjectNotes]);
+
+  // ─── Prepare PDFs the tutor cannot read yet ──────────────────────────────
+  // Flashcards and quizzes already extract on demand; chat was the only surface
+  // that left an unprepared PDF invisible. Runs once per subject open, in
+  // sequence, and writes the result back to the note so every other surface
+  // (badge, quiz, flashcards, RAG index) benefits from the same extraction.
+  const preparedSubjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!userId || !subjectId) return;
+    if (preparedSubjectRef.current === subjectId) return;
+    if (unpreparedPdfs.length === 0) return;
+    preparedSubjectRef.current = subjectId;
+
+    const targets = unpreparedPdfs.filter((n) => !!n.attachmentPath);
+    if (targets.length === 0) return;
+
+    const post = (text: string) => {
+      if (mountedRef.current) setMessages((prev) => [...prev, { role: 'ai', text, isSystem: true }]);
+    };
+    post(fmt(T('tutorPreparingPdfs'), { n: targets.length }));
+
+    (async () => {
+      let ready = 0;
+      let failed = 0;
+      for (const note of targets) {
+        try {
+          const r = await extractPdfTextFromStoragePath(note.attachmentPath as string);
+          if (!mountedRef.current) return;
+          if (r.stage === 'done' && r.text.trim()) {
+            handleSaveNote({ ...note, extractedText: r.text, extractionError: undefined });
+            ready += 1;
+          } else {
+            // Recording the failure stops this from silently retrying on every
+            // open, and surfaces the Retry pill in the notes list.
+            handleSaveNote({ ...note, extractionError: r.detail || 'Could not read this PDF' });
+            failed += 1;
+          }
+        } catch (e: any) {
+          if (!mountedRef.current) return;
+          handleSaveNote({ ...note, extractionError: e?.message || 'Could not read this PDF' });
+          failed += 1;
+        }
+      }
+      if (ready > 0) post(fmt(T('tutorPdfsReady'), { n: ready }));
+      if (failed > 0) post(fmt(T('tutorPdfsFailed'), { n: failed }));
+    })();
+  }, [subjectId, userId, unpreparedPdfs, handleSaveNote, T]);
 
   // ─── Sessions ────────────────────────────────────────────────────────────
   const loadSession = useCallback(async (s: ChatSession) => {

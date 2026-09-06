@@ -1081,6 +1081,11 @@ const translations = {
     tutorGreeting:
       "Hi! I'm your AI Subject Tutor for {subject}.\n\nI have read all your notes and PDFs for this subject. Ask me anything to help you study, summarize topics, or test your knowledge!",
     tutorHeaderTitle: '{subject} Tutor',
+    tutorGreetingPreparing:
+      "Hi! I'm your AI Subject Tutor for {subject}.\n\nI'm reading your PDFs for this subject now. Give me a moment, then ask me anything.",
+    tutorPreparingPdfs: 'Preparing {n} PDF(s) so I can read them. This takes a moment.',
+    tutorPdfsReady: '{n} PDF(s) ready. Ask away.',
+    tutorPdfsFailed: "Could not read {n} PDF(s). They may be scanned images. Open the notes list and tap Prepare to retry.",
     tutorHeaderSubPro: 'PRO AI TUTOR',
     tutorHeaderSubPlus: 'PLUS AI TUTOR',
     tutorHeaderSubFree: 'FREE AI TUTOR',
@@ -2198,6 +2203,11 @@ const translations = {
     tutorGreeting:
       'Hai! Saya Tutor Subjek AI anda untuk {subject}.\n\nSaya telah membaca semua nota dan PDF anda untuk subjek ini. Tanya apa sahaja untuk membantu anda belajar, meringkaskan topik, atau menguji pengetahuan anda!',
     tutorHeaderTitle: 'Tutor {subject}',
+    tutorGreetingPreparing:
+      'Hai! Saya Tutor AI Subjek anda untuk {subject}.\n\nSaya sedang membaca PDF untuk subjek ini. Tunggu sebentar, kemudian tanya apa sahaja.',
+    tutorPreparingPdfs: 'Menyediakan {n} PDF supaya saya boleh membacanya. Sekejap sahaja.',
+    tutorPdfsReady: '{n} PDF sudah sedia. Tanyalah.',
+    tutorPdfsFailed: 'Tidak dapat membaca {n} PDF. Mungkin imej yang diimbas. Buka senarai nota dan ketik Prepare untuk cuba lagi.',
     tutorHeaderSubPro: 'TUTOR AI PRO',
     tutorHeaderSubPlus: 'TUTOR AI PLUS',
     tutorHeaderSubFree: 'TUTOR AI PERCUMA',
