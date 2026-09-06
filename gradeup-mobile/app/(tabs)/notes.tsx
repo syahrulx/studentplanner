@@ -8,6 +8,7 @@ import { useTranslations } from '@/src/i18n';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
+import { dueCounts } from '@/src/lib/fsrs';
 import { remapClassroomCourse } from '@/src/lib/googleClassroom';
 import * as taskDb from '@/src/lib/taskDb';
 import * as coursesDb from '@/src/lib/coursesDb';
@@ -519,7 +520,7 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function StudyHub() {
-  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcard, renameCourse, deleteCourse, timetable, setTasks, setCourses: setAppCourses } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcardsForNote, renameCourse, deleteCourse, timetable, setTasks, setCourses: setAppCourses } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const themePack = useThemePack();
@@ -677,8 +678,8 @@ export default function StudyHub() {
         text: 'Delete', 
         style: 'destructive', 
         onPress: () => {
-          const cardsToDelete = flashcards.filter(c => c.noteId === noteId);
-          cardsToDelete.forEach(c => deleteFlashcard(c.id));
+          // One DB call for the whole deck (rolls back + alerts on failure).
+          void deleteFlashcardsForNote(noteId);
         }
       }
     ]);
@@ -782,6 +783,8 @@ export default function StudyHub() {
 
   const totalCards = flashcards.length;
   const totalNotes = notes.length;
+  // Cards due for FSRS review across every deck (new cards count as due).
+  const dueTotal = useMemo(() => dueCounts(flashcards, new Date()).due, [flashcards]);
 
   return (
     <View style={s.container}>
@@ -872,12 +875,44 @@ export default function StudyHub() {
 
         {/* ─── Flashcard Decks ─── */}
         <Text style={s.sectionLabel}>FLASHCARD DECKS</Text>
+        {totalCards > 0 && (
+          <Pressable
+            style={({ pressed }) => [
+              s.quickActionWide,
+              { backgroundColor: quickActionWideTint },
+              pressed && { opacity: 0.85 },
+            ]}
+            onPress={() => router.push({ pathname: '/flashcard-review', params: { mode: 'due' } } as any)}
+            disabled={dueTotal === 0}
+          >
+            <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+              <Feather name="clock" size={18} color={onPrimaryIcon} />
+            </View>
+            <View style={s.quickActionWideTextWrap}>
+              <Text style={s.quickActionWideTitle}>
+                {(T as any)('flashcardDueTodayTitle')}{dueTotal > 0 ? ` · ${dueTotal}` : ''}
+              </Text>
+              <Text style={s.quickActionWideSub}>
+                {dueTotal > 0
+                  ? String((T as any)('flashcardDueTodayBody')).replace('{n}', String(dueTotal))
+                  : (T as any)('flashcardDueTodayNone')}
+              </Text>
+            </View>
+            {dueTotal > 0 ? (
+              <Text style={[s.quickActionWideTitle, { color: theme.primary, fontSize: 13 }]}>
+                {(T as any)('flashcardDueTodayCta')}
+              </Text>
+            ) : (
+              <Feather name="check-circle" size={16} color={theme.textSecondary} />
+            )}
+          </Pressable>
+        )}
         {deckItems.length === 0 ? (
           <View style={s.emptyDeck}>
             <Feather name="layers" size={32} color={theme.textSecondary} style={s.emptyDeckIcon} />
             <Text style={s.emptyDeckTitle}>No flashcard decks yet</Text>
             <Text style={s.emptyDeckSub}>
-              Open a note and add cards from the editor, or use Flashcards on the notes list / Study tab.
+              {(T as any)('flashcardEmptyDeckHint')}
             </Text>
           </View>
         ) : (

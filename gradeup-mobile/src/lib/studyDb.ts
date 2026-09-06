@@ -4,10 +4,12 @@
  */
 import { supabase } from './supabase';
 import type { Note, Flashcard } from '../types';
+import type { ReviewLogRow } from './fsrs';
 import { isHandwritingNoteContent } from './handwritingTypes';
 
 const NOTES_TABLE = 'notes';
 const CARDS_TABLE = 'flashcards';
+const REVIEWS_TABLE = 'flashcard_reviews';
 
 function rowToNote(row: Record<string, unknown>): Note {
   const content = String(row.content ?? '');
@@ -27,12 +29,69 @@ function rowToNote(row: Record<string, unknown>): Note {
   };
 }
 
+function numOr(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function isoOrUndefined(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 function rowToCard(row: Record<string, unknown>): Flashcard {
+  const cardType = row.card_type;
+  const state = numOr(row.state, 0);
   return {
     id: String(row.id),
     noteId: row.note_id ? String(row.note_id) : undefined,
     front: String(row.front),
     back: String(row.back),
+    cardType: cardType === 'cloze' || cardType === 'concept' ? cardType : 'basic',
+    hint: row.hint != null && String(row.hint).trim() ? String(row.hint) : undefined,
+    sourceExcerpt:
+      row.source_excerpt != null && String(row.source_excerpt).trim() ? String(row.source_excerpt) : undefined,
+    position: numOr(row.position, 0),
+    createdAt: isoOrUndefined(row.created_at),
+    updatedAt: isoOrUndefined(row.updated_at),
+    due: isoOrUndefined(row.due),
+    stability: numOr(row.stability, 0),
+    difficulty: numOr(row.difficulty, 0),
+    elapsedDays: numOr(row.elapsed_days, 0),
+    scheduledDays: numOr(row.scheduled_days, 0),
+    learningSteps: numOr(row.learning_steps, 0),
+    reps: numOr(row.reps, 0),
+    lapses: numOr(row.lapses, 0),
+    state: state === 1 || state === 2 || state === 3 ? state : 0,
+    lastReview: isoOrUndefined(row.last_review) ?? null,
+  };
+}
+
+/** Flashcard -> `public.flashcards` row. `updated_at` is always bumped to now. */
+function cardToRow(userId: string, card: Flashcard, nowIso: string): Record<string, unknown> {
+  const state = card.state ?? 0;
+  return {
+    id: card.id,
+    user_id: userId,
+    note_id: card.noteId ?? null,
+    front: sanitizeText(card.front) ?? '',
+    back: sanitizeText(card.back) ?? '',
+    card_type: card.cardType ?? 'basic',
+    hint: sanitizeText(card.hint),
+    source_excerpt: sanitizeText(card.sourceExcerpt),
+    position: card.position ?? 0,
+    due: card.due ?? nowIso,
+    stability: card.stability ?? 0,
+    difficulty: card.difficulty ?? 0,
+    elapsed_days: card.elapsedDays ?? 0,
+    scheduled_days: card.scheduledDays ?? 0,
+    learning_steps: card.learningSteps ?? 0,
+    reps: card.reps ?? 0,
+    lapses: card.lapses ?? 0,
+    state: state === 1 || state === 2 || state === 3 ? state : 0,
+    last_review: card.lastReview ?? null,
+    updated_at: nowIso,
   };
 }
 
@@ -62,7 +121,9 @@ export async function getFlashcards(userId: string): Promise<Flashcard[]> {
     .from(CARDS_TABLE)
     .select('*')
     .eq('user_id', userId)
-    .order('id', { ascending: false }); // Fix 6: deterministic order (newest first)
+    // Deterministic order: newest first, id as a tiebreaker for equal timestamps.
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
   if (error) return [];
   return (data ?? []).map(rowToCard);
 }
@@ -114,20 +175,67 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
 
 
 export async function upsertFlashcard(userId: string, card: Flashcard): Promise<void> {
-  const { error } = await supabase.from(CARDS_TABLE).upsert(
-    {
-      id: card.id,
-      user_id: userId,
-      note_id: card.noteId ?? null,
-      front: card.front,
-      back: card.back,
-    },
-    { onConflict: 'id,user_id' }
-  );
+  const { error } = await supabase
+    .from(CARDS_TABLE)
+    .upsert(cardToRow(userId, card, new Date().toISOString()), { onConflict: 'id,user_id' });
   if (error) {
     if (__DEV__) console.error('[Flashcard] upsert failed:', error);
     throw error;
   }
+}
+
+const UPSERT_CHUNK = 200;
+
+/** Batch upsert (chunks of 200). Throws on the first failing chunk. */
+export async function upsertFlashcards(userId: string, cards: Flashcard[]): Promise<void> {
+  if (cards.length === 0) return;
+  const nowIso = new Date().toISOString();
+  for (let i = 0; i < cards.length; i += UPSERT_CHUNK) {
+    const rows = cards.slice(i, i + UPSERT_CHUNK).map((c) => cardToRow(userId, c, nowIso));
+    const { error } = await supabase.from(CARDS_TABLE).upsert(rows, { onConflict: 'id,user_id' });
+    if (error) {
+      if (__DEV__) console.error('[Flashcard] batch upsert failed:', error);
+      throw error;
+    }
+  }
+}
+
+/** One row per rating, holding the card state BEFORE the review. */
+export async function insertFlashcardReview(userId: string, row: ReviewLogRow): Promise<void> {
+  const { error } = await supabase.from(REVIEWS_TABLE).insert({ ...row, user_id: userId });
+  if (error) {
+    if (__DEV__) console.error('[Flashcard] review insert failed:', error);
+    throw error;
+  }
+}
+
+export interface RecentReviewStats {
+  /** Number of reviews in the window. */
+  count: number;
+  /** Fraction of reviews rated Again (0..1); 0 when there are no reviews. */
+  againRate: number;
+  againCount: number;
+}
+
+/** Review activity over the last `days` days. */
+export async function getRecentReviewStats(userId: string, days: number): Promise<RecentReviewStats> {
+  const since = new Date(Date.now() - Math.max(1, days) * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from(REVIEWS_TABLE)
+    .select('rating')
+    .eq('user_id', userId)
+    .gte('review_at', since);
+  if (error) {
+    if (__DEV__) console.error('[Flashcard] review stats failed:', error);
+    throw error;
+  }
+  const rows = data ?? [];
+  const againCount = rows.filter((r) => Number(r.rating) === 1).length;
+  return {
+    count: rows.length,
+    againCount,
+    againRate: rows.length > 0 ? againCount / rows.length : 0,
+  };
 }
 
 export async function deleteNote(userId: string, noteId: string): Promise<void> {

@@ -4,6 +4,7 @@ import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import { isAtLeastPlus } from '../lib/flashcardGenerationLimits';
+import { rateCard, type FlashcardRating } from '../lib/fsrs';
 import {
   initialUser,
   initialCourses,
@@ -17,6 +18,9 @@ import {
 // A component-body `let` would reset to 0 on every render, causing duplicate IDs
 // when addFlashcard is called rapidly (e.g. 10 cards from Promise.all).
 let _flashcardIdSeq = Date.now();
+
+/** Input for `addFlashcards`: front/back plus any optional Flashcard metadata. */
+export type NewFlashcardInput = { front: string; back: string } & Partial<Omit<Flashcard, 'id' | 'noteId' | 'front' | 'back'>>;
 import {
   getAcademicProgress,
   getAcademicProgressFromCalendar,
@@ -155,10 +159,25 @@ type AppState = {
   flashcards: Flashcard[];
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
   flashcardFolders?: never; // DEPRECATED - Folders are dead.
-  addFlashcard: (noteId: string, front: string, back: string) => Flashcard;
-  updateFlashcard: (cardId: string, front: string, back: string) => void;
-  deleteFlashcard: (cardId: string) => void;
-  deleteFlashcardsForNote: (noteId: string) => Promise<void>;
+  /**
+   * Add one card. Optimistic insert; rolls back and rejects when the DB write
+   * fails. Prefer `addFlashcards` when inserting more than one card.
+   */
+  addFlashcard: (noteId: string, front: string, back: string, extra?: Partial<Flashcard>) => Promise<Flashcard>;
+  /** Add many cards to one note in ONE batch upsert. Rolls back + throws on failure. */
+  addFlashcards: (noteId: string, cards: NewFlashcardInput[]) => Promise<Flashcard[]>;
+  /** Resolves true on success. On failure the optimistic edit is rolled back and an alert is shown. */
+  updateFlashcard: (cardId: string, front: string, back: string, extra?: Partial<Flashcard>) => Promise<boolean>;
+  /** Resolves true on success. On failure the optimistic delete is rolled back and an alert is shown. */
+  deleteFlashcard: (cardId: string) => Promise<boolean>;
+  /** Deletes every card of a note in one DB call. Resolves true on success (rolls back on failure). */
+  deleteFlashcardsForNote: (noteId: string) => Promise<boolean>;
+  /**
+   * Rate a card (1 Again, 2 Hard, 3 Good, 4 Easy). Computes the next FSRS state,
+   * updates local state optimistically, then persists the card and a review-log
+   * row. Card write failures roll back and reject; log failures are non-fatal.
+   */
+  reviewFlashcard: (cardId: string, rating: FlashcardRating, durationMs?: number) => Promise<Flashcard | null>;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
   pendingClassroomTasks: import('../lib/googleClassroom').PendingNewTask[];
@@ -856,13 +875,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (r1.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedCards = r1.value;
-          const validNoteIds = new Set(loadedNotes.map((n) => n.id));
-
-          // Same policy as notes above: soft-hide cards whose parent note is
-          // missing/hidden. Never auto-delete from Supabase — a missing note
-          // can simply mean the note row hasn't synced yet.
-          const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
-          setFlashcards(validCards);
+          // Soft-hide cards whose parent note is genuinely absent, but ONLY when
+          // the notes request itself succeeded. If notes failed to load we have
+          // no idea which notes exist, so hiding every card would make the whole
+          // flashcard library vanish on a flaky connection. Never auto-delete
+          // from Supabase — a missing note can simply mean the note row hasn't
+          // synced yet.
+          const notesLoadedOk = r0.status === 'fulfilled';
+          if (notesLoadedOk) {
+            const validNoteIds = new Set(loadedNotes.map((n) => n.id));
+            setFlashcards(loadedCards.filter((c) => !!c.noteId && validNoteIds.has(c.noteId)));
+          } else {
+            setFlashcards(loadedCards);
+          }
         }
         if (r2.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedTasks = await offlineSync.mergePendingTasks(uid, r2.value);
@@ -2114,61 +2139,178 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Fix 1: Module-level counter (outside component) prevents reset-to-0 on every render.
-  // When addFlashcard is called rapidly (e.g. 10 cards from Promise.all), the closure
-  // over a component-body variable always reads 0, causing duplicate IDs.
-  const addFlashcard = useCallback((noteId: string, front: string, back: string): Flashcard => {
-    const card: Flashcard = {
-      id: `card-${Date.now()}-${_flashcardIdSeq++}`,
-      noteId,
-      front: front.trim() || 'Front',
-      back: back.trim() || 'Back',
-    };
-    setFlashcards((prev) => [card, ...prev]);
-    // Fix 7: Use cached remoteUserIdRef — avoids auth.getSession() round-trip per card
+  // When cards are created rapidly (e.g. 10 cards from one generation), a closure
+  // over a component-body variable would always read 0, causing duplicate IDs.
+  const flashcardsRef = useRef<Flashcard[]>(flashcards);
+  flashcardsRef.current = flashcards;
+
+  const addFlashcards = useCallback(async (noteId: string, inputs: NewFlashcardInput[]): Promise<Flashcard[]> => {
+    if (inputs.length === 0) return [];
+    const nowIso = new Date().toISOString();
+    const existingForNote = flashcardsRef.current.filter((c) => c.noteId === noteId).length;
+    const cards: Flashcard[] = inputs.map((input, i) => {
+      const { front, back, ...extra } = input;
+      return {
+        ...extra,
+        id: `card-${Date.now()}-${_flashcardIdSeq++}`,
+        noteId,
+        front: front.trim() || 'Front',
+        back: back.trim() || 'Back',
+        cardType: extra.cardType ?? 'basic',
+        position: extra.position ?? existingForNote + i,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        // New cards are due immediately (FSRS "New" state).
+        due: extra.due ?? nowIso,
+        state: extra.state ?? 0,
+        stability: extra.stability ?? 0,
+        difficulty: extra.difficulty ?? 0,
+        elapsedDays: extra.elapsedDays ?? 0,
+        scheduledDays: extra.scheduledDays ?? 0,
+        learningSteps: extra.learningSteps ?? 0,
+        reps: extra.reps ?? 0,
+        lapses: extra.lapses ?? 0,
+        lastReview: extra.lastReview ?? null,
+      };
+    });
+    // Optimistic insert (newest first, matching getFlashcards ordering).
+    setFlashcards((prev) => [...cards, ...prev]);
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      studyDb.upsertFlashcard(uid, card).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (add):', err);
-      });
+    if (!uid) {
+      const ids = new Set(cards.map((c) => c.id));
+      setFlashcards((prev) => prev.filter((c) => !ids.has(c.id)));
+      throw new Error('Sign in required to save flashcards.');
     }
+    try {
+      await studyDb.upsertFlashcards(uid, cards);
+    } catch (err) {
+      if (__DEV__) console.error('[Flashcard] persist failed (addFlashcards):', err);
+      const ids = new Set(cards.map((c) => c.id));
+      setFlashcards((prev) => prev.filter((c) => !ids.has(c.id)));
+      throw err instanceof Error ? err : new Error('Could not save flashcards.');
+    }
+    return cards;
+  }, []);
+
+  const addFlashcard = useCallback(async (
+    noteId: string,
+    front: string,
+    back: string,
+    extra?: Partial<Flashcard>,
+  ): Promise<Flashcard> => {
+    const { id: _ignoredId, noteId: _ignoredNoteId, front: _f, back: _b, ...rest } = extra ?? {};
+    const [card] = await addFlashcards(noteId, [{ front, back, ...rest }]);
     return card;
-  }, []);
+  }, [addFlashcards]);
 
-  const updateFlashcard = useCallback((cardId: string, front: string, back: string) => {
-    setFlashcards((prev) => prev.map((c) => {
-      if (c.id !== cardId) return c;
-      const updated = { ...c, front: front.trim() || c.front, back: back.trim() || c.back };
-      // Fix 7 + Fix 3: cached uid, error catch
-      const uid = remoteUserIdRef.current;
-      if (uid) {
-        studyDb.upsertFlashcard(uid, updated).catch((err) => {
-          if (__DEV__) console.error('[Flashcard] persist failed (update):', err);
-        });
-      }
-      return updated;
-    }));
-  }, []);
-
-  const deleteFlashcard = useCallback((cardId: string) => {
-    setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
-    // Fix 7 + Fix 3: cached uid, error catch
+  const updateFlashcard = useCallback(async (
+    cardId: string,
+    front: string,
+    back: string,
+    extra?: Partial<Flashcard>,
+  ): Promise<boolean> => {
+    const previous = flashcardsRef.current.find((c) => c.id === cardId);
+    if (!previous) return false;
+    const { id: _ignoredId, ...rest } = extra ?? {};
+    const updated: Flashcard = {
+      ...previous,
+      ...rest,
+      front: front.trim() || previous.front,
+      back: back.trim() || previous.back,
+      updatedAt: new Date().toISOString(),
+    };
+    setFlashcards((prev) => prev.map((c) => (c.id === cardId ? updated : c)));
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      studyDb.deleteFlashcard(uid, cardId).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (delete):', err);
-      });
+    if (!uid) {
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      Alert.alert('Not saved', 'Sign in required to edit flashcards.');
+      return false;
+    }
+    try {
+      await studyDb.upsertFlashcard(uid, updated);
+      return true;
+    } catch (err) {
+      if (__DEV__) console.error('[Flashcard] persist failed (update):', err);
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      Alert.alert('Not saved', 'Could not save the card. Check your connection and try again.');
+      return false;
     }
   }, []);
 
-  /** Deletes ALL cards for a note — used by "Replace" mode in generation. */
-  const deleteFlashcardsForNote = useCallback(async (noteId: string): Promise<void> => {
+  const deleteFlashcard = useCallback(async (cardId: string): Promise<boolean> => {
+    const snapshot = flashcardsRef.current;
+    if (!snapshot.some((c) => c.id === cardId)) return true;
+    setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
+    const uid = remoteUserIdRef.current;
+    if (!uid) {
+      setFlashcards(snapshot);
+      Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
+      return false;
+    }
+    try {
+      await studyDb.deleteFlashcard(uid, cardId);
+      return true;
+    } catch (err) {
+      if (__DEV__) console.error('[Flashcard] persist failed (delete):', err);
+      setFlashcards((prev) => {
+        const removed = snapshot.find((c) => c.id === cardId);
+        if (!removed || prev.some((c) => c.id === cardId)) return prev;
+        return [...prev, removed];
+      });
+      Alert.alert('Not deleted', 'Could not delete the card. Check your connection and try again.');
+      return false;
+    }
+  }, []);
+
+  /** Deletes ALL cards for a note in one call — used by "Replace" mode in generation and "Delete deck". */
+  const deleteFlashcardsForNote = useCallback(async (noteId: string): Promise<boolean> => {
+    const snapshot = flashcardsRef.current;
+    const removed = snapshot.filter((c) => c.noteId === noteId);
+    if (removed.length === 0) return true;
     setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId));
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      await studyDb.deleteFlashcardsForNote(uid, noteId).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
-      });
+    if (!uid) {
+      setFlashcards((prev) => [...prev, ...removed.filter((r) => !prev.some((c) => c.id === r.id))]);
+      Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
+      return false;
     }
+    try {
+      await studyDb.deleteFlashcardsForNote(uid, noteId);
+      return true;
+    } catch (err) {
+      if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
+      setFlashcards((prev) => [...prev, ...removed.filter((r) => !prev.some((c) => c.id === r.id))]);
+      Alert.alert('Not deleted', 'Could not delete the deck. Check your connection and try again.');
+      return false;
+    }
+  }, []);
+
+  const reviewFlashcard = useCallback(async (
+    cardId: string,
+    rating: FlashcardRating,
+    durationMs?: number,
+  ): Promise<Flashcard | null> => {
+    const previous = flashcardsRef.current.find((c) => c.id === cardId);
+    if (!previous) return null;
+    const { card: next, log } = rateCard(previous, rating, new Date(), durationMs);
+    setFlashcards((prev) => prev.map((c) => (c.id === cardId ? next : c)));
+    const uid = remoteUserIdRef.current;
+    if (!uid) {
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      throw new Error('Sign in required to review flashcards.');
+    }
+    try {
+      await studyDb.upsertFlashcard(uid, next);
+    } catch (err) {
+      if (__DEV__) console.error('[Flashcard] persist failed (review):', err);
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      throw err instanceof Error ? err : new Error('Could not save your review.');
+    }
+    // The review log is analytics/optimisation data — never block the session on it.
+    await studyDb.insertFlashcardReview(uid, log).catch((err) => {
+      if (__DEV__) console.warn('[Flashcard] review log insert failed:', err);
+    });
+    return next;
   }, []);
 
   const saveTimetableAndLink = useCallback(async (entries: TimetableEntry[], universityId: string, studentId: string) => {
@@ -2471,9 +2613,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       flashcards,
       setFlashcards,
       addFlashcard,
+      addFlashcards,
       updateFlashcard,
       deleteFlashcard,
       deleteFlashcardsForNote,
+      reviewFlashcard,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,
@@ -2557,9 +2701,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       flashcards,
       setFlashcards,
       addFlashcard,
+      addFlashcards,
       updateFlashcard,
       deleteFlashcard,
       deleteFlashcardsForNote,
+      reviewFlashcard,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,

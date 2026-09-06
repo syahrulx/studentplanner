@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,12 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
+import { getOpenAIKey, noteHasPdfAttachment } from '@/src/lib/studyApi';
 import {
-  generateFlashcardsFromNote,
-  getOpenAIKey,
-  noteHasPdfAttachment,
-} from '@/src/lib/studyApi';
-import { invokeGenerateFlashcards } from '@/src/lib/invokeGenerateFlashcards';
+  invokeGenerateFlashcards,
+  type GeneratedCardPayload,
+  type GenerateFlashcardsRequest,
+} from '@/src/lib/invokeGenerateFlashcards';
+import { isHandwritingNoteContent } from '@/src/lib/handwritingTypes';
+import type { NewFlashcardInput } from '@/src/context/AppContext';
 import { ImportProgressBar } from '@/components/ImportProgressBar';
 import type { ThemePalette } from '@/constants/Themes';
 import {
@@ -334,13 +336,23 @@ function createStyles(theme: ThemePalette) {
 
 export default function FlashcardPick() {
   const { subjectId: paramSubjectId } = useLocalSearchParams<{ subjectId?: string }>();
-  const { courses, notes, flashcards, language, getSubjectColor, addFlashcard, deleteFlashcardsForNote, handleSaveNote, user } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, addFlashcards, deleteFlashcardsForNote, handleSaveNote, user } = useApp();
   const plusUnlocked = isAtLeastPlus(user?.subscriptionPlan);
   const proUnlocked = isPro(user?.subscriptionPlan);
   const T = useTranslations(language);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(theme), [theme]);
+
+  // Set when the screen unmounts so an in-flight generation loop stops and
+  // never calls setState on a dead component.
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
 
   const initialSubject =
     typeof paramSubjectId === 'string' && paramSubjectId.length > 0 ? paramSubjectId : null;
@@ -396,14 +408,22 @@ export default function FlashcardPick() {
     if (!pickedSubjectId) return [];
     return notes
       .filter((n) => n.subjectId === pickedSubjectId)
-      .map((n) => ({
-        ...n,
-        cardCount: cardCountByNote.get(n.id) ?? 0,
-        hasText: !!(n.content && n.content.trim().length > 0 && n.content !== 'Extracting text from PDF...'),
-        hasPdf: noteHasPdfAttachment(n),
-        hasCachedText: !!(n.extractedText && n.extractedText.trim().length > 0),
-        hasFailed: !!n.extractionError,
-      }))
+      .map((n) => {
+        // Handwriting notes store stroke JSON in `content`; it is not text we can
+        // generate from. They are only usable via a PDF attachment / cached text.
+        const isHandwriting = n.noteType === 'handwriting' || isHandwritingNoteContent(n.content);
+        return {
+          ...n,
+          cardCount: cardCountByNote.get(n.id) ?? 0,
+          isHandwriting,
+          hasText:
+            !isHandwriting &&
+            !!(n.content && n.content.trim().length > 0 && n.content !== 'Extracting text from PDF...'),
+          hasPdf: noteHasPdfAttachment(n),
+          hasCachedText: !!(n.extractedText && n.extractedText.trim().length > 0),
+          hasFailed: !!n.extractionError,
+        };
+      })
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [notes, cardCountByNote, pickedSubjectId]);
 
@@ -516,6 +536,10 @@ export default function FlashcardPick() {
     const pdfPagesForRequest =
       anyPdfInRun && pdfPageMode === 'custom' ? pdfPageRange.trim() : undefined;
 
+    // Every setState below goes through this guard so a user who navigates
+    // away mid-generation never triggers "state update on unmounted component".
+    const alive = () => !cancelledRef.current;
+
     setGenerating(true);
     setGenerateProgressUi({ progress: 6, label: T('flashcardGenProgressStarting') });
     setGeneratingLabel(T('flashcardGenProgressStarting'));
@@ -529,6 +553,10 @@ export default function FlashcardPick() {
     const startNoteProgressTicker = (low: number, highCap: number) => {
       clearProgressTicker();
       progressTicker = setInterval(() => {
+        if (!alive()) {
+          clearProgressTicker();
+          return;
+        }
         setGenerateProgressUi((prev) => {
           if (!prev) return prev;
           const cap = highCap - 6;
@@ -537,18 +565,73 @@ export default function FlashcardPick() {
       }, 220);
     };
 
+    type NoteForGen = (typeof usable)[number];
+    type GenOutcome = {
+      cards: GeneratedCardPayload[];
+      warnings: string[];
+      truncated: boolean;
+      truncatedChars?: number;
+      error: string | null;
+      errorCode?: string;
+    };
+
+    /** One Edge Function call for a note: PDF when attached, else typed text, else cached extracted text. */
+    const runGeneration = async (note: NoteForGen): Promise<GenOutcome> => {
+      let body: GenerateFlashcardsRequest | null = null;
+      if (note.hasPdf && note.attachmentPath) {
+        body = {
+          source: 'pdf_storage',
+          storage_path: note.attachmentPath,
+          bucket: 'note-attachments',
+          count: cardsPerNote,
+          note_id: note.id,
+          ...(pdfPagesForRequest ? { pdf_pages: pdfPagesForRequest } : {}),
+        };
+      } else if (note.hasText) {
+        body = { source: 'text', content: note.content.trim(), count: cardsPerNote, note_id: note.id };
+      } else if (note.hasCachedText && note.extractedText) {
+        // PDF was removed / never attached but we still hold the extracted text.
+        body = { source: 'text', content: note.extractedText.trim(), count: cardsPerNote, note_id: note.id };
+      }
+      if (!body) {
+        return { cards: [], warnings: [], truncated: false, error: T('flashcardPickNoSource') };
+      }
+      try {
+        const res = await invokeGenerateFlashcards(body);
+        if (res.error) {
+          return { cards: [], warnings: [], truncated: false, error: res.error, errorCode: res.errorCode };
+        }
+        return {
+          cards: res.data?.cards ?? [],
+          warnings: Array.isArray(res.data?.warnings) ? res.data.warnings : [],
+          truncated: !!res.data?.truncated,
+          truncatedChars:
+            typeof res.data?.truncated_chars === 'number' ? res.data.truncated_chars : undefined,
+          error: null,
+        };
+      } catch (e: any) {
+        return { cards: [], warnings: [], truncated: false, error: e?.message || 'Generation failed' };
+      }
+    };
+
     let totalAdded = 0;
     let firstNoteWithNewCards: string | null = null;
-      const failLines: string[] = [];
+    const failLines: string[] = [];
+    const noticeLines: string[] = [];
     let stoppedOnDailyLimit = false;
-      let stoppedOnMonthlyLimit = false;
+    let stoppedOnMonthlyLimit = false;
 
     try {
       if (isReplaceMode) {
         setGenerateProgressUi({ progress: 10, label: T('flashcardGenProgressReplace') });
         setGeneratingLabel(T('flashcardGenProgressReplace'));
         for (const [noteId] of existingCounts) {
-          await deleteFlashcardsForNote(noteId);
+          const ok = await deleteFlashcardsForNote(noteId);
+          if (!alive()) return;
+          if (!ok) {
+            const title = usable.find((n) => n.id === noteId)?.title ?? noteId;
+            failLines.push(`${title}: could not remove the existing deck.`);
+          }
         }
         setGenerateProgressUi({ progress: 18, label: T('flashcardGenProgressGenerating') });
         setGeneratingLabel(T('flashcardGenProgressGenerating'));
@@ -573,6 +656,7 @@ export default function FlashcardPick() {
 
       const totalNotes = usable.length;
       for (let i = 0; i < totalNotes; i++) {
+        if (!alive()) return;
         const note = usable[i];
         const low = 18 + Math.floor((i / totalNotes) * 72);
         const highCap = 18 + Math.floor(((i + 1) / totalNotes) * 94);
@@ -588,29 +672,10 @@ export default function FlashcardPick() {
         setGenerateProgressUi({ progress: low, label: phaseLabel });
         startNoteProgressTicker(low, highCap);
 
-        let cards: { front: string; back: string }[] = [];
-        let error: string | null = null;
+        let outcome = await runGeneration(note);
+        if (!alive()) return;
 
-        try {
-          if (note.hasPdf && note.attachmentPath) {
-            const res = await invokeGenerateFlashcards({
-              source: 'pdf_storage',
-              storage_path: note.attachmentPath,
-              bucket: 'note-attachments',
-              count: cardsPerNote,
-              note_id: note.id,
-              ...(pdfPagesForRequest ? { pdf_pages: pdfPagesForRequest } : {}),
-            });
-            if (res.error) error = res.error;
-            else cards = res.data?.cards ?? [];
-          } else if (note.hasText) {
-            cards = await generateFlashcardsFromNote(note.content.trim(), user?.id, cardsPerNote);
-          }
-        } catch (e: any) {
-          error = e?.message || 'Generation failed';
-        }
-
-        if (error && /rate.*limit|429|too many requests/i.test(error) && !/daily/i.test(error)) {
+        if (outcome.error && /rate.*limit|429|too many requests/i.test(outcome.error) && !/daily/i.test(outcome.error)) {
           clearProgressTicker();
           setGenerateProgressUi((prev) =>
             prev
@@ -619,26 +684,10 @@ export default function FlashcardPick() {
           );
           setGeneratingLabel(T('flashcardGenProgressRetry'));
           await new Promise((r) => setTimeout(r, 10_000));
-          error = null;
+          if (!alive()) return;
           startNoteProgressTicker(low, highCap);
-          try {
-            if (note.hasPdf && note.attachmentPath) {
-              const res = await invokeGenerateFlashcards({
-                source: 'pdf_storage',
-                storage_path: note.attachmentPath,
-                bucket: 'note-attachments',
-                count: cardsPerNote,
-                note_id: note.id,
-                ...(pdfPagesForRequest ? { pdf_pages: pdfPagesForRequest } : {}),
-              });
-              if (res.error) error = res.error;
-              else cards = res.data?.cards ?? [];
-            } else if (note.hasText) {
-              cards = await generateFlashcardsFromNote(note.content.trim(), user?.id, cardsPerNote);
-            }
-          } catch (retryErr: any) {
-            error = retryErr?.message || 'Retry failed';
-          }
+          outcome = await runGeneration(note);
+          if (!alive()) return;
         }
 
         clearProgressTicker();
@@ -646,9 +695,15 @@ export default function FlashcardPick() {
           prev ? { ...prev, progress: Math.min(highCap, 97) } : prev,
         );
 
-        if (error) {
+        if (outcome.error) {
+          const error = outcome.error;
           failLines.push(`${note.title}: ${formatFlashcardGenerationError(error)}`);
-          if (note.hasPdf && handleSaveNote) {
+          // Only record an extraction error on the note when the server says the
+          // PDF itself could not be extracted. Rate limits, quota, or model
+          // failures are unrelated to the attachment and must not mark it broken.
+          const isPdfExtractFailure =
+            outcome.errorCode === 'PDF_EXTRACT_FAILED' || /PDF_EXTRACT_FAILED/i.test(error);
+          if (isPdfExtractFailure && note.hasPdf && handleSaveNote) {
             const orig = notes.find((n) => n.id === note.id);
             if (orig) handleSaveNote({ ...orig, extractionError: formatFlashcardGenerationError(error) });
           }
@@ -666,18 +721,47 @@ export default function FlashcardPick() {
           continue;
         }
 
+        if (outcome.truncated) {
+          const chars = outcome.truncatedChars ?? 0;
+          noticeLines.push(
+            `${note.title}: ${T('flashcardPickTruncatedBody').replace('{n}', chars > 0 ? chars.toLocaleString() : '?')}`,
+          );
+        }
+        for (const w of outcome.warnings) {
+          if (w && typeof w === 'string') noticeLines.push(`${note.title}: ${w}`);
+        }
+
+        const cards = outcome.cards.filter((c) => c && typeof c.front === 'string' && typeof c.back === 'string');
         if (cards.length > 0) {
           if (note.hasPdf && note.hasFailed && handleSaveNote) {
             const orig = notes.find((n) => n.id === note.id);
             if (orig) handleSaveNote({ ...orig, extractionError: undefined });
           }
           const existingFronts = existingFrontsByNote.get(note.id) ?? new Set<string>();
-          const newCards = cards.filter(
-            (c) => !existingFronts.has(c.front.trim().toLowerCase())
-          );
+          const seenThisRun = new Set<string>();
+          const newCards = cards.filter((c) => {
+            const key = c.front.trim().toLowerCase();
+            if (!key || existingFronts.has(key) || seenThisRun.has(key)) return false;
+            seenThisRun.add(key);
+            return true;
+          });
           if (newCards.length > 0) {
-            if (!firstNoteWithNewCards) firstNoteWithNewCards = note.id;
-            for (const c of newCards) { addFlashcard(note.id, c.front, c.back); totalAdded += 1; }
+            const inputs: NewFlashcardInput[] = newCards.map((c) => ({
+              front: c.front,
+              back: c.back,
+              cardType: c.type === 'cloze' || c.type === 'concept' ? c.type : 'basic',
+              hint: c.hint && c.hint.trim() ? c.hint.trim() : undefined,
+              sourceExcerpt: c.source_excerpt && c.source_excerpt.trim() ? c.source_excerpt.trim() : undefined,
+            }));
+            try {
+              // ONE batch upsert per note.
+              const saved = await addFlashcards(note.id, inputs);
+              totalAdded += saved.length;
+              if (!firstNoteWithNewCards && saved.length > 0) firstNoteWithNewCards = note.id;
+            } catch (saveErr: any) {
+              failLines.push(`${note.title}: ${saveErr?.message || 'Could not save the generated cards.'}`);
+            }
+            if (!alive()) return;
           }
         }
       }
@@ -687,21 +771,30 @@ export default function FlashcardPick() {
         setGenerateProgressUi({ progress: 100, label: T('flashcardGenProgressDone') });
         setGeneratingLabel(T('flashcardGenProgressDone'));
         await new Promise((r) => setTimeout(r, 650));
+        if (!alive()) return;
       }
       setGenerateProgressUi(null);
       setGeneratingLabel('');
 
+      const noticeBlock =
+        noticeLines.length > 0
+          ? `\n\n${T('flashcardPickWarningsTitle')}\n${noticeLines.slice(0, 3).join('\n')}`
+          : '';
+
       // Monthly-limit UI is already shown centrally in invokeGenerateFlashcards().
       // Avoid showing a second generic failure alert on top of that.
       if (!stoppedOnMonthlyLimit && totalAdded === 0 && failLines.length > 0) {
-        Alert.alert(T('flashcardPickGenerateFailedTitle'), failLines.slice(0, 3).join('\n'));
+        Alert.alert(T('flashcardPickGenerateFailedTitle'), failLines.slice(0, 3).join('\n') + noticeBlock);
       } else if (totalAdded === 0) {
-        Alert.alert(
-          'No New Cards',
-          isReplaceMode
-            ? T('flashcardPickGenerateNoneHint')
-            : 'All generated cards already exist in your deck. Try regenerating with different content, or use \'Replace All\' to refresh the deck.',
-        );
+        if (!stoppedOnMonthlyLimit) {
+          Alert.alert(
+            'No New Cards',
+            (isReplaceMode
+              ? T('flashcardPickGenerateNoneHint')
+              : 'All generated cards already exist in your deck. Try regenerating with different content, or use \'Replace All\' to refresh the deck.') +
+              noticeBlock,
+          );
+        }
       } else {
         const goPreview = () => {
           if (firstNoteWithNewCards) {
@@ -711,26 +804,38 @@ export default function FlashcardPick() {
             });
           }
         };
-        if (failLines.length > 0) {
+        if (failLines.length > 0 || noticeLines.length > 0) {
           const doneBody =
             T('flashcardPickGenerateDoneBody').replace('{n}', String(totalAdded)) +
-            `\n\n${T('flashcardPickPartialFailures')}\n${failLines.slice(0, 2).join('\n')}`;
-          Alert.alert(T('flashcardPickGenerateDoneTitle'), doneBody, [
-            { text: T('close'), style: 'cancel' },
-            { text: T('flashcardPickContinueToPreview'), onPress: goPreview },
-          ]);
+            (failLines.length > 0
+              ? `\n\n${T('flashcardPickPartialFailures')}\n${failLines.slice(0, 2).join('\n')}`
+              : '') +
+            noticeBlock;
+          Alert.alert(
+            noticeLines.length > 0 && failLines.length === 0
+              ? T('flashcardPickTruncatedTitle')
+              : T('flashcardPickGenerateDoneTitle'),
+            doneBody,
+            [
+              { text: T('close'), style: 'cancel' },
+              { text: T('flashcardPickContinueToPreview'), onPress: goPreview },
+            ],
+          );
         } else {
           goPreview();
         }
       }
     } catch (e: unknown) {
+      if (!alive()) return;
       const msg = e instanceof Error ? e.message : 'Generation failed';
       Alert.alert('Error', msg);
     } finally {
       clearProgressTicker();
-      setGenerateProgressUi(null);
-      setGenerating(false);
-      setGeneratingLabel('');
+      if (alive()) {
+        setGenerateProgressUi(null);
+        setGenerating(false);
+        setGeneratingLabel('');
+      }
     }
   }, [
     selectedIds,
@@ -738,11 +843,9 @@ export default function FlashcardPick() {
     subjectNotes,
     cardCountByNote,
     flashcards,
-    addFlashcard,
+    addFlashcards,
     deleteFlashcardsForNote,
     handleSaveNote,
-    user?.id,
-    user?.subscriptionPlan,
     cardsPerNote,
     notes,
     T,
@@ -868,7 +971,9 @@ export default function FlashcardPick() {
                       </Text>
                       <Text style={!item.hasText && !item.hasPdf && !item.hasCachedText ? styles.rowSubWarn : styles.rowSub}>
                         {!item.hasText && !item.hasPdf && !item.hasCachedText
-                          ? T('flashcardPickNoSource')
+                          ? item.isHandwriting
+                            ? T('flashcardPickHandwritingNotUsable')
+                            : T('flashcardPickNoSource')
                           : item.cardCount > 0
                             ? T('flashcardPickCardCount').replace('{n}', String(item.cardCount))
                             : T('flashcardPickNoCardsYet')}
