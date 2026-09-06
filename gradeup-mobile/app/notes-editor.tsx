@@ -203,12 +203,17 @@ export default function NotesEditor() {
     setSaved(true);
     if (showAlert) Alert.alert('Saved', 'Note saved successfully.');
 
-    // Fire-and-forget embedding generation for AI Tutor context
+    // Fire-and-forget embedding generation for AI Tutor context. The note row
+    // is written through the offline outbox, so wait a few seconds before
+    // indexing (the server requires the note to exist). If this misses, the
+    // tutor screen re-indexes stale/missing notes on open.
     const fullContent = [note.content, note.extractedText].filter(Boolean).join('\n\n').trim();
     if (fullContent.length > 50) {
-      import('@/src/lib/invokeAiGenerate').then(({ invokeAiEmbed }) => {
-        invokeAiEmbed({ noteId: note.id, subjectId: note.subjectId, content: fullContent });
-      }).catch(() => {});
+      setTimeout(() => {
+        import('@/src/lib/invokeAiGenerate').then(({ invokeAiEmbed }) => {
+          invokeAiEmbed({ noteId: note.id, subjectId: note.subjectId, content: fullContent });
+        }).catch(() => {});
+      }, 5_000);
     }
   }, [title, content, tag, currentNoteId, existing, subjectId, paramFolderId, attachmentPath, attachmentFileName, extractedText]);
 

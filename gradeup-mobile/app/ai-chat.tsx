@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -50,6 +50,11 @@ export default function AiChat() {
   const theme = useTheme();
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const headerSubColor = useMemo(
     () => onPrimaryMuted(theme.textInverse, theme.primary),
     [theme.textInverse, theme.primary],
@@ -63,7 +68,7 @@ export default function AiChat() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const scrollToBottom = () => {
-    setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
+    setTimeout(() => { if (mountedRef.current) scrollRef.current?.scrollToEnd({ animated: true }); }, 100);
   };
 
   const handleSend = () => {
@@ -74,90 +79,88 @@ export default function AiChat() {
     setIsProcessing(true);
     scrollToBottom();
 
-    setTimeout(() => {
-      (async () => {
-        try {
-          const todayISO = getTodayISO();
-          const { tasks, error } = await extractTasksFromMessageAI({
-            message: pastedText,
-            courses,
-            todayISO,
-            currentWeek: user.currentWeek,
-            userId: user.id,
-            semesterStartISO: academicCalendar?.startDate,
-            country: user.country,
-          });
+    (async () => {
+      try {
+        const todayISO = getTodayISO();
+        const { tasks, error } = await extractTasksFromMessageAI({
+          message: pastedText,
+          courses,
+          todayISO,
+          currentWeek: user.currentWeek,
+          userId: user.id,
+          semesterStartISO: academicCalendar?.startDate,
+          country: user.country,
+        });
+        if (!mountedRef.current) return;
 
-          if (tasks.length === 0) {
-            if (error && handleMonthlyLimit(error, language)) {
-              return;
-            }
-            const detailText =
-              error?.details != null
-                ? `\n\nDetails: ${
-                    typeof error.details === 'string'
-                      ? error.details
-                      : JSON.stringify(error.details)
-                  }`
-                : '';
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: 'ai',
-                text: error
-                  ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}${detailText}`
-                  : '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date',
-              },
-            ]);
+        if (tasks.length === 0) {
+          if (error && handleMonthlyLimit(error, language)) {
             return;
           }
-
-          for (const task of tasks) {
-            addTask(
-              buildTaskFromExtraction(task, {
-                fallbackCourseId: courses[0]?.id || 'General',
-                user,
-                calendarStart: academicCalendar?.startDate,
-                sourceMessage: pastedText,
-              })
-            );
+          if (__DEV__ && error?.details != null) {
+            console.log('[AiChat] task extraction error details:', error.details);
           }
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'ai',
+              text: error
+                ? `🤔 I couldn't extract a task from this message.\n\nReason: ${error.message}`
+                : '🤔 I couldn\'t detect any assignment or deadline from this message.\n\nTry pasting a message that mentions:\n• A submission deadline\n• A quiz/test date\n• An assignment due date',
+            },
+          ]);
+          return;
+        }
 
-          const missingDate = tasks.filter((t) => t.needs_date);
-
-          const taskSummary = tasks
-            .map((t) => {
-              const dateLabel = t.needs_date ? '📅 Date TBA — set manually' : `📅 ${t.due_date}  ⏰ ${t.due_time}`;
-              return `• "${t.title}"\n   ${dateLabel}${t.course_id ? `  📚 ${t.course_id}` : ''}`;
+        for (const task of tasks) {
+          addTask(
+            buildTaskFromExtraction(task, {
+              fallbackCourseId: courses[0]?.id || 'General',
+              user,
+              calendarStart: academicCalendar?.startDate,
+              sourceMessage: pastedText,
             })
-            .join('\n\n');
+          );
+        }
 
-          const warningNote = missingDate.length > 0
-            ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
-            : '';
+        const missingDate = tasks.filter((t) => t.needs_date);
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'ai',
-              text: `✅ Task extracted and added to your planner!\n\n${taskSummary}${warningNote}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
-            },
-          ]);
-        } catch {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'ai',
-              text:
-                '⚠️ Something went wrong while talking to the AI. Please try again in a moment or enter the task manually.',
-            },
-          ]);
-        } finally {
+        const taskSummary = tasks
+          .map((t) => {
+            const dateLabel = t.needs_date ? '📅 Date TBA — set manually' : `📅 ${t.due_date}  ⏰ ${t.due_time}`;
+            return `• "${t.title}"\n   ${dateLabel}${t.course_id ? `  📚 ${t.course_id}` : ''}`;
+          })
+          .join('\n\n');
+
+        const warningNote = missingDate.length > 0
+          ? `\n\n⚠️ ${missingDate.length === 1 ? '1 task has' : `${missingDate.length} tasks have`} no specific date in the message. Please open the task and set the due date manually.`
+          : '';
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'ai',
+            text: `✅ Task extracted and added to your planner!\n\n${taskSummary}${warningNote}\n\nYou can view it in your Calendar. Paste another message to add more tasks!`,
+          },
+        ]);
+      } catch (e) {
+        if (__DEV__) console.error('[AiChat] task extraction failed:', e);
+        if (!mountedRef.current) return;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'ai',
+            text:
+              '⚠️ Something went wrong while talking to the AI. Please try again in a moment or enter the task manually.',
+          },
+        ]);
+      } finally {
+        if (mountedRef.current) {
           setIsProcessing(false);
           scrollToBottom();
         }
-      })();
-    }, 500);
+      }
+    })();
   };
 
   return (
