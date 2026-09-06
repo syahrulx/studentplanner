@@ -820,11 +820,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         offlineSync.loadCachedTasks(uid),
         offlineSync.loadCachedNotes(uid),
         offlineSync.loadCachedTaskCompletions(uid),
-      ]).then(([cachedTasks, cachedNotes, cachedCompletions]) => {
+        offlineSync.loadCachedFlashcards(uid),
+      ]).then(([cachedTasks, cachedNotes, cachedCompletions, cachedCards]) => {
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
         setTasks(cachedTasks);
         setNotes(cachedNotes);
         setTaskCompletionKeys(new Set(cachedCompletions));
+        // Seeded from cache so a review session can start before the network
+        // answers, and still works when it never does.
+        if (cachedCards.length > 0) setFlashcards(cachedCards);
       });
       // Finish any queued write first. Otherwise a stale fetch could race a
       // successful flush and briefly overwrite the just-synced local version.
@@ -898,12 +902,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // from Supabase — a missing note can simply mean the note row hasn't
           // synced yet.
           const notesLoadedOk = r0.status === 'fulfilled';
-          if (notesLoadedOk) {
-            const validNoteIds = new Set(loadedNotes.map((n) => n.id));
-            setFlashcards(loadedCards.filter((c) => !!c.noteId && validNoteIds.has(c.noteId)));
-          } else {
-            setFlashcards(loadedCards);
-          }
+          // Queued reviews and edits win over the server copy, or a fetch that
+          // lands before the outbox drains would show the pre-review schedule.
+          const mergedCards = await offlineSync.mergePendingFlashcards(uid, loadedCards);
+          const validNoteIds = new Set(loadedNotes.map((n) => n.id));
+          const visibleCards = notesLoadedOk
+            ? mergedCards.filter((c) => !!c.noteId && validNoteIds.has(c.noteId))
+            : mergedCards;
+          setFlashcards(visibleCards);
+          void offlineSync.cacheFlashcards(uid, visibleCards);
         }
         if (r2.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedTasks = await offlineSync.mergePendingTasks(uid, r2.value);
@@ -2194,14 +2201,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setFlashcards((prev) => prev.filter((c) => !ids.has(c.id)));
       throw new Error('Sign in required to save flashcards.');
     }
-    try {
-      await studyDb.upsertFlashcards(uid, cards);
-    } catch (err) {
-      if (__DEV__) console.error('[Flashcard] persist failed (addFlashcards):', err);
-      const ids = new Set(cards.map((c) => c.id));
-      setFlashcards((prev) => prev.filter((c) => !ids.has(c.id)));
-      throw err instanceof Error ? err : new Error('Could not save flashcards.');
-    }
+    await Promise.all(cards.map((card) => offlineSync.queueFlashcardUpsert(uid, card)));
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
     return cards;
   }, []);
 
@@ -2239,15 +2240,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Not saved', 'Sign in required to edit flashcards.');
       return false;
     }
-    try {
-      await studyDb.upsertFlashcard(uid, updated);
-      return true;
-    } catch (err) {
-      if (__DEV__) console.error('[Flashcard] persist failed (update):', err);
-      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
-      Alert.alert('Not saved', 'Could not save the card. Check your connection and try again.');
-      return false;
-    }
+    await offlineSync.queueFlashcardUpsert(uid, updated);
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
   }, []);
 
   const deleteFlashcard = useCallback(async (cardId: string): Promise<boolean> => {
@@ -2260,19 +2255,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
       return false;
     }
-    try {
-      await studyDb.deleteFlashcard(uid, cardId);
-      return true;
-    } catch (err) {
-      if (__DEV__) console.error('[Flashcard] persist failed (delete):', err);
-      setFlashcards((prev) => {
-        const removed = snapshot.find((c) => c.id === cardId);
-        if (!removed || prev.some((c) => c.id === cardId)) return prev;
-        return [...prev, removed];
-      });
-      Alert.alert('Not deleted', 'Could not delete the card. Check your connection and try again.');
-      return false;
-    }
+    await offlineSync.queueFlashcardDelete(uid, cardId);
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
   }, []);
 
   /** Deletes ALL cards for a note in one call — used by "Replace" mode in generation and "Delete deck". */
@@ -2287,15 +2272,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
       return false;
     }
-    try {
-      await studyDb.deleteFlashcardsForNote(uid, noteId);
-      return true;
-    } catch (err) {
-      if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
-      setFlashcards((prev) => [...prev, ...removed.filter((r) => !prev.some((c) => c.id === r.id))]);
-      Alert.alert('Not deleted', 'Could not delete the deck. Check your connection and try again.');
-      return false;
-    }
+    await Promise.all(removed.map((card) => offlineSync.queueFlashcardDelete(uid, card.id)));
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
   }, []);
 
   const reviewFlashcard = useCallback(async (
@@ -2312,17 +2291,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
       throw new Error('Sign in required to review flashcards.');
     }
-    try {
-      await studyDb.upsertFlashcard(uid, next);
-    } catch (err) {
-      if (__DEV__) console.error('[Flashcard] persist failed (review):', err);
-      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
-      throw err instanceof Error ? err : new Error('Could not save your review.');
-    }
-    // The review log is analytics/optimisation data — never block the session on it.
-    await studyDb.insertFlashcardReview(uid, log).catch((err) => {
-      if (__DEV__) console.warn('[Flashcard] review log insert failed:', err);
-    });
+    // Queued, not written directly, so a review on a commute still counts once
+    // signal returns. Reviewing is the one study action that needs no server:
+    // FSRS already ran on the device and only the result has to travel.
+    void offlineSync
+      .queueFlashcardUpsert(uid, next)
+      .then(() => offlineSync.queueFlashcardReviewLog(uid, log))
+      .then(() => offlineSync.flushOfflineSync(uid))
+      .catch((err) => {
+        if (__DEV__) console.error('[Flashcard] could not queue review:', err);
+      });
     return next;
   }, []);
 
