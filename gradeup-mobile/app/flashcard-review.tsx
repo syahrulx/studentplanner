@@ -158,22 +158,22 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     },
     ratingBtn: {
       flex: 1,
-      paddingVertical: 12,
+      // Single-line labels now, so pad more to keep a comfortable tap target.
+      paddingVertical: 16,
+      paddingHorizontal: 6,
       borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: isDarkMinimal ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)',
     },
     ratingBtnGood: { backgroundColor: primaryCta },
-    ratingLabel: { fontSize: 12, fontWeight: '800', color: isDarkMinimal ? '#000000' : '#ffffff', letterSpacing: 0.5 },
-    ratingLabelGood: { color: primaryCtaText },
-    ratingInterval: {
-      fontSize: 11,
-      fontWeight: '700',
-      marginTop: 3,
-      color: isDarkMinimal ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.75)',
+    ratingLabel: {
+      fontSize: 13,
+      fontWeight: '800',
+      textAlign: 'center',
+      color: isDarkMinimal ? '#000000' : '#ffffff',
     },
-    ratingIntervalGood: { color: primaryCtaText, opacity: 0.75 },
+    ratingLabelGood: { color: primaryCtaText },
     footerHint: {
       marginTop: 12,
       textAlign: 'center',
@@ -240,7 +240,16 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   });
 }
 
-const RATINGS: FlashcardRating[] = [1, 2, 3, 4];
+/**
+ * Three ratings, not the full FSRS four.
+ *
+ * "Hard" (2) is dropped on purpose: for a student audience it overlaps too
+ * closely with "Again" — both read as "I struggled" — and a rating picked at
+ * random is worse for the schedule than a coarser one picked honestly. FSRS
+ * schedules fine on a subset of ratings. "Too easy" is kept because it is
+ * clearly distinguishable and stops well-known cards coming back too often.
+ */
+const RATINGS: FlashcardRating[] = [1, 3, 4];
 
 export default function FlashcardReview() {
   const params = useLocalSearchParams<{ noteId?: string; mode?: string }>();
@@ -639,10 +648,18 @@ export default function FlashcardReview() {
                       key={r}
                       style={[styles.ratingBtn, good && styles.ratingBtnGood]}
                       onPress={() => handleRate(r)}
-                      accessibilityLabel={`${ratingLabels[r]} ${intervals?.[r] ?? ''}`}
+                      // The interval stays out of the visible label but is kept
+                      // here so screen-reader users still get the schedule.
+                      accessibilityLabel={`${ratingLabels[r]}${intervals?.[r] ? `, next in ${intervals[r]}` : ''}`}
                     >
-                      <Text style={[styles.ratingLabel, good && styles.ratingLabelGood]}>{ratingLabels[r]}</Text>
-                      <Text style={[styles.ratingInterval, good && styles.ratingIntervalGood]}>{intervals?.[r] ?? ''}</Text>
+                      <Text
+                        style={[styles.ratingLabel, good && styles.ratingLabelGood]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.8}
+                      >
+                        {ratingLabels[r]}
+                      </Text>
                     </Pressable>
                   );
                 })}
