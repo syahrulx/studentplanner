@@ -9,6 +9,12 @@ import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import { getFirstSuccess } from '@/src/lib/smartCapture/smartCaptureSetupState';
+import {
+  fetchShortcutLink,
+  getCachedShortcutLink,
+  SHORTCUTS_APP_URL,
+  type ShortcutLink,
+} from '@/src/lib/smartCapture/smartCaptureShortcut';
 
 /**
  * Setup and education for the two Smart Capture automations.
@@ -22,17 +28,15 @@ import { getFirstSuccess } from '@/src/lib/smartCapture/smartCaptureSetupState';
  */
 
 /**
- * iCloud link to the published "Plan from screenshot" shortcut.
+ * The shortcut link is remote config (`app_config.smart_capture_shortcut_url`),
+ * so it can be published or rotated without an app update.
  *
- * To recreate it: Shortcuts → new shortcut → add "Take Screenshot" → add
+ * To build the shortcut: Shortcuts → new shortcut → add "Take Screenshot" → add
  * Rencana's "Plan from screenshot" action and pass the screenshot into it →
- * name it "Plan from screenshot" → Share → Copy iCloud Link.
- *
- * Until it is published, the button falls back to opening the Shortcuts app so
- * the user can build it manually from the steps shown on screen.
+ * name it "Plan from screenshot" → Share → Copy iCloud Link, then store that
+ * link in app_config. Until then the button opens the Shortcuts app and the
+ * steps on screen describe how to build it by hand.
  */
-const SMART_CAPTURE_SHORTCUT_URL = '';
-const SHORTCUTS_APP_URL = 'shortcuts://';
 
 export default function SmartAutomations() {
   const { language } = useApp();
@@ -41,6 +45,10 @@ export default function SmartAutomations() {
   const isIos = Platform.OS === 'ios';
 
   const [backTapWorking, setBackTapWorking] = useState(false);
+  const [shortcut, setShortcut] = useState<ShortcutLink>({
+    url: SHORTCUTS_APP_URL,
+    isPublished: false,
+  });
 
   useEffect(() => {
     let alive = true;
@@ -52,10 +60,31 @@ export default function SmartAutomations() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isIos) return;
+    let alive = true;
+    // Paint from cache first so the button is never wrong for a beat, then
+    // reconcile with whatever is configured right now.
+    void getCachedShortcutLink().then((cached) => {
+      if (alive && cached.isPublished) setShortcut(cached);
+    });
+    void fetchShortcutLink().then((link) => {
+      if (alive) setShortcut(link);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isIos]);
+
   const openShortcut = useCallback(() => {
-    const url = SMART_CAPTURE_SHORTCUT_URL || SHORTCUTS_APP_URL;
-    Linking.openURL(url).catch(() => {});
-  }, []);
+    Linking.openURL(shortcut.url).catch(() => {
+      // A stale or revoked iCloud link should still leave the student somewhere
+      // useful: the Shortcuts app, where the on-screen steps apply.
+      if (shortcut.url !== SHORTCUTS_APP_URL) {
+        Linking.openURL(SHORTCUTS_APP_URL).catch(() => {});
+      }
+    });
+  }, [shortcut]);
 
   const openSettings = useCallback(() => {
     Linking.openSettings().catch(() => {});
@@ -105,8 +134,17 @@ export default function SmartAutomations() {
             body={T('saBackTapBody')}
           />
 
-          <Step theme={theme} index={1} label={T('saBackTapStep1')} sub={T('saBackTapStep1Sub')}>
-            <ActionButton theme={theme} label={T('saAddShortcut')} onPress={openShortcut} />
+          <Step
+            theme={theme}
+            index={1}
+            label={T('saBackTapStep1')}
+            sub={shortcut.isPublished ? T('saBackTapStep1Sub') : T('saBackTapStep1SubManual')}
+          >
+            <ActionButton
+              theme={theme}
+              label={shortcut.isPublished ? T('saAddShortcut') : T('saOpenShortcuts')}
+              onPress={openShortcut}
+            />
           </Step>
 
           <Step theme={theme} index={2} label={T('saBackTapStep2')} sub={T('saBackTapStep2Sub')}>
