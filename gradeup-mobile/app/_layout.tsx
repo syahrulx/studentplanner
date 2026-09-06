@@ -493,6 +493,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="legal/guidelines" />
         <Stack.Screen name="legal/terms" />
         <Stack.Screen name="study-timer" />
+        <Stack.Screen name="study-insights" />
         <Stack.Screen name="live-activities" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 

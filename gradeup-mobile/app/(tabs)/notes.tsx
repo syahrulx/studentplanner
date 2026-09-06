@@ -1,6 +1,6 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '@/src/context/AppContext';
@@ -9,6 +9,8 @@ import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useThem
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
 import { dueCounts } from '@/src/lib/fsrs';
+import { EMPTY_INSIGHTS, buildMissedQuestionsQuiz, getStudyInsights, type StudyInsights } from '@/src/lib/studyInsights';
+import { setGeneratedQuizQuestions } from '@/src/lib/studyApi';
 import { remapClassroomCourse } from '@/src/lib/googleClassroom';
 import * as taskDb from '@/src/lib/taskDb';
 import * as coursesDb from '@/src/lib/coursesDb';
@@ -96,6 +98,33 @@ function createStyles(theme: ThemePalette) {
     },
 
     // Section
+    studyNowHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    studyNowLabel: { marginBottom: 10 },
+    studyNowSeeAll: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: theme.primary,
+      marginBottom: 10,
+      paddingRight: 4,
+    },
+    // Same shell as quickActionWide, but rows stack inside one section so the
+    // large trailing margin would break the grouping.
+    studyNowRow: {
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 8,
+    },
+    studyNowSpacer: { height: 20 },
     sectionLabel: {
       fontSize: 11,
       fontWeight: '700',
@@ -786,6 +815,76 @@ export default function StudyHub() {
   // Cards due for FSRS review across every deck (new cards count as due).
   const dueTotal = useMemo(() => dueCounts(flashcards, new Date()).due, [flashcards]);
 
+  // ── Study now ────────────────────────────────────────────────────────────
+  // One RPC backs the whole section. Refreshed when the tab regains focus so
+  // finishing a quiz or a review updates it, but throttled so tab-flicking does
+  // not fire a request per switch.
+  const [insights, setInsights] = useState<StudyInsights>(EMPTY_INSIGHTS);
+  const [buildingMissed, setBuildingMissed] = useState(false);
+  const insightsFetchedAtRef = useRef(0);
+  const insightsMountedRef = useRef(true);
+  const INSIGHTS_TTL_MS = 30_000;
+
+  useEffect(() => {
+    insightsMountedRef.current = true;
+    return () => { insightsMountedRef.current = false; };
+  }, []);
+
+  const refreshInsights = useCallback(async (force = false) => {
+    if (!force && Date.now() - insightsFetchedAtRef.current < INSIGHTS_TTL_MS) return;
+    insightsFetchedAtRef.current = Date.now();
+    const next = await getStudyInsights({ weakLimit: 3 });
+    if (insightsMountedRef.current) setInsights(next);
+  }, []);
+
+  /** Drop the throttle so returning from a study action always refetches. */
+  const invalidateInsights = useCallback(() => {
+    insightsFetchedAtRef.current = 0;
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshInsights();
+    }, [refreshInsights]),
+  );
+
+  /** Missed questions and weak topics both reuse the normal quiz pipeline. */
+  const startMissedQuiz = useCallback(async (noteId?: string) => {
+    if (buildingMissed) return;
+    setBuildingMissed(true);
+    try {
+      const { questions, sourceNoteIds } = await buildMissedQuestionsQuiz({
+        noteId,
+        limit: noteId ? 10 : 15,
+      });
+      if (questions.length === 0) {
+        Alert.alert((T as any)('missedQuizEmpty'));
+        return;
+      }
+      await setGeneratedQuizQuestions(questions, sourceNoteIds);
+      // Answering these writes newer attempts, so the counts change while we
+      // are away. Force a refetch when the tab regains focus.
+      invalidateInsights();
+      router.push({
+        pathname: '/quiz-mode-selection',
+        params: {
+          useGenerated: '1',
+          total: String(questions.length),
+          quizType: 'mixed',
+          difficulty: 'medium',
+          timer: 'off',
+          sourceType: 'notes',
+          sourceId: noteId ?? '_missed',
+        },
+      } as any);
+    } finally {
+      if (insightsMountedRef.current) setBuildingMissed(false);
+    }
+  }, [buildingMissed, T, invalidateInsights]);
+
+  const topWeak = insights.weakNotes[0];
+  const hasStudyNow = dueTotal > 0 || insights.missedCount > 0 || !!topWeak;
+
   return (
     <View style={s.container}>
       <View style={s.header}>
@@ -873,40 +972,115 @@ export default function StudyHub() {
           <Feather name="chevron-right" size={16} color={theme.textSecondary} />
         </Pressable>
 
+        {/* ─── Study now ───
+            One place that answers "what should I do right now?". Each row only
+            appears when it has something to act on, so the section stays short
+            and never shows a dead end. */}
+        {(hasStudyNow || totalCards > 0) && (
+          <>
+            <View style={s.studyNowHeader}>
+              <Text style={[s.sectionLabel, s.studyNowLabel]}>
+                {String((T as any)('studyNowTitle')).toUpperCase()}
+              </Text>
+              <Pressable
+                onPress={() => router.push('/study-insights' as any)}
+                hitSlop={8}
+              >
+                <Text style={s.studyNowSeeAll}>{(T as any)('studyNowSeeAll')}</Text>
+              </Pressable>
+            </View>
+
+            {dueTotal > 0 && (
+              <Pressable
+                style={({ pressed }) => [
+                  s.studyNowRow,
+                  { backgroundColor: quickActionWideTint },
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() => {
+                  invalidateInsights();
+                  router.push({ pathname: '/flashcard-review', params: { mode: 'due' } } as any);
+                }}
+              >
+                <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+                  <Feather name="clock" size={18} color={onPrimaryIcon} />
+                </View>
+                <View style={s.quickActionWideTextWrap}>
+                  <Text style={s.quickActionWideTitle}>
+                    {String((T as any)('studyNowDueCards')).replace('{n}', String(dueTotal))}
+                  </Text>
+                  <Text style={s.quickActionWideSub}>{(T as any)('studyNowDueCardsBody')}</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+              </Pressable>
+            )}
+
+            {insights.missedCount > 0 && (
+              <Pressable
+                style={({ pressed }) => [
+                  s.studyNowRow,
+                  { backgroundColor: quickActionWideTint },
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() => void startMissedQuiz()}
+                disabled={buildingMissed}
+              >
+                <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+                  <Feather name="rotate-ccw" size={18} color={onPrimaryIcon} />
+                </View>
+                <View style={s.quickActionWideTextWrap}>
+                  <Text style={s.quickActionWideTitle}>
+                    {String((T as any)('studyNowMissed')).replace('{n}', String(insights.missedCount))}
+                  </Text>
+                  <Text style={s.quickActionWideSub}>{(T as any)('studyNowMissedBody')}</Text>
+                </View>
+                {buildingMissed
+                  ? <ActivityIndicator size="small" color={theme.primary} />
+                  : <Feather name="chevron-right" size={18} color={theme.textSecondary} />}
+              </Pressable>
+            )}
+
+            {topWeak && (
+              <Pressable
+                style={({ pressed }) => [
+                  s.studyNowRow,
+                  { backgroundColor: quickActionWideTint },
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() => void startMissedQuiz(topWeak.noteId)}
+                disabled={buildingMissed}
+              >
+                <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+                  <Feather name="target" size={18} color={onPrimaryIcon} />
+                </View>
+                <View style={s.quickActionWideTextWrap}>
+                  <Text style={s.quickActionWideTitle} numberOfLines={1}>{topWeak.title}</Text>
+                  <Text style={s.quickActionWideSub}>
+                    {String((T as any)('studyNowWeakBody'))
+                      .replace('{p}', String(topWeak.accuracyPct))
+                      .replace('{n}', String(topWeak.attempts))}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+              </Pressable>
+            )}
+
+            {!hasStudyNow && (
+              <View style={[s.studyNowRow, { backgroundColor: quickActionWideTint }]}>
+                <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
+                  <Feather name="check-circle" size={18} color={onPrimaryIcon} />
+                </View>
+                <View style={s.quickActionWideTextWrap}>
+                  <Text style={s.quickActionWideSub}>{(T as any)('studyNowAllClear')}</Text>
+                </View>
+              </View>
+            )}
+            <View style={s.studyNowSpacer} />
+          </>
+        )}
+
         {/* ─── Flashcard Decks ─── */}
         <Text style={s.sectionLabel}>FLASHCARD DECKS</Text>
-        {totalCards > 0 && (
-          <Pressable
-            style={({ pressed }) => [
-              s.quickActionWide,
-              { backgroundColor: quickActionWideTint },
-              pressed && { opacity: 0.85 },
-            ]}
-            onPress={() => router.push({ pathname: '/flashcard-review', params: { mode: 'due' } } as any)}
-            disabled={dueTotal === 0}
-          >
-            <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
-              <Feather name="clock" size={18} color={onPrimaryIcon} />
-            </View>
-            <View style={s.quickActionWideTextWrap}>
-              <Text style={s.quickActionWideTitle}>
-                {(T as any)('flashcardDueTodayTitle')}{dueTotal > 0 ? ` · ${dueTotal}` : ''}
-              </Text>
-              <Text style={s.quickActionWideSub}>
-                {dueTotal > 0
-                  ? String((T as any)('flashcardDueTodayBody')).replace('{n}', String(dueTotal))
-                  : (T as any)('flashcardDueTodayNone')}
-              </Text>
-            </View>
-            {dueTotal > 0 ? (
-              <Text style={[s.quickActionWideTitle, { color: theme.primary, fontSize: 13 }]}>
-                {(T as any)('flashcardDueTodayCta')}
-              </Text>
-            ) : (
-              <Feather name="check-circle" size={16} color={theme.textSecondary} />
-            )}
-          </Pressable>
-        )}
         {deckItems.length === 0 ? (
           <View style={s.emptyDeck}>
             <Feather name="layers" size={32} color={theme.textSecondary} style={s.emptyDeckIcon} />
