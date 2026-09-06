@@ -226,9 +226,14 @@ export default ({ config }) => {
       {
         organization: 'aizz-tech-solutions',
         project: 'react-native',
-        // Source map / debug symbol upload runs only when SENTRY_AUTH_TOKEN is
-        // present at build time (EAS secret); without it the build proceeds
-        // and the upload is skipped, so local dev is unaffected.
+        // The debug-symbol upload phase needs SENTRY_AUTH_TOKEN at build time.
+        // It does not skip when the token is missing, it fails the archive with
+        // "Auth token is required for this request", so a release build has to
+        // run somewhere that has the token. It is a secret in the EAS
+        // `production` environment, which means EAS builders only: secrets are
+        // never downloaded to a local build. Same for MAPBOX_DOWNLOAD_TOKEN,
+        // which pod install needs. Build releases with `eas build`, not
+        // `eas build --local`.
       },
     ],
   ],
