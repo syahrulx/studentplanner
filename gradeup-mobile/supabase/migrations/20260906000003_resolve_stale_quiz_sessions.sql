@@ -62,7 +62,7 @@ begin
   -- Only sessions this caller took part in, so a player resolves their own
   -- abandoned matches rather than reaching into anyone else's.
   for v_session in
-    select s.id
+    select s.id, s.mode
     from public.quiz_sessions s
     join public.quiz_participants p on p.session_id = s.id and p.user_id = v_user
     where s.status = 'in_progress'
@@ -80,9 +80,12 @@ begin
     select count(*) into v_tie
       from public.quiz_participants where session_id = v_session.id and score = v_top;
 
-    -- A bonus for a match where nobody scored would be meaningless, and a draw
-    -- has no winner to award, so both are skipped.
-    if v_top > 0 and v_tie = 1 then
+    -- The winner bonus only exists in multiplayer, and finish_quiz_participant
+    -- gates it the same way. Without the mode check a solo quiz abandoned
+    -- mid-game would earn XP that completing it never would, which turns
+    -- walking away into the better move. A match nobody scored in, or one that
+    -- ended level, has no winner to name.
+    if v_session.mode = 'multiplayer' and v_top > 0 and v_tie = 1 then
       select user_id into v_winner
         from public.quiz_participants
        where session_id = v_session.id and score = v_top
