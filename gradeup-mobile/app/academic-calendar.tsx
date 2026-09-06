@@ -83,6 +83,18 @@ function inferAcademicLevelFromOfferLabel(label: string): AcademicLevel {
   return "Other";
 }
 
+/**
+ * The level an offer belongs to.
+ *
+ * The published `programLevel` wins; the label is only read when the admin left
+ * it blank. Seeding the picker and tapping an option have to agree on this, or
+ * the level flips on its own and the sheet reloads for no reason the student
+ * can see.
+ */
+function levelForOffer(offer: UniversityCalendarOffer): AcademicLevel {
+  return offer.programLevel ?? inferAcademicLevelFromOfferLabel(offer.semesterLabel);
+}
+
 function offerSummary(offer: UniversityCalendarOffer, todayISO: string): string {
   const details: string[] = [`${offer.startDate} to ${offer.endDate}`];
   if (offer.startDate <= todayISO && todayISO <= offer.endDate) details.push("Current");
@@ -144,6 +156,10 @@ export default function AcademicCalendarScreen() {
   const [cfgSelectedOfferId, setCfgSelectedOfferId] = useState("");
   const [showOtherOffers, setShowOtherOffers] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
+  /** The fetch threw. Distinct from "loaded, and there are none". */
+  const [offersFailed, setOffersFailed] = useState(false);
+  /** Bumped by Retry to re-run the fetch without closing the sheet. */
+  const [offersReloadKey, setOffersReloadKey] = useState(0);
   const [uitmCommunityOffers, setUitmCommunityOffers] = useState<UitmCalendarContribution[]>([]);
   const [cfgSelectedUitmCommunityId, setCfgSelectedUitmCommunityId] = useState("");
   const [cfgUitmCalendarSource, setCfgUitmCalendarSource] = useState<"official" | "community">("official");
@@ -268,33 +284,66 @@ export default function AcademicCalendarScreen() {
     if (configOpen) setCfgStudentId((user.studentId || "").trim());
   }, [configOpen, user.studentId]);
 
+  // Nothing to hold on to once the sheet is closed, or before a university is
+  // known. Kept separate from the two fetches so closing the sheet cannot race
+  // a request that is still in flight.
   useEffect(() => {
-    const uniId = user.universityId;
-    if (!configOpen || !uniId) {
-      setAdminOffers([]);
-      setCfgSelectedOfferId("");
-      setUitmCommunityOffers([]);
-      setCfgSelectedUitmCommunityId("");
-      setOffersLoading(false);
-      return;
-    }
+    if (configOpen && user.universityId) return;
+    setAdminOffers([]);
+    setCfgSelectedOfferId("");
+    setUitmCommunityOffers([]);
+    setCfgSelectedUitmCommunityId("");
+    setOffersLoading(false);
+    setOffersFailed(false);
+  }, [configOpen, user.universityId]);
+
+  // UiTM publishes per HEA group, and the group follows the programme level, so
+  // changing the level here genuinely has to fetch a different list.
+  useEffect(() => {
+    if (!configOpen || user.universityId !== "uitm") return;
     let cancelled = false;
     setOffersLoading(true);
+    setOffersFailed(false);
     void (async () => {
       try {
-        if (uniId === "uitm") {
-          const group: "A" | "B" = cfgLevel === "Foundation" ? "A" : "B";
-          const list = await fetchApprovedUitmCalendarContributions(group);
-          if (cancelled) return;
-          setAdminOffers([]);
-          setUitmCommunityOffers(list);
-          const currentStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
-          const currentMatch = list.find((item) => item.startDate === currentStart);
-          setCfgSelectedUitmCommunityId((currentMatch ?? list[0])?.id ?? "");
-          return;
+        const group: "A" | "B" = cfgLevel === "Foundation" ? "A" : "B";
+        const list = await fetchApprovedUitmCalendarContributions(group);
+        if (cancelled) return;
+        setAdminOffers([]);
+        setUitmCommunityOffers(list);
+        const currentStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
+        const currentMatch = list.find((item) => item.startDate === currentStart);
+        setCfgSelectedUitmCommunityId((currentMatch ?? list[0])?.id ?? "");
+      } catch {
+        if (!cancelled) {
+          setUitmCommunityOffers([]);
+          setOffersFailed(true);
         }
+      } finally {
+        if (!cancelled) setOffersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [configOpen, user.universityId, cfgLevel, academicCalendar?.startDate, offersReloadKey]);
+
+  // Every other university publishes one list per university, so this must NOT
+  // depend on cfgLevel. Picking a semester sets the level from its label, and
+  // when that was a dependency the tap refetched the list and then reseeded the
+  // selection from the saved calendar: the sheet flashed a spinner and landed
+  // back on the semester the student was trying to change away from.
+  useEffect(() => {
+    const uniId = user.universityId;
+    if (!configOpen || !uniId || uniId === "uitm") return;
+    let cancelled = false;
+    setOffersLoading(true);
+    setOffersFailed(false);
+    void (async () => {
+      try {
         const list = await fetchAllCalendarOffersForUniversity(uniId);
         if (cancelled) return;
+        setUitmCommunityOffers([]);
         setAdminOffers(list);
         const curStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
         const curLabel = String(academicCalendar?.semesterLabel ?? "");
@@ -303,10 +352,12 @@ export default function AcademicCalendarScreen() {
         );
         const pick = match ?? list[0];
         setCfgSelectedOfferId(pick?.id ?? "");
-        if (pick)
-          setCfgLevel(inferAcademicLevelFromOfferLabel(pick.semesterLabel));
+        if (pick) setCfgLevel(levelForOffer(pick));
       } catch {
-        if (!cancelled) setAdminOffers([]);
+        if (!cancelled) {
+          setAdminOffers([]);
+          setOffersFailed(true);
+        }
       } finally {
         if (!cancelled) setOffersLoading(false);
       }
@@ -317,9 +368,9 @@ export default function AcademicCalendarScreen() {
   }, [
     configOpen,
     user.universityId,
-    cfgLevel,
     academicCalendar?.startDate,
     academicCalendar?.semesterLabel,
+    offersReloadKey,
   ]);
 
   const uniSearchResults = useMemo(() => {
@@ -657,13 +708,7 @@ export default function AcademicCalendarScreen() {
           : {}),
         heaTermCode: null,
         studentId: sid,
-        ...(selected
-          ? {
-              academicLevel: inferAcademicLevelFromOfferLabel(
-                selected.semesterLabel,
-              ),
-            }
-          : {}),
+        ...(selected ? { academicLevel: levelForOffer(selected) } : {}),
       });
 
       if (selected) {
@@ -1514,6 +1559,38 @@ export default function AcademicCalendarScreen() {
                   style={{ marginTop: 12 }}
                   color={theme.primary}
                 />
+              ) : offersFailed ? (
+                /* A failed request used to render as "no calendars published",
+                   which reads like the university has none rather than like a
+                   dropped connection, and left no way back but closing the
+                   sheet. */
+                <>
+                  <Text
+                    style={[
+                      s.modalSub,
+                      { color: theme.textSecondary, marginTop: 8 },
+                    ]}
+                  >
+                    Could not load the calendar list. Check your connection and
+                    try again.
+                  </Text>
+                  <Pressable
+                    style={[
+                      s.saveBtn,
+                      {
+                        backgroundColor: theme.card,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        marginTop: 12,
+                      },
+                    ]}
+                    onPress={() => setOffersReloadKey((n) => n + 1)}
+                  >
+                    <Text style={[s.saveBtnText, { color: theme.text }]}>
+                      Retry
+                    </Text>
+                  </Pressable>
+                </>
               ) : adminOffers.length === 0 ? (
                 <>
                   <Text
@@ -1596,10 +1673,7 @@ export default function AcademicCalendarScreen() {
                               selected={cfgSelectedOfferId === o.id}
                               onSelect={() => {
                                 setCfgSelectedOfferId(o.id);
-                                setCfgLevel(
-                                  o.programLevel ??
-                                    inferAcademicLevelFromOfferLabel(o.semesterLabel),
-                                );
+                                setCfgLevel(levelForOffer(o));
                               }}
                               onReport={() =>
                                 Alert.alert(
