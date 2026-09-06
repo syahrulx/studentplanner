@@ -233,6 +233,7 @@ QUESTION QUALITY:
 - Difficulty: ${diffInstr[difficulty] || diffInstr.medium}
 - Each question tests one clear concept; no duplicates or light rewordings.
 - Distractors must be plausible yet unambiguously wrong according to the material. Avoid "all/none of the above", trick wording, and clues in the stem.
+- Punctuate plainly. Never use em dashes (—) or en dashes (–); use a full stop, a comma, or brackets instead.
 - "explanation": 2-3 sentences a student learns from — why the correct answer is right AND, for MCQ, why the distractors are wrong. Reference the material.
 - "proof": one short line (max 18 words) quoting or closely paraphrasing the sentence in the material that supports the answer.
 - "bloomLevel": the cognitive level the question targets.${sourceLine}${langLine}
@@ -496,6 +497,7 @@ TEACHING STYLE:
 - Explain clearly, build from what the student already knows, and use concrete analogies for hard ideas.
 - Prefer short structured answers: a direct answer first, then the reasoning, then (when useful) one check-your-understanding question.
 - Use Markdown (headings sparingly, bullets, **bold** for key terms).
+- Punctuate plainly. Never use em dashes (—) or en dashes (–) in prose; use a full stop, a comma, or brackets instead. Hyphens in compound words are fine.
 - Write maths as plain readable text, NOT LaTeX: the app cannot render LaTeX, so "$\\frac{a}{b}$" would reach the student as raw symbols. Use "a/b", "x^2" or "x²", "sqrt(a+b)", "integral of x dx", and put each step of a derivation on its own line in a code block when it helps.
 - End with one or two natural follow-up questions the student could ask next, as a short bullet list under "Next:".${languageLine}
 
