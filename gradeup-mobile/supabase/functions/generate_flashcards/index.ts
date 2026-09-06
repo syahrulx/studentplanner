@@ -17,6 +17,14 @@ import {
   type Plan,
 } from '../_shared/planLimits.ts';
 import { reindexNote } from '../_shared/embed.ts';
+import {
+  GEMINI_STUDY_EXTRACT_PROMPT,
+  extractPagesWithUnpdf,
+  joinPages,
+  looksImageHeavy,
+  restructureToStudyMarkdown,
+  stripRepeatedLines,
+} from '../_shared/studyExtract.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -425,7 +433,7 @@ const LARGE_PDF_BODY_BYTES = 6 * 1024 * 1024;
 const LARGE_PDF_MAX_PAGES = 12;
 /** One long attempt fits Edge wall-clock better than two sequential long attempts. */
 const LARGE_GEMINI_TIMEOUT_MS = 78_000;
-const LARGE_GEMINI_MAX_OUTPUT = 4096;
+const LARGE_GEMINI_MAX_OUTPUT = 8192;
 const LARGE_GEMINI_MAX_MODELS = 1;
 const LARGE_GEMINI_MAX_ATTEMPTS = 1;
 /** If ListModels fails, try 2 IDs with shorter per-call timeouts (404 fallback without blowing wall-clock). */
@@ -433,18 +441,6 @@ const LARGE_GEMINI_FALLBACK_MODELS = 2;
 const LARGE_GEMINI_FALLBACK_TIMEOUT_MS = 38_000;
 
 const MAX_USER_SELECTED_PAGES = 60;
-
-async function extractPdfTextWithUnpdf(pdfBytes: Uint8Array): Promise<string | null> {
-  try {
-    const { extractText, getDocumentProxy } = await import('npm:unpdf@0.12.1');
-    const pdf = await getDocumentProxy(pdfBytes, { verbosity: 0 });
-    const { text } = await extractText(pdf, { mergePages: true });
-    const cleaned = String(text ?? '').trim().slice(0, 120_000);
-    return cleaned.length > 0 ? cleaned : null;
-  } catch {
-    return null;
-  }
-}
 
 function parsePdfPagesSpec(
   spec: string,
@@ -504,8 +500,9 @@ async function extractPdfText(
   storagePath: string,
   bucket: string,
   geminiKey: string,
+  openAiKey: string,
   pagesSpec?: string,
-): Promise<{ text: string; error?: string }> {
+): Promise<{ text: string; error?: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null; model?: string }> {
   // Generate signed URL — edge function never downloads the PDF
   const { data: signedData, error: signedError } = await supabaseAdmin.storage
     .from(bucket)
@@ -548,9 +545,14 @@ async function extractPdfText(
     }
 
     // Fast fallback path for text-based PDFs: avoids Gemini availability spikes.
-    const unpdfFast = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
-    if (unpdfFast) {
-      return { text: unpdfFast };
+    // Typed decks are restructured into study Markdown by the fast model.
+    // Diagram-heavy decks fall through to Gemini so figures are described.
+    const textDoc = await extractPagesWithUnpdf(new Uint8Array(pdfBytes));
+    if (textDoc && !looksImageHeavy(textDoc)) {
+      const joined = joinPages(stripRepeatedLines(textDoc));
+      if (!openAiKey) return { text: joined.replace(/^\[Page \d+\]\n?/gm, '') };
+      const r = await restructureToStudyMarkdown(openAiKey, joined);
+      return { text: r.text, usage: r.usage, model: r.model };
     }
 
     if (!isLikelyLargePdf && pdfBytes.byteLength > LARGE_PDF_BODY_BYTES) {
@@ -646,27 +648,15 @@ async function extractPdfText(
         try {
           // Big/long PDFs can time out if we try to OCR "everything".
           // We only need enough high-signal text to generate flashcards.
-          const boundedExtract =
-            'Extract educational text needed for flashcards. Return plain text only (no markdown). ' +
-            'Preserve headings and structure. Prioritize definitions, key concepts, formulas, and bullet points. ' +
-            'Skip indices, page numbers, repeated headers/footers, and long boilerplate.';
-
           const pageHint =
             pagesInUpload > 0
               ? `${pagesInUpload} page${pagesInUpload === 1 ? '' : 's'}`
               : 'the attached pages';
           const firstPagesOnly =
             extractHeavy
-              ? `IMPORTANT: The PDF attachment contains ${pageHint}. Extract key study text from those pages only. `
+              ? `IMPORTANT: The PDF attachment contains ${pageHint}. Extract from those pages only.\n\n`
               : '';
-
-          const ocrInstruction =
-            'If the PDF pages are images/scans, perform OCR to read the text. ';
-
-          const prompt =
-            attempt === 1
-              ? (firstPagesOnly + ocrInstruction + boundedExtract)
-              : (firstPagesOnly + 'This PDF may be scanned/image-based. Perform OCR. ' + boundedExtract);
+          const prompt = firstPagesOnly + GEMINI_STUDY_EXTRACT_PROMPT;
 
           const controller = new AbortController();
           const timeoutMs = extractHeavy
@@ -689,7 +679,7 @@ async function extractPdfText(
                 }],
                 generationConfig: {
                   temperature: 0,
-                  maxOutputTokens: extractHeavy ? LARGE_GEMINI_MAX_OUTPUT : 8192,
+                  maxOutputTokens: extractHeavy ? LARGE_GEMINI_MAX_OUTPUT : 32768,
                 },
               }),
             },
@@ -743,10 +733,12 @@ async function extractPdfText(
       }
     }
 
-    // Last-resort fallback: try local parser again before failing.
-    const unpdfFallback = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
-    if (unpdfFallback) {
-      return { text: unpdfFallback };
+    // Gemini failed but the deck has a text layer: return structured text minus figures.
+    if (textDoc) {
+      const joined = joinPages(stripRepeatedLines(textDoc));
+      if (!openAiKey) return { text: joined.replace(/^\[Page \d+\]\n?/gm, '') };
+      const r = await restructureToStudyMarkdown(openAiKey, joined);
+      return { text: r.text, usage: r.usage, model: r.model };
     }
 
     return { text: '', error: lastError || 'PDF extraction failed after retries.' };
@@ -963,8 +955,19 @@ Deno.serve(async (req) => {
           storagePath,
           bucket,
           geminiKey,
+          openAiKey,
           pdfPageFilterActive ? pdfPagesRaw : undefined,
         );
+        if (extraction.usage) {
+          await supabaseAdmin.from('ai_token_usage').insert({
+            user_id: userId,
+            kind: 'pdf_text_extraction',
+            model: extraction.model ?? null,
+            prompt_tokens: extraction.usage.prompt_tokens,
+            completion_tokens: extraction.usage.completion_tokens,
+            total_tokens: extraction.usage.total_tokens,
+          }).then(() => {}, () => {});
+        }
         if (extraction.error || !extraction.text.trim()) {
           const rawError = extraction.error || 'Could not extract text from PDF.';
           logOpsEvent(supabaseAdmin, {

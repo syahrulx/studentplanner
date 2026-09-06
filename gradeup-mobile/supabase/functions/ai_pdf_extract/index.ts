@@ -7,6 +7,15 @@ import {
 } from '../_shared/tokenLimit.ts';
 import { logOpsEvent } from '../_shared/opsLog.ts';
 import { GEMINI_PREFERRED_MODELS } from '../_shared/models.ts';
+import {
+  GEMINI_STUDY_EXTRACT_PROMPT,
+  extractPagesWithUnpdf,
+  joinPages,
+  looksImageHeavy,
+  restructureToStudyMarkdown,
+  stripRepeatedLines,
+  type PdfPages,
+} from '../_shared/studyExtract.ts';
 
 // ---------------------------------------------------------------------------
 // CORS & Response helpers
@@ -85,22 +94,37 @@ async function listAvailableGeminiModels(geminiKey: string): Promise<string[] | 
   }
 }
 
-async function extractPdfTextWithUnpdf(pdfBytes: Uint8Array): Promise<string | null> {
-  try {
-    const { extractText, getDocumentProxy } = await import('npm:unpdf@0.12.1');
-    const pdf = await getDocumentProxy(pdfBytes, { verbosity: 0 });
-    const { text } = await extractText(pdf, { mergePages: true });
-    const cleaned = String(text ?? '').trim().slice(0, 120_000);
-    return cleaned.length > 0 ? cleaned : null;
-  } catch {
-    return null;
+type ExtractUsage = { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+
+interface ExtractResult {
+  text: string;
+  usage?: ExtractUsage;
+  model?: string;
+  /** Which path produced the text; recorded in ops logs for tuning. */
+  method?: 'restructured' | 'gemini' | 'unpdf_raw';
+  error?: string;
+}
+
+/**
+ * Text-layer PDFs go through a restructure pass (fast OpenAI tier); scanned or
+ * diagram-heavy PDFs go to Gemini, which can see the pages. Either way the
+ * output is study Markdown. Raw unpdf text is only ever a fallback.
+ */
+async function textLayerToStudyMarkdown(doc: PdfPages, openAiKey: string): Promise<ExtractResult> {
+  const cleaned = stripRepeatedLines(doc);
+  const joined = joinPages(cleaned);
+  if (!openAiKey) {
+    return { text: joined.replace(/^\[Page \d+\]\n?/gm, '').slice(0, 120_000), method: 'unpdf_raw' };
   }
+  const r = await restructureToStudyMarkdown(openAiKey, joined);
+  return { text: r.text.slice(0, 120_000), usage: r.usage, model: r.model, method: r.degraded ? 'unpdf_raw' : 'restructured' };
 }
 
 async function extractViaGemini(
   signedUrl: string,
   geminiKey: string,
-): Promise<{ text: string; usage?: any; error?: string }> {
+  openAiKey: string,
+): Promise<ExtractResult> {
   const modelsListPromise = listAvailableGeminiModels(geminiKey);
   // Download PDF bytes from signed URL
   const pdfRes = await fetch(signedUrl);
@@ -118,9 +142,18 @@ async function extractViaGemini(
     };
   }
 
-  const unpdfFast = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
-  if (unpdfFast) {
-    return { text: unpdfFast };
+  // Per-page text lets us tell a typed deck from a diagram deck. A typed deck is
+  // restructured by the fast model; a diagram deck falls through to Gemini so
+  // the figures are described rather than lost.
+  const textDoc = await extractPagesWithUnpdf(new Uint8Array(pdfBytes));
+  if (textDoc && !looksImageHeavy(textDoc)) {
+    return textLayerToStudyMarkdown(textDoc, openAiKey);
+  }
+  if (!geminiKey) {
+    // Cannot see the pages; do the best we can with whatever text exists.
+    return textDoc
+      ? textLayerToStudyMarkdown(textDoc, openAiKey)
+      : { text: '', error: 'This PDF has no text layer and image extraction is not configured.' };
   }
 
   // Upload to Gemini File API (simple media upload — single POST)
@@ -183,10 +216,11 @@ async function extractViaGemini(
                 contents: [{
                   parts: [
                     { file_data: { mime_type: 'application/pdf', file_uri: geminiFileUri } },
-                    { text: 'Extract all readable educational text from this PDF document. Return plain text only. Preserve headings and structure. Ignore file metadata, page numbers, and formatting artifacts.' },
+                    { text: GEMINI_STUDY_EXTRACT_PROMPT },
                   ],
                 }],
-                generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+                // Study Markdown is longer than flat text (tables, figure notes). Gemini 3.x allows 65k.
+                generationConfig: { temperature: 0, maxOutputTokens: 32768 },
               }),
             },
           );
@@ -219,10 +253,16 @@ async function extractViaGemini(
             }
           }
 
+          const um = aiJson?.usageMetadata ?? {};
           return {
             text: text.trim().slice(0, 120_000),
-            usage: aiJson?.usageMetadata,
+            usage: {
+              prompt_tokens: Number(um.promptTokenCount ?? 0),
+              completion_tokens: Number(um.candidatesTokenCount ?? 0),
+              total_tokens: Number(um.totalTokenCount ?? 0),
+            },
             model: modelName,
+            method: 'gemini',
           };
         } catch (err: any) {
           clearTimeout(timeout);
@@ -237,9 +277,10 @@ async function extractViaGemini(
       }
     }
 
-    const unpdfFallback = await extractPdfTextWithUnpdf(new Uint8Array(pdfBytes));
-    if (unpdfFallback) {
-      return { text: unpdfFallback };
+    // Gemini failed on a deck that does have a text layer: keep the student
+    // moving with structured text, minus the figures.
+    if (textDoc) {
+      return textLayerToStudyMarkdown(textDoc, openAiKey);
     }
 
     return { text: '', error: lastError || 'Gemini extraction failed after retries.' };
@@ -268,6 +309,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const geminiKey = (Deno.env.get('GEMINI_API_KEY') ?? '').trim();
+    const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
     const authHeader = req.headers.get('Authorization') ?? '';
 
     if (!supabaseUrl || !supabaseAnon) {
@@ -341,7 +383,7 @@ Deno.serve(async (req) => {
     }
 
     // ── Extract via Gemini (streams PDF directly, no memory buffering) ──
-    const result = await extractViaGemini(signedData.signedUrl, geminiKey);
+    const result = await extractViaGemini(signedData.signedUrl, geminiKey, openAiKey);
 
     if (result.error || !result.text) {
       const rawError = result.error || 'Could not extract text from PDF.';
@@ -361,15 +403,15 @@ Deno.serve(async (req) => {
         .insert({
           user_id: userId,
           kind: 'pdf_text_extraction',
-          model: result.model ?? GEMINI_PREFERRED_MODELS[0],
-          prompt_tokens: result.usage?.promptTokenCount ?? null,
-          completion_tokens: result.usage?.candidatesTokenCount ?? null,
-          total_tokens: result.usage?.totalTokenCount ?? null,
+          model: result.model ?? (result.method === 'gemini' ? GEMINI_PREFERRED_MODELS[0] : 'unpdf'),
+          prompt_tokens: result.usage?.prompt_tokens ?? null,
+          completion_tokens: result.usage?.completion_tokens ?? null,
+          total_tokens: result.usage?.total_tokens ?? null,
         })
         .then(() => {}, () => {});
     } catch {}
 
-    return json({ text: result.text, stage: 'done' });
+    return json({ text: result.text, stage: 'done', method: result.method ?? 'unknown' });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     try {
