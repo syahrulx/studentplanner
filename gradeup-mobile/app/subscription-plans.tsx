@@ -67,7 +67,7 @@ function openRencanaWeb(path: string) {
 
 export default function SubscriptionPlansScreen() {
   const theme = useTheme();
-  const { user, updateProfile, refreshRemoteData } = useApp();
+  const { user, updateProfile, refreshRemoteData, refreshSubscription } = useApp();
   /** Non-null while a store free trial is running on the user's current plan. */
   const activeTrial = getTrialState(user);
   const { userId } = useCommunity();
@@ -317,13 +317,29 @@ export default function SubscriptionPlansScreen() {
     }
     setRestoring(true);
     try {
-      const restoredPlan = await restorePurchases();
+      // The store is only one of the ways a plan can be granted. Curlec
+      // purchases and admin/promotional grants live on the server and are
+      // invisible to RevenueCat, so a store restore that finds nothing is not
+      // the same as having nothing. Ask the server before saying no.
+      let restoredPlan: SubscriptionPlan = 'free';
+      let storeError: unknown = null;
+      try {
+        restoredPlan = await restorePurchases();
+      } catch (e) {
+        storeError = e;
+      }
+      if (restoredPlan === 'free') {
+        restoredPlan = await refreshSubscription();
+      }
+
       if (restoredPlan !== 'free') {
         Alert.alert(
           'Purchases Restored',
           `Your ${subscriptionPlanLabel(restoredPlan)} subscription has been restored!`,
           [{ text: 'OK', onPress: () => router.back() }],
         );
+      } else if (storeError) {
+        throw storeError;
       } else {
         Alert.alert('No Purchases Found', 'We couldn\'t find any active subscriptions to restore.');
       }

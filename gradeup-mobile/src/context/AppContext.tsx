@@ -179,6 +179,14 @@ type AppState = {
    * row. Card write failures roll back and reject; log failures are non-fatal.
    */
   reviewFlashcard: (cardId: string, rating: FlashcardRating, durationMs?: number) => Promise<Flashcard | null>;
+  /**
+   * Re-read the plan from the server profile and apply it.
+   *
+   * The server is the single source of truth for entitlement: a plan can come
+   * from the store, from Curlec/Razorpay, or from an admin grant, and only the
+   * first of those is visible to RevenueCat. Returns the plan now in effect.
+   */
+  refreshSubscription: () => Promise<import('../types').SubscriptionPlan>;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
   pendingClassroomTasks: import('../lib/googleClassroom').PendingNewTask[];
@@ -449,6 +457,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const tasksRef = useRef<Task[]>([]);
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
+  /**
+   * Indirection for `refreshSubscription`, which is declared further down but
+   * needed by the RevenueCat listener set up during sign-in.
+   */
+  const refreshSubscriptionRef = useRef<() => Promise<import('../types').SubscriptionPlan>>(
+    async () => 'free',
+  );
   const offlineMutationVersionRef = useRef(0);
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
@@ -1221,37 +1236,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           revenueCatUnsubscribeRef.current();
           revenueCatUnsubscribeRef.current = onCustomerInfoUpdate(async () => {
             if (remoteUserIdRef.current !== uid) return; // stale callback from a previous session
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('subscription_plan, subscription_status, subscription_period_type, subscription_expires_at')
-              .eq('id', uid)
-              .maybeSingle();
-            if (error || remoteUserIdRef.current !== uid) return;
-            const plan = data?.subscription_plan === 'pro'
-              ? 'pro'
-              : data?.subscription_plan === 'plus'
-                ? 'plus'
-                : 'free';
-            // The billing fields travel with the plan: a trial that starts, is
-            // cancelled, or converts changes these without changing the tier, so
-            // refreshing only the plan would leave a stale countdown on screen.
-            const status = data?.subscription_status ? String(data.subscription_status) : undefined;
-            const periodType = data?.subscription_period_type ? String(data.subscription_period_type) : undefined;
-            const expiresAt = data?.subscription_expires_at ? String(data.subscription_expires_at) : undefined;
-            setUserState((prev) =>
-              prev.subscriptionPlan === plan &&
-              prev.subscriptionStatus === status &&
-              prev.subscriptionPeriodType === periodType &&
-              prev.subscriptionExpiresAt === expiresAt
-                ? prev
-                : {
-                    ...prev,
-                    subscriptionPlan: plan,
-                    subscriptionStatus: status,
-                    subscriptionPeriodType: periodType,
-                    subscriptionExpiresAt: expiresAt,
-                  },
-            );
+            await refreshSubscriptionRef.current();
           });
         } catch (e) {
           if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
@@ -2341,6 +2326,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return next;
   }, []);
 
+  /**
+   * Pull the authoritative plan from `profiles` and apply it locally.
+   *
+   * Used by "Restore Purchases": RevenueCat only knows about store receipts, so
+   * an admin grant or a Curlec purchase restores as "no purchases found" unless
+   * we also ask the server.
+   */
+  const refreshSubscription = useCallback(async (): Promise<import('../types').SubscriptionPlan> => {
+    const uid = remoteUserIdRef.current;
+    if (!uid) return 'free';
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('subscription_plan, subscription_status, subscription_period_type, subscription_expires_at')
+      .eq('id', uid)
+      .maybeSingle();
+    if (error || remoteUserIdRef.current !== uid) {
+      if (__DEV__ && error) console.warn('[Rencana] refreshSubscription failed:', error.message);
+      return 'free';
+    }
+    const plan: import('../types').SubscriptionPlan =
+      data?.subscription_plan === 'pro' ? 'pro' : data?.subscription_plan === 'plus' ? 'plus' : 'free';
+    const status = data?.subscription_status ? String(data.subscription_status) : undefined;
+    const periodType = data?.subscription_period_type ? String(data.subscription_period_type) : undefined;
+    const expiresAt = data?.subscription_expires_at ? String(data.subscription_expires_at) : undefined;
+    setUserState((prev) =>
+      prev.subscriptionPlan === plan &&
+      prev.subscriptionStatus === status &&
+      prev.subscriptionPeriodType === periodType &&
+      prev.subscriptionExpiresAt === expiresAt
+        ? prev
+        : { ...prev, subscriptionPlan: plan, subscriptionStatus: status, subscriptionPeriodType: periodType, subscriptionExpiresAt: expiresAt },
+    );
+    return plan;
+  }, []);
+  refreshSubscriptionRef.current = refreshSubscription;
+
   const saveTimetableAndLink = useCallback(async (entries: TimetableEntry[], universityId: string, studentId: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     const uid = session?.user?.id;
@@ -2646,6 +2667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       deleteFlashcard,
       deleteFlashcardsForNote,
       reviewFlashcard,
+      refreshSubscription,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,
@@ -2734,6 +2756,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       deleteFlashcard,
       deleteFlashcardsForNote,
       reviewFlashcard,
+      refreshSubscription,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,

@@ -31,10 +31,11 @@ type ReviewMode = 'deck' | 'due';
  * Card height floor, as a share of the screen.
  *
  * Cards are short (a question and a hint), so on a tall phone they shrank to a
- * small block adrift in empty space. Scaling to the viewport keeps the card
- * substantial on a Pro Max without overflowing an SE.
+ * small block adrift in empty space. Scaling to the viewport keeps a consistent
+ * shape across devices, and keeps the front and back the same size so the card
+ * does not resize when it flips.
  */
-const CARD_MIN_HEIGHT = Math.max(300, Math.round(Dimensions.get('window').height * 0.42));
+const CARD_MIN_HEIGHT = Math.max(240, Math.round(Dimensions.get('window').height * 0.3));
 
 function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   const monoAccent = '#9ca3af';
@@ -148,15 +149,6 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       shadowOpacity: 0.15,
       shadowRadius: 24,
       elevation: 6,
-    },
-    cardBackIconCircle: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      backgroundColor: primaryCta,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 16,
     },
     cardAnswer: {
       fontSize: 19,
@@ -636,9 +628,6 @@ export default function FlashcardReview() {
           {!showBack ? (
             /* ── FRONT ── */
             <Pressable style={styles.cardFront} onPress={toggleFlip}>
-              <View style={styles.cardIconCircle}>
-                <Icons.Layers size={28} color={theme.primary} />
-              </View>
               {typeBadge ? (
                 <View style={styles.cardTypeBadge}>
                   <Text style={styles.cardTypeBadgeText}>{typeBadge}</Text>
@@ -651,9 +640,6 @@ export default function FlashcardReview() {
           ) : (
             /* ── BACK ── */
             <Pressable style={styles.cardBack} onPress={toggleFlip}>
-              <View style={styles.cardBackIconCircle}>
-                <Icons.Sparkles size={26} color={isDarkMinimal ? '#000000' : '#fff'} />
-              </View>
               <Text style={styles.cardAnswer}>{faces?.back}</Text>
               <View style={styles.ratingRow}>
                 {RATINGS.map((r) => {
