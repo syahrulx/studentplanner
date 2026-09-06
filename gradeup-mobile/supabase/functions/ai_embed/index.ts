@@ -1,111 +1,78 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+/**
+ * ai_embed — (re)index one note for RAG.
+ *
+ * Body: { noteId: string; subjectId: string; content: string }
+ * Returns: { success: true, chunksProcessed: number, tokens: number }
+ *
+ * Uses the shared pipeline in `_shared/embed.ts` (text-embedding-3-large,
+ * 1536 dims, insert-then-delete so a note is never left unindexed).
+ */
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { reindexNote } from '../_shared/embed.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+const MAX_EMBED_CHARS = 400_000;
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    const openAiKey = Deno.env.get('OPENAI_API_KEY');
+    const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const openAiKey = (Deno.env.get('OPENAI_API_KEY') ?? '').trim();
+    if (!openAiKey) return json({ error: 'Missing OPENAI_API_KEY' }, 500);
 
-    if (!openAiKey) throw new Error('Missing OPENAI_API_KEY');
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!bearer) return json({ error: 'Unauthorized' }, 401);
 
-    // Create a Supabase client with the Auth context of the logged in user.
-    const supabaseClient = createClient(
-      supabaseUrl,
-      supabaseAnon,
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
-
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    if (userError || !user) throw new Error('Unauthorized')
-
-    const { noteId, subjectId, content } = await req.json()
-
-    if (!noteId || !subjectId || !content) {
-      throw new Error('Missing required parameters: noteId, subjectId, content');
-    }
-
-    // Basic chunking: split by paragraphs, then group up to ~1000 characters
-    const paragraphs = content.split(/\n\s*\n/);
-    const chunks: string[] = [];
-    let currentChunk = '';
-
-    for (const p of paragraphs) {
-      if (currentChunk.length + p.length > 1000 && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
-      currentChunk += p + '\n\n';
-    }
-    if (currentChunk.trim().length > 0) {
-      chunks.push(currentChunk.trim());
-    }
-
-    if (chunks.length === 0) {
-      return new Response(JSON.stringify({ success: true, message: 'No content to embed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // 1. Generate Embeddings using OpenAI
-    const openAiRes = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        input: chunks,
-        model: 'text-embedding-3-small'
-      })
+    const admin = createClient(supabaseUrl, serviceRole || supabaseAnon, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      ...(serviceRole ? {} : { global: { headers: { Authorization: authHeader } } }),
     });
+    const { data: authData, error: authError } = serviceRole
+      ? await admin.auth.getUser(bearer)
+      : await admin.auth.getUser();
+    if (authError || !authData?.user) return json({ error: 'Unauthorized' }, 401);
+    const userId = authData.user.id;
 
-    if (!openAiRes.ok) {
-      const errTxt = await openAiRes.text();
-      throw new Error(`OpenAI API Error: ${errTxt}`);
+    let body: { noteId?: string; subjectId?: string; content?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: 'Invalid JSON body' }, 400);
     }
+    const noteId = String(body.noteId ?? '').trim();
+    const subjectId = String(body.subjectId ?? '').trim();
+    const content = String(body.content ?? '').slice(0, MAX_EMBED_CHARS);
+    if (!noteId || !subjectId) return json({ error: 'Missing required parameters: noteId, subjectId' }, 400);
 
-    const embeddingData = await openAiRes.json();
-    const embeddings = embeddingData.data; // Array of objects containing .embedding
+    // The note must belong to the caller (the FK on note_embeddings enforces
+    // existence, but we want a clean error rather than a constraint failure).
+    const { data: note } = await admin
+      .from('notes')
+      .select('id')
+      .eq('id', noteId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!note) return json({ error: 'Note not found for this user' }, 404);
 
-    // 2. Clear old embeddings for this note
-    await supabaseClient
-      .from('note_embeddings')
-      .delete()
-      .eq('note_id', noteId)
-      .eq('user_id', user.id);
-
-    // 3. Insert new embeddings
-    const rowsToInsert = chunks.map((chunkText, i) => ({
-      note_id: noteId,
-      user_id: user.id,
-      subject_id: subjectId,
-      chunk_index: i,
-      content: chunkText,
-      embedding: embeddings[i].embedding
-    }));
-
-    const { error: insertError } = await supabaseClient
-      .from('note_embeddings')
-      .insert(rowsToInsert);
-
-    if (insertError) throw insertError;
-
-    return new Response(JSON.stringify({ success: true, chunksProcessed: chunks.length }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    const result = await reindexNote(admin, openAiKey, { userId, noteId, subjectId, text: content });
+    return json({ success: true, chunksProcessed: result.chunks, tokens: result.tokens });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    return json({ error: error?.message ?? String(error) }, 400);
   }
-})
+});

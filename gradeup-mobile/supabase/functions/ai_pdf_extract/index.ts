@@ -6,6 +6,7 @@ import {
   MONTHLY_LIMIT_ERROR_CODE,
 } from '../_shared/tokenLimit.ts';
 import { logOpsEvent } from '../_shared/opsLog.ts';
+import { GEMINI_PREFERRED_MODELS } from '../_shared/models.ts';
 
 // ---------------------------------------------------------------------------
 // CORS & Response helpers
@@ -59,13 +60,6 @@ function friendlyExtractionError(raw: string): string {
 // Gemini extraction via signed URL (edge function never holds PDF in memory)
 // ---------------------------------------------------------------------------
 
-const GEMINI_PREFERRED_MODELS = [
-  'gemini-3.1-flash',
-  'gemini-3.1-flash-lite-preview',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
-];
 
 async function listAvailableGeminiModels(geminiKey: string): Promise<string[] | null> {
   const controller = new AbortController();
@@ -228,6 +222,7 @@ async function extractViaGemini(
           return {
             text: text.trim().slice(0, 120_000),
             usage: aiJson?.usageMetadata,
+            model: modelName,
           };
         } catch (err: any) {
           clearTimeout(timeout);
@@ -366,7 +361,7 @@ Deno.serve(async (req) => {
         .insert({
           user_id: userId,
           kind: 'pdf_text_extraction',
-          model: 'gemini-3.1-flash-lite-preview',
+          model: result.model ?? GEMINI_PREFERRED_MODELS[0],
           prompt_tokens: result.usage?.promptTokenCount ?? null,
           completion_tokens: result.usage?.candidatesTokenCount ?? null,
           total_tokens: result.usage?.totalTokenCount ?? null,

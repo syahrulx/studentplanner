@@ -1,5 +1,6 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
   checkMonthlyTokenLimit,
@@ -313,7 +314,7 @@ async function openAiTimetableFromPdfNative(args: {
     body: JSON.stringify({
       model: args.model,
       store: false,
-      temperature: 0,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
       instructions: TIMETABLE_SYSTEM,
       text: { format: { type: 'json_object' } },
       input: [
@@ -363,7 +364,7 @@ async function openAiTimetableFromTextChat(args: {
         { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
     }),
   });
 
@@ -477,8 +478,8 @@ async function openAiTimetableFromImage(args: {
           ],
         },
       ],
-      temperature: 0,
-      max_tokens: 4096,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
+      max_completion_tokens: 4096,
     }),
   });
 
@@ -528,8 +529,8 @@ async function openAiTimetableFromImage(args: {
         { role: 'user', content: step2Prompt },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0,
-      max_tokens: 4096,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
+      max_completion_tokens: 4096,
     }),
   });
 
@@ -614,9 +615,9 @@ Deno.serve(async (req) => {
       return errorBody('OPENAI_API_KEY looks invalid or placeholder.', 'CONFIG');
     }
 
-    const pdfModel = (Deno.env.get('OPENAI_TIMETABLE_PDF_MODEL') ?? 'gpt-4o').trim();
-    const textModel = (Deno.env.get('OPENAI_TIMETABLE_TEXT_MODEL') ?? 'gpt-4o-mini').trim();
-    const imageModel = (Deno.env.get('OPENAI_TIMETABLE_IMAGE_MODEL') ?? 'gpt-4o').trim();
+    const pdfModel = (Deno.env.get('OPENAI_TIMETABLE_PDF_MODEL') ?? OPENAI_MODEL_FAST).trim();
+    const textModel = (Deno.env.get('OPENAI_TIMETABLE_TEXT_MODEL') ?? OPENAI_MODEL_FAST).trim();
+    const imageModel = (Deno.env.get('OPENAI_TIMETABLE_IMAGE_MODEL') ?? OPENAI_MODEL_FAST).trim();
 
     let modelText = '';
     // Pending usage — only charged to the user once we confirm the extraction

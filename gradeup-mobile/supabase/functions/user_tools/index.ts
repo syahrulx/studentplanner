@@ -3,6 +3,7 @@
 // calendar/profile data and never exposes its service-role client.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 import {
   checkMonthlyTokenLimit,
   formatMonthlyLimitMessage,
@@ -100,7 +101,7 @@ async function extractScannedPdfText(
     const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PREFERRED_MODELS[0]}:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
           signal: controller.signal,
@@ -197,7 +198,7 @@ async function callOpenAI(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${openAiKey}`,
       },
-      body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 4000 }),
+      body: JSON.stringify({ model, messages, ...samplingParams(model, { temperature: 0, reasoning: 'none' }), max_completion_tokens: 4000 }),
     });
     if (!response.ok) return { error: `Calendar extraction failed (${response.status}).` };
     const result = await response.json();
@@ -306,7 +307,7 @@ Deno.serve(async (req) => {
       result = await callOpenAI(openAiKey, [
         { role: 'system', content: calendarPrompt },
         { role: 'user', content: `Extract the calendar from this PDF text:\n\n${text.trim().slice(0, 18000)}` },
-      ], 'gpt-4o-mini', 30_000);
+      ], OPENAI_MODEL_FAST, 30_000);
     } else if (action === 'extract_calendar_from_image') {
       const image = String(payload.imageBase64 ?? '').trim();
       const match = image.match(/^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i);
@@ -328,7 +329,7 @@ Deno.serve(async (req) => {
           { type: 'text', text: 'Extract the academic calendar from this image.' },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
         ] },
-      ], 'gpt-4o', 45_000);
+      ], OPENAI_MODEL_FAST, 45_000);
     } else {
       return json(400, { error: 'Unsupported action.' });
     }
@@ -337,7 +338,7 @@ Deno.serve(async (req) => {
     await logTokenUsage(admin, {
       user_id: userId,
       kind: action === 'extract_calendar_from_pdf' ? 'calendar_pdf_extraction' : 'calendar_image_extraction',
-      model: action === 'extract_calendar_from_pdf' ? 'gpt-4o-mini' : 'gpt-4o',
+      model: OPENAI_MODEL_FAST,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
       total_tokens: result.usage?.total_tokens ?? null,

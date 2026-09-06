@@ -7,6 +7,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 
 type Json = Record<string, unknown>;
 
@@ -72,7 +73,7 @@ async function extractPdfTextWithGemini(
     if (!geminiFileUri) return { text: null, error: 'Gemini upload returned no file URI.' };
 
     await new Promise((r) => setTimeout(r, 1200));
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = GEMINI_PREFERRED_MODELS;
     let out = '';
     let lastErr = '';
     for (const model of models) {
@@ -1447,13 +1448,13 @@ Rules:
             'Authorization': `Bearer ${openAiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0,
-            max_tokens: 2000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 2000,
           }),
         });
 
@@ -1654,13 +1655,13 @@ Rules:
             'Authorization': `Bearer ${openAiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0,
-            max_tokens: 4000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 4000,
           }),
         });
 
@@ -1823,7 +1824,7 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
           signal: aiController.signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAiKey}` },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: imgSystemPrompt },
               { role: 'user', content: [
@@ -1831,8 +1832,8 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
                 { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } },
               ]},
             ],
-            temperature: 0,
-            max_tokens: 4000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 4000,
           }),
         });
         if (!aiRes.ok) {

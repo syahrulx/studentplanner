@@ -1,5 +1,6 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
   checkMonthlyTokenLimit,
@@ -445,7 +446,7 @@ async function openAiExtractViaPdfNative(args: {
     body: JSON.stringify({
       model: args.model,
       store: false,
-      temperature: 0,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
       instructions: SYSTEM_INSTRUCTIONS,
       text: { format: { type: 'json_object' } },
       input: [
@@ -506,7 +507,7 @@ async function openAiExtractViaTextChat(args: {
         { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.0,
+      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
     }),
   });
 
@@ -659,8 +660,8 @@ Deno.serve(async (req) => {
     }
 
     const textForModel = mergedText.trim();
-    const pdfModel = (Deno.env.get('OPENAI_SOW_MODEL') ?? 'gpt-4o').trim();
-    const textModel = (Deno.env.get('OPENAI_SOW_TEXT_MODEL') ?? 'gpt-4o-mini').trim();
+    const pdfModel = (Deno.env.get('OPENAI_SOW_MODEL') ?? OPENAI_MODEL_FAST).trim();
+    const textModel = (Deno.env.get('OPENAI_SOW_TEXT_MODEL') ?? OPENAI_MODEL_FAST).trim();
     const normCtx = { currentWeek, todayISO, semesterStartISO, totalWeeks, endOfWeekDay, periods };
 
     let normalized: { subjects: ExtractedSubject[]; tasks: ExtractedTask[] } | null = null;
@@ -748,7 +749,7 @@ Deno.serve(async (req) => {
       }
       const preview = textForModel.slice(0, 400).replace(/\s+/g, ' ');
       return errorBody(
-        `The model returned no subjects or tasks (mode: ${extractionMode}). First 400 chars of locally extracted text: "${preview}"… If this looks like gibberish, the PDF text layer may be broken — the app now sends the PDF directly to the model when possible; redeploy extract_sow and ensure OPENAI_SOW_MODEL supports file input (default gpt-4o). Image-only scans still need OCR or a text export.`,
+        `The model returned no subjects or tasks (mode: ${extractionMode}). First 400 chars of locally extracted text: "${preview}"… If this looks like gibberish, the PDF text layer may be broken — the app now sends the PDF directly to the model when possible; redeploy extract_sow and ensure OPENAI_SOW_MODEL supports file input (default gpt-5.6-luna). Image-only scans still need OCR or a text export.`,
         'EMPTY_EXTRACTION'
       );
     }
