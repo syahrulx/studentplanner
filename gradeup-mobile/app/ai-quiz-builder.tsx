@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -8,9 +8,9 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import {
   generateQuizFromNotes,
   setGeneratedQuizQuestions,
-  getOpenAIKey,
   type QuizType,
   type QuizDifficulty,
+  type QuizSourceNote,
 } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import { handleMonthlyLimit } from '@/src/lib/aiLimitError';
@@ -79,6 +79,14 @@ export default function AIQuizBuilder() {
   const [loadingBanner, setLoadingBanner] = useState<{ title: string; detail?: string } | null>(null);
   const loadingPhaseTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Never let a phase-banner timeout fire setState after the screen unmounts.
+  useEffect(() => {
+    return () => {
+      loadingPhaseTimeoutsRef.current.forEach(clearTimeout);
+      loadingPhaseTimeoutsRef.current = [];
+    };
+  }, []);
+
   const topicsForSubject = useMemo(
     () => notes.filter((n) => n.subjectId === selectedSubject),
     [notes, selectedSubject],
@@ -105,13 +113,11 @@ export default function AIQuizBuilder() {
 
   const handleGenerate = async () => {
     if (!hasTopics) return;
-    if (!getOpenAIKey()) {
-      Alert.alert('API Key Missing', 'Add EXPO_PUBLIC_OPENAI_API_KEY to your .env file.');
-      return;
-    }
 
     const selectedNotes = topicsForSubject.filter((n) => selectedTopicIds.has(n.id));
-    const contentParts: string[] = [];
+    // Each entry becomes one `[Study source N]` block so generated questions
+    // can be traced back to the note they came from.
+    const contentParts: QuizSourceNote[] = [];
     const failedPdfTitles: string[] = [];
     const extractionIssues: string[] = [];
     let attemptedPdfCount = 0;
@@ -123,13 +129,13 @@ export default function AIQuizBuilder() {
       // 1. Use plain text content if available
       const plainText = (note.content || '').trim();
       if (plainText.length > 0) {
-        contentParts.push(plainText);
+        contentParts.push({ id: note.id, content: plainText });
         continue;
       }
 
       // 2. Use cached extracted text from DB (instant — no API call)
       if (note.extractedText?.trim()) {
-        contentParts.push(note.extractedText.trim());
+        contentParts.push({ id: note.id, content: note.extractedText.trim() });
         continue;
       }
 
@@ -156,7 +162,7 @@ export default function AIQuizBuilder() {
         ]);
         const pdfText = extracted.text;
         if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
-          contentParts.push(pdfText);
+          contentParts.push({ id: note.id, content: pdfText });
           if (handleSaveNote) {
             handleSaveNote({ ...note, extractedText: pdfText, extractionError: undefined });
           }
@@ -178,7 +184,7 @@ export default function AIQuizBuilder() {
             const backupText = backup.data!.cards
               .map((c) => `${c.front}\n${c.back}`)
               .join('\n\n');
-            contentParts.push(backupText);
+            contentParts.push({ id: note.id, content: backupText });
             if (handleSaveNote) {
               handleSaveNote({ ...note, extractionError: undefined });
             }
@@ -210,7 +216,7 @@ export default function AIQuizBuilder() {
             const backupText = backup.data!.cards
               .map((c) => `${c.front}\n${c.back}`)
               .join('\n\n');
-            contentParts.push(backupText);
+            contentParts.push({ id: note.id, content: backupText });
             if (handleSaveNote) {
               handleSaveNote({ ...note, extractionError: undefined });
             }
@@ -247,7 +253,7 @@ export default function AIQuizBuilder() {
           const extracted = await extractPdfTextFromStoragePath(note.attachmentPath);
           const pdfText = extracted.text;
           if (pdfText.trim().length > 0 && looksLikeRealContent(pdfText)) {
-            contentParts.push(pdfText.trim());
+            contentParts.push({ id: note.id, content: pdfText.trim() });
             if (handleSaveNote) handleSaveNote({ ...note, extractedText: pdfText.trim(), extractionError: undefined });
           } else {
             const reason = `${extracted.stage}${extracted.detail ? ` - ${extracted.detail}` : ''}`;
@@ -260,7 +266,7 @@ export default function AIQuizBuilder() {
       }
     }
 
-    const contents = contentParts.filter(Boolean);
+    const contents = contentParts.filter((part) => part.content.trim().length > 0);
     if (!contents.length) {
       setLoading(false);
       setLoadingBanner(null);
@@ -287,19 +293,26 @@ export default function AIQuizBuilder() {
         }, 5000),
       ];
 
-      const questions = await generateQuizFromNotes(contents, questionCount, quizType, difficulty, user.id);
+      const { questions, quality, sourceNoteIds } = await generateQuizFromNotes(
+        contents, questionCount, quizType, difficulty, user.id, language,
+      );
 
       if (!questions.length) {
         Alert.alert('Generation Failed', 'Could not generate questions. Try different notes or settings.');
         return;
       }
 
-      await setGeneratedQuizQuestions(questions);
+      await setGeneratedQuizQuestions(questions, sourceNoteIds);
+
+      const notices: string[] = [];
+      if (quality.partial || questions.length < quality.requested) {
+        notices.push(`Generated ${questions.length} of ${quality.requested} questions. The notes did not support more distinct, verifiable questions.`);
+      }
       if (failedPdfTitles.length > 0) {
-        Alert.alert(
-          'Some PDFs skipped',
-          `Could not read text from ${failedPdfTitles.length} PDF(s). Quiz was generated from available content.`,
-        );
+        notices.push(`Could not read text from ${failedPdfTitles.length} PDF(s). Quiz was generated from available content.`);
+      }
+      if (notices.length > 0) {
+        Alert.alert(quality.partial ? 'Quiz partially generated' : 'Some PDFs skipped', notices.join('\n\n'));
       }
       router.push({
         pathname: '/quiz-mode-selection',

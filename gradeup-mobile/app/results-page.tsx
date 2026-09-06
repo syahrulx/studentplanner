@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -8,46 +8,134 @@ import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTranslations } from '@/src/i18n';
 import { useQuiz } from '@/src/context/QuizContext';
 import * as quizApi from '@/src/lib/quizApi';
-import type { QuizParticipant } from '@/src/lib/quizApi';
-import { saveQuizToLibrary } from '@/src/lib/studyApi';
+import type { QuizParticipant, QuizSession, ParticipantAnswer } from '@/src/lib/quizApi';
+import { saveQuizToLibrary, type GeneratedQuizQuestion } from '@/src/lib/studyApi';
 import { shareQuizResultsPdf } from '@/src/lib/quizResultsPdf';
+import { computeLocalScore } from '@/src/lib/quizGrading';
 
 const PAD = 20;
 const RADIUS = 20;
 const RADIUS_SM = 14;
 
+function isShortAnswer(q: GeneratedQuizQuestion): boolean {
+  return q.kind === 'short_answer' || !q.options || q.options.length === 0;
+}
+
+function correctAnswerLabel(q: GeneratedQuizQuestion): string {
+  if (isShortAnswer(q)) return (q.expectedAnswer || '').trim() || '—';
+  const opt = q.options?.[q.correctIndex];
+  return opt ? `${String.fromCharCode(65 + q.correctIndex)}. ${opt}` : '—';
+}
+
+function yourAnswerLabel(q: GeneratedQuizQuestion, a: ParticipantAnswer | undefined): string {
+  if (!a) return 'Not answered';
+  if (isShortAnswer(q)) return (a.typedAnswer || '').trim() || 'No answer (time ran out)';
+  if (a.selectedIndex < 0) return 'No answer (time ran out)';
+  const opt = q.options?.[a.selectedIndex];
+  return opt ? `${String.fromCharCode(65 + a.selectedIndex)}. ${opt}` : '—';
+}
+
+/** Note id a missed question should be turned into a flashcard under, or null. */
+function flashcardNoteIdFor(q: GeneratedQuizQuestion, session: QuizSession | null): string | null {
+  if (q.sourceNoteId) return q.sourceNoteId;
+  if (
+    session?.source_type === 'flashcards' &&
+    session.source_id &&
+    session.source_id !== '_all' &&
+    session.source_id !== '_saved'
+  ) {
+    return session.source_id;
+  }
+  return null;
+}
+
 export default function ResultsPage() {
-  const { language, user, courses } = useApp();
+  const { language, user, courses, addFlashcards } = useApp();
   const theme = useTheme();
   const T = useTranslations(language);
-  const { currentSession, myAnswers, opponentProgress, leaveQuiz } = useQuiz();
+  const { currentSession, myAnswers: contextAnswers, leaveQuiz } = useQuiz();
 
-  const { sessionId, score: paramScore, total: paramTotal } = useLocalSearchParams<{
-    sessionId?: string; score?: string; total?: string;
+  const {
+    sessionId, score: paramScore, total: paramTotal, xp: paramXp, correct: paramCorrect, winner: paramWinner,
+  } = useLocalSearchParams<{
+    sessionId?: string; score?: string; total?: string; xp?: string; correct?: string; winner?: string; graded?: string;
   }>();
 
   const [participants, setParticipants] = useState<QuizParticipant[]>([]);
   const [loading, setLoading] = useState(true);
   const [sharingPdf, setSharingPdf] = useState(false);
+  const [resolvedSession, setResolvedSession] = useState<QuizSession | null>(currentSession);
+  const [showBreakdown, setShowBreakdown] = useState(true);
+  const [flashcardsMade, setFlashcardsMade] = useState(false);
 
-  const scoreNum = parseInt(paramScore ?? '0', 10);
-  const totalNum = Math.max(1, parseInt(paramTotal ?? '5', 10));
-  // Derive correctCount from answers when available; don't guess from score
-  // (score includes speed bonuses so dividing by 10 overcounts)
-  const correctCount = myAnswers.length > 0
-    ? myAnswers.filter((a) => a.correct).length
-    : null;
+  // Load the session (for the per-question breakdown) when it is not in context,
+  // e.g. after a deep link or app restart.
+  useEffect(() => {
+    if (currentSession) {
+      setResolvedSession(currentSession);
+      return;
+    }
+    const sid = sessionId;
+    if (!sid) return;
+    let cancelled = false;
+    quizApi.getSession(sid).then((s) => { if (!cancelled && s) setResolvedSession(s); });
+    return () => { cancelled = true; };
+  }, [currentSession, sessionId]);
+
+  const questions: GeneratedQuizQuestion[] = useMemo(
+    () => (resolvedSession?.questions as GeneratedQuizQuestion[]) || [],
+    [resolvedSession],
+  );
+
+  // Graded answers: context first (replaced with the RPC grading at finish),
+  // otherwise my participant row from the DB.
+  const myAnswers: ParticipantAnswer[] = useMemo(() => {
+    if (contextAnswers.length > 0) return contextAnswers;
+    const me = participants.find((p) => p.user_id === user.id);
+    return Array.isArray(me?.answers) ? (me!.answers as ParticipantAnswer[]) : [];
+  }, [contextAnswers, participants, user.id]);
+
+  const answersByIndex = useMemo(() => {
+    const map = new Map<number, ParticipantAnswer>();
+    for (const a of myAnswers) map.set(a.questionIndex, a);
+    return map;
+  }, [myAnswers]);
+
+  const scoreNum = parseInt(paramScore ?? '0', 10) || 0;
+  const totalNum = Math.max(1, parseInt(paramTotal ?? '', 10) || questions.length || 5);
+  const paramCorrectNum = paramCorrect ? parseInt(paramCorrect, 10) : NaN;
+  // Prefer the server-graded correct count; fall back to the graded answers.
+  const correctCount = Number.isFinite(paramCorrectNum)
+    ? paramCorrectNum
+    : myAnswers.length > 0
+      ? myAnswers.filter((a) => a.correct).length
+      : null;
   const accuracy = correctCount !== null ? Math.round((correctCount / totalNum) * 100) : null;
-  const isMultiplayer = currentSession?.mode === 'multiplayer';
+  const isMultiplayer = resolvedSession?.mode === 'multiplayer';
 
-  // Recalculate XP from full myAnswers (includes speed bonus) for display accuracy
-  const baseXP = myAnswers.length > 0
-    ? myAnswers.reduce((sum, a) => sum + (a.correct ? 10 : 0) + (a.correct && a.timeMs < 5000 ? 5 : 0), 0)
-    : scoreNum;
+  // XP comes from the RPC (`xp_earned`, includes the winner bonus). Fallback:
+  // recompute with the same formula from the graded answers.
+  const paramXpNum = paramXp ? parseInt(paramXp, 10) : NaN;
+  const xpEarned = Number.isFinite(paramXpNum)
+    ? paramXpNum
+    : myAnswers.length > 0
+      ? computeLocalScore(myAnswers)
+      : scoreNum;
   const totalAnswerTime = myAnswers.reduce((sum, a) => sum + a.timeMs, 0);
   const avgTimeMs = myAnswers.length > 0 ? totalAnswerTime / myAnswers.length : 0;
 
-  /** Refetch until every participant has finished so scores aren’t stale (each player used to look like #1). */
+  const missed = useMemo(
+    () => questions
+      .map((q, idx) => ({ q, idx, a: answersByIndex.get(idx) }))
+      .filter(({ a }) => !a || !a.correct),
+    [questions, answersByIndex],
+  );
+  const missedWithNote = useMemo(
+    () => missed.filter(({ q }) => flashcardNoteIdFor(q, resolvedSession) !== null),
+    [missed, resolvedSession],
+  );
+
+  /** Refetch until every participant has finished so scores aren't stale. The pending timeout is cleared on unmount. */
   useEffect(() => {
     const sid = sessionId || currentSession?.id;
     if (!sid) {
@@ -57,6 +145,7 @@ export default function ResultsPage() {
 
     let cancelled = false;
     let attempt = 0;
+    let pending: ReturnType<typeof setTimeout> | null = null;
 
     const loadResults = async () => {
       try {
@@ -69,7 +158,7 @@ export default function ResultsPage() {
         const everyoneDone = parts.length < 2 || parts.every((p) => p.finished);
         attempt += 1;
         if (multi && !everyoneDone && attempt < 30) {
-          setTimeout(loadResults, 400);
+          pending = setTimeout(loadResults, 400);
         } else {
           setLoading(false);
         }
@@ -81,6 +170,7 @@ export default function ResultsPage() {
     loadResults();
     return () => {
       cancelled = true;
+      if (pending) clearTimeout(pending);
     };
   }, [sessionId, currentSession?.id, currentSession?.mode]);
 
@@ -111,25 +201,28 @@ export default function ResultsPage() {
     numAtTopScore > 1 &&
     myParticipantScore === maxParticipantScore;
 
+  // The RPC flags the winner when the last participant finishes; earlier
+  // finishers derive it from the final standings once everyone is done.
   const isWinner =
     isMultiplayer &&
-    resultsReady &&
-    !loading &&
-    participants.length >= 2 &&
-    myParticipantScore === maxParticipantScore &&
-    numAtTopScore === 1;
+    (paramWinner === '1' ||
+      (resultsReady &&
+        !loading &&
+        participants.length >= 2 &&
+        myParticipantScore === maxParticipantScore &&
+        numAtTopScore === 1));
 
   const handlePlayAgain = () => {
     leaveQuiz();
     // Route back to the quiz builder so the user can tweak settings and replay
-    if (currentSession?.source_type === 'notes' && currentSession?.source_id) {
+    if (resolvedSession?.source_type === 'notes' && resolvedSession?.source_id) {
       router.replace({ pathname: '/ai-quiz-builder' } as any);
     } else {
       router.replace({ pathname: '/quiz-mode-selection', params: {
-        sourceType: currentSession?.source_type || 'flashcards',
-        sourceId: currentSession?.source_id || '_all',
-        quizType: currentSession?.quiz_type || 'mcq',
-        difficulty: currentSession?.difficulty || 'medium',
+        sourceType: resolvedSession?.source_type || 'flashcards',
+        sourceId: resolvedSession?.source_id || '_all',
+        quizType: resolvedSession?.quiz_type || 'mcq',
+        difficulty: resolvedSession?.difficulty || 'medium',
         total: String(totalNum),
       } } as any);
     }
@@ -137,36 +230,36 @@ export default function ResultsPage() {
 
   const handleShare = async () => {
     const sid = sessionId || currentSession?.id;
-    let resolvedSession = currentSession;
-    if ((!resolvedSession?.questions?.length) && sid) {
-      resolvedSession = (await quizApi.getSession(sid)) ?? resolvedSession;
+    let session = resolvedSession;
+    if ((!session?.questions?.length) && sid) {
+      session = (await quizApi.getSession(sid)) ?? session;
     }
-    if (!resolvedSession?.questions?.length) {
+    if (!session?.questions?.length) {
       Alert.alert('Nothing to share', 'Quiz questions are not available for this session.');
       return;
     }
 
     const sourceLabel =
-      resolvedSession.source_type === 'notes'
-        ? (courses.find((c) => c.id === resolvedSession.source_id)?.name || resolvedSession.source_id || 'Notes')
+      session.source_type === 'notes'
+        ? (courses.find((c) => c.id === session!.source_id)?.name || session.source_id || 'Notes')
         : 'Flashcards';
-    const quizTypeLabel = (resolvedSession.quiz_type || 'mixed')
+    const quizTypeLabel = (session.quiz_type || 'mixed')
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (m) => m.toUpperCase());
-    const difficultyLabel = (resolvedSession.difficulty || 'medium')
+    const difficultyLabel = (session.difficulty || 'medium')
       .replace(/\b\w/g, (m) => m.toUpperCase());
 
     setSharingPdf(true);
     try {
       await shareQuizResultsPdf({
-        questions: resolvedSession.questions,
+        questions: session.questions,
         myAnswers,
         summary: {
           correctCount: correctCount ?? 0,
           totalQuestions: totalNum,
           accuracyPct: accuracy,
           points: scoreNum,
-          xp: baseXP,
+          xp: xpEarned,
           avgTimeSec: avgTimeMs > 0 ? avgTimeMs / 1000 : null,
           title: `${sourceLabel} · Quiz`,
         },
@@ -186,31 +279,80 @@ export default function ResultsPage() {
   const handleSaveForRevision = async () => {
     try {
       const sid = sessionId || currentSession?.id;
-      const resolvedSession = currentSession || (sid ? await quizApi.getSession(sid) : null);
-      if (!resolvedSession?.questions?.length) {
+      const session = resolvedSession || (sid ? await quizApi.getSession(sid) : null);
+      if (!session?.questions?.length) {
         Alert.alert('Nothing to save', 'This quiz does not contain questions to save.');
         return;
       }
-      const sourceLabel = resolvedSession.source_type === 'notes'
-        ? (courses.find((c) => c.id === resolvedSession.source_id)?.id || 'Notes')
+      const sourceLabel = session.source_type === 'notes'
+        ? (courses.find((c) => c.id === session.source_id)?.id || 'Notes')
         : 'Flashcards';
-      const quizTypeLabel = (resolvedSession.quiz_type || 'mixed')
+      const quizTypeLabel = (session.quiz_type || 'mixed')
         .replace('_', ' ')
         .replace(/\b\w/g, (m) => m.toUpperCase());
-      const difficultyLabel = (resolvedSession.difficulty || 'medium')
+      const difficultyLabel = (session.difficulty || 'medium')
         .replace(/\b\w/g, (m) => m.toUpperCase());
       await saveQuizToLibrary({
         title: `${sourceLabel} • ${quizTypeLabel} • ${difficultyLabel}`,
-        sourceType: resolvedSession.source_type,
-        sourceId: resolvedSession.source_id || undefined,
-        quizType: resolvedSession.quiz_type as any,
-        difficulty: resolvedSession.difficulty as any,
-        questions: resolvedSession.questions,
+        sourceType: session.source_type,
+        sourceId: session.source_id || undefined,
+        quizType: session.quiz_type as any,
+        difficulty: session.difficulty as any,
+        questions: session.questions,
       });
       Alert.alert('Saved', 'Quiz saved to Revision Quiz in Study.');
     } catch {
       Alert.alert('Save failed', 'Could not save this quiz right now. Please try again.');
     }
+  };
+
+  const handleMissedToFlashcards = async () => {
+    if (flashcardsMade) return;
+    if (missed.length === 0) {
+      Alert.alert('Nothing to add', 'You answered every question correctly.');
+      return;
+    }
+    if (missedWithNote.length === 0) {
+      Alert.alert(
+        'No note to attach to',
+        'These questions are not linked to a specific note, so flashcards cannot be created automatically. Save the quiz for revision instead.',
+      );
+      return;
+    }
+    // Group by note so each deck gets one batch write.
+    const byNote = new Map<string, { front: string; back: string; cardType: 'basic'; sourceExcerpt?: string }[]>();
+    for (const { q } of missedWithNote) {
+      const noteId = flashcardNoteIdFor(q, resolvedSession);
+      if (!noteId) continue;
+      const answer = correctAnswerLabel(q);
+      const explanation = (q.explanation || '').trim();
+      const back = explanation ? `${answer}\n\n${explanation}` : answer;
+      const list = byNote.get(noteId) ?? [];
+      list.push({ front: q.question, back, cardType: 'basic', sourceExcerpt: q.proof || undefined });
+      byNote.set(noteId, list);
+    }
+    let created = 0;
+    let failed = 0;
+    for (const [noteId, cards] of byNote) {
+      try {
+        await addFlashcards(noteId, cards);
+        created += cards.length;
+      } catch {
+        failed += cards.length;
+      }
+    }
+    if (created > 0) setFlashcardsMade(true);
+    const skipped = missed.length - created - failed;
+    if (created === 0) {
+      Alert.alert('Could not create flashcards', 'The cards could not be saved right now. Please try again.');
+      return;
+    }
+    Alert.alert(
+      'Flashcards created',
+      `${created} flashcard${created === 1 ? '' : 's'} added from your missed questions.${
+        skipped > 0 ? ` ${skipped} question${skipped === 1 ? ' was' : 's were'} skipped because no note could be linked.` : ''
+      }${failed > 0 ? ` ${failed} could not be saved.` : ''}`,
+    );
   };
 
   return (
@@ -264,7 +406,7 @@ export default function ResultsPage() {
         {/* XP badge */}
         <View style={styles.xpBadge}>
           <Feather name="zap" size={16} color="#f59e0b" />
-          <Text style={styles.xpText}>+{baseXP} XP</Text>
+          <Text style={styles.xpText}>+{xpEarned} XP</Text>
         </View>
       </View>
 
@@ -296,7 +438,7 @@ export default function ResultsPage() {
           ) : (
             participants.map((p, idx) => {
               const pCorrect = (p.answers || []).filter((a: any) => a.correct).length;
-              const pTotal = currentSession?.question_count || totalNum;
+              const pTotal = resolvedSession?.question_count || totalNum;
               const isMe = p.user_id === user.id; // use user_id — name match is fragile
               return (
                 <View
@@ -324,6 +466,70 @@ export default function ResultsPage() {
               );
             })
           )}
+        </View>
+      )}
+
+      {/* Missed → flashcards */}
+      {questions.length > 0 && missed.length > 0 && (
+        <Pressable
+          style={[
+            styles.ctaBtn,
+            { backgroundColor: flashcardsMade ? theme.card : '#10b981', borderWidth: flashcardsMade ? 1 : 0, borderColor: theme.border, marginBottom: 20 },
+          ]}
+          onPress={handleMissedToFlashcards}
+          disabled={flashcardsMade}
+        >
+          <Feather name={flashcardsMade ? 'check' : 'layers'} size={20} color={flashcardsMade ? theme.textSecondary : '#fff'} />
+          <Text style={[styles.ctaBtnText, flashcardsMade && { color: theme.textSecondary }]}>
+            {flashcardsMade
+              ? 'Flashcards added'
+              : `Turn missed questions into flashcards (${missedWithNote.length > 0 ? missedWithNote.length : missed.length})`}
+          </Text>
+        </Pressable>
+      )}
+
+      {/* Per-question breakdown */}
+      {questions.length > 0 && (
+        <View style={styles.section}>
+          <Pressable style={styles.sectionHeaderRow} onPress={() => setShowBreakdown((v) => !v)}>
+            <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginBottom: 0 }]}>QUESTION BREAKDOWN</Text>
+            <Feather name={showBreakdown ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
+          </Pressable>
+          {showBreakdown && questions.map((q, idx) => {
+            const a = answersByIndex.get(idx);
+            const correct = !!a?.correct;
+            const explanation = (q.explanation || '').trim();
+            return (
+              <View
+                key={`${idx}-${q.question.slice(0, 24)}`}
+                style={[styles.qCard, { backgroundColor: theme.card, borderColor: correct ? '#10b981' : '#ef4444' }]}
+              >
+                <View style={styles.qHeader}>
+                  <View style={[styles.qBadge, { backgroundColor: correct ? '#10b981' : '#ef4444' }]}>
+                    <Feather name={correct ? 'check' : 'x'} size={12} color="#fff" />
+                    <Text style={styles.qBadgeText}>Q{idx + 1}</Text>
+                  </View>
+                  {a ? (
+                    <Text style={[styles.qTime, { color: theme.textSecondary }]}>{(a.timeMs / 1000).toFixed(1)}s</Text>
+                  ) : null}
+                </View>
+                <Text style={[styles.qText, { color: theme.text }]}>{q.question}</Text>
+                <View style={styles.qRow}>
+                  <Text style={[styles.qRowLabel, { color: theme.textSecondary }]}>Your answer</Text>
+                  <Text style={[styles.qRowValue, { color: correct ? '#10b981' : '#ef4444' }]}>{yourAnswerLabel(q, a)}</Text>
+                </View>
+                {!correct && (
+                  <View style={styles.qRow}>
+                    <Text style={[styles.qRowLabel, { color: theme.textSecondary }]}>Correct answer</Text>
+                    <Text style={[styles.qRowValue, { color: theme.text }]}>{correctAnswerLabel(q)}</Text>
+                  </View>
+                )}
+                {explanation ? (
+                  <Text style={[styles.qExplanation, { color: theme.textSecondary }]}>{explanation}</Text>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -400,6 +606,7 @@ const styles = StyleSheet.create({
 
   section: { marginBottom: 20 },
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
 
   playerRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: RADIUS_SM, borderWidth: 1.5, marginBottom: 8 },
   rankCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
@@ -408,6 +615,17 @@ const styles = StyleSheet.create({
   playerName: { fontSize: 15, fontWeight: '700' },
   playerSub: { fontSize: 12, fontWeight: '500', marginTop: 2 },
   playerScore: { fontSize: 16, fontWeight: '800' },
+
+  qCard: { borderRadius: RADIUS_SM, borderWidth: 1, borderLeftWidth: 4, padding: 14, marginBottom: 10, gap: 6 },
+  qHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  qBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  qBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  qTime: { fontSize: 12, fontWeight: '600' },
+  qText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  qRow: { gap: 2 },
+  qRowLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  qRowValue: { fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  qExplanation: { fontSize: 13, lineHeight: 18, fontWeight: '500', marginTop: 2 },
 
   actions: { gap: 12 },
   ctaBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 18, borderRadius: RADIUS },

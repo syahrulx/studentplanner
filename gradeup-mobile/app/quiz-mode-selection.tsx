@@ -1,22 +1,99 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
-import { ThemeIcon } from '@/components/ThemeIcon';
 import { useTranslations } from '@/src/i18n';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useQuiz } from '@/src/context/QuizContext';
-import { getGeneratedQuizQuestions, clearGeneratedQuizQuestions } from '@/src/lib/studyApi';
+import {
+  getGeneratedQuizStash,
+  clearGeneratedQuizQuestions,
+  type GeneratedQuizQuestion,
+} from '@/src/lib/studyApi';
 import * as quizApi from '@/src/lib/quizApi';
 import type { SourceType, MatchType } from '@/src/lib/quizApi';
+import type { Flashcard } from '@/src/types';
 
 const PAD = 20;
 const SECTION = 24;
 const RADIUS = 20;
 const RADIUS_SM = 14;
-type TimerMode = '20' | '30' | 'off';
+const DEFAULT_TIMER_SECONDS = 30;
+
+/** `timer` param: 'off' → 0, any non-negative number → that many seconds, else default. */
+function parseTimerParam(raw: string | undefined): number {
+  if (raw === 'off') return 0;
+  const n = Number(raw);
+  if (raw !== undefined && Number.isFinite(n) && n >= 0) return n;
+  return DEFAULT_TIMER_SECONDS;
+}
+
+function cardFront(card: Flashcard): string {
+  return (card?.front ?? card?.question ?? '').trim() || 'No question';
+}
+function cardBack(card: Flashcard): string {
+  return (card?.back ?? card?.answer ?? '').trim() || 'Answer';
+}
+
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Build a question from one flashcard. With enough distinct distractors this
+ * is a 4-option MCQ; with fewer we either shrink to the available options
+ * (min 2) or fall back to a True/False statement. Never pads with literal
+ * "Option N" strings.
+ */
+function questionFromFlashcard(card: Flashcard, pool: Flashcard[]): GeneratedQuizQuestion {
+  const front = cardFront(card);
+  const back = cardBack(card);
+  const backKey = back.toLowerCase();
+  const distractors: string[] = [];
+  const seen = new Set<string>([backKey]);
+  for (const other of shuffleInPlace(pool.filter((c) => c.id !== card.id))) {
+    const candidate = cardBack(other);
+    const key = candidate.toLowerCase();
+    if (!candidate || seen.has(key)) continue;
+    seen.add(key);
+    distractors.push(candidate);
+    if (distractors.length >= 3) break;
+  }
+
+  const explanation = `The answer to "${front}" is "${back}".`;
+  const base = { proof: back, explanation, sourceNoteId: card.noteId ?? null };
+
+  // Not enough material for a fair MCQ: 50% chance of a True/False statement.
+  if (distractors.length < 3 && (distractors.length === 0 || Math.random() < 0.5)) {
+    const useFalse = distractors.length > 0 && Math.random() < 0.5;
+    const statement = useFalse ? distractors[0] : back;
+    return {
+      ...base,
+      question: `Is the answer to "${front}" "${statement}"?`,
+      options: ['True', 'False'],
+      correctIndex: useFalse ? 1 : 0,
+      kind: 'true_false',
+      explanation: useFalse
+        ? `False. The answer to "${front}" is "${back}", not "${statement}".`
+        : `True. The answer to "${front}" is "${back}".`,
+    };
+  }
+
+  const opts = shuffleInPlace([back, ...distractors]);
+  return {
+    ...base,
+    question: front,
+    options: opts,
+    correctIndex: opts.indexOf(back),
+    kind: 'mcq',
+  };
+}
 
 export default function QuizModeSelection() {
   const { language, flashcards } = useApp();
@@ -26,7 +103,7 @@ export default function QuizModeSelection() {
   const { createQuiz, joinQuiz } = useQuiz();
 
   const {
-    noteId, total, fromBuilder, useGenerated,
+    noteId, total, useGenerated,
     quizType: paramQuizType, difficulty: paramDifficulty,
     sourceType: paramSourceType, sourceId: paramSourceId, timer: paramTimer,
   } = useLocalSearchParams<{
@@ -45,52 +122,47 @@ export default function QuizModeSelection() {
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null);
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const initialTimerMode: TimerMode =
-    paramTimer === '20' || paramTimer === '30' || paramTimer === 'off'
-      ? paramTimer
-      : '30';
-  const selectedTimerSeconds = initialTimerMode === 'off' ? 0 : Number(initialTimerMode);
+  const selectedTimerSeconds = parseTimerParam(paramTimer);
 
-  const buildQuestions = useCallback(async () => {
+  const buildQuestions = useCallback(async (): Promise<GeneratedQuizQuestion[]> => {
     if (useGenerated === '1') {
-      return await getGeneratedQuizQuestions();
+      const { questions, sourceNoteIds } = await getGeneratedQuizStash();
+      // Make sure every question carries its resolved note id so it survives
+      // inside the session JSON (quiz_attempts.source_note_id depends on it).
+      return questions.map((q) => {
+        if (q.sourceNoteId) return q;
+        const idx = typeof q.sourceIndex === 'number' ? q.sourceIndex : -1;
+        const resolved = idx >= 0 && idx < sourceNoteIds.length ? sourceNoteIds[idx] : null;
+        return resolved ? { ...q, sourceNoteId: resolved } : q;
+      });
     }
     // Build from flashcards
     const pool = noteId && noteId !== '_all'
       ? flashcards.filter((c) => c.noteId === noteId)
       : flashcards;
-    // Fix 6: Partial Fisher-Yates — O(k) where k=totalNum, not O(n log n)
-    // Also avoids the known JS sort-comparator random bias
+    // Partial Fisher-Yates — O(k) where k=totalNum, not O(n log n)
     const pool2 = [...pool];
     const count = Math.min(totalNum, pool2.length);
     for (let i = 0; i < count; i++) {
       const j = i + Math.floor(Math.random() * (pool2.length - i));
       [pool2[i], pool2[j]] = [pool2[j], pool2[i]];
     }
-    const selected = pool2.slice(0, count);
-    return selected.map((card) => {
-      const front = card?.front ?? (card as any)?.question ?? 'No question';
-      const back = card?.back ?? (card as any)?.answer ?? 'Answer';
-      const wrongs = pool.filter((c) => c.id !== card.id).map((c) => c?.back ?? (c as any)?.answer ?? 'Option');
-      const opts = [back];
-      for (let i = 0; opts.length < 4 && i < wrongs.length; i++) {
-        if (!opts.includes(wrongs[i])) opts.push(wrongs[i]);
-      }
-      while (opts.length < 4) opts.push(`Option ${opts.length + 1}`);
-      for (let i = opts.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [opts[i], opts[j]] = [opts[j], opts[i]];
-      }
-      return { question: front, options: opts, correctIndex: opts.indexOf(back) };
-    });
+    return pool2.slice(0, count).map((card) => questionFromFlashcard(card, pool));
   }, [useGenerated, noteId, flashcards, totalNum]);
 
+  /**
+   * The timer is a session-level setting. `quiz_sessions` has no column for it
+   * so it is written ONCE on `questions[0].__timerSeconds`; gameplay reads it
+   * from there.
+   */
   const applyTimerToQuestions = useCallback(
-    (questions: any[]) =>
-      questions.map((q) => ({
-        ...q,
-        __timerSeconds: selectedTimerSeconds,
-      })),
+    (questions: GeneratedQuizQuestion[]): GeneratedQuizQuestion[] => {
+      if (questions.length === 0) return questions;
+      return questions.map((q, index) => {
+        const { __timerSeconds: _ignored, ...rest } = q;
+        return index === 0 ? { ...rest, __timerSeconds: selectedTimerSeconds } : rest;
+      });
+    },
     [selectedTimerSeconds],
   );
 
@@ -98,7 +170,11 @@ export default function QuizModeSelection() {
     setLoading(true);
     try {
       const rawQuestions = await buildQuestions();
-      const questions = applyTimerToQuestions(rawQuestions as any[]);
+      const questions = applyTimerToQuestions(rawQuestions);
+      if (questions.length === 0) {
+        Alert.alert('No questions', 'There are no questions to play. Generate a quiz or add flashcards first.');
+        return;
+      }
       const session = await createQuiz({
         mode: 'solo',
         matchType: 'friend',
@@ -126,11 +202,12 @@ export default function QuizModeSelection() {
     }
     setLoading(true);
     try {
-      // For random: try to find existing session first
+      // For random: try to find and join an existing session first. The helper
+      // retries the lookup once if the join races with another player.
       if (matchType === 'random') {
-        const existing = await quizApi.findRandomSession(sourceType, quizType);
+        const existing = await quizApi.findAndJoinRandomSession(sourceType, quizType);
         if (existing) {
-          const session = await joinQuiz(existing.id);
+          const session = await joinQuiz(existing.session.id);
           // Clear cached questions even when joining (not creating) a session
           if (useGenerated === '1') await clearGeneratedQuizQuestions();
           router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
@@ -139,7 +216,11 @@ export default function QuizModeSelection() {
       }
 
       const rawQuestions = await buildQuestions();
-      const questions = applyTimerToQuestions(rawQuestions as any[]);
+      const questions = applyTimerToQuestions(rawQuestions);
+      if (questions.length === 0) {
+        Alert.alert('No questions', 'There are no questions to play. Generate a quiz or add flashcards first.');
+        return;
+      }
       const session = await createQuiz({
         mode: 'multiplayer',
         matchType,
@@ -174,7 +255,11 @@ export default function QuizModeSelection() {
     setLoading(true);
     try {
       const rawQuestions = await buildQuestions();
-      const questions = applyTimerToQuestions(rawQuestions as any[]);
+      const questions = applyTimerToQuestions(rawQuestions);
+      if (questions.length === 0) {
+        Alert.alert('No questions', 'There are no questions to play. Generate a quiz or add flashcards first.');
+        return;
+      }
       const session = await createQuiz({
         mode: 'multiplayer',
         matchType: 'friend',
@@ -208,7 +293,9 @@ export default function QuizModeSelection() {
       </View>
 
       {total && (
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{total} {T('questionsReady')}</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          {total} {T('questionsReady')} · {selectedTimerSeconds > 0 ? `${selectedTimerSeconds}s per question` : 'no timer'}
+        </Text>
       )}
 
       {loading && (

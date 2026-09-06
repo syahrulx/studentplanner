@@ -6,6 +6,13 @@ import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import { getSavedQuizzes, setGeneratedQuizQuestions, type SavedQuizItem } from '@/src/lib/studyApi';
 
+/** Convert the saved timer to the `timer` route param understood by mode selection. */
+function timerParamFor(quiz: SavedQuizItem): string | undefined {
+  const t = quiz.timerSeconds;
+  if (typeof t !== 'number' || !Number.isFinite(t) || t < 0) return undefined;
+  return t === 0 ? 'off' : String(t);
+}
+
 export default function QuizReviewScreen() {
   const theme = useTheme();
   const s = useMemo(() => styles(theme), [theme]);
@@ -40,6 +47,11 @@ export default function QuizReviewScreen() {
     );
   }
 
+  const timerLabel =
+    typeof quiz.timerSeconds === 'number'
+      ? quiz.timerSeconds === 0 ? 'no timer' : `${quiz.timerSeconds}s per question`
+      : null;
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <View style={s.header}>
@@ -48,11 +60,15 @@ export default function QuizReviewScreen() {
           <Text style={s.backText}>Revision Quiz</Text>
         </Pressable>
         <Text style={s.title}>{quiz.title}</Text>
-        <Text style={s.subtitle}>{quiz.questionCount} questions • answer key</Text>
+        <Text style={s.subtitle}>
+          {quiz.questionCount} questions • answer key{timerLabel ? ` • ${timerLabel}` : ''}
+        </Text>
       </View>
 
       {quiz.questions.map((q, index) => {
-        const isShort = !q.options || q.options.length === 0;
+        const isShort = q.kind === 'short_answer' || !q.options || q.options.length === 0;
+        const explanation = (q.explanation || '').trim();
+        const proof = (q.proof || '').trim();
         return (
           <View key={`${quiz.id}-${index}`} style={s.card}>
             <Text style={s.qLabel}>Q{index + 1}</Text>
@@ -62,6 +78,9 @@ export default function QuizReviewScreen() {
               <View style={s.answerBox}>
                 <Text style={s.answerLabel}>Answer</Text>
                 <Text style={s.answerText}>{q.expectedAnswer || '-'}</Text>
+                {q.acceptedAnswers && q.acceptedAnswers.length > 0 ? (
+                  <Text style={s.acceptedText}>Also accepted: {q.acceptedAnswers.join(', ')}</Text>
+                ) : null}
               </View>
             ) : (
               <View style={{ gap: 8 }}>
@@ -80,13 +99,23 @@ export default function QuizReviewScreen() {
               </View>
             )}
 
+            {explanation ? (
+              <View style={s.explanationBox}>
+                <View style={s.proofHeader}>
+                  <Feather name="info" size={13} color={theme.primary} />
+                  <Text style={s.proofTitle}>Why</Text>
+                </View>
+                <Text style={s.explanationText}>{explanation}</Text>
+              </View>
+            ) : null}
+
             <View style={s.proofBox}>
               <View style={s.proofHeader}>
                 <Feather name="file-text" size={13} color={theme.primary} />
                 <Text style={s.proofTitle}>Reference / Proof</Text>
               </View>
               <Text style={s.proofText}>
-                {q.proof?.trim() || 'Reference snippet is not available for this older saved quiz.'}
+                {proof || 'Reference snippet is not available for this older saved quiz.'}
               </Text>
             </View>
           </View>
@@ -97,6 +126,7 @@ export default function QuizReviewScreen() {
         style={s.practiceBtn}
         onPress={async () => {
           await setGeneratedQuizQuestions(quiz.questions);
+          const timer = timerParamFor(quiz);
           router.push({
             pathname: '/quiz-mode-selection',
             params: {
@@ -106,6 +136,7 @@ export default function QuizReviewScreen() {
               difficulty: quiz.difficulty || 'medium',
               sourceType: quiz.sourceType || 'notes',
               sourceId: quiz.sourceId || '_saved',
+              ...(timer ? { timer } : {}),
             },
           } as any);
         }}
@@ -163,6 +194,17 @@ const styles = (theme: ThemePalette) =>
     },
     answerLabel: { color: '#10b981', fontSize: 11, fontWeight: '800', marginBottom: 4 },
     answerText: { color: theme.text, fontSize: 14, fontWeight: '600' },
+    acceptedText: { color: theme.textSecondary, fontSize: 12, marginTop: 4 },
+    explanationBox: {
+      marginTop: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.border,
+      backgroundColor: theme.background,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+    },
+    explanationText: { color: theme.text, fontSize: 13, lineHeight: 19, fontWeight: '500' },
     proofBox: {
       marginTop: 10,
       borderRadius: 10,

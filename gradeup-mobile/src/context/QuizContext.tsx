@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import * as quizApi from '../lib/quizApi';
+import { computeLocalScore } from '../lib/quizGrading';
 import { saveQuizProgress, getQuizProgress, clearQuizProgress } from '../storage';
 import type {
   QuizSession,
   QuizParticipant,
   ParticipantAnswer,
   CreateSessionParams,
+  FinishParticipantResult,
 } from '../lib/quizApi';
 
 // ---------------------------------------------------------------------------
@@ -19,6 +21,8 @@ export interface OpponentProgress {
   correct: boolean;
   score: number;
   finished: boolean;
+  /** Presence `leave` seen for this player and no re-join since. */
+  disconnected?: boolean;
 }
 
 interface QuizState {
@@ -35,9 +39,32 @@ interface QuizState {
   joinQuiz: (sessionIdOrCode: string, isCode?: boolean) => Promise<QuizSession>;
   setReady: () => void;
   broadcastGameStart: () => void;
-  submitAnswer: (questionIndex: number, selectedIndex: number, correct: boolean, timeMs: number) => Promise<void>;
-  finishQuiz: () => Promise<void>;
+  /**
+   * Record an answer locally (and broadcast to opponents). `correct` is the
+   * client-side grading used only for instant feedback; the DB re-grades at
+   * finish.
+   */
+  submitAnswer: (
+    questionIndex: number,
+    selectedIndex: number,
+    correct: boolean,
+    timeMs: number,
+    typedAnswer?: string | null,
+  ) => Promise<void>;
+  /**
+   * Submit all raw answers to `finish_quiz_participant`. Resolves with the
+   * server-graded result (score, xp, winner flag, graded answers) or null when
+   * there is no active session/participant.
+   */
+  finishQuiz: () => Promise<FinishParticipantResult | null>;
+  /** Full reset after a quiz is over (also clears the local progress mirror). */
   leaveQuiz: () => void;
+  /**
+   * Tear down the realtime channel and in-memory state when the player backs
+   * out mid-game. Keeps the local progress mirror so the session can still be
+   * resumed via its id.
+   */
+  abandonQuiz: () => void;
   refreshParticipants: () => Promise<void>;
 }
 
@@ -68,6 +95,8 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { myAnswersRef.current = myAnswers; }, [myAnswers]);
   // Cached auth userId — avoids calling auth.getSession() on every answer broadcast
   const myUserIdRef = useRef<string | null>(null);
+  const currentSessionRef = useRef<QuizSession | null>(null);
+  useEffect(() => { currentSessionRef.current = currentSession; }, [currentSession]);
 
   // Clean up channel on unmount or session change
   const cleanupChannel = useCallback(() => {
@@ -84,77 +113,6 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     return () => cleanupChannel();
-  }, [cleanupChannel]);
-
-  // Setup realtime channel for a session
-  const setupChannel = useCallback(async (sessionId: string) => {
-    cleanupChannel();
-
-    const { data: { session: authSession } } = await supabase.auth.getSession();
-    const myUserId = authSession?.user?.id;
-    if (!myUserId) return;
-
-    const channel = supabase.channel(`quiz:${sessionId}`, {
-      config: { presence: { key: myUserId } },
-    });
-
-    // Presence: track who's in the lobby
-    channel.on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState();
-      const presentIds = Object.keys(state);
-      // Check if all participants are ready
-      const allPresent = presentIds.length >= 2;
-      const readyStates = presentIds.map((id) => {
-        const presences = state[id] as any[];
-        return presences?.some((p: any) => p.ready);
-      });
-      setAllReady(allPresent && readyStates.every(Boolean));
-    });
-
-    // Broadcast: answer_submitted
-    channel.on('broadcast', { event: 'answer_submitted' }, ({ payload }: any) => {
-      if (payload.userId === myUserId) return;
-      setOpponentProgress((prev) => {
-        const next = new Map(prev);
-        next.set(payload.userId, {
-          userId: payload.userId,
-          questionIndex: payload.questionIndex,
-          correct: payload.correct,
-          score: payload.score,
-          finished: false,
-        });
-        return next;
-      });
-    });
-
-    // Broadcast: player_finished
-    channel.on('broadcast', { event: 'player_finished' }, ({ payload }: any) => {
-      if (payload.userId === myUserId) return;
-      setOpponentProgress((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(payload.userId);
-        next.set(payload.userId, {
-          ...(existing || { userId: payload.userId, questionIndex: 0, correct: false }),
-          score: payload.score,
-          finished: true,
-        });
-        return next;
-      });
-    });
-
-    // Broadcast: game_start (countdown)
-    channel.on('broadcast', { event: 'game_start' }, () => {
-      startCountdown();
-    });
-
-    await channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ ready: false, joinedAt: Date.now() });
-      }
-    });
-
-    channelRef.current = channel;
-    channelSessionIdRef.current = sessionId;
   }, [cleanupChannel]);
 
   const startCountdown = useCallback(() => {
@@ -180,6 +138,108 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }, 1000);
   }, []);
 
+  // Setup realtime channel for a session
+  const setupChannel = useCallback(async (sessionId: string) => {
+    cleanupChannel();
+
+    const { data: { session: authSession } } = await supabase.auth.getSession();
+    const myUserId = authSession?.user?.id;
+    if (!myUserId) return;
+
+    const channel = supabase.channel(`quiz:${sessionId}`, {
+      config: { presence: { key: myUserId } },
+    });
+
+    // Presence: track who's in the lobby
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const presentIds = Object.keys(state);
+      // Check if all participants are ready
+      const allPresent = presentIds.length >= 2;
+      const readyStates = presentIds.map((id) => {
+        const presences = state[id] as any[];
+        return presences?.some((p: any) => p.ready);
+      });
+      setAllReady(allPresent && readyStates.every(Boolean));
+
+      // Anyone present again is no longer disconnected (re-join after a drop).
+      setOpponentProgress((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const id of presentIds) {
+          const existing = next.get(id);
+          if (existing?.disconnected) {
+            next.set(id, { ...existing, disconnected: false });
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    });
+
+    // Presence: opponent left (app killed, back gesture, network drop)
+    channel.on('presence', { event: 'leave' }, ({ key }: any) => {
+      const leftId = String(key || '');
+      if (!leftId || leftId === myUserId) return;
+      setOpponentProgress((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(leftId);
+        next.set(leftId, {
+          ...(existing || { userId: leftId, questionIndex: 0, correct: false, score: 0, finished: false }),
+          disconnected: true,
+        });
+        return next;
+      });
+    });
+
+    // Broadcast: answer_submitted
+    channel.on('broadcast', { event: 'answer_submitted' }, ({ payload }: any) => {
+      if (payload.userId === myUserId) return;
+      setOpponentProgress((prev) => {
+        const next = new Map(prev);
+        next.set(payload.userId, {
+          userId: payload.userId,
+          questionIndex: payload.questionIndex,
+          correct: payload.correct,
+          score: payload.score,
+          finished: false,
+          disconnected: false,
+        });
+        return next;
+      });
+    });
+
+    // Broadcast: player_finished
+    channel.on('broadcast', { event: 'player_finished' }, ({ payload }: any) => {
+      if (payload.userId === myUserId) return;
+      setOpponentProgress((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(payload.userId);
+        next.set(payload.userId, {
+          ...(existing || { userId: payload.userId, questionIndex: 0, correct: false }),
+          score: payload.score,
+          finished: true,
+          disconnected: false,
+        });
+        return next;
+      });
+    });
+
+    // Broadcast: game_start (countdown)
+    channel.on('broadcast', { event: 'game_start' }, () => {
+      startCountdown();
+    });
+
+    await channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({ ready: false, joinedAt: Date.now() });
+      }
+    });
+
+    channelRef.current = channel;
+    channelSessionIdRef.current = sessionId;
+  }, [cleanupChannel, startCountdown]);
+
   // Refresh participants from DB
   const refreshParticipants = useCallback(async () => {
     if (!currentSession) return;
@@ -191,6 +251,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
   const createQuiz = useCallback(async (params: CreateSessionParams): Promise<QuizSession> => {
     const session = await quizApi.createSession(params);
     setCurrentSession(session);
+    currentSessionRef.current = session;
     setMyAnswers([]);
     myAnswersRef.current = [];
     setOpponentProgress(new Map());
@@ -220,11 +281,16 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
       session = result.session;
       setMyParticipantId(result.participant.id);
     } else {
-      await quizApi.joinSession(sessionIdOrCode);
-      session = (await quizApi.getSession(sessionIdOrCode))!;
+      // Look the session up BEFORE joining so a deleted/expired id fails with a
+      // clear error instead of a null deref.
+      const found = await quizApi.getSession(sessionIdOrCode);
+      if (!found) throw new Error('This match is no longer available.');
+      await quizApi.joinSession(found.id);
+      session = found;
     }
 
     setCurrentSession(session);
+    currentSessionRef.current = session;
     setOpponentProgress(new Map());
     setCountdown(null);
     setIsReady(false);
@@ -236,7 +302,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     const { data: { session: authSession } } = await supabase.auth.getSession();
     myUserIdRef.current = authSession?.user?.id || null;
     const myPart = parts.find((p) => p.user_id === authSession?.user?.id);
-    
+
     if (myPart) {
       setMyParticipantId(myPart.id);
       const dbAnswers = (myPart.answers as ParticipantAnswer[]) || [];
@@ -286,11 +352,12 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     selectedIndex: number,
     correct: boolean,
     timeMs: number,
+    typedAnswer: string | null = null,
   ) => {
     // Append locally for instant tracking. Guard against duplicate submissions
     // for the same question index (e.g. a tap racing the timer expiry) so a
     // recovered session can't accumulate phantom extra answers.
-    const answer: ParticipantAnswer = { questionIndex, selectedIndex, correct, timeMs };
+    const answer: ParticipantAnswer = { questionIndex, selectedIndex, typedAnswer, correct, timeMs };
     const alreadyAnswered = myAnswersRef.current.some((a) => a.questionIndex === questionIndex);
     const updatedAnswers = alreadyAnswered
       ? myAnswersRef.current
@@ -301,13 +368,15 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     // Database write removed to prevent realtime congestion. Answers are held in
     // `myAnswersRef`, written as a batch when the quiz finishes, and mirrored to
     // local storage on every answer so progress survives a mid-game app restart.
-    if (currentSession?.id && !alreadyAnswered) {
-      void saveQuizProgress(currentSession.id, updatedAnswers);
+    const session = currentSessionRef.current;
+    if (session?.id && !alreadyAnswered) {
+      void saveQuizProgress(session.id, updatedAnswers);
     }
 
-    // Broadcast to opponents — use cached userId ref to avoid auth roundtrip per answer
-    if (channelRef.current && currentSession?.mode === 'multiplayer' && myUserIdRef.current) {
-      const currentScore = updatedAnswers.filter((a) => a.correct).length * 10 + (correct && timeMs < 5000 ? 5 : 0);
+    // Broadcast to opponents — use cached userId ref to avoid auth roundtrip per answer.
+    // Score uses the same formula as the DB (10 per correct + 5 speed bonus per
+    // fast correct answer, accumulated over every answer so far).
+    if (channelRef.current && session?.mode === 'multiplayer' && myUserIdRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'answer_submitted',
@@ -315,44 +384,42 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
           userId: myUserIdRef.current,
           questionIndex,
           correct,
-          score: currentScore,
+          score: computeLocalScore(updatedAnswers),
         },
       });
     }
-  }, [currentSession]);
+  }, []);
 
-  const finishQuizAction = useCallback(async () => {
-    if (!myParticipantId || !currentSession) return;
+  const finishQuizAction = useCallback(async (): Promise<FinishParticipantResult | null> => {
+    const session = currentSessionRef.current;
+    if (!myParticipantId || !session) return null;
 
     // Use ref to read latest answers — avoids stale closure (the XP=0 bug)
     const latestAnswers = myAnswersRef.current;
+    const isMultiplayer = session.mode === 'multiplayer';
 
-    // Determine if winner (only for multiplayer)
-    const isMultiplayer = currentSession.mode === 'multiplayer';
-    // Score = base (10 per correct) + speed bonus (5 if < 5000ms)
-    const myScore = latestAnswers.reduce(
-      (sum, a) => sum + (a.correct ? 10 : 0) + (a.correct && a.timeMs < 5000 ? 5 : 0),
-      0,
-    );
-
-    let isWinner = false;
-    if (isMultiplayer) {
-      const opScores = Array.from(opponentProgress.values()).map((o) => o.score);
-      // Empty array: `[].every(...)` is true — without opponent signals, never claim win.
-      if (opScores.length > 0) {
-        const bestOpponent = Math.max(...opScores);
-        isWinner = myScore > bestOpponent;
-      }
-    }
-
-    await quizApi.finishParticipant({
-      participantId: myParticipantId,
-      sessionId: currentSession.id,
-      answers: latestAnswers,
-      score: myScore,
-      isWinner,
-      isMultiplayer,
+    // The database grades, scores, awards the winner bonus and closes the
+    // session. Nothing about score / XP / winner is decided on the client.
+    const result = await quizApi.finishParticipant({
+      sessionId: session.id,
+      answers: latestAnswers.map((a) => ({
+        questionIndex: a.questionIndex,
+        selectedIndex: a.selectedIndex,
+        typedAnswer: a.typedAnswer ?? null,
+        timeMs: a.timeMs,
+      })),
     });
+
+    // Replace local grading with the authoritative graded answers.
+    if (result.answers.length > 0) {
+      const gradedByIndex = new Map(result.answers.map((a) => [a.questionIndex, a]));
+      const merged = latestAnswers.map((a) => {
+        const graded = gradedByIndex.get(a.questionIndex);
+        return graded ? { ...a, correct: graded.correct, timeMs: graded.timeMs } : a;
+      });
+      myAnswersRef.current = merged;
+      setMyAnswers(merged);
+    }
 
     // Broadcast finish — use cached userId ref
     if (channelRef.current && isMultiplayer && myUserIdRef.current) {
@@ -361,27 +428,15 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
         event: 'player_finished',
         payload: {
           userId: myUserIdRef.current,
-          score: myScore,
+          score: result.score,
         },
       });
     }
 
-    // Close the session:
-    // - Solo: always finish immediately (only one participant, no race possible)
-    // - Multiplayer: check if all players finished; finishSession is idempotent so
-    //   double-calling by simultaneous finishers is harmless (UPDATE is a no-op once done)
-    if (!isMultiplayer) {
-      await quizApi.finishSession(currentSession.id);
-    } else {
-      const parts = await quizApi.getSessionParticipants(currentSession.id);
-      if (parts.every((p) => p.finished)) {
-        await quizApi.finishSession(currentSession.id);
-      }
-    }
-
     // Progress is now durably saved in the DB — drop the local recovery mirror.
-    void clearQuizProgress(currentSession.id);
-  }, [myParticipantId, currentSession, opponentProgress]);
+    void clearQuizProgress(session.id);
+    return result;
+  }, [myParticipantId]);
 
 
   const broadcastGameStart = useCallback(() => {
@@ -394,11 +449,10 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const leaveQuiz = useCallback(() => {
+  const resetState = useCallback(() => {
     cleanupChannel();
-    const leavingSessionId = currentSession?.id;
-    if (leavingSessionId) void clearQuizProgress(leavingSessionId);
     setCurrentSession(null);
+    currentSessionRef.current = null;
     setParticipants([]);
     setMyParticipantId(null);
     setMyAnswers([]);
@@ -408,7 +462,17 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
     setCountdown(null);
     setIsReady(false);
     setAllReady(false);
-  }, [cleanupChannel, currentSession]);
+  }, [cleanupChannel]);
+
+  const leaveQuiz = useCallback(() => {
+    const leavingSessionId = currentSessionRef.current?.id;
+    if (leavingSessionId) void clearQuizProgress(leavingSessionId);
+    resetState();
+  }, [resetState]);
+
+  const abandonQuiz = useCallback(() => {
+    resetState();
+  }, [resetState]);
 
   const value = useMemo<QuizState>(
     () => ({
@@ -427,6 +491,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
       submitAnswer: submitAnswerAction,
       finishQuiz: finishQuizAction,
       leaveQuiz,
+      abandonQuiz,
       refreshParticipants,
     }),
     [
@@ -445,6 +510,7 @@ export function QuizProvider({ children }: { children: React.ReactNode }) {
       submitAnswerAction,
       finishQuizAction,
       leaveQuiz,
+      abandonQuiz,
       refreshParticipants,
     ],
   );

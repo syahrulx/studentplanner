@@ -36,22 +36,21 @@ function wrapText(text: string, maxChars: number): string[] {
 }
 
 function isShortAnswerQuestion(q: GeneratedQuizQuestion): boolean {
-  return !q.options || q.options.length === 0;
+  return q.kind === 'short_answer' || !q.options || q.options.length === 0;
 }
 
 function formatUserPick(q: GeneratedQuizQuestion, ans: ParticipantAnswer | undefined): string {
   if (!ans) return 'No answer recorded';
   if (isShortAnswerQuestion(q)) {
-    return '(Short answer — exact wording was not saved for export; marked '
-      + (ans.correct ? 'correct' : 'incorrect')
-      + ')';
+    const typed = (ans.typedAnswer || '').trim();
+    return typed ? pdfSafe(typed, 500) : 'No answer (time ran out)';
   }
   const i = ans.selectedIndex;
   if (i >= 0 && i < q.options.length) {
     const letter = String.fromCharCode(65 + i);
     return `${letter}. ${pdfSafe(q.options[i], 500)}`;
   }
-  return '—';
+  return 'No answer (time ran out)';
 }
 
 function formatCorrectAnswer(q: GeneratedQuizQuestion): string {
@@ -177,7 +176,12 @@ async function buildQuizPdf(params: {
     newLine(st, 6);
     drawLine(st, `Your answer: ${userPick}`, 11);
     drawLine(st, `Correct answer: ${correct}`, 11);
-    drawLine(st, `Result: ${resultLabel}`, 11, true);
+    drawLine(st, `Result: ${resultLabel}${ans ? `  (${(ans.timeMs / 1000).toFixed(1)}s)` : ''}`, 11, true);
+    const explanation = (q.explanation || '').trim();
+    if (explanation) {
+      newLine(st, 2);
+      drawLine(st, `Why: ${pdfSafe(explanation, 1000)}`, 10);
+    }
     newLine(st, 14);
   });
 

@@ -45,9 +45,34 @@ export interface QuizParticipant {
 
 export interface ParticipantAnswer {
   questionIndex: number;
+  /** Option index; -1 when nothing was selected (timeout) or for short answers. */
   selectedIndex: number;
+  /** Free-text response for short-answer questions. */
+  typedAnswer?: string | null;
+  /**
+   * Local grading result. Used for instant UI feedback / opponent broadcast
+   * only; the value stored in the DB comes from `finish_quiz_participant`.
+   */
   correct: boolean;
   timeMs: number;
+}
+
+/** Raw answer as submitted to the `finish_quiz_participant` RPC. */
+export interface RawQuizAnswer {
+  questionIndex: number;
+  selectedIndex: number | null;
+  typedAnswer: string | null;
+  timeMs: number;
+}
+
+/** Parsed return value of `finish_quiz_participant`. */
+export interface FinishParticipantResult {
+  score: number;
+  correct_count: number;
+  total_questions: number;
+  xp_earned: number;
+  is_winner: boolean;
+  answers: ParticipantAnswer[];
 }
 
 export interface QuizScore {
@@ -137,8 +162,13 @@ export async function createSession(params: CreateSessionParams): Promise<QuizSe
   const safeQuestions = (params.questions || []).map((q) => ({
     ...q,
     question: (q.question || '').slice(0, 500),
-    options: q.options?.map((o) => o.slice(0, 250)),
+    options: (q.options || []).map((o) => String(o ?? '').slice(0, 250)),
     expectedAnswer: q.expectedAnswer ? q.expectedAnswer.slice(0, 250) : undefined,
+    acceptedAnswers: Array.isArray(q.acceptedAnswers)
+      ? q.acceptedAnswers.map((a) => String(a ?? '').slice(0, 250)).slice(0, 10)
+      : undefined,
+    explanation: q.explanation ? q.explanation.slice(0, 1000) : undefined,
+    proof: q.proof ? q.proof.slice(0, 300) : undefined,
   }));
 
   const { data, error } = await supabase
@@ -169,6 +199,13 @@ export async function createSession(params: CreateSessionParams): Promise<QuizSe
   return data as QuizSession;
 }
 
+/** True for a Postgres unique-violation (23505) surfaced by PostgREST. */
+export function isUniqueViolation(error: unknown): boolean {
+  const code = String((error as any)?.code || '');
+  const message = String((error as any)?.message || '').toLowerCase();
+  return code === '23505' || /duplicate key value|unique constraint/.test(message);
+}
+
 export async function joinSession(sessionId: string): Promise<QuizParticipant> {
   const userId = await getCurrentUserId();
 
@@ -183,6 +220,34 @@ export async function joinSession(sessionId: string): Promise<QuizParticipant> {
 
   if (error) normalizeQuizTableError(error);
   return data as QuizParticipant;
+}
+
+/**
+ * Random matchmaking: find an open session and join it. If the join races
+ * with another player (unique violation / session no longer waiting) the
+ * lookup is retried once, excluding the session that failed. Returns null
+ * when no open session is available so the caller can host a new one.
+ */
+export async function findAndJoinRandomSession(
+  sourceType: SourceType,
+  quizType: string,
+): Promise<{ session: QuizSession; participant: QuizParticipant } | null> {
+  let excludeSessionId: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const session = await findRandomSession(sourceType, quizType, excludeSessionId);
+    if (!session) return null;
+    try {
+      const participant = await joinSession(session.id);
+      return { session, participant };
+    } catch (e) {
+      if (attempt === 0 && isUniqueViolation(e)) {
+        excludeSessionId = session.id;
+        continue;
+      }
+      throw e;
+    }
+  }
+  return null;
 }
 
 export async function joinByInviteCode(inviteCode: string): Promise<{ session: QuizSession; participant: QuizParticipant }> {
@@ -263,6 +328,10 @@ export async function startSession(sessionId: string): Promise<void> {
   if (error) normalizeQuizTableError(error);
 }
 
+/**
+ * Fallback only: `finish_quiz_participant` closes the session itself. Only the
+ * host may update `quiz_sessions` under the current RLS policy.
+ */
 export async function finishSession(sessionId: string): Promise<void> {
   const { error } = await supabase
     .from('quiz_sessions')
@@ -279,59 +348,62 @@ export async function finishSession(sessionId: string): Promise<void> {
 // Incremental submitAnswer was removed to prevent db congestion.
 
 export interface FinishParticipantParams {
-  participantId: string;
   sessionId: string;
-  answers: ParticipantAnswer[];
-  score: number;
-  isWinner: boolean;
-  isMultiplayer: boolean;
+  answers: RawQuizAnswer[];
 }
 
+function toRawAnswer(a: RawQuizAnswer): RawQuizAnswer {
+  const selected = a.selectedIndex;
+  return {
+    questionIndex: Math.max(0, Math.trunc(Number(a.questionIndex) || 0)),
+    selectedIndex: typeof selected === 'number' && Number.isFinite(selected) ? Math.trunc(selected) : null,
+    typedAnswer: a.typedAnswer == null ? null : String(a.typedAnswer).slice(0, 250),
+    timeMs: Math.max(0, Math.round(Number(a.timeMs) || 0)),
+  };
+}
+
+/**
+ * Submit the participant's raw answers. The database grades them against the
+ * session's stored questions, computes score + speed bonus, writes
+ * quiz_participants / quiz_scores, awards the multiplayer winner bonus and
+ * closes the session. The client no longer computes score / XP / winner.
+ */
 export async function finishParticipant({
-  participantId,
   sessionId,
   answers,
-  score,
-  isWinner,
-  isMultiplayer,
-}: FinishParticipantParams): Promise<QuizScore> {
-  const userId = await getCurrentUserId();
+}: FinishParticipantParams): Promise<FinishParticipantResult> {
+  const payload = (answers || []).map(toRawAnswer);
 
-  // Batch update all answers, score, and set as finished
-  const { data: participant, error: updateError } = await supabase
-    .from('quiz_participants')
-    .update({ answers, score, finished: true })
-    .eq('id', participantId)
-    .select()
-    .single();
-
-  if (updateError) normalizeQuizTableError(updateError);
-  if (!participant) throw new Error('Participant not found');
-
-  const correctCount = answers.filter((a) => a.correct).length;
-  const totalQuestions = answers.length;
-
-  let xpEarned = score as number;
-  if (isMultiplayer && isWinner) xpEarned += 20;
-
-  const { data: scoreResponse, error } = await supabase
-    .from('quiz_scores')
-    .upsert(
-      {
-        user_id: userId,
-        session_id: sessionId,
-        score,
-        correct_count: correctCount,
-        total_questions: totalQuestions,
-        xp_earned: xpEarned,
-      },
-      { onConflict: 'user_id,session_id', ignoreDuplicates: false },
-    )
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc('finish_quiz_participant', {
+    p_session_id: sessionId,
+    p_answers: payload,
+  });
 
   if (error) normalizeQuizTableError(error);
-  return scoreResponse as QuizScore;
+
+  const raw = (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, any> | null;
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Quiz results could not be saved. Please try again.');
+  }
+
+  const graded: ParticipantAnswer[] = Array.isArray(raw.answers)
+    ? raw.answers.map((a: any) => ({
+        questionIndex: Number(a?.questionIndex) || 0,
+        selectedIndex: a?.selectedIndex == null ? -1 : Number(a.selectedIndex),
+        typedAnswer: a?.typedAnswer ?? null,
+        correct: Boolean(a?.correct),
+        timeMs: Number(a?.timeMs) || 0,
+      }))
+    : [];
+
+  return {
+    score: Number(raw.score) || 0,
+    correct_count: Number(raw.correct_count) || 0,
+    total_questions: Number(raw.total_questions) || 0,
+    xp_earned: Number(raw.xp_earned) || 0,
+    is_winner: Boolean(raw.is_winner),
+    answers: graded,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -349,10 +421,11 @@ export async function getSessionResults(sessionId: string): Promise<QuizParticip
 export async function findRandomSession(
   sourceType: SourceType,
   quizType: string,
+  excludeSessionId?: string,
 ): Promise<QuizSession | null> {
   const userId = await getCurrentUserId();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('quiz_sessions')
     .select('*')
     .eq('status', 'waiting')
@@ -360,7 +433,10 @@ export async function findRandomSession(
     .eq('match_type', 'random')
     .eq('source_type', sourceType)
     .eq('quiz_type', quizType)
-    .neq('host_id', userId)
+    .neq('host_id', userId);
+  if (excludeSessionId) query = query.neq('id', excludeSessionId);
+
+  const { data, error } = await query
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
