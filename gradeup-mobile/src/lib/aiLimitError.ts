@@ -49,6 +49,31 @@ export function isMonthlyLimitError(err: ErrorLike): boolean {
   return !!msg && MONTHLY_LIMIT_REGEX.test(msg);
 }
 
+/**
+ * When the monthly budget refills.
+ *
+ * The server sums usage since the start of the current UTC month, so the reset
+ * is always midnight UTC on the 1st. Naming the actual date beats "next month":
+ * a student who hits the cap on the 29th only has to wait two days, and the
+ * vague wording made that sound like a month of waiting.
+ */
+function nextResetLabel(language: AppLanguage): string {
+  const now = new Date();
+  const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  try {
+    // `AppLanguage` is currently 'en' only; compare loosely so adding 'ms'
+    // later needs no change here.
+    const locale = String(language) === 'ms' ? 'ms-MY' : 'en-GB';
+    return reset.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    });
+  } catch {
+    return reset.toISOString().slice(0, 10);
+  }
+}
+
 let alertShowing = false;
 
 /**
@@ -70,7 +95,9 @@ export function showMonthlyLimitAlert(language: AppLanguage = 'en'): void {
 
   Alert.alert(
     t(language, 'aiMonthlyLimitTitle'),
-    [t(language, 'aiMonthlyLimitMessage'), tagline].filter(Boolean).join(' '),
+    [t(language, 'aiMonthlyLimitMessage').replace('{date}', nextResetLabel(language)), tagline]
+      .filter(Boolean)
+      .join(' '),
     [
       {
         text: t(language, 'aiMonthlyLimitLater'),

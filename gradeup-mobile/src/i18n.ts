@@ -160,9 +160,9 @@ const translations = {
     verifiedByAi: 'Verified by AI',
     messageLog: 'Message Log',
     extractedOn: 'Extracted on',
-    needsDateBannerGc: 'No due date set in Google Classroom — tap Edit to add one',
-    needsDateBannerAi: 'No specific due date was found in the message — tap Edit to add one',
-    needsDateBannerGeneric: 'No due date set — tap Edit to add one',
+    needsDateBannerGc: 'No due date set in Google Classroom. Tap Edit to add one',
+    needsDateBannerAi: 'No specific due date was found in the message. Tap Edit to add one',
+    needsDateBannerGeneric: 'No due date set. Tap Edit to add one',
     received: 'Received',
     taskNotFound: 'Task not found',
     back: 'Back',
@@ -202,7 +202,7 @@ const translations = {
     flashcardSummaryReviewAgainCards: 'Redo the ones you forgot ({n})',
     flashcardDueShort: 'Due',
     flashcardDueFooter: '{n} DUE NOW',
-    flashcardReviewSaveFailed: 'Could not save a review. Check your connection — your rating was not recorded.',
+    flashcardReviewSaveFailed: 'Could not save a review. Check your connection. Your rating was not recorded.',
     flashcardTypeCloze: 'FILL IN THE BLANK',
     flashcardTypeConcept: 'CONCEPT',
     flashcardHintPrefix: 'Hint:',
@@ -245,7 +245,7 @@ const translations = {
     // Study tab due card
     flashcardEmptyDeckHint: 'Generate from a note or add cards in the deck preview.',
     // Generation feedback
-    flashcardPickHandwritingNotUsable: 'Handwritten note — not usable for generation',
+    flashcardPickHandwritingNotUsable: 'Handwritten note. Not usable for generation',
     flashcardPickTruncatedTitle: 'Partial coverage',
     flashcardPickTruncatedBody:
       'Only the first part of this document was used (~{n} chars). Split the PDF or pick a page range for full coverage.',
@@ -259,7 +259,7 @@ const translations = {
     flashcardPickNoNotes: 'No notes in this subject',
     flashcardPickNoNotesHint: 'Create a note first, then select it here to generate flashcards.',
     flashcardPickCardCount: '{n} flashcards',
-    flashcardPickNoCardsYet: 'No flashcards yet — select & generate',
+    flashcardPickNoCardsYet: 'No flashcards yet. Select & generate',
     flashcardsAllSheetsTitle: 'Flashcards',
     flashcardsBrowseDecksSub: 'Generate cards',
     flashcardPickOtherSubjects: 'Other subjects',
@@ -269,8 +269,8 @@ const translations = {
     flashcardPickClearSelection: 'Clear',
     flashcardPickNoTextNote: 'No written text in note',
     flashcardPickNoSource: 'Add note text or a PDF attachment',
-    flashcardPickPdfFullDoc: 'Full PDF attached — cards from whole document',
-    flashcardPickPdfPreferred: 'PDF attached — generation uses the full PDF',
+    flashcardPickPdfFullDoc: 'Full PDF attached. Cards from whole document',
+    flashcardPickPdfPreferred: 'PDF attached. Generation uses the full PDF',
     flashcardPickNoContentTitle: 'Nothing to generate from',
     flashcardPickNoContentHint:
       'Pick notes that have written text in the body or a .pdf file attached.',
@@ -303,10 +303,10 @@ const translations = {
     flashcardGenPdfTipRow3Right: '15–25 cards',
     flashcardGenPdfTipRow4Left: 'Long reading',
     flashcardGenPdfTipRow4Right: 'Up to your plan max',
-    flashcardGenFreeSection: 'Free — up to {max} cards',
-    flashcardGenPlusSection: 'Plus — up to {max} cards',
+    flashcardGenFreeSection: 'Free · up to {max} cards',
+    flashcardGenPlusSection: 'Plus · up to {max} cards',
     flashcardGenPlusLockedHint: 'Locked on Free. Upgrade to Plus for larger decks.',
-    flashcardGenProSection: 'Pro — up to {max} cards',
+    flashcardGenProSection: 'Pro · up to {max} cards',
     flashcardGenProLockedHint: 'Locked on Free/Plus. Upgrade to Pro for the biggest decks.',
     flashcardGenUpgrade: 'View plans',
     flashcardGenDonePick: 'Generate',
@@ -318,7 +318,7 @@ const translations = {
     flashcardGenProgressPdf: 'Reading PDF & generating…',
     flashcardGenProgressText: 'Generating from note text…',
     flashcardGenProgressDone: 'Flashcards ready',
-    flashcardGenProgressRetry: 'Rate limited — retrying shortly…',
+    flashcardGenProgressRetry: 'Rate limited. Retrying shortly…',
     noteImportTitle: 'Importing file',
     noteImportSub: 'Keep this screen open until the bar reaches 100%.',
     noteImportReading: 'Preparing file…',
@@ -326,7 +326,7 @@ const translations = {
     noteImportSaving: 'Saving note…',
     noteImportDone: 'Import complete',
     noteImportAlertTitle: 'Import PDF into your Notes',
-    noteImportAlertMessage: 'Rencana will upload the PDF you choose to your private Notes library so you can read it in the app and generate AI summaries and flashcards from it. Only .pdf files are supported — other formats cannot be imported. For example, you can pick a lecture handout from Files, iCloud Drive, or Downloads.',
+    noteImportAlertMessage: 'Rencana will upload the PDF you choose to your private Notes library so you can read it in the app and generate AI summaries and flashcards from it. Only .pdf files are supported. Other formats cannot be imported. For example, you can pick a lecture handout from Files, iCloud Drive, or Downloads.',
     noteImportChoosePdf: 'Choose PDF',
     noteAttachTitle: 'Attaching file',
     noteAttachReading: 'Preparing file…',
@@ -624,8 +624,8 @@ const translations = {
     nowPlayingSaveFailTitle: 'Could not save',
     nowPlayingSaveFailBody: 'Something went wrong. Try reconnecting Spotify in Settings.',
     nowPlayingErrorTitle: 'Error',
-    setVibeEmptyRecent: 'No recently played tracks found.\nYour Spotify session may have expired — try reconnecting in Settings.',
-    setVibeEmptyPlaylists: 'No playlists found.\nYour Spotify session may have expired — try reconnecting in Settings.',
+    setVibeEmptyRecent: 'No recently played tracks found.\nYour Spotify session may have expired. Try reconnecting in Settings.',
+    setVibeEmptyPlaylists: 'No playlists found.\nYour Spotify session may have expired. Try reconnecting in Settings.',
     settingsClassroomDisconnectTitle: 'Disconnect Google Classroom',
     settingsClassroomDisconnectBody: 'Auto-sync will stop. Your imported tasks will remain in the planner.',
     settingsClassroomDisconnectConfirm: 'Disconnect',
@@ -682,7 +682,7 @@ const translations = {
     importCalendarUpgradeTitle: 'Plus / Pro Feature',
     importCalendarUpgradeBody: 'Importing tasks directly from your device calendar is exclusively available for Plus and Pro users.',
     importCalendarPermissionBody:
-      'Allow calendar access to import events into your planner. Events are copied as tasks with no subject—you can edit them later.',
+      'Allow calendar access to import events into your planner. Events are copied as tasks with no subject. you can edit them later.',
     importCalendarGrantAccess: 'Allow access',
     importCalendarSelectCalendars: 'Calendars',
     importCalendarDateRange: 'Date range',
@@ -695,7 +695,7 @@ const translations = {
     importCalendarDone: 'Import complete',
     importCalendarNoEvents: 'No events in this range.',
     importCalendarTooMany:
-      'Too many events in this range. Only the first {n} will be imported—narrow the range if needed.',
+      'Too many events in this range. Only the first {n} will be imported. narrow the range if needed.',
     importCalendarLoadError: 'Could not load calendars.',
     importCalendarNoCalendars: 'No calendars found on this device.',
 
@@ -723,7 +723,7 @@ const translations = {
     confessionYouAreAt: 'You are at',
     confessionPostingAs: 'Posting from',
     confessionRules:
-      'Posts are anonymous to other students but subject to community guidelines. Be kind — no harassment, hate, or explicit content.',
+      'Posts are anonymous to other students but subject to community guidelines. Be kind. No harassment, hate, or explicit content.',
     confessionPost: 'Post',
     confessionPostError: 'Could not post your confession. Please try again.',
     confessionCommentError: 'Could not post your comment. Please try again.',
@@ -892,11 +892,11 @@ const translations = {
     timetableEditTitle: 'Edit class',
     nonUitmTimetableIntroTitle: 'Bring your timetable into Rencana',
     nonUitmTimetableIntroBody:
-      'Not on UiTM MyStudent? Snap a screenshot or upload a PDF of your timetable — we use AI to turn it into your weekly schedule. You can tweak anything after, and your classes can show on your home screen widget (where supported).',
+      'Not on UiTM MyStudent? Snap a screenshot or upload a PDF of your timetable. We use AI to turn it into your weekly schedule. You can tweak anything after, and your classes can show on your home screen widget (where supported).',
     nonUitmTimetableIntroUpload: 'Upload timetable',
     nonUitmTimetableIntroLater: 'Maybe later',
     nonUitmTimetableIntroPrivacyNote:
-      'Your file is sent securely to our servers only to read class times and names — nothing is posted publicly.',
+      'Your file is sent securely to our servers only to read class times and names. Nothing is posted publicly.',
     timetableImportTitle: 'Import timetable',
     timetableImportSubtitle: 'Pick a clear photo, screenshot, or PDF of your weekly timetable and AI will read it and fill in your classes automatically. For example, upload a screenshot of your university portal timetable or a PDF from your course coordinator.',
     timetableImportPickImage: 'Photo / screenshot',
@@ -945,7 +945,7 @@ const translations = {
     stressMapTeachingWeekLine:
       'Teaching week {current} of {total} (from Academic calendar start). Not the same as portal semester (e.g. semester 5 ≠ week 5).',
     stressMapTasksOutsideRange:
-      '{count} task(s) are not in any bar — due dates fall outside weeks 1–{total} for this semester start. Update Academic calendar or task due dates.',
+      '{count} task(s) are not in any bar. Due dates fall outside weeks 1–{total} for this semester start. Update Academic calendar or task due dates.',
     preferencesSection: 'Preferences',
     planSection: 'Plan',
     appearanceSection: 'Appearance',
@@ -966,7 +966,7 @@ const translations = {
     weekStartPrefDesc: 'Order of days on your timetable.',
     autoDeletePastTasks: 'Auto-delete past tasks',
     autoDeletePastTasksDesc:
-      'Remove tasks from your planner after their due date and time have passed. Default is off — past tasks stay until you delete them.',
+      'Remove tasks from your planner after their due date and time have passed. Default is off. Past tasks stay until you delete them.',
     autoDeletePastTasksConfirmTitle: 'Delete past tasks?',
     autoDeletePastTasksConfirmBody:
       'You have {count} task(s) whose due date and time have already passed. Enabling this will remove them from your planner. This cannot be undone.',
@@ -1018,16 +1018,16 @@ const translations = {
     updatePromptOpenFailedTitle: "Couldn't open the App Store",
     updatePromptOpenFailedBody: 'Please open the App Store manually and search for Rencana.',
 
-    aiMonthlyLimitTitle: 'Monthly AI limit reached',
+    aiMonthlyLimitTitle: "That's your AI for this month",
+    // {date} is the next reset, filled in by showMonthlyLimitAlert.
     aiMonthlyLimitMessage:
-      "You've used up all your AI tokens for this month on your current plan. Upgrade your plan to keep generating flashcards, quizzes, summaries, and more — or wait until next month when your free tokens reset.",
-    aiMonthlyLimitUpgrade: 'Upgrade plan',
-    aiMonthlyLimitLater: 'Maybe later',
+      'Your tokens come back on {date}. Until then, flashcards, quizzes and the tutor are paused.',
+    aiMonthlyLimitUpgrade: 'See plans',
+    aiMonthlyLimitLater: 'Not now',
 
     // Free-trial copy. {duration} is filled from the store's own trial length.
-    trialTagline:
-      "Try {plan} free for {duration} — cancel any time before it ends and you won't be charged.",
-    trialCta: 'Start free trial',
+    trialTagline: 'Try {plan} free for {duration}. Cancel anytime.',
+    trialCta: 'Try it free',
     trialDurationDay: '{count} day',
     trialDurationDays: '{count} days',
     trialDurationWeek: '{count} week',
@@ -1072,7 +1072,7 @@ const translations = {
     reportMessagePlaceholder: 'Describe what happened, what you expected, and any steps to reproduce.',
     reportSubmit: 'Send report',
     reportSubmittedTitle: 'Report sent',
-    reportSubmittedBody: 'Thanks — our team will review it shortly.',
+    reportSubmittedBody: 'Thanks. Our team will review it shortly.',
     reportSubmitError: 'Could not send your report. Please try again.',
     reportFootnote:
       'Reports are visible to the Rencana admin team only. Please be respectful and avoid sharing other people\u2019s private information.',
@@ -1103,7 +1103,7 @@ const translations = {
     tutorQuickQuiz: 'Quiz me on this',
     tutorQuickFlashcards: 'Make flashcards',
     tutorQuickSimplifyPrompt: "Can you explain that more simply, as if I'm hearing it for the first time?",
-    tutorQuickDeeperPrompt: 'Go deeper on that — add more detail, reasoning, and examples from my notes.',
+    tutorQuickDeeperPrompt: 'Go deeper on that. Add more detail, reasoning, and examples from my notes.',
     tutorQuickQuizPrompt:
       'Quiz me on what you just explained: give me 3 quick questions, one at a time, and wait for my answer before revealing the solution.',
     tutorHistoryTitle: 'Chat History',
@@ -1273,9 +1273,9 @@ const translations = {
     verifiedByAi: 'Disahkan oleh AI',
     messageLog: 'Log Mesej',
     extractedOn: 'Diekstrak pada',
-    needsDateBannerGc: 'Tiada tarikh akhir dalam Google Classroom — ketik Sunting untuk tambah',
-    needsDateBannerAi: 'Tiada tarikh akhir spesifik dalam mesej — ketik Sunting untuk tambah',
-    needsDateBannerGeneric: 'Tiada tarikh akhir — ketik Sunting untuk tambah',
+    needsDateBannerGc: 'Tiada tarikh akhir dalam Google Classroom. Ketik Sunting untuk tambah',
+    needsDateBannerAi: 'Tiada tarikh akhir spesifik dalam mesej. Ketik Sunting untuk tambah',
+    needsDateBannerGeneric: 'Tiada tarikh akhir. Ketik Sunting untuk tambah',
     received: 'Diterima',
     taskNotFound: 'Tugasan tidak dijumpai',
     back: 'Kembali',
@@ -1315,7 +1315,7 @@ const translations = {
     flashcardSummaryReviewAgainCards: 'Ulang kad yang tak ingat ({n})',
     flashcardDueShort: 'Tertunggak',
     flashcardDueFooter: '{n} PERLU DIULANG',
-    flashcardReviewSaveFailed: 'Tidak dapat simpan ulang kaji. Semak sambungan anda — penilaian tidak direkodkan.',
+    flashcardReviewSaveFailed: 'Tidak dapat simpan ulang kaji. Semak sambungan anda. Penilaian tidak direkodkan.',
     flashcardTypeCloze: 'ISI TEMPAT KOSONG',
     flashcardTypeConcept: 'KONSEP',
     flashcardHintPrefix: 'Petunjuk:',
@@ -1358,7 +1358,7 @@ const translations = {
     // Study tab due card
     flashcardEmptyDeckHint: 'Jana dari nota atau tambah kad dalam pratonton dek.',
     // Generation feedback
-    flashcardPickHandwritingNotUsable: 'Nota tulisan tangan — tidak boleh digunakan untuk penjanaan',
+    flashcardPickHandwritingNotUsable: 'Nota tulisan tangan. Tidak boleh digunakan untuk penjanaan',
     flashcardPickTruncatedTitle: 'Liputan sebahagian',
     flashcardPickTruncatedBody:
       'Hanya bahagian awal dokumen ini digunakan (~{n} aksara). Pisahkan PDF atau pilih julat halaman untuk liputan penuh.',
@@ -1372,7 +1372,7 @@ const translations = {
     flashcardPickNoNotes: 'Tiada nota dalam subjek ini',
     flashcardPickNoNotesHint: 'Cipta nota dahulu, kemudian pilih di sini untuk jana kad imbas.',
     flashcardPickCardCount: '{n} kad imbas',
-    flashcardPickNoCardsYet: 'Tiada kad lagi — pilih & jana',
+    flashcardPickNoCardsYet: 'Tiada kad lagi. Pilih & jana',
     flashcardsAllSheetsTitle: 'Kad imbas',
     flashcardsBrowseDecksSub: 'Jana kad',
     flashcardPickOtherSubjects: 'Subjek lain',
@@ -1382,8 +1382,8 @@ const translations = {
     flashcardPickClearSelection: 'Kosongkan',
     flashcardPickNoTextNote: 'Tiada teks dalam nota',
     flashcardPickNoSource: 'Tambah teks nota atau lampirkan PDF',
-    flashcardPickPdfFullDoc: 'PDF penuh dilampirkan — kad dari keseluruhan dokumen',
-    flashcardPickPdfPreferred: 'PDF dilampirkan — penjanaan guna PDF penuh',
+    flashcardPickPdfFullDoc: 'PDF penuh dilampirkan. Kad dari keseluruhan dokumen',
+    flashcardPickPdfPreferred: 'PDF dilampirkan. Penjanaan guna PDF penuh',
     flashcardPickNoContentTitle: 'Tiada sumber untuk dijana',
     flashcardPickNoContentHint:
       'Pilih nota yang ada teks dalam badan atau fail .pdf dilampirkan.',
@@ -1416,10 +1416,10 @@ const translations = {
     flashcardGenPdfTipRow3Right: '15–25 kad',
     flashcardGenPdfTipRow4Left: 'Bacaan panjang',
     flashcardGenPdfTipRow4Right: 'Sehingga had pelan',
-    flashcardGenFreeSection: 'Percuma — sehingga {max} kad',
-    flashcardGenPlusSection: 'Plus — sehingga {max} kad',
+    flashcardGenFreeSection: 'Percuma · sehingga {max} kad',
+    flashcardGenPlusSection: 'Plus · sehingga {max} kad',
     flashcardGenPlusLockedHint: 'Terkunci pada Percuma. Naik taraf ke Plus untuk dek lebih besar.',
-    flashcardGenProSection: 'Pro — sehingga {max} kad',
+    flashcardGenProSection: 'Pro · sehingga {max} kad',
     flashcardGenProLockedHint: 'Terkunci pada Percuma/Plus. Naik taraf ke Pro untuk dek paling besar.',
     flashcardGenUpgrade: 'Lihat pelan',
     flashcardGenDonePick: 'Jana',
@@ -1431,7 +1431,7 @@ const translations = {
     flashcardGenProgressPdf: 'Membaca PDF & menjana…',
     flashcardGenProgressText: 'Menjana dari teks nota…',
     flashcardGenProgressDone: 'Kad imbas sedia',
-    flashcardGenProgressRetry: 'Had kadar — mencuba semula…',
+    flashcardGenProgressRetry: 'Had kadar. Mencuba semula…',
     noteImportTitle: 'Mengimport fail',
     noteImportSub: 'Biarkan skrin ini terbuka sehingga bar mencapai 100%.',
     noteImportReading: 'Menyediakan fail…',
@@ -1439,7 +1439,7 @@ const translations = {
     noteImportSaving: 'Menyimpan nota…',
     noteImportDone: 'Import selesai',
     noteImportAlertTitle: 'Import PDF ke pustaka Nota',
-    noteImportAlertMessage: 'Rencana akan memuat naik fail PDF yang anda pilih ke pustaka Nota peribadi anda supaya boleh dibaca dalam aplikasi dan digunakan untuk menjana ringkasan AI serta kad imbas. Hanya fail .pdf disokong — format lain tidak boleh diimport. Contohnya, anda boleh pilih nota kuliah dari Files, iCloud Drive, atau Downloads.',
+    noteImportAlertMessage: 'Rencana akan memuat naik fail PDF yang anda pilih ke pustaka Nota peribadi anda supaya boleh dibaca dalam aplikasi dan digunakan untuk menjana ringkasan AI serta kad imbas. Hanya fail .pdf disokong. Format lain tidak boleh diimport. Contohnya, anda boleh pilih nota kuliah dari Files, iCloud Drive, atau Downloads.',
     noteImportChoosePdf: 'Pilih PDF',
     noteAttachTitle: 'Melampirkan fail',
     noteAttachReading: 'Menyediakan fail…',
@@ -1737,8 +1737,8 @@ const translations = {
     nowPlayingSaveFailTitle: 'Tidak dapat simpan',
     nowPlayingSaveFailBody: 'Sesuatu tidak kena. Cuba sambung semula Spotify dalam Tetapan.',
     nowPlayingErrorTitle: 'Ralat',
-    setVibeEmptyRecent: 'Tiada lagu terbaru ditemui.\nSesi Spotify mungkin tamat — cuba sambung semula dalam Tetapan.',
-    setVibeEmptyPlaylists: 'Tiada senarai main ditemui.\nSesi Spotify mungkin tamat — cuba sambung semula dalam Tetapan.',
+    setVibeEmptyRecent: 'Tiada lagu terbaru ditemui.\nSesi Spotify mungkin tamat. Cuba sambung semula dalam Tetapan.',
+    setVibeEmptyPlaylists: 'Tiada senarai main ditemui.\nSesi Spotify mungkin tamat. Cuba sambung semula dalam Tetapan.',
     settingsClassroomDisconnectTitle: 'Putuskan Google Classroom',
     settingsClassroomDisconnectBody:
       'Auto-sync akan berhenti. Tugasan yang diimport kekal dalam perancang.',
@@ -1796,7 +1796,7 @@ const translations = {
     importCalendarUpgradeTitle: 'Ciri Plus / Pro',
     importCalendarUpgradeBody: 'Mengimport tugasan terus daripada kalendar peranti anda tersedia secara eksklusif untuk pengguna Plus dan Pro.',
     importCalendarPermissionBody:
-      'Benarkan akses kalendar untuk mengimport acara ke perancang anda. Acara disalin sebagai tugasan tanpa subjek—anda boleh edit kemudian.',
+      'Benarkan akses kalendar untuk mengimport acara ke perancang anda. Acara disalin sebagai tugasan tanpa subjek. anda boleh edit kemudian.',
     importCalendarGrantAccess: 'Benarkan akses',
     importCalendarSelectCalendars: 'Kalendar',
     importCalendarDateRange: 'Julat tarikh',
@@ -1809,7 +1809,7 @@ const translations = {
     importCalendarDone: 'Import selesai',
     importCalendarNoEvents: 'Tiada acara dalam julat ini.',
     importCalendarTooMany:
-      'Terlalu banyak acara dalam julat ini. Hanya {n} pertama akan diimport—perketat julat jika perlu.',
+      'Terlalu banyak acara dalam julat ini. Hanya {n} pertama akan diimport. perketat julat jika perlu.',
     importCalendarLoadError: 'Tidak dapat memuatkan kalendar.',
     importCalendarNoCalendars: 'Tiada kalendar dijumpai pada peranti ini.',
 
@@ -1837,7 +1837,7 @@ const translations = {
     confessionYouAreAt: 'Anda di',
     confessionPostingAs: 'Menyiar dari',
     confessionRules:
-      'Siaran adalah tanpa nama kepada pelajar lain tetapi tertakluk pada garis panduan komuniti. Bersikap baik — tiada gangguan, kebencian, atau kandungan eksplisit.',
+      'Siaran adalah tanpa nama kepada pelajar lain tetapi tertakluk pada garis panduan komuniti. Bersikap baik. Tiada gangguan, kebencian, atau kandungan eksplisit.',
     confessionPost: 'Siarkan',
     confessionPostError: 'Tidak dapat menyiarkan pengakuan. Sila cuba lagi.',
     confessionCommentError: 'Tidak dapat menyiarkan komen. Sila cuba lagi.',
@@ -2006,11 +2006,11 @@ const translations = {
     timetableEditTitle: 'Edit kelas',
     nonUitmTimetableIntroTitle: 'Bawa jadual anda ke Rencana',
     nonUitmTimetableIntroBody:
-      'Bukan MyStudent UiTM? Ambil tangkapan skrin atau muat naik PDF jadual — kami guna AI untuk jadikan jadual mingguan anda. Anda boleh laras selepas ini, dan kelas boleh dipaparkan pada widget skrin utama (jika disokong).',
+      'Bukan MyStudent UiTM? Ambil tangkapan skrin atau muat naik PDF jadual. Kami guna AI untuk jadikan jadual mingguan anda. Anda boleh laras selepas ini, dan kelas boleh dipaparkan pada widget skrin utama (jika disokong).',
     nonUitmTimetableIntroUpload: 'Muat naik jadual',
     nonUitmTimetableIntroLater: 'Nanti dulu',
     nonUitmTimetableIntroPrivacyNote:
-      'Fail dihantar dengan selamat ke pelayan kami hanya untuk baca masa dan nama kelas — tiada siaran awam.',
+      'Fail dihantar dengan selamat ke pelayan kami hanya untuk baca masa dan nama kelas. Tiada siaran awam.',
     timetableImportTitle: 'Import jadual',
     timetableImportSubtitle: 'Pilih foto, tangkapan skrin atau PDF jadual mingguan anda dan AI akan membacanya serta mengisi kelas anda secara automatik. Contohnya, muat naik tangkapan skrin jadual dari portal universiti atau fail PDF dari penyelaras kursus anda.',
     timetableImportPickImage: 'Foto / tangkapan skrin',
@@ -2059,7 +2059,7 @@ const translations = {
     stressMapTeachingWeekLine:
       'Minggu pengajian {current} daripada {total} (dari tarikh mula kalendar akademik). Bukan sama dengan semester portal (cth. semester 5 ≠ minggu 5).',
     stressMapTasksOutsideRange:
-      '{count} tugas tiada dalam bar — tarikh tamat di luar minggu 1–{total} untuk mula semester ini. Kemas kini kalendar akademik atau tarikh tugas.',
+      '{count} tugas tiada dalam bar. Tarikh tamat di luar minggu 1–{total} untuk mula semester ini. Kemas kini kalendar akademik atau tarikh tugas.',
     preferencesSection: 'Keutamaan',
     planSection: 'Pelan',
     appearanceSection: 'Paparan',
@@ -2080,7 +2080,7 @@ const translations = {
     weekStartPrefDesc: 'Susunan hari pada tab jadual.',
     autoDeletePastTasks: 'Padam tugas lepas tarikh tamat secara automatik',
     autoDeletePastTasksDesc:
-      'Buang tugas daripada perancang selepas tarikh dan masa tamat berlalu. Lalai dimatikan — tugas lepas kekal sehingga anda padam sendiri.',
+      'Buang tugas daripada perancang selepas tarikh dan masa tamat berlalu. Lalai dimatikan. Tugas lepas kekal sehingga anda padam sendiri.',
     autoDeletePastTasksConfirmTitle: 'Padam tugas yang sudah lepas?',
     autoDeletePastTasksConfirmBody:
       'Anda ada {count} tugas yang tarikh dan masa tamatnya sudah berlalu. Membolehkan ini akan membuangnya daripada perancang. Tindakan ini tidak boleh dibuat asal.',
@@ -2135,16 +2135,16 @@ const translations = {
     updatePromptOpenFailedTitle: 'Tidak dapat membuka App Store',
     updatePromptOpenFailedBody: 'Sila buka App Store secara manual dan cari Rencana.',
 
-    aiMonthlyLimitTitle: 'Had AI bulanan telah habis',
+    aiMonthlyLimitTitle: 'Token AI bulan ini dah habis',
+    // {date} ialah tarikh set semula, diisi oleh showMonthlyLimitAlert.
     aiMonthlyLimitMessage:
-      'Anda telah menggunakan semua token AI untuk bulan ini pada pelan semasa anda. Naik taraf pelan untuk terus menjana flashcard, kuiz, ringkasan dan lain-lain — atau tunggu bulan depan apabila token percuma anda diset semula.',
-    aiMonthlyLimitUpgrade: 'Naik taraf pelan',
-    aiMonthlyLimitLater: 'Nanti sahaja',
+      'Token anda kembali pada {date}. Sementara itu, flashcard, kuiz dan tutor dijeda.',
+    aiMonthlyLimitUpgrade: 'Lihat pelan',
+    aiMonthlyLimitLater: 'Nanti dulu',
 
     // Salinan percubaan percuma. {duration} diisi daripada tempoh percubaan kedai.
-    trialTagline:
-      'Cuba {plan} percuma selama {duration} — batal bila-bila masa sebelum ia tamat dan anda tidak akan dicaj.',
-    trialCta: 'Mula percubaan percuma',
+    trialTagline: 'Cuba {plan} percuma {duration}. Batal bila-bila.',
+    trialCta: 'Cuba percuma',
     trialDurationDay: '{count} hari',
     trialDurationDays: '{count} hari',
     trialDurationWeek: '{count} minggu',
@@ -2189,7 +2189,7 @@ const translations = {
     reportMessagePlaceholder: 'Terangkan apa yang berlaku, apa yang anda jangkakan, dan langkah-langkah untuk menghasilkannya semula.',
     reportSubmit: 'Hantar laporan',
     reportSubmittedTitle: 'Laporan dihantar',
-    reportSubmittedBody: 'Terima kasih — pasukan kami akan menyemak tidak lama lagi.',
+    reportSubmittedBody: 'Terima kasih. Pasukan kami akan menyemak tidak lama lagi.',
     reportSubmitError: 'Tidak dapat menghantar laporan. Sila cuba lagi.',
     reportFootnote:
       'Laporan ini hanya dilihat oleh pasukan admin Rencana. Sila hormati dan elakkan berkongsi maklumat peribadi orang lain.',
@@ -2220,7 +2220,7 @@ const translations = {
     tutorQuickQuiz: 'Kuiz saya',
     tutorQuickFlashcards: 'Buat flashcard',
     tutorQuickSimplifyPrompt: 'Boleh terangkan dengan lebih mudah, seolah-olah saya baru pertama kali mendengarnya?',
-    tutorQuickDeeperPrompt: 'Terangkan dengan lebih mendalam — tambah butiran, penaakulan, dan contoh daripada nota saya.',
+    tutorQuickDeeperPrompt: 'Terangkan dengan lebih mendalam. Tambah butiran, penaakulan, dan contoh daripada nota saya.',
     tutorQuickQuizPrompt:
       'Kuiz saya tentang apa yang baru anda terangkan: beri 3 soalan ringkas, satu demi satu, dan tunggu jawapan saya sebelum mendedahkan penyelesaian.',
     tutorHistoryTitle: 'Sejarah Perbualan',

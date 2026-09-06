@@ -114,21 +114,21 @@ export function upgradeCopy({
     };
   }
 
+  // Lead with what the feature does, not with the offer. The old copy opened
+  // with "Try Plus free for 7 days" and buried the benefit under a sentence of
+  // cancellation terms, which reads like a contract rather than an invitation.
   return {
-    title: `Try ${planName} free for ${trial.durationText}`,
-    message: `${lead} Start a ${attributiveDuration(trial)} free trial — cancel any time before it ends and you won't be charged.`,
-    cta: 'Start free trial',
+    title: feature,
+    message: [detail?.trim() || lead, `Free for ${trial.durationText}. Cancel anytime.`]
+      .filter(Boolean)
+      .join(' '),
+    cta: 'Try it free',
   };
 }
 
-/** "7-day" — the attributive form, for phrases like "a 7-day free trial". */
-function attributiveDuration(trial: FreeTrialOffer): string {
-  return `${trial.durationValue}-${trial.durationUnit}`;
-}
-
 /**
- * Label for an inline upsell button or banner, e.g. "Try Plus free for 7 days"
- * — falls back to "Upgrade to Plus".
+ * Label for an inline upsell button or banner, e.g. "Try Plus free for 7 days".
+ * Falls back to "Upgrade to Plus".
  */
 export function upgradeButtonLabel(plan: PaidPlan): string {
   const trial = getTrialOfferFor(plan);
@@ -138,7 +138,7 @@ export function upgradeButtonLabel(plan: PaidPlan): string {
 
 /** Short confirm-button label for a dialog, where there is no room for the full offer. */
 export function upgradeCtaLabel(plan: PaidPlan): string {
-  return getTrialOfferFor(plan) ? 'Start free trial' : 'Upgrade';
+  return getTrialOfferFor(plan) ? 'Try it free' : 'Upgrade';
 }
 
 /**
@@ -150,7 +150,7 @@ export function trialTagline(plan: PaidPlan): string {
   const trial = getTrialOfferFor(plan);
   if (!trial) return '';
   const planName = plan === 'pro' ? 'Pro' : 'Plus';
-  return `Try ${planName} free for ${trial.durationText} — cancel any time before it ends and you won't be charged.`;
+  return `Try ${planName} free for ${trial.durationText}. Cancel anytime.`;
 }
 
 // ---------------------------------------------------------------------------
