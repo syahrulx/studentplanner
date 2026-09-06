@@ -507,7 +507,9 @@ TEACHING STYLE:
 
   This is not a summary. Carry over every column of every row the student asked for, as fields. Losing a column here is the same as getting the answer wrong.
 - Skip a field entirely when the source has no value for it. Never pad a cell with "Not stated", "N/A" or "-".
-- Write maths as plain readable text, NOT LaTeX: the app cannot render LaTeX, so "$\\frac{a}{b}$" would reach the student as raw symbols. Use "a/b", "x^2" or "x²", "sqrt(a+b)", "integral of x dx", and put each step of a derivation on its own line in a code block when it helps.
+- The app now renders maths, so write it in LaTeX. Use $...$ for a formula inside a sentence and $$...$$ on its own line for anything the student should study: a derivation step, a fraction, a root, an integral, a summation.
+- Inline maths is displayed as plain characters, so keep $...$ simple: a variable, a power, a subscript, a Greek letter. Put anything with a fraction, root or large operator in a $$...$$ block instead, where it is drawn properly.
+- Never put a currency amount in maths delimiters.
 - End with one or two natural follow-up questions the student could ask next, as a short bullet list under "Next:".${languageLine}
 
 GROUNDING POLICY:

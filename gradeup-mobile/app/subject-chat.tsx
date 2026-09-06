@@ -15,6 +15,8 @@ import { isMonthlyLimitError, showMonthlyLimitAlert } from '@/src/lib/aiLimitErr
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { getChatSessions, getChatMessages, createChatSession, createChatMessage, updateChatSessionTimestamp, deleteChatSession } from '@/src/lib/chatDb';
 import { ensureSubjectEmbeddings } from '@/src/lib/subjectEmbeddings';
+import { parseMathSegments } from '@/src/lib/mathText';
+import { MathBlock } from '@/components/MathBlock';
 import { noteHasPdfAttachment } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import type { ChatSession, Note } from '@/src/types';
@@ -672,6 +674,23 @@ export default function SubjectChat() {
     return Boolean(last?.isStreaming && last.text.length > 0);
   }, [messages]);
 
+  /**
+   * Built once per theme. An answer can split into several Markdown segments
+   * around its formulas, and a fresh style object for each would rebuild every
+   * renderer on every streamed token.
+   */
+  const mdStyles = useMemo(
+    () => ({
+      body: { ...StyleSheet.flatten(s.bubbleText), color: theme.text },
+      paragraph: { marginTop: 0, marginBottom: 8 },
+      code_inline: { backgroundColor: theme.border, paddingHorizontal: 4, borderRadius: 4, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+      code_block: { backgroundColor: theme.border, padding: 8, borderRadius: 8, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+      link: { color: theme.primary },
+      list_item: { marginBottom: 4 },
+    }),
+    [theme.text, theme.border, theme.primary],
+  );
+
   const canSend = (!!chatInput.trim() || !!pendingImageBase64) && !isProcessing;
   const planLabel = user.subscriptionPlan === 'pro' ? 'PRO' : user.subscriptionPlan === 'plus' ? 'PLUS' : 'FREE';
   const headerSub = user.subscriptionPlan === 'pro' ? T('tutorHeaderSubPro') : user.subscriptionPlan === 'plus' ? T('tutorHeaderSubPlus') : T('tutorHeaderSubFree');
@@ -758,18 +777,28 @@ export default function SubjectChat() {
                     <Image source={{ uri: m.imageUri }} style={s.bubbleImage} resizeMode="cover" />
                   ) : null}
                   {m.role === 'ai' ? (
-                    <Markdown
-                      style={{
-                        body: { ...StyleSheet.flatten(s.bubbleText), color: theme.text },
-                        paragraph: { marginTop: 0, marginBottom: 8 },
-                        code_inline: { backgroundColor: theme.border, paddingHorizontal: 4, borderRadius: 4, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-                        code_block: { backgroundColor: theme.border, padding: 8, borderRadius: 8, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-                        link: { color: theme.primary },
-                        list_item: { marginBottom: 4 },
-                      }}
-                    >
-                      {m.text}
-                    </Markdown>
+                    /* Prose keeps the native Markdown renderer; only display
+                       maths is handed to KaTeX, so a message with no formulas
+                       renders exactly as before and costs nothing extra. While
+                       the answer is still streaming the formula is shown in its
+                       plain form, because an expression that is still growing
+                       would restart the renderer on every token. */
+                    parseMathSegments(m.text).map((seg, segIndex) =>
+                      seg.type === 'block' ? (
+                        <MathBlock
+                          key={`m${segIndex}`}
+                          latex={seg.value}
+                          color={theme.text}
+                          backgroundColor={theme.border}
+                          fontSize={16}
+                          plain={m.isStreaming}
+                        />
+                      ) : (
+                        <Markdown key={`t${segIndex}`} style={mdStyles}>
+                          {seg.value}
+                        </Markdown>
+                      ),
+                    )
                   ) : (
                     m.text && m.text !== T('tutorImageAttached') ? (
                       <Text style={[s.bubbleText, { color: theme.textInverse, marginTop: m.imageUri ? 8 : 0 }]}>

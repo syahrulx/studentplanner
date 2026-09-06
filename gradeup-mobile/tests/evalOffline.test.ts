@@ -197,9 +197,15 @@ check('a tutor answer that invents a term is reported', () => {
   assert.ok(bad.some((f) => f.includes('Gantt chart')), bad.join('; '));
 });
 
-check('a tutor answer with LaTeX or a wide table is reported', () => {
+check('a formula that needs layout inline, or a wide table, is reported', () => {
+  // Inline maths is only converted to plain characters, so a fraction there
+  // loses its layout. It belongs in a $$ block.
   const latex = checkTutorAnswer('The half life is $\\frac{0.693}{k}$ for a first order reaction here.', [], [], 't');
-  assert.ok(latex.some((f) => f.includes('LaTeX')), latex.join('; '));
+  assert.ok(latex.some((f) => f.includes('needs a $$ block')), latex.join('; '));
+
+  // A display block is correct and must not be reported.
+  const ok = checkTutorAnswer('The half life for a first order reaction is:\n\n$$\\frac{0.693}{k}$$\n\nIt does not depend on concentration.', [], [], 't');
+  assert.equal(ok.length, 0, ok.join('; '));
 
   const table = checkTutorAnswer(
     'Here is the breakdown of every stakeholder in your notes.\n\n| Name | Role | Interest | Influence |\n| --- | --- | --- | --- |\n| A | B | C | D |',

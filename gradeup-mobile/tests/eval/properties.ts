@@ -224,10 +224,17 @@ export function checkTutorAnswer(
   fail.push(...checkNoAbsentTerms(answer, absent, label));
 
   if (/[—–]/.test(answer)) fail.push(`${label}: contains an em or en dash`);
-  // The tutor is told to write plain-text maths; LaTeX would render as raw
-  // markers in the chat bubble.
-  if (/\$[^$\n]{2,}\$|\\frac|\\begin\{/.test(answer)) {
-    fail.push(`${label}: contains LaTeX, which the chat cannot render`);
+  // LaTeX is now rendered, so the check inverts: what matters is that a
+  // formula needing real layout is in a $$ block rather than inline, where it
+  // is only converted to plain characters.
+  const inline = answer.match(/(?<!\$)\$(?!\$)([^$\n]{1,200})\$(?!\$)/g) ?? [];
+  for (const m of inline) {
+    if (/\\frac|\\sqrt|\\int|\\sum|\\begin\{/.test(m)) {
+      fail.push(`${label}: "${m.slice(0, 40)}" needs a $$ block, not inline maths`);
+    }
+  }
+  if (/\\begin\{(?:align|equation|matrix)/.test(answer) && !answer.includes('$$')) {
+    fail.push(`${label}: LaTeX environment outside a $$ block`);
   }
   // A wide Markdown table is unreadable on a phone; the prompt asks for
   // per-row blocks instead.
