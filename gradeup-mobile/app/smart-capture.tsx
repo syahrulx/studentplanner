@@ -83,6 +83,7 @@ export default function SmartCaptureSheet() {
   const [doneSteps, setDoneSteps] = useState<CaptureStep[]>([]);
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [emptyReason, setEmptyReason] = useState<'no_tasks' | 'no_text'>('no_tasks');
+  const [canUseVision, setCanUseVision] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [usesToday, setUsesToday] = useState(0);
   const [addedCount, setAddedCount] = useState(0);
@@ -176,6 +177,7 @@ export default function SmartCaptureSheet() {
       }
       if (outcome.status === 'empty') {
         setEmptyReason(outcome.reason);
+        setCanUseVision(!!outcome.canUseVision);
         setPhase('empty');
         haptic('warn');
         return;
@@ -392,12 +394,35 @@ export default function SmartCaptureSheet() {
                 emptyReason === 'no_text' ? T('scReasonHardToRead') : T('scReasonNoDates'),
               ]}
             >
-              <PrimaryButton
-                theme={theme}
-                label={T('scPasteInstead')}
-                onPress={() => router.replace('/ai-chat' as never)}
-              />
-              <SecondaryButton theme={theme} label={T('scRetry')} onPress={() => void analyze(false)} />
+              {canUseVision ? (
+                <>
+                  {/* A busy chat screenshot flattens into a noisy dump; the
+                      vision model reads the layout and usually finds the one
+                      message that matters. */}
+                  <PrimaryButton
+                    theme={theme}
+                    label={T('scTryVision')}
+                    onPress={() => void analyze(true)}
+                  />
+                  <Text style={[s.helperText, { color: theme.textSecondary }]}>
+                    {T('scTryVisionSub')}
+                  </Text>
+                  <SecondaryButton
+                    theme={theme}
+                    label={T('scPasteInstead')}
+                    onPress={() => router.replace('/ai-chat' as never)}
+                  />
+                </>
+              ) : (
+                <>
+                  <PrimaryButton
+                    theme={theme}
+                    label={T('scPasteInstead')}
+                    onPress={() => router.replace('/ai-chat' as never)}
+                  />
+                  <SecondaryButton theme={theme} label={T('scRetry')} onPress={() => void analyze(false)} />
+                </>
+              )}
             </EmptyState>
           ) : null}
 

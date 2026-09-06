@@ -84,6 +84,29 @@ assert.equal(
   'a timetable screenshot keeps its date line',
 );
 
+// A real chat screenshot: a whole scrollback, mostly irrelevant, with the one
+// message that matters at the bottom and wrapped across two OCR lines.
+const CHAT_DUMP = [
+  '6:10', '5G', '52', '259', 'PJJ', 'You',
+  '10:40 - 2:50', '11-1', '1:30 PM \u2713',
+  'Tuesday', 'Hutang :', 'Mama :50', 'Kakak :138', '8:38 PM \u2713',
+  'Wednesday', 'Hutang :', 'Kakak : 220', 'Edited 2:59 PM \u2713',
+  'Today', 'Assignment1 isp601 kena hantar', 'jumaat ni , sila siapkan', '5:58 PM \u2713',
+].join('\n');
+
+const chat = cleanOcrText(CHAT_DUMP);
+assert.ok(chat.includes('Assignment1 isp601 kena hantar'), 'the task line survives');
+assert.ok(chat.includes('jumaat ni'), 'the date phrase survives even when wrapped');
+assert.ok(chat.includes('Today'), 'day separators survive as dating context');
+assert.ok(chat.includes('10:40 - 2:50'), 'a time range is content, not a bubble timestamp');
+assert.ok(!chat.includes('5:58 PM'), 'bubble timestamps go');
+assert.ok(!chat.includes('8:38 PM'), 'bubble timestamps go');
+assert.ok(!chat.includes('Edited'), 'the edit marker goes');
+assert.ok(
+  chat.length > 20,
+  'a busy screenshot must clear the OCR floor, or it never reaches extraction',
+);
+
 assert.equal(cleanOcrText(''), '');
 assert.equal(cleanOcrText('10:32 AM\n✓✓'), '', 'chrome-only input yields nothing');
 assert.equal(

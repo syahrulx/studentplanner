@@ -67,7 +67,14 @@ export interface SmartCaptureContext {
 
 export type SmartCaptureOutcome =
   | { status: 'ok'; items: ReviewItem[]; sourceText: string; usedVision: boolean }
-  | { status: 'empty'; reason: 'no_tasks' | 'no_text'; sourceText: string; error?: ExtractionError }
+  | {
+      status: 'empty';
+      reason: 'no_tasks' | 'no_text';
+      sourceText: string;
+      error?: ExtractionError;
+      /** True when this was an image and the vision model has not been tried yet. */
+      canUseVision?: boolean;
+    }
   | { status: 'needs_vision'; sourceText: string; imageUri: string }
   | { status: 'error'; error: ExtractionError; sourceText: string };
 
@@ -85,17 +92,22 @@ function sourceHintFor(source: CaptureSource, viaOcr: boolean): 'whatsapp_share'
 /** Reads text out of a capture, using on-device OCR when it is an image. */
 export async function readCaptureText(
   input: SmartCaptureInput,
-): Promise<{ text: string; viaOcr: boolean }> {
+): Promise<{ text: string; viaOcr: boolean; ocrError?: string }> {
   if (input.text?.trim()) return { text: input.text.trim(), viaOcr: false };
   if (!input.imageUri) return { text: '', viaOcr: false };
 
   try {
     const result = await recognizeText(input.imageUri);
     return { text: cleanOcrText(result.text ?? ''), viaOcr: true };
-  } catch {
-    // A missing module or an unreadable image both mean "no text on device" —
-    // the vision fallback decides whether the capture is recoverable.
-    return { text: '', viaOcr: true };
+  } catch (e) {
+    // Keep the reason. A missing native module and an unreadable file both end
+    // up here, and silently treating them as "no text" made a broken build look
+    // like a bad screenshot.
+    return {
+      text: '',
+      viaOcr: true,
+      ocrError: e instanceof Error ? e.message : 'On-device text recognition failed',
+    };
   }
 }
 
@@ -105,12 +117,15 @@ export async function runSmartCapture(
   onStep?: (step: CaptureStep) => void,
 ): Promise<SmartCaptureOutcome> {
   onStep?.('read');
-  const { text, viaOcr } = await readCaptureText(input);
+  const { text, viaOcr, ocrError } = await readCaptureText(input);
+  // Vision is worth offering for any image we have not already sent, whether
+  // OCR came back empty or the model just could not find a task in the dump.
+  const visionAvailable = !!input.imageUri && !context.allowVisionFallback;
 
   // The character floor only judges OCR quality. Text the student typed or
   // shared is taken at its word — "Quiz Bab 3 Jumaat" is 17 characters and a
   // perfectly good capture.
-  const ocrCameUpShort = viaOcr && text.length < MIN_USABLE_OCR_CHARS;
+  const ocrCameUpShort = viaOcr && (!!ocrError || text.length < MIN_USABLE_OCR_CHARS);
   const shouldUseVision = ocrCameUpShort && !!input.imageUri;
 
   if (shouldUseVision && !context.allowVisionFallback) {
@@ -118,6 +133,9 @@ export async function runSmartCapture(
   }
   if (!text.trim() && !input.imageUri) {
     return { status: 'empty', reason: 'no_text', sourceText: text };
+  }
+  if (!text.trim() && input.imageUri && !context.allowVisionFallback) {
+    return { status: 'needs_vision', sourceText: text, imageUri: input.imageUri };
   }
 
   let imageBase64: string | undefined;
@@ -165,12 +183,18 @@ export async function runSmartCapture(
 
   if (error && extracted.length === 0) {
     if (error.code === 'NO_TASKS') {
-      return { status: 'empty', reason: 'no_tasks', sourceText: text, error };
+      return {
+        status: 'empty',
+        reason: 'no_tasks',
+        sourceText: text,
+        error,
+        canUseVision: visionAvailable,
+      };
     }
     return { status: 'error', error, sourceText: text };
   }
   if (extracted.length === 0) {
-    return { status: 'empty', reason: 'no_tasks', sourceText: text };
+    return { status: 'empty', reason: 'no_tasks', sourceText: text, canUseVision: visionAvailable };
   }
 
   onStep?.('match');

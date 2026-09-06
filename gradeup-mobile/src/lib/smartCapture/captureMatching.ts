@@ -61,6 +61,9 @@ const CHROME_LINE_PATTERNS: RegExp[] = [
   /^\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?[\s✓✔☑»]*$/i,
   /^\d{1,2}\.\d{2}\s*(?:[ap]\.?m\.?[\s✓✔☑»]*|[\s]*[✓✔☑»]+)$/i,
   /^(forwarded|diteruskan)$/i,
+  // "Edited 2:59 PM ✓" — the edit marker travels with the bubble timestamp.
+  /^(edited|disunting)\s+\d{1,2}[:.]\d{2}\s*(?:[ap]\.?m\.?)?[\s✓✔☑»]*$/i,
+  /^(edited|disunting)$/i,
   /^(you|anda)?\s*(reacted|bertindak balas)\b.*$/i,
   /^(this message was deleted|mesej ini telah dipadam)$/i,
   /^(online|typing\.{0,3}|sedang menaip\.{0,3}|last seen.*)$/i,
