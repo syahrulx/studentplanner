@@ -25,7 +25,9 @@
     "test:grade-persistence": "bash scripts/test-grade-persistence.sh",
     "test:calendar-offers": "bash scripts/test-calendar-offers.sh",
     "test:rate-limit": "bash scripts/test-rate-limit.sh",
-    "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh"
+    "postinstall": "patch-package && bash scripts/patch-expo-modules-core.sh && bash scripts/patch-expo-image-ios.sh",
+    "test:eval-offline": "npx --yes tsx tests/evalOffline.test.ts",
+    "test:eval-live": "npx --yes tsx tests/evalLive.test.ts"
   },
   "dependencies": {
     "@expo/ui": "~55.0.11",

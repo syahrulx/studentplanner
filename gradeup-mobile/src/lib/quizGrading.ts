@@ -60,8 +60,17 @@ export function levenshtein(a: string, b: string): number {
  * accepted aliases, or is within a small Levenshtein tolerance of the
  * expected answer (typos). Never a bare substring test.
  *
- * Tolerance = max(1, floor(len(expected) * 0.2)), applied only when the
- * normalised given answer is at least 3 characters long.
+ * Tolerance = min(2, max(1, floor(len(expected) * 0.15))), applied only when
+ * the normalised given answer is at least 3 characters long.
+ *
+ * The cap matters. At a flat 20% an 11-character answer tolerates 2 edits, and
+ * "shareholder" is 2 edits from "stakeholder": two different words in project
+ * management, one marked as the other. Capping at 2 keeps genuine typos passing
+ * while keeping near-miss vocabulary apart.
+ *
+ * `quiz_short_answer_correct` in the database applies the same rule. They must
+ * not drift: the client grades the instant feedback and the database grades the
+ * final score, so a student would see one verdict and be given the other.
  */
 export function gradeShortAnswer(
   given: string | null | undefined,
@@ -79,7 +88,7 @@ export function gradeShortAnswer(
     }
   }
 
-  const tolerance = Math.max(1, Math.floor(e.length * 0.2));
+  const tolerance = Math.min(2, Math.max(1, Math.floor(e.length * 0.15)));
   if (g.length >= 3 && levenshtein(g, e) <= tolerance) return true;
   return false;
 }
