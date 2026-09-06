@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { View, Text, Pressable, StyleSheet, Platform, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, Dimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme } from '@/hooks/useTheme';
@@ -26,6 +26,15 @@ import Animated, {
 } from 'react-native-reanimated';
 
 type ReviewMode = 'deck' | 'due';
+
+/**
+ * Card height floor, as a share of the screen.
+ *
+ * Cards are short (a question and a hint), so on a tall phone they shrank to a
+ * small block adrift in empty space. Scaling to the viewport keeps the card
+ * substantial on a Pro Max without overflowing an SE.
+ */
+const CARD_MIN_HEIGHT = Math.max(300, Math.round(Dimensions.get('window').height * 0.42));
 
 function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   const monoAccent = '#9ca3af';
@@ -70,7 +79,11 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       backgroundColor: theme.card,
       paddingVertical: 36,
       paddingHorizontal: 28,
+      // Front and back share a floor so the card fills more of a tall screen
+      // and does not jump in size when it flips.
+      minHeight: CARD_MIN_HEIGHT,
       alignItems: 'center',
+      justifyContent: 'center',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.1,
@@ -127,7 +140,9 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       backgroundColor: isDarkMinimal ? '#f5f5f5' : theme.primary,
       paddingVertical: 32,
       paddingHorizontal: 24,
+      minHeight: CARD_MIN_HEIGHT,
       alignItems: 'center',
+      justifyContent: 'center',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.15,

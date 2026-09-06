@@ -369,6 +369,10 @@ export default function NotesList() {
       const file = result.assets[0];
       const fileName = file.name ?? `attachment-${Date.now()}`;
       const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+      // The note title is shown as a deck name and a chat source, where a file
+      // extension is noise. Files exported as "notes.pdf.pdf" also exist in the
+      // wild, so strip every trailing extension, not just the last one.
+      const noteTitle = fileName.replace(/(\.[A-Za-z0-9]{1,5})+$/, '').trim() || fileName;
       const fileSize = typeof file.size === 'number' ? file.size : null;
 
       if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
@@ -422,7 +426,7 @@ export default function NotesList() {
         id: noteId,
         subjectId,
         folderId: selectedFolder ?? undefined,
-        title: fileName,
+        title: noteTitle,
         content: '',
         tag: 'Lecture' as const,
         updatedAt: new Date().toISOString().slice(0, 10),

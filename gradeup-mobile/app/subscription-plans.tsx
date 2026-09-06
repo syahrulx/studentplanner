@@ -348,7 +348,9 @@ export default function SubscriptionPlansScreen() {
   const ctaLabel = useMemo(() => {
     if (!dirty) return 'Done';
     if (selected === 'free') return 'Manage Subscription';
-    if (selectedTrial) return `Start My ${selectedTrial.ctaDurationText} Free Trial`;
+    // Sentence case, and no "My": the button states the action, the line under
+    // it states the terms.
+    if (selectedTrial) return `Start ${selectedTrial.ctaDurationText.toLowerCase()} free trial`;
     return `Subscribe to ${subscriptionPlanLabel(selected)}`;
   }, [dirty, selected, selectedTrial]);
 
@@ -362,27 +364,25 @@ export default function SubscriptionPlansScreen() {
     if (activeTrial && !dirty) {
       return trialRenewalNotice(activeTrial, priceForTier(activeTrial.plan));
     }
-    if (selectedTrial) {
-      return `${selectedTrial.durationText} free, then ${selectedPrice}. Auto-renews monthly until canceled.`;
-    }
+    // The trial terms live next to the CTA (`purchaseTerms`) and in the legal
+    // block below it. Repeating them here made the same sentence appear three
+    // times on one screen.
+    if (selectedTrial) return '';
     return 'Subscriptions auto-renew monthly. Cancel anytime from your device settings.';
   }, [activeTrial, dirty, priceForTier, selectedPrice, selectedTrial, staff]);
 
   const purchaseTerms = useMemo(() => {
     if (!dirty || selected === 'free' || staff) return null;
     if (selectedTrial) {
-      return `${selectedTrial.durationText} free, then ${selectedPrice}. Cancel before the trial ends to avoid being charged.`;
+      return `Free for ${selectedTrial.durationText}, then ${selectedPrice}. Cancel anytime before it ends.`;
     }
     return `${selectedPrice}, auto-renewing monthly until canceled.`;
   }, [dirty, selected, selectedPrice, selectedTrial, staff]);
 
   const legalDisclosure = useMemo(() => {
     const storeName = Platform.OS === 'ios' ? 'App Store' : Platform.OS === 'android' ? 'Google Play' : 'billing';
-    const trialTerms = selectedTrial
-      ? `Eligible customers receive ${selectedTrial.durationText} free, then ${selectedPrice}. `
-      : '';
-    return `${trialTerms}Subscriptions automatically renew monthly unless canceled at least 24 hours before the end of the trial or current billing period. Manage or cancel in your ${storeName} subscription settings.`;
-  }, [selectedPrice, selectedTrial]);
+    return `Renews automatically each month unless canceled at least 24 hours before the period ends. Manage or cancel anytime in your ${storeName} settings.`;
+  }, []);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -508,7 +508,9 @@ export default function SubscriptionPlansScreen() {
             </View>
           )}
 
-          <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
+          {footerHint ? (
+            <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
+          ) : null}
 
           <Pressable
             onPress={() => router.push('/free-premium' as any)}
