@@ -208,6 +208,11 @@ export interface Note {
 }
 
 
+/** FSRS card state. Mirrors ts-fsrs `State`: 0 New, 1 Learning, 2 Review, 3 Relearning. */
+export type FlashcardState = 0 | 1 | 2 | 3;
+
+export type FlashcardType = 'basic' | 'cloze' | 'concept';
+
 export interface Flashcard {
   id: string;
   noteId?: string; // which note this flashcard belongs to
@@ -215,6 +220,27 @@ export interface Flashcard {
   back: string;
   question?: string;
   answer?: string;
+  // ── Content metadata (public.flashcards columns) ──
+  /** 'basic' Q/A, 'cloze' (front contains {{c1::answer}} markup), or 'concept'. */
+  cardType?: FlashcardType;
+  hint?: string;
+  /** Short excerpt from the source note that the card was generated from. */
+  sourceExcerpt?: string;
+  /** Ordering inside a deck (0-based). */
+  position?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  // ── FSRS scheduling state (ISO strings for dates) ──
+  due?: string;
+  stability?: number;
+  difficulty?: number;
+  elapsedDays?: number;
+  scheduledDays?: number;
+  learningSteps?: number;
+  reps?: number;
+  lapses?: number;
+  state?: FlashcardState;
+  lastReview?: string | null;
 }
 
 export interface ChatSession {

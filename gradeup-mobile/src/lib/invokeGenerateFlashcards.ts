@@ -21,9 +21,12 @@ export interface GenerateFlashcardsRequest {
   storage_path?: string;
   /** Storage bucket name (default: note-attachments) */
   bucket?: string;
-  /** Max flashcards per request; server clamps by subscription (Free ≤12, Plus/Pro ≤30) */
+  /**
+   * Max flashcards per request. The server clamps by subscription plan
+   * (free 10 / plus 20 / pro 35 — see flashcardGenerationLimits.ts).
+   */
   count?: number;
-  /** Note ID for future cache key */
+  /** Note ID (stored with generated cards, used for cache keys). Send for text AND pdf sources. */
   note_id?: string;
   /**
    * PDF only. Omit or "all" = full document (large PDFs may still be trimmed server-side).
@@ -32,8 +35,20 @@ export interface GenerateFlashcardsRequest {
   pdf_pages?: string;
 }
 
+export type GeneratedCardType = 'basic' | 'cloze' | 'concept';
+
+export interface GeneratedCardPayload {
+  front: string;
+  back: string;
+  /** Defaults to 'basic' when omitted. Cloze fronts contain `{{c1::answer}}` markup. */
+  type?: GeneratedCardType;
+  hint?: string | null;
+  /** Short quote from the source the card was derived from. */
+  source_excerpt?: string | null;
+}
+
 export interface GenerateFlashcardsResult {
-  cards: { front: string; back: string }[];
+  cards: GeneratedCardPayload[];
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -41,6 +56,16 @@ export interface GenerateFlashcardsResult {
     chunks_processed: number;
   };
   warnings?: string[];
+  /** True when the server only used the first part of the source text. */
+  truncated?: boolean;
+  /** Approximate number of source characters actually used when `truncated`. */
+  truncated_chars?: number;
+}
+
+/** Machine-readable error code returned in the Edge Function error envelope, when present. */
+export interface GenerateFlashcardsError {
+  message: string;
+  code?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +74,7 @@ export interface GenerateFlashcardsResult {
 
 export async function invokeGenerateFlashcards(
   body: GenerateFlashcardsRequest,
-): Promise<{ data: GenerateFlashcardsResult | null; error?: string }> {
+): Promise<{ data: GenerateFlashcardsResult | null; error?: string; errorCode?: string }> {
   // Check session exists
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session?.access_token) {
@@ -91,20 +116,23 @@ export async function invokeGenerateFlashcards(
     // Edge Function error envelope
     if (data?.error?.message) {
       const msg = String(data.error.message);
+      const errorCode = typeof data.error.code === 'string' ? data.error.code : undefined;
       if (isMonthlyLimitError(data.error)) {
         showMonthlyLimitAlert();
-        return { data: null, error: msg };
+        return { data: null, error: msg, errorCode };
       }
       if (/daily ai limit reached/i.test(msg)) {
-        return { data: null, error: 'Daily AI limit reached. Please try again tomorrow.' };
+        return { data: null, error: 'Daily AI limit reached. Please try again tomorrow.', errorCode };
       }
       if (/rate limit|rate_limit_exceeded|tokens per min|too many requests|openai error \(429\)/i.test(msg)) {
-        return { data: null, error: 'OpenAI is rate-limited right now. Please retry in a few seconds.' };
+        return { data: null, error: 'OpenAI is rate-limited right now. Please retry in a few seconds.', errorCode };
       }
-      return { data: null, error: msg };
+      return { data: null, error: msg, errorCode };
     }
 
-    return { data: data as GenerateFlashcardsResult };
+    const result = (data ?? {}) as GenerateFlashcardsResult;
+    if (!Array.isArray(result.cards)) result.cards = [];
+    return { data: result };
   } catch (e: any) {
     return {
       data: null,
