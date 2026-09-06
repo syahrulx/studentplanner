@@ -9,7 +9,8 @@ import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import { invokeAiGenerate, AiGenerateRequest, AiGenerateChatResult, AiGenerateChatCitation } from '@/src/lib/invokeAiGenerate';
-import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
+import { canStreamChat, streamAiChat } from '@/src/lib/streamAiChat';
+import { isMonthlyLimitError, showMonthlyLimitAlert } from '@/src/lib/aiLimitError';
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { getChatSessions, getChatMessages, createChatSession, createChatMessage, updateChatSessionTimestamp, deleteChatSession } from '@/src/lib/chatDb';
 import { ensureSubjectEmbeddings } from '@/src/lib/subjectEmbeddings';
@@ -23,6 +24,8 @@ type Message = {
   /** Greeting / error / info bubbles that are not part of the model conversation. */
   isSystem?: boolean;
   citations?: AiGenerateChatCitation[];
+  /** True while tokens are still arriving for this bubble. */
+  isStreaming?: boolean;
 };
 
 function hexLuminance(hex: string): number | null {
@@ -80,9 +83,17 @@ export default function SubjectChat() {
   const T = useTranslations(language);
   const scrollRef = useRef<ScrollView>(null);
   const mountedRef = useRef(true);
+  /** Streaming buffers: tokens land in a ref and flush to state on a timer. */
+  const streamBufferRef = useRef('');
+  const streamActiveRef = useRef(false);
+  const streamFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      streamActiveRef.current = false;
+      if (streamFlushRef.current) clearTimeout(streamFlushRef.current);
+    };
   }, []);
 
   const headerSubColor = useMemo(() => onPrimaryMuted(theme.textInverse, theme.primary), [theme.textInverse, theme.primary]);
@@ -341,6 +352,56 @@ export default function SubjectChat() {
       return;
     }
 
+    // ── Streaming bubble ────────────────────────────────────────────────
+    // Tokens arrive faster than the list can usefully re-render, so they are
+    // buffered in a ref and flushed on a short timer.
+    const flushStream = () => {
+      if (streamFlushRef.current) {
+        clearTimeout(streamFlushRef.current);
+        streamFlushRef.current = null;
+      }
+      if (!mountedRef.current || !streamActiveRef.current) return;
+      const text = streamBufferRef.current;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last?.isStreaming) return prev;
+        return [...prev.slice(0, -1), { ...last, text }];
+      });
+    };
+
+    const beginStreamingBubble = () => {
+      streamBufferRef.current = '';
+      streamActiveRef.current = true;
+      setMessages((prev) => [...prev, { role: 'ai', text: '', isStreaming: true }]);
+    };
+
+    const appendStreamChunk = (chunk: string) => {
+      streamBufferRef.current += chunk;
+      if (!streamFlushRef.current) {
+        streamFlushRef.current = setTimeout(() => {
+          streamFlushRef.current = null;
+          flushStream();
+        }, 60);
+      }
+    };
+
+    const endStreamingBubble = (finalText: string | null, citations: AiGenerateChatCitation[]) => {
+      if (streamFlushRef.current) {
+        clearTimeout(streamFlushRef.current);
+        streamFlushRef.current = null;
+      }
+      streamActiveRef.current = false;
+      if (!mountedRef.current) return;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last?.isStreaming) return prev;
+        // finalText null means the attempt failed: drop the partial bubble so
+        // the buffered retry can post a clean answer.
+        if (finalText === null) return prev.slice(0, -1);
+        return [...prev.slice(0, -1), { role: 'ai', text: finalText, citations: citations.length > 0 ? citations : undefined }];
+      });
+    };
+
     const pushSystem = (text: string) => {
       if (!mountedRef.current) return;
       setMessages((prev) => [...prev, { role: 'ai', text, isSystem: true }]);
@@ -365,42 +426,104 @@ export default function SubjectChat() {
         pushSystem(`🐛 **DEBUG — Request Sent**\n- subject_id: "${subjectId}"\n- subject_name: "${subjectName}"\n- Notes in blob: ${noteTitles.length}\n- With extractedText: ${extractedCount}\n- Context length: ${notesBlob.length} chars\n- Question: "${userText.slice(0, 80)}"\n- Chat history msgs: ${history.length}`);
       }
 
-      let result = await invokeAiGenerate<AiGenerateChatResult>(buildBody(notesBlob));
+      const cleanCitations = (raw: unknown): AiGenerateChatCitation[] => {
+        const list = Array.isArray(raw)
+          ? (raw as AiGenerateChatCitation[]).filter(
+              (c) => c && typeof c.note_id === 'string' && typeof c.title === 'string',
+            )
+          : [];
+        return list.filter((c, i, arr) => arr.findIndex((o) => o.note_id === c.note_id) === i);
+      };
+
+      /**
+       * One attempt at a given context size. Streams when the device supports
+       * it and falls back to the buffered call on any streaming failure, so a
+       * proxy that breaks SSE degrades to the old behaviour instead of an error.
+       */
+      const runChat = async (
+        content: string,
+      ): Promise<
+        | { ok: true; text: string; citations: AiGenerateChatCitation[]; streamed: boolean }
+        | { ok: false; error: string | null; aborted?: boolean }
+      > => {
+        const requestBody = buildBody(content);
+
+        if (canStreamChat()) {
+          let metaCitations: AiGenerateChatCitation[] = [];
+          beginStreamingBubble();
+          const outcome = await streamAiChat(requestBody, {
+            onDelta: appendStreamChunk,
+            onMeta: ({ citations }) => {
+              metaCitations = cleanCitations(citations);
+            },
+          });
+
+          if (outcome.ok && outcome.text.trim()) {
+            const finalText = outcome.text.trim();
+            const finalCitations = cleanCitations(outcome.citations).length > 0
+              ? cleanCitations(outcome.citations)
+              : metaCitations;
+            endStreamingBubble(finalText, finalCitations);
+            return { ok: true, text: finalText, citations: finalCitations, streamed: true };
+          }
+
+          endStreamingBubble(null, []);
+          if (!outcome.ok && outcome.error === 'aborted') return { ok: false, error: null, aborted: true };
+          if (DEBUG_MODE && !outcome.ok) {
+            console.log(`[SubjectChat DEBUG] stream failed, falling back: ${outcome.error}`);
+          }
+          // A quota or context error is authoritative — do not burn a second
+          // request re-asking the same question through the buffered path.
+          if (!outcome.ok && (isMonthlyLimitError(outcome.error) || CONTEXT_TOO_LARGE_RE.test(outcome.error))) {
+            // invokeAiGenerate raises this alert on the buffered path; the
+            // streaming path bypasses it, so raise it here.
+            if (isMonthlyLimitError(outcome.error)) showMonthlyLimitAlert(language);
+            return { ok: false, error: outcome.error };
+          }
+        }
+
+        const result = await invokeAiGenerate<AiGenerateChatResult>(requestBody);
+        if (result.error) return { ok: false, error: result.error };
+        const text = result.data?.response?.trim();
+        if (!text) return { ok: false, error: null };
+        return { ok: true, text, citations: cleanCitations(result.data?.citations), streamed: false };
+      };
+
+      let attempt = await runChat(notesBlob);
 
       // Server says the notes blob is too big: tell the user, then retry once relying on RAG only.
-      if (result.error && notesBlob && CONTEXT_TOO_LARGE_RE.test(result.error)) {
+      if (!attempt.ok && attempt.error && notesBlob && CONTEXT_TOO_LARGE_RE.test(attempt.error)) {
         pushSystem(T('tutorContextTooLarge'));
-        result = await invokeAiGenerate<AiGenerateChatResult>(buildBody(''));
+        attempt = await runChat('');
       }
 
       if (!mountedRef.current) return;
 
-      if (result.error) {
-        if (isMonthlyLimitError(result.error)) {
+      if (!attempt.ok) {
+        if (attempt.aborted) return;
+        if (attempt.error === null) {
+          let text = T('tutorNoResponse');
+          if (DEBUG_MODE) text += `\n\n---\n🐛 **DEBUG:** empty response with no error returned.`;
+          pushSystem(text);
+        } else if (isMonthlyLimitError(attempt.error)) {
           // invokeAiGenerate already showed the upgrade alert; keep the bubble short.
           pushSystem(T('tutorMonthlyLimitBubble'));
         } else {
-          let text = fmt(T('tutorErrorGeneric'), { error: result.error });
-          if (DEBUG_MODE) text += `\n\n---\n🐛 **DEBUG — Error Details**\n\`\`\`\n${result.error}\n\`\`\``;
+          let text = fmt(T('tutorErrorGeneric'), { error: attempt.error });
+          if (DEBUG_MODE) text += `\n\n---\n🐛 **DEBUG — Error Details**\n\`\`\`\n${attempt.error}\n\`\`\``;
           pushSystem(text);
         }
         return;
       }
 
-      const aiText = result.data?.response?.trim();
-      if (!aiText) {
-        let text = T('tutorNoResponse');
-        if (DEBUG_MODE) text += `\n\n---\n🐛 **DEBUG:** result.data is null/empty, no error returned either.\nRaw: ${JSON.stringify(result).slice(0, 300)}`;
-        pushSystem(text);
-        return;
+      const aiText = attempt.text;
+      // The streaming path already committed its own bubble.
+      if (!attempt.streamed) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'ai', text: aiText, citations: attempt.citations.length > 0 ? attempt.citations : undefined },
+        ]);
       }
-
-      const citations = Array.isArray(result.data?.citations)
-        ? result.data!.citations!.filter((c) => c && typeof c.note_id === 'string' && typeof c.title === 'string')
-        : [];
-      const uniqueCitations = citations.filter((c, i, arr) => arr.findIndex((o) => o.note_id === c.note_id) === i);
-
-      setMessages((prev) => [...prev, { role: 'ai', text: aiText, citations: uniqueCitations.length > 0 ? uniqueCitations : undefined }]);
 
       // Persist only after a successful model response so a failed call never leaves an orphan user turn.
       try {
@@ -447,6 +570,12 @@ export default function SubjectChat() {
       if (messages[i].role === 'ai' && !messages[i].isSystem) return i;
     }
     return -1;
+  }, [messages]);
+
+  /** Once tokens are on screen the spinner is redundant. */
+  const isStreamingText = useMemo(() => {
+    const last = messages[messages.length - 1];
+    return Boolean(last?.isStreaming && last.text.length > 0);
   }, [messages]);
 
   const canSend = (!!chatInput.trim() || !!pendingImageBase64) && !isProcessing;
@@ -513,6 +642,9 @@ export default function SubjectChat() {
           )}
           {messages.map((m, i) => {
             const isLastAnswer = i === lastAnswerIndex;
+            // The streaming bubble exists before the first token arrives; the
+            // "thinking" indicator covers that gap, so skip the empty shell.
+            if (m.isStreaming && !m.text) return null;
             return (
               <View key={i} style={[s.bubbleWrap, m.role === 'user' && s.bubbleRight]}>
                 <View
@@ -574,7 +706,7 @@ export default function SubjectChat() {
               </View>
             );
           })}
-          {isProcessing && (
+          {isProcessing && !isStreamingText && (
             <View style={s.bubbleWrap}>
               <View style={[s.bubble, s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <View style={s.processingRow}>

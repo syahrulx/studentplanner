@@ -54,6 +54,8 @@ interface RequestBody {
   /** Base64-encoded image for vision analysis in chat / handwriting. */
   image_base64?: string;
   image_mime?: string;
+  /** Chat only: stream the answer as Server-Sent Events instead of one JSON body. */
+  stream?: boolean;
   selection_hint?: { left: number; top: number; right: number; bottom: number };
 }
 
@@ -579,6 +581,133 @@ async function callOpenAI(
   }
 }
 
+/**
+ * Stream a chat completion back as Server-Sent Events.
+ *
+ * Frames are all `data:` lines carrying a JSON object with a `type`, so the
+ * client needs no `event:` bookkeeping:
+ *   {"type":"meta","citations":[...],"model":"..."}   once, before any text
+ *   {"type":"delta","text":"..."}                     many
+ *   {"type":"done"}                                   once, last
+ *   {"type":"error","message":"...","code":"..."}     instead of done
+ *
+ * Usage is logged from inside the stream: the handler has already returned by
+ * then, but the Deno runtime stays alive until the stream closes.
+ */
+function streamChatResponse(
+  apiKey: string,
+  messages: { role: string; content: string | unknown[] }[],
+  opts: OpenAiCallOptions,
+  onFinish: (usage: Record<string, number> | null) => Promise<void>,
+  meta: { citations: { note_id: string; title: string }[]; model: string },
+): Response {
+  const encoder = new TextEncoder();
+
+  const body = new ReadableStream({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      };
+
+      const abort = new AbortController();
+      const timeout = setTimeout(() => abort.abort(), opts.timeoutMs ?? 120_000);
+      let usage: Record<string, number> | null = null;
+      let produced = false;
+
+      try {
+        send({ type: 'meta', citations: meta.citations, model: meta.model });
+
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: abort.signal,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: opts.model,
+            messages,
+            max_completion_tokens: opts.maxTokens,
+            ...samplingParams(opts.model, { temperature: opts.temperature, reasoning: opts.reasoning }),
+            stream: true,
+            stream_options: { include_usage: true },
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          const errText = res.body ? await res.text() : '';
+          throw new Error(`OpenAI error (${res.status}): ${errText.slice(0, 400)}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // OpenAI frames are separated by a blank line.
+          let cut = buffer.indexOf('\n\n');
+          while (cut !== -1) {
+            const frame = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            cut = buffer.indexOf('\n\n');
+
+            const line = frame.split('\n').find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            const data = line.slice(5).trim();
+            if (!data || data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.usage) usage = normalizeUsage(parsed.usage);
+              const choice = parsed.choices?.[0];
+              if (choice?.delta?.refusal) {
+                throw new Error(`Model refusal: ${String(choice.delta.refusal).slice(0, 200)}`);
+              }
+              const text = choice?.delta?.content;
+              if (typeof text === 'string' && text.length > 0) {
+                produced = true;
+                send({ type: 'delta', text });
+              }
+            } catch (frameErr: any) {
+              if (/Model refusal/.test(frameErr?.message ?? '')) throw frameErr;
+              // A malformed frame is not worth killing a good answer over.
+            }
+          }
+        }
+
+        if (!produced) throw new Error('The AI returned an empty answer.');
+        send({ type: 'done' });
+      } catch (err: any) {
+        const raw = err?.name === 'AbortError'
+          ? 'The answer took too long. Please try again.'
+          : (err?.message || 'The AI service failed.');
+        console.error('[ai_generate] stream error:', raw);
+        send({ type: 'error', message: friendlyProviderError(raw, 'chat'), code: 'OPENAI_ERROR' });
+      } finally {
+        clearTimeout(timeout);
+        try {
+          await onFinish(usage);
+        } catch (logErr: any) {
+          console.error('[ai_generate] stream usage log failed:', logErr?.message ?? logErr);
+        }
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Supabase sits behind a proxy that would otherwise buffer the whole body.
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}
+
 function totalTokens(usage: Record<string, number> | null): number | null {
   if (!usage) return null;
   const t = usage.total_tokens ?? ((usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0));
@@ -843,6 +972,29 @@ Deno.serve(async (req) => {
         reasoning: plan === 'pro' ? 'low' : 'none',
         temperature: plan === 'pro' ? undefined : 0.6,
       };
+
+      // Streaming path: the answer starts appearing immediately instead of the
+      // student watching a spinner for the whole generation.
+      if (body.stream === true) {
+        const streamModel = callOpts.model;
+        const streamKind = usageKind;
+        return streamChatResponse(
+          openAiKey,
+          messages,
+          callOpts,
+          async (usage) => {
+            await logTokenUsage(supabaseAdmin, {
+              user_id: userId,
+              kind: streamKind,
+              model: streamModel,
+              prompt_tokens: usage?.prompt_tokens ?? null,
+              completion_tokens: usage?.completion_tokens ?? null,
+              total_tokens: totalTokens(usage),
+            });
+          },
+          { citations: chatCitations.slice(0, 6), model: streamModel },
+        );
+      }
     } else {
       const prompts = buildQuizPrompt(truncatedContent, quizCount, quizType, difficulty, language, sourceCount);
       messages = [
