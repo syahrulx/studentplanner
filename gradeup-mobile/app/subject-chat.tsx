@@ -139,6 +139,30 @@ export default function SubjectChat() {
     [notes, subjectId],
   );
 
+  /**
+   * Markdown tables render at the bubble's width by default, so a six-column
+   * table collapses to one character per line. Extraction now preserves tables
+   * from lecture slides, which made this reachable. Give the table its natural
+   * width inside a horizontal scroller instead.
+   */
+  const markdownRules = useMemo(
+    () => ({
+      table: (node: any, children: React.ReactNode) => (
+        <ScrollView
+          key={node.key}
+          horizontal
+          showsHorizontalScrollIndicator
+          bounces={false}
+          style={s.tableScroll}
+          contentContainerStyle={s.tableScrollContent}
+        >
+          <View style={s.tableInner}>{children}</View>
+        </ScrollView>
+      ),
+    }),
+    [s],
+  );
+
   const greeting = useMemo(
     () => fmt(T(unpreparedPdfs.length > 0 ? 'tutorGreetingPreparing' : 'tutorGreeting'), { subject: subjectLabel }),
     [T, subjectLabel, unpreparedPdfs.length],
@@ -766,7 +790,12 @@ export default function SubjectChat() {
                         code_block: { backgroundColor: theme.border, padding: 8, borderRadius: 8, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
                         link: { color: theme.primary },
                         list_item: { marginBottom: 4 },
+                        // Cells need a floor, or long prose columns squeeze the
+                        // short ones down to a single character.
+                        th: { minWidth: 96, padding: 6 },
+                        td: { minWidth: 96, padding: 6 },
                       }}
+                      rules={markdownRules}
                     >
                       {m.text}
                     </Markdown>
@@ -1031,6 +1060,10 @@ const s = StyleSheet.create({
   historyEmpty: { textAlign: 'center', marginTop: 40 },
 
   // Image attachment styles
+  tableScroll: { marginBottom: 8 },
+  tableScrollContent: { paddingRight: 4 },
+  // 640 keeps a six-column table readable; narrower tables still shrink to fit.
+  tableInner: { minWidth: 640 },
   bubbleImage: {
     width: 240,
     height: 240,
