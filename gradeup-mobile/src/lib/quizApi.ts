@@ -153,8 +153,34 @@ export interface CreateSessionParams {
   circleId?: string;
 }
 
+/**
+ * Clear this player's abandoned lobbies and unresolved matches.
+ *
+ * Leaving a lobby never deleted its session row, and a match where someone quit
+ * mid-game could never satisfy the "everyone finished" check that closes it and
+ * awards the winner bonus. Reaping on the way into a new session means each
+ * player tidies up their own trail as they keep playing, with no scheduler to
+ * maintain.
+ *
+ * Never throws: failing to tidy up must not stop a student starting a quiz.
+ */
+export async function resolveStaleSessions(): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('resolve_stale_quiz_sessions', {
+      p_waiting_minutes: 30,
+      p_active_minutes: 30,
+    });
+    if (error && __DEV__) console.warn('[Quiz] stale session cleanup failed:', error.message);
+  } catch (e) {
+    if (__DEV__) console.warn('[Quiz] stale session cleanup failed:', e);
+  }
+}
+
 export async function createSession(params: CreateSessionParams): Promise<QuizSession> {
   const userId = await getCurrentUserId();
+  // Tidy up before adding another session, so a player's abandoned rows never
+  // accumulate and a match they walked away from still resolves.
+  await resolveStaleSessions();
   const invite_code = params.mode === 'multiplayer' ? generateInviteCode() : null;
 
   // Trim question content BEFORE inserting to prevent JSONB bloat and ensure
