@@ -1,46 +1,38 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 
-/** Small, non-blocking reassurance that local edits are safe while offline. */
+/** Show failed sync attempts only; ordinary queued saves stay silent. */
 export default function OfflineSyncBanner() {
   const theme = useTheme();
   const { offlineSyncStatus, retryOfflineSync } = useApp();
   const { pendingCount, syncing, lastError } = offlineSyncStatus;
 
-  if (pendingCount === 0) return null;
+  // Every edit briefly enters the outbox, including successful online saves.
+  // A pending operation alone is not an error and must not trigger a popup.
+  if (pendingCount === 0 || syncing || !lastError) return null;
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>
       <View style={[styles.banner, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        {syncing ? (
-          <ActivityIndicator size="small" color={theme.primary} />
-        ) : (
-          <View style={[styles.dot, { backgroundColor: theme.primary }]} />
-        )}
+        <View style={[styles.dot, { backgroundColor: theme.primary }]} />
         <View style={styles.copy}>
           <Text style={[styles.title, { color: theme.text }]}>
-            {syncing
-              ? 'Syncing saved changes…'
-              : lastError
-                ? `${pendingCount} change${pendingCount === 1 ? '' : 's'} couldn’t sync`
-                : `${pendingCount} change${pendingCount === 1 ? '' : 's'} saved offline`}
+            {`${pendingCount} change${pendingCount === 1 ? '' : 's'} couldn’t sync`}
           </Text>
           <Text numberOfLines={2} style={[styles.detail, { color: theme.textSecondary }]}>
-            {lastError || 'Safe on this device · retries automatically'}
+            {lastError}
           </Text>
         </View>
-        {!syncing && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Retry synchronization"
-            hitSlop={8}
-            onPress={() => { void retryOfflineSync(); }}
-            style={({ pressed }) => [styles.retry, { backgroundColor: `${theme.primary}18`, opacity: pressed ? 0.65 : 1 }]}
-          >
-            <Text style={[styles.retryText, { color: theme.primary }]}>Retry</Text>
-          </Pressable>
-        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry synchronization"
+          hitSlop={8}
+          onPress={() => { void retryOfflineSync(); }}
+          style={({ pressed }) => [styles.retry, { backgroundColor: `${theme.primary}18`, opacity: pressed ? 0.65 : 1 }]}
+        >
+          <Text style={[styles.retryText, { color: theme.primary }]}>Retry</Text>
+        </Pressable>
       </View>
     </View>
   );

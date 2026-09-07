@@ -259,6 +259,11 @@ export default function AddAcademicCalendarScreen() {
         throw new Error("Break dates must be valid, ordered, and inside the semester dates.");
       }
       for (const [index, period] of periods.entries()) {
+        // The editor may leave one completely empty draft row at the end of
+        // the JSON. It is not a calendar period and must not make an
+        // otherwise valid submission fail (or be persisted as bad data).
+        const isEmptyDraft = !period.label && !period.startDate && !period.endDate;
+        if (isEmptyDraft) continue;
         if (!period.label ||
           !/^\d{4}-\d{2}-\d{2}$/.test(period.startDate) ||
           !/^\d{4}-\d{2}-\d{2}$/.test(period.endDate) ||
@@ -266,14 +271,19 @@ export default function AddAcademicCalendarScreen() {
           period.startDate < start ||
           period.endDate > end
         ) {
-          throw new Error(`Period ${index + 1} needs a label and valid dates inside the semester.`);
+          throw new Error(`Period ${index + 1} needs a label and valid dates inside the semester, or remove the empty draft row.`);
         }
       }
+      // Drop the empty draft row the editor leaves behind, so it is never validated or persisted.
+      // `periods` is editor state, so the cleaned list is a local value rather than a reassignment.
+      const submittedPeriods = periods.filter(
+        (period) => Boolean(period.label || period.startDate || period.endDate),
+      );
 
       // Other students apply what is published here, so an incomplete timeline must not leave
       // this screen — see `validateCalendarTimeline` for what counts as incomplete.
       const timelineProblems = validateCalendarTimeline({
-        periods,
+        periods: submittedPeriods,
         startDate: start,
         endDate: end,
       });
@@ -293,7 +303,7 @@ export default function AddAcademicCalendarScreen() {
           totalWeeks: weeks,
           ...(breakStartValue ? { breakStartDate: breakStartValue } : {}),
           ...(breakEndValue ? { breakEndDate: breakEndValue } : {}),
-          periods: toAcademicPeriods(periods),
+          periods: toAcademicPeriods(submittedPeriods),
         });
         Alert.alert(
           "Sent for review",
@@ -362,7 +372,7 @@ export default function AddAcademicCalendarScreen() {
         total_weeks: weeks,
         break_start_date: breakStartValue || null,
         break_end_date: breakEndValue || null,
-        periods_json: toAcademicPeriods(periods),
+        periods_json: toAcademicPeriods(submittedPeriods),
         program_level: programLevel.trim() || null,
         source: "crowdsourced",
         created_by: userId,
@@ -432,7 +442,7 @@ export default function AddAcademicCalendarScreen() {
       // weeks, periods, or break dates from this form.
       const selectedPeriods = Array.isArray(canonicalRow?.periods_json)
         ? canonicalRow!.periods_json
-        : periods;
+        : submittedPeriods;
       await updateAcademicCalendar({
         semesterLabel: String(canonicalRow?.semester_label || publishedLabel),
         startDate: String(canonicalRow?.start_date || start).slice(0, 10),

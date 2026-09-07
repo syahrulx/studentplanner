@@ -2237,8 +2237,8 @@ export default function Dashboard() {
           {focusCard ? 'Your most important next move, ready to open in one tap.' : 'No urgent items right now. Planner and study are in a good place.'}
         </Text>
         {renderFocusCard()}
-        {activeBreakdowns.length > 0 ? (
-          <View style={styles.tabletPlanWrap}>
+        <View style={styles.tabletPlanWrap}>
+          {activeBreakdowns.length > 0 ? (
             <HomeHeroCarousel
               horizontalMargin={0}
               dotColor={hexToRgba(theme.textSecondary, 0.3)}
@@ -2273,8 +2273,16 @@ export default function Dashboard() {
                 <View key={`tablet-plan-${plan.parent.id}`}>{renderPlannedCard(plan)}</View>
               ))}
             />
-          </View>
-        ) : null}
+          ) : (
+            <View style={[styles.upcomingPanel, { borderColor: theme.border }]}>
+              <Text style={[styles.sectionSubcopy, { color: theme.textSecondary }]}>No task breakdown yet.</Text>
+              <Pressable onPress={() => setPlanPickerOpen(true)} style={[styles.suggestAgainButton, { borderColor: theme.border }]}>
+                <Feather name="plus" size={14} color={theme.primary} />
+                <Text style={[styles.suggestAgainText, { color: theme.primary }]}>Break down a task</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
       </View>
       ) : null}
 
