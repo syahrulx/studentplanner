@@ -4,6 +4,7 @@ import { useAuth } from '../state/AuthProvider';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
+import { shellContainer } from '../ui/layout';
 import { IconBell, IconChevronDown, IconSearch } from '../ui/icons';
 
 export function Topbar({
@@ -30,8 +31,8 @@ export function Topbar({
   }, [admin?.email, user?.email]);
 
   return (
-    <header className="z-10 shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+    <header className="z-10 shrink-0 border-b border-slate-200 bg-white/80 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/60">
+      <div className={cn(shellContainer, 'flex items-center justify-between gap-3')}>
         <div className="flex items-center gap-2">
           <button
             type="button"

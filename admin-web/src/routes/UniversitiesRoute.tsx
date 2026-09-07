@@ -106,7 +106,7 @@ export function UniversitiesRoute() {
         </div>
       </MotionSection>
 
-      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[420px_1fr]">
+      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,480px)_1fr] 3xl:grid-cols-[minmax(0,560px)_1fr]">
         <MotionStaggerItem>
           <MotionPanel className="h-full">
         <Card>
@@ -149,8 +149,8 @@ export function UniversitiesRoute() {
                 </div>
               ) : null}
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                <table className="w-full">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[420px]">
                   <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
                     <tr>
                       <th className="px-4 py-3">University</th>
