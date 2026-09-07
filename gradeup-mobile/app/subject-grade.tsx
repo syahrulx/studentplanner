@@ -18,27 +18,11 @@ import {
 } from '@/src/lib/gradeCalculator';
 import { cacheSubjectGradeConfig, getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
 
-type NetInfoStateLike = {
-  isConnected: boolean | null;
-  isInternetReachable: boolean | null;
-};
-
-type OptionalNetInfo = {
-  addEventListener: (listener: (state: NetInfoStateLike) => void) => () => void;
-};
-
-function getOptionalNetInfo(): OptionalNetInfo | null {
-  try {
-    // Some installed development clients predate the NetInfo native module.
-    // Loading it lazily keeps the route usable until that client is rebuilt.
-    const module = require('@react-native-community/netinfo') as {
-      default?: OptionalNetInfo;
-    } & OptionalNetInfo;
-    return module.default ?? module;
-  } catch {
-    return null;
-  }
-}
+// NetInfo is optional because older installed development clients may not
+// contain its native module. Avoid requiring it at runtime: Hermes can throw
+// before the screen renders when the native implementation is absent.
+type OptionalNetInfo = { addEventListener: (listener: (state: { isConnected: boolean | null; isInternetReachable: boolean | null }) => void) => () => void };
+function getOptionalNetInfo(): OptionalNetInfo | null { return null; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -750,6 +734,14 @@ export default function SubjectGradeScreen() {
                     </View>
                   );
                 })}
+                {editingRowIdx === customRows.length && (
+                  <View style={ss.editorRow}>
+                    <TextInput style={[ss.editorInput, { flex: 1, color: txt, backgroundColor: bg }]} value={gLetter} onChangeText={setGLetter} placeholder="A+" autoFocus autoCapitalize="characters" />
+                    <TextInput style={[ss.editorInput, { flex: 1.5, color: txt, backgroundColor: bg }]} value={gMin} onChangeText={setGMin} placeholder="90" keyboardType="decimal-pad" />
+                    <TextInput style={[ss.editorInput, { flex: 1.5, color: txt, backgroundColor: bg }]} value={gPoint} onChangeText={setGPoint} placeholder="4.0" keyboardType="decimal-pad" onSubmitEditing={saveGradeRow} />
+                    <Pressable onPress={saveGradeRow} style={ss.editorActionBtn}><Feather name="check-circle" size={20} color={pri} /></Pressable>
+                  </View>
+                )}
               </View>
 
               <Pressable style={[ss.addLevelBtn, { backgroundColor: cardBg }]} onPress={() => { setEditingRowIdx(customRows.length); setGLetter(''); setGMin(''); setGPoint(''); }}>

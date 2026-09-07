@@ -111,7 +111,9 @@ function parsePeriodsJson(json: string): PeriodRow[] {
         label: String(p.label ?? ""),
         startDate: String(p.startDate ?? "").slice(0, 10),
         endDate: String(p.endDate ?? "").slice(0, 10),
-      }));
+      }))
+      // Draft rows are UI scaffolding, never publishable periods.
+      .filter((p) => Boolean(p.label || p.startDate || p.endDate));
   } catch {
     return [];
   }
@@ -580,9 +582,39 @@ export function CalendarUpdatesRoute() {
           setErr("Periods JSON must be a JSON array (or leave empty).");
           return;
         }
-        periods = parsed;
+        const normalizedPeriods = parsed.map((period, index) => {
+          if (!period || typeof period !== "object") {
+            throw new Error(`Period ${index + 1} must be an object.`);
+          }
+          const value = period as Record<string, unknown>;
+          return {
+            type: String(value.type ?? "other").trim() || "other",
+            label: String(value.label ?? "").trim(),
+            startDate: String(value.startDate ?? value.start_date ?? "").trim().slice(0, 10),
+            endDate: String(value.endDate ?? value.end_date ?? "").trim().slice(0, 10),
+          };
+        });
+        for (const [index, period] of normalizedPeriods.entries()) {
+          // Ignore a completely empty draft row, but never silently accept a
+          // partially filled period or dates outside the semester.
+          if (!period.label && !period.startDate && !period.endDate) continue;
+          if (
+            !period.label ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(period.startDate) ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(period.endDate) ||
+            period.startDate > period.endDate ||
+            period.startDate < sd ||
+            period.endDate > ed
+          ) {
+            setErr(`Period ${index + 1} needs a label and valid dates inside the semester, or remove the empty draft row.`);
+            return;
+          }
+        }
+        periods = normalizedPeriods.filter(
+          (period) => Boolean(period.label || period.startDate || period.endDate),
+        );
       } catch {
-        setErr("Periods JSON is not valid JSON.");
+        setErr("Periods JSON is not valid JSON or contains an invalid period.");
         return;
       }
     }

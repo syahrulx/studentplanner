@@ -1313,11 +1313,12 @@ export default function HandwritingEditor() {
     const next = Math.max(1, Math.min(3, value));
     setZoomScale(Math.round(next * 100) / 100);
     horizontalOffset.value = targetHorizontal;
-    setTimeout(() => {
-      scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, targetScroll));
-      pinchVisualX.value = withTiming(0, { duration: 80 });
-      pinchVisualY.value = withTiming(0, { duration: 80 });
-    }, 32);
+    // Commit the layout and clear the temporary focal transform in the same
+    // frame. Delaying this by a timer causes a visible snap on iPad/phones
+    // while the page width is being relaid out.
+    scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, targetScroll));
+    pinchVisualX.value = 0;
+    pinchVisualY.value = 0;
   }, [horizontalOffset, pinchVisualX, pinchVisualY, scrollOffset, verticalLimit]);
   const documentPinchGesture = useMemo(() => Gesture.Pinch()
     .onStart(() => {

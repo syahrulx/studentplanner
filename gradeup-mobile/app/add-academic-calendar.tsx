@@ -205,7 +205,7 @@ export default function AddAcademicCalendarScreen() {
             startDate: String(period.startDate || period.start_date || "").trim().slice(0, 10),
             endDate: String(period.endDate || period.end_date || "").trim().slice(0, 10),
           };
-        });
+        }).filter((period) => Boolean(period.label || period.startDate || period.endDate));
       } catch {
         throw new Error("Periods JSON is invalid.");
       }
@@ -235,6 +235,11 @@ export default function AddAcademicCalendarScreen() {
         throw new Error("Break dates must be valid, ordered, and inside the semester dates.");
       }
       for (const [index, period] of periods.entries()) {
+        // The editor may leave one completely empty draft row at the end of
+        // the JSON. It is not a calendar period and must not make an
+        // otherwise valid submission fail (or be persisted as bad data).
+        const isEmptyDraft = !period.label && !period.startDate && !period.endDate;
+        if (isEmptyDraft) continue;
         if (!period.label ||
           !/^\d{4}-\d{2}-\d{2}$/.test(period.startDate) ||
           !/^\d{4}-\d{2}-\d{2}$/.test(period.endDate) ||
@@ -242,9 +247,12 @@ export default function AddAcademicCalendarScreen() {
           period.startDate < start ||
           period.endDate > end
         ) {
-          throw new Error(`Period ${index + 1} needs a label and valid dates inside the semester.`);
+          throw new Error(`Period ${index + 1} needs a label and valid dates inside the semester, or remove the empty draft row.`);
         }
       }
+      periods = periods.filter(
+        (period) => Boolean(period.label || period.startDate || period.endDate),
+      );
 
       if (isUitm) {
         await submitUitmCalendarContribution({
