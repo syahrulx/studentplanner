@@ -70,7 +70,12 @@ interface CommunityState {
   refreshMyActivity: () => Promise<void>;
   updateActivity: (type: ActivityType, detail?: string, courseName?: string) => Promise<void>;
   clearMyActivity: () => Promise<void>;
-  sendReaction: (receiverId: string, type: string, message?: string) => Promise<boolean>;
+  sendReaction: (
+    receiverId: string,
+    type: string,
+    message?: string,
+    data?: Record<string, unknown> | null,
+  ) => Promise<boolean>;
   sendBump: (receiverId: string) => Promise<boolean>;
 
   // Accountability Pacts (Shared Goals)
@@ -950,14 +955,19 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   // ─── Reaction actions (rate-limited) ───
-  const handleSendReaction = useCallback(async (receiverId: string, type: string, message?: string) => {
+  const handleSendReaction = useCallback(async (
+    receiverId: string,
+    type: string,
+    message?: string,
+    data?: Record<string, unknown> | null,
+  ) => {
     if (!userId) return false;
     if (!reactionLimiter.attempt()) {
       Alert.alert('Slow down', 'You can send up to 5 reactions or bumps per minute.');
       return false;
     }
     try {
-      await communityApi.sendReaction(userId, receiverId, type, message);
+      await communityApi.sendReaction(userId, receiverId, type, message, data);
       return true;
     } catch (e) {
       console.warn('Failed to send reaction:', e);

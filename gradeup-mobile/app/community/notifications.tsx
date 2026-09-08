@@ -968,12 +968,17 @@ export default function NotificationsScreen() {
       setRespondingQuizInviteIds((prev) => new Set(prev).add(reaction.id));
       try {
         if (accept) {
-          const inviteCode = parseQuizInviteCode(reaction.message);
-          if (!inviteCode) {
+          // Newer challenges carry the session id on the row; the code parsed out
+          // of the message text is the fallback for rows sent before that.
+          const sessionId = String(reaction.data?.sessionId ?? '').trim();
+          const inviteCode = sessionId ? null : parseQuizInviteCode(reaction.message);
+          if (!sessionId && !inviteCode) {
             Alert.alert('Invalid invite', 'Could not find a valid invite code in this notification.');
             return;
           }
-          const session = await joinQuiz(inviteCode, true);
+          const session = sessionId
+            ? await joinQuiz(sessionId)
+            : await joinQuiz(inviteCode as string, true);
           await communityApi.deleteMyReceivedReactions(userId, [reaction.id]).catch(() => {});
           setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
           await refreshUnreadCount();

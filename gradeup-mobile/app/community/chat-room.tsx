@@ -306,6 +306,7 @@ export default function ChatRoomScreen() {
           friendId,
           '🎮',
           `Quiz challenge! Join with code: ${inviteCode}`,
+          { sessionId: session.id, inviteCode },
         ).catch(() => {});
       }
 

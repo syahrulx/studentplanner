@@ -241,11 +241,16 @@ export default function QuizModeSelection() {
         circleId: matchType === 'circle' ? (selectedCircle || undefined) : undefined,
       });
       if (matchType === 'friend' && targetFriendId && session.invite_code) {
-        // Best-effort notification ping to selected friend via existing community push pipeline.
+        // Best-effort ping via the community push pipeline. The session id rides
+        // along so tapping the banner opens this lobby; the code is the fallback
+        // for anyone joining by hand.
         await sendReaction(
           targetFriendId,
           '🎮',
-          `Quiz challenge from friend! Join with code: ${session.invite_code}. If your AI limit is reached, you can still join this invite because questions are already generated.`,
+          // Keep the "code: X" shape — parseQuizInviteCode in the notification
+          // list reads the code back out of this text.
+          `Join with code: ${session.invite_code}. The questions are already generated.`,
+          { sessionId: session.id, inviteCode: session.invite_code },
         ).catch(() => {});
       }
       // Clear cached questions — they've been committed to the session
