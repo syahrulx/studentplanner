@@ -34,8 +34,14 @@ export default function QuizJoinByCodeScreen() {
     try {
       const session = await joinQuiz(c, true);
       router.replace({ pathname: '/match-lobby', params: { sessionId: session.id } } as any);
-    } catch {
-      Alert.alert('Could not join', 'Invite code is invalid or the match already started.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const detail = /not authenticated/i.test(message)
+        ? 'Please sign in again before joining a quiz.'
+        : /network|fetch|timeout|connection/i.test(message)
+          ? 'Check your internet connection and try again.'
+          : 'Invite code is invalid or the match already started.';
+      Alert.alert('Could not join', detail);
     } finally {
       setLoading(false);
     }

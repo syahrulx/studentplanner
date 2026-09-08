@@ -101,10 +101,14 @@ export interface LeaderboardEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const INVITE_CODE_PATTERN = new RegExp(`^[${INVITE_CODE_CHARS}]{6}$`);
+
 function generateInviteCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 6; i++) {
+    code += INVITE_CODE_CHARS[Math.floor(Math.random() * INVITE_CODE_CHARS.length)];
+  }
   return code;
 }
 
@@ -277,15 +281,26 @@ export async function findAndJoinRandomSession(
 }
 
 export async function joinByInviteCode(inviteCode: string): Promise<{ session: QuizSession; participant: QuizParticipant }> {
+  const normalizedCode = inviteCode.trim().toUpperCase();
+  if (!normalizedCode) throw new Error('Invite code is required');
+  // The code goes into an ilike pattern below, where `%` and `_` would match
+  // any waiting lobby. Every generated code is six characters of a fixed
+  // alphabet, so anything else cannot be a real code anyway.
+  if (!INVITE_CODE_PATTERN.test(normalizedCode)) {
+    throw new Error('Invite code is invalid or the match already started');
+  }
   const { data: session, error } = await supabase
     .from('quiz_sessions')
     .select('*')
-    .eq('invite_code', inviteCode.toUpperCase())
+    // Codes are generated uppercase, but ilike also accepts codes copied from
+    // a message or older clients that stored lowercase values.
+    .ilike('invite_code', normalizedCode)
     .eq('status', 'waiting')
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (error) normalizeQuizTableError(error);
-  if (!session) throw new Error('Session not found or already started');
+  if (!session) throw new Error('Invite code is invalid or the match already started');
 
   const participant = await joinSession(session.id);
   return { session: session as QuizSession, participant };

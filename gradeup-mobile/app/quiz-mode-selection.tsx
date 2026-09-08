@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -106,11 +106,15 @@ export default function QuizModeSelection() {
     noteId, total, useGenerated,
     quizType: paramQuizType, difficulty: paramDifficulty,
     sourceType: paramSourceType, sourceId: paramSourceId, timer: paramTimer,
+    challengeFriendId: rawChallengeFriendId,
   } = useLocalSearchParams<{
     noteId?: string; total?: string; fromBuilder?: string; useGenerated?: string;
     quizType?: string; difficulty?: string; sourceType?: string; sourceId?: string;
-    timer?: string;
+    timer?: string; challengeFriendId?: string | string[];
   }>();
+  const challengeFriendId = Array.isArray(rawChallengeFriendId)
+    ? rawChallengeFriendId[0]
+    : rawChallengeFriendId;
 
   const totalNum = parseInt(total || '5', 10);
   const sourceType: SourceType = (paramSourceType as SourceType) || 'flashcards';
@@ -121,7 +125,10 @@ export default function QuizModeSelection() {
   const [multiOpen, setMultiOpen] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null);
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Starts busy on the direct-invite route: the effect below fires straight
+  // away, so the screen should never flash an idle state first.
+  const [loading, setLoading] = useState(Boolean(challengeFriendId));
+  const directInviteStartedRef = useRef(false);
   const selectedTimerSeconds = parseTimerParam(paramTimer);
 
   const buildQuestions = useCallback(async (): Promise<GeneratedQuizQuestion[]> => {
@@ -195,8 +202,9 @@ export default function QuizModeSelection() {
     }
   };
 
-  const handleMultiplayer = async (matchType: MatchType) => {
-    if (matchType === 'friend' && !selectedFriend) {
+  const handleMultiplayer = async (matchType: MatchType, friendIdOverride?: string) => {
+    const targetFriendId = friendIdOverride || selectedFriend;
+    if (matchType === 'friend' && !targetFriendId) {
       Alert.alert('Select friend', 'Pick one friend first, then tap the arrow button to send challenge invite.');
       return;
     }
@@ -232,10 +240,10 @@ export default function QuizModeSelection() {
         questions,
         circleId: matchType === 'circle' ? (selectedCircle || undefined) : undefined,
       });
-      if (matchType === 'friend' && selectedFriend && session.invite_code) {
+      if (matchType === 'friend' && targetFriendId && session.invite_code) {
         // Best-effort notification ping to selected friend via existing community push pipeline.
         await sendReaction(
-          selectedFriend,
+          targetFriendId,
           '🎮',
           `Quiz challenge from friend! Join with code: ${session.invite_code}. If your AI limit is reached, you can still join this invite because questions are already generated.`,
         ).catch(() => {});
@@ -249,6 +257,17 @@ export default function QuizModeSelection() {
       setLoading(false);
     }
   };
+
+  // Entering from a friend's profile already chooses both multiplayer and
+  // the recipient. Create the challenge directly instead of asking the user
+  // to choose Solo/Multiplayer and select the same friend again.
+  useEffect(() => {
+    if (!challengeFriendId || directInviteStartedRef.current) return;
+    directInviteStartedRef.current = true;
+    void handleMultiplayer('friend', challengeFriendId);
+    // This is intentionally a one-shot action for the route's profile target.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challengeFriendId]);
 
   /** Host-only: create multiplayer lobby so invite code is generated (shown in match lobby). */
   const handleHostWithInviteCode = async () => {
@@ -278,6 +297,32 @@ export default function QuizModeSelection() {
       setLoading(false);
     }
   };
+
+  if (challengeFriendId) {
+    return (
+      <View
+        style={[styles.directInviteContainer, { backgroundColor: theme.background }]}
+      >
+        {loading ? (
+          <>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.directInviteTitle, { color: theme.text }]}>Creating quiz challenge…</Text>
+            <Text style={[styles.directInviteText, { color: theme.textSecondary }]}>The invite will be sent directly to this friend.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.directInviteTitle, { color: theme.text }]}>Could not create challenge</Text>
+            <Pressable
+              style={[styles.directInviteRetry, { backgroundColor: theme.primary }]}
+              onPress={() => { void handleMultiplayer('friend', challengeFriendId); }}
+            >
+              <Text style={styles.directInviteRetryText}>Try again</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -432,6 +477,11 @@ export default function QuizModeSelection() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  directInviteContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: PAD, gap: 12 },
+  directInviteTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  directInviteText: { fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 320 },
+  directInviteRetry: { marginTop: 8, paddingHorizontal: 24, paddingVertical: 14, borderRadius: RADIUS_SM },
+  directInviteRetryText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   content: { paddingHorizontal: PAD, paddingTop: 56, paddingBottom: 24 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   backBtn: { width: 44, height: 44, borderRadius: RADIUS_SM, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderWidth: 1 },
