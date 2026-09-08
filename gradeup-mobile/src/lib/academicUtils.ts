@@ -80,10 +80,14 @@ export const MAX_EXTRA_WEEKS_BEYOND_CALENDAR = 2;
 export function mergeTeachingWeeksForStoredCalendar(cal: AcademicCalendar | null | undefined): number {
   if (!cal) return MIN_DEFAULT_TEACHING_WEEKS;
   const storedNum = Number(cal.totalWeeks);
-  const baseline = Math.max(
-    MIN_DEFAULT_TEACHING_WEEKS,
-    Number.isFinite(storedNum) && storedNum >= 1 ? Math.floor(storedNum) : MIN_DEFAULT_TEACHING_WEEKS,
-  );
+  const hasStoredWeeks = Number.isFinite(storedNum) && storedNum >= 1;
+  const baseline = hasStoredWeeks ? Math.floor(storedNum) : MIN_DEFAULT_TEACHING_WEEKS;
+  // A user who explicitly aligned/configured a semester may intentionally
+  // choose a shorter or longer teaching period. Preserve that value when the
+  // calendar is hydrated instead of silently forcing it back to 14 weeks.
+  if (hasStoredWeeks && (cal.selectionSource === 'user' || cal.selectionSource === 'manual')) {
+    return baseline;
+  }
   if (!cal.periods || !Array.isArray(cal.periods) || cal.periods.length === 0) return baseline;
   const computed = computeCountedWeeksFromPeriods(cal.periods as AcademicPeriod[]);
   if (computed == null) return baseline;

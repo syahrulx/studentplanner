@@ -224,6 +224,14 @@ export const UNIVERSITIES: UniversityConfig[] = [
     mode: 'webview',
     logoEmoji: '🎓',
   },
+  {
+    id: 'micp',
+    name: 'MAHSA International College (Penang)',
+    shortName: 'MICP',
+    loginUrl: 'https://micp.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
 ];
 
 let universitiesCache: UniversityConfig[] = [...UNIVERSITIES];

@@ -494,7 +494,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         semesterPhase: progress.semesterPhase,
       };
     });
-  }, [academicCalendar?.startDate, academicCalendar?.totalWeeks, academicCalendar?.periods]);
+  }, [
+    academicCalendar?.startDate,
+    academicCalendar?.totalWeeks,
+    academicCalendar?.teachingWeekOffset,
+    academicCalendar?.periods,
+  ]);
 
   useEffect(() => {
     academicCalendarRef.current = academicCalendar;
