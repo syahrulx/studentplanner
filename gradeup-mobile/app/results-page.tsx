@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -52,6 +53,7 @@ function flashcardNoteIdFor(q: GeneratedQuizQuestion, session: QuizSession | nul
 export default function ResultsPage() {
   const { language, user, courses, addFlashcards } = useApp();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const T = useTranslations(language);
   const { currentSession, myAnswers: contextAnswers, leaveQuiz } = useQuiz();
 
@@ -358,7 +360,11 @@ export default function ResultsPage() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        // A fixed 56 sits under the Dynamic Island, whose inset is larger.
+        { paddingTop: Platform.OS === 'ios' ? insets.top + 4 : 40 },
+      ]}
       showsVerticalScrollIndicator={false}
     >
       {/* Result Header */}
@@ -590,7 +596,7 @@ export default function ResultsPage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingHorizontal: PAD, paddingTop: 56, paddingBottom: 24 },
+  content: { paddingHorizontal: PAD, paddingBottom: 24 },
 
   heroCard: { borderRadius: RADIUS, padding: 32, alignItems: 'center', marginBottom: 20 },
   heroTitle: { fontSize: 24, fontWeight: '800', color: '#fff', marginTop: 12, marginBottom: 8 },
