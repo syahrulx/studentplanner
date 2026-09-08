@@ -216,6 +216,14 @@ export const UNIVERSITIES: UniversityConfig[] = [
     mode: 'webview',
     logoEmoji: '🎓',
   },
+  {
+    id: 'usas',
+    name: 'Universiti Sultan Azlan Shah',
+    shortName: 'USAS',
+    loginUrl: 'https://www.usas.edu.my/',
+    mode: 'webview',
+    logoEmoji: '🎓',
+  },
 ];
 
 let universitiesCache: UniversityConfig[] = [...UNIVERSITIES];
