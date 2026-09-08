@@ -33,3 +33,4 @@ gradeup-mobile/*.apks
 gradeup-mobile/tools/bundletool.jar
 gradeup-mobile/modules/home-widget-bridge/android/build/
 gradeup-mobile/modules/home-widget-bridge/android/.gradle/
+node_modules.offloaded-backup-20260906/

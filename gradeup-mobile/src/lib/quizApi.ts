@@ -186,15 +186,20 @@ export async function joinSession(sessionId: string): Promise<QuizParticipant> {
 }
 
 export async function joinByInviteCode(inviteCode: string): Promise<{ session: QuizSession; participant: QuizParticipant }> {
+  const normalizedCode = inviteCode.trim().toUpperCase();
+  if (!normalizedCode) throw new Error('Invite code is required');
   const { data: session, error } = await supabase
     .from('quiz_sessions')
     .select('*')
-    .eq('invite_code', inviteCode.toUpperCase())
+    // Codes are generated uppercase, but ilike also accepts codes copied from
+    // a message or older clients that stored lowercase values.
+    .ilike('invite_code', normalizedCode)
     .eq('status', 'waiting')
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (error) normalizeQuizTableError(error);
-  if (!session) throw new Error('Session not found or already started');
+  if (!session) throw new Error('Invite code is invalid or the match already started');
 
   const participant = await joinSession(session.id);
   return { session: session as QuizSession, participant };

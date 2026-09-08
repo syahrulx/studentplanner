@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -14,6 +14,12 @@ const RADIUS_SM = 14;
 const QUESTION_OPTS = [5, 10, 15, 20];
 
 export default function QuizConfig() {
+  const { challengeFriendId: rawChallengeFriendId } = useLocalSearchParams<{
+    challengeFriendId?: string | string[];
+  }>();
+  const challengeFriendId = Array.isArray(rawChallengeFriendId)
+    ? rawChallengeFriendId[0]
+    : rawChallengeFriendId;
   const { notes, flashcards, language } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
@@ -34,6 +40,7 @@ export default function QuizConfig() {
         sourceId: noteId || '_all',
         quizType: 'mcq',
         difficulty: 'medium',
+        ...(challengeFriendId ? { challengeFriendId } : {}),
       },
     } as any);
   };
