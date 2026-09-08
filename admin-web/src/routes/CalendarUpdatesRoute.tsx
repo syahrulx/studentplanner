@@ -60,6 +60,7 @@ const APP_UNIVERSITIES: { id: string; name: string }[] = [
   { id: "taylors", name: "Taylor's University" },
   { id: "sunway", name: "Sunway University" },
   { id: "utem", name: "Universiti Teknikal Malaysia Melaka" },
+  { id: "usas", name: "Universiti Sultan Azlan Shah" },
 ];
 
 function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {

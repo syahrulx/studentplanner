@@ -343,12 +343,30 @@ export default function AddAcademicCalendarScreen() {
         throw new Error("Could not verify your campus. Please retry.");
       }
       if (campusName && campusName !== "-") {
+        // Campus labels entered in profiles are often abbreviated (for
+        // example, "Kuala Kangsar" or "Kampus Sultan Azlan Shah") while the
+        // directory stores the official campus name. Match normalized exact
+        // names first, then a sufficiently specific containment match so an
+        // otherwise valid profile is not blocked by harmless naming aliases.
         const normalizeCampus = (value: string) =>
-          value.trim().toLowerCase().replace(/\s+/g, " ");
+          value
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        const campusMatches = (canonicalValue: string, profileValue: string) => {
+          const canonical = normalizeCampus(canonicalValue);
+          const profile = normalizeCampus(profileValue);
+          if (!canonical || !profile) return false;
+          if (canonical === profile) return true;
+          return (
+            (profile.length >= 6 && canonical.includes(profile)) ||
+            (canonical.length >= 6 && profile.includes(canonical))
+          );
+        };
         const match = (campusRows ?? []).find(
-          (row) =>
-            normalizeCampus(String(row.name || "")) ===
-            normalizeCampus(campusName),
+          (row) => campusMatches(String(row.name || ""), campusName),
         );
         resolvedCampusId = match?.id ?? null;
         if (!resolvedCampusId && (campusRows ?? []).length > 0) {
