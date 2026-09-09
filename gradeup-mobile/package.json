@@ -1,7 +1,7 @@
 {
   "name": "gradeup-mobile",
   "main": "expo-router/entry",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "engines": {
     "node": "^22.0.0 || ^24.0.0"
   },
