@@ -6,9 +6,15 @@
 -- and aligning the week did not move the week shown on Home. The Smart Capture
 -- cap reaches Free users only, and MICP reaches one college, so those go last.
 --
--- One line per item, and the whole block stays under the 500-character limit
--- on the Play Console release-notes field, so the same copy ships in the app
--- and in the store listing without being rewritten twice and drifting apart.
+-- One bullet per item, because WhatsNewPrompt.tsx renders one card per bullet
+-- line and treats a following non-bullet line as that card's sub-text. It has
+-- no concept of a section heading, so a numbered "New / Fixes" layout pairs
+-- lines up wrongly here.
+--
+-- The store listing therefore carries a different layout — see
+-- store-release-notes-v173.md, which does group into New and Fixes. Wording
+-- and layout differ on purpose; the substance must not. Change one, change
+-- the other.
 --
 -- Not listed: Circles and Locations were removed from the admin web sidebar
 -- (c1e6a9b). That is the staff console, not the student app, and no student
