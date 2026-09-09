@@ -3,13 +3,11 @@ import { cn } from '../ui/cn';
 import { MotionSidebarItem } from '../ui/motion';
 import {
   IconCalendar,
-  IconCircles,
   IconClipboard,
   IconFileText,
   IconGrid,
   IconBell,
   IconBriefcase,
-  IconMapPin,
   IconSchool,
   IconSubscription,
   IconUsers,
@@ -32,8 +30,6 @@ const nav: NavItem[] = [
   { header: 'Community' },
   { to: '/events', label: 'Events', Icon: IconClipboard },
   { to: '/services', label: 'Services', Icon: IconBriefcase },
-  { to: '/circles', label: 'Circles', Icon: IconCircles },
-  { to: '/locations', label: 'Locations', Icon: IconMapPin },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
