@@ -54,7 +54,7 @@ export const VISION_LIMITS: Record<Plan, { count: number; windowDays: number } |
  * `src/lib/smartCapture/smartCaptureLimits.ts`.
  */
 export const SMART_CAPTURE_DAILY_LIMITS: Record<Plan, number | null> = {
-  free: 2,
+  free: 3,
   plus: null,
   pro: null,
 };

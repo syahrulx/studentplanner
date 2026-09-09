@@ -9,18 +9,18 @@ import { isAtLeastPlus } from '../flashcardGenerationLimits';
 // MIRRORS supabase/functions/_shared/planLimits.ts → SMART_CAPTURE_DAILY_LIMITS
 // (the Edge Function is the source of truth and rejects with
 // code `SMART_CAPTURE_LIMIT`). Change both files together.
-//   free 2 per UTC day / plus unlimited / pro unlimited
+//   free 3 per UTC day / plus unlimited / pro unlimited
 // ---------------------------------------------------------------------------
 
 /** Smart Captures a Free user may run per day. */
-export const SMART_CAPTURE_FREE_PER_DAY = 2;
+export const SMART_CAPTURE_FREE_PER_DAY = 3;
 
 export function smartCaptureLimitForPlan(plan?: SubscriptionPlan | null): number {
   return isAtLeastPlus(plan) ? Infinity : SMART_CAPTURE_FREE_PER_DAY;
 }
 
 /**
- * Local counter. Only used to render "1 of 2 free today" before a request is
+ * Local counter. Only used to render "1 of 3 free today" before a request is
  * made — the server still enforces the real limit, and the two can differ if
  * the user switches devices mid-day.
  */
