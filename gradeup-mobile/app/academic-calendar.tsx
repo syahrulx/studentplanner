@@ -140,6 +140,7 @@ export default function AcademicCalendarScreen() {
   const [weekAlignOpen, setWeekAlignOpen] = useState(false);
   const [alignBusy, setAlignBusy] = useState(false);
   const [alignPickWeek, setAlignPickWeek] = useState(1);
+  const [alignTotalWeeks, setAlignTotalWeeks] = useState(14);
 
   const [cfgLevel, setCfgLevel] = useState<AcademicLevel>(
     () => user.academicLevel ?? "Bachelor",
@@ -387,11 +388,13 @@ export default function AcademicCalendarScreen() {
 
   const openWeekAlign = useCallback(() => {
     if (!academicCalendar?.startDate) return;
+    const storedTotalWeeks = Math.max(1, Math.floor(Number(academicCalendar.totalWeeks) || 14));
     const current = getAcademicProgressFromCalendar(
       academicCalendar,
       user.startDate,
     );
-    const maxPick = maxWeekAlignPick(academicCalendar.totalWeeks ?? 14);
+    const maxPick = maxWeekAlignPick(storedTotalWeeks);
+    setAlignTotalWeeks(storedTotalWeeks);
     setAlignPickWeek(Math.max(1, Math.min(maxPick, current.week)));
     setWeekAlignOpen(true);
   }, [academicCalendar, user.startDate]);
@@ -467,14 +470,16 @@ export default function AcademicCalendarScreen() {
     if (!academicCalendar || alignBusy) return;
     setAlignBusy(true);
     try {
+      const totalWeeks = Math.max(1, Math.min(52, Math.floor(Number(alignTotalWeeks) || 14)));
+      const boundedWeek = Math.max(1, Math.min(maxWeekAlignPick(totalWeeks), alignPickWeek));
       const raw = getAcademicProgressFromCalendar(
-        academicCalendar,
+        { ...academicCalendar, totalWeeks, teachingWeekOffset: 0 },
         user.startDate,
         {
           ignoreTeachingWeekOffset: true,
         },
       );
-      const newOffset = alignPickWeek - raw.week;
+      const newOffset = boundedWeek - raw.week;
       const {
         id: _id,
         userId: _uid,
@@ -483,13 +488,13 @@ export default function AcademicCalendarScreen() {
       } = academicCalendar;
       await updateAcademicCalendar({
         ...rest,
+        totalWeeks,
         teachingWeekOffset: newOffset,
         selectionSource: "user",
         selectedAt: new Date().toISOString(),
         isActive: true,
       });
-      const cap = Math.max(1, academicCalendar.totalWeeks ?? 14);
-      if (isSemesterBreakAlignWeek(alignPickWeek, cap)) {
+      if (isSemesterBreakAlignWeek(boundedWeek, totalWeeks)) {
         await disableClassNotificationsForSemesterBreak();
       }
       setWeekAlignOpen(false);
@@ -506,6 +511,7 @@ export default function AcademicCalendarScreen() {
     academicCalendar,
     alignBusy,
     alignPickWeek,
+    alignTotalWeeks,
     updateAcademicCalendar,
     user.startDate,
   ]);
@@ -1950,8 +1956,9 @@ export default function AcademicCalendarScreen() {
                   style={[s.modalSub, { color: theme.textSecondary }]}
                   numberOfLines={3}
                 >
-                  Choose the teaching week you are in today. Dates stay the
-                  same; only the week number changes.
+                  Choose the teaching week you are in today and the number of
+                  teaching weeks in this semester. Calendar dates stay the
+                  same.
                 </Text>
               </View>
               <Pressable
@@ -2007,11 +2014,11 @@ export default function AcademicCalendarScreen() {
                 >
                   {getPostTeachingKind(
                     alignPickWeek,
-                    academicCalendar?.totalWeeks ?? 14,
+                    alignTotalWeeks,
                   )
                     ? resolveBreakPeriodLabel(
                         alignPickWeek,
-                        academicCalendar?.totalWeeks ?? 14,
+                        alignTotalWeeks,
                         {
                           study: T("studyWeek"),
                           exam: T("examWeek"),
@@ -2025,7 +2032,7 @@ export default function AcademicCalendarScreen() {
                   onPress={() =>
                     setAlignPickWeek((prev) =>
                       Math.min(
-                        maxWeekAlignPick(academicCalendar?.totalWeeks ?? 14),
+                        maxWeekAlignPick(alignTotalWeeks),
                         prev + 1,
                       ),
                     )
@@ -2055,15 +2062,15 @@ export default function AcademicCalendarScreen() {
                 {[
                   {
                     label: T("studyWeek"),
-                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 1,
+                    val: alignTotalWeeks + 1,
                   },
                   {
                     label: T("examWeek"),
-                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2,
+                    val: alignTotalWeeks + 2,
                   },
                   {
                     label: T("semesterBreak"),
-                    val: Math.max(1, academicCalendar?.totalWeeks ?? 14) + 2 + EXAM_PERIOD_WEEKS,
+                    val: alignTotalWeeks + 2 + EXAM_PERIOD_WEEKS,
                   },
                 ].map((opt) => (
                   <Pressable
@@ -2100,6 +2107,41 @@ export default function AcademicCalendarScreen() {
                     </Text>
                   </Pressable>
                 ))}
+              </View>
+            </View>
+
+            <View style={{ marginTop: 8, marginBottom: 8, alignItems: "center" }}>
+              <Text style={[s.fieldLabel, { color: theme.textSecondary }]}>Teaching weeks in semester</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 20, marginTop: 8 }}>
+                <Pressable
+                  onPress={() => setAlignTotalWeeks((prev) => Math.max(1, prev - 1))}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: theme.backgroundSecondary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Feather name="minus" size={20} color={theme.text} />
+                </Pressable>
+                <Text style={{ minWidth: 100, textAlign: "center", fontSize: 22, fontWeight: "900", color: theme.text }}>
+                  {alignTotalWeeks}
+                </Text>
+                <Pressable
+                  onPress={() => setAlignTotalWeeks((prev) => Math.min(52, prev + 1))}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: theme.backgroundSecondary,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Feather name="plus" size={20} color={theme.text} />
+                </Pressable>
               </View>
             </View>
 

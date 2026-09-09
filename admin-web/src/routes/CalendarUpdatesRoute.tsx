@@ -61,6 +61,7 @@ const APP_UNIVERSITIES: { id: string; name: string }[] = [
   { id: "sunway", name: "Sunway University" },
   { id: "utem", name: "Universiti Teknikal Malaysia Melaka" },
   { id: "usas", name: "Universiti Sultan Azlan Shah" },
+  { id: "micp", name: "MAHSA International College (Penang)" },
 ];
 
 function eligibleUniversities(list: UniversityRow[]): UniversityRow[] {
