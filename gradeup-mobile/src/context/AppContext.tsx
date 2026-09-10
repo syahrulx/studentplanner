@@ -98,6 +98,7 @@ import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStreams } from '../lib/communityApi';
 import { syncExpoPushTokenToProfile, subscribeExpoPushTokenUpdates } from '../lib/pushRegistration';
 import { fetchUitmTimetablePublic, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
+import { isMatricVerified } from '../lib/uitmVerification';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
@@ -2437,6 +2438,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       const login = (user.studentId || '').trim();
       if (!login) throw new Error('Missing saved student ID. Disconnect and connect again.');
+      // The timetable sources are public, so ownership of the matric has to be
+      // proven here too — not just on the initial connect.
+      if (!(await isMatricVerified(login))) {
+        throw new Error(
+          'Verify your student ID before refreshing. Open Timetable and connect again to receive a code.',
+        );
+      }
       const prevPortalSemester = user.currentSemester;
       const { entries, profile } = await fetchUitmTimetablePublic(login, options?.courses);
       if (entries.length === 0) {
