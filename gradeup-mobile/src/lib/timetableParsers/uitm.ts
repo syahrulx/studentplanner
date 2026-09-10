@@ -1,37 +1,19 @@
 import type { DayOfWeek, TimetableEntry } from '../../types';
-import Constants from 'expo-constants';
 
 /**
- * UiTM MyStudent timetable fetcher — runs entirely on the client.
+ * UiTM timetable fetcher — runs entirely on the client, public sources only.
  *
- * Flow (same as https://mystudent.uitm.edu.my/ PWA):
- * 1. Firebase signInWithEmailAndPassword  ({matric}@mystudent.uitm.edu.my)
- * 2. Load timetable JSON from CDN          (jadual/baru/{matric}.json)
- * 3. Fallback: ICRESS student page / course pages
- * 4. Profile from Firestore pelajar doc + CDN biodata + MyStudent HTML
+ * Flow (student ID / matric only, no credentials):
+ * 1. Timetable JSON from the UiTM CDN  (jadual/baru/{matric}.json)
+ * 2. Fallback: ICRESS student page, then ICRESS course pages (user-supplied codes)
+ * 3. Profile from the UiTM CDN          (biodata/{matric}.json and friends)
  *
- * All endpoints are public (no server secrets). The Firebase Web API key
- * comes from the MyStudent PWA bundle — it is client-exposed by design.
+ * Every endpoint here is unauthenticated. There is no MyStudent login step:
+ * we never ask for, transmit, or store a student's portal password.
  */
 
-const FIREBASE_WEB_API_KEY_FALLBACK = 'AIzaSyCzaZT_qsgrbWBmtFJ0Sg3I-eJbZtntbpM';
-const FIREBASE_WEB_API_KEY =
-  ((Constants.expoConfig?.extra as any)?.firebaseWebApiKey as string | undefined)?.trim() ||
-  FIREBASE_WEB_API_KEY_FALLBACK;
-const FIRESTORE_PROJECT_ID = 'universiti-tekno-1581783266917';
-const MYSTUDENT_CDN = 'https://cdn.uitm.link/jadual/baru/';
-
-/**
- * Google Identity Toolkit often has this API key locked to browser HTTP referrers
- * (mystudent.uitm.edu.my). React Native sends no Referer, so Google returns
- * "Requests from referer <empty> are blocked." — we send the same Origin/Referer
- * the official PWA would use.
- */
-const FIREBASE_ALLOWED_REFERERS = [
-  'https://mystudent.uitm.edu.my/',
-  `https://${FIRESTORE_PROJECT_ID}.firebaseapp.com/`,
-  `https://${FIRESTORE_PROJECT_ID}.web.app/`,
-];
+const UITM_CDN = 'https://cdn.uitm.link/';
+const MYSTUDENT_CDN = `${UITM_CDN}jadual/baru/`;
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -111,23 +93,6 @@ function normalizeTime(raw: string): string {
   return cleaned;
 }
 
-function toFirebaseEmail(input: string): string {
-  const t = input.trim();
-  if (!t) return t;
-  if (!t.includes('@')) return `${t}@mystudent.uitm.edu.my`;
-  const lower = t.toLowerCase();
-  const local = t.split('@')[0].trim();
-  if (
-    lower.endsWith('@student.uitm.edu.my') ||
-    lower.endsWith('@isiswa.uitm.edu.my') ||
-    lower.endsWith('@mails.uitm.edu.my')
-  ) {
-    return `${local}@mystudent.uitm.edu.my`;
-  }
-  if (lower.endsWith('@mystudent.uitm.edu.my')) return t.trim();
-  return t.trim();
-}
-
 function strVal(v: unknown): string | undefined {
   if (typeof v === 'string' && v.trim() !== '') return v.trim();
   return undefined;
@@ -178,184 +143,7 @@ function intPartFromRecord(nested: Record<string, unknown>): number | undefined 
   return undefined;
 }
 
-// ── Firebase Auth ───────────────────────────────────────────
-
-function isRefererBlockedMessage(msg: string): boolean {
-  const m = msg.toLowerCase();
-  return m.includes('referer') && (m.includes('blocked') || m.includes('empty'));
-}
-
-async function firebaseSignIn(
-  email: string,
-  password: string,
-): Promise<{ matric: string; email: string; displayName?: string; idToken: string }> {
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_WEB_API_KEY}`;
-  const body = JSON.stringify({ email, password, returnSecureToken: true });
-
-  let lastRefererError = '';
-  for (const referer of FIREBASE_ALLOWED_REFERERS) {
-    const origin = referer.replace(/\/$/, '');
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Referer: referer,
-        Origin: origin,
-      },
-      body,
-    });
-    const raw = await res.text();
-    type FirebaseSignInResponse = {
-      idToken?: string;
-      email?: string;
-      displayName?: string;
-      error?: { message?: string };
-    };
-
-    let j: FirebaseSignInResponse | null = null;
-    try {
-      j = raw ? (JSON.parse(raw) as FirebaseSignInResponse) : null;
-    } catch {
-      j = null;
-    }
-    const errMsg = (j?.error?.message || (raw && !j ? raw : '') || '').trim();
-
-    const apiKeyExpired =
-      /api key expired|key expired|api_key_expired|invalid api key|not valid api key/i.test(errMsg) ||
-      /api key expired|key expired|api_key_expired|invalid api key|not valid api key/i.test(raw);
-    if (apiKeyExpired) {
-      throw new Error(
-        'MyStudent Firebase API key has expired. Renew the API key in Google Cloud/Firebase and set it as `EXPO_PUBLIC_FIREBASE_WEB_API_KEY` (or `firebaseWebApiKey` in `app.config.js` extra).',
-      );
-    }
-
-    if (res.ok && j?.idToken) {
-      const resolved = (j.email || email).trim();
-      const matric = resolved.split('@')[0] || '';
-      if (!matric) throw new Error('Could not read student ID from account.');
-      const displayName =
-        typeof j.displayName === 'string' && j.displayName.trim() !== '' ? j.displayName.trim() : undefined;
-      const idToken = typeof j.idToken === 'string' && j.idToken.length > 10 ? j.idToken : '';
-      if (!idToken) throw new Error('Could not obtain session from MyStudent login.');
-      return { matric, email: resolved, displayName, idToken };
-    }
-
-    if (isRefererBlockedMessage(errMsg) || isRefererBlockedMessage(raw)) {
-      lastRefererError = errMsg || raw;
-      continue;
-    }
-
-    if (
-      errMsg.includes('INVALID_PASSWORD') ||
-      errMsg.includes('INVALID_LOGIN_CREDENTIALS') ||
-      errMsg.includes('EMAIL_NOT_FOUND') ||
-      errMsg.includes('INVALID_EMAIL')
-    ) {
-      throw new Error(
-        'Invalid email or password. Use the same account as mystudent.uitm.edu.my (e.g. your student number as 2024xxxxxx@mystudent.uitm.edu.my).',
-      );
-    }
-    throw new Error(errMsg || `Could not sign in to MyStudent (Firebase). HTTP ${res.status}`);
-  }
-
-  throw new Error(
-    lastRefererError ||
-      'MyStudent login is blocked by Google API key rules. Open Google Cloud Console → APIs & Services → Credentials → ' +
-      'the browser API key for this Firebase project → Application restrictions: use “None” or add iOS/Android app IDs.',
-  );
-}
-
-// ── Firestore pelajar doc ───────────────────────────────────
-
-function firestoreValueToJs(v: unknown): unknown {
-  if (!v || typeof v !== 'object') return undefined;
-  const o = v as Record<string, unknown>;
-  if ('nullValue' in o) return null;
-  if (typeof o.stringValue === 'string') return o.stringValue;
-  if (o.integerValue !== undefined) {
-    if (typeof o.integerValue === 'string') return parseInt(o.integerValue, 10);
-    if (typeof o.integerValue === 'number') return o.integerValue;
-  }
-  if (o.doubleValue !== undefined) {
-    if (typeof o.doubleValue === 'number') return o.doubleValue;
-    if (typeof o.doubleValue === 'string') return parseFloat(o.doubleValue);
-  }
-  if (typeof o.booleanValue === 'boolean') return o.booleanValue;
-  if (o.mapValue && typeof o.mapValue === 'object') {
-    const inner = (o.mapValue as { fields?: Record<string, unknown> }).fields;
-    return firestoreFieldsToPlain(inner || {});
-  }
-  if (o.arrayValue && typeof o.arrayValue === 'object') {
-    const vals = (o.arrayValue as { values?: unknown[] }).values;
-    return Array.isArray(vals) ? vals.map(firestoreValueToJs) : [];
-  }
-  return undefined;
-}
-
-function firestoreFieldsToPlain(fields: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(fields)) {
-    const j = firestoreValueToJs(val);
-    if (j !== undefined) out[key] = j;
-  }
-  return out;
-}
-
-async function fetchPelajarFirestorePlain(matric: string, idToken: string): Promise<Record<string, unknown>> {
-  const docSuffixes = ['@student.uitm.edu.my', '@mystudent.uitm.edu.my'];
-  for (const suf of docSuffixes) {
-    const docId = `${matric}${suf}`;
-    const path = `projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents/pelajar/${encodeURIComponent(docId)}`;
-    const url = `https://firestore.googleapis.com/v1/${path}`;
-    try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!res.ok) continue;
-      const json = (await res.json()) as { fields?: Record<string, unknown> };
-      const plain = firestoreFieldsToPlain(json.fields || {});
-      if (Object.keys(plain).length > 0) return plain;
-    } catch {
-      continue;
-    }
-  }
-  return {};
-}
-
-function mapPelajarFirestoreToPortal(
-  data: Record<string, unknown>,
-  firebaseDisplayName?: string,
-): Partial<MyStudentProfilePayload> {
-  if (!data || Object.keys(data).length === 0) return {};
-  const str = (k: string): string | undefined => {
-    const v = data[k];
-    if (typeof v === 'string' && v.trim()) return v.trim();
-    return undefined;
-  };
-  const partSem = (): number | undefined => {
-    const v = data.part;
-    if (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 30) return Math.floor(v);
-    if (typeof v === 'string') {
-      const n = parseInt(v.trim(), 10);
-      if (n > 0 && n < 30) return n;
-    }
-    return undefined;
-  };
-  const ps = partSem();
-  const fullName = str('name') || str('nama') || str('nama_pelajar');
-  return {
-    fullName: fullName || firebaseDisplayName,
-    program: str('program_desc') || str('program'),
-    campus: str('campus_desc') || str('kampus'),
-    faculty: str('faculty_desc') || str('fakulti'),
-    studyMode: str('studymode_desc') || str('mod_pengajian'),
-    semester: ps,
-    part: ps,
-    personalEmail: str('official_email') || str('emel') || str('email'),
-  };
-}
-
-// ── CDN profile ─────────────────────────────────────────────
+// ── Profile: public CDN ─────────────────────────────────────
 
 function parseStudentProfileJson(data: unknown): Partial<MyStudentProfilePayload> {
   if (!data || typeof data !== 'object') return {};
@@ -400,8 +188,7 @@ async function fetchMystudentProfileCdn(matric: string): Promise<Partial<MyStude
   ];
   for (const p of paths) {
     try {
-      const url = `https://cdn.uitm.link/${p}`;
-      const res = await fetch(url);
+      const res = await fetch(`${UITM_CDN}${p}`);
       if (!res.ok) continue;
       const data = (await res.json()) as unknown;
       const parsed = parseStudentProfileJson(data);
@@ -414,124 +201,22 @@ async function fetchMystudentProfileCdn(matric: string): Promise<Partial<MyStude
   return {};
 }
 
-// ── MyStudent profile HTML (SPA) ────────────────────────────
-
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#(\d+);/g, (_, x) => String.fromCharCode(Number(x)))
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function parseMyStudentProfileHtml(html: string): Partial<MyStudentProfilePayload> {
-  const out: Partial<MyStudentProfilePayload> = {};
-  const afterLabel = (labels: string[]): string | undefined => {
-    for (const label of labels) {
-      const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const r1 = new RegExp(
-        esc + '\\s*[:：]?\\s*</[^>]{0,48}>\\s*(?:<[^>]{0,48}>\\s*){0,4}([^<]{2,400})',
-        'i',
-      );
-      let m = html.match(r1);
-      if (m) {
-        const t = decodeHtmlEntities(m[1]);
-        if (t.length >= 2) return t;
-      }
-      const r2 = new RegExp(esc + '\\s*[:：]\\s*([^<\\n]{2,400})', 'i');
-      m = html.match(r2);
-      if (m) {
-        const t = decodeHtmlEntities(m[1]);
-        if (t.length >= 2) return t;
-      }
-    }
-    return undefined;
-  };
-  out.campus = afterLabel(['Kampus', 'Campus']);
-  out.faculty = afterLabel(['Fakulti', 'Faculty']);
-  const prog = afterLabel(['Program']);
-  if (prog) out.program = prog;
-  out.studyMode = afterLabel(['Mod Pengajian', 'Mod']);
-  const mail = html.match(/mailto:([^"'\s>]+)/i);
-  if (mail) {
-    try {
-      out.personalEmail = decodeURIComponent(mail[1].trim());
-    } catch {
-      out.personalEmail = mail[1].trim();
-    }
-  }
-  if (!out.personalEmail) {
-    const em = afterLabel(['Emel', 'Email', 'E-mel']);
-    if (em && em.includes('@')) out.personalEmail = em;
-  }
-  const sem =
-    html.match(/Semester\s*<\/[^>]+>\s*<[^>]+>\s*(\d{1,2})/i) ||
-    html.match(/Semester\s*[:：]\s*(\d{1,2})/i);
-  if (sem) {
-    const n = parseInt(sem[1], 10);
-    if (n > 0 && n < 30) out.semester = n;
-  }
-  return out;
-}
-
-async function fetchMystudentProfileHtml(idToken: string): Promise<string | null> {
-  for (const path of ['/profile', '/student/profile']) {
-    try {
-      const res = await fetch(`https://mystudent.uitm.edu.my${path}`, {
-        redirect: 'follow',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-        },
-      });
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (text.length > 1200) return text;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-// ── Build combined profile ──────────────────────────────────
-
-async function buildStudentPortalProfile(
-  matric: string,
-  firebaseDisplayName: string | undefined,
-  idToken: string,
-): Promise<MyStudentProfilePayload> {
-  const [cdn, fsPlain] = await Promise.all([
-    fetchMystudentProfileCdn(matric),
-    fetchPelajarFirestorePlain(matric, idToken),
-  ]);
-  const fs = mapPelajarFirestoreToPortal(fsPlain, firebaseDisplayName);
-
-  let web: Partial<MyStudentProfilePayload> = {};
-  try {
-    const html = await fetchMystudentProfileHtml(idToken);
-    if (html) web = parseMyStudentProfileHtml(html);
-  } catch {
-    /* PWA may return shell without SSR — CDN/Firestore still used */
-  }
-
-  const semester = fs.semester ?? web.semester ?? cdn.semester;
+/** Public-source profile. Fields the CDN does not publish stay undefined. */
+async function buildPublicProfile(matric: string): Promise<MyStudentProfilePayload> {
+  const cdn = await fetchMystudentProfileCdn(matric);
+  const semester = cdn.semester;
   const part =
-    fs.part ?? cdn.part ?? (semester != null && semester > 0 && semester < 20 ? semester : undefined);
-
+    cdn.part ?? (semester != null && semester > 0 && semester < 20 ? semester : undefined);
   return {
     matric,
-    fullName: fs.fullName || web.fullName || cdn.fullName || firebaseDisplayName,
-    program: fs.program || web.program || cdn.program,
+    fullName: cdn.fullName,
+    program: cdn.program,
     part,
-    campus: fs.campus || web.campus || cdn.campus,
-    faculty: fs.faculty || web.faculty || cdn.faculty,
-    studyMode: fs.studyMode || web.studyMode || cdn.studyMode,
+    campus: cdn.campus,
+    faculty: cdn.faculty,
+    studyMode: cdn.studyMode,
     semester: semester ?? undefined,
-    personalEmail: fs.personalEmail || web.personalEmail || cdn.personalEmail,
+    personalEmail: cdn.personalEmail,
   };
 }
 
@@ -709,7 +394,7 @@ function rowsToEntries(rows: TimetableRow[]): TimetableEntry[] {
 
 // ── Public API ──────────────────────────────────────────────
 
-/** Maps Edge `profile` into `profileDb.updateProfile` / AppContext `updateProfile` fields. */
+/** Maps a fetched `profile` into `profileDb.updateProfile` / AppContext `updateProfile` fields. */
 export function profileUpdatesFromMyStudentPayload(
   p: MyStudentProfilePayload | null | undefined,
   fallbackMatric?: string,
@@ -745,9 +430,19 @@ export function profileUpdatesFromMyStudentPayload(
   };
 }
 
-export async function fetchUitmTimetable(
-  emailOrMatric: string,
-  password: string,
+/**
+ * Fetch a UiTM timetable from public sources using the student ID alone.
+ *
+ * Sources, in order:
+ * - UiTM CDN JSON             (jadual/baru/{matric}.json)
+ * - ICRESS student page       (fallback)
+ * - ICRESS course pages       (fallback, only when the user supplies course codes)
+ *
+ * Profile fields come from the public CDN biodata files and may be empty —
+ * anything UiTM does not publish openly is simply not available.
+ */
+export async function fetchUitmTimetablePublic(
+  matricOrEmail: string,
   courses?: string[],
 ): Promise<{
   entries: TimetableEntry[];
@@ -756,16 +451,18 @@ export async function fetchUitmTimetable(
   matric?: string;
   profile?: MyStudentProfilePayload;
 }> {
-  const firebaseEmail = toFirebaseEmail(emailOrMatric.trim());
-  const { matric, displayName, idToken } = await firebaseSignIn(firebaseEmail, password);
-  const profile = await buildStudentPortalProfile(matric, displayName, idToken);
+  const matric = matricFromStudentLoginInput(matricOrEmail.trim());
+  if (!matric) return { entries: [], coursesFound: [], matric: undefined };
 
-  let rows = await fetchMystudentCdn(matric);
+  const [cdnRows, profile] = await Promise.all([
+    fetchMystudentCdn(matric),
+    buildPublicProfile(matric),
+  ]);
 
+  let rows = cdnRows;
   if (rows.length === 0) {
     rows = await fetchIcressStudentPage(matric);
   }
-
   if (rows.length === 0 && courses && courses.length > 0) {
     const merged: TimetableRow[] = [];
     for (const c of courses) {
@@ -783,57 +480,6 @@ export async function fetchUitmTimetable(
     matric,
     profile,
   };
-}
-
-/**
- * Public UiTM timetable fetch (no password).
- *
- * This mimics “student ID only” sites by relying on public sources:
- * - UiTM CDN JSON (if available)
- * - ICRESS student page
- * - Optional ICRESS course pages (if user provides course codes)
- *
- * Note: Profile fields (name/program/semester/etc) cannot be fetched without login.
- */
-export async function fetchUitmTimetablePublic(
-  matricOrEmail: string,
-  courses?: string[],
-): Promise<{
-  entries: TimetableEntry[];
-  coursesFound: string[];
-  matric?: string;
-}> {
-  const matric = matricFromStudentLoginInput(matricOrEmail.trim());
-  if (!matric) return { entries: [], coursesFound: [], matric: undefined };
-
-  let rows = await fetchMystudentCdn(matric);
-  if (rows.length === 0) {
-    rows = await fetchIcressStudentPage(matric);
-  }
-  if (rows.length === 0 && courses && courses.length > 0) {
-    const merged: TimetableRow[] = [];
-    for (const c of courses) {
-      const code = c.toUpperCase().trim();
-      if (code.length < 4) continue;
-      merged.push(...(await fetchStaticIcress(code)));
-    }
-    rows = merged;
-  }
-
-  return {
-    entries: rowsToEntries(rows),
-    coursesFound: [...new Set(rows.map((r) => r.subjectCode))],
-    matric,
-  };
-}
-
-export async function fetchUitmProfileOnly(
-  emailOrMatric: string,
-  password: string,
-): Promise<MyStudentProfilePayload> {
-  const firebaseEmail = toFirebaseEmail(emailOrMatric.trim());
-  const { matric, displayName, idToken } = await firebaseSignIn(firebaseEmail, password);
-  return buildStudentPortalProfile(matric, displayName, idToken);
 }
 
 export function matricFromStudentLoginInput(input: string): string {

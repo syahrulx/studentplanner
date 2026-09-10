@@ -97,7 +97,7 @@ import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStreams } from '../lib/communityApi';
 import { syncExpoPushTokenToProfile, subscribeExpoPushTokenUpdates } from '../lib/pushRegistration';
-import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
+import { fetchUitmTimetablePublic, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
@@ -264,8 +264,8 @@ type AppState = {
   saveTimetableOnly: (entries: TimetableEntry[], options?: { semesterLabel?: string }) => Promise<void>;
   saveTimetableAndLink: (entries: TimetableEntry[], universityId: string, studentId: string) => Promise<void>;
   disconnectUniversity: () => Promise<void>;
-  /** UiTM: re-fetch timetable + portal profile; overwrites saved timetable and MyStudent fields. */
-  refreshUniversityTimetable: (password: string, options?: { courses?: string[] }) => Promise<void>;
+  /** UiTM: re-fetch timetable + profile from public sources; overwrites the saved timetable. */
+  refreshUniversityTimetable: (options?: { courses?: string[] }) => Promise<void>;
   weekStartsOn: WeekStartsOn;
   setWeekStartsOn: (mode: WeekStartsOn) => Promise<void>;
   /** When true, past-due tasks are removed automatically (local + Supabase when signed in). Default false. */
@@ -2424,7 +2424,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUniversityTimetable = useCallback(
-    async (password: string, options?: { courses?: string[] }) => {
+    async (options?: { courses?: string[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (!uid) throw new Error('Sign in required.');
@@ -2433,12 +2433,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No university link found. Open Timetable and connect once.');
       }
       if (uniId !== 'uitm') {
-        throw new Error('Refresh is only supported for UiTM MyStudent.');
+        throw new Error('Refresh is only supported for UiTM.');
       }
       const login = (user.studentId || '').trim();
       if (!login) throw new Error('Missing saved student ID. Disconnect and connect again.');
       const prevPortalSemester = user.currentSemester;
-      const { entries, profile } = await fetchUitmTimetable(login, password, options?.courses);
+      const { entries, profile } = await fetchUitmTimetablePublic(login, options?.courses);
       if (entries.length === 0) {
         throw new Error(
           'No timetable returned. Add optional course codes or check MyStudent in a browser.',

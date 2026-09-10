@@ -11,7 +11,6 @@ import { useTranslations, type TranslationKey } from '@/src/i18n';
 import { searchUniversities, getUniversityById, getMalaysianUniversities } from '@/src/lib/universities';
 import { getTodayISO } from '@/src/utils/date';
 import {
-  fetchUitmTimetable,
   fetchUitmTimetablePublic,
   matricFromStudentLoginInput,
   profileUpdatesFromMyStudentPayload,
@@ -60,8 +59,6 @@ export default function UniversityConnectScreen() {
   const [uniOptions, setUniOptions] = useState<UniversityConfig[]>([]);
   const [studentEmail, setStudentEmail] = useState('');
   const [resolvedMatric, setResolvedMatric] = useState<string | null>(null);
-  const [password, setPassword] = useState(''); // no longer required (kept for backwards UI stability)
-  const [showPassword, setShowPassword] = useState(false); // no longer required
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [campusInfo, setCampusInfo] = useState<string | undefined>();
@@ -118,17 +115,10 @@ export default function UniversityConnectScreen() {
     setStep('validating');
     setLoading(true);
 
-    const usePublicOnly = selectedUni?.id === 'uitm';
-    const timetablePromise = usePublicOnly
-      ? fetchUitmTimetablePublic(
-          studentEmail.trim(),
-          coursesList.length > 0 ? coursesList : undefined,
-        )
-      : fetchUitmTimetable(
-          studentEmail.trim(),
-          password,
-          coursesList.length > 0 ? coursesList : undefined,
-        );
+    const timetablePromise = fetchUitmTimetablePublic(
+      studentEmail.trim(),
+      coursesList.length > 0 ? coursesList : undefined,
+    );
     const minValidateMs = 500;
     const minDelay = new Promise<void>((r) => setTimeout(r, minValidateMs));
 
@@ -145,9 +135,7 @@ export default function UniversityConnectScreen() {
       if (fetched.length === 0) {
         Alert.alert(
           T('noTimetable'),
-          usePublicOnly
-            ? 'No timetable slots were found from public sources. Try adding your course codes, or enter your MyStudent password to fetch via portal login.'
-            : 'No timetable slots were found. Add your course codes in the optional field and try again.',
+          'No timetable slots were found from public sources. Add your course codes in the optional field and try again.',
           [{ text: 'OK', onPress: () => setStep('login') }],
         );
         return;
@@ -155,7 +143,7 @@ export default function UniversityConnectScreen() {
 
       setCampusInfo(campus);
       setEntries(fetched);
-      setLastMyStudentProfile(usePublicOnly ? null : (mystudentProfile ?? null));
+      setLastMyStudentProfile(mystudentProfile ?? null);
       setStep('review');
     } catch (e) {
       Alert.alert(T('error'), e instanceof Error ? e.message : 'Failed to fetch timetable');
@@ -372,7 +360,7 @@ export default function UniversityConnectScreen() {
     </View>
   );
 
-  /* ── Login form (student ID + password) ─────────────── */
+  /* ── Student ID form (public sources, no credentials) ─── */
   const renderLoginForm = () => (
     <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
@@ -666,21 +654,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16,
   },
   hintText: { fontSize: 12, marginTop: 8, lineHeight: 18 },
-  passwordWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: 12, overflow: 'hidden',
-  },
-  passwordInput: {
-    flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16,
-  },
-  eyeBtn: {
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  securityBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', borderRadius: 12,
-    padding: 14, gap: 10, marginTop: 20,
-  },
-  securityText: { flex: 1, fontSize: 13, lineHeight: 19 },
   fetchingWrap: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40,
   },
