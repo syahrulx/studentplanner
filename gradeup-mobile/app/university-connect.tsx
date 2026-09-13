@@ -627,31 +627,19 @@ export default function UniversityConnectScreen() {
 
   /* ── Main render ────────────────────────────────────── */
   const goBack = () => {
-    if (step === 'already_connected') {
-      router.back();
-      return;
-    }
-    if (step === 'university') {
-      router.back();
-      return;
-    }
+    // A fetch in flight must not be interrupted.
     if (step === 'validating' || step === 'fetching') return;
-    if (step === 'terms') {
-      setSelectedUni(null);
-      setStep('university');
+
+    // Only these two have a previous step the render still handles. Moving the
+    // timetable to public sources dropped 'university', 'terms' and
+    // 'already_connected' from the render, but goBack still walked into them
+    // (login → terms → university), which showed the header over an empty body
+    // and took several more presses to escape. Anything else leaves the screen.
+    if (step === 'verify' || step === 'review') {
+      setStep('login');
       return;
     }
-    const map: Record<Step, Step> = {
-      university: 'university',
-      terms: 'university',
-      login: 'terms',
-      verify: 'login',
-      validating: 'login',
-      fetching: 'login',
-      review: 'login',
-      already_connected: 'already_connected',
-    };
-    setStep(map[step]);
+    router.back();
   };
 
   return (
