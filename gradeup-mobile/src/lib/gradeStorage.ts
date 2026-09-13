@@ -10,7 +10,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import type { SubjectGradeConfig } from '../types';
-import { captureError } from './monitoring';
+import { captureError, isTransientNetworkError } from './monitoring';
 import {
   gradeConfigLocalKey,
   gradeConfigToRow,
@@ -96,10 +96,15 @@ export async function getSubjectGradeConfig(
  * Upsert (save or update) a grade config.
  * Writes to Supabase and mirrors to AsyncStorage.
  */
+/**
+ * `permanent` means the server answered and rejected the row (bad payload, RLS,
+ * a constraint). Resending identical bytes cannot succeed, so callers must stop
+ * retrying and surface the failure instead of looping.
+ */
 export async function saveSubjectGradeConfig(
   userId: string,
   config: SubjectGradeConfig,
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; permanent: boolean }> {
   // Always save locally first for instant UI feedback
   await cacheSubjectGradeConfig(userId, config);
 
@@ -109,13 +114,22 @@ export async function saveSubjectGradeConfig(
       .upsert(gradeConfigToRow(userId, config), { onConflict: 'user_id,subject_id' });
 
     if (error) {
-      captureError(error, { operation: 'grade_config_remote_write' });
-      return { error: error.message };
+      // The edit is already durable in AsyncStorage and the caller retries the
+      // network mirror (on reconnect and on a timer), so a dropped request is
+      // an expected state, not something to page anyone about.
+      const transient = isTransientNetworkError(error);
+      if (!transient) {
+        captureError(error, { operation: 'grade_config_remote_write' });
+      }
+      return { error: error.message, permanent: !transient };
     }
-    return { error: null };
+    return { error: null, permanent: false };
   } catch (e: any) {
-    captureError(e, { operation: 'grade_config_remote_write' });
-    return { error: e?.message ?? 'Unknown error' };
+    const transient = isTransientNetworkError(e);
+    if (!transient) {
+      captureError(e, { operation: 'grade_config_remote_write' });
+    }
+    return { error: e?.message ?? 'Unknown error', permanent: !transient };
   }
 }
 

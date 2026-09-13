@@ -155,7 +155,12 @@ export default function SubjectGradeScreen() {
     const result = await saveSubjectGradeConfig(user.id, next);
     const isLatestSave = pendingConfig.current?.updatedAt === next.updatedAt;
     if (!isLatestSave) return false;
-    if (!result.error) {
+    // Drop the pending write when it succeeded, and also when the server
+    // rejected it outright: the retry paths below resend the identical row, so
+    // keeping it would loop every 5s forever (and fire an error report each
+    // time). The edit stays in the local cache either way; `saveState` tells
+    // the user it did not reach the cloud.
+    if (!result.error || result.permanent) {
       pendingConfig.current = null;
     }
     setSaveState(result.error ? 'error' : 'saved');
