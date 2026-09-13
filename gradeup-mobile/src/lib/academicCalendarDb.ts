@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { AcademicCalendar } from '../types';
-import { captureError } from './monitoring';
+import { captureError, isTransientNetworkError } from './monitoring';
 
 const TABLE = 'academic_calendars';
 
@@ -115,7 +115,11 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
     .select('*')
     .single();
   if (error) {
-    captureError(error, { operation: 'academic_calendar_write' });
+    // Still thrown to the caller either way; a dropped request just
+    // isn't a Sentry-worthy event.
+    if (!isTransientNetworkError(error)) {
+      captureError(error, { operation: 'academic_calendar_write' });
+    }
     if (__DEV__) console.warn('[Rencana] upsertCalendar', error.message);
     throw new Error(error.message || 'Failed to save academic calendar');
   }
@@ -128,7 +132,11 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
 export async function deleteAllCalendarsForUser(userId: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('user_id', userId);
   if (error) {
-    captureError(error, { operation: 'academic_calendar_delete' });
+    // Still thrown to the caller either way; a dropped request just
+    // isn't a Sentry-worthy event.
+    if (!isTransientNetworkError(error)) {
+      captureError(error, { operation: 'academic_calendar_delete' });
+    }
     throw new Error(error.message || 'Failed to delete academic calendar');
   }
 }

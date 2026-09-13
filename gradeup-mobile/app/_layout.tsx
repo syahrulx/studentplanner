@@ -41,6 +41,7 @@ import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
+import { useNavigationBreadcrumbs } from '@/src/lib/navigationBreadcrumbs';
 import { supabase } from '@/src/lib/supabase';
 
 export {
@@ -97,6 +98,10 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
+  // Screen-change breadcrumbs. Android crash events carry no screen context at
+  // all without these, which makes native mounting crashes untraceable.
+  useNavigationBreadcrumbs();
+
   useEffect(() => {
     // expo-notifications tap routing is native-only; skip on web.
     if (Platform.OS === 'web') return;
