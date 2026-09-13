@@ -302,6 +302,14 @@ export default function TimetableEditScreen() {
   }, []);
 
   const saveEntry = useCallback(async () => {
+    // Save stays tappable while the modal animates away, so a quick second tap
+    // can land here after closeModal() has cleared both `editing` and
+    // `isCreating`. The form fields keep their old values (only openCreate
+    // resets them), so the validation below waves that stale tap through — and
+    // it used to reach `editing!.id` with `editing` already null.
+    const target = isCreating ? null : editing;
+    if (!isCreating && !target) return;
+
     const code = subjectCode.trim();
     if (!code) {
       Alert.alert(T('error'), T('timetableCodeRequired'));
@@ -319,7 +327,7 @@ export default function TimetableEditScreen() {
       Alert.alert(T('error'), T('timetableEndBeforeStart'));
       return;
     }
-    const overlapId = isCreating ? NEW_SLOT_OVERLAP_ID : editing!.id;
+    const overlapId = target ? target.id : NEW_SLOT_OVERLAP_ID;
     const overlap = findOverlappingTimetableEntry(timetable, {
       id: overlapId,
       day,
@@ -354,8 +362,8 @@ export default function TimetableEditScreen() {
           location: loc,
           ...(colorTrim ? { slotColor: colorTrim } : {}),
         });
-      } else if (editing) {
-        await updateTimetableEntry(editing.id, {
+      } else if (target) {
+        await updateTimetableEntry(target.id, {
           day,
           startTime: ns,
           endTime: ne,
