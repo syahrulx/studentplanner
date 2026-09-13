@@ -44,6 +44,10 @@ const refreshLimiter = new RateLimiter(5, 10_000); // max 5 manual refreshes / 1
 
 const REFRESH_INTERVAL = 120_000; // 2 minutes — realtime subscriptions handle instant updates; this is a safety fallback
 const SHARED_TASKS_REFRESH_INTERVAL = 300_000; // 5 minutes — realtime handles instant updates for shared tasks
+// A full refresh is requested from two places that can fire together (mount, and
+// AppState going active). Anything asked for within this window of a run is served
+// by that run instead of starting a second one.
+const REFRESH_ALL_COALESCE_MS = 3_000;
 
 // =============================================================================
 // CONTEXT TYPE
@@ -391,7 +395,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId, refreshShareStreams, tr]);
 
-  const refreshAll = useCallback(async () => {
+  const runRefreshAll = useCallback(async () => {
     if (!refreshLimiter.attempt()) return;
     try {
       // Phase 1: Load friends first — friendsRef must be populated before
@@ -428,6 +432,37 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshFriendSnaps,
     refreshMyStreak,
   ]);
+
+  const refreshAllInFlightRef = useRef<Promise<void> | null>(null);
+  const refreshAllFinishedAtRef = useRef(0);
+
+  /**
+   * Coalescing entry point for a full refresh.
+   *
+   * The effect below asks for one on mount *and* registers an AppState listener
+   * that asks for another on 'active'. When the provider mounts as the app is
+   * coming to the foreground — a resume, or signing in mid-resume — both land
+   * within milliseconds and every community request goes out twice.
+   *
+   * `refreshLimiter` does not catch this: it allows 5 refreshes per 10s, which
+   * is an abuse guard, not de-duplication.
+   */
+  const refreshAll = useCallback(async (): Promise<void> => {
+    const inFlight = refreshAllInFlightRef.current;
+    if (inFlight) return inFlight;
+    if (Date.now() - refreshAllFinishedAtRef.current < REFRESH_ALL_COALESCE_MS) return;
+
+    // runRefreshAll swallows its own errors; the catch is belt and braces so a
+    // caller doing `void refreshAll()` can never raise an unhandled rejection.
+    const run = runRefreshAll()
+      .catch(() => undefined)
+      .finally(() => {
+        refreshAllFinishedAtRef.current = Date.now();
+        refreshAllInFlightRef.current = null;
+      });
+    refreshAllInFlightRef.current = run;
+    return run;
+  }, [runRefreshAll]);
 
   // Initial load + periodic refresh
   useEffect(() => {
