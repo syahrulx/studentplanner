@@ -19,6 +19,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
+import { openAuthSession } from '@/src/lib/openAuthSession';
 import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { supabase } from '@/src/lib/supabase';
@@ -147,7 +148,7 @@ export default function SignUp() {
         return;
       }
       if (data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        const result = await openAuthSession(data.url, redirectUrl);
         if (result.type === 'success' && result.url) {
           const url = new URL(result.url);
           const params = new URLSearchParams(url.hash.replace('#', ''));
@@ -233,7 +234,7 @@ export default function SignUp() {
         return;
       }
       if (data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        const result = await openAuthSession(data.url, redirectUrl);
         if (result.type === 'success' && result.url) {
           const url = new URL(result.url);
           const params = new URLSearchParams(url.hash.replace('#', ''));
