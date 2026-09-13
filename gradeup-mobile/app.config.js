@@ -194,6 +194,8 @@ export default ({ config }) => {
         // and the upload is skipped, so local dev is unaffected.
       },
     ],
+    // Must come after '@rnmapbox/maps' so it merges onto the manifest Mapbox contributes.
+    './plugins/withLazyMapboxInit',
   ],
   extra: {
     ...base?.extra,
