@@ -236,8 +236,6 @@ export default ({ config }) => {
         // `eas build --local`.
       },
     ],
-    // Must come after '@rnmapbox/maps' so it merges onto the manifest Mapbox contributes.
-    './plugins/withLazyMapboxInit',
   ],
   extra: {
     ...base?.extra,
