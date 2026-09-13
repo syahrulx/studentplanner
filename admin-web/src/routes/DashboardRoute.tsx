@@ -139,7 +139,7 @@ export function DashboardRoute() {
         </div>
       </MotionSection>
 
-      <MotionStagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MotionStagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 3xl:grid-cols-6">
         {cardsFiltered.length === 0 && searchQuery.trim() ? (
           <div className="col-span-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
             No overview stats match “{searchQuery.trim()}”. Clear the top search to see all cards.

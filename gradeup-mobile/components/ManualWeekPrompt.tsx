@@ -99,6 +99,11 @@ export function ManualWeekPrompt() {
         startDate: fmtDate(startDate),
         endDate: fmtDate(endDate),
         totalWeeks,
+        // A manual start date replaces whatever calendar was applied before, so drop the old
+        // timeline instead of leaving its periods/break dots on a different semester.
+        breakStartDate: '',
+        breakEndDate: '',
+        periods: [],
         isActive: true,
       });
 

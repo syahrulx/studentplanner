@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { AcademicLevel, SubscriptionPlan } from '../types';
+import { normalizeAcademicLevel } from './academicLevel';
 
 export interface ThemePreferencesRow {
   theme?: string;
@@ -59,6 +60,9 @@ export async function getProfile(userId: string): Promise<{
   lastSync?: string;
   portalTeachingAnchoredSemester?: number;
   subscriptionPlan?: SubscriptionPlan;
+  subscriptionStatus?: string;
+  subscriptionPeriodType?: string;
+  subscriptionExpiresAt?: string;
   hasUsedThemeTrial?: boolean;
   themePreferences?: ThemePreferencesRow | null;
   country?: string;
@@ -66,7 +70,7 @@ export async function getProfile(userId: string): Promise<{
   const { data, error } = await supabase
     .from(TABLE)
     .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, has_used_theme_trial, theme_preferences, country',
+      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, subscription_status, subscription_period_type, subscription_expires_at, has_used_theme_trial, theme_preferences, country',
     )
     .eq('id', userId)
     .single();
@@ -90,16 +94,18 @@ export async function getProfile(userId: string): Promise<{
     last_sync: string | null;
     portal_teaching_anchored_semester: number | null;
     subscription_plan: string | null;
+    subscription_status: string | null;
+    subscription_period_type: string | null;
+    subscription_expires_at: string | null;
     has_used_theme_trial: boolean | null;
     theme_preferences: ThemePreferencesRow | null;
     country: string | null;
   };
-  const level = row.academic_level as AcademicLevel | undefined;
   return {
     name: row.name ?? '',
     university: row.university ?? undefined,
     universityId: row.university_id ? String(row.university_id) : undefined,
-    academicLevel: level && ['Diploma', 'Bachelor', 'Master', 'PhD', 'Foundation', 'Other'].includes(level) ? level : undefined,
+    academicLevel: normalizeAcademicLevel(row.academic_level),
     studentId: row.student_id ? String(row.student_id) : undefined,
     program: row.program ? String(row.program) : undefined,
     part: row.part != null && Number.isFinite(Number(row.part)) ? Number(row.part) : undefined,
@@ -120,6 +126,11 @@ export async function getProfile(userId: string): Promise<{
         ? Number(row.portal_teaching_anchored_semester)
         : undefined,
     subscriptionPlan: normalizeSubscriptionPlan(row.subscription_plan),
+    // Billing facts are server-owned (webhook-written) and read-only here — the
+    // client must never assert its own trial state.
+    subscriptionStatus: row.subscription_status ? String(row.subscription_status) : undefined,
+    subscriptionPeriodType: row.subscription_period_type ? String(row.subscription_period_type) : undefined,
+    subscriptionExpiresAt: row.subscription_expires_at ? String(row.subscription_expires_at) : undefined,
     hasUsedThemeTrial: row.has_used_theme_trial ?? false,
     themePreferences: row.theme_preferences ?? null,
     country: row.country ? String(row.country).toUpperCase() : undefined,
@@ -155,7 +166,11 @@ export async function updateProfile(
   if (updates.name !== undefined) payload.name = updates.name;
   if (updates.university !== undefined) payload.university = updates.university;
   if (updates.universityId !== undefined) payload.university_id = updates.universityId;
-  if (updates.academicLevel !== undefined) payload.academic_level = updates.academicLevel;
+  // Normalised on write as well as read: callers have passed the old lowercase chip keys through
+  // an `as any` cast before, and an unrecognised value must not be persisted.
+  if (updates.academicLevel !== undefined) {
+    payload.academic_level = normalizeAcademicLevel(updates.academicLevel) ?? null;
+  }
   if (updates.studentId !== undefined) payload.student_id = updates.studentId.trim() || null;
   if (updates.program !== undefined) payload.program = updates.program.trim() || null;
   if (updates.part !== undefined) payload.part = updates.part > 0 ? updates.part : null;

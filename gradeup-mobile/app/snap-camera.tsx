@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { maxSnapsPerDay, isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { uploadSnapImage, postSnap, getMySnapsToday, getMyStreak } from '@/src/lib/snapApi';
 import type { SnapStreak } from '@/src/types';
@@ -25,6 +26,7 @@ import type { SnapStreak } from '@/src/types';
 export default function SnapCamera() {
   const { user } = useApp();
   const theme = useTheme();
+  const { upgradeLabel, ctaLabel, tagline, openPaywall } = useUpgradePrompt();
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
@@ -205,15 +207,20 @@ export default function SnapCamera() {
 
   const handleOpenCamera = async () => {
     if (atLimit) {
-      Alert.alert(
-        'Daily limit reached',
+      // The upsell tier depends on where they already are: Free users are being
+      // sold Plus, Plus users Pro. Pro users have nothing left to buy.
+      const upsellPlan = plan === 'free' ? 'plus' : 'pro';
+      const base =
         plan === 'free'
           ? 'Free users get 1 snap per day. Upgrade to Plus for 3, or Pro for unlimited.'
-          : `You've posted all ${maxSnaps} snaps for today. ${plan === 'plus' ? 'Upgrade to Pro for unlimited!' : 'Come back tomorrow!'}`,
+          : `You've posted all ${maxSnaps} snaps for today. ${plan === 'plus' ? 'Upgrade to Pro for unlimited!' : 'Come back tomorrow!'}`;
+      Alert.alert(
+        'Daily limit reached',
+        plan !== 'pro' ? [base, tagline(upsellPlan)].filter(Boolean).join(' ') : base,
         plan !== 'pro'
           ? [
               { text: 'Not now', style: 'cancel' },
-              { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
+              { text: ctaLabel(upsellPlan), onPress: openPaywall },
             ]
           : [{ text: 'OK' }],
       );
@@ -492,10 +499,10 @@ export default function SnapCamera() {
               {plan !== 'pro' && (
                 <Pressable
                   style={[s.upgradeBtn, { backgroundColor: theme.primary }]}
-                  onPress={() => router.push('/subscription-plans' as any)}
+                  onPress={openPaywall}
                 >
                   <Feather name="zap" size={15} color="#fff" />
-                  <Text style={s.upgradeBtnText}>Upgrade plan</Text>
+                  <Text style={s.upgradeBtnText}>{upgradeLabel(plan === 'free' ? 'plus' : 'pro')}</Text>
                 </Pressable>
               )}
             </View>

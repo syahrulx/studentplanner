@@ -13,6 +13,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { isAtLeastPlus, SNAP_VIEW_LIMIT_FREE } from '@/src/lib/flashcardGenerationLimits';
 import {
   getSnapById,
@@ -44,6 +45,7 @@ export default function SnapViewer() {
 
   const { user } = useApp();
   const theme = useTheme();
+  const { promptUpgrade, upgradeLabel, tagline, openPaywall } = useUpgradePrompt();
   const plan = user.subscriptionPlan;
   const canReact = isAtLeastPlus(plan);
 
@@ -105,14 +107,11 @@ export default function SnapViewer() {
 
   const handleReact = async (emoji: string) => {
     if (!snap || !canReact) {
-      Alert.alert(
-        'Plus Feature',
-        'Reactions are available for Plus and Pro users.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
-        ],
-      );
+      promptUpgrade({
+        plan: 'plus',
+        feature: 'Reacting to snaps',
+        fallbackTitle: 'Plus feature',
+      });
       return;
     }
 
@@ -188,6 +187,7 @@ export default function SnapViewer() {
             </Text>
             <Text style={[s.blockedDesc, { color: theme.textSecondary }]}>
               Free users can view up to {SNAP_VIEW_LIMIT_FREE} friend snaps per day. Upgrade to see unlimited snaps!
+              {tagline('plus') ? ` ${tagline('plus')}` : ''}
             </Text>
             <Pressable
               style={({ pressed }) => [
@@ -195,10 +195,10 @@ export default function SnapViewer() {
                 { backgroundColor: theme.primary },
                 pressed && { opacity: 0.85 },
               ]}
-              onPress={() => router.push('/subscription-plans' as any)}
+              onPress={openPaywall}
             >
               <Feather name="zap" size={18} color="#fff" />
-              <Text style={s.upgradeBtnText}>Upgrade Now</Text>
+              <Text style={s.upgradeBtnText}>{upgradeLabel('plus')}</Text>
             </Pressable>
             <Pressable onPress={() => router.back()} style={{ marginTop: 12 }}>
               <Text style={[s.backLink, { color: theme.textSecondary }]}>Go Back</Text>
@@ -290,14 +290,11 @@ export default function SnapViewer() {
             <Pressable
               style={s.lockHint}
               onPress={() =>
-                Alert.alert(
-                  'Plus Feature',
-                  'Upgrade to Plus or Pro to react to snaps!',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
-                  ],
-                )
+                promptUpgrade({
+                  plan: 'plus',
+                  feature: 'Reacting to snaps',
+                  fallbackTitle: 'Plus feature',
+                })
               }
             >
               <Feather name="lock" size={14} color="rgba(255,255,255,0.6)" />

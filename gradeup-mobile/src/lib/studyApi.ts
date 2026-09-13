@@ -18,6 +18,7 @@ import {
 } from './invokeGenerateFlashcards';
 import {
   invokeAiGenerate,
+  type AiGenerateRequest,
   type AiGenerateQuizResult,
 } from './invokeAiGenerate';
 
@@ -25,16 +26,62 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type GeneratedFlashcard = { front: string; back: string };
+export type GeneratedFlashcard = {
+  front: string;
+  back: string;
+  type?: 'basic' | 'cloze' | 'concept';
+  hint?: string | null;
+  source_excerpt?: string | null;
+};
+
+export type GenerateFlashcardsOutcome = {
+  cards: GeneratedFlashcard[];
+  warnings: string[];
+  truncated: boolean;
+  truncatedChars?: number;
+};
+
+export type QuizQuestionKind = 'mcq' | 'true_false' | 'short_answer';
+export type QuizBloomLevel = 'remember' | 'understand' | 'apply' | 'analyze';
 
 export type GeneratedQuizQuestion = {
   question: string;
   options: string[];
+  /** Index into `options`; -1 for short-answer questions. */
   correctIndex: number;
+  kind?: QuizQuestionKind;
   /** For short-answer questions: the expected answer text */
-  expectedAnswer?: string;
+  expectedAnswer?: string | null;
+  /** Alternative accepted answers (short answer). */
+  acceptedAnswers?: string[] | null;
+  /** 2-3 sentences: why the answer is right and why distractors are wrong. */
+  explanation?: string | null;
   /** Brief reason/excerpt that supports why the answer is correct. */
-  proof?: string;
+  proof?: string | null;
+  /** 0-based index into the `[Study source N]` blocks the client sent. */
+  sourceIndex?: number | null;
+  /** Resolved note id for `sourceIndex` (persisted into the session JSON). */
+  sourceNoteId?: string | null;
+  bloomLevel?: QuizBloomLevel | null;
+  /**
+   * Session-level timer marker. Only ever set on `questions[0]` when a session
+   * is created (quiz_sessions has no timer column).
+   */
+  __timerSeconds?: number;
+};
+
+export type QuizGenerationQuality = {
+  requested: number;
+  generated: number;
+  repaired: boolean;
+  partial: boolean;
+};
+
+export type GenerateQuizResult = {
+  questions: GeneratedQuizQuestion[];
+  quality: QuizGenerationQuality;
+  /** Parallel to the `[Study source N]` blocks sent to the server. */
+  sourceNoteIds: string[];
 };
 
 export type SavedQuizItem = {
@@ -46,17 +93,32 @@ export type SavedQuizItem = {
   sourceId?: string;
   quizType?: QuizType;
   difficulty?: QuizDifficulty;
+  /** 0 = no timer. Stored inside `questions[0].__timerSeconds`. */
+  timerSeconds?: number;
   questions: GeneratedQuizQuestion[];
 };
 
 export type QuizType = 'mcq' | 'true_false' | 'mixed' | 'short_answer';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
-function buildBalancedQuizSource(noteContents: string[], maxChars = 14500): string {
-  const sources = noteContents
-    .map((content) => String(content ?? '').replace(/\u0000/g, '').replace(/[ \t]+/g, ' ').trim())
-    .filter((content) => content.length >= 20);
-  if (sources.length === 0) return '';
+export type QuizSourceNote = { id: string; content: string };
+
+/**
+ * Interleave note contents into `[Study source N]` blocks so a single large
+ * note cannot consume the whole context window. Returns the combined text and
+ * the note id for each block (block N ↔ sourceNoteIds[N - 1]).
+ */
+export function buildBalancedQuizSource(
+  notes: QuizSourceNote[],
+  maxChars = 14500,
+): { content: string; sourceNoteIds: string[] } {
+  const sources = notes
+    .map((note) => ({
+      id: String(note?.id ?? ''),
+      content: String(note?.content ?? '').replace(/\u0000/g, '').replace(/[ \t]+/g, ' ').trim(),
+    }))
+    .filter((note) => note.content.length >= 20);
+  if (sources.length === 0) return { content: '', sourceNoteIds: [] };
 
   // Round-robin chunks stop the first large PDF from consuming the complete
   // context window while later selected notes contribute nothing.
@@ -67,100 +129,111 @@ function buildBalancedQuizSource(noteContents: string[], maxChars = 14500): stri
   while (remaining > 80 && madeProgress) {
     madeProgress = false;
     for (let index = 0; index < sources.length && remaining > 80; index++) {
-      if (cursors[index] >= sources[index].length) continue;
+      const text = sources[index].content;
+      if (cursors[index] >= text.length) continue;
       const label = `\n\n[Study source ${index + 1}]\n`;
-      const take = Math.min(1400, sources[index].length - cursors[index], remaining - label.length);
+      const take = Math.min(1400, text.length - cursors[index], remaining - label.length);
       if (take <= 0) continue;
-      pieces.push(label, sources[index].slice(cursors[index], cursors[index] + take));
+      pieces.push(label, text.slice(cursors[index], cursors[index] + take));
       cursors[index] += take;
       remaining -= label.length + take;
       madeProgress = true;
     }
   }
-  return pieces.join('').slice(0, maxChars).trim();
+  return {
+    content: pieces.join('').slice(0, maxChars).trim(),
+    sourceNoteIds: sources.map((note) => note.id),
+  };
 }
 
-function normalizeGeneratedQuizQuestions(
-  raw: GeneratedQuizQuestion[],
-  quizType: QuizType,
+const QUESTION_KINDS: QuizQuestionKind[] = ['mcq', 'true_false', 'short_answer'];
+const BLOOM_LEVELS: QuizBloomLevel[] = ['remember', 'understand', 'apply', 'analyze'];
+
+function cleanText(value: unknown, max: number): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/**
+ * Light validator that trusts the server's curation. The Edge Function already
+ * dedupes, balances question types / True-False answers and rotates MCQ answer
+ * positions, so the client only drops structurally broken items and keeps the
+ * server's ordering and answer positions untouched.
+ */
+export function validateGeneratedQuizQuestions(
+  raw: unknown,
   requestedCount: number,
-): GeneratedQuizQuestion[] {
-  const accepted: GeneratedQuizQuestion[] = [];
-  const seen = new Set<string>();
-  let trueAnswers = 0;
-  let falseAnswers = 0;
-  const kindCounts = { mcq: 0, true_false: 0, short_answer: 0 };
-  const mcqOffset = Math.floor(Math.random() * 4);
+  serverQuality?: Partial<QuizGenerationQuality> | null,
+  sourceNoteIds: string[] = [],
+): { questions: GeneratedQuizQuestion[]; quality: QuizGenerationQuality } {
+  const questions: GeneratedQuizQuestion[] = [];
 
-  for (const candidate of Array.isArray(raw) ? raw : []) {
-    if (accepted.length >= requestedCount) break;
+  for (const candidate of Array.isArray(raw) ? (raw as any[]) : []) {
     if (!candidate || typeof candidate !== 'object') continue;
-    const question = String(candidate.question ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
-    const key = question.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (question.length < 8 || !key || seen.has(key)) continue;
-    const proof = candidate.proof ? String(candidate.proof).replace(/\s+/g, ' ').trim().slice(0, 160) : undefined;
-    if (!proof || proof.length < 3) continue;
+    const question = cleanText(candidate.question, 500);
+    if (!question) continue;
+
     const options = Array.isArray(candidate.options)
-      ? candidate.options.map((option) => String(option ?? '').replace(/\s+/g, ' ').trim().slice(0, 250))
+      ? candidate.options.map((option: unknown) => cleanText(option, 250)).filter((o: string) => o.length > 0)
       : [];
-    const correctIndex = Number(candidate.correctIndex);
+    const rawCorrect = Number(candidate.correctIndex);
+    const expectedAnswer = cleanText(candidate.expectedAnswer, 250) || null;
 
+    let kind: QuizQuestionKind;
+    let correctIndex: number;
     if (options.length === 0) {
-      const expectedAnswer = String(candidate.expectedAnswer ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
-      if ((quizType !== 'short_answer' && quizType !== 'mixed') || !expectedAnswer) continue;
-      accepted.push({ question, options: [], correctIndex: -1, expectedAnswer, proof });
-      kindCounts.short_answer += 1;
-      seen.add(key);
-      continue;
+      // Short answer: needs an expected answer to be gradable.
+      if (!expectedAnswer) continue;
+      kind = 'short_answer';
+      correctIndex = -1;
+    } else {
+      if (!Number.isInteger(rawCorrect) || rawCorrect < 0 || rawCorrect >= options.length) continue;
+      correctIndex = rawCorrect;
+      const declared = String(candidate.kind ?? '');
+      kind = QUESTION_KINDS.includes(declared as QuizQuestionKind) && declared !== 'short_answer'
+        ? (declared as QuizQuestionKind)
+        : options.length === 2 && options.every((o: string) => /^(true|false)$/i.test(o))
+          ? 'true_false'
+          : 'mcq';
     }
 
-    const trueIndex = options.findIndex((option) => option.toLowerCase() === 'true');
-    const falseIndex = options.findIndex((option) => option.toLowerCase() === 'false');
-    if (options.length === 2 && trueIndex >= 0 && falseIndex >= 0) {
-      if ((quizType !== 'true_false' && quizType !== 'mixed') || !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 1) continue;
-      const normalizedCorrect = options[correctIndex].toLowerCase() === 'true' ? 0 : 1;
-      if (normalizedCorrect === 0) trueAnswers += 1;
-      else falseAnswers += 1;
-      accepted.push({ question, options: ['True', 'False'], correctIndex: normalizedCorrect, proof });
-      kindCounts.true_false += 1;
-      seen.add(key);
-      continue;
-    }
+    const acceptedAnswers = Array.isArray(candidate.acceptedAnswers)
+      ? candidate.acceptedAnswers.map((a: unknown) => cleanText(a, 250)).filter(Boolean)
+      : null;
+    const sourceIndexRaw = Number(candidate.sourceIndex);
+    const sourceIndex = Number.isInteger(sourceIndexRaw) && sourceIndexRaw >= 0 ? sourceIndexRaw : null;
+    const sourceNoteId =
+      cleanText(candidate.sourceNoteId, 120) ||
+      (sourceIndex !== null && sourceIndex < sourceNoteIds.length ? sourceNoteIds[sourceIndex] : null) ||
+      null;
+    const bloomRaw = String(candidate.bloomLevel ?? '');
+    const bloomLevel = BLOOM_LEVELS.includes(bloomRaw as QuizBloomLevel) ? (bloomRaw as QuizBloomLevel) : null;
 
-    if ((quizType !== 'mcq' && quizType !== 'mixed') || !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) continue;
-    const correct = options[correctIndex];
-    const wrongSeen = new Set<string>();
-    const uniqueWrong = options.filter((option, index) => {
-      const normalized = option.toLowerCase();
-      if (index === correctIndex || !option || normalized === correct.toLowerCase() || wrongSeen.has(normalized)) return false;
-      wrongSeen.add(normalized);
-      return true;
+    questions.push({
+      question,
+      options,
+      correctIndex,
+      kind,
+      expectedAnswer: kind === 'short_answer' ? expectedAnswer : expectedAnswer || undefined,
+      acceptedAnswers: acceptedAnswers && acceptedAnswers.length ? acceptedAnswers : null,
+      explanation: cleanText(candidate.explanation, 1000) || null,
+      proof: cleanText(candidate.proof, 300) || null,
+      sourceIndex,
+      sourceNoteId,
+      bloomLevel,
     });
-    if (!correct || uniqueWrong.length < 3) continue;
-    for (let index = uniqueWrong.length - 1; index > 0; index--) {
-      const swap = Math.floor(Math.random() * (index + 1));
-      [uniqueWrong[index], uniqueWrong[swap]] = [uniqueWrong[swap], uniqueWrong[index]];
-    }
-    const finalOptions = uniqueWrong.slice(0, 3);
-    const target = (mcqOffset + accepted.length) % 4;
-    finalOptions.splice(target, 0, correct);
-    accepted.push({ question, options: finalOptions, correctIndex: target, proof });
-    kindCounts.mcq += 1;
-    seen.add(key);
   }
 
-  const trueFalseTotal = trueAnswers + falseAnswers;
-  if (trueFalseTotal >= 4 && Math.max(trueAnswers, falseAnswers) / trueFalseTotal > 0.75) {
-    throw new Error('The generated True/False answers were too one-sided. Please regenerate for a fairer quiz.');
-  }
-  if (quizType === 'mixed' && requestedCount >= 6 && Object.values(kindCounts).some((count) => count === 0)) {
-    throw new Error('The generated quiz did not contain a balanced mix of question types. Please regenerate it.');
-  }
-  const minimumUsable = Math.min(requestedCount, Math.max(1, Math.ceil(requestedCount * 0.7)));
-  if (accepted.length < minimumUsable) {
-    throw new Error(`Only ${accepted.length} of ${requestedCount} questions passed quality checks. Please try again.`);
-  }
-  return accepted;
+  const requested = Math.max(
+    1,
+    Number(serverQuality?.requested) > 0 ? Number(serverQuality?.requested) : requestedCount,
+  );
+  const quality: QuizGenerationQuality = {
+    requested,
+    generated: questions.length,
+    repaired: Boolean(serverQuality?.repaired),
+    partial: Boolean(serverQuality?.partial) || questions.length < requested,
+  };
+  return { questions, quality };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,20 +248,47 @@ export async function generateFlashcardsFromNote(
   noteContent: string,
   _userId?: string,
   count: number = 10,
+  noteId?: string,
 ): Promise<GeneratedFlashcard[]> {
-  if (!noteContent.trim()) return [];
+  const outcome = await generateFlashcardsFromNoteDetailed(noteContent, count, noteId);
+  return outcome.cards;
+}
+
+/**
+ * Same as generateFlashcardsFromNote but also returns server `warnings` and the
+ * `truncated` flag so callers can tell the user when only part of the source
+ * was used.
+ */
+export async function generateFlashcardsFromNoteDetailed(
+  noteContent: string,
+  count: number = 10,
+  noteId?: string,
+): Promise<GenerateFlashcardsOutcome> {
+  if (!noteContent.trim()) return { cards: [], warnings: [], truncated: false };
 
   const { data, error } = await invokeGenerateFlashcards({
     source: 'text',
     content: noteContent,
     count,
+    ...(noteId ? { note_id: noteId } : {}),
   });
 
   if (error) {
     throw new Error(error);
   }
 
-  return data?.cards ?? [];
+  return {
+    cards: (data?.cards ?? []).map((c) => ({
+      front: String(c.front ?? ''),
+      back: String(c.back ?? ''),
+      type: c.type,
+      hint: c.hint ?? null,
+      source_excerpt: c.source_excerpt ?? null,
+    })),
+    warnings: Array.isArray(data?.warnings) ? data.warnings : [],
+    truncated: !!data?.truncated,
+    truncatedChars: typeof data?.truncated_chars === 'number' ? data.truncated_chars : undefined,
+  };
 }
 
 /** True when the note has a storage path and the filename looks like a PDF. */
@@ -202,30 +302,45 @@ export function noteHasPdfAttachment(note: {
 }
 
 // ---------------------------------------------------------------------------
-// Quiz generation (via ai_generate Edge Function — unchanged)
+// Quiz generation (via ai_generate Edge Function)
 // ---------------------------------------------------------------------------
 
 /**
- * Generate quiz questions from note contents.
- * Still proxied through the ai_generate Edge Function.
+ * Generate quiz questions from notes. Each note becomes a `[Study source N]`
+ * block; the server reports `sourceIndex` per question which is resolved back
+ * to `sourceNoteId` here.
  */
 export async function generateQuizFromNotes(
-  noteContents: string[],
+  notes: QuizSourceNote[],
   questionCount: number,
   quizType: QuizType = 'mcq',
   difficulty: QuizDifficulty = 'medium',
   _userId?: string,
-): Promise<GeneratedQuizQuestion[]> {
-  const combined = buildBalancedQuizSource(noteContents);
-  if (!combined.trim()) return [];
+  language?: string,
+): Promise<GenerateQuizResult> {
+  const { content, sourceNoteIds } = buildBalancedQuizSource(notes);
+  if (!content.trim()) {
+    return {
+      questions: [],
+      quality: { requested: questionCount, generated: 0, repaired: false, partial: true },
+      sourceNoteIds: [],
+    };
+  }
 
-  const { data, error } = await invokeAiGenerate<AiGenerateQuizResult>({
+  // `source_note_ids` / `language` are part of the server contract for quiz
+  // generation; typed here as an extension so the shared request type (owned
+  // by the chat work) does not need to change.
+  const body: AiGenerateRequest & { source_note_ids?: string[]; language?: string } = {
     kind: 'quiz',
-    content: combined,
+    content,
     count: questionCount,
     quiz_type: quizType,
     difficulty,
-  });
+    source_note_ids: sourceNoteIds,
+  };
+  if (language) body.language = language;
+
+  const { data, error } = await invokeAiGenerate<AiGenerateQuizResult>(body);
 
   if (error) {
     // Do not turn a server failure into an empty quiz. That hid the actual
@@ -234,14 +349,25 @@ export async function generateQuizFromNotes(
     throw new Error(error);
   }
 
-  return normalizeGeneratedQuizQuestions(data?.questions ?? [], quizType, questionCount);
+  const { questions, quality } = validateGeneratedQuizQuestions(
+    data?.questions ?? [],
+    questionCount,
+    data?.quality,
+    sourceNoteIds,
+  );
+  return { questions, quality, sourceNoteIds };
 }
 
 // ---------------------------------------------------------------------------
-// Quiz AsyncStorage helpers (unchanged)
+// Quiz AsyncStorage helpers
 // ---------------------------------------------------------------------------
 
 const QUIZ_TEMP_KEY = '@quiz_generated_store';
+
+type GeneratedQuizStash = {
+  questions: GeneratedQuizQuestion[];
+  sourceNoteIds: string[];
+};
 
 async function getCurrentUserId(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -249,28 +375,49 @@ async function getCurrentUserId(): Promise<string> {
   return session.user.id;
 }
 
-export async function setGeneratedQuizQuestions(questions: GeneratedQuizQuestion[]): Promise<void> {
+export async function setGeneratedQuizQuestions(
+  questions: GeneratedQuizQuestion[],
+  sourceNoteIds: string[] = [],
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(QUIZ_TEMP_KEY, JSON.stringify(questions));
+    const stash: GeneratedQuizStash = { questions, sourceNoteIds };
+    await AsyncStorage.setItem(QUIZ_TEMP_KEY, JSON.stringify(stash));
   } catch (e) {
     console.warn('Failed to save quiz to AsyncStorage', e);
   }
 }
 
-export async function getGeneratedQuizQuestions(): Promise<GeneratedQuizQuestion[]> {
+/** Returns the stashed questions plus the source-note map (both may be empty). */
+export async function getGeneratedQuizStash(): Promise<GeneratedQuizStash> {
   try {
     const data = await AsyncStorage.getItem(QUIZ_TEMP_KEY);
-    if (!data) return [];
-    return JSON.parse(data) as GeneratedQuizQuestion[];
+    if (!data) return { questions: [], sourceNoteIds: [] };
+    const parsed = JSON.parse(data);
+    // Backwards compatibility: older builds stored a bare question array.
+    if (Array.isArray(parsed)) return { questions: parsed as GeneratedQuizQuestion[], sourceNoteIds: [] };
+    return {
+      questions: Array.isArray(parsed?.questions) ? (parsed.questions as GeneratedQuizQuestion[]) : [],
+      sourceNoteIds: Array.isArray(parsed?.sourceNoteIds) ? parsed.sourceNoteIds.map(String) : [],
+    };
   } catch {
-    return [];
+    return { questions: [], sourceNoteIds: [] };
   }
+}
+
+export async function getGeneratedQuizQuestions(): Promise<GeneratedQuizQuestion[]> {
+  return (await getGeneratedQuizStash()).questions;
 }
 
 export async function clearGeneratedQuizQuestions(): Promise<void> {
   try {
     await AsyncStorage.removeItem(QUIZ_TEMP_KEY);
   } catch {}
+}
+
+function readTimerSeconds(questions: unknown): number | undefined {
+  const raw = Array.isArray(questions) ? (questions[0] as any)?.__timerSeconds : undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 export async function getSavedQuizzes(): Promise<SavedQuizItem[]> {
@@ -296,7 +443,8 @@ export async function getSavedQuizzes(): Promise<SavedQuizItem[]> {
       sourceId: row.source_id,
       quizType: row.quiz_type,
       difficulty: row.difficulty,
-      questions: row.questions,
+      timerSeconds: readTimerSeconds(row.questions),
+      questions: Array.isArray(row.questions) ? row.questions : [],
     }));
   } catch (e) {
     console.warn('getSavedQuizzes exception:', e);
@@ -310,10 +458,21 @@ export async function saveQuizToLibrary(input: {
   sourceId?: string;
   quizType?: QuizType;
   difficulty?: QuizDifficulty;
+  /** 0 = no timer. Persisted in `questions[0].__timerSeconds` when not already present. */
+  timerSeconds?: number;
   questions: GeneratedQuizQuestion[];
 }): Promise<SavedQuizItem> {
   const userId = await getCurrentUserId();
-  const questions = (input.questions || []).slice(0, 50);
+  const questions = (input.questions || []).slice(0, 50).map((q) => ({ ...q }));
+  if (
+    questions.length > 0 &&
+    readTimerSeconds(questions) === undefined &&
+    typeof input.timerSeconds === 'number' &&
+    Number.isFinite(input.timerSeconds) &&
+    input.timerSeconds >= 0
+  ) {
+    questions[0].__timerSeconds = input.timerSeconds;
+  }
 
   const insertData = {
     user_id: userId,
@@ -345,6 +504,7 @@ export async function saveQuizToLibrary(input: {
     sourceId: data.source_id,
     quizType: data.quiz_type as QuizType,
     difficulty: data.difficulty as QuizDifficulty,
+    timerSeconds: readTimerSeconds(data.questions),
     questions: data.questions,
   };
 }
@@ -357,7 +517,7 @@ export async function deleteSavedQuiz(id: string): Promise<void> {
       .delete()
       .eq('id', id)
       .eq('user_id', userId);
-      
+
     if (error) {
       console.error('Failed to delete saved quiz:', error);
       throw new Error(error.message);

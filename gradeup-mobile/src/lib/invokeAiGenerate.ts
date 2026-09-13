@@ -18,6 +18,8 @@ export interface AiGenerateRequest {
   count?: number;
   quiz_type?: 'mcq' | 'true_false' | 'mixed' | 'short_answer';
   difficulty?: 'easy' | 'medium' | 'hard';
+  /** Quiz: note ids parallel to the `[Study source N]` blocks in `content`, for per-note mastery. */
+  source_note_ids?: string[];
   today_iso?: string;
   current_week?: number;
   courses?: { id: string; name: string }[];
@@ -26,8 +28,18 @@ export interface AiGenerateRequest {
   question?: string;
   /** RAG: the subject ID to scope embedding search. */
   subject_id?: string;
-  /** Base64-encoded image for vision analysis in chat. */
+  /** Tags the request as a Smart Capture (share sheet / Back Tap screenshot) for quota + telemetry. */
+  source?: 'smart_capture';
+  /** Base64-encoded image for vision analysis in chat, or as an OCR fallback for `task_extract`. */
   image_base64?: string;
+  /** MIME type of `image_base64` (e.g. 'image/png'). Server defaults to image/jpeg when absent. */
+  image_mime?: string;
+  /** Chat: human-readable course name shown to the model and used for domain inference. */
+  subject_name?: string;
+  /** Chat: UI language code (e.g. 'en' | 'ms') — the model answers in this language. */
+  language?: string;
+  /** Chat: titles of the notes included in `content`, so the server can cite "[Note: title]" for RAG chunks. */
+  note_titles?: { id: string; title: string }[];
   /** Optional normalized crop hint for handwriting OCR. */
   selection_hint?: { left: number; top: number; right: number; bottom: number };
 }
@@ -41,9 +53,17 @@ export type AiGenerateQuizResult = {
   questions: {
     question: string;
     options: string[];
+    /** -1 for short-answer questions. */
     correctIndex: number;
-    expectedAnswer?: string;
-    proof?: string;
+    kind?: 'mcq' | 'true_false' | 'short_answer';
+    expectedAnswer?: string | null;
+    acceptedAnswers?: string[] | null;
+    /** 2-3 sentences: why the answer is right and why distractors are wrong. */
+    explanation?: string | null;
+    proof?: string | null;
+    /** 0-based index into the `[Study source N]` blocks the client sent. */
+    sourceIndex?: number | null;
+    bloomLevel?: 'remember' | 'understand' | 'apply' | 'analyze' | null;
   }[];
   quality?: {
     requested: number;
@@ -76,8 +96,11 @@ export type AiGenerateTaskExtractResult = {
   error?: string;
 };
 
+export type AiGenerateChatCitation = { note_id: string; title: string };
+
 export type AiGenerateChatResult = {
   response: string;
+  citations?: AiGenerateChatCitation[];
   error?: string;
 };
 
@@ -93,7 +116,7 @@ export type AiGenerateHandwritingResult = {
 
 export async function invokeAiGenerate<T = unknown>(
   body: AiGenerateRequest,
-): Promise<{ data: T | null; error?: string }> {
+): Promise<{ data: T | null; error?: string; errorCode?: string }> {
   const hasSession = async (): Promise<boolean> => {
     const { data: sessionData } = await supabase.auth.getSession();
     return !!sessionData.session?.access_token;
@@ -166,7 +189,7 @@ export async function invokeAiGenerate<T = unknown>(
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
           continue;
         }
-        return { data: null, error: edgeMessage };
+        return { data: null, error: edgeMessage, errorCode: edgeCode || undefined };
       }
 
       return { data: data as T };
@@ -190,16 +213,22 @@ export async function invokeAiGenerate<T = unknown>(
 
 export async function invokeAiEmbed(
   body: { noteId: string; subjectId: string; content: string }
-): Promise<{ success: boolean; chunksProcessed?: number; error?: string }> {
+): Promise<{ success: boolean; chunksProcessed?: number; tokens?: number; error?: string }> {
   try {
     const { data, error } = await supabase.functions.invoke('ai_embed', { body });
     if (error) {
       return { success: false, error: error.message };
     }
     if (data?.error) {
-      return { success: false, error: data.error };
+      const err = data.error;
+      const message = typeof err === 'string' ? err : String(err?.message ?? 'AI embedding failed');
+      return { success: false, error: message };
     }
-    return { success: true, chunksProcessed: data?.chunksProcessed };
+    return {
+      success: data?.success !== false,
+      chunksProcessed: typeof data?.chunksProcessed === 'number' ? data.chunksProcessed : undefined,
+      tokens: typeof data?.tokens === 'number' ? data.tokens : undefined,
+    };
   } catch (e: any) {
     return { success: false, error: e?.message || 'AI embedding failed' };
   }

@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { Avatar } from '@/components/Avatar';
@@ -54,6 +55,7 @@ function lastMessagePreview(convo: DmConversation, userId: string): string {
 
 export default function ChatListScreen() {
   const theme = useTheme();
+  const { upgradeLabel, tagline, openPaywall } = useUpgradePrompt();
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const { userId } = useCommunity();
@@ -164,9 +166,10 @@ export default function ChatListScreen() {
           <Text style={[styles.lockedDesc, { color: theme.textSecondary }]}>
             Direct messaging is available exclusively for Pro subscribers. Upgrade your plan to chat
             with friends, share flashcards, and quiz together.
+            {tagline('pro') ? ` ${tagline('pro')}` : ''}
           </Text>
           <Pressable
-            onPress={() => router.push('/subscription-plans' as any)}
+            onPress={openPaywall}
             style={({ pressed }) => [pressed && { opacity: 0.85 }]}
           >
             <LinearGradient
@@ -176,7 +179,7 @@ export default function ChatListScreen() {
               style={styles.upgradeBtn}
             >
               <Feather name="zap" size={18} color="#fff" />
-              <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
+              <Text style={styles.upgradeBtnText}>{upgradeLabel('pro')}</Text>
             </LinearGradient>
           </Pressable>
         </View>

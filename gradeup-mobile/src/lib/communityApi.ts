@@ -113,6 +113,8 @@ export interface QuickReaction {
   receiver_id: string;
   reaction_type: string;
   message?: string;
+  /** Sender-supplied payload, forwarded into the push data by the insert trigger. */
+  data?: Record<string, unknown> | null;
   created_at: string;
   read: boolean;
   sender_profile?: FriendProfile;
@@ -1028,24 +1030,31 @@ export async function getFriendsWithStatus(userId: string): Promise<FriendWithSt
 // =============================================================================
 
 /** Send a reaction to a friend */
+/**
+ * `data` is forwarded verbatim into the push payload by the insert trigger
+ * (see 20260908000001_quiz_challenge_push_payload.sql), which is how a quiz
+ * challenge carries the session id its banner needs to be tappable.
+ */
 export async function sendReaction(
   senderId: string,
   receiverId: string,
   reactionType: string,
-  message?: string
+  message?: string,
+  data?: Record<string, unknown> | null
 ) {
-  const { data, error } = await supabase
+  const { data: row, error } = await supabase
     .from('quick_reactions')
     .insert({
       sender_id: senderId,
       receiver_id: receiverId,
       reaction_type: reactionType,
       message: message || null,
+      ...(data && Object.keys(data).length > 0 ? { data } : {}),
     })
     .select()
     .single();
   if (error) throw error;
-  return data;
+  return row;
 }
 
 /** Get my received reactions (newest first) */

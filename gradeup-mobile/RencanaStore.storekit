@@ -57,7 +57,13 @@
           "groupNumber" : 1,
           "internalID" : "6770874141",
           "introductoryOffers" : [
-
+            {
+              "displayPrice" : "0.00",
+              "internalID" : "6790112401",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P1W"
+            }
           ],
           "localizations" : [
             {
@@ -87,7 +93,13 @@
           "groupNumber" : 2,
           "internalID" : "6770895236",
           "introductoryOffers" : [
-
+            {
+              "displayPrice" : "0.00",
+              "internalID" : "6790112402",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P1W"
+            }
           ],
           "localizations" : [
             {

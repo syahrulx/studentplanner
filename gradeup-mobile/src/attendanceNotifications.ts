@@ -2,23 +2,35 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { IosAuthorizationStatus } from 'expo-notifications';
 import type { AcademicCalendar, TimetableEntry } from './types';
-import { attendanceOccurrenceKey, ensureAttendanceCategory, getAnsweredOccurrenceSet } from './attendanceRecording';
+import {
+  attendanceOccurrenceKey,
+  ensureAttendanceCategory,
+  getAnsweredOccurrenceSet,
+  isAttendanceCheckinExpired,
+} from './attendanceRecording';
+import { getAcademicProgressFromCalendar } from './lib/academicUtils';
 import { getNotificationPrefs } from './storage';
 
 // Android channel importance cannot be changed once created.
 // Bump the channel id so existing installs get a fresh HIGH-importance channel (restores popup/banner).
 const CHANNEL_ATTENDANCE = 'attendance_checkin_v2';
-// Sibling channel used when the user turns the popup OFF in Settings. LOW importance
-// keeps the entry in the notification shade (and in the in-app Notification Manager)
-// without showing a heads-up banner or playing a sound.
+// Legacy LOW-importance sibling. It used to carry check-ins when the user turned
+// the toggle off — that "off but still delivered" behaviour is gone, so the
+// channel is deleted on startup instead of created.
 const CHANNEL_ATTENDANCE_SILENT = 'attendance_checkin_silent_v1';
 const ID_PREFIX = 'attendance-';
 
-// iOS caps pending local notifications at 64 per app. Leave headroom for task +
-// revision + push schedules so auto-generated (UiTM) timetables — which expand
-// to many occurrences across the horizon — don't silently drop the soonest
-// classes once the budget is exhausted. We keep the NEAREST occurrences.
-const MAX_ATTENDANCE_NOTIFICATIONS = 40;
+// iOS caps pending local notifications at 64 per app and silently drops the
+// overflow, so every module works to a share of that: attendance 24, tasks 24,
+// revision 4, weekly/timer/postpone 3 — 55 of 64, with headroom to spare.
+//
+// A check-in is only answerable on the day of the class, so booking two weeks
+// ahead was pure waste: a 68-row timetable produced ~136 candidates fighting
+// over 40 slots, and today's classes lost to next week's. Two days is enough —
+// the app re-seeds on every foreground, so tomorrow's arrive tomorrow. The
+// busiest timetable in production has 12 classes in a day, which fits exactly.
+const MAX_ATTENDANCE_NOTIFICATIONS = 24;
+const DEFAULT_ATTENDANCE_HORIZON_DAYS = 2;
 
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 type WeekdayLabel = (typeof WEEKDAY_LABELS)[number];
@@ -131,6 +143,39 @@ function dateInRange(date: string, start: string | undefined, end: string | unde
 }
 
 /**
+ * Last teaching day implied by `startDate` + `totalWeeks` (+ the week-align
+ * offset), for calendars that never stored an explicit `endDate`.
+ * Mirrors `getAcademicProgress`: the semester is measured from the Sunday that
+ * opens week 1, and week N ends on the Saturday of that week.
+ */
+function teachingEndFromWeeks(calendar: AcademicCalendar): string | null {
+  const trimmed = (calendar.startDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const raw = new Date(`${trimmed}T00:00:00`);
+  if (Number.isNaN(raw.getTime())) return null;
+  const totalWeeks = Math.max(1, Number(calendar.totalWeeks) || 14);
+  const offset = Math.trunc(Number(calendar.teachingWeekOffset) || 0);
+  // currentWeek = rawWeek + offset, so teaching runs out `offset` weeks earlier.
+  const weeks = totalWeeks - offset;
+  if (weeks < 1) return null;
+  const sunday = new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() - raw.getDay());
+  return localDateKey(addDays(sunday, weeks * 7 - 1));
+}
+
+/**
+ * True when the user's own calendar says the semester is over — study week,
+ * exam period or semester break. Derived here (not just passed in by the
+ * caller) because most reschedule triggers — foreground resume, timetable
+ * edits, initial load — have no reason to know the semester phase, and used to
+ * re-seed check-ins that the break kill-switch had just cancelled.
+ */
+function calendarIndicatesSemesterBreak(calendar: AcademicCalendar | null | undefined): boolean {
+  if (!calendar) return false;
+  const progress = getAcademicProgressFromCalendar(calendar);
+  return progress.semesterPhase === 'break_after' || progress.isBreak;
+}
+
+/**
  * Conservative calendar gate: suppress only when the user's own active
  * calendar clearly identifies the date as outside teaching. If calendar data
  * is absent or incomplete, reminders continue instead of guessing.
@@ -143,7 +188,17 @@ function isLectureDate(date: Date, calendar: AcademicCalendar | null | undefined
   if (dateInRange(key, calendar.breakStartDate, calendar.breakEndDate)) return false;
 
   const periods = Array.isArray(calendar.periods) ? calendar.periods : [];
-  if (periods.length === 0) return true;
+  if (periods.length === 0) {
+    // No periods and no endDate: the calendar is just `startDate` + `totalWeeks`,
+    // which used to read as "teaching forever" and kept class check-ins firing
+    // right through the semester break. Derive the last teaching day instead.
+    // Only safe here — with periods present, the lecture gate below is exact,
+    // and a weeks-derived cut-off would wrongly suppress lecture dates that
+    // mid-semester breaks pushed past week `totalWeeks`.
+    if (calendar.endDate) return true;
+    const lastTeachingDay = teachingEndFromWeeks(calendar);
+    return !lastTeachingDay || key <= lastTeachingDay;
+  }
   const matching = periods.filter((period) => dateInRange(key, period.startDate, period.endDate));
   if (matching.some((period) => period.type !== 'lecture')) return false;
   const hasLecturePeriods = periods.some((period) => period.type === 'lecture');
@@ -156,14 +211,10 @@ export async function ensureAttendanceChannel(): Promise<void> {
     name: 'Class attendance',
     importance: Notifications.AndroidImportance.HIGH,
   });
-  // Always-create the silent sibling so toggling the popup off doesn't need a
-  // round-trip to native channel creation later.
-  await Notifications.setNotificationChannelAsync(CHANNEL_ATTENDANCE_SILENT, {
-    name: 'Class attendance (silent)',
-    importance: Notifications.AndroidImportance.LOW,
-    sound: null,
-    enableVibrate: false,
-  });
+  // Drop the legacy silent sibling on upgrade — nothing posts to it any more,
+  // and leaving it behind shows a dead "Class attendance (silent)" row in the
+  // Android app notification settings.
+  await Notifications.deleteNotificationChannelAsync(CHANNEL_ATTENDANCE_SILENT).catch(() => {});
 }
 
 function requestFromScheduledEntry(n: unknown): { id: string; data: Record<string, unknown> | undefined } {
@@ -186,6 +237,34 @@ export async function cancelAllAttendanceNotifications(): Promise<void> {
       await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
     }),
   );
+}
+
+/**
+ * Clear check-ins whose class day has already passed. A check-in is only
+ * answerable on the day, so a stale one sitting in the notification shade is
+ * dead weight — and tapping it used to still record attendance days later.
+ * Runs on every reschedule trigger (app load, foreground resume, timetable edit).
+ */
+export async function dismissExpiredAttendanceCheckins(): Promise<void> {
+  const [presented, scheduled] = await Promise.all([
+    Notifications.getPresentedNotificationsAsync().catch(() => []),
+    Notifications.getAllScheduledNotificationsAsync().catch(() => []),
+  ]);
+  await Promise.all([
+    ...(presented ?? []).map(async (notification) => {
+      const request = notification.request;
+      const data = request.content?.data as Record<string, unknown> | undefined;
+      if (data?.type !== 'attendance_checkin') return;
+      if (!isAttendanceCheckinExpired(String(data.scheduledStartAt ?? ''))) return;
+      await Notifications.dismissNotificationAsync(request.identifier).catch(() => {});
+    }),
+    ...(scheduled ?? []).map(async (entry) => {
+      const { id, data } = requestFromScheduledEntry(entry as any);
+      if (!id || data?.type !== 'attendance_checkin') return;
+      if (!isAttendanceCheckinExpired(String(data.scheduledStartAt ?? ''))) return;
+      await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+    }),
+  ]);
 }
 
 /** Remove pending and already-presented check-ins for exact timetable rows. */
@@ -255,17 +334,39 @@ export async function rescheduleAttendanceNotifications(
   timetable: TimetableEntry[],
   opts?: { horizonDays?: number; semesterBreak?: boolean; academicCalendar?: AcademicCalendar | null },
 ): Promise<void> {
-  if (opts?.semesterBreak) {
-    rescheduleQueue = rescheduleQueue
-      .catch(() => {})
-      .then(async () => {
-        await cancelAllAttendanceNotifications();
-      });
-    return rescheduleQueue;
-  }
   rescheduleQueue = rescheduleQueue
     .catch(() => {})
     .then(async () => {
+      // Both run ahead of the early returns below, so the legacy silent channel
+      // is retired and yesterday's check-ins are swept even for users whose
+      // check-ins are switched off or who are on semester break.
+      await ensureAttendanceChannel().catch(() => {});
+      await dismissExpiredAttendanceCheckins().catch(() => {});
+
+      // Read prefs before anything else: both switches below are hard stops
+      // that must also clear whatever is already pending.
+      const prefs = await getNotificationPrefs().catch(() => null);
+      const checkinsEnabled = prefs?.attendanceCheckinPopup ?? true;
+      const pauseOutsideLecturePeriods = prefs?.pauseAttendanceOutsideLecturePeriods ?? true;
+
+      if (!checkinsEnabled) {
+        await cancelAllAttendanceNotifications();
+        if (__DEV__) console.log('[attendance] skip reschedule: class check-ins turned off');
+        return;
+      }
+      // `opts.semesterBreak` is the caller's own read of the semester phase
+      // (from the user profile); the derived check covers every caller that has
+      // no reason to know it. Both answer to the same "Pause outside lecture
+      // weeks" switch — otherwise a caller passing the flag would cancel
+      // check-ins that the very next reschedule puts straight back.
+      const inBreak =
+        opts?.semesterBreak === true || calendarIndicatesSemesterBreak(opts?.academicCalendar);
+      if (pauseOutsideLecturePeriods && inBreak) {
+        await cancelAllAttendanceNotifications();
+        if (__DEV__) console.log('[attendance] skip reschedule: semester break / exam period');
+        return;
+      }
+
       const perm = await Notifications.getPermissionsAsync();
       if (!localNotificationsAllowed(perm)) {
         if (__DEV__) {
@@ -277,20 +378,15 @@ export async function rescheduleAttendanceNotifications(
         return;
       }
 
-      await ensureAttendanceChannel();
       await ensureAttendanceCategory().catch(() => {});
       await cancelAllAttendanceNotifications();
 
-      // Read once per reschedule. When OFF we schedule each notification so the
-      // OS delivers it silently — no banner, no sound — but the request stays
-      // pending so it appears in the in-app Notification Manager and the OS
-      // notification center where the user can still tap it to record attendance.
-      const prefs = await getNotificationPrefs().catch(() => null);
-      const popupEnabled = prefs?.attendanceCheckinPopup ?? true;
-      const pauseOutsideLecturePeriods = prefs?.pauseAttendanceOutsideLecturePeriods ?? true;
-      const androidChannelId = popupEnabled ? CHANNEL_ATTENDANCE : CHANNEL_ATTENDANCE_SILENT;
+      const androidChannelId = CHANNEL_ATTENDANCE;
 
-      const horizonDays = Math.max(1, Math.min(31, Number(opts?.horizonDays ?? 14)));
+      const horizonDays = Math.max(
+        1,
+        Math.min(31, Number(opts?.horizonDays ?? DEFAULT_ATTENDANCE_HORIZON_DAYS)),
+      );
       const now = new Date();
       const today = startOfDay(now);
       const answered = await getAnsweredOccurrenceSet().catch(() => new Set<string>());
@@ -354,12 +450,8 @@ export async function rescheduleAttendanceNotifications(
             content: {
               title: 'Class check-in',
               body: `Did you attend class "${p.subject}" in 5 more minutes?`,
-              sound: popupEnabled,
+              sound: true,
               categoryIdentifier: 'attendance_checkin',
-              // iOS: 'passive' delivers the notification straight to the
-              // notification center without lighting up the screen or playing
-              // a sound — exactly what "popup off" should mean.
-              ...(popupEnabled ? {} : { interruptionLevel: 'passive' as const }),
               data: {
                 type: 'attendance_checkin',
                 userId,

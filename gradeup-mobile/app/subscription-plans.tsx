@@ -25,7 +25,14 @@ import {
   restorePurchases,
   isPurchaseCancelled,
   type PlanOfferings,
+  type FreeTrialOffer,
 } from '@/src/lib/purchases';
+import {
+  getTrialState,
+  trialBadgeLabel,
+  trialRenewalNotice,
+} from '@/src/lib/subscriptionStatus';
+import { resetTrialOffers } from '@/src/lib/upgradePrompt';
 import type { SubscriptionPlan } from '@/src/types';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { useTheme } from '@/hooks/useTheme';
@@ -60,7 +67,9 @@ function openRencanaWeb(path: string) {
 
 export default function SubscriptionPlansScreen() {
   const theme = useTheme();
-  const { user, updateProfile } = useApp();
+  const { user, updateProfile, refreshRemoteData, refreshSubscription } = useApp();
+  /** Non-null while a store free trial is running on the user's current plan. */
+  const activeTrial = getTrialState(user);
   const { userId } = useCommunity();
   const [staff, setStaff] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
@@ -160,6 +169,17 @@ export default function SubscriptionPlansScreen() {
     [offerings],
   );
 
+  /** Trial terms are returned only when the current store account is eligible. */
+  const trialForTier = useCallback(
+    (plan: SubscriptionPlan): FreeTrialOffer | null => {
+      if (!offerings || staff) return null;
+      if (plan === 'plus') return offerings.plusTrial;
+      if (plan === 'pro') return offerings.proTrial;
+      return null;
+    },
+    [offerings, staff],
+  );
+
   /** Get the display price string from the store (e.g. "RM 9.90" or "$2.49"). */
   const priceForTier = useCallback(
     (plan: SubscriptionPlan): string => {
@@ -181,6 +201,9 @@ export default function SubscriptionPlansScreen() {
     },
     [packageForTier, user.country],
   );
+
+  const selectedTrial = trialForTier(selected);
+  const selectedPrice = priceForTier(selected);
 
   const ctaGradient = useMemo(() => [theme.primary, theme.accent2] as [string, string], [theme.primary, theme.accent2]);
 
@@ -251,13 +274,29 @@ export default function SubscriptionPlansScreen() {
     setPurchasing(true);
     try {
       const newPlan = await purchasePackage(pkg);
+      // The trial has now been consumed — gates must stop advertising it.
+      resetTrialOffers();
       // RevenueCat updates the client entitlement immediately. Server access is
       // updated only by the authenticated webhook; the mobile client must never
       // self-assert that a purchase was paid.
       Alert.alert(
-        '🎉 Welcome!',
-        `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
-        [{ text: 'Awesome', onPress: () => router.back() }],
+        selectedTrial ? '🎉 Free trial started!' : '🎉 Welcome!',
+        selectedTrial
+          ? `Your ${selectedTrial.durationText} ${subscriptionPlanLabel(newPlan)} trial is active. After that, it renews at ${selectedPrice} unless canceled.`
+          : `You're now on ${subscriptionPlanLabel(newPlan)}! All features are unlocked.`,
+        [
+          {
+            text: 'Awesome',
+            onPress: () => {
+              // Pull the webhook-written billing row so the trial countdown is
+              // right on the screen we return to. Dismissing the alert gives the
+              // webhook the moment it needs to land; if it hasn't, the next
+              // foreground refresh picks it up.
+              void refreshRemoteData().catch(() => {});
+              router.back();
+            },
+          },
+        ],
       );
     } catch (e: any) {
       // User cancelled the purchase — not an error
@@ -278,13 +317,29 @@ export default function SubscriptionPlansScreen() {
     }
     setRestoring(true);
     try {
-      const restoredPlan = await restorePurchases();
+      // The store is only one of the ways a plan can be granted. Curlec
+      // purchases and admin/promotional grants live on the server and are
+      // invisible to RevenueCat, so a store restore that finds nothing is not
+      // the same as having nothing. Ask the server before saying no.
+      let restoredPlan: SubscriptionPlan = 'free';
+      let storeError: unknown = null;
+      try {
+        restoredPlan = await restorePurchases();
+      } catch (e) {
+        storeError = e;
+      }
+      if (restoredPlan === 'free') {
+        restoredPlan = await refreshSubscription();
+      }
+
       if (restoredPlan !== 'free') {
         Alert.alert(
           'Purchases Restored',
           `Your ${subscriptionPlanLabel(restoredPlan)} subscription has been restored!`,
           [{ text: 'OK', onPress: () => router.back() }],
         );
+      } else if (storeError) {
+        throw storeError;
       } else {
         Alert.alert('No Purchases Found', 'We couldn\'t find any active subscriptions to restore.');
       }
@@ -309,15 +364,41 @@ export default function SubscriptionPlansScreen() {
   const ctaLabel = useMemo(() => {
     if (!dirty) return 'Done';
     if (selected === 'free') return 'Manage Subscription';
+    // Sentence case, and no "My": the button states the action, the line under
+    // it states the terms.
+    if (selectedTrial) return `Start ${selectedTrial.ctaDurationText.toLowerCase()} free trial`;
     return `Subscribe to ${subscriptionPlanLabel(selected)}`;
-  }, [dirty, selected]);
+  }, [dirty, selected, selectedTrial]);
 
   const footerHint = useMemo(() => {
     if (staff) {
       return 'Staff accounts can switch plans directly for testing.';
     }
+    // Someone already mid-trial needs their own charge date, not an offer they
+    // have already taken. This beats `selectedTrial`, which is null for them
+    // anyway now that the store no longer counts them as eligible.
+    if (activeTrial && !dirty) {
+      return trialRenewalNotice(activeTrial, priceForTier(activeTrial.plan));
+    }
+    // The trial terms live next to the CTA (`purchaseTerms`) and in the legal
+    // block below it. Repeating them here made the same sentence appear three
+    // times on one screen.
+    if (selectedTrial) return '';
     return 'Subscriptions auto-renew monthly. Cancel anytime from your device settings.';
-  }, [staff]);
+  }, [activeTrial, dirty, priceForTier, selectedPrice, selectedTrial, staff]);
+
+  const purchaseTerms = useMemo(() => {
+    if (!dirty || selected === 'free' || staff) return null;
+    if (selectedTrial) {
+      return `Free for ${selectedTrial.durationText}, then ${selectedPrice}. Cancel anytime before it ends.`;
+    }
+    return `${selectedPrice}, auto-renewing monthly until canceled.`;
+  }, [dirty, selected, selectedPrice, selectedTrial, staff]);
+
+  const legalDisclosure = useMemo(() => {
+    const storeName = Platform.OS === 'ios' ? 'App Store' : Platform.OS === 'android' ? 'Google Play' : 'billing';
+    return `Renews automatically each month unless canceled at least 24 hours before the period ends. Manage or cancel anytime in your ${storeName} settings.`;
+  }, []);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -345,6 +426,7 @@ export default function SubscriptionPlansScreen() {
                 const showStaffRibbon = plan === 'pro' && staff;
                 const isCurrent = currentTier === plan;
                 const price = priceForTier(plan);
+                const trial = trialForTier(plan);
 
                 return (
                   <Pressable
@@ -378,7 +460,9 @@ export default function SubscriptionPlansScreen() {
 
                     {isCurrent ? (
                       <View style={[styles.currentBadge, { backgroundColor: theme.primary + '20' }]}>
-                        <Text style={[styles.currentBadgeText, { color: theme.primary }]}>Current Plan</Text>
+                        <Text style={[styles.currentBadgeText, { color: theme.primary }]}>
+                          {activeTrial && activeTrial.plan === plan ? trialBadgeLabel(activeTrial) : 'Current Plan'}
+                        </Text>
                       </View>
                     ) : null}
 
@@ -397,8 +481,21 @@ export default function SubscriptionPlansScreen() {
                       <View style={styles.cardTopText}>
                         <View style={styles.cardTitleRow}>
                           <Text style={[styles.cardTitle, { color: theme.text }]}>{subscriptionPlanLabel(plan)}</Text>
+                          {trial ? (
+                            <View style={[styles.trialBadge, { backgroundColor: theme.primary + '20' }]}>
+                              <Feather name="gift" size={11} color={theme.primary} />
+                              <Text style={[styles.trialBadgeText, { color: theme.primary }]}>TRY FREE</Text>
+                            </View>
+                          ) : null}
                         </View>
-                        <Text style={[styles.cardPrice, { color: theme.primary }]}>{price}</Text>
+                        {trial ? (
+                          <>
+                            <Text style={[styles.cardTrial, { color: theme.primary }]}>{trial.durationText} free</Text>
+                            <Text style={[styles.cardPriceAfterTrial, { color: theme.textSecondary }]}>Then {price}</Text>
+                          </>
+                        ) : (
+                          <Text style={[styles.cardPrice, { color: theme.primary }]}>{price}</Text>
+                        )}
                         <Text style={[styles.cardBlurb, { color: theme.textSecondary }]}>
                           {plan === 'free'
                             ? 'The core student planner — free for as long as you study.'
@@ -427,7 +524,9 @@ export default function SubscriptionPlansScreen() {
             </View>
           )}
 
-          <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
+          {footerHint ? (
+            <Text style={[styles.footerNote, { color: theme.textSecondary }]}>{footerHint}</Text>
+          ) : null}
 
           <Pressable
             onPress={() => router.push('/free-premium' as any)}
@@ -460,7 +559,7 @@ export default function SubscriptionPlansScreen() {
           {/* Apple IAP Compliance Disclosures */}
           <View style={styles.legalDisclosureContainer}>
             <Text style={[styles.legalDisclosureText, { color: theme.textSecondary }]}>
-              Subscriptions will automatically renew unless canceled at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period. You can manage or cancel your subscription anytime in your iTunes Account Settings.
+              {legalDisclosure}
             </Text>
             <View style={styles.legalLinksRow}>
               <Pressable onPress={() => void openPrivacyPolicy()} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
@@ -476,6 +575,9 @@ export default function SubscriptionPlansScreen() {
         </ScrollView>
 
         <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, { backgroundColor: theme.background }]}>
+          {purchaseTerms ? (
+            <Text style={[styles.purchaseTerms, { color: theme.textSecondary }]}>{purchaseTerms}</Text>
+          ) : null}
           <Pressable
             onPress={() => void onPurchase()}
             disabled={purchasing || loadingStaff || isLoading}
@@ -580,8 +682,19 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   cardTopText: { flex: 1, minWidth: 0 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   cardTitle: { fontSize: 18, fontWeight: '800' },
+  trialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  trialBadgeText: { fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
+  cardTrial: { marginTop: 5, fontSize: 17, fontWeight: '800' },
+  cardPriceAfterTrial: { marginTop: 2, fontSize: 13, fontWeight: '600' },
   cardPrice: { marginTop: 4, fontSize: 16, fontWeight: '700' },
   cardBlurb: { marginTop: 6, fontSize: 13, fontWeight: '500', lineHeight: 18 },
   bullets: { marginTop: 14, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
@@ -619,6 +732,14 @@ const styles = StyleSheet.create({
   bottomSafe: {
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  purchaseTerms: {
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
   },
   cta: {
     height: 52,

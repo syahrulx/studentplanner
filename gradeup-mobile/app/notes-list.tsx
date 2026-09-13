@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, Pressable, FlatList, StyleSheet, Platform, Modal, TextInput, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, FlatList, StyleSheet, Platform, Modal, TextInput, Alert, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import type { ThemePalette } from '@/constants/Themes';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadNoteAttachment } from '@/src/lib/noteStorage';
@@ -77,10 +78,10 @@ function createStyles(theme: ThemePalette) {
     folderChipText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
     folderChipTextActive: { color: theme.textInverse },
 
-    listContent: { paddingHorizontal: 20, paddingBottom: 100 },
+    listContent: { paddingBottom: 100 },
     listEmpty: { flexGrow: 1 },
 
-    cardGroup: { backgroundColor: theme.card, overflow: 'hidden' },
+    cardGroup: { backgroundColor: theme.card, overflow: 'hidden', marginHorizontal: 20 },
     cardGroupFirst: { borderTopLeftRadius: 16, borderTopRightRadius: 16 },
     cardGroupLast: { borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
 
@@ -206,7 +207,8 @@ export default function NotesList() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
   const subjectId =
     typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
-  const { notes, handleSaveNote, deleteNote, language, user } = useApp();
+  const { notes, handleSaveNote, deleteNote, language, user, refreshRemoteData } = useApp();
+  const { promptUpgrade } = useUpgradePrompt();
   const T = useTranslations(language);
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -224,6 +226,24 @@ export default function NotesList() {
   const [registeredFolders, setRegisteredFolders] = useState<string[]>([]);
   /** Tracks noteIds currently being extracted server-side. */
   const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
+
+  /**
+   * Notes are served from an offline cache first, so anything that changed the
+   * server copy from outside this device (another phone, the web app, an admin
+   * edit) stayed invisible until the app was fully restarted. Pull-to-refresh
+   * is the way out of a stale list.
+   */
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshRemoteData();
+    } catch (e) {
+      if (__DEV__) console.warn('[NotesList] refresh failed:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshRemoteData]);
   /** Always-current ref so async callbacks never read stale `notes` closure. */
   const notesRef = useRef(notes);
   useEffect(() => { notesRef.current = notes; }, [notes]);
@@ -258,14 +278,12 @@ export default function NotesList() {
 
   const openNewHandwritingNote = () => {
     if (!isAtLeastPlus(user.subscriptionPlan)) {
-      Alert.alert(
-        'Plus feature',
-        'Handwritten notebooks and PDF annotation are available with Rencana Plus or Pro.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View plans', onPress: () => router.push('/subscription-plans' as never) },
-        ],
-      );
+      promptUpgrade({
+        plan: 'plus',
+        feature: 'Handwritten notebooks and PDF annotation',
+        plural: true,
+        fallbackTitle: 'Plus feature',
+      });
       return;
     }
     const noteId = `n${Date.now()}`;
@@ -369,6 +387,10 @@ export default function NotesList() {
       const file = result.assets[0];
       const fileName = file.name ?? `attachment-${Date.now()}`;
       const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+      // The note title is shown as a deck name and a chat source, where a file
+      // extension is noise. Files exported as "notes.pdf.pdf" also exist in the
+      // wild, so strip every trailing extension, not just the last one.
+      const noteTitle = fileName.replace(/(\.[A-Za-z0-9]{1,5})+$/, '').trim() || fileName;
       const fileSize = typeof file.size === 'number' ? file.size : null;
 
       if (isPdf && fileSize != null && fileSize > MAX_PDF_AI_BYTES) {
@@ -422,7 +444,7 @@ export default function NotesList() {
         id: noteId,
         subjectId,
         folderId: selectedFolder ?? undefined,
-        title: fileName,
+        title: noteTitle,
         content: '',
         tag: 'Lecture' as const,
         updatedAt: new Date().toISOString().slice(0, 10),
@@ -476,105 +498,111 @@ export default function NotesList() {
         </View>
       </View>
 
-      <Text style={styles.pageTitle}>{subjectId} Notes</Text>
-      <View style={styles.searchWrap}>
-        <Feather name="search" size={17} color={theme.textSecondary} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search notes and recognized handwriting"
-          placeholderTextColor={theme.textSecondary}
-          style={styles.searchInput}
-          accessibilityLabel="Search notes and recognized handwriting"
-        />
-        {searchQuery ? <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Clear search"><Feather name="x" size={17} color={theme.textSecondary} /></Pressable> : null}
-      </View>
-
-      {/* Folder chips */}
-      {(folders.length > 0) && (
-        <View style={styles.folderRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRowContent}>
-            <Pressable style={[styles.folderChip, !selectedFolder && styles.folderChipActive]} onPress={() => setSelectedFolder(null)}>
-              <Text style={[styles.folderChipText, !selectedFolder && styles.folderChipTextActive]}>All</Text>
-            </Pressable>
-            {folders.map((f) => (
-              <Pressable
-                key={f}
-                style={[styles.folderChip, selectedFolder === f && styles.folderChipActive]}
-                onPress={() => setSelectedFolder(selectedFolder === f ? null : f)}
-                onLongPress={() => Alert.alert(`Folder "${f}"`, undefined, [
-                  {
-                    text: 'Delete folder',
-                    style: 'destructive',
-                    onPress: () => {
-                      for (const n of allNotes.filter((n) => n.folderId === f)) {
-                        handleSaveNote({ ...n, folderId: undefined });
-                      }
-                      const next = registeredFolders.filter((x) => x !== f);
-                      setRegisteredFolders(next);
-                      void persistRegisteredFoldersForSubject(subjectId, next);
-                      if (selectedFolder === f) setSelectedFolder(null);
-                    },
-                  },
-                  { text: 'Cancel', style: 'cancel' },
-                ])}
-              >
-                <Feather name="folder" size={12} color={selectedFolder === f ? theme.textInverse : theme.textSecondary} />
-                <Text style={[styles.folderChipText, selectedFolder === f && styles.folderChipTextActive]} numberOfLines={1}>{f}</Text>
-              </Pressable>
-            ))}
-            <Pressable style={[styles.folderChip, styles.folderChipAdd]} onPress={() => setShowNewFolderModal(true)}>
-              <Feather name="plus" size={12} color={theme.primary} />
-              <Text style={[styles.folderChipText, { color: theme.primary }]}>New folder</Text>
-            </Pressable>
-          </ScrollView>
-        </View>
-      )}
-
-
-
-      {/* Quick Actions Grid */}
-      <View style={{ flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 16 }}>
-        {/* Flashcard shortcut */}
-        <Pressable
-          style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push({ pathname: '/flashcard-pick' as any, params: subjectId ? { subjectId } : {} })}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <View style={styles.flashcardEntryIcon}>
-              <Feather name="layers" size={20} color={theme.textInverse} />
-            </View>
-            <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
-          </View>
-          <View style={styles.flashcardEntryBody}>
-            <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
-            <Text style={styles.flashcardEntrySub}>{T('flashcardsBrowseDecksSub')}</Text>
-          </View>
-        </Pressable>
-
-        {/* Grade Calculator shortcut */}
-        <Pressable
-          style={({ pressed }) => [styles.flashcardEntry, { backgroundColor: `${theme.success ?? '#10b981'}10`, borderColor: `${theme.success ?? '#10b981'}22` }, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push({ pathname: '/subject-grade' as any, params: { subjectId } })}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <View style={[styles.flashcardEntryIcon, { backgroundColor: theme.success }]}>
-              <Feather name="bar-chart-2" size={20} color="#fff" />
-            </View>
-            <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
-          </View>
-          <View style={styles.flashcardEntryBody}>
-            <Text style={styles.flashcardEntryTitle}>Grades</Text>
-            <Text style={styles.flashcardEntrySub}>Track marks & predict final grade</Text>
-          </View>
-        </Pressable>
-      </View>
-
       {/* Notes list */}
       <FlatList
         data={list}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
+        }
         contentContainerStyle={[styles.listContent, list.length === 0 && styles.listEmpty]}
+        ListHeaderComponent={
+          <>
+          <Text style={styles.pageTitle}>{subjectId} Notes</Text>
+          <View style={styles.searchWrap}>
+            <Feather name="search" size={17} color={theme.textSecondary} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search notes and recognized handwriting"
+              placeholderTextColor={theme.textSecondary}
+              style={styles.searchInput}
+              accessibilityLabel="Search notes and recognized handwriting"
+            />
+            {searchQuery ? <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Clear search"><Feather name="x" size={17} color={theme.textSecondary} /></Pressable> : null}
+          </View>
+
+          {/* Folder chips */}
+          {(folders.length > 0) && (
+            <View style={styles.folderRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.folderRowContent}>
+                <Pressable style={[styles.folderChip, !selectedFolder && styles.folderChipActive]} onPress={() => setSelectedFolder(null)}>
+                  <Text style={[styles.folderChipText, !selectedFolder && styles.folderChipTextActive]}>All</Text>
+                </Pressable>
+                {folders.map((f) => (
+                  <Pressable
+                    key={f}
+                    style={[styles.folderChip, selectedFolder === f && styles.folderChipActive]}
+                    onPress={() => setSelectedFolder(selectedFolder === f ? null : f)}
+                    onLongPress={() => Alert.alert(`Folder "${f}"`, undefined, [
+                      {
+                        text: 'Delete folder',
+                        style: 'destructive',
+                        onPress: () => {
+                          for (const n of allNotes.filter((n) => n.folderId === f)) {
+                            handleSaveNote({ ...n, folderId: undefined });
+                          }
+                          const next = registeredFolders.filter((x) => x !== f);
+                          setRegisteredFolders(next);
+                          void persistRegisteredFoldersForSubject(subjectId, next);
+                          if (selectedFolder === f) setSelectedFolder(null);
+                        },
+                      },
+                      { text: 'Cancel', style: 'cancel' },
+                    ])}
+                  >
+                    <Feather name="folder" size={12} color={selectedFolder === f ? theme.textInverse : theme.textSecondary} />
+                    <Text style={[styles.folderChipText, selectedFolder === f && styles.folderChipTextActive]} numberOfLines={1}>{f}</Text>
+                  </Pressable>
+                ))}
+                <Pressable style={[styles.folderChip, styles.folderChipAdd]} onPress={() => setShowNewFolderModal(true)}>
+                  <Feather name="plus" size={12} color={theme.primary} />
+                  <Text style={[styles.folderChipText, { color: theme.primary }]}>New folder</Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+          )}
+
+
+
+          {/* Quick Actions Grid */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 16 }}>
+            {/* Flashcard shortcut */}
+            <Pressable
+              style={({ pressed }) => [styles.flashcardEntry, pressed && { opacity: 0.88 }]}
+              onPress={() => router.push({ pathname: '/flashcard-pick' as any, params: subjectId ? { subjectId } : {} })}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={styles.flashcardEntryIcon}>
+                  <Feather name="layers" size={20} color={theme.textInverse} />
+                </View>
+                <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
+              </View>
+              <View style={styles.flashcardEntryBody}>
+                <Text style={styles.flashcardEntryTitle}>{T('flashcardsAllSheetsTitle')}</Text>
+                <Text style={styles.flashcardEntrySub}>{T('flashcardsBrowseDecksSub')}</Text>
+              </View>
+            </Pressable>
+
+            {/* Grade Calculator shortcut */}
+            <Pressable
+              style={({ pressed }) => [styles.flashcardEntry, { backgroundColor: `${theme.success ?? '#10b981'}10`, borderColor: `${theme.success ?? '#10b981'}22` }, pressed && { opacity: 0.88 }]}
+              onPress={() => router.push({ pathname: '/subject-grade' as any, params: { subjectId } })}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={[styles.flashcardEntryIcon, { backgroundColor: theme.success }]}>
+                  <Feather name="bar-chart-2" size={20} color="#fff" />
+                </View>
+                <Feather name="arrow-up-right" size={18} color={theme.textSecondary} style={{ opacity: 0.5 }} />
+              </View>
+              <View style={styles.flashcardEntryBody}>
+                <Text style={styles.flashcardEntryTitle}>Grades</Text>
+                <Text style={styles.flashcardEntrySub}>Track marks & predict final grade</Text>
+              </View>
+            </Pressable>
+          </View>
+          </>
+        }
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <Feather name="folder" size={42} color={theme.textSecondary} style={styles.emptyIcon} />
@@ -708,14 +736,12 @@ export default function NotesList() {
         ]}
         onPress={() => {
           if (!isAtLeastPlus(user.subscriptionPlan)) {
-            Alert.alert(
-              'Plus Feature',
-              'AI Subject Tutor is available on Plus and Pro plans. It reads all your notes for this subject and answers your questions.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Upgrade', style: 'default', onPress: () => router.push('/subscription-plans' as any) },
-              ]
-            );
+            promptUpgrade({
+              plan: 'plus',
+              feature: 'AI Subject Tutor',
+              detail: 'It reads all your notes for this subject and answers your questions.',
+              fallbackTitle: 'Plus feature',
+            });
             return;
           }
           router.push({ pathname: '/subject-chat' as any, params: { subjectId } });

@@ -6,6 +6,8 @@ import { Sidebar } from '../components/Sidebar';
 import { Topbar } from '../components/Topbar';
 import { useAuth } from '../state/AuthProvider';
 import { AdminSearchProvider } from '../state/AdminSearchContext';
+import { cn } from '../ui/cn';
+import { shellContainer } from '../ui/layout';
 import { pageTransition, pageVariants } from '../ui/motion';
 
 const bypassAuth = import.meta.env.VITE_BYPASS_ADMIN_AUTH === 'true';
@@ -58,7 +60,7 @@ export function AdminLayout() {
             <AdminSearchProvider>
             <Topbar onOpenMobileNav={() => setMobileOpen(true)} theme={theme} setTheme={setTheme} />
             <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <div className="mx-auto w-full max-w-7xl px-4 py-6">
+              <div className={cn(shellContainer, 'py-6')}>
                 {bypassAuth && !loading && !user && !devSecretSet ? (
                   <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
                     <span className="font-black">No Supabase session.</span> RLS blocks direct reads until you sign in as an

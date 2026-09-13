@@ -25,6 +25,8 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "@/src/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
+import { CalendarOfferOption } from "@/components/calendar/CalendarOfferOption";
+import { groupOffersForPicker } from "@/src/lib/calendarTimeline";
 import { supabase } from "@/src/lib/supabase";
 import { useTranslations } from "@/src/i18n";
 import {
@@ -79,6 +81,18 @@ function inferAcademicLevelFromOfferLabel(label: string): AcademicLevel {
     return "PhD";
   if (s.includes("master") || s.includes("sarjana")) return "Master";
   return "Other";
+}
+
+/**
+ * The level an offer belongs to.
+ *
+ * The published `programLevel` wins; the label is only read when the admin left
+ * it blank. Seeding the picker and tapping an option have to agree on this, or
+ * the level flips on its own and the sheet reloads for no reason the student
+ * can see.
+ */
+function levelForOffer(offer: UniversityCalendarOffer): AcademicLevel {
+  return offer.programLevel ?? inferAcademicLevelFromOfferLabel(offer.semesterLabel);
 }
 
 function offerSummary(offer: UniversityCalendarOffer, todayISO: string): string {
@@ -141,7 +155,12 @@ export default function AcademicCalendarScreen() {
   const [syncStatus, setSyncStatus] = useState<string>("");
   const [adminOffers, setAdminOffers] = useState<UniversityCalendarOffer[]>([]);
   const [cfgSelectedOfferId, setCfgSelectedOfferId] = useState("");
+  const [showOtherOffers, setShowOtherOffers] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
+  /** The fetch threw. Distinct from "loaded, and there are none". */
+  const [offersFailed, setOffersFailed] = useState(false);
+  /** Bumped by Retry to re-run the fetch without closing the sheet. */
+  const [offersReloadKey, setOffersReloadKey] = useState(0);
   const [uitmCommunityOffers, setUitmCommunityOffers] = useState<UitmCalendarContribution[]>([]);
   const [cfgSelectedUitmCommunityId, setCfgSelectedUitmCommunityId] = useState("");
   const [cfgUitmCalendarSource, setCfgUitmCalendarSource] = useState<"official" | "community">("official");
@@ -266,33 +285,66 @@ export default function AcademicCalendarScreen() {
     if (configOpen) setCfgStudentId((user.studentId || "").trim());
   }, [configOpen, user.studentId]);
 
+  // Nothing to hold on to once the sheet is closed, or before a university is
+  // known. Kept separate from the two fetches so closing the sheet cannot race
+  // a request that is still in flight.
   useEffect(() => {
-    const uniId = user.universityId;
-    if (!configOpen || !uniId) {
-      setAdminOffers([]);
-      setCfgSelectedOfferId("");
-      setUitmCommunityOffers([]);
-      setCfgSelectedUitmCommunityId("");
-      setOffersLoading(false);
-      return;
-    }
+    if (configOpen && user.universityId) return;
+    setAdminOffers([]);
+    setCfgSelectedOfferId("");
+    setUitmCommunityOffers([]);
+    setCfgSelectedUitmCommunityId("");
+    setOffersLoading(false);
+    setOffersFailed(false);
+  }, [configOpen, user.universityId]);
+
+  // UiTM publishes per HEA group, and the group follows the programme level, so
+  // changing the level here genuinely has to fetch a different list.
+  useEffect(() => {
+    if (!configOpen || user.universityId !== "uitm") return;
     let cancelled = false;
     setOffersLoading(true);
+    setOffersFailed(false);
     void (async () => {
       try {
-        if (uniId === "uitm") {
-          const group: "A" | "B" = cfgLevel === "Foundation" ? "A" : "B";
-          const list = await fetchApprovedUitmCalendarContributions(group);
-          if (cancelled) return;
-          setAdminOffers([]);
-          setUitmCommunityOffers(list);
-          const currentStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
-          const currentMatch = list.find((item) => item.startDate === currentStart);
-          setCfgSelectedUitmCommunityId((currentMatch ?? list[0])?.id ?? "");
-          return;
+        const group: "A" | "B" = cfgLevel === "Foundation" ? "A" : "B";
+        const list = await fetchApprovedUitmCalendarContributions(group);
+        if (cancelled) return;
+        setAdminOffers([]);
+        setUitmCommunityOffers(list);
+        const currentStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
+        const currentMatch = list.find((item) => item.startDate === currentStart);
+        setCfgSelectedUitmCommunityId((currentMatch ?? list[0])?.id ?? "");
+      } catch {
+        if (!cancelled) {
+          setUitmCommunityOffers([]);
+          setOffersFailed(true);
         }
+      } finally {
+        if (!cancelled) setOffersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [configOpen, user.universityId, cfgLevel, academicCalendar?.startDate, offersReloadKey]);
+
+  // Every other university publishes one list per university, so this must NOT
+  // depend on cfgLevel. Picking a semester sets the level from its label, and
+  // when that was a dependency the tap refetched the list and then reseeded the
+  // selection from the saved calendar: the sheet flashed a spinner and landed
+  // back on the semester the student was trying to change away from.
+  useEffect(() => {
+    const uniId = user.universityId;
+    if (!configOpen || !uniId || uniId === "uitm") return;
+    let cancelled = false;
+    setOffersLoading(true);
+    setOffersFailed(false);
+    void (async () => {
+      try {
         const list = await fetchAllCalendarOffersForUniversity(uniId);
         if (cancelled) return;
+        setUitmCommunityOffers([]);
         setAdminOffers(list);
         const curStart = String(academicCalendar?.startDate ?? "").slice(0, 10);
         const curLabel = String(academicCalendar?.semesterLabel ?? "");
@@ -301,10 +353,12 @@ export default function AcademicCalendarScreen() {
         );
         const pick = match ?? list[0];
         setCfgSelectedOfferId(pick?.id ?? "");
-        if (pick)
-          setCfgLevel(inferAcademicLevelFromOfferLabel(pick.semesterLabel));
+        if (pick) setCfgLevel(levelForOffer(pick));
       } catch {
-        if (!cancelled) setAdminOffers([]);
+        if (!cancelled) {
+          setAdminOffers([]);
+          setOffersFailed(true);
+        }
       } finally {
         if (!cancelled) setOffersLoading(false);
       }
@@ -315,9 +369,9 @@ export default function AcademicCalendarScreen() {
   }, [
     configOpen,
     user.universityId,
-    cfgLevel,
     academicCalendar?.startDate,
     academicCalendar?.semesterLabel,
+    offersReloadKey,
   ]);
 
   const uniSearchResults = useMemo(() => {
@@ -370,8 +424,25 @@ export default function AcademicCalendarScreen() {
     presentWeekAlignFlow();
   }, [academicCalendar?.startDate, presentWeekAlignFlow]);
 
-  const { weekAlign: weekAlignParam } = useLocalSearchParams<{ weekAlign?: string }>();
+  const { weekAlign: weekAlignParam, configure: configureParam } = useLocalSearchParams<{
+    weekAlign?: string;
+    configure?: string;
+  }>();
   const weekAlignLaunchRef = useRef(false);
+  const configureLaunchRef = useRef(false);
+
+  // `Settings → Choose your semester` links straight here; the picker used to be reachable only
+  // through an unlabelled sliders icon on this screen.
+  useFocusEffect(
+    useCallback(() => {
+      const requested =
+        configureParam === "1" || configureParam === "true" || configureParam === "yes";
+      if (!requested || configureLaunchRef.current) return;
+      configureLaunchRef.current = true;
+      router.setParams({ configure: undefined });
+      setConfigOpen(true);
+    }, [configureParam]),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -488,7 +559,7 @@ export default function AcademicCalendarScreen() {
               startDate: official.startDate,
               endDate: official.endDate,
               totalWeeks: official.totalWeeks ?? 14,
-              periods: official.periods,
+              periods: official.periods ?? [],
               teachingWeekOffset: 0,
               selectionSource: "user",
               selectedAt: new Date().toISOString(),
@@ -554,6 +625,12 @@ export default function AcademicCalendarScreen() {
 
   const periods = academicCalendar?.periods ?? [];
 
+  // Programme + today's date decide what a student sees first; nothing is hidden, only ordered.
+  const groupedOffers = useMemo(
+    () => groupOffersForPicker(adminOffers, { academicLevel: user.academicLevel }),
+    [adminOffers, user.academicLevel],
+  );
+
   const recommendedGroup = useMemo<"A" | "B">(
     () => (cfgLevel === "Foundation" ? "A" : "B"),
     [cfgLevel],
@@ -613,7 +690,7 @@ export default function AcademicCalendarScreen() {
             endDate: official.endDate,
             totalWeeks:
               official.totalWeeks ?? academicCalendar?.totalWeeks ?? 14,
-            periods: official.periods,
+            periods: official.periods ?? [],
             teachingWeekOffset: 0,
             selectionSource: "user",
             selectedAt: new Date().toISOString(),
@@ -637,13 +714,7 @@ export default function AcademicCalendarScreen() {
           : {}),
         heaTermCode: null,
         studentId: sid,
-        ...(selected
-          ? {
-              academicLevel: inferAcademicLevelFromOfferLabel(
-                selected.semesterLabel,
-              ),
-            }
-          : {}),
+        ...(selected ? { academicLevel: levelForOffer(selected) } : {}),
       });
 
       if (selected) {
@@ -1494,6 +1565,38 @@ export default function AcademicCalendarScreen() {
                   style={{ marginTop: 12 }}
                   color={theme.primary}
                 />
+              ) : offersFailed ? (
+                /* A failed request used to render as "no calendars published",
+                   which reads like the university has none rather than like a
+                   dropped connection, and left no way back but closing the
+                   sheet. */
+                <>
+                  <Text
+                    style={[
+                      s.modalSub,
+                      { color: theme.textSecondary, marginTop: 8 },
+                    ]}
+                  >
+                    Could not load the calendar list. Check your connection and
+                    try again.
+                  </Text>
+                  <Pressable
+                    style={[
+                      s.saveBtn,
+                      {
+                        backgroundColor: theme.card,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        marginTop: 12,
+                      },
+                    ]}
+                    onPress={() => setOffersReloadKey((n) => n + 1)}
+                  >
+                    <Text style={[s.saveBtnText, { color: theme.text }]}>
+                      Retry
+                    </Text>
+                  </Pressable>
+                </>
               ) : adminOffers.length === 0 ? (
                 <>
                   <Text
@@ -1529,94 +1632,88 @@ export default function AcademicCalendarScreen() {
                   <Text style={[s.modalSub, { color: theme.textSecondary }]}>
                     Select your semester to load dates.
                   </Text>
-                  {adminOffers.map((o) => (
-                    <TouchableOpacity
-                      key={o.id}
-                      style={[
-                        s.optRow,
-                        {
-                          borderWidth: 1,
-                          borderColor: cfgSelectedOfferId === o.id ? theme.primary : theme.border,
-                          backgroundColor: cfgSelectedOfferId === o.id ? theme.primary + "1A" : "transparent",
-                        }
-                      ]}
-                      activeOpacity={0.6}
-                      onPress={() => {
-                        setCfgSelectedOfferId(o.id);
-                        setCfgLevel(
-                          inferAcademicLevelFromOfferLabel(o.semesterLabel),
-                        );
-                      }}
-                    >
-                      <Feather
-                        name={cfgSelectedOfferId === o.id ? "check-circle" : "circle"}
-                        size={18}
-                        color={
-                          cfgSelectedOfferId === o.id
-                            ? theme.primary
-                            : theme.textSecondary
-                        }
-                      />
-                      <View style={{ flex: 1 }}>
+                  {(
+                    [
+                      ["For you now", groupedOffers.forYou],
+                      ["Starting later", groupedOffers.upcoming],
+                      ["Other programmes and past semesters", groupedOffers.others],
+                    ] as const
+                  ).map(([heading, list]) =>
+                    list.length === 0 ? null : (
+                      <View key={heading}>
                         <Text
-                          style={[s.optText, { color: theme.text }]}
-                          numberOfLines={2}
+                          style={[
+                            s.fieldLabel,
+                            { color: theme.textSecondary, marginTop: 16 },
+                          ]}
                         >
-                          {o.semesterLabel}
+                          {heading}
                         </Text>
-                        <Text
-                          style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}
-                          numberOfLines={2}
-                        >
-                          {offerSummary(o, todayISO)}
-                        </Text>
+                        {heading === "Other programmes and past semesters" &&
+                        !showOtherOffers ? (
+                          <Pressable
+                            onPress={() => setShowOtherOffers(true)}
+                            style={({ pressed }) => [
+                              s.optRow,
+                              {
+                                borderWidth: 1,
+                                borderColor: theme.border,
+                                opacity: pressed ? 0.85 : 1,
+                              },
+                            ]}
+                          >
+                            <Feather
+                              name="chevron-down"
+                              size={18}
+                              color={theme.textSecondary}
+                            />
+                            <Text style={[s.optText, { color: theme.textSecondary }]}>
+                              Show {list.length} more
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          list.map((o) => (
+                            <CalendarOfferOption
+                              key={o.id}
+                              offer={o}
+                              selected={cfgSelectedOfferId === o.id}
+                              onSelect={() => {
+                                setCfgSelectedOfferId(o.id);
+                                setCfgLevel(levelForOffer(o));
+                              }}
+                              onReport={() =>
+                                Alert.alert(
+                                  "Report Calendar",
+                                  "Are the dates for this calendar incorrect or fake?",
+                                  [
+                                    { text: "Cancel", style: "cancel" },
+                                    {
+                                      text: "Report",
+                                      style: "destructive",
+                                      onPress: async () => {
+                                        const { error } = await supabase.rpc(
+                                          "increment_calendar_report",
+                                          { offer_id: o.id },
+                                        );
+                                        if (error) {
+                                          Alert.alert("Error", error.message);
+                                        } else {
+                                          Alert.alert(
+                                            "Reported",
+                                            "Thank you. The admin has been notified.",
+                                          );
+                                        }
+                                      },
+                                    },
+                                  ],
+                                )
+                              }
+                            />
+                          ))
+                        )}
                       </View>
-                      {o.source === "crowdsourced" ? (
-                        <TouchableOpacity
-                          hitSlop={15}
-                          style={{
-                            paddingLeft: 10,
-                            paddingRight: 4,
-                            paddingVertical: 4,
-                          }}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert(
-                              "Report Calendar",
-                              "Are the dates for this calendar incorrect or fake?",
-                              [
-                                { text: "Cancel", style: "cancel" },
-                                {
-                                  text: "Report",
-                                  style: "destructive",
-                                  onPress: async () => {
-                                    const { error } = await supabase.rpc(
-                                      "increment_calendar_report",
-                                      { offer_id: o.id },
-                                    );
-                                    if (error) {
-                                      Alert.alert("Error", error.message);
-                                    } else {
-                                      Alert.alert(
-                                        "Reported",
-                                        "Thank you. The admin has been notified.",
-                                      );
-                                    }
-                                  },
-                                },
-                              ],
-                            );
-                          }}
-                        >
-                          <Feather
-                            name="flag"
-                            size={16}
-                            color={theme.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      ) : null}
-                    </TouchableOpacity>
-                  ))}
+                    ),
+                  )}
                   <Pressable
                     style={[
                       s.saveBtn,

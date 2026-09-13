@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { useApp } from '@/src/context/AppContext';
 import { buildCustomTheme, type ThemePalette } from '@/constants/Themes';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +18,7 @@ const PRESET_COLORS = [
 
 export default function CustomThemeScreen() {
   const theme = useTheme();
+  const { upgradeLabel, tagline, openPaywall } = useUpgradePrompt();
   const { user, customThemeColors, setCustomThemeColors, setThemePack, themePack, theme: baseThemeId } = useApp();
   
   const isPro = user?.subscriptionPlan === 'pro';
@@ -100,12 +102,15 @@ export default function CustomThemeScreen() {
         <View style={styles.proLock}>
           <Feather name="lock" size={48} color={theme.primary} />
           <Text style={[styles.proLockTitle, { color: theme.text }]}>Pro Feature</Text>
-          <Text style={[styles.proLockDesc, { color: theme.textSecondary }]}>Custom app themes are only available for Pro users.</Text>
+          <Text style={[styles.proLockDesc, { color: theme.textSecondary }]}>
+            Custom app themes are only available for Pro users.
+            {tagline('pro') ? ` ${tagline('pro')}` : ''}
+          </Text>
           <Pressable
             style={[styles.saveBtn, { backgroundColor: theme.primary, marginTop: 24, paddingHorizontal: 32 }]}
-            onPress={() => router.push('/subscription-plans')}
+            onPress={openPaywall}
           >
-            <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>View Plans</Text>
+            <Text style={[styles.saveBtnText, { color: theme.textInverse }]}>{upgradeLabel('pro')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>

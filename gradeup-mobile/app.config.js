@@ -69,6 +69,21 @@ export default ({ config }) => {
   const existingUrlTypes = Array.isArray(infoPlist.CFBundleURLTypes)
     ? [...infoPlist.CFBundleURLTypes]
     : [];
+
+  // Setting CFBundleURLTypes here makes Expo skip the abstract `scheme`
+  // property entirely, so `rencana://` has to be registered by hand. Without
+  // it the share extension cannot hand a share back to the app, and no
+  // rencana:// deep link opens.
+  const appScheme = base?.scheme ?? 'rencana';
+  const schemeRegistered = existingUrlTypes.some(
+    (t) => Array.isArray(t?.CFBundleURLSchemes) && t.CFBundleURLSchemes.includes(appScheme),
+  );
+  if (!schemeRegistered) {
+    existingUrlTypes.push({
+      CFBundleURLName: 'com.aizztech.rencana',
+      CFBundleURLSchemes: [appScheme],
+    });
+  }
   if (iosGoogleUrlScheme) {
     const already = existingUrlTypes.some((t) =>
       Array.isArray(t?.CFBundleURLSchemes) && t.CFBundleURLSchemes.includes(iosGoogleUrlScheme),
@@ -184,14 +199,41 @@ export default ({ config }) => {
         }
       }
     ],
+    // Share sheet target: text and screenshots from any app land in Smart Capture.
+    [
+      'expo-sharing',
+      {
+        ios: {
+          enabled: true,
+          appGroupId: 'group.com.aizztech.rencana',
+          activationRule: {
+            supportsText: true,
+            supportsWebUrlWithMaxCount: 1,
+            supportsImageWithMaxCount: 1,
+          },
+        },
+        android: {
+          enabled: true,
+          singleShareMimeTypes: ['text/plain', 'image/*'],
+        },
+      },
+    ],
+    // Compiles the "Plan from screenshot" App Intent into the main app target
+    // so Back Tap shortcuts can reach it.
+    './plugins/withSmartCapture',
     [
       '@sentry/react-native/expo',
       {
         organization: 'aizz-tech-solutions',
         project: 'react-native',
-        // Source map / debug symbol upload runs only when SENTRY_AUTH_TOKEN is
-        // present at build time (EAS secret); without it the build proceeds
-        // and the upload is skipped, so local dev is unaffected.
+        // The debug-symbol upload phase needs SENTRY_AUTH_TOKEN at build time.
+        // It does not skip when the token is missing, it fails the archive with
+        // "Auth token is required for this request", so a release build has to
+        // run somewhere that has the token. It is a secret in the EAS
+        // `production` environment, which means EAS builders only: secrets are
+        // never downloaded to a local build. Same for MAPBOX_DOWNLOAD_TOKEN,
+        // which pod install needs. Build releases with `eas build`, not
+        // `eas build --local`.
       },
     ],
     // Must come after '@rnmapbox/maps' so it merges onto the manifest Mapbox contributes.
@@ -221,8 +263,6 @@ export default ({ config }) => {
     googleAndroidClientId,
     /** Must match Storage bucket id in the same Supabase project as supabaseUrl */
     sowFilesBucket: process.env.EXPO_PUBLIC_SOW_BUCKET || 'sow-files',
-    /** UiTM MyStudent Firebase API key (Identity Toolkit Web API). */
-    firebaseWebApiKey: process.env.EXPO_PUBLIC_FIREBASE_WEB_API_KEY || '',
   },
   };
 };

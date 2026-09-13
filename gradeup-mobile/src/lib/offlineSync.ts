@@ -1,16 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Note, Task } from '../types';
+import type { Flashcard, Note, Task } from '../types';
 import * as studyDb from './studyDb';
 import * as taskDb from './taskDb';
 import { deleteHandwritingRemote } from './handwritingDb';
 import * as recommendationDb from './recommendationDb';
 import type { RecommendationFeedback } from './recommendationDb';
+import type { ReviewLogRow } from './fsrs';
 
 const OUTBOX_KEY = 'rencana.offline-sync.outbox.v1';
 const TASK_CACHE_PREFIX = 'rencana.offline-sync.tasks.v1';
 const NOTE_CACHE_PREFIX = 'rencana.offline-sync.notes.v1';
 const COMPLETION_CACHE_PREFIX = 'rencana.offline-sync.completions.v1';
 const RECOMMENDATION_CACHE_PREFIX = 'rencana.offline-sync.recommendations.v1';
+const FLASHCARD_CACHE_PREFIX = 'rencana.offline-sync.flashcards.v1';
 
 type OfflineOperation =
   | 'task_upsert'
@@ -19,7 +21,10 @@ type OfflineOperation =
   | 'breakdown_completion_set'
   | 'note_upsert'
   | 'note_delete'
-  | 'recommendation_feedback_upsert';
+  | 'recommendation_feedback_upsert'
+  | 'flashcard_upsert'
+  | 'flashcard_delete'
+  | 'flashcard_review_log';
 
 interface OfflineSyncItem {
   id: string;
@@ -65,6 +70,10 @@ function noteCacheKey(userId: string): string {
 
 function completionCacheKey(userId: string): string {
   return `${COMPLETION_CACHE_PREFIX}:${userId}`;
+}
+
+function flashcardCacheKey(userId: string): string {
+  return `${FLASHCARD_CACHE_PREFIX}:${userId}`;
 }
 
 function recommendationCacheKey(userId: string): string {
@@ -259,6 +268,50 @@ export async function queueNoteDelete(userId: string, noteId: string): Promise<v
   await enqueue(userId, 'note_delete', noteId, { noteId });
 }
 
+/**
+ * Flashcard reviews are the one study action that needs no server to be useful:
+ * FSRS runs on the device, and only the result needs saving. Queuing them means
+ * a session on a commute still counts once signal returns, instead of a banner
+ * saying the rating was not recorded.
+ */
+export async function queueFlashcardUpsert(userId: string, card: Flashcard): Promise<void> {
+  await enqueue(userId, 'flashcard_upsert', card.id, card);
+}
+
+export async function queueFlashcardDelete(userId: string, cardId: string): Promise<void> {
+  await enqueue(userId, 'flashcard_delete', cardId, null);
+}
+
+/**
+ * Keyed by the review's own id rather than the card's, because a card reviewed
+ * three times offline produced three distinct log rows. Keying by card would
+ * collapse them into one and lose the history.
+ */
+export async function queueFlashcardReviewLog(userId: string, row: ReviewLogRow): Promise<void> {
+  await enqueue(userId, 'flashcard_review_log', `${row.card_id}:${row.review_at}`, row);
+}
+
+export async function cacheFlashcards(userId: string, cards: Flashcard[]): Promise<void> {
+  await writeCache(flashcardCacheKey(userId), cards);
+}
+
+export async function loadCachedFlashcards(userId: string): Promise<Flashcard[]> {
+  return readCache<Flashcard>(flashcardCacheKey(userId));
+}
+
+/** Apply queued card writes over the server copy, newest queued write winning. */
+export async function mergePendingFlashcards(userId: string, remote: Flashcard[]): Promise<Flashcard[]> {
+  const items = (await readOutbox())
+    .filter((item) => item.userId === userId && (item.operation === 'flashcard_upsert' || item.operation === 'flashcard_delete'))
+    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+  const merged = new Map(remote.map((card) => [card.id, card]));
+  items.forEach((item) => {
+    if (item.operation === 'flashcard_delete') merged.delete(item.entityId);
+    else merged.set(item.entityId, item.payload as Flashcard);
+  });
+  return [...merged.values()];
+}
+
 export async function queueRecommendationFeedback(
   userId: string,
   feedback: RecommendationFeedback,
@@ -367,6 +420,25 @@ async function execute(item: OfflineSyncItem): Promise<void> {
   }
   if (item.operation === 'note_upsert') {
     await studyDb.upsertNote(item.userId, item.payload as Note);
+    return;
+  }
+  if (item.operation === 'flashcard_upsert') {
+    await studyDb.upsertFlashcard(item.userId, item.payload as Flashcard);
+    return;
+  }
+  if (item.operation === 'flashcard_delete') {
+    await studyDb.deleteFlashcard(item.userId, item.entityId);
+    return;
+  }
+  if (item.operation === 'flashcard_review_log') {
+    // The log feeds FSRS parameter tuning, not the schedule itself, so a lost
+    // row costs accuracy later rather than correctness now. Never fail the
+    // queue over one: the card write that matters already succeeded.
+    try {
+      await studyDb.insertFlashcardReview(item.userId, item.payload as ReviewLogRow);
+    } catch (e) {
+      if (__DEV__) console.warn('[OfflineSync] review log dropped:', e);
+    }
     return;
   }
   if (item.operation === 'recommendation_feedback_upsert') {

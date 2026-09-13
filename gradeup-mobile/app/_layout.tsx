@@ -38,6 +38,7 @@ import {
 } from '@/src/attendanceRecording';
 import UpdatePrompt from '@/src/components/UpdatePrompt';
 import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
+import SmartCaptureLauncher from '@/src/components/SmartCaptureLauncher';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
@@ -366,6 +367,7 @@ function RootLayoutNav() {
       <CommunityProvider>
         <QuizProvider>
           <ThemeAwareLayout />
+          <SmartCaptureLauncher />
           <AppUpdateGate />
           <WhatsNewPromptModal />
         </QuizProvider>
@@ -471,6 +473,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="subscription-plans" />
         <Stack.Screen name="free-premium" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="account-legal" />
         <Stack.Screen
           name="timetable-import"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
@@ -497,6 +500,7 @@ function ThemeAwareLayout() {
         <Stack.Screen name="legal/guidelines" />
         <Stack.Screen name="legal/terms" />
         <Stack.Screen name="study-timer" />
+        <Stack.Screen name="study-insights" />
         <Stack.Screen name="live-activities" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen 
@@ -507,6 +511,15 @@ function ThemeAwareLayout() {
             headerShown: false 
           }} 
         />
+        <Stack.Screen
+          name="smart-capture"
+          options={{
+            presentation: 'transparentModal',
+            animation: 'fade',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen name="smart-automations" />
       </Stack>
     </ThemeProvider>
   );

@@ -1,4 +1,4 @@
-import type { AcademicCalendar } from '../types';
+import type { AcademicCalendar, AcademicLevel } from '../types';
 
 export type UniversityCalendarOffer = {
   id: string;
@@ -12,6 +12,8 @@ export type UniversityCalendarOffer = {
   breakStartDate?: string;
   breakEndDate?: string;
   periods?: AcademicCalendar['periods'];
+  /** Programme this calendar is for; `undefined` means it applies to every programme. */
+  programLevel?: AcademicLevel;
   officialUrl?: string;
   referencePdfUrl?: string;
   adminNote?: string;

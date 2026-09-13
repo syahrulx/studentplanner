@@ -7,6 +7,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 
 type Json = Record<string, unknown>;
 
@@ -72,7 +73,7 @@ async function extractPdfTextWithGemini(
     if (!geminiFileUri) return { text: null, error: 'Gemini upload returned no file URI.' };
 
     await new Promise((r) => setTimeout(r, 1200));
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = GEMINI_PREFERRED_MODELS;
     let out = '';
     let lastErr = '';
     for (const model of models) {
@@ -1447,13 +1448,13 @@ Rules:
             'Authorization': `Bearer ${openAiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0,
-            max_tokens: 2000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 2000,
           }),
         });
 
@@ -1612,7 +1613,7 @@ Return VALID JSON ONLY with this exact shape:
       "break_end_date": "YYYY-MM-DD or null (mid-semester break end)",
       "periods": [
         {
-          "type": "lecture" | "exam" | "break" | "revision" | "registration" | "orientation" | "industrial_training",
+          "type": "lecture" | "test" | "exam" | "revision" | "break" | "special_break" | "holiday" | "registration" | "orientation" | "industrial_training" | "other",
           "label": "string (e.g. 'Lectures Week 1-7')",
           "startDate": "YYYY-MM-DD",
           "endDate": "YYYY-MM-DD"
@@ -1627,6 +1628,15 @@ Rules:
 - total_weeks should count teaching/lecture weeks only (exclude exam, break, registration weeks).
 - The "periods" array should capture the full semester timeline: registration, orientation, lecture blocks, mid-sem break, revision week, exam period, etc.
 - For lecture periods, split them if there is a break in between (e.g. "Lectures Week 1-7" then break then "Lectures Week 8-14").
+- Every dated row of the table must become its own period. Never merge two rows into one span, and never skip a row because its type is unclear — use "other" rather than dropping it.
+- A mid-semester test ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") is type "test". It is a separate row: do not absorb it into the lecture block or the break next to it.
+- The periods must run continuously from first to last. Apart from short weekend-sized joins there must be no unexplained gap — a gap of a week or more means a row was missed, so re-read the table and add it.
+- PDF_TEXT is a flattened table: each row is a label followed by one date+duration group per semester, in column order (Semester 1, then Semester 2, then Semester 3). Emit one candidate per semester.
+- A "-" or an empty group still occupies a column position. Count it, do not skip it, or every later date shifts into the wrong semester.
+- Column headings ("Semester 1", "Semester 2") are often missing from the extracted text or appear far away from the rows they label. Rely on the order of the groups within each row.
+- The same date is frequently repeated in Malay and again in English ("14 - 27 Sept. 2026 14th - 27th Sept. 2026"). That is one period, not two.
+- Rows are not in chronological order, and unrelated content (public holidays, the document title) may be interleaved after the table. Sort the periods by date yourself.
+- Source documents contain typos, usually a year that contradicts its neighbours (a revision week dated 2025 between periods in 2026). Prefer the value consistent with the surrounding sequence.
 - If information is unclear or missing, use null for optional fields.
 - Do NOT invent or guess dates. Only extract what is explicitly stated.
 - Return JSON only. No markdown, no explanation, no code fences.`;
@@ -1645,13 +1655,13 @@ Rules:
             'Authorization': `Bearer ${openAiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            temperature: 0,
-            max_tokens: 4000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 4000,
           }),
         });
 
@@ -1814,7 +1824,7 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
           signal: aiController.signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAiKey}` },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: OPENAI_MODEL_FAST,
             messages: [
               { role: 'system', content: imgSystemPrompt },
               { role: 'user', content: [
@@ -1822,8 +1832,8 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
                 { type: 'image_url', image_url: { url: imageDataUrl, detail: 'high' } },
               ]},
             ],
-            temperature: 0,
-            max_tokens: 4000,
+            ...samplingParams(OPENAI_MODEL_FAST, { temperature: 0, reasoning: 'none' }),
+            max_completion_tokens: 4000,
           }),
         });
         if (!aiRes.ok) {

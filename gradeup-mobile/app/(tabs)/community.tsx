@@ -72,6 +72,7 @@ import {
   useTheme,
   useThemePack,
 } from '@/hooks/useTheme';
+import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import type { ThemePalette } from '@/constants/Themes';
 import { useWallClockTick } from '@/hooks/useWallClockTick';
 import { useCommunity } from '@/src/context/CommunityContext';
@@ -419,6 +420,7 @@ export default function CommunityMap() {
     showTransitLabels: false,
   }), [theme.id]);
   const { language, user, timetable } = useApp();
+  const { promptUpgrade } = useUpgradePrompt();
   /** Keeps “current class” under Studying in sync as periods change. */
   useWallClockTick(30_000);
   const T = useTranslations(language);
@@ -674,16 +676,38 @@ export default function CommunityMap() {
     [sendBump]
   );
 
-  const handleCenterOnMe = useCallback(() => {
-    if (hasValidMyCoords && cameraRef.current) {
-      cameraRef.current.setCamera({
-        centerCoordinate: [myLongitude, myLatitude],
-        zoomLevel: 15,
-        animationDuration: 500,
-        padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
-      });
-    }
+  /** Returns false when there is nothing to centre on yet (no fix, or map not mounted). */
+  const handleCenterOnMe = useCallback((): boolean => {
+    if (!hasValidMyCoords || !cameraRef.current) return false;
+    cameraRef.current.setCamera({
+      centerCoordinate: [myLongitude, myLatitude],
+      zoomLevel: 15,
+      animationDuration: 500,
+      padding: { paddingBottom: 0, paddingTop: 0, paddingLeft: 0, paddingRight: 0 },
+    });
+    return true;
   }, [hasValidMyCoords, myLatitude, myLongitude]);
+
+  // Mapbox reads `Camera.defaultSettings` once, at mount. `mapCenterLat/Lng`
+  // recompute when the GPS fix lands, but the camera never picks that up — so
+  // after "Tap to Check In" the map sat on the fallback campus coordinate while
+  // the "me" pin appeared somewhere else entirely. Fly there the first time we
+  // get real coords; the ref makes it a one-shot so later GPS ticks can't yank
+  // the camera back while the user is panning around the map.
+  const autoCenteredRef = useRef(false);
+  useEffect(() => {
+    if (autoCenteredRef.current) return;
+    if (handleCenterOnMe()) autoCenteredRef.current = true;
+  }, [handleCenterOnMe]);
+
+  const handleCheckIn = useCallback(async () => {
+    await grantLocationConsent();
+    // Consent starts the watcher, which resolves a fix asynchronously — the
+    // effect above catches that. When we already have coords (ghost-mode
+    // hydrate, earlier session) nothing re-renders, so centre right now.
+    autoCenteredRef.current = false;
+    if (handleCenterOnMe()) autoCenteredRef.current = true;
+  }, [grantLocationConsent, handleCenterOnMe]);
 
   const handleToggleGhostMode = useCallback(async () => {
     const targetVisibility = locationVisibility === 'off' ? 'friends' : 'off';
@@ -1017,7 +1041,7 @@ export default function CommunityMap() {
                   },
                   pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
                 ]}
-                onPress={grantLocationConsent}
+                onPress={handleCheckIn}
               >
                 <Feather name="navigation" size={16} color={isMonoOnly ? '#000000' : '#ffffff'} />
                 <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '800', color: isMonoOnly ? '#000000' : '#ffffff' }}>
@@ -1364,14 +1388,12 @@ export default function CommunityMap() {
                   if (isPro) {
                     router.push('/community/chat-list' as any);
                   } else {
-                    Alert.alert(
-                      'Pro Feature',
-                      'Direct messaging is available exclusively for Pro subscribers. Upgrade to chat with your friends, share flashcards, and quiz together.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Upgrade', onPress: () => router.push('/subscription-plans' as any) },
-                      ],
-                    );
+                    promptUpgrade({
+                      plan: 'pro',
+                      feature: 'Direct messaging',
+                      detail: 'Chat with your friends, share flashcards, and quiz together.',
+                      fallbackTitle: 'Pro feature',
+                    });
                   }
                 }}
               >
@@ -1836,6 +1858,7 @@ function StatusPopup({
   const layout = useCommunityLayout();
   const isDarkMinimal = useDarkMinimalThemePack();
   const isMonoOnly = themePack === 'mono';
+  const { promptUpgrade } = useUpgradePrompt();
   const [selectedType, setSelectedType] = useState<ActivityType>(
     (myActivity?.activity_type as ActivityType) || 'idle'
   );
@@ -2050,17 +2073,12 @@ function StatusPopup({
             ]}
             onPress={() => {
               if (!isProUser) {
-                Alert.alert(
-                  'Pro Feature',
-                  'Custom status is exclusively available for Pro users.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Upgrade to Pro', onPress: () => {
-                      onClose();
-                      router.push('/subscription-plans' as any);
-                    }},
-                  ],
-                );
+                onClose();
+                promptUpgrade({
+                  plan: 'pro',
+                  feature: 'Custom status',
+                  fallbackTitle: 'Pro feature',
+                });
                 return;
               }
               setSelectedType('custom');

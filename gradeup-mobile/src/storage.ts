@@ -514,11 +514,10 @@ export interface NotificationPrefs {
   classroomSyncEnabled: boolean;
   sharedTasksEnabled: boolean;
   /**
-   * When true (default), the 5-minutes-before-class attendance check-in shows a
-   * banner / sound / popup. When false, the notification is still scheduled and
-   * delivered silently (no banner, no sound) — it remains visible inside the
-   * in-app Notification Manager and the OS notification center, so the user can
-   * still record their attendance from there. Only the popup is suppressed.
+   * When true (default), the 5-minutes-before-class attendance check-in is
+   * scheduled and shows a banner / sound. When false, no check-in is scheduled
+   * at all and any pending ones are cancelled — attendance can still be
+   * recorded manually from the timetable screen.
    */
   attendanceCheckinPopup: boolean;
   /** Skip class check-ins on holidays, breaks, exams and other non-lecture periods. */
@@ -586,9 +585,9 @@ export async function setNotificationPrefs(prefs: NotificationPrefs): Promise<vo
 
 /**
  * Lightweight reader used by the global notification handler to decide whether
- * the 5-min-before-class popup should appear in the foreground. We deliberately
- * read the persisted blob directly so this stays a tiny synchronous-feeling
- * lookup that works even before the app's React tree has mounted.
+ * the 5-min-before-class check-in should be shown at all. We deliberately read
+ * the persisted blob directly so this stays a tiny synchronous-feeling lookup
+ * that works even before the app's React tree has mounted.
  */
 export async function getAttendanceCheckinPopupEnabled(): Promise<boolean> {
   try {

@@ -94,7 +94,9 @@ export default function ServicesBoard() {
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const userId = user?.id || null;
-  const userUni = (user as any)?.university_id || (user as any)?.universityId || (user as any)?.university || null;
+  const profileUniId = (user as any)?.university_id || (user as any)?.universityId || null;
+  /** Profile also stores the university *name*, which is never a valid `university_id` filter. */
+  const profileUniName = ((user as any)?.university ?? '').trim() || null;
   const userCampusName = ((user as any)?.campus ?? '').trim() || null;
   // Match GlassTabBar height: 8 (top padding) + 64 (bar) + bottom inset (≥12).
   const tabBarTotal = 8 + 64 + Math.max(insets.bottom, 12);
@@ -114,7 +116,18 @@ export default function ServicesBoard() {
   const [explicitAnyUniversity, setExplicitAnyUniversity] = useState(false);
   const [filterCampusId, setFilterCampusId] = useState<string | null>(null);
   const [universities, setUniversities] = useState<eventsApi.University[]>([]);
+  /** Campuses for the university currently being browsed. */
   const [campuses, setCampuses] = useState<eventsApi.Campus[]>([]);
+  /** Campuses for the university selected inside the filter sheet (kept apart so the sheet can't disturb the feed). */
+  const [modalCampuses, setModalCampuses] = useState<eventsApi.Campus[]>([]);
+
+  /** Profile university as an id — falls back to matching the stored name against the loaded list. */
+  const userUni = useMemo<string | null>(() => {
+    if (profileUniId) return profileUniId;
+    if (!profileUniName) return null;
+    const n = profileUniName.toLowerCase();
+    return universities.find((u) => u.name.trim().toLowerCase() === n)?.id ?? null;
+  }, [profileUniId, profileUniName, universities]);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [tempOrderBy, setTempOrderBy] = useState<'newest' | 'price_asc' | 'price_desc' | 'deadline_asc'>('newest');
@@ -141,6 +154,8 @@ export default function ServicesBoard() {
   const [items, setItems] = useState<ServicePost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  /** Set when the last fetch failed, so a broken query can't masquerade as an empty feed. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Debounce the search query so we don't fire a request per keystroke.
   useEffect(() => {
@@ -162,21 +177,50 @@ export default function ServicesBoard() {
   }, []);
 
   useEffect(() => {
-    eventsApi.fetchUniversities().then(setUniversities);
+    eventsApi
+      .fetchUniversities()
+      .then(setUniversities)
+      .catch((e) => console.error('[ServicesBoard] fetchUniversities error:', e));
   }, []);
 
   const activeUni =
     explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni);
 
-  const currentUniToFetch = showFilterModal ? tempFilterUniversity : activeUni;
+  useEffect(() => {
+    if (!activeUni) {
+      setCampuses([]);
+      return;
+    }
+    let cancelled = false;
+    eventsApi
+      .fetchCampuses(activeUni)
+      .then((camps) => {
+        if (!cancelled) setCampuses(camps);
+      })
+      .catch((e) => console.error('[ServicesBoard] fetchCampuses error:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUni]);
+
+  const modalUniToFetch = showFilterModal ? tempFilterUniversity : null;
 
   useEffect(() => {
-    if (currentUniToFetch) {
-      eventsApi.fetchCampuses(currentUniToFetch).then(setCampuses);
-    } else {
-      setCampuses([]);
+    if (!modalUniToFetch) {
+      setModalCampuses([]);
+      return;
     }
-  }, [currentUniToFetch]);
+    let cancelled = false;
+    eventsApi
+      .fetchCampuses(modalUniToFetch)
+      .then((camps) => {
+        if (!cancelled) setModalCampuses(camps);
+      })
+      .catch((e) => console.error('[ServicesBoard] fetchCampuses (filter sheet) error:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [modalUniToFetch]);
 
   useEffect(() => {
     setCampusSearchQuery('');
@@ -201,7 +245,17 @@ export default function ServicesBoard() {
     holdsCampusModalLockRef.current = false;
     let cancelled = false;
     (async () => {
-      const camps = await eventsApi.fetchCampuses(userUni);
+      let camps: eventsApi.Campus[];
+      try {
+        camps = await eventsApi.fetchCampuses(userUni);
+      } catch (e) {
+        // Fail open to “all campuses” — otherwise Browse stays stuck on the spinner.
+        console.error('[ServicesBoard] fetchCampuses error:', e);
+        if (cancelled) return;
+        setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
+        setBrowseCampusReady(true);
+        return;
+      }
       if (cancelled) return;
       if (camps.length === 0) {
         setProfileBrowseCampusSaved(BROWSE_ALL_CAMPUSES);
@@ -253,6 +307,9 @@ export default function ServicesBoard() {
 
   useEffect(() => {
     if (!filterCampusId || !campuses.length) return;
+    // Only judge the campus once the list actually belongs to the university being browsed,
+    // otherwise a just-applied campus is dropped while its university's campuses load.
+    if (campuses[0].university_id !== activeUni) return;
     if (!campuses.some((c) => c.id === filterCampusId)) setFilterCampusId(null);
   }, [activeUni, campuses, filterCampusId]);
 
@@ -273,14 +330,15 @@ export default function ServicesBoard() {
     return list;
   }, [universities, uniSearchQuery, userUni, showFilterModal]);
 
+  /** Filter-sheet list only — the feed reads `campuses`. */
   const filteredCampusesList = useMemo(() => {
     const q = campusSearchQuery.trim().toLowerCase();
-    if (!campuses.length) return [];
-    if (!q) return [...campuses].sort((a, b) => a.name.localeCompare(b.name));
-    return campuses.filter(
+    if (!modalCampuses.length) return [];
+    if (!q) return [...modalCampuses].sort((a, b) => a.name.localeCompare(b.name));
+    return modalCampuses.filter(
       (c) => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
     );
-  }, [campuses, campusSearchQuery]);
+  }, [modalCampuses, campusSearchQuery]);
 
   const campusNameForQuery = useMemo(() => {
     if (!filterCampusId) return undefined;
@@ -308,30 +366,50 @@ export default function ServicesBoard() {
     [userId, userUni]
   );
 
+  /** Browse is the only scope the filter sheet applies to. */
+  const browseScope = scope === 'all';
+
+  /** True while Browse still has to resolve the saved browse campus before its first fetch. */
+  const waitingForBrowseCampus =
+    browseScope && !explicitAnyUniversity && !!userUni && !!userId && !browseCampusReady;
+
+  /** Focus-effect runs — only the newest may clear the spinner. */
+  const loadRunRef = useRef(0);
+  /** Fetches — only the newest may write `items`, whichever order they resolve in. */
+  const fetchRunRef = useRef(0);
+
   const load = useCallback(async () => {
-    if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) {
+    if (waitingForBrowseCampus) {
       return;
     }
+    const runId = ++fetchRunRef.current;
     try {
       const data = await servicesApi.fetchServices({
         scope,
-        kind,
-        category,
+        // Sort/type/category/location live in the Browse-only filter sheet, so they must not
+        // keep filtering the personal tabs where nothing shows they are still on.
+        kind: browseScope ? kind : null,
+        category: browseScope ? category : null,
         status,
         search: debouncedSearch || null,
-        orderBy,
-        universityId: scope === 'all' ? (activeUni || undefined) : undefined,
-        campus: scope === 'all' ? campusNameForQuery : undefined,
+        orderBy: browseScope ? orderBy : 'newest',
+        universityId: browseScope ? (activeUni || undefined) : undefined,
+        campus: browseScope ? campusNameForQuery : undefined,
       });
+      if (runId !== fetchRunRef.current) return;
       const filtered =
         (scope === 'all' && !status) || scope === 'mine'
           ? data.filter((s) => s.service_status !== 'cancelled')
           : data;
       setItems(filtered);
+      setLoadError(null);
     } catch (e) {
       console.error('[ServicesBoard] fetch error:', e);
+      if (runId !== fetchRunRef.current) return;
+      setLoadError("Couldn't load services. Check your connection and try again.");
     }
   }, [
+    browseScope,
     scope,
     kind,
     category,
@@ -340,31 +418,37 @@ export default function ServicesBoard() {
     orderBy,
     activeUni,
     campusNameForQuery,
-    explicitAnyUniversity,
-    userUni,
-    userId,
-    browseCampusReady,
+    waitingForBrowseCampus,
   ]);
 
   useFocusEffect(
     useCallback(() => {
+      const runId = ++loadRunRef.current;
       setLoading(true);
+      // Still resolving the browse campus — this effect re-runs once it settles.
+      if (waitingForBrowseCampus) return;
       load().finally(() => {
-        if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) {
-          setLoading(true);
-        } else {
-          setLoading(false);
-        }
+        if (runId !== loadRunRef.current) return;
+        setLoading(false);
       });
-    }, [load, scope, explicitAnyUniversity, userUni, userId, browseCampusReady])
+    }, [load, waitingForBrowseCampus])
   );
 
   const onRefresh = useCallback(async () => {
-    if (scope === 'all' && !explicitAnyUniversity && userUni && userId && !browseCampusReady) return;
+    if (waitingForBrowseCampus) return;
     setRefreshing(true);
     await load();
     setRefreshing(false);
-  }, [load, scope, explicitAnyUniversity, userUni, userId, browseCampusReady]);
+  }, [load, waitingForBrowseCampus]);
+
+  const retryLoad = useCallback(() => {
+    const runId = ++loadRunRef.current;
+    setLoading(true);
+    load().finally(() => {
+      if (runId !== loadRunRef.current) return;
+      setLoading(false);
+    });
+  }, [load]);
 
   /** Gate: check student verification before allowing service creation. */
   const handleNewService = useCallback(async () => {
@@ -428,6 +512,19 @@ export default function ServicesBoard() {
     [orderBy, kind, category, explicitAnyUniversity, filterUniversity, campusShowsAsExplicitBrowseFilter]
   );
 
+  /**
+   * Browse is always scoped to a university — your own whenever you haven't
+   * picked one. That default has no `filterUniversity` behind it, so it can't
+   * be a clearable chip: clearing would fall straight back to `userUni` and the
+   * chip would return. Surface it as a static scope label instead, so the feed
+   * isn't quietly filtered with nothing on screen saying so. Leaving the scope
+   * is done from the sheet ("Any university"), which has its own chip.
+   */
+  const browseScopeLabel = useMemo(() => {
+    if (explicitAnyUniversity || filterUniversity !== null || !userUni) return null;
+    return universities.find((u) => u.id === userUni)?.name?.toUpperCase() ?? userUni.toUpperCase();
+  }, [explicitAnyUniversity, filterUniversity, userUni, universities]);
+
   const activeBrowseChips = useMemo(() => {
     const chips: { key: string; label: string; onClear: () => void }[] = [];
     if (orderBy !== 'newest') {
@@ -459,22 +556,19 @@ export default function ServicesBoard() {
         },
       });
     }
-    
-    if (filterUniversity !== null || (!explicitAnyUniversity && userUni)) {
-      const effUni = filterUniversity ?? userUni;
-      if (effUni) {
-        chips.push({
-          key: 'uni',
-          label: universities.find((u) => u.id === effUni)?.name?.toUpperCase() ?? effUni.toUpperCase(),
-          onClear: () => {
-            setFilterUniversity(null);
-            setFilterCampusId(null);
-            if (filterUniversity === null) {
-              setExplicitAnyUniversity(true);
-            }
-          },
-        });
-      }
+    // Only an explicitly chosen university is a chip — your own is the default, so showing it
+    // there left “Clear all” looking broken (the chip came straight back).
+    if (filterUniversity !== null) {
+      chips.push({
+        key: 'uni',
+        label:
+          universities.find((u) => u.id === filterUniversity)?.name?.toUpperCase() ??
+          filterUniversity.toUpperCase(),
+        onClear: () => {
+          setFilterUniversity(null);
+          setFilterCampusId(null);
+        },
+      });
     }
     if (kind !== null) {
       const kl = KIND_FILTERS.find((k) => k.id === kind)?.label ?? '';
@@ -509,6 +603,8 @@ export default function ServicesBoard() {
     setTempCategory(category);
     const nextUni = explicitAnyUniversity ? null : (filterUniversity !== null ? filterUniversity : userUni || null);
     setTempFilterUniversity(nextUni);
+    // Seed from the browsed list so the campus row doesn't flash a placeholder while it refetches.
+    setModalCampuses(nextUni && nextUni === activeUni ? campuses : []);
     setTempExplicitAnyUniversity(explicitAnyUniversity);
     setTempFilterCampusId(filterCampusId);
     setUniSearchQuery('');
@@ -517,7 +613,7 @@ export default function ServicesBoard() {
     setCampusPickerExpanded(false);
     setTempSaveCampusAsBrowseDefault(!!userUni && !!nextUni && nextUni === userUni);
     setShowFilterModal(true);
-  }, [orderBy, kind, category, filterUniversity, explicitAnyUniversity, filterCampusId, userUni]);
+  }, [orderBy, kind, category, filterUniversity, explicitAnyUniversity, filterCampusId, userUni, activeUni, campuses]);
 
   const resetTempFilters = useCallback(() => {
     setTempOrderBy('newest');
@@ -537,11 +633,21 @@ export default function ServicesBoard() {
       tempOrderBy !== 'newest' ||
       tempKind !== null ||
       tempCategory !== null ||
+      tempExplicitAnyUniversity ||
       tempFilterUniversity !== null ||
       tempFilterCampusId !== null ||
       !!uniSearchQuery.trim() ||
       !!campusSearchQuery.trim(),
-    [tempOrderBy, tempKind, tempCategory, tempFilterUniversity, tempFilterCampusId, uniSearchQuery, campusSearchQuery]
+    [
+      tempOrderBy,
+      tempKind,
+      tempCategory,
+      tempExplicitAnyUniversity,
+      tempFilterUniversity,
+      tempFilterCampusId,
+      uniSearchQuery,
+      campusSearchQuery,
+    ]
   );
 
   const renderHeader = () => (
@@ -619,12 +725,28 @@ export default function ServicesBoard() {
           )}
         </View>
 
-        {scope === 'all' && activeBrowseChips.length > 0 && (
+        {scope === 'all' && (browseScopeLabel !== null || activeBrowseChips.length > 0) && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.browseChipsRow}
           >
+            {browseScopeLabel !== null && (
+              <View
+                style={[
+                  styles.browseActiveChip,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}
+              >
+                <Feather name="award" size={11} color={theme.textSecondary} />
+                <Text
+                  style={[styles.browseActiveChipText, { color: theme.textSecondary }]}
+                  numberOfLines={1}
+                >
+                  {browseScopeLabel}
+                </Text>
+              </View>
+            )}
             {activeBrowseChips.map((c) => (
               <View
                 key={c.key}
@@ -822,6 +944,40 @@ export default function ServicesBoard() {
     [theme, userId]
   );
 
+  const ErrorState = (
+    <View style={styles.emptyWrap}>
+      <View style={[styles.emptyIcon, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+        <Feather name="alert-circle" size={26} color={theme.textSecondary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>Couldn’t load services</Text>
+      <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>{loadError}</Text>
+      <Pressable
+        onPress={retryLoad}
+        style={({ pressed }) => [
+          styles.emptyCta,
+          { backgroundColor: theme.primary },
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <Feather name="refresh-cw" size={16} color={theme.textInverse} />
+        <Text style={[styles.emptyCtaText, { color: theme.textInverse }]}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+
+  /** Shown above results that are still on screen from an earlier, successful load. */
+  const ErrorBanner = (
+    <View style={[styles.errorBanner, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+      <Feather name="alert-circle" size={15} color={theme.textSecondary} />
+      <Text style={[styles.errorBannerText, { color: theme.textSecondary }]} numberOfLines={2}>
+        {loadError}
+      </Text>
+      <Pressable onPress={retryLoad} hitSlop={8}>
+        <Text style={[styles.errorBannerAction, { color: theme.primary }]}>Retry</Text>
+      </Pressable>
+    </View>
+  );
+
   const Empty = (
     <View style={styles.emptyWrap}>
       <View style={[styles.emptyIcon, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
@@ -922,14 +1078,19 @@ export default function ServicesBoard() {
           data={items}
           keyExtractor={(it) => it.id}
           renderItem={renderCard}
-          ListHeaderComponent={renderHeader()}
+          ListHeaderComponent={
+            <>
+              {renderHeader()}
+              {loadError && items.length > 0 ? ErrorBanner : null}
+            </>
+          }
           style={{ backgroundColor: theme.background }}
           contentContainerStyle={[styles.listContent, { paddingBottom: tabBarTotal + 100 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.textSecondary} />
           }
-          ListEmptyComponent={Empty}
+          ListEmptyComponent={loadError ? ErrorState : Empty}
         />
       )}
 
@@ -1117,19 +1278,15 @@ export default function ServicesBoard() {
                     <Pressable
                       style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                       onPress={() => {
-                        // Apply immediately
-                        setExplicitAnyUniversity(true);
-                        setFilterUniversity(null);
-                        setFilterCampusId(null);
-                        setOrderBy(tempOrderBy);
-                        setKind(tempKind);
-                        setCategory(tempCategory);
+                        setTempExplicitAnyUniversity(true);
+                        setTempFilterUniversity(null);
+                        setTempFilterCampusId(null);
                         setUniSearchQuery('');
-                        setShowFilterModal(false);
+                        setUniPickerExpanded(true);
                       }}
                     >
                       <Text style={[styles.searchHitText, { color: theme.text }]}>Any university</Text>
-                      {explicitAnyUniversity ? (
+                      {tempExplicitAnyUniversity ? (
                         <Feather name="check" size={18} color={theme.primary} />
                       ) : null}
                     </Pressable>
@@ -1150,21 +1307,17 @@ export default function ServicesBoard() {
                               key={item.id}
                               style={[styles.searchHitRow, { borderBottomColor: theme.border }]}
                               onPress={() => {
-                                // Apply university filter immediately and close modal
-                                setExplicitAnyUniversity(false);
-                                setFilterUniversity(item.id);
-                                setFilterCampusId(null);
-                                setOrderBy(tempOrderBy);
-                                setKind(tempKind);
-                                setCategory(tempCategory);
+                                setTempExplicitAnyUniversity(false);
+                                setTempFilterUniversity(item.id);
+                                setTempFilterCampusId(null);
                                 setUniSearchQuery('');
-                                setShowFilterModal(false);
+                                setUniPickerExpanded(false);
                               }}
                             >
                               <Text style={[styles.searchHitText, { color: theme.text }]} numberOfLines={2}>
                                 {item.name}
                               </Text>
-                              {filterUniversity === item.id ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                              {sel ? <Feather name="check" size={18} color={theme.primary} /> : null}
                             </Pressable>
                           );
                         })
@@ -1189,7 +1342,7 @@ export default function ServicesBoard() {
                     >
                       <Feather name="map-pin" size={16} color={theme.primary} />
                       <Text style={[styles.filterCollapsedTitle, { color: theme.text }]} numberOfLines={2}>
-                        {campuses.find((c) => c.id === tempFilterCampusId)?.name ?? 'Campus'}
+                        {modalCampuses.find((c) => c.id === tempFilterCampusId)?.name ?? 'Campus'}
                       </Text>
                       <Pressable onPress={() => setCampusPickerExpanded(true)} hitSlop={8}>
                         <Text style={[styles.filterChangeLink, { color: theme.primary }]}>Change</Text>
@@ -1390,7 +1543,10 @@ export default function ServicesBoard() {
                 setKind(tempKind);
                 setCategory(tempCategory);
                 setExplicitAnyUniversity(tempExplicitAnyUniversity);
-                setFilterUniversity(tempFilterUniversity || null);
+                // Your own university is the implicit default — keep it out of the chip row.
+                setFilterUniversity(
+                  tempFilterUniversity && tempFilterUniversity !== userUni ? tempFilterUniversity : null
+                );
                 setFilterCampusId(tempFilterCampusId || null);
                 setUniSearchQuery('');
                 setCampusSearchQuery('');
@@ -1678,6 +1834,21 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   emptyCtaText: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+
+  // Error banner (results already on screen)
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  errorBannerText: { flex: 1, fontSize: 13, letterSpacing: -0.1 },
+  errorBannerAction: { fontSize: 13, fontWeight: '700', letterSpacing: -0.2 },
 
   // FAB
   fab: {

@@ -47,12 +47,35 @@ serve(async (req) => {
     }
 
     // ── 2. Parse body ────────────────────────────────────────────────────────
-    const { student_email } = await req.json();
+    // `purpose` distinguishes the two claims this OTP can establish:
+    //   'services'    (default) — "I am a student somewhere", gates Services.
+    //   'uitm_matric'           — "I own matric X", gates timetable fetching.
+    // They are separate on purpose: a user already verified for Services must
+    // still be able to prove a matric, so uitm_matric skips the
+    // already_verified short-circuit below.
+    const { student_email, purpose } = await req.json();
+    const otpPurpose = purpose === 'uitm_matric' ? 'uitm_matric' : 'services';
+
     if (!student_email || !student_email.includes('@')) {
       return new Response(JSON.stringify({ error: 'Invalid student email' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const normalizedEmail = student_email.trim().toLowerCase();
+
+    // A matric claim is only meaningful when the code goes to that matric's own
+    // UiTM inbox, so pin the domain and shape here as well as in the RPC.
+    if (otpPurpose === 'uitm_matric') {
+      if (!/^\d{6,12}@student\.uitm\.edu\.my$/.test(normalizedEmail)) {
+        return new Response(
+          JSON.stringify({
+            error: 'Matric verification requires a {matric}@student.uitm.edu.my address.',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     // ── 3. Generate 6-digit OTP ──────────────────────────────────────────────
@@ -65,26 +88,43 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // Check if already verified
-    const { data: profile } = await adminClient
-      .from('profiles')
-      .select('student_verified')
-      .eq('id', user.id)
-      .single();
+    // Already-verified short-circuit applies to the Services claim only. For a
+    // matric claim, student_verified says nothing about owning this matric.
+    if (otpPurpose === 'services') {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('student_verified')
+        .eq('id', user.id)
+        .single();
 
-    if (profile?.student_verified) {
-      return new Response(JSON.stringify({ status: 'already_verified' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      if (profile?.student_verified) {
+        return new Response(JSON.stringify({ status: 'already_verified' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('verified_matric')
+        .eq('id', user.id)
+        .single();
+
+      const claimedMatric = normalizedEmail.split('@')[0];
+      if (profile?.verified_matric && profile.verified_matric === claimedMatric) {
+        return new Response(JSON.stringify({ status: 'already_verified' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const { error: upsertError } = await adminClient
       .from('student_otp_verifications')
       .upsert({
         user_id: user.id,
-        student_email: student_email.trim().toLowerCase(),
+        student_email: normalizedEmail,
         otp_code: otp,
         expires_at: expiresAt,
+        attempts: 0,
         created_at: new Date().toISOString(),
       }, { onConflict: 'user_id' });
 
@@ -146,7 +186,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: 'Rencana <noreply@aizztech.com>',
-        to: [student_email.trim()],
+        to: [normalizedEmail],
         subject: `${otp} is your Rencana verification code`,
         html: emailHtml,
       }),
@@ -172,7 +212,7 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ status: 'sent', email: student_email }), {
+    return new Response(JSON.stringify({ status: 'sent', email: normalizedEmail }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

@@ -37,6 +37,22 @@ function normalizeIso(iso: string): string {
   return new Date(t).toISOString();
 }
 
+/**
+ * A class check-in is only answerable on the day of the class. Once that
+ * calendar day ends it expires, so a notification left sitting in the shade
+ * can't be used to record attendance days later.
+ * Compared on local calendar days — "the day ends" means the user's midnight.
+ * An unparseable timestamp is treated as not expired: never block on bad data.
+ */
+export function isAttendanceCheckinExpired(scheduledStartAt: string, now: Date = new Date()): boolean {
+  const t = Date.parse(String(scheduledStartAt || '').trim());
+  if (!Number.isFinite(t)) return false;
+  const cls = new Date(t);
+  const classDay = new Date(cls.getFullYear(), cls.getMonth(), cls.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return classDay < today;
+}
+
 export function attendanceOccurrenceKey(timetableEntryId: string, scheduledStartAt: string): string {
   const tid = String(timetableEntryId || '').trim();
   const iso = String(scheduledStartAt || '').trim();
@@ -217,6 +233,13 @@ export async function handleAttendanceNotificationResponse(
 ): Promise<{ handled: boolean; defaultTapData?: Record<string, any> }> {
   const data = response.notification.request.content.data as Record<string, any> | undefined;
   if (!data || data.type !== 'attendance_checkin') return { handled: false };
+
+  // The class day is over — swallow it rather than record attendance for a past
+  // class. Covers both the action buttons and a plain tap on the body.
+  if (isAttendanceCheckinExpired(String(data.scheduledStartAt || ''))) {
+    await Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+    return { handled: true };
+  }
 
   const status = normalizeStatusFromAction(response.actionIdentifier);
   if (!status) {

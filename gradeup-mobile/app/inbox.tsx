@@ -243,6 +243,9 @@ export default function InboxScreen() {
     } else if (t === 'circle_invitation_response' && item.data?.circleId) {
       router.push({ pathname: '/community/circle-detail', params: { id: item.data.circleId } } as any);
       return true;
+    } else if (t === 'quiz_invite' && item.data?.sessionId) {
+      router.push({ pathname: '/match-lobby', params: { sessionId: String(item.data.sessionId) } } as any);
+      return true;
     } else if (
       t === 'reaction' ||
       t === 'circle_invitation' ||

@@ -3,6 +3,7 @@
 // calendar/profile data and never exposes its service-role client.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 import {
   checkMonthlyTokenLimit,
   formatMonthlyLimitMessage,
@@ -100,7 +101,7 @@ async function extractScannedPdfText(
     const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PREFERRED_MODELS[0]}:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
           signal: controller.signal,
@@ -138,15 +139,44 @@ async function extractScannedPdfText(
   }
 }
 
+/**
+ * `test` and `special_break` used to be missing from this list, and a row the model has no type
+ * for gets dropped rather than mapped to the nearest one: a UKM calendar lost its whole
+ * "Peperiksaan Pertengahan Semester" week that way, leaving a hole students saw as a dead month.
+ * Keep this list in sync with `AcademicPeriodType` in src/types.ts.
+ */
+const PERIOD_TYPES =
+  'lecture|test|exam|revision|break|special_break|holiday|registration|orientation|industrial_training|other';
+
+/**
+ * Rules written against what the extracted text actually looks like. PDF text extraction flattens
+ * these tables into one line per row: the row label, then one date+duration group per semester in
+ * column order, with "-" for a semester the row does not apply to. The column headings are often
+ * missing entirely or land far from the rows they describe, so which semester a date belongs to is
+ * carried by position alone — and getting that wrong is what published a calendar whose semester
+ * "started" on its own mid-semester break date.
+ */
+const TIMELINE_RULES = [
+  'The table arrives flattened: each row is a label followed by one date+duration group per semester, in column order (Semester 1, then Semester 2, then Semester 3).',
+  'A "-" or an empty group still occupies a column position — count it, do not skip it, or every later date shifts into the wrong semester.',
+  'Column headings ("Semester 1", "Semester 2") are often missing from the text or appear far away from the rows. Rely on the order of the groups within each row, and emit one candidate per semester.',
+  'The same date is frequently repeated in Malay and again in English ("14 - 27 Sept. 2026 14th - 27th Sept. 2026"). That is one period, not two.',
+  'Rows are not in chronological order, and unrelated content (public holidays, the document title) may be interleaved after the table. Sort periods by date yourself.',
+  'Every dated row of the table must become its own period — never merge two rows into one span, and never skip a row because its type is unclear (use "other").',
+  'Mid-semester tests ("Peperiksaan Pertengahan Semester", "Mid Semester Examination") are type "test", not "exam" and not part of the lecture block around them.',
+  'The periods must run continuously from the first to the last: apart from short weekend-sized joins, there must be no unexplained gap. A gap of a week or more means a row was missed — re-read the table and add it.',
+  'Source documents contain typos, usually a year that contradicts its neighbours (a revision week dated 2025 between periods in 2026). Prefer the value consistent with the surrounding sequence.',
+].join(' ');
+
 const calendarPromptMY = `You extract academic calendars for Malaysian universities and polytechnics.
 Return valid JSON only in this shape:
-{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training|holiday","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
-Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods, including named public holidays that fall within the semester (type "holiday", e.g. "Deepavali", "Hari Raya") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
+{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"${PERIOD_TYPES}","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
+Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert Malaysian date formats to YYYY-MM-DD. total_weeks counts teaching weeks only. ${TIMELINE_RULES} Capture the full timeline in periods, including named public holidays that fall within the semester (type "holiday", e.g. "Deepavali", "Hari Raya") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
 
 const calendarPromptIntl = `You extract academic calendars for universities worldwide.
 Return valid JSON only in this shape:
-{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"lecture|exam|break|revision|registration|orientation|industrial_training|holiday","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
-Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert dates in whatever format they appear to YYYY-MM-DD. total_weeks counts teaching weeks only. Capture the full timeline in periods, including named public/institutional holidays that fall within the semester (type "holiday") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
+{"official_url_title":"string","candidates":[{"program_level":"string","campus_group":"string or null","campus_group_description":"string or null","semester_label":"string","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","total_weeks":14,"break_start_date":"YYYY-MM-DD or null","break_end_date":"YYYY-MM-DD or null","periods":[{"type":"${PERIOD_TYPES}","label":"string","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]}]}
+Return separate candidates for every program level, institute/campus group, and semester/session shown. Convert dates in whatever format they appear to YYYY-MM-DD. total_weeks counts teaching weeks only. ${TIMELINE_RULES} Capture the full timeline in periods, including named public/institutional holidays that fall within the semester (type "holiday") — do not fold them into "break" or "other". Do not invent or infer dates that are not present. Use null for missing optional values.`;
 
 function calendarPromptForCountry(country: unknown): string {
   return String(country ?? 'MY').trim().toUpperCase() === 'MY' ? calendarPromptMY : calendarPromptIntl;
@@ -168,7 +198,7 @@ async function callOpenAI(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${openAiKey}`,
       },
-      body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 4000 }),
+      body: JSON.stringify({ model, messages, ...samplingParams(model, { temperature: 0, reasoning: 'none' }), max_completion_tokens: 4000 }),
     });
     if (!response.ok) return { error: `Calendar extraction failed (${response.status}).` };
     const result = await response.json();
@@ -277,7 +307,7 @@ Deno.serve(async (req) => {
       result = await callOpenAI(openAiKey, [
         { role: 'system', content: calendarPrompt },
         { role: 'user', content: `Extract the calendar from this PDF text:\n\n${text.trim().slice(0, 18000)}` },
-      ], 'gpt-4o-mini', 30_000);
+      ], OPENAI_MODEL_FAST, 30_000);
     } else if (action === 'extract_calendar_from_image') {
       const image = String(payload.imageBase64 ?? '').trim();
       const match = image.match(/^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i);
@@ -299,7 +329,7 @@ Deno.serve(async (req) => {
           { type: 'text', text: 'Extract the academic calendar from this image.' },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
         ] },
-      ], 'gpt-4o', 45_000);
+      ], OPENAI_MODEL_FAST, 45_000);
     } else {
       return json(400, { error: 'Unsupported action.' });
     }
@@ -308,7 +338,7 @@ Deno.serve(async (req) => {
     await logTokenUsage(admin, {
       user_id: userId,
       kind: action === 'extract_calendar_from_pdf' ? 'calendar_pdf_extraction' : 'calendar_image_extraction',
-      model: action === 'extract_calendar_from_pdf' ? 'gpt-4o-mini' : 'gpt-4o',
+      model: OPENAI_MODEL_FAST,
       prompt_tokens: result.usage?.prompt_tokens ?? null,
       completion_tokens: result.usage?.completion_tokens ?? null,
       total_tokens: result.usage?.total_tokens ?? null,

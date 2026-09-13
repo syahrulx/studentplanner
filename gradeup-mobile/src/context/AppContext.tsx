@@ -4,6 +4,7 @@ import '../notificationsForeground';
 import type { UserProfile, Course, Task, Note, Flashcard, AcademicCalendar, TimetableEntry } from '../types';
 import type { ThemeId } from '@/constants/Themes';
 import { isAtLeastPlus } from '../lib/flashcardGenerationLimits';
+import { rateCard, type FlashcardRating } from '../lib/fsrs';
 import {
   initialUser,
   initialCourses,
@@ -17,6 +18,9 @@ import {
 // A component-body `let` would reset to 0 on every render, causing duplicate IDs
 // when addFlashcard is called rapidly (e.g. 10 cards from Promise.all).
 let _flashcardIdSeq = Date.now();
+
+/** Input for `addFlashcards`: front/back plus any optional Flashcard metadata. */
+export type NewFlashcardInput = { front: string; back: string } & Partial<Omit<Flashcard, 'id' | 'noteId' | 'front' | 'back'>>;
 import {
   getAcademicProgress,
   getAcademicProgressFromCalendar,
@@ -61,7 +65,13 @@ import {
   type WeekStartsOn,
 } from '../storage';
 import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
-import { scheduleRevisionNotification, cancelAllRevisionNotifications, requestRevisionPermissions } from '../revisionNotifications';
+import {
+  scheduleRevisionNotification,
+  cancelAllRevisionNotifications,
+  cancelRevisionNotification,
+  rescheduleAllRevisionNotifications,
+  requestRevisionPermissions,
+} from '../revisionNotifications';
 import {
   requestNotificationPermissions,
   scheduleTaskNotifications,
@@ -87,7 +97,8 @@ import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
 import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStreams } from '../lib/communityApi';
 import { syncExpoPushTokenToProfile, subscribeExpoPushTokenUpdates } from '../lib/pushRegistration';
-import { fetchUitmTimetable, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
+import { fetchUitmTimetablePublic, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
+import { isMatricVerified } from '../lib/uitmVerification';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
@@ -95,6 +106,7 @@ import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
 import { initPurchases, logOutPurchases, onCustomerInfoUpdate } from '../lib/purchases';
+import { primeTrialOffers, resetTrialOffers } from '../lib/upgradePrompt';
 import * as offlineSync from '../lib/offlineSync';
 import type { OfflineSyncStatus } from '../lib/offlineSync';
 
@@ -149,10 +161,33 @@ type AppState = {
   flashcards: Flashcard[];
   setFlashcards: React.Dispatch<React.SetStateAction<Flashcard[]>>;
   flashcardFolders?: never; // DEPRECATED - Folders are dead.
-  addFlashcard: (noteId: string, front: string, back: string) => Flashcard;
-  updateFlashcard: (cardId: string, front: string, back: string) => void;
-  deleteFlashcard: (cardId: string) => void;
-  deleteFlashcardsForNote: (noteId: string) => Promise<void>;
+  /**
+   * Add one card. Optimistic insert; rolls back and rejects when the DB write
+   * fails. Prefer `addFlashcards` when inserting more than one card.
+   */
+  addFlashcard: (noteId: string, front: string, back: string, extra?: Partial<Flashcard>) => Promise<Flashcard>;
+  /** Add many cards to one note in ONE batch upsert. Rolls back + throws on failure. */
+  addFlashcards: (noteId: string, cards: NewFlashcardInput[]) => Promise<Flashcard[]>;
+  /** Resolves true on success. On failure the optimistic edit is rolled back and an alert is shown. */
+  updateFlashcard: (cardId: string, front: string, back: string, extra?: Partial<Flashcard>) => Promise<boolean>;
+  /** Resolves true on success. On failure the optimistic delete is rolled back and an alert is shown. */
+  deleteFlashcard: (cardId: string) => Promise<boolean>;
+  /** Deletes every card of a note in one DB call. Resolves true on success (rolls back on failure). */
+  deleteFlashcardsForNote: (noteId: string) => Promise<boolean>;
+  /**
+   * Rate a card (1 Again, 2 Hard, 3 Good, 4 Easy). Computes the next FSRS state,
+   * updates local state optimistically, then persists the card and a review-log
+   * row. Card write failures roll back and reject; log failures are non-fatal.
+   */
+  reviewFlashcard: (cardId: string, rating: FlashcardRating, durationMs?: number) => Promise<Flashcard | null>;
+  /**
+   * Re-read the plan from the server profile and apply it.
+   *
+   * The server is the single source of truth for entitlement: a plan can come
+   * from the store, from Curlec/Razorpay, or from an admin grant, and only the
+   * first of those is visible to RevenueCat. Returns the plan now in effect.
+   */
+  refreshSubscription: () => Promise<import('../types').SubscriptionPlan>;
   pendingExtraction: string;
   setPendingExtraction: (text: string) => void;
   pendingClassroomTasks: import('../lib/googleClassroom').PendingNewTask[];
@@ -230,8 +265,8 @@ type AppState = {
   saveTimetableOnly: (entries: TimetableEntry[], options?: { semesterLabel?: string }) => Promise<void>;
   saveTimetableAndLink: (entries: TimetableEntry[], universityId: string, studentId: string) => Promise<void>;
   disconnectUniversity: () => Promise<void>;
-  /** UiTM: re-fetch timetable + portal profile; overwrites saved timetable and MyStudent fields. */
-  refreshUniversityTimetable: (password: string, options?: { courses?: string[] }) => Promise<void>;
+  /** UiTM: re-fetch timetable + profile from public sources; overwrites the saved timetable. */
+  refreshUniversityTimetable: (options?: { courses?: string[] }) => Promise<void>;
   weekStartsOn: WeekStartsOn;
   setWeekStartsOn: (mode: WeekStartsOn) => Promise<void>;
   /** When true, past-due tasks are removed automatically (local + Supabase when signed in). Default false. */
@@ -423,6 +458,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const tasksRef = useRef<Task[]>([]);
   /** Latest auth user id we loaded remote data for — avoids applying results after sign-out. */
   const remoteUserIdRef = useRef<string | null>(null);
+  /**
+   * Indirection for `refreshSubscription`, which is declared further down but
+   * needed by the RevenueCat listener set up during sign-in.
+   */
+  const refreshSubscriptionRef = useRef<() => Promise<import('../types').SubscriptionPlan>>(
+    async () => 'free',
+  );
   const offlineMutationVersionRef = useRef(0);
   /** Prevents calendar auto-sync from running more than once per session. */
   const calendarAutoSyncedRef = useRef(false);
@@ -634,6 +676,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
+  /**
+   * Re-seed task and study reminders on every return to the foreground.
+   *
+   * Both are now booked only a short way ahead so they fit the 64 pending
+   * notifications iOS allows per app — which means something has to claim the
+   * next batch of slots as time moves on. Kept separate from the attendance
+   * listener above: that one bails out when the timetable is empty, and these
+   * two have nothing to do with having classes.
+   */
+  const tasksForNotifRef = useRef<Task[]>([]);
+  const revisionListForNotifRef = useRef<RevisionSettings[]>([]);
+  useEffect(() => {
+    tasksForNotifRef.current = tasks;
+  }, [tasks]);
+  useEffect(() => {
+    revisionListForNotifRef.current = revisionSettingsList;
+  }, [revisionSettingsList]);
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      // Skip while a list is still empty. Resuming before the first load lands
+      // would otherwise cancel every reminder and re-schedule nothing. An
+      // emptied list is already handled where it is emptied, and the load path
+      // rebuilds both from the database anyway.
+      const pendingTasks = tasksForNotifRef.current;
+      if (pendingTasks.length > 0) {
+        void rescheduleAllTaskNotifications(pendingTasks).catch(() => {});
+      }
+      const pendingRevision = revisionListForNotifRef.current;
+      if (pendingRevision.length > 0) {
+        void rescheduleAllRevisionNotifications(pendingRevision).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   /** Recompute teaching week when the app returns to foreground (e.g. new calendar day). */
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (state) => {
@@ -748,11 +826,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         offlineSync.loadCachedTasks(uid),
         offlineSync.loadCachedNotes(uid),
         offlineSync.loadCachedTaskCompletions(uid),
-      ]).then(([cachedTasks, cachedNotes, cachedCompletions]) => {
+        offlineSync.loadCachedFlashcards(uid),
+      ]).then(([cachedTasks, cachedNotes, cachedCompletions, cachedCards]) => {
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
         setTasks(cachedTasks);
         setNotes(cachedNotes);
         setTaskCompletionKeys(new Set(cachedCompletions));
+        // Seeded from cache so a review session can start before the network
+        // answers, and still works when it never does.
+        if (cachedCards.length > 0) setFlashcards(cachedCards);
       });
       // Finish any queued write first. Otherwise a stale fetch could race a
       // successful flush and briefly overwrite the just-synced local version.
@@ -819,13 +901,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (r1.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedCards = r1.value;
+          // Soft-hide cards whose parent note is genuinely absent, but ONLY when
+          // the notes request itself succeeded. If notes failed to load we have
+          // no idea which notes exist, so hiding every card would make the whole
+          // flashcard library vanish on a flaky connection. Never auto-delete
+          // from Supabase — a missing note can simply mean the note row hasn't
+          // synced yet.
+          const notesLoadedOk = r0.status === 'fulfilled';
+          // Queued reviews and edits win over the server copy, or a fetch that
+          // lands before the outbox drains would show the pre-review schedule.
+          const mergedCards = await offlineSync.mergePendingFlashcards(uid, loadedCards);
           const validNoteIds = new Set(loadedNotes.map((n) => n.id));
-
-          // Same policy as notes above: soft-hide cards whose parent note is
-          // missing/hidden. Never auto-delete from Supabase — a missing note
-          // can simply mean the note row hasn't synced yet.
-          const validCards = loadedCards.filter((c) => c.noteId && validNoteIds.has(c.noteId));
-          setFlashcards(validCards);
+          const visibleCards = notesLoadedOk
+            ? mergedCards.filter((c) => !!c.noteId && validNoteIds.has(c.noteId))
+            : mergedCards;
+          setFlashcards(visibleCards);
+          void offlineSync.cacheFlashcards(uid, visibleCards);
         }
         if (r2.status === 'fulfilled' && !localMutatedDuringLoad) {
           const loadedTasks = await offlineSync.mergePendingTasks(uid, r2.value);
@@ -855,6 +946,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const studyList = r3.value;
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
+          // Re-derive the OS schedules from what the DB actually holds. This is
+          // what clears reminders for study times deleted on another device —
+          // and, on upgrade, the stale legacy single-slot daily notification.
+          void rescheduleAllRevisionNotifications(studyList).catch(() => {});
         }
         // (r4 is already processed and set above)
         if (r7.status === 'fulfilled') {
@@ -1005,6 +1100,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 lastSync: profile.lastSync,
                 portalTeachingAnchoredSemester: anchored,
                 subscriptionPlan: profile.subscriptionPlan ?? 'free',
+                subscriptionStatus: profile.subscriptionStatus,
+                subscriptionPeriodType: profile.subscriptionPeriodType,
+                subscriptionExpiresAt: profile.subscriptionExpiresAt,
                 country: profile.country ?? 'MY',
               };
             }
@@ -1141,6 +1239,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // ── Initialize RevenueCat; the shared server plan controls access ──
         try {
           await initPurchases(uid);
+          // Warm trial eligibility so the first feature gate the user hits can
+          // already say "try free" rather than a bare "upgrade".
+          void primeTrialOffers();
           // RevenueCat's SDK may expose sandbox or cached store state. It must
           // never override the server because the user may instead be entitled
           // through Curlec/Razorpay or an admin grant. A store update simply
@@ -1148,18 +1249,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           revenueCatUnsubscribeRef.current();
           revenueCatUnsubscribeRef.current = onCustomerInfoUpdate(async () => {
             if (remoteUserIdRef.current !== uid) return; // stale callback from a previous session
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('subscription_plan')
-              .eq('id', uid)
-              .maybeSingle();
-            if (error || remoteUserIdRef.current !== uid) return;
-            const plan = data?.subscription_plan === 'pro'
-              ? 'pro'
-              : data?.subscription_plan === 'plus'
-                ? 'plus'
-                : 'free';
-            setUserState((prev) => (prev.subscriptionPlan === plan ? prev : { ...prev, subscriptionPlan: plan }));
+            await refreshSubscriptionRef.current();
           });
         } catch (e) {
           if (__DEV__) console.warn('[Rencana] RevenueCat init failed:', e);
@@ -1262,6 +1352,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           revenueCatUnsubscribeRef.current();
           revenueCatUnsubscribeRef.current = () => {};
           logOutPurchases().catch(() => {});
+          // Trial eligibility belongs to the store account that just signed out.
+          resetTrialOffers();
           // After clearing, mark ready so auth screen renders
           setDataReady(true);
         }
@@ -1470,12 +1562,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const fallback = { ...settings, enabled: false };
         setRevisionState(fallback);
         await persistRevision(fallback);
-        await cancelAllRevisionNotifications();
+        await cancelRevisionNotification(settings.id);
         return;
       }
-      await scheduleRevisionNotification(settings);
-    } else {
-      await cancelAllRevisionNotifications();
     }
     setRevisionState(settings);
     await persistRevision(settings);
@@ -1487,6 +1576,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await studyTimeDb.upsertStudySettings(uid, settings);
       const list = await studyTimeDb.getAllStudySettings(uid);
       setRevisionSettingsList(list);
+      // Rebuild from the saved list, not from `settings`: the row was just
+      // inserted, so only the list carries the DB id each reminder is keyed to.
+      await rescheduleAllRevisionNotifications(list);
+    } else if (settings.enabled) {
+      // Signed out — no DB id to key on, so this one keeps the local slot.
+      await scheduleRevisionNotification(settings);
+    } else {
+      await cancelRevisionNotification(settings.id);
     }
   }, []);
 
@@ -1495,19 +1592,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const uid = session?.user?.id;
     if (!uid) return;
     await studyTimeDb.deleteStudySetting(uid, id);
+    // Kill this one's reminder up front, so a failed list refresh can't leave it firing.
+    await cancelRevisionNotification(id);
     const list = await studyTimeDb.getAllStudySettings(uid);
     setRevisionSettingsList(list);
-    if (list.length > 0) {
-      setRevisionState(list[0]);
-      if (list[0].enabled) {
-        await scheduleRevisionNotification(list[0]);
-      } else {
-        await cancelAllRevisionNotifications();
-      }
-    } else {
-      setRevisionState(defaultRevision);
-      await cancelAllRevisionNotifications();
-    }
+    const next = list.length > 0 ? list[0] : defaultRevision;
+    setRevisionState(next);
+    // Previously skipped, so local storage kept handing back the deleted study time.
+    await persistRevision(next);
+    await rescheduleAllRevisionNotifications(list);
   }, []);
 
   const markStudyDone = useCallback((key: string) => {
@@ -2072,62 +2165,186 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Fix 1: Module-level counter (outside component) prevents reset-to-0 on every render.
-  // When addFlashcard is called rapidly (e.g. 10 cards from Promise.all), the closure
-  // over a component-body variable always reads 0, causing duplicate IDs.
-  const addFlashcard = useCallback((noteId: string, front: string, back: string): Flashcard => {
-    const card: Flashcard = {
-      id: `card-${Date.now()}-${_flashcardIdSeq++}`,
-      noteId,
-      front: front.trim() || 'Front',
-      back: back.trim() || 'Back',
-    };
-    setFlashcards((prev) => [card, ...prev]);
-    // Fix 7: Use cached remoteUserIdRef — avoids auth.getSession() round-trip per card
+  // When cards are created rapidly (e.g. 10 cards from one generation), a closure
+  // over a component-body variable would always read 0, causing duplicate IDs.
+  const flashcardsRef = useRef<Flashcard[]>(flashcards);
+  flashcardsRef.current = flashcards;
+
+  const addFlashcards = useCallback(async (noteId: string, inputs: NewFlashcardInput[]): Promise<Flashcard[]> => {
+    if (inputs.length === 0) return [];
+    const nowIso = new Date().toISOString();
+    const existingForNote = flashcardsRef.current.filter((c) => c.noteId === noteId).length;
+    const cards: Flashcard[] = inputs.map((input, i) => {
+      const { front, back, ...extra } = input;
+      return {
+        ...extra,
+        id: `card-${Date.now()}-${_flashcardIdSeq++}`,
+        noteId,
+        front: front.trim() || 'Front',
+        back: back.trim() || 'Back',
+        cardType: extra.cardType ?? 'basic',
+        position: extra.position ?? existingForNote + i,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        // New cards are due immediately (FSRS "New" state).
+        due: extra.due ?? nowIso,
+        state: extra.state ?? 0,
+        stability: extra.stability ?? 0,
+        difficulty: extra.difficulty ?? 0,
+        elapsedDays: extra.elapsedDays ?? 0,
+        scheduledDays: extra.scheduledDays ?? 0,
+        learningSteps: extra.learningSteps ?? 0,
+        reps: extra.reps ?? 0,
+        lapses: extra.lapses ?? 0,
+        lastReview: extra.lastReview ?? null,
+      };
+    });
+    // Optimistic insert (newest first, matching getFlashcards ordering).
+    setFlashcards((prev) => [...cards, ...prev]);
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      studyDb.upsertFlashcard(uid, card).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (add):', err);
-      });
+    if (!uid) {
+      const ids = new Set(cards.map((c) => c.id));
+      setFlashcards((prev) => prev.filter((c) => !ids.has(c.id)));
+      throw new Error('Sign in required to save flashcards.');
     }
+    await Promise.all(cards.map((card) => offlineSync.queueFlashcardUpsert(uid, card)));
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return cards;
+  }, []);
+
+  const addFlashcard = useCallback(async (
+    noteId: string,
+    front: string,
+    back: string,
+    extra?: Partial<Flashcard>,
+  ): Promise<Flashcard> => {
+    const { id: _ignoredId, noteId: _ignoredNoteId, front: _f, back: _b, ...rest } = extra ?? {};
+    const [card] = await addFlashcards(noteId, [{ front, back, ...rest }]);
     return card;
-  }, []);
+  }, [addFlashcards]);
 
-  const updateFlashcard = useCallback((cardId: string, front: string, back: string) => {
-    setFlashcards((prev) => prev.map((c) => {
-      if (c.id !== cardId) return c;
-      const updated = { ...c, front: front.trim() || c.front, back: back.trim() || c.back };
-      // Fix 7 + Fix 3: cached uid, error catch
-      const uid = remoteUserIdRef.current;
-      if (uid) {
-        studyDb.upsertFlashcard(uid, updated).catch((err) => {
-          if (__DEV__) console.error('[Flashcard] persist failed (update):', err);
-        });
-      }
-      return updated;
-    }));
-  }, []);
-
-  const deleteFlashcard = useCallback((cardId: string) => {
-    setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
-    // Fix 7 + Fix 3: cached uid, error catch
+  const updateFlashcard = useCallback(async (
+    cardId: string,
+    front: string,
+    back: string,
+    extra?: Partial<Flashcard>,
+  ): Promise<boolean> => {
+    const previous = flashcardsRef.current.find((c) => c.id === cardId);
+    if (!previous) return false;
+    const { id: _ignoredId, ...rest } = extra ?? {};
+    const updated: Flashcard = {
+      ...previous,
+      ...rest,
+      front: front.trim() || previous.front,
+      back: back.trim() || previous.back,
+      updatedAt: new Date().toISOString(),
+    };
+    setFlashcards((prev) => prev.map((c) => (c.id === cardId ? updated : c)));
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      studyDb.deleteFlashcard(uid, cardId).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (delete):', err);
-      });
+    if (!uid) {
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      Alert.alert('Not saved', 'Sign in required to edit flashcards.');
+      return false;
     }
+    await offlineSync.queueFlashcardUpsert(uid, updated);
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
   }, []);
 
-  /** Deletes ALL cards for a note — used by "Replace" mode in generation. */
-  const deleteFlashcardsForNote = useCallback(async (noteId: string): Promise<void> => {
+  const deleteFlashcard = useCallback(async (cardId: string): Promise<boolean> => {
+    const snapshot = flashcardsRef.current;
+    if (!snapshot.some((c) => c.id === cardId)) return true;
+    setFlashcards((prev) => prev.filter((c) => c.id !== cardId));
+    const uid = remoteUserIdRef.current;
+    if (!uid) {
+      setFlashcards(snapshot);
+      Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
+      return false;
+    }
+    await offlineSync.queueFlashcardDelete(uid, cardId);
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
+  }, []);
+
+  /** Deletes ALL cards for a note in one call — used by "Replace" mode in generation and "Delete deck". */
+  const deleteFlashcardsForNote = useCallback(async (noteId: string): Promise<boolean> => {
+    const snapshot = flashcardsRef.current;
+    const removed = snapshot.filter((c) => c.noteId === noteId);
+    if (removed.length === 0) return true;
     setFlashcards((prev) => prev.filter((c) => c.noteId !== noteId));
     const uid = remoteUserIdRef.current;
-    if (uid) {
-      await studyDb.deleteFlashcardsForNote(uid, noteId).catch((err) => {
-        if (__DEV__) console.error('[Flashcard] persist failed (deleteForNote):', err);
-      });
+    if (!uid) {
+      setFlashcards((prev) => [...prev, ...removed.filter((r) => !prev.some((c) => c.id === r.id))]);
+      Alert.alert('Not deleted', 'Sign in required to delete flashcards.');
+      return false;
     }
+    await Promise.all(removed.map((card) => offlineSync.queueFlashcardDelete(uid, card.id)));
+    void offlineSync.flushOfflineSync(uid).catch(() => {});
+    return true;
   }, []);
+
+  const reviewFlashcard = useCallback(async (
+    cardId: string,
+    rating: FlashcardRating,
+    durationMs?: number,
+  ): Promise<Flashcard | null> => {
+    const previous = flashcardsRef.current.find((c) => c.id === cardId);
+    if (!previous) return null;
+    const { card: next, log } = rateCard(previous, rating, new Date(), durationMs);
+    setFlashcards((prev) => prev.map((c) => (c.id === cardId ? next : c)));
+    const uid = remoteUserIdRef.current;
+    if (!uid) {
+      setFlashcards((prev) => prev.map((c) => (c.id === cardId ? previous : c)));
+      throw new Error('Sign in required to review flashcards.');
+    }
+    // Queued, not written directly, so a review on a commute still counts once
+    // signal returns. Reviewing is the one study action that needs no server:
+    // FSRS already ran on the device and only the result has to travel.
+    void offlineSync
+      .queueFlashcardUpsert(uid, next)
+      .then(() => offlineSync.queueFlashcardReviewLog(uid, log))
+      .then(() => offlineSync.flushOfflineSync(uid))
+      .catch((err) => {
+        if (__DEV__) console.error('[Flashcard] could not queue review:', err);
+      });
+    return next;
+  }, []);
+
+  /**
+   * Pull the authoritative plan from `profiles` and apply it locally.
+   *
+   * Used by "Restore Purchases": RevenueCat only knows about store receipts, so
+   * an admin grant or a Curlec purchase restores as "no purchases found" unless
+   * we also ask the server.
+   */
+  const refreshSubscription = useCallback(async (): Promise<import('../types').SubscriptionPlan> => {
+    const uid = remoteUserIdRef.current;
+    if (!uid) return 'free';
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('subscription_plan, subscription_status, subscription_period_type, subscription_expires_at')
+      .eq('id', uid)
+      .maybeSingle();
+    if (error || remoteUserIdRef.current !== uid) {
+      if (__DEV__ && error) console.warn('[Rencana] refreshSubscription failed:', error.message);
+      return 'free';
+    }
+    const plan: import('../types').SubscriptionPlan =
+      data?.subscription_plan === 'pro' ? 'pro' : data?.subscription_plan === 'plus' ? 'plus' : 'free';
+    const status = data?.subscription_status ? String(data.subscription_status) : undefined;
+    const periodType = data?.subscription_period_type ? String(data.subscription_period_type) : undefined;
+    const expiresAt = data?.subscription_expires_at ? String(data.subscription_expires_at) : undefined;
+    setUserState((prev) =>
+      prev.subscriptionPlan === plan &&
+      prev.subscriptionStatus === status &&
+      prev.subscriptionPeriodType === periodType &&
+      prev.subscriptionExpiresAt === expiresAt
+        ? prev
+        : { ...prev, subscriptionPlan: plan, subscriptionStatus: status, subscriptionPeriodType: periodType, subscriptionExpiresAt: expiresAt },
+    );
+    return plan;
+  }, []);
+  refreshSubscriptionRef.current = refreshSubscription;
 
   const saveTimetableAndLink = useCallback(async (entries: TimetableEntry[], universityId: string, studentId: string) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -2208,7 +2425,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUniversityTimetable = useCallback(
-    async (password: string, options?: { courses?: string[] }) => {
+    async (options?: { courses?: string[] }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
       if (!uid) throw new Error('Sign in required.');
@@ -2217,12 +2434,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No university link found. Open Timetable and connect once.');
       }
       if (uniId !== 'uitm') {
-        throw new Error('Refresh is only supported for UiTM MyStudent.');
+        throw new Error('Refresh is only supported for UiTM.');
       }
       const login = (user.studentId || '').trim();
       if (!login) throw new Error('Missing saved student ID. Disconnect and connect again.');
+      // The timetable sources are public, so ownership of the matric has to be
+      // proven here too — not just on the initial connect.
+      if (!(await isMatricVerified(login))) {
+        throw new Error(
+          'Verify your student ID before refreshing. Open Timetable and connect again to receive a code.',
+        );
+      }
       const prevPortalSemester = user.currentSemester;
-      const { entries, profile } = await fetchUitmTimetable(login, password, options?.courses);
+      const { entries, profile } = await fetchUitmTimetablePublic(login, options?.courses);
       if (entries.length === 0) {
         throw new Error(
           'No timetable returned. Add optional course codes or check MyStudent in a browser.',
@@ -2429,9 +2653,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       flashcards,
       setFlashcards,
       addFlashcard,
+      addFlashcards,
       updateFlashcard,
       deleteFlashcard,
       deleteFlashcardsForNote,
+      reviewFlashcard,
+      refreshSubscription,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,
@@ -2515,9 +2742,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       flashcards,
       setFlashcards,
       addFlashcard,
+      addFlashcards,
       updateFlashcard,
       deleteFlashcard,
       deleteFlashcardsForNote,
+      reviewFlashcard,
+      refreshSubscription,
       pendingExtraction,
       setPendingExtraction,
       pendingClassroomTasks,

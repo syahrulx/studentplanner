@@ -11,15 +11,21 @@ import { useTranslations, type TranslationKey } from '@/src/i18n';
 import { searchUniversities, getUniversityById, getMalaysianUniversities } from '@/src/lib/universities';
 import { getTodayISO } from '@/src/utils/date';
 import {
-  fetchUitmTimetable,
   fetchUitmTimetablePublic,
   matricFromStudentLoginInput,
   profileUpdatesFromMyStudentPayload,
   type MyStudentProfilePayload,
 } from '@/src/lib/timetableParsers/uitm';
+import {
+  getVerifiedUitmMatric,
+  isValidMatric,
+} from '@/src/lib/uitmVerification';
+import MatricOtpVerify from '@/components/MatricOtpVerify';
 import type { UniversityConfig, TimetableEntry, DayOfWeek, Course } from '@/src/types';
 
-type Step = 'university' | 'terms' | 'login' | 'validating' | 'fetching' | 'review' | 'already_connected';
+type Step =
+  | 'university' | 'terms' | 'login' | 'verify'
+  | 'validating' | 'fetching' | 'review' | 'already_connected';
 
 const DAY_ORDER: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -60,19 +66,41 @@ export default function UniversityConnectScreen() {
   const [uniOptions, setUniOptions] = useState<UniversityConfig[]>([]);
   const [studentEmail, setStudentEmail] = useState('');
   const [resolvedMatric, setResolvedMatric] = useState<string | null>(null);
-  const [password, setPassword] = useState(''); // no longer required (kept for backwards UI stability)
-  const [showPassword, setShowPassword] = useState(false); // no longer required
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [campusInfo, setCampusInfo] = useState<string | undefined>();
   const [coursesInput, setCoursesInput] = useState('');
   const [lastMyStudentProfile, setLastMyStudentProfile] = useState<MyStudentProfilePayload | null>(null);
+  /** Matric already proven by this account — lets us skip the OTP entirely. */
+  const [verifiedMatric, setVerifiedMatric] = useState<string | null>(null);
+  const [checkingVerified, setCheckingVerified] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     void getMalaysianUniversities().then((list) => {
       if (!cancelled) setUniOptions(list as UniversityConfig[]);
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A matric verified earlier (here, at sign-up, or through Services with a
+  // UiTM student address) still counts, so look it up once and prefill.
+  useEffect(() => {
+    let cancelled = false;
+    void getVerifiedUitmMatric()
+      .then((matric) => {
+        if (cancelled) return;
+        if (matric) {
+          setVerifiedMatric(matric);
+          setStudentEmail((prev) => (prev.trim() ? prev : matric));
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setCheckingVerified(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -104,12 +132,8 @@ export default function UniversityConnectScreen() {
     setStep('terms');
   };
 
-  const handleFetchTimetable = async () => {
-    if (!studentEmail.trim()) {
-      Alert.alert(T('error'), T('studentEmailLabel'));
-      return;
-    }
-
+  /** Fetch + parse. Only ever called with a matric this account has proven. */
+  const runFetch = async (matric: string) => {
     const coursesList = coursesInput
       .split(/[,\s]+/)
       .map((c) => c.trim().toUpperCase())
@@ -118,17 +142,10 @@ export default function UniversityConnectScreen() {
     setStep('validating');
     setLoading(true);
 
-    const usePublicOnly = selectedUni?.id === 'uitm';
-    const timetablePromise = usePublicOnly
-      ? fetchUitmTimetablePublic(
-          studentEmail.trim(),
-          coursesList.length > 0 ? coursesList : undefined,
-        )
-      : fetchUitmTimetable(
-          studentEmail.trim(),
-          password,
-          coursesList.length > 0 ? coursesList : undefined,
-        );
+    const timetablePromise = fetchUitmTimetablePublic(
+      matric,
+      coursesList.length > 0 ? coursesList : undefined,
+    );
     const minValidateMs = 500;
     const minDelay = new Promise<void>((r) => setTimeout(r, minValidateMs));
 
@@ -140,14 +157,12 @@ export default function UniversityConnectScreen() {
       const campus = result?.campus as string | undefined;
       const m = result?.matric as string | undefined;
       const mystudentProfile = (result?.profile as MyStudentProfilePayload | undefined) ?? undefined;
-      setResolvedMatric(m || matricFromStudentLoginInput(studentEmail.trim()));
+      setResolvedMatric(m || matric);
 
       if (fetched.length === 0) {
         Alert.alert(
           T('noTimetable'),
-          usePublicOnly
-            ? 'No timetable slots were found from public sources. Try adding your course codes, or enter your MyStudent password to fetch via portal login.'
-            : 'No timetable slots were found. Add your course codes in the optional field and try again.',
+          'No timetable slots were found from public sources. Add your course codes in the optional field and try again.',
           [{ text: 'OK', onPress: () => setStep('login') }],
         );
         return;
@@ -155,7 +170,7 @@ export default function UniversityConnectScreen() {
 
       setCampusInfo(campus);
       setEntries(fetched);
-      setLastMyStudentProfile(usePublicOnly ? null : (mystudentProfile ?? null));
+      setLastMyStudentProfile(mystudentProfile ?? null);
       setStep('review');
     } catch (e) {
       Alert.alert(T('error'), e instanceof Error ? e.message : 'Failed to fetch timetable');
@@ -163,6 +178,31 @@ export default function UniversityConnectScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFetchTimetable = async () => {
+    const matric = matricFromStudentLoginInput(studentEmail.trim());
+    if (!matric) {
+      Alert.alert(T('error'), T('studentEmailLabel'));
+      return;
+    }
+    if (!isValidMatric(matric)) {
+      Alert.alert(T('error'), 'Enter your matric number, e.g. 2024123456.');
+      return;
+    }
+
+    // Already proven → straight to the timetable, no code to type.
+    if (verifiedMatric && verifiedMatric === matric) {
+      await runFetch(matric);
+      return;
+    }
+    setStep('verify');
+  };
+
+  const handleMatricVerified = (matric: string) => {
+    setVerifiedMatric(matric);
+    setStudentEmail(matric);
+    void runFetch(matric);
   };
 
   const handleConfirmSave = async () => {
@@ -231,7 +271,7 @@ export default function UniversityConnectScreen() {
     const displayIndex =
       step === 'university' ? 0
       : step === 'terms' ? 1
-      : step === 'login' || step === 'validating' || step === 'fetching' ? 2
+      : step === 'login' || step === 'verify' || step === 'validating' || step === 'fetching' ? 2
       : 3;
     return (
       <View style={styles.stepRow}>
@@ -372,8 +412,12 @@ export default function UniversityConnectScreen() {
     </View>
   );
 
-  /* ── Login form (student ID + password) ─────────────── */
-  const renderLoginForm = () => (
+  /* ── Student ID form (public sources, no credentials) ─── */
+  const renderLoginForm = () => {
+    const currentMatric = matricFromStudentLoginInput(studentEmail.trim());
+    const isCurrentVerified = !!verifiedMatric && verifiedMatric === currentMatric;
+
+    return (
     <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
         <View style={[styles.loginCard, { backgroundColor: theme.card }]}>
@@ -385,16 +429,24 @@ export default function UniversityConnectScreen() {
             </View>
           </View>
 
-          <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Student ID</Text>
+          <View style={styles.labelRow}>
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginBottom: 0 }]}>Student ID</Text>
+            {isCurrentVerified && (
+              <View style={[styles.verifiedChip, { backgroundColor: '#34C75919' }]}>
+                <Feather name="check-circle" size={11} color="#34C759" />
+                <Text style={styles.verifiedChipText}>Verified</Text>
+              </View>
+            )}
+          </View>
           <TextInput
-            style={[styles.textField, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+            style={[styles.textField, { backgroundColor: theme.background, color: theme.text, borderColor: isCurrentVerified ? '#34C75966' : theme.border }]}
             value={studentEmail}
             onChangeText={setStudentEmail}
             placeholder="e.g. 2024xxxxxx"
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="default"
+            keyboardType="number-pad"
           />
 
           <Text style={[styles.fieldLabel, { color: theme.textSecondary, marginTop: 20 }]}>
@@ -412,7 +464,9 @@ export default function UniversityConnectScreen() {
           <Text style={[styles.hintText, { color: theme.textSecondary }]}>{T('optionalCourseCodesHint')}</Text>
 
           <Text style={[styles.hintText, { color: theme.textSecondary }]}>
-            This uses public timetable sources (CDN/ICRESS). If no results, add course codes.
+            {isCurrentVerified
+              ? 'This ID is verified — we\'ll pull your timetable from public UiTM sources.'
+              : 'We\'ll email a one-time code to your UiTM student address to confirm the ID is yours. No password needed.'}
           </Text>
         </View>
 
@@ -421,19 +475,44 @@ export default function UniversityConnectScreen() {
             styles.primaryBtn,
             { backgroundColor: theme.primary },
             pressed && { opacity: 0.85 },
-            !studentEmail.trim() && { opacity: 0.5 },
+            (!studentEmail.trim() || checkingVerified) && { opacity: 0.5 },
           ]}
           onPress={handleFetchTimetable}
-          disabled={!studentEmail.trim()}
+          disabled={!studentEmail.trim() || checkingVerified}
         >
-          <Feather name="zap" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.primaryBtnText}>Generate Timetable</Text>
+          <Feather
+            name={isCurrentVerified ? 'zap' : 'shield'}
+            size={20}
+            color="#fff"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.primaryBtnText}>
+            {isCurrentVerified ? 'Generate Timetable' : 'Verify & Generate'}
+          </Text>
         </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
+    );
+  };
+
+  /* ── Validating login ───────────────────────────────── */
+  /* ── Prove the matric belongs to this user ──────────── */
+  const renderVerify = () => (
+    <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        style={styles.scrollBody}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <MatricOtpVerify
+          matric={matricFromStudentLoginInput(studentEmail.trim())}
+          onVerified={handleMatricVerified}
+          onChangeId={() => setStep('login')}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 
-  /* ── Validating login ───────────────────────────────── */
   const renderValidating = () => (
     <View style={styles.fetchingWrap}>
       <ActivityIndicator size="large" color={theme.primary} />
@@ -566,6 +645,7 @@ export default function UniversityConnectScreen() {
       university: 'university',
       terms: 'university',
       login: 'terms',
+      verify: 'login',
       validating: 'login',
       fetching: 'login',
       review: 'login',
@@ -586,6 +666,7 @@ export default function UniversityConnectScreen() {
 
       {/* University connect steps are now deprecated; we only generate timetable via public sources. */}
       {step === 'login' && renderLoginForm()}
+      {step === 'verify' && renderVerify()}
       {step === 'validating' && renderValidating()}
       {step === 'fetching' && renderFetching()}
       {step === 'review' && renderReview()}
@@ -662,25 +743,20 @@ const styles = StyleSheet.create({
   loginUniName: { fontSize: 22, fontWeight: '800' },
   loginSubtext: { fontSize: 13, marginTop: 2 },
   fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8, letterSpacing: 0.3 },
+  labelRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
+  },
+  verifiedChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+  },
+  verifiedChipText: {
+    fontSize: 11, fontWeight: '800', color: '#34C759', letterSpacing: 0.2,
+  },
   textField: {
     borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16,
   },
   hintText: { fontSize: 12, marginTop: 8, lineHeight: 18 },
-  passwordWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: 12, overflow: 'hidden',
-  },
-  passwordInput: {
-    flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16,
-  },
-  eyeBtn: {
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  securityBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', borderRadius: 12,
-    padding: 14, gap: 10, marginTop: 20,
-  },
-  securityText: { flex: 1, fontSize: 13, lineHeight: 19 },
   fetchingWrap: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40,
   },

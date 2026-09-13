@@ -20,17 +20,22 @@ import { supabase } from '@/src/lib/supabase';
 import { getUniversitiesForCountry, type UniversityItem } from '@/src/lib/universities';
 import { COUNTRIES, DEFAULT_COUNTRY_CODE, getCountryByCode } from '@/src/lib/countries';
 import { useApp } from '@/src/context/AppContext';
+import type { AcademicLevel } from '@/src/types';
 
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
 const skippedKeyFor = (uid: string) => `${PROFILE_SETUP_SKIPPED_KEY_PREFIX}${uid}`;
 
+/**
+ * `key` must be an `AcademicLevel` — it is written straight to `profiles.academic_level`, and the
+ * lowercase keys this list used to carry did not survive the read-side check in profileDb.
+ */
 const ACADEMIC_LEVELS = [
-  { key: 'foundation', label: 'Foundation / Pre-U', icon: 'book-open' as const },
-  { key: 'diploma', label: 'Diploma', icon: 'file-text' as const },
-  { key: 'degree', label: 'Degree', icon: 'award' as const },
-  { key: 'masters', label: "Master's", icon: 'layers' as const },
-  { key: 'phd', label: 'PhD', icon: 'activity' as const },
-] as const;
+  { key: 'Foundation', label: 'Foundation / Pre-U', icon: 'book-open' as const },
+  { key: 'Diploma', label: 'Diploma', icon: 'file-text' as const },
+  { key: 'Bachelor', label: 'Degree', icon: 'award' as const },
+  { key: 'Master', label: "Master's", icon: 'layers' as const },
+  { key: 'PhD', label: 'PhD', icon: 'activity' as const },
+] as const satisfies readonly { key: AcademicLevel; label: string; icon: string }[];
 
 export default function ProfileSetup() {
   const { updateProfile } = useApp();
@@ -38,7 +43,7 @@ export default function ProfileSetup() {
   const [country, setCountry] = useState(DEFAULT_COUNTRY_CODE);
   const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [university, setUniversity] = useState<UniversityItem | null>(null);
-  const [academicLevel, setAcademicLevel] = useState<string>('');
+  const [academicLevel, setAcademicLevel] = useState<AcademicLevel | ''>('');
   const [universities, setUniversities] = useState<UniversityItem[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universityModalVisible, setUniversityModalVisible] = useState(false);
@@ -98,7 +103,7 @@ export default function ProfileSetup() {
         country,
         university: university.name,
         universityId: university.id,
-        academicLevel: academicLevel as any,
+        ...(academicLevel ? { academicLevel } : {}),
       });
 
       try {
