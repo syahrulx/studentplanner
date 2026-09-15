@@ -53,6 +53,7 @@ export default function QuizGameplay() {
   const [score, setScore] = useState(0);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [shortAnswer, setShortAnswer] = useState('');
+  const shortInputRef = useRef<TextInput>(null);
   const [streak, setStreak] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [autoAdvanceLeft, setAutoAdvanceLeft] = useState<number | null>(null);
@@ -349,9 +350,23 @@ export default function QuizGameplay() {
     handledQuestionRef.current = qi;
     hasLocalSubmitRef.current = true;
     const timeMs = timerSeconds * 1000;
-    setStreak(0);
-    setShortAnswer('');
-    showFeedback({ correct: false, selectedIndex: -1, typedAnswer: null, timedOut: true });
+    // Expiry fires from a timer, not a tap, so the user may be mid-selection with
+    // the iOS edit menu animating in. Clearing the text and disabling the field
+    // under it pulls the menu's anchor away and UIKit crashes laying it out
+    // (CALayerInvalidGeometry, "position contains NaN"). Resign the field first
+    // — that dismisses the menu — and apply the changes on the next frame.
+    const expire = () => {
+      setStreak(0);
+      setShortAnswer('');
+      showFeedback({ correct: false, selectedIndex: -1, typedAnswer: null, timedOut: true });
+    };
+    const input = shortInputRef.current;
+    if (input?.isFocused()) {
+      input.blur();
+      requestAnimationFrame(expire);
+    } else {
+      expire();
+    }
     if (myParticipantId) {
       await submitAnswer(qi, -1, false, timeMs, null);
     }
@@ -658,6 +673,7 @@ export default function QuizGameplay() {
         {isShortAnswer ? (
           <View style={s.shortAnswerWrap}>
             <TextInput
+              ref={shortInputRef}
               style={[s.shortInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
               placeholder="Type your answer..."
               placeholderTextColor={theme.textSecondary}
