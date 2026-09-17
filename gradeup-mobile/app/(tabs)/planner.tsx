@@ -699,6 +699,17 @@ export default function Planner() {
   }, [filteredTasks, filteredStudyItems, sharedTaskItems]);
 
   const pinnedSet = useMemo(() => new Set(pinnedTaskIds), [pinnedTaskIds]);
+
+  /** Subject shown on a card; also the key and header for "Sort by subject". */
+  const subjectLabelOf = useCallback((item: PlannerItem): string => {
+    if (item.itemType !== 'task') return item.subjectId || '';
+    if (item.courseId?.toLowerCase().startsWith('gc-course-')) {
+      const found = courses.find(c => c.id === item.courseId);
+      return found ? found.name : item.courseId.replace(/^gc-course-/i, '');
+    }
+    return item.courseId || '';
+  }, [courses]);
+
   const displayList = useMemo((): PlannerItem[] => {
     const groupBreakdownSteps = (ordered: PlannerItem[]): PlannerItem[] => {
       const childIds = new Set<string>();
@@ -734,9 +745,15 @@ export default function Planner() {
       });
       return grouped;
     };
-    // In "all" view, keep strict date grouping: no pinning, just combined sorted list.
+    // In "all" view, no pinning. Nearest due keeps the date-sorted combinedList;
+    // Subject regroups it by subject, date order kept within each subject
+    // (Array.prototype.sort is stable).
     if (view === 'all') {
-      return groupBreakdownSteps(combinedList);
+      if (sortMode !== 'subject') return groupBreakdownSteps(combinedList);
+      const bySubject = [...combinedList].sort((a, b) =>
+        subjectLabelOf(a).localeCompare(subjectLabelOf(b), undefined, { sensitivity: 'base' }),
+      );
+      return groupBreakdownSteps(bySubject);
     }
     const raw = combinedList;
     const isPinned = (item: PlannerItem): item is PlannerTaskItem =>
@@ -790,7 +807,7 @@ export default function Planner() {
     });
 
     return groupBreakdownSteps([...pinned, ...unpinned]);
-  }, [combinedList, pinnedSet, pinnedTaskIds, sortMode, view, collapsedBreakdowns]);
+  }, [combinedList, pinnedSet, pinnedTaskIds, sortMode, view, collapsedBreakdowns, subjectLabelOf]);
 
   /** Week grid: scroll to first hour that has items (tasks default to 23:59 and sit at the bottom). */
   useEffect(() => {
@@ -1004,14 +1021,7 @@ export default function Planner() {
     return (item.dueTime || '').slice(0, 5);
   };
 
-  const getCardSubject = (item: PlannerItem) => {
-    if (item.itemType !== 'task') return item.subjectId;
-    if (item.courseId?.toLowerCase().startsWith('gc-course-')) {
-      const found = courses.find(c => c.id === item.courseId);
-      return found ? found.name : item.courseId.replace(/^gc-course-/i, '');
-    }
-    return item.courseId;
-  };
+  const getCardSubject = subjectLabelOf;
 
   const handleItemPress = (item: PlannerItem) => {
     if (item.itemType === 'task') {
@@ -2319,17 +2329,23 @@ export default function Planner() {
             </View>
           ) : (
             (() => {
-              let lastDate = '';
+              // Group headers follow the sort: dates for Nearest due, subjects
+              // for Subject (the card itself still shows its due date).
+              const bySubject = sortMode === 'subject';
+              let lastGroup: string | null = null;
               return displayList.map((item, idx) => {
                 const itemDate = item.itemType === 'task' ? item.dueDate : item.date;
-                const showHeader = itemDate !== lastDate;
-                lastDate = itemDate;
+                const group = bySubject ? subjectLabelOf(item) : itemDate;
+                const showHeader = group !== lastGroup;
+                lastGroup = group;
                 return (
                   <View key={`all-${idx}`} style={s.allRowOffset}>
                     {showHeader && (
                       <View style={s.allDateRow}>
                         <Text style={s.allDateHeader}>
-                          {formatDisplayDate(itemDate)}  •  {weekLabelForDate(itemDate)}
+                          {bySubject
+                            ? group || T('subject')
+                            : `${formatDisplayDate(itemDate)}  •  ${weekLabelForDate(itemDate)}`}
                         </Text>
                         <View style={s.allDateLine} />
                       </View>
