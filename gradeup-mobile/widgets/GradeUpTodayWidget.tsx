@@ -1,5 +1,5 @@
 import { ZStack, Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, frame, opacity, background, containerRelativeFrame } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, opacity, background, containerRelativeFrame } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetTaskRow } from '../src/lib/homeWidgetProps';
 
@@ -345,11 +345,27 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
         <Divider modifiers={[...fg(line), opacity(0.2)]} />
       ) : null}
 
-      {/* Two-column content */}
+      {/* Two-column content.
+          Each column takes half the widget width via containerRelativeFrame
+          rather than sizing to its own text. Without it both columns shrink to
+          fit "All done" / "No classes" and huddle against the leading edge,
+          which leaves the rest of the widget empty — barely noticeable on an
+          iPhone, and the whole right-hand half of an iPad widget.
+          `spacing` is the width this layout does not get: our own side padding,
+          which containerRelativeFrame measures outside of. The gap between the
+          columns is then padding *inside* each half, so it cannot affect the
+          split. */}
       <HStack spacing={0} alignment="top">
 
         {/* TASKS column */}
-        <VStack spacing={dense ? 4 : 6} alignment="leading" modifiers={[padding({ trailing: 12 })]}>
+        <VStack
+          spacing={dense ? 4 : 6}
+          alignment="leading"
+          modifiers={[
+            padding({ trailing: 10 }),
+            containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: contentInsets.side * 2, alignment: 'topLeading' }),
+          ]}
+        >
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>TASKS</Text>
             <Spacer />
@@ -390,13 +406,15 @@ function GradeUpTodayWidgetView(props: HomeWidgetProps | null | undefined, _env:
           <Spacer />
         </VStack>
 
-        {/* Vertical 1pt line */}
-        <VStack modifiers={[frame({ width: 1 }), ...(isFullColor ? [background(line)] : []), opacity(0.22)]}>
-          <Spacer />
-        </VStack>
-
         {/* CLASSES column */}
-        <VStack spacing={dense ? 2 : 6} alignment="leading" modifiers={[padding({ leading: 12 })]}>
+        <VStack
+          spacing={dense ? 2 : 6}
+          alignment="leading"
+          modifiers={[
+            padding({ leading: 10 }),
+            containerRelativeFrame({ axes: 'horizontal', count: 2, span: 1, spacing: contentInsets.side * 2, alignment: 'topLeading' }),
+          ]}
+        >
           <HStack spacing={4}>
             <Text modifiers={[font({ size: 8, weight: 'heavy' }), ...fg(accent)]}>CLASSES</Text>
             <Spacer />
