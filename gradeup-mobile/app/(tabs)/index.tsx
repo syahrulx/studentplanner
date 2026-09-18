@@ -13,6 +13,7 @@ import {
   Easing,
   Modal,
   ScrollView,
+  InteractionManager,
 } from 'react-native';
 import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1220,6 +1221,24 @@ export default function Dashboard() {
     } as any);
   }, [recommendedToday]);
   const [refreshingHome, setRefreshingHome] = useState(false);
+
+  // Everything below the hero waits for the first frame. Mounting the whole
+  // dashboard in one Fabric transaction held the main thread long enough for
+  // Sentry to report an App Hang on a cold start, where the first mount also
+  // pays for class and selector registration. The user sees the header and hero
+  // immediately; the rest arrives a frame later, before they can scroll to it.
+  const [belowFoldReady, setBelowFoldReady] = useState(false);
+  useEffect(() => {
+    if (belowFoldReady) return;
+    const task = InteractionManager.runAfterInteractions(() => setBelowFoldReady(true));
+    // runAfterInteractions waits for any running animation, so a slow
+    // transition must not strand the rest of the screen.
+    const fallback = setTimeout(() => setBelowFoldReady(true), 500);
+    return () => {
+      task.cancel();
+      clearTimeout(fallback);
+    };
+  }, [belowFoldReady]);
   const [themeLoadingHold, setThemeLoadingHold] = useState(false);
   const themeLoadingStartedAtRef = useRef<number | null>(null);
   const refreshSpin = useRef(new Animated.Value(0)).current;
@@ -2224,6 +2243,9 @@ export default function Dashboard() {
         </View>
       )}
 
+      {/* Below the fold: mounted a frame later, see belowFoldReady. */}
+      {belowFoldReady ? (
+        <>
       {/* Today's focus + Upcoming — side by side on tablet */}
       <View style={isTablet ? styles.dashRow : undefined}>
       {isTablet ? (
@@ -2421,6 +2443,8 @@ export default function Dashboard() {
       </View>
 
       <View style={{ height: 48 }} />
+        </>
+      ) : null}
           </>
         )}
       />

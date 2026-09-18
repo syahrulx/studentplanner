@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  InteractionManager,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -39,6 +40,21 @@ export function HomeHeroCarousel({
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const [index, setIndex] = useState(0);
   const lastIndex = useRef(0);
+  // Only the first page is built for the first frame; the off-screen ones follow
+  // once the frame is done. Mounting every page up front put their whole view
+  // tree into the same main-thread transaction, which is what the home screen's
+  // App Hang was made of. Page wrappers are always rendered, so widths, snap
+  // offsets and the dots stay exactly as before.
+  const [allPagesReady, setAllPagesReady] = useState(false);
+  useEffect(() => {
+    if (allPagesReady) return;
+    const task = InteractionManager.runAfterInteractions(() => setAllPagesReady(true));
+    const fallback = setTimeout(() => setAllPagesReady(true), 500);
+    return () => {
+      task.cancel();
+      clearTimeout(fallback);
+    };
+  }, [allPagesReady]);
   // A page is the full screen width with the gutter *inside* it. Insetting the
   // scroll content instead would leave a sliver of the neighbouring page
   // showing at the screen edge, with its text clipped mid-word.
@@ -91,7 +107,9 @@ export function HomeHeroCarousel({
       >
         {visible.map((page, pageIndex) => (
           <View key={pageIndex} style={{ width: pageWidth, paddingHorizontal: horizontalMargin }}>
-            {page}
+            {/* The current page is always built, so a swipe that lands before
+                the deferred mount still shows content rather than a blank slide. */}
+            {allPagesReady || pageIndex === index ? page : null}
           </View>
         ))}
       </ScrollView>
