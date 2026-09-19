@@ -58,13 +58,17 @@ class MapboxLazyInitModule : Module() {
 
     for (name in MAPS_INITIALIZERS) {
       try {
-        val cls = Class.forName(name)
-        if (!Initializer::class.java.isAssignableFrom(cls)) {
+        val raw = Class.forName(name)
+        if (!Initializer::class.java.isAssignableFrom(raw)) {
           Log.w(TAG, "$name is not an androidx.startup.Initializer; skipping.")
           continue
         }
+        // initializeComponent infers its type parameter from the argument, and a
+        // star projection gives it nothing to infer from. The initialised object
+        // is discarded, so Any is as good a T as the real one.
         @Suppress("UNCHECKED_CAST")
-        appInitializer.initializeComponent(cls as Class<out Initializer<*>>)
+        val cls = raw as Class<out Initializer<Any>>
+        appInitializer.initializeComponent(cls)
         Log.i(TAG, "Mapbox initialised on demand via $name")
         initializedBy = name
         return name
