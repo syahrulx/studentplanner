@@ -21,6 +21,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { ensureMapboxNativeInit } from 'mapbox-lazy-init';
 
 // Mapbox requires native code compiled into a dev build — it throws in Expo Go,
@@ -37,10 +38,21 @@ if (Platform.OS !== 'web') {
       console.log('[MAP] Native init:', initializedBy ?? 'not initialised');
     }
     Mapbox = require('@rnmapbox/maps').default as typeof import('@rnmapbox/maps').default;
-    const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+    // iOS reads MBXAccessToken from Info.plist, which app.config.js always fills
+    // — Android has no equivalent, so the same value is the fallback here. It is
+    // a public pk token, and it already ships inside every iOS build.
+    const _configToken = (Constants.expoConfig?.ios as { infoPlist?: { MBXAccessToken?: string } } | undefined)
+      ?.infoPlist?.MBXAccessToken;
+    const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || _configToken || '';
     if (_mapboxToken) {
       console.log('[MAP] Token set via JS, length:', _mapboxToken.length);
       (Mapbox as any).setAccessToken(_mapboxToken);
+    } else if (Platform.OS === 'android') {
+      // Mounting a MapView without a token raises MapboxConfigurationException on
+      // the main thread, which is a native crash, not a catchable JS error. Drop
+      // to the placeholder instead: a map we cannot draw must not take the app down.
+      console.warn('[MAP] No Mapbox access token — showing the placeholder instead of the map.');
+      Mapbox = null;
     } else {
       console.log('[MAP] No JS token — using native Info.plist MBXAccessToken');
     }
