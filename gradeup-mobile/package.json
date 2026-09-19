@@ -78,6 +78,7 @@
     "home-widget-bridge": "file:./modules/home-widget-bridge",
     "html2canvas": "^1.4.1",
     "lottie-react": "^2.4.1",
+    "mapbox-lazy-init": "file:./modules/mapbox-lazy-init",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.6.205",
     "punycode": "^2.3.1",

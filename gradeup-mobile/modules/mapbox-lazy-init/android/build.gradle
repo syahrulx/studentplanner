@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'host.exp.exponent'
+version = '1.0.0'
+
+android {
+  namespace 'expo.modules.mapboxlazyinit'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // AndroidX App Startup only. Mapbox's own initializer is reached by reflection,
+  // so this module never needs the Mapbox artifact (or its download token).
+  implementation 'androidx.startup:startup-runtime:1.1.1'
+}

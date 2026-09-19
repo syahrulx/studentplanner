@@ -21,6 +21,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ensureMapboxNativeInit } from 'mapbox-lazy-init';
 
 // Mapbox requires native code compiled into a dev build — it throws in Expo Go,
 // and @rnmapbox/maps has no web build (aliased to a stub in metro.config.js).
@@ -28,6 +29,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 let Mapbox: typeof import('@rnmapbox/maps').default | null = null;
 if (Platform.OS !== 'web') {
   try {
+    // Android only: the map engine no longer starts with the process (that ran inside
+    // ActivityThread.handleBindApplication and caused background ANRs), so start it here,
+    // before the import below reads native constants that touch com.mapbox.maps.Style.
+    const initializedBy = ensureMapboxNativeInit();
+    if (Platform.OS === 'android') {
+      console.log('[MAP] Native init:', initializedBy ?? 'not initialised');
+    }
     Mapbox = require('@rnmapbox/maps').default as typeof import('@rnmapbox/maps').default;
     const _mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
     if (_mapboxToken) {

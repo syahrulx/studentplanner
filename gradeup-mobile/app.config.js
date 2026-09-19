@@ -221,6 +221,9 @@ export default ({ config }) => {
     // Compiles the "Plan from screenshot" App Intent into the main app target
     // so Back Tap shortcuts can reach it.
     './plugins/withSmartCapture',
+    // Must come after '@rnmapbox/maps' so it merges onto the manifest Mapbox contributes.
+    // Pairs with modules/mapbox-lazy-init, which starts the engine on demand instead.
+    './plugins/withLazyMapboxInit',
     [
       '@sentry/react-native/expo',
       {
