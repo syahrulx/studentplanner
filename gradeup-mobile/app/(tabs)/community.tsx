@@ -775,7 +775,15 @@ export default function CommunityMap() {
       <>
       {/* Theme-pack overlays: absolutely positioned decorations, map tab only */}
       {isCatTheme ? <CatLottie style={[styles.floatingCat, { bottom: layout.floatingCatBottom }]} /> : null}
-      {isSpiderTheme ? <SpiderLottie variant="communityLine" style={styles.spiderTopLine} /> : null}
+      {isSpiderTheme ? (
+        <SpiderLottie
+          variant="communityLine"
+          // Sits just above the sheet, wherever the sheet happens to be, like the
+          // cat above. A fixed offset per platform put it inside the friends list
+          // on Android, because the sheet is a share of screen height, not a constant.
+          style={[styles.spiderTopLine, { bottom: layout.bottomSheetHeight - 28 }]}
+        />
+      ) : null}
       {/* ─── TOP BAR ─── */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, width: 'auto' }]}>
@@ -2301,11 +2309,11 @@ const styles = StyleSheet.create({
     opacity: 0.96,
     zIndex: 18,
   },
-  /** Spider theme: decorative web at map bottom-right. */
+  /** Spider theme: decorative web at map bottom-right. `bottom` comes from the
+      layout hook at the call site, so it tracks the sheet on every screen size. */
   spiderTopLine: {
     position: 'absolute',
     right: 10,
-    bottom: Platform.OS === 'ios' ? 310 : 116,
     width: 100,
     height: 124,
     opacity: 0.80,
