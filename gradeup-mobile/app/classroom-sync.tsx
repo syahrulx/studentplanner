@@ -134,8 +134,15 @@ export default function ClassroomSync() {
   // and just load courses. Otherwise open Google exactly once per load attempt.
   useEffect(() => {
     if (notConfigured) {
+      // A build-time packaging mistake, not something the student can fix — the
+      // OAuth client ids that name the problem belong in the dev console only.
+      if (__DEV__) {
+        console.warn(
+          '[classroom-sync] no OAuth client id for this platform — set an iOS client id in EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (not the "Web" client) and an Android one in EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID, add them to the EAS build env, then rebuild.',
+        );
+      }
       setError(
-        'Google Classroom needs the correct OAuth client for this device: use an iOS client id in EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (not the "Web" client) for iPhone, and an Android client id for EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID. Add them to EAS build env, then rebuild.',
+        'Google Classroom sync is unavailable in this version of the app. Please update Rencana, or try again later.',
       );
       return;
     }

@@ -23,6 +23,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { alertAiError } from '@/src/lib/aiErrorMessage';
 import * as roomsApi from '@/src/lib/campusRoomsApi';
 import type { ExtractedRoom } from '@/src/lib/campusRoomsApi';
 
@@ -160,7 +161,7 @@ export default function CampusMapUploadScreen() {
           Alert.alert(T('campusMapExtractLimitTitle'), error.message);
         } else if (error.code !== 'MONTHLY_TOKEN_LIMIT') {
           // Monthly-limit alert is surfaced inside the API helper.
-          Alert.alert(T('error'), `${error.message}${error.code ? ` (${error.code})` : ''}`);
+          alertAiError('campus-map-upload', error, language);
         }
         return;
       }
@@ -170,7 +171,7 @@ export default function CampusMapUploadScreen() {
       }
       setRows(rooms.map((r) => ({ ...r, _key: nextKey() })));
     } catch (e) {
-      Alert.alert(T('error'), e instanceof Error ? e.message : 'Extraction failed.');
+      alertAiError('campus-map-upload', { message: e instanceof Error ? e.message : String(e) }, language);
     } finally {
       setBusy(false);
     }

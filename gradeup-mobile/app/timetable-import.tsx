@@ -21,6 +21,7 @@ import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeExtractTimetable } from '@/src/lib/invokeExtractTimetable';
 import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
+import { alertAiError } from '@/src/lib/aiErrorMessage';
 import { apiSlotsToTimetableEntries, parseExtractTimetableResponse } from '@/src/lib/timetableExtraction';
 import type { TimetableEntry } from '@/src/types';
 import { setHasSeenNonUitmTimetableIntro } from '@/src/storage';
@@ -113,11 +114,13 @@ export default function TimetableImportScreen() {
         if (isMonthlyLimitError(fnErr)) {
           return;
         }
-        Alert.alert(T('error'), `${fnErr.message}${fnErr.code ? ` (${fnErr.code})` : ''}`);
+        alertAiError('timetable-import', fnErr, language, { httpStatus });
         return;
       }
       if (httpStatus >= 400) {
-        Alert.alert(T('error'), `HTTP ${httpStatus}`);
+        alertAiError('timetable-import', { message: `HTTP ${httpStatus}`, code: 'INTERNAL' }, language, {
+          httpStatus,
+        });
         return;
       }
       const parsed = parseExtractTimetableResponse(data);
@@ -127,7 +130,7 @@ export default function TimetableImportScreen() {
       }
       setEntriesPreview(apiSlotsToTimetableEntries(parsed));
     } catch (e) {
-      Alert.alert(T('error'), e instanceof Error ? e.message : 'Extraction failed.');
+      alertAiError('timetable-import', { message: e instanceof Error ? e.message : String(e) }, language);
     } finally {
       setBusy(false);
     }

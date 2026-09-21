@@ -276,8 +276,8 @@ const translations = {
       'Pick notes that have written text in the body or a .pdf file attached.',
     flashcardPickGenerateFailedTitle: 'Could not generate',
     flashcardPickPartialFailures: 'Some notes failed:',
-    flashcardPickApiKeyTitle: 'API key required',
-    flashcardPickApiKeyHint: 'Add EXPO_PUBLIC_OPENAI_API_KEY to .env or app.config.js to generate flashcards.',
+    flashcardPickApiKeyTitle: 'Flashcards unavailable',
+    flashcardPickApiKeyHint: 'Flashcard generation is unavailable right now. Please try again later.',
     flashcardPickGenerateDoneTitle: 'Flashcards added',
     flashcardPickGenerateDoneBody: 'Added {n} new flashcards from your selected notes.',
     flashcardPickGenerateNoneTitle: 'No new cards',
@@ -1068,6 +1068,25 @@ const translations = {
     aiMonthlyLimitUpgrade: 'See plans',
     aiMonthlyLimitLater: 'Not now',
 
+    // AI failure copy — see src/lib/aiErrorMessage.ts. Never name env vars,
+    // buckets or CLI commands here: students read these, developers read the
+    // console.
+    aiErrorTitle: "Couldn't process this file",
+    aiErrorUnavailable:
+      'AI features are temporarily unavailable. Nothing you did caused this — please try again later.',
+    aiErrorService: "The AI service didn't respond. Please try again in a moment.",
+    aiErrorSession: 'Your session expired. Sign in again, then retry.',
+    aiErrorFileUnreadable: "We couldn't read the file you uploaded. Please pick it again.",
+    aiErrorNoText:
+      "No readable text was found in this file. Scanned or photographed PDFs don't work — export it from Word or Google Docs as a PDF and try again.",
+    aiErrorUnreadableDoc: "The AI couldn't make sense of this document. Try a simpler or cleaner file.",
+    aiErrorTooLarge: 'This file is too large. Try a smaller one, or split it into parts.',
+    aiErrorSaveFailed: "We couldn't save the result. Please try again.",
+    aiErrorGeneric: 'Something went wrong. Please try again.',
+    uploadSowUploadFailedTitle: "Couldn't upload this file",
+    uploadSowUploadFailedBody:
+      'The file could not be sent for processing. Check your connection and try again.',
+
     // Free-trial copy. {duration} is filled from the store's own trial length.
     trialTagline: 'Try {plan} free for {duration}. Cancel anytime.',
     trialCta: 'Try it free',
@@ -1440,8 +1459,8 @@ const translations = {
       'Pilih nota yang ada teks dalam badan atau fail .pdf dilampirkan.',
     flashcardPickGenerateFailedTitle: 'Tidak dapat menjana',
     flashcardPickPartialFailures: 'Sesetengah nota gagal:',
-    flashcardPickApiKeyTitle: 'Kunci API diperlukan',
-    flashcardPickApiKeyHint: 'Tambah EXPO_PUBLIC_OPENAI_API_KEY dalam .env atau app.config.js untuk jana kad imbas.',
+    flashcardPickApiKeyTitle: 'Kad imbas tidak tersedia',
+    flashcardPickApiKeyHint: 'Penjanaan kad imbas tidak tersedia buat masa ini. Sila cuba lagi nanti.',
     flashcardPickGenerateDoneTitle: 'Kad ditambah',
     flashcardPickGenerateDoneBody: '{n} kad imbas baharu ditambah daripada nota yang dipilih.',
     flashcardPickGenerateNoneTitle: 'Tiada kad baharu',
@@ -2235,6 +2254,25 @@ const translations = {
       'Token anda kembali pada {date}. Sementara itu, flashcard, kuiz dan tutor dijeda.',
     aiMonthlyLimitUpgrade: 'Lihat pelan',
     aiMonthlyLimitLater: 'Nanti dulu',
+
+    // Salinan kegagalan AI — lihat src/lib/aiErrorMessage.ts. Jangan sekali-kali
+    // sebut env var, bucket atau arahan CLI di sini: pelajar yang baca mesej ini,
+    // pembangun baca konsol.
+    aiErrorTitle: 'Tidak dapat memproses fail ini',
+    aiErrorUnavailable:
+      'Ciri AI tidak tersedia buat sementara waktu. Ini bukan salah anda — sila cuba lagi nanti.',
+    aiErrorService: 'Perkhidmatan AI tidak memberi respons. Sila cuba lagi sebentar nanti.',
+    aiErrorSession: 'Sesi anda telah tamat. Log masuk semula, kemudian cuba lagi.',
+    aiErrorFileUnreadable: 'Kami tidak dapat membaca fail yang anda muat naik. Sila pilih fail itu semula.',
+    aiErrorNoText:
+      'Tiada teks yang boleh dibaca dalam fail ini. PDF imbasan atau gambar tidak berfungsi — eksport daripada Word atau Google Docs sebagai PDF dan cuba lagi.',
+    aiErrorUnreadableDoc: 'AI tidak dapat memahami dokumen ini. Cuba fail yang lebih ringkas atau kemas.',
+    aiErrorTooLarge: 'Fail ini terlalu besar. Cuba fail yang lebih kecil, atau pecahkan kepada beberapa bahagian.',
+    aiErrorSaveFailed: 'Kami tidak dapat menyimpan hasilnya. Sila cuba lagi.',
+    aiErrorGeneric: 'Ada sesuatu yang tidak kena. Sila cuba lagi.',
+    uploadSowUploadFailedTitle: 'Tidak dapat memuat naik fail ini',
+    uploadSowUploadFailedBody:
+      'Fail ini tidak dapat dihantar untuk diproses. Semak sambungan internet anda dan cuba lagi.',
 
     // Salinan percubaan percuma. {duration} diisi daripada tempoh percubaan kedai.
     trialTagline: 'Cuba {plan} percuma {duration}. Batal bila-bila.',

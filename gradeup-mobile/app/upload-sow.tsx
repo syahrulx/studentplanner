@@ -18,10 +18,12 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
+import { useTranslations } from '@/src/i18n';
 import * as DocumentPicker from 'expo-document-picker';
 import { uploadSowFile, SOW_FILES_BUCKET } from '@/src/lib/sowStorage';
 import { invokeExtractSow } from '@/src/lib/invokeExtractSow';
 import { isMonthlyLimitError } from '@/src/lib/aiLimitError';
+import { alertAiError, logAiError } from '@/src/lib/aiErrorMessage';
 import { supabase } from '@/src/lib/supabase';
 import * as coursesDb from '@/src/lib/coursesDb';
 import * as taskDb from '@/src/lib/taskDb';
@@ -102,8 +104,9 @@ function formatTimeHM(d: Date): string {
 }
 
 export default function UploadSOW() {
-  const { courses, user, academicCalendar, addCourse, addTask, deleteCourse, tasks: existingTasks } = useApp();
+  const { courses, user, academicCalendar, addCourse, addTask, deleteCourse, tasks: existingTasks, language } = useApp();
   const theme = useTheme();
+  const T = useTranslations(language);
   const [selected, setSelected] = useState<{ name: string; uri: string; mimeType?: string | null } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -291,13 +294,13 @@ export default function UploadSOW() {
         selected.mimeType ?? undefined
       );
       if (uploadError) {
-        const supabaseUrl = (Constants.expoConfig?.extra?.supabaseUrl as string) || '';
-        const msg = uploadError.message || '';
-        const bucketHint =
-          /bucket|not found/i.test(msg)
-            ? `\n\nBucket name: "${SOW_FILES_BUCKET}"\nApp URL: ${supabaseUrl || '(not set)'}\n\nCreate the bucket in Dashboard → Storage, or set EXPO_PUBLIC_SOW_BUCKET. Restart Expo after changing .env.`
-            : '';
-        Alert.alert('Upload failed', msg + bucketHint);
+        // The Supabase message names buckets and policies — dev detail. Students
+        // get copy they can act on; the rest goes to the console in dev builds.
+        logAiError('upload-sow', { message: uploadError.message, code: 'STORAGE' }, {
+          bucket: SOW_FILES_BUCKET,
+          supabaseUrl: (Constants.expoConfig?.extra?.supabaseUrl as string) || '(not set)',
+        });
+        Alert.alert(T('uploadSowUploadFailedTitle'), T('uploadSowUploadFailedBody'));
         return;
       }
 
@@ -330,25 +333,14 @@ export default function UploadSOW() {
         if (isMonthlyLimitError({ message: errMessage, code: errCode })) {
           return;
         }
-        const codeSuffix = errCode ? ` (${errCode})` : '';
-        const isOpenAi =
-          errCode === 'OPENAI' ||
-          (errCode === 'CONFIG' && /openai/i.test(errMessage)) ||
-          /openai.*api key|invalid_api_key/i.test(errMessage);
-        const showSupabaseJwtTip =
-          !isOpenAi && (httpStatus === 401 || /Invalid JWT|jwt.*invalid|unauthoriz/i.test(errMessage));
-        const supabaseTip = showSupabaseJwtTip
-          ? '\n\nTip: Use the anon public JWT from Supabase → Settings → API. Set EXPO_PUBLIC_SUPABASE_KEY, then npx expo start -c.'
-          : '';
-        const openAiTip = isOpenAi
-          ? '\n\nSet the secret on the server:\nnpx supabase secrets set OPENAI_API_KEY=sk-...'
-          : '';
-        Alert.alert('AI extraction failed', `The AI could not process this file.${openAiTip || supabaseTip || '\n\nTry again or use a different PDF.'}`);
+        alertAiError('upload-sow', { message: errMessage, code: errCode }, language, { httpStatus });
         return;
       }
 
       if (httpStatus >= 400) {
-        Alert.alert('AI extraction failed', 'The server could not process this file. Please try again or use a different PDF.');
+        alertAiError('upload-sow', { message: `HTTP ${httpStatus}`, code: 'INTERNAL' }, language, {
+          httpStatus,
+        });
         return;
       }
 
@@ -392,7 +384,7 @@ export default function UploadSOW() {
         rawTextPreview: typeof body?.raw_text_preview === 'string' ? body.raw_text_preview : '',
       });
     } catch (e) {
-      Alert.alert('Extraction failed', 'Something went wrong. Please try again.');
+      alertAiError('upload-sow', { message: e instanceof Error ? e.message : String(e) }, language);
     } finally {
       setIsBusy(false);
     }
