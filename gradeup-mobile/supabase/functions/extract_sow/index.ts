@@ -1,6 +1,6 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, responsesSamplingParams, samplingParams } from '../_shared/models.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
   checkMonthlyTokenLimit,
@@ -446,7 +446,7 @@ async function openAiExtractViaPdfNative(args: {
     body: JSON.stringify({
       model: args.model,
       store: false,
-      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
+      ...responsesSamplingParams(args.model, { temperature: 0, reasoning: 'none' }),
       instructions: SYSTEM_INSTRUCTIONS,
       text: { format: { type: 'json_object' } },
       input: [
@@ -666,6 +666,9 @@ Deno.serve(async (req) => {
 
     let normalized: { subjects: ExtractedSubject[]; tasks: ExtractedTask[] } | null = null;
     let extractionMode: 'pdf_native' | 'text_chat' = 'text_chat';
+    // Kept so that if the text fallback also fails we can report the original
+    // model failure, which is the more useful one to debug.
+    let pdfFailure: { status: number; detail: string } | null = null;
 
     const canTryPdfNative =
       isPdfMagic(bytes) && bytes.length > 0 && bytes.length <= MAX_PDF_BYTES_NATIVE;
@@ -693,10 +696,18 @@ Deno.serve(async (req) => {
           normalized = n;
           extractionMode = 'pdf_native';
         } else {
-          return errorBody('AI received the PDF but returned invalid JSON or could not find tasks.', 'PARSE');
+          console.warn(
+            'extract_sow: native PDF pass returned unusable JSON; falling back to locally extracted text.'
+          );
         }
       } else if (!pdfRes.ok) {
-        return errorBody(`OpenAI error ${pdfRes.status}: ${pdfRes.detail}`, 'OPENAI');
+        // Not fatal, and deliberately so: this pass used to hard-return, so one
+        // bad request here killed every import. The text extracted above is a
+        // perfectly good second attempt, so use it instead of giving up.
+        pdfFailure = { status: pdfRes.status, detail: pdfRes.detail };
+        console.warn(
+          `extract_sow: native PDF pass failed (OpenAI ${pdfRes.status}); falling back to locally extracted text. ${pdfRes.detail}`
+        );
       }
     } else if (bytes.length > MAX_PDF_BYTES_NATIVE && isPdfMagic(bytes)) {
       console.warn(
@@ -704,8 +715,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!normalized && !canTryPdfNative) {
+    if (!normalized) {
       if (textForModel.length < 120) {
+        // Nothing to fall back on. If the native pass failed for its own reason,
+        // report that instead of blaming the PDF's text layer.
+        if (pdfFailure) {
+          return errorBody(`OpenAI error ${pdfFailure.status}: ${pdfFailure.detail}`, 'OPENAI');
+        }
         return errorBody(
           `Almost no readable text was found in this PDF. Scanned (image-only) PDFs, password-protected files, or heavy compression often cause this. Fix: open the SOW in Word/Google Docs and use Save as PDF / Print to PDF so text is embedded.`,
           'PDF_TEXT'
@@ -718,7 +734,13 @@ Deno.serve(async (req) => {
         documentText: textForModel,
       });
       if (!textRes.ok) {
-        return errorBody(`OpenAI error ${textRes.status}: ${textRes.detail}`, 'OPENAI');
+        return errorBody(
+          `OpenAI error ${textRes.status}: ${textRes.detail}` +
+            (pdfFailure
+              ? ` (native PDF pass also failed with ${pdfFailure.status}: ${pdfFailure.detail})`
+              : ''),
+          'OPENAI'
+        );
       }
       await logTokenUsage(supabaseAdminForLimit, {
         user_id: userId,
@@ -749,7 +771,7 @@ Deno.serve(async (req) => {
       }
       const preview = textForModel.slice(0, 400).replace(/\s+/g, ' ');
       return errorBody(
-        `The model returned no subjects or tasks (mode: ${extractionMode}). First 400 chars of locally extracted text: "${preview}"… If this looks like gibberish, the PDF text layer may be broken — the app now sends the PDF directly to the model when possible; redeploy extract_sow and ensure OPENAI_SOW_MODEL supports file input (default gpt-5.6-luna). Image-only scans still need OCR or a text export.`,
+        `The model returned no subjects or tasks (mode: ${extractionMode}). First 400 chars of locally extracted text: "${preview}"… If this looks like gibberish the PDF text layer is broken; the native-PDF pass is the fallback for that case, so check the warning above for why it did not take over. Image-only scans need OCR or a text export.`,
         'EMPTY_EXTRACTION'
       );
     }

@@ -1,6 +1,6 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, responsesSamplingParams, samplingParams } from '../_shared/models.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import {
   checkMonthlyTokenLimit,
@@ -314,7 +314,7 @@ async function openAiTimetableFromPdfNative(args: {
     body: JSON.stringify({
       model: args.model,
       store: false,
-      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
+      ...responsesSamplingParams(args.model, { temperature: 0, reasoning: 'none' }),
       instructions: TIMETABLE_SYSTEM,
       text: { format: { type: 'json_object' } },
       input: [

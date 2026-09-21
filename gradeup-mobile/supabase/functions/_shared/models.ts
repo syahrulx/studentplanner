@@ -55,19 +55,36 @@ export function pickOpenAiModel(
   return OPENAI_MODEL_FAST;
 }
 
+const REASONING_FAMILY = /^(gpt-5|gpt-6|o[1-9]|chat-latest)/i;
+
 /**
- * GPT-5.x / GPT-6 models expose `reasoning_effort` and reject `temperature`
+ * GPT-5.x / GPT-6 models expose a reasoning effort and reject `temperature`
  * (except in narrow cases). Older chat models accept `temperature` only.
- * This helper returns the sampling block to spread into a Chat Completions
- * body so callers never special-case model families again.
+ *
+ * The two APIs spell the effort differently, so pick the helper that matches
+ * the endpoint you are POSTing to — `samplingParams` for
+ * `/v1/chat/completions`, `responsesSamplingParams` for `/v1/responses`.
+ * Crossing them is rejected with `unsupported_parameter`, and because the
+ * native-PDF passes are all on the Responses API that mistake used to fail
+ * every PDF extraction in the app.
  */
 export function samplingParams(
   model: string,
   opts: { temperature?: number; reasoning?: ReasoningEffort } = {},
 ): Record<string, unknown> {
-  const isReasoningFamily = /^(gpt-5|gpt-6|o[1-9]|chat-latest)/i.test(model);
-  if (isReasoningFamily) {
+  if (REASONING_FAMILY.test(model)) {
     return { reasoning_effort: opts.reasoning ?? 'none' };
+  }
+  return opts.temperature != null ? { temperature: opts.temperature } : {};
+}
+
+/** `samplingParams` for the Responses API, where effort nests under `reasoning`. */
+export function responsesSamplingParams(
+  model: string,
+  opts: { temperature?: number; reasoning?: ReasoningEffort } = {},
+): Record<string, unknown> {
+  if (REASONING_FAMILY.test(model)) {
+    return { reasoning: { effort: opts.reasoning ?? 'none' } };
   }
   return opts.temperature != null ? { temperature: opts.temperature } : {};
 }

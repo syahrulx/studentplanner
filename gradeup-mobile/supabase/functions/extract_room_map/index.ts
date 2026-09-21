@@ -1,6 +1,6 @@
 // @ts-nocheck — Deno edge function; runs on Supabase Deno runtime, not the RN TS compiler.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
+import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, responsesSamplingParams, samplingParams } from '../_shared/models.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import { getUserPlanRow } from '../_shared/tokenLimit.ts';
 
@@ -317,7 +317,7 @@ async function fromPdfNative(args: { apiKey: string; model: string; pdfBytes: Ui
     body: JSON.stringify({
       model: args.model,
       store: false,
-      ...samplingParams(args.model, { temperature: 0, reasoning: 'none' }),
+      ...responsesSamplingParams(args.model, { temperature: 0, reasoning: 'none' }),
       instructions: ROOM_SYSTEM,
       text: { format: { type: 'json_object' } },
       input: [
@@ -452,7 +452,7 @@ Deno.serve(async (req) => {
 
       // Floor-plan PDFs often embed label text in random stream order (≥120 chars
       // of gibberish), so the cheap text path returns empty. If text path yields
-      // nothing, retry with PDF vision (gpt-4o reads the drawing layout).
+      // nothing, retry with PDF vision, which reads the drawing layout.
       if (mergedText.trim().length >= 120) {
         const r = await fromTextChat({ apiKey: keyTrim, model: textModel, documentText: mergedText });
         if (!r.ok) return errorBody(`OpenAI error ${r.status}: ${r.detail}`, 'OPENAI');
