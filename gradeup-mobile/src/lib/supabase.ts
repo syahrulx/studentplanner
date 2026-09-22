@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import { LogBox, Platform } from 'react-native';
+import { requestUrl, timeoutForUrl } from './supabaseRequestTimeout';
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl as string | undefined;
 const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey as string | undefined;
@@ -9,6 +10,40 @@ const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey as string |
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase config. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_KEY in app.config.js or .env');
 }
+
+/**
+ * Aborts a request that has stopped making progress, so callers get a rejection
+ * they can show a retry for instead of a promise that never settles. Which
+ * requests are capped, and why, lives in ./supabaseRequestTimeout.
+ */
+const fetchWithTimeout: typeof fetch = (input, init) => {
+  const ms = timeoutForUrl(requestUrl(input));
+  if (ms == null) return fetch(input, init);
+
+  const controller = new AbortController();
+  // A caller-supplied signal must still win — supabase-js aborts its own
+  // in-flight requests through one, and swallowing that would leak sockets.
+  const callerSignal = init?.signal;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ms);
+
+  return fetch(input, { ...init, signal: controller.signal })
+    .catch((e) => {
+      // An abort reads as a generic "Aborted" error, which tells a caller
+      // nothing. Name the real cause so logs and retry copy can be specific.
+      if (timedOut) throw new Error(`Supabase request timed out after ${ms}ms`);
+      throw e;
+    })
+    .finally(() => clearTimeout(timer));
+};
 
 /**
  * Persist auth session on device so refresh / cold start stays logged into Rencana.
@@ -23,6 +58,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     // let supabase-js parse it. On native we use deep links + WebBrowser instead.
     detectSessionInUrl: Platform.OS === 'web',
   },
+  global: { fetch: fetchWithTimeout },
 });
 
 let authRecoveryPromise: Promise<void> | null = null;

@@ -14,6 +14,10 @@ import {
 
 } from '../seedData';
 
+/** How long one `profiles.last_active_at` write covers. DAU/MAU only needs to
+ *  know the user opened the app, so one write per window is plenty. */
+const ACTIVITY_BUMP_WINDOW_MS = 5 * 60 * 1000;
+
 // Fix 1: Module-level counter for flashcard IDs — never resets between renders.
 // A component-body `let` would reset to 0 on every render, causing duplicate IDs
 // when addFlashcard is called rapidly (e.g. 10 cards from Promise.all).
@@ -56,6 +60,8 @@ import {
   setWeekStartsOn as persistWeekStartsOn,
   getAutoDeletePastTasks,
   setAutoDeletePastTasks as persistAutoDeletePastTasks,
+  getLastActivityBump,
+  setLastActivityBump,
   type RevisionSettings,
   type AppLanguage,
   type AppLoghat,
@@ -372,21 +378,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearPendingClassroomTasks = useCallback(() => setPendingClassroomTasks([]), []);
 
   // Bump last_active_at for DAU/MAU tracking
-  const lastBumpRef = useRef<number>(0);
   const bumpActivity = useCallback(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const uid = session?.user?.id;
-      if (!uid) return;
-      const now = Date.now();
-      // Only bump once every 5 minutes to avoid DB spam
-      if (now - lastBumpRef.current < 5 * 60 * 1000) return;
-      lastBumpRef.current = now;
-      supabase
-        .from('profiles')
-        .update({ last_active_at: new Date().toISOString() })
-        .eq('id', uid)
-        .then();
-    });
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (!uid) return;
+
+        // Only bump once every 5 minutes to avoid DB spam. The window is
+        // persisted rather than held in a ref: a ref resets on cold start, so
+        // a user relaunching the app wrote to the same profiles row on every
+        // launch and the throttle never applied where it mattered most.
+        const now = Date.now();
+        if (now - (await getLastActivityBump(uid)) < ACTIVITY_BUMP_WINDOW_MS) return;
+
+        const { error } = await supabase
+          .from('profiles')
+          .update({ last_active_at: new Date().toISOString() })
+          .eq('id', uid);
+
+        // Only record a bump that landed, so a write that failed is retried on
+        // the next foreground instead of being suppressed for a full window.
+        if (!error) await setLastActivityBump(uid, now);
+      } catch {
+        // Liveness tracking is never worth surfacing to the user.
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1291,6 +1310,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Track whether getSession() already fired loadRemoteData so we don't
     // run it twice when onAuthStateChange fires INITIAL_SESSION immediately after.
     let initialSessionHandled = false;
+    // The user whose data is already loaded. supabase-js can emit SIGNED_IN
+    // more than once for a single sign-in, and the INITIAL_SESSION guard below
+    // only holds if getSession() wins the race — this does not depend on either.
+    let loadedForUid: string | null = null;
+
+    /**
+     * Starts a load unless this user's data is already loading or loaded.
+     * Returns whether it started, so callers can skip the follow-up work too.
+     * A load that fails clears the marker — retrying later beats sticking.
+     */
+    const startRemoteLoad = (
+      uid: string,
+      session: Parameters<typeof getAuthFallbackName>[0],
+    ): boolean => {
+      if (loadedForUid === uid) return false;
+      loadedForUid = uid;
+      void loadRemoteData(uid, getAuthFallbackName(session)).catch(() => {
+        if (loadedForUid === uid) loadedForUid = null;
+      });
+      return true;
+    };
 
     // Load once for current session (cold start / reload)
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1301,7 +1341,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       initialSessionHandled = true;
-      void loadRemoteData(uid, getAuthFallbackName(session));
+      // Not unconditional: INITIAL_SESSION can land before this resolves, and
+      // loading twice is what used to fire 18 queries on one cold start.
+      startRemoteLoad(uid, session);
     }).catch((e) => {
       // If getSession() itself rejects (e.g. a corrupt persisted auth blob),
       // dataReady would never flip and the app would sit on "Loading your
@@ -1320,6 +1362,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_OUT') {
           remoteLoadGeneration += 1;
           remoteUserIdRef.current = null;
+          // Signing back in — even as the same user — must load again.
+          loadedForUid = null;
           setOfflineSyncStatus({
             userId: null,
             pendingCount: 0,
@@ -1359,10 +1403,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+      // Only a change of signed-in identity warrants re-running the nine boot
+      // queries and the push-token write. TOKEN_REFRESHED fires roughly hourly
+      // and again on every foreground once the token has gone stale, so
+      // reloading on it meant a full refetch plus a profiles UPDATE every time
+      // the app came back to the foreground. USER_UPDATED and PASSWORD_RECOVERY
+      // do not change whose data we are holding either.
+      if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
       // Skip the INITIAL_SESSION event if getSession() already handled it above
       // to avoid firing 18 duplicate queries on every cold start.
       if (event === 'INITIAL_SESSION' && initialSessionHandled) return;
-      void loadRemoteData(uid, getAuthFallbackName(session));
+      if (!startRemoteLoad(uid, session)) return;
       void syncExpoPushTokenToProfile(uid);
     });
 

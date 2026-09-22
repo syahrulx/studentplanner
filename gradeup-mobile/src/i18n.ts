@@ -1200,6 +1200,12 @@ const translations = {
     tutorPermissionNeededTitle: 'Permission Needed',
     tutorPhotoPermissionBody: 'Please grant photo library access to attach images.',
     tutorCameraPermissionBody: 'Please grant camera access to take photos.',
+
+    // Connection gate — shown when the session/profile lookup a layout waits on
+    // fails or times out, instead of rendering a blank screen forever.
+    connectionGateTitle: "Can't reach Rencana",
+    connectionGateBody: 'Check your connection and try again. Your saved work is safe on this device.',
+    connectionGateRetry: 'Try again',
   },
 
   ms: {
@@ -2387,6 +2393,11 @@ const translations = {
     tutorPermissionNeededTitle: 'Kebenaran Diperlukan',
     tutorPhotoPermissionBody: 'Sila berikan akses pustaka foto untuk melampirkan imej.',
     tutorCameraPermissionBody: 'Sila berikan akses kamera untuk mengambil foto.',
+
+    // Connection gate
+    connectionGateTitle: 'Tak dapat hubungi Rencana',
+    connectionGateBody: 'Semak sambungan anda dan cuba lagi. Kerja yang tersimpan selamat dalam peranti ini.',
+    connectionGateRetry: 'Cuba lagi',
   },
 } as const;
 

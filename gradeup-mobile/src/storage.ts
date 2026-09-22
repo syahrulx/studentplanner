@@ -763,3 +763,34 @@ export async function clearQuizProgress(sessionId?: string): Promise<void> {
     await AsyncStorage.removeItem(KEY_QUIZ_PROGRESS);
   } catch {}
 }
+
+// ---------------------------------------------------------------------------
+// Activity bump throttle
+// ---------------------------------------------------------------------------
+
+const KEY_ACTIVITY_BUMP_PREFIX = 'last_active_bump_v1:';
+
+/**
+ * When we last wrote `profiles.last_active_at` for this user.
+ *
+ * The throttle window used to live in a component ref, which reset on every
+ * cold start — so relaunching the app (exactly what a user does when a screen
+ * hangs) wrote on every launch, concentrating writes on one row. Persisting it
+ * makes the window survive restarts. Keyed per user so switching accounts does
+ * not inherit the other account's timestamp.
+ */
+export async function getLastActivityBump(userId: string): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_ACTIVITY_BUMP_PREFIX + userId);
+    const parsed = raw ? Number(raw) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function setLastActivityBump(userId: string, at: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEY_ACTIVITY_BUMP_PREFIX + userId, String(at));
+  } catch {}
+}

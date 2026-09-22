@@ -14,9 +14,19 @@ import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
 import { StaleCalendarPrompt } from '@/components/StaleCalendarPrompt';
 import { supabase } from '@/src/lib/supabase';
+import { ConnectionRetry } from '@/src/components/ConnectionRetry';
 
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
 const skippedKeyFor = (uid: string) => `${PROFILE_SETUP_SKIPPED_KEY_PREFIX}${uid}`;
+
+// Only these three carry an identity change this gate cares about. Re-resolving
+// on TOKEN_REFRESHED (hourly, and on every foreground once the token is stale)
+// meant a fresh profiles read for a user we had already resolved.
+const GATE_AUTH_EVENTS = new Set(['SIGNED_IN', 'SIGNED_OUT', 'INITIAL_SESSION']);
+
+// Backstop for a lookup that neither resolves nor rejects. Sits just above the
+// 15s Supabase request timeout so the real error path wins when there is one.
+const GATE_WATCHDOG_MS = 18_000;
 
 export default function TabLayout() {
   const { language } = useApp();
@@ -24,27 +34,49 @@ export default function TabLayout() {
   const T = useTranslations(language);
   const { isDesktop } = useResponsive();
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [gate, setGate] = useState<'loading' | 'signed-out' | 'needs-profile' | 'ready'>('loading');
+  const [gate, setGate] = useState<'loading' | 'signed-out' | 'needs-profile' | 'ready' | 'error'>(
+    'loading',
+  );
+  const [gateAttempt, setGateAttempt] = useState(0);
 
   const openAddMenu = () => setAddMenuOpen(true);
   const closeAddMenu = () => setAddMenuOpen(false);
 
   useEffect(() => {
     let alive = true;
+    // supabase-js can emit SIGNED_IN more than once for a single sign-in.
+    // Resolving again for a user we already resolved just repeats the read.
+    let resolvedForUid: string | null = null;
 
     const resolveGate = async (uid?: string | null) => {
       if (!alive) return;
       if (!uid) {
+        resolvedForUid = null;
         setGate('signed-out');
         return;
       }
+      if (resolvedForUid === uid) return;
+      resolvedForUid = uid;
+
       try {
-        const { data: profile } = await supabase
+        const { data: profile, error } = await supabase
           .from('profiles')
           .select('university')
           .eq('id', uid)
           .maybeSingle();
         if (!alive) return;
+
+        // A lookup that failed says nothing about whether the profile is
+        // complete. Reading it as "incomplete" stranded offline users on the
+        // full-screen profile wall, where saving then also failed. Fail open
+        // and let a later attempt decide — same reasoning, and same comment,
+        // as app/(auth)/_layout.tsx.
+        if (error) {
+          resolvedForUid = null;
+          setGate('ready');
+          return;
+        }
+
         if (profile?.university) {
           // If they completed profile later, clear any prior skip for this user.
           try {
@@ -52,6 +84,7 @@ export default function TabLayout() {
           } catch {
             /* ignore */
           }
+          if (!alive) return;
           setGate('ready');
           return;
         }
@@ -59,33 +92,58 @@ export default function TabLayout() {
         // Allow continuing if THIS user explicitly skipped profile setup.
         try {
           const skipped = await AsyncStorage.getItem(skippedKeyFor(uid));
+          if (!alive) return;
           setGate(skipped ? 'ready' : 'needs-profile');
         } catch {
+          if (!alive) return;
           setGate('needs-profile');
         }
       } catch {
         if (!alive) return;
-        setGate('needs-profile');
+        resolvedForUid = null;
+        setGate('ready');
       }
     };
 
-    void supabase.auth.getSession().then(({ data }) => {
-      void resolveGate(data.session?.user?.id ?? null);
-    });
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => resolveGate(data.session?.user?.id ?? null))
+      .catch(() => {
+        // Without an identity, neither rendering the tabs nor bouncing to login
+        // is defensible. Offer a retry rather than a blank screen.
+        if (alive) setGate('error');
+      });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!alive) return;
+      if (!GATE_AUTH_EVENTS.has(event)) return;
       void resolveGate(session?.user?.id ?? null);
     });
 
+    const watchdog = setTimeout(() => {
+      if (!alive) return;
+      setGate((current) => (current === 'loading' ? 'error' : current));
+    }, GATE_WATCHDOG_MS);
+
     return () => {
       alive = false;
+      clearTimeout(watchdog);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [gateAttempt]);
 
+  if (gate === 'error') {
+    return (
+      <ConnectionRetry
+        onRetry={() => {
+          setGate('loading');
+          setGateAttempt((n) => n + 1);
+        }}
+      />
+    );
+  }
   if (gate === 'loading') return null;
   if (gate === 'signed-out') return <Redirect href="/(auth)/login" />;
   if (gate === 'needs-profile') return <Redirect href="/(auth)/profile-setup" />;
