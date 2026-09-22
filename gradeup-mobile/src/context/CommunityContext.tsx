@@ -694,9 +694,20 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           event: 'INSERT',
           schema: 'public',
           table: 'dm_messages',
+          // Without this, Realtime took every insert in the table and had to
+          // evaluate the dm_messages SELECT policy — an EXISTS against
+          // dm_conversations — once per subscriber per message.
+          //
+          // recipient_id is set by a BEFORE INSERT trigger, so a brand-new
+          // conversation's first message carries it too. Filtering on
+          // conversation_id instead would have missed exactly that case, since
+          // a conversation that does not exist yet cannot be in the list.
+          filter: `recipient_id=eq.${userId}`,
         },
         async (payload: any) => {
           const msg = payload.new;
+          // Redundant under the filter, kept as a guard against a row that
+          // somehow reaches us without one.
           if (!msg || msg.sender_id === userId) return;
 
           // Refresh unread DM count for badge globally
