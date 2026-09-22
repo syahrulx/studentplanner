@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { AcademicLevel, SubscriptionPlan } from '../types';
 import { normalizeAcademicLevel } from './academicLevel';
+import { fetchProfileRow, invalidateProfileCache } from './profileCache';
 
 export interface ThemePreferencesRow {
   theme?: string;
@@ -67,16 +68,12 @@ export async function getProfile(userId: string): Promise<{
   themePreferences?: ThemePreferencesRow | null;
   country?: string;
 } | null> {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(
-      'name, university, university_id, academic_level, student_id, program, part, avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, subscription_status, subscription_period_type, subscription_expires_at, has_used_theme_trial, theme_preferences, country',
-    )
-    .eq('id', userId)
-    .single();
+  // Shared with the two layout gates and the community context, which each
+  // used to issue their own read of this same row during boot.
+  const { row: data, error } = await fetchProfileRow(userId);
 
   if (error || !data) return null;
-  const row = data as {
+  const row = data as unknown as {
     name: string | null;
     university: string | null;
     university_id: string | null;
@@ -206,4 +203,7 @@ export async function updateProfile(
   if (Object.keys(payload).length === 0) return;
   const { error } = await supabase.from(TABLE).update(payload).eq('id', userId);
   if (error) throw new Error(error.message || 'Failed to update profile');
+  // The cached row is now behind what the server holds. Drop it so the next
+  // reader — a layout gate re-checking `university`, say — sees this write.
+  invalidateProfileCache(userId);
 }

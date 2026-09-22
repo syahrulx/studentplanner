@@ -14,6 +14,7 @@ import { useTranslations } from '@/src/i18n';
 import { ManualWeekPrompt } from '@/components/ManualWeekPrompt';
 import { StaleCalendarPrompt } from '@/components/StaleCalendarPrompt';
 import { supabase } from '@/src/lib/supabase';
+import { fetchProfileRow } from '@/src/lib/profileCache';
 import { ConnectionRetry } from '@/src/components/ConnectionRetry';
 
 const PROFILE_SETUP_SKIPPED_KEY_PREFIX = 'profile_setup_skipped_v1:';
@@ -59,11 +60,9 @@ export default function TabLayout() {
       resolvedForUid = uid;
 
       try {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('university')
-          .eq('id', uid)
-          .maybeSingle();
+        // Shared read — the (auth) gate, profileDb and the community context
+        // all want part of this same row within the same second of boot.
+        const { row: profile, error } = await fetchProfileRow(uid);
         if (!alive) return;
 
         // A lookup that failed says nothing about whether the profile is

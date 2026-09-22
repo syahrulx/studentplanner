@@ -2,6 +2,7 @@ import { Redirect, Stack, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase';
+import { fetchProfileRow } from '@/src/lib/profileCache';
 import { ConnectionRetry } from '@/src/components/ConnectionRetry';
 
 // Must match app/(tabs)/_layout.tsx — a user who chose "Skip for now" is not
@@ -43,11 +44,9 @@ export default function AuthLayout() {
           return;
         }
 
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('university')
-          .eq('id', uid)
-          .maybeSingle();
+        // Shared read — see src/lib/profileCache.ts. The (tabs) gate asks for
+        // the same row moments later on a normal cold start.
+        const { row: profile, error } = await fetchProfileRow(uid);
         if (!alive) return;
 
         // Only a SUCCESSFUL query that genuinely returns no university means

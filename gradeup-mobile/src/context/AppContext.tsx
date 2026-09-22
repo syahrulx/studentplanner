@@ -98,6 +98,7 @@ import * as taskDb from '../lib/taskDb';
 import * as studyTimeDb from '../lib/studyTimeDb';
 import * as coursesDb from '../lib/coursesDb';
 import * as profileDb from '../lib/profileDb';
+import { fetchProfileRow, invalidateProfileCache } from '../lib/profileCache';
 import * as academicCalendarDb from '../lib/academicCalendarDb';
 import * as timetableDb from '../lib/timetableDb';
 import { clearSemesterDataFromDatabase } from '../lib/semesterClearDb';
@@ -1364,6 +1365,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           remoteUserIdRef.current = null;
           // Signing back in — even as the same user — must load again.
           loadedForUid = null;
+          // Never let the next account read the previous account's row.
+          invalidateProfileCache();
           setOfflineSyncStatus({
             userId: null,
             pendingCount: 0,
@@ -2371,11 +2374,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshSubscription = useCallback(async (): Promise<import('../types').SubscriptionPlan> => {
     const uid = remoteUserIdRef.current;
     if (!uid) return 'free';
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('subscription_plan, subscription_status, subscription_period_type, subscription_expires_at')
-      .eq('id', uid)
-      .maybeSingle();
+    // force: billing is the one thing that must never read through a cache.
+    // This runs right after a purchase or a restore, where the whole point is
+    // to see a change the server made moments ago.
+    const { row, error } = await fetchProfileRow(uid, { force: true });
+    const data = row as {
+      subscription_plan?: string | null;
+      subscription_status?: string | null;
+      subscription_period_type?: string | null;
+      subscription_expires_at?: string | null;
+    } | null;
     if (error || remoteUserIdRef.current !== uid) {
       if (__DEV__ && error) console.warn('[Rencana] refreshSubscription failed:', error.message);
       return 'free';

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { fetchProfileRow } from './profileCache';
 import { checkContentModeration } from './servicesApi';// =============================================================================
 // TYPES
 // =============================================================================
@@ -1202,14 +1203,12 @@ export async function updateLocationVisibility(userId: string, visibility: Locat
 
 /** Get only the user's location visibility from their profile */
 export async function getLocationVisibilityFromProfile(userId: string): Promise<LocationVisibility> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('location_visibility')
-    .eq('id', userId)
-    .single();
+  // Shared read — this fires during community boot, alongside the layout gates
+  // and profileDb asking for other columns of the same row.
+  const { row, error } = await fetchProfileRow(userId);
 
-  if (error || !data) return 'friends';
-  return (data.location_visibility as LocationVisibility) || 'friends';
+  if (error || !row) return 'friends';
+  return (row.location_visibility as LocationVisibility) || 'friends';
 }
 
 /** Get list of friend IDs that are allowed to see the user's location when visibility = 'custom_friends'. */

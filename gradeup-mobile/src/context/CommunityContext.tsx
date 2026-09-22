@@ -44,6 +44,11 @@ const refreshLimiter = new RateLimiter(5, 10_000); // max 5 manual refreshes / 1
 
 const REFRESH_INTERVAL = 120_000; // 2 minutes — realtime subscriptions handle instant updates; this is a safety fallback
 const SHARED_TASKS_REFRESH_INTERVAL = 300_000; // 5 minutes — realtime handles instant updates for shared tasks
+
+// Past this many people we stop filtering the study-snap subscription and take
+// the unfiltered firehose instead, as we always did. A filter naming hundreds
+// of ids trades one cost for another.
+const SNAP_FILTER_MAX_IDS = 100;
 // A full refresh is requested from two places that can fire together (mount, and
 // AppState going active). Anything asked for within this window of a run is served
 // by that run instead of starting a second one.
@@ -209,6 +214,21 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     friendsRef.current = friends;
   }, [friends]);
+
+  /**
+   * Ids the study-snap subscription watches: self plus friends, deduped and
+   * sorted, as one comparable string. The poll hands back a fresh array every
+   * two minutes, so sorting into a string is what keeps an unchanged friend
+   * list from tearing the channel down and rebuilding it on every refresh.
+   *
+   * Null means "do not filter" — no user yet, or too many ids to name.
+   */
+  const snapFilterIds = useMemo(() => {
+    if (!userId) return null;
+    const ids = Array.from(new Set([userId, ...friends.map((f) => f.id)].filter(Boolean)));
+    if (ids.length === 0 || ids.length > SNAP_FILTER_MAX_IDS) return null;
+    return ids.sort().join(',');
+  }, [userId, friends]);
 
   const communityBadgeCount = useMemo(() => {
     const pendingShares = incomingSharedTasks.filter((s) => s.status === 'pending').length;
@@ -773,25 +793,38 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId) return;
 
+    // Narrow the subscription to the people whose snaps actually change this
+    // screen. Without a filter, Realtime has to evaluate the study_snaps SELECT
+    // policy for every subscriber on every insert — and that policy runs an
+    // EXISTS against friendships, so one snap costs one friendship subquery per
+    // person online.
+    //
+    // The filter is an optimisation, never a correctness requirement: past the
+    // cap we subscribe unfiltered exactly as before, because a filter listing
+    // hundreds of ids is its own problem. refreshFriendSnaps reads self plus
+    // friends, so the list matches what it would fetch.
+    const watchedIds = snapFilterIds ? snapFilterIds.split(',') : null;
+    const binding =
+      watchedIds && watchedIds.length > 0
+        ? {
+            event: 'INSERT' as const,
+            schema: 'public',
+            table: 'study_snaps',
+            filter: `user_id=in.(${watchedIds.join(',')})`,
+          }
+        : { event: 'INSERT' as const, schema: 'public', table: 'study_snaps' };
+
     const channel = supabase
       .channel('study-snap-changes')
-      .on(
-        'postgres_changes' as any,
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'study_snaps',
-        },
-        () => {
-          refreshFriendSnaps();
-        }
-      )
+      .on('postgres_changes' as any, binding, () => {
+        refreshFriendSnaps();
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, refreshFriendSnaps]);
+  }, [userId, refreshFriendSnaps, snapFilterIds]);
 
   // ─── Listen for incoming shared tasks → local push notification ───
   // (notification is fired from the unified shared-tasks-changes channel below)

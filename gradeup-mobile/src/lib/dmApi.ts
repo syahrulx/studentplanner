@@ -270,13 +270,39 @@ export async function markMessagesRead(conversationId: string, userId: string): 
 }
 
 /** Get total unread DM messages count across all conversations for a user. */
+/**
+ * Just the conversation ids, for scoping queries that would otherwise lean on
+ * RLS to do the narrowing. Deliberately lighter than getConversations(), which
+ * also loads profiles and the last message of every thread.
+ */
+export async function getConversationIds(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('dm_conversations')
+    .select('id')
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+
+  if (error || !data) return [];
+  return data.map((c) => String(c.id));
+}
+
 export async function getTotalUnreadDmCount(userId: string): Promise<number> {
   try {
-    // RLS already restricts select to messages in conversations the user belongs to.
-    // If the user is NOT the sender and it's unread, it's an unread message for them.
+    // Scope to this user's own conversations so the count can use
+    // idx_dm_messages_conversation.
+    //
+    // RLS alone was doing the narrowing before, and that is the wrong tool for
+    // it: the policy runs an EXISTS against dm_conversations for every row
+    // matching "unread and not mine" — which, before the policy is applied,
+    // means every unread message in the table, other people's included. The
+    // cost tracked total app traffic rather than this user's. This runs on
+    // boot, on every two-minute poll, and on every incoming DM.
+    const conversationIds = await getConversationIds(userId);
+    if (conversationIds.length === 0) return 0;
+
     const { count, error } = await supabase
       .from('dm_messages')
       .select('*', { count: 'exact', head: true })
+      .in('conversation_id', conversationIds)
       .neq('sender_id', userId)
       .eq('read_by_recipient', false);
 
