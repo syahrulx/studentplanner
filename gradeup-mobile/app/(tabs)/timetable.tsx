@@ -619,6 +619,7 @@ export default function TimetableScreen() {
           </View>
         ) : null}
         {renderHeader(true)}
+        {renderTimetableMenu()}
         <Modal
           visible={showNonUitmIntro}
           transparent
