@@ -52,9 +52,23 @@ type Scope = 'all' | 'mine' | 'taken';
 
 const SCOPE_TABS: { id: Scope; label: string }[] = [
   { id: 'all',   label: 'Browse' },
-  { id: 'mine',  label: 'My Requests' },
-  { id: 'taken', label: 'My Tasks' },
+  { id: 'mine',  label: 'Mine' },
+  { id: 'taken', label: 'Tasks' },
 ];
+
+/** Deadline within this window reads as urgent on the card. */
+const URGENT_MS = 72 * 60 * 60 * 1000;
+
+function dueLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0 || ms > URGENT_MS) return null;
+  const h = Math.floor(ms / 3_600_000);
+  return h < 1 ? 'Due soon' : h < 24 ? `Due in ${h}h` : `Due in ${Math.ceil(h / 24)}d`;
+}
+
+/** "Open (Anywhere)" and similar carry no information on a card. */
+const isVagueLocation = (loc: string) => /anywhere|online|any\b/i.test(loc);
 
 const KIND_FILTERS: { id: ServiceKind | null; label: string }[] = [
   { id: null,      label: 'All' },
@@ -570,18 +584,7 @@ export default function ServicesBoard() {
         },
       });
     }
-    if (kind !== null) {
-      const kl = KIND_FILTERS.find((k) => k.id === kind)?.label ?? '';
-      chips.push({ key: 'kind', label: kl, onClear: () => setKind(null) });
-    }
-    if (category) {
-      const cat = SERVICE_CATEGORIES.find((c) => c.id === category);
-      chips.push({
-        key: 'cat',
-        label: cat?.label ?? category,
-        onClear: () => setCategory(null),
-      });
-    }
+    // Kind and category are picked from the inline chip row, so they aren't repeated here.
     return chips;
   }, [
     orderBy,
@@ -671,93 +674,84 @@ export default function ServicesBoard() {
           ) : null}
         </View>
 
-        {/* Scope tabs + filter control (Browse: sliders on the right, same row as tabs) */}
+        {/* Scope as plain text tabs + filter on one line — was a boxed segmented control
+            plus a separate chip row, three rows of chrome before the first listing. */}
         <View style={styles.scopeRow}>
-          <View style={[styles.scopeBar, { backgroundColor: theme.backgroundSecondary, flex: 1 }]}>
+          <View style={styles.scopeTextTabs}>
             {SCOPE_TABS.map((s) => {
               const active = scope === s.id;
               const count = s.id === 'mine' ? mineCount : s.id === 'taken' ? takenCount : null;
               return (
-                <Pressable
-                  key={s.id}
-                  onPress={() => setScope(s.id)}
-                  style={[
-                    styles.scopeTab,
-                    active && { backgroundColor: theme.card },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.scopeText,
-                      { color: active ? theme.text : theme.textSecondary },
-                    ]}
-                  >
+                <Pressable key={s.id} onPress={() => setScope(s.id)} hitSlop={6} style={styles.scopeTextTab}>
+                  <Text style={[styles.scopeTextLabel, { color: active ? theme.text : theme.textSecondary, fontWeight: active ? '800' : '600' }]}>
                     {s.label}
                   </Text>
                   {count != null && count > 0 && (
                     <View style={[styles.scopeBadge, { backgroundColor: active ? theme.text : theme.textSecondary }]}>
-                      <Text style={[styles.scopeBadgeText, { color: theme.background }]}>
-                        {count}
-                      </Text>
+                      <Text style={[styles.scopeBadgeText, { color: theme.background }]}>{count}</Text>
                     </View>
                   )}
+                  {active && <View style={[styles.scopeUnderline, { backgroundColor: theme.text }]} />}
                 </Pressable>
               );
             })}
           </View>
           {scope === 'all' && (
-            <View style={[styles.scopeHeaderActions, { backgroundColor: theme.background }]}>
-              <Pressable
-                onPress={openServicesFilterModal}
-                style={({ pressed }) => [
-                  styles.filterIconBtn,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  pressed && { opacity: 0.7 },
-                ]}
-                accessibilityLabel="Filter and sort services"
-              >
-                <Feather name="sliders" size={18} color={theme.text} />
-                {hasActiveBrowseFilters && (
-                  <View style={[styles.filterIconBtnDot, { backgroundColor: theme.primary }]} />
-                )}
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={openServicesFilterModal}
+              style={({ pressed }) => [styles.filterIconBtn, { backgroundColor: theme.backgroundSecondary }, pressed && { opacity: 0.7 }]}
+              accessibilityLabel="Filter and sort services"
+            >
+              <Feather name="sliders" size={17} color={theme.text} />
+              {hasActiveBrowseFilters && <View style={[styles.filterIconBtnDot, { backgroundColor: theme.primary }]} />}
+            </Pressable>
           )}
         </View>
+      </View>
 
-        {scope === 'all' && (browseScopeLabel !== null || activeBrowseChips.length > 0) && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.browseChipsRow}
-          >
-            {browseScopeLabel !== null && (
-              <View
-                style={[
-                  styles.browseActiveChip,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
+      {/* Type + category in one scrollable row; active = solid pill. */}
+      {scope === 'all' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          {KIND_FILTERS.map((k) => {
+            const active = kind === k.id && (k.id !== null || !category);
+            return (
+              <Pressable
+                key={k.id ?? 'all'}
+                onPress={() => { setKind(k.id); if (k.id === null) setCategory(null); }}
+                style={[styles.chip, active && { backgroundColor: theme.text }]}
               >
-                <Feather name="award" size={11} color={theme.textSecondary} />
-                <Text
-                  style={[styles.browseActiveChipText, { color: theme.textSecondary }]}
-                  numberOfLines={1}
-                >
-                  {browseScopeLabel}
+                <Text style={[styles.chipText, { color: active ? theme.background : theme.textSecondary, fontWeight: active ? '700' : '500' }]}>
+                  {k.label}
                 </Text>
-              </View>
-            )}
-            {activeBrowseChips.map((c) => (
-              <View
-                key={c.key}
-                style={[
-                  styles.browseActiveChip,
-                  { backgroundColor: theme.primary + '14', borderColor: theme.primary + '33' },
-                ]}
+              </Pressable>
+            );
+          })}
+          <View style={[styles.chipDivider, { backgroundColor: theme.border }]} />
+          {SERVICE_CATEGORIES.map((c) => {
+            const active = category === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                onPress={() => setCategory(active ? null : c.id)}
+                style={[styles.chip, active && { backgroundColor: c.tint }]}
               >
-                <Text style={[styles.browseActiveChipText, { color: theme.primary }]} numberOfLines={1}>
+                <Feather name={c.icon as any} size={12} color={active ? '#fff' : c.tint} />
+                <Text style={[styles.chipText, { color: active ? '#fff' : theme.textSecondary, fontWeight: active ? '700' : '500' }]}>
                   {c.label}
                 </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* Only non-default filters (sort, another uni/campus) — your own uni is implied. */}
+      {scope === 'all' && activeBrowseChips.length > 0 && (
+        <View style={styles.headerInset}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.browseChipsRow}>
+            {activeBrowseChips.map((c) => (
+              <View key={c.key} style={[styles.browseActiveChip, { backgroundColor: theme.primary + '14', borderColor: theme.primary + '33' }]}>
+                <Text style={[styles.browseActiveChipText, { color: theme.primary }]} numberOfLines={1}>{c.label}</Text>
                 <Pressable onPress={c.onClear} hitSlop={8}>
                   <Feather name="x" size={13} color={theme.primary} />
                 </Pressable>
@@ -778,8 +772,8 @@ export default function ServicesBoard() {
               <Text style={[styles.browseActiveChipText, { color: theme.textSecondary }]}>Clear all</Text>
             </Pressable>
           </ScrollView>
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 
@@ -789,6 +783,10 @@ export default function ServicesBoard() {
       const sm = statusMeta(item.service_status);
       const isMine = item.author_id === userId;
       const iTook  = item.claimed_by === userId;
+      const due = item.service_status === 'open' ? dueLabel(item.deadline_at) : null;
+      // Body often repeats the amount ("RM 20 per session") — the right-hand price is the one source.
+      const price = formatPrice(item);
+      const showLocation = !!item.location && !isVagueLocation(item.location);
 
       return (
         <Pressable
@@ -855,41 +853,45 @@ export default function ServicesBoard() {
                         {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
                       </Text>
                     </View>
-                    <View style={[styles.statusChip, { backgroundColor: sm.bg, borderColor: sm.tint }]}>
-                      <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
-                    </View>
+                    {item.service_status !== 'open' && (
+                      <View style={[styles.statusChip, { backgroundColor: sm.bg, borderColor: sm.tint }]}>
+                        <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               ) : null}
 
               <View style={styles.cardBody}>
-                {!item.image_url && (
-                  <View style={styles.metaTopRow}>
-                    <View style={[styles.kindChipPlain, { borderColor: theme.border }]}>
-                      <Feather
-                        name={item.service_kind === 'offer' ? 'gift' : 'help-circle'}
-                        size={11}
-                        color={theme.text}
-                      />
-                      <Text style={[styles.kindChipText, { color: theme.text }]}>
-                        {item.service_kind === 'offer' ? 'Offering' : 'Requesting'}
-                      </Text>
+                {/* One kicker line: type · urgency · non-open status. "Open" is the normal state, so it's implied. */}
+                <View style={styles.kickerRow}>
+                  <Text style={[styles.kicker, { color: item.service_kind === 'request' ? theme.primary : theme.textSecondary }]}>
+                    {item.service_kind === 'offer' ? 'OFFERING' : 'REQUEST'}
+                  </Text>
+                  {due ? (
+                    <View style={styles.dueWrap}>
+                      <View style={styles.dueDot} />
+                      <Text style={styles.dueText}>{due}</Text>
                     </View>
-                    <View style={[styles.statusChipPlain, { backgroundColor: sm.bg }]}>
-                      <Text style={[styles.statusChipText, { color: sm.tint }]}>{sm.label}</Text>
+                  ) : null}
+                  {item.service_status !== 'open' && (
+                    <Text style={[styles.kickerStatus, { color: sm.tint }]}>· {sm.label}</Text>
+                  )}
+                  {(item.unread_chat_count ?? 0) > 0 && (
+                    <View style={[styles.cardUnreadBadge, { marginLeft: 'auto' }]}>
+                      <Text style={styles.cardUnreadBadgeText}>{item.unread_chat_count}</Text>
                     </View>
-                  </View>
-                )}
+                  )}
+                </View>
 
+                {/* Title leads; price is shown once, on the right, where eyes compare. */}
                 <View style={styles.titleRow}>
                   <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]} numberOfLines={2}>
                     {item.title}
                   </Text>
-                  {(item.unread_chat_count ?? 0) > 0 && (
-                    <View style={styles.cardUnreadBadge}>
-                      <Text style={styles.cardUnreadBadgeText}>{item.unread_chat_count}</Text>
-                    </View>
-                  )}
+                  <View style={styles.priceWrap}>
+                    <Text style={[styles.priceText, { color: theme.text }]} numberOfLines={1}>{price}</Text>
+                  </View>
                 </View>
 
                 {item.body ? (
@@ -898,42 +900,22 @@ export default function ServicesBoard() {
                   </Text>
                 ) : null}
 
-                <View style={styles.metaRow}>
-                  <View style={[styles.metaChip, { backgroundColor: cat.tint + '14' }]}>
-                    <Feather name={cat.icon as any} size={11} color={cat.tint} />
-                    <Text style={[styles.metaChipText, { color: cat.tint }]}>{cat.label}</Text>
-                  </View>
-
-                  <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                    <Text style={[styles.metaChipText, { color: theme.text }]}>
-                      {formatPrice(item)}
-                    </Text>
-                  </View>
-
-                  {item.location ? (
-                    <View style={[styles.metaChip, { backgroundColor: theme.backgroundSecondary }]}>
-                      <Feather name="map-pin" size={10} color={theme.text} />
-                      <Text style={[styles.metaChipText, { color: theme.text }]} numberOfLines={1}>
-                        {item.location}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={[styles.hairline, { backgroundColor: theme.border }]} />
-
+                {/* Who + trust + where, one quiet line. */}
                 <View style={styles.footer}>
-                  <Avatar name={item.author_name} avatarUrl={item.author_avatar || undefined} size={26} />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={[styles.authorName, { color: theme.text }]} numberOfLines={1}>
-                      {isMine ? 'You' : item.author_name}
-                      {iTook ? '  ·  You took this' : ''}
-                    </Text>
-                    <Text style={[styles.authorMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {timeAgo(item.created_at)}
-                    </Text>
+                  <Avatar name={item.author_name} avatarUrl={item.author_avatar || undefined} size={22} />
+                  <Text style={[styles.footerLine, { color: theme.textSecondary }]} numberOfLines={1}>
+                    <Text style={{ color: theme.text, fontWeight: '600' }}>{isMine ? 'You' : item.author_name}</Text>
+                    {(item.author_reviews ?? 0) > 0 && item.author_rating != null ? (
+                      <Text>{`  ★ ${item.author_rating.toFixed(1)} (${item.author_reviews})`}</Text>
+                    ) : null}
+                    {`  ·  ${timeAgo(item.created_at)}`}
+                    {showLocation ? `  ·  ${item.location}` : ''}
+                    {iTook ? '  ·  You took this' : ''}
+                  </Text>
+                  <View style={styles.catTag}>
+                    <Feather name={cat.icon as any} size={12} color={cat.tint} />
+                    <Text style={[styles.catTagText, { color: cat.tint }]}>{cat.label}</Text>
                   </View>
-                  <Feather name="chevron-right" size={18} color={theme.textSecondary} />
                 </View>
               </View>
             </>
@@ -1628,7 +1610,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
   },
   scopeHeaderActions: {
     flexDirection: 'row',
@@ -1636,10 +1617,9 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
   filterIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1702,13 +1682,8 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 12,
+    marginTop: 10,
     overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
   },
 
   heroWrap: { width: '100%', height: 140, position: 'relative' },
@@ -1756,8 +1731,27 @@ const styles = StyleSheet.create({
   cardBody: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12 },
   metaTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  cardTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.4, marginBottom: 4 },
-  cardSubtitle: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  cardTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.4, lineHeight: 22 },
+  cardSubtitle: { fontSize: 14, lineHeight: 19, marginTop: 4 },
+  kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  kicker: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
+  kickerStatus: { fontSize: 12, fontWeight: '700' },
+  dueWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dueDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },
+  dueText: { fontSize: 12, fontWeight: '700', color: '#DC2626' },
+  priceWrap: { marginLeft: 12, alignItems: 'flex-end', maxWidth: 110 },
+  priceText: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
+  footerLine: { flex: 1, fontSize: 13, marginLeft: 8 },
+  catTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8 },
+  catTagText: { fontSize: 12, fontWeight: '600' },
+  scopeTextTabs: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 22 },
+  scopeTextTab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8 },
+  scopeTextLabel: { fontSize: 16, letterSpacing: -0.2 },
+  scopeUnderline: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, borderRadius: 1 },
+  chipRow: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, gap: 2, alignItems: 'center' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
+  chipText: { fontSize: 14 },
+  chipDivider: { width: StyleSheet.hairlineWidth, height: 18, marginHorizontal: 6 },
   
   cardUnreadBadge: {
     backgroundColor: '#FF3B30',
@@ -1785,7 +1779,7 @@ const styles = StyleSheet.create({
   metaChipText: { fontSize: 11, fontWeight: '600', letterSpacing: -0.1 },
 
   hairline: { height: StyleSheet.hairlineWidth, marginTop: 12 },
-  footer: { flexDirection: 'row', alignItems: 'center', paddingTop: 10 },
+  footer: { flexDirection: 'row', alignItems: 'center', paddingTop: 12 },
   authorName: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
   authorMeta: { fontSize: 11, fontWeight: '500', marginTop: 1 },
 

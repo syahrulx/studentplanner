@@ -30,9 +30,13 @@ update public.confessions c
 
 -- ─── Read RPCs (return type changes → drop + recreate) ─────────────────────
 
+-- Drop both the old and the new signatures so this also runs cleanly on a
+-- database where these functions were already created by hand.
 drop function if exists public.get_confessions(timestamptz, integer, text, text, text);
+drop function if exists public.get_confessions(timestamptz, integer, text, text, text, text);
 drop function if exists public.get_confession(uuid);
 drop function if exists public.create_confession(text, text);
+drop function if exists public.create_confession(text, text, boolean);
 
 create function public.get_confessions(
   p_before timestamptz default null,

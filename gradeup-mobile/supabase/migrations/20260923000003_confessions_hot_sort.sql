@@ -9,6 +9,7 @@
 set lock_timeout = '5s';
 
 drop function if exists public.get_confessions(timestamptz, integer, text, text, text);
+drop function if exists public.get_confessions(timestamptz, integer, text, text, text, text);
 
 create function public.get_confessions(
   p_before timestamptz default null,

@@ -14,7 +14,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Feather from '@expo/vector-icons/Feather';
@@ -28,6 +28,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import * as confessionsApi from '@/src/lib/confessionsApi';
+import { markConfessionsSeen } from '@/src/lib/confessionPulse';
 import type { Confession } from '@/src/lib/confessionsApi';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { Campus } from '@/src/lib/eventsApi';
@@ -90,6 +91,8 @@ export default function ConfessionsScreen() {
   const insets = useSafeAreaInsets();
   const { user, language } = useApp();
   const T = useTranslations(language);
+  // Map bubbles deep-link straight into one campus's feed.
+  const { campus: campusParam } = useLocalSearchParams<{ campus?: string }>();
 
   const userUni = (user as any)?.universityId ?? null;
   const universityName = (user as any)?.university?.trim() || userUni || '';
@@ -140,12 +143,14 @@ export default function ConfessionsScreen() {
     if (!userUni) return;
     eventsApi.fetchCampuses(userUni).then((list) => {
       setCampuses(list);
-      if (list.length > 1 && userCampus) {
+      if (campusParam && list.some((c) => c.name === campusParam)) {
+        setSelectedCampus(campusParam);
+      } else if (list.length > 1 && userCampus) {
         const match = list.find((c) => sameCampus(c.name, userCampus));
         if (match) setSelectedCampus(match.name);
       }
     }).catch(() => {});
-  }, [userUni, userCampus]);
+  }, [userUni, userCampus, campusParam]);
 
   const loadFeed = useCallback(async () => {
     if (!userUni) { setItems([]); setLoading(false); setRefreshing(false); return; }
@@ -173,6 +178,8 @@ export default function ConfessionsScreen() {
   }, [userUni, sort, loadingMore, hasMore, items, selectedCampus, selectedTag, activeSearch]);
 
   useFocusEffect(useCallback(() => { setLoading(true); void loadFeed(); }, [loadFeed]));
+  // Opening the feed clears the "N new" badge on the Community tab.
+  useFocusEffect(useCallback(() => () => { void markConfessionsSeen(); }, []));
 
   const handleRefresh = () => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); setRefreshing(true); void loadFeed(); };
 
