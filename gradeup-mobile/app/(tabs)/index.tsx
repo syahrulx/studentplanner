@@ -243,8 +243,13 @@ function createDashboardStyles(
     },
     peakAlertTop: {
       flexDirection: 'row',
-      alignItems: 'center',
+      // Top, not centre: the title block grows to three lines in the
+      // before-semester and no-calendar states, and a centred badge then floats
+      // in mid-air beside the title's second line instead of sitting in the
+      // card's top-right corner where it reads as a status.
+      alignItems: 'flex-start',
       justifyContent: 'space-between',
+      gap: 12,
     },
     // Both children of peakAlertTop must be allowed to shrink. Without this the
     // row sizes each one to its content, so a long status ("Semester not started
@@ -254,30 +259,33 @@ function createDashboardStyles(
     peakAlertLeft: {
       flexShrink: 1,
     },
-    peakAlertWeekRow: {
+    // The pencil rides the eyebrow, not the title. A title that wraps ("NOT IN
+    // SEMESTER", and most of the Malay strings) takes the full column width
+    // even though its glyphs do not, so an icon placed after it floated in the
+    // empty space between the second line and the status badge. The eyebrow is
+    // one short line in every state, so the icon always sits against text.
+    peakAlertLabelRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      flexShrink: 1,
+      gap: 6,
+      marginTop: 4,
     },
     peakAlertEditBtn: {
       padding: 4,
-      marginTop: -2,
+      marginTop: -1,
     },
     peakAlertWeek: {
       fontSize: 20,
       fontWeight: '800',
       color: text,
       letterSpacing: -0.3,
-      // Wrap inside the row rather than shoving the edit pencil out of it.
-      flexShrink: 1,
+      lineHeight: 24,
     },
     peakAlertLabel: {
       fontSize: 11,
       fontWeight: '700',
       color: textSecondary,
       letterSpacing: 1.2,
-      marginTop: 4,
     },
     peakAlertSubline: {
       fontSize: 11,
@@ -300,7 +308,9 @@ function createDashboardStyles(
     },
     peakAlertBadgeMuted: {
       backgroundColor: bgSecondary,
-      opacity: 0.85,
+      // Solid on purpose: the themed card art (spider web, purple gradient)
+      // sits directly behind this corner, and a translucent badge let it show
+      // through the status text.
     },
     peakAlertBadgeText: {
       fontSize: 12,
@@ -2110,12 +2120,27 @@ export default function Dashboard() {
           ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <View style={styles.peakAlertWeekRow}>
+              <Text style={[
+                styles.peakAlertWeek,
+                isPurpleTheme && { color: '#ffffff' },
+                themePack === 'custom' && { color: theme.focusCardText }
+              ]}>{pulseMainTitle}</Text>
+              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
+                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
+                </Text>
+              ) : null}
+              {semesterPhase === 'no_calendar' ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
+              ) : null}
+              <View style={styles.peakAlertLabelRow}>
                 <Text style={[
-                  styles.peakAlertWeek, 
-                  isPurpleTheme && { color: '#ffffff' },
-                  themePack === 'custom' && { color: theme.focusCardText }
-                ]}>{pulseMainTitle}</Text>
+                  styles.peakAlertLabel,
+                  isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
+                  themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+                ]}>
+                  {T('semesterPulse')}
+                </Text>
                 {showWeekAlignEdit ? (
                   <Pressable
                     onPress={onWeekAlignPress}
@@ -2126,7 +2151,7 @@ export default function Dashboard() {
                   >
                     <Feather
                       name="edit-2"
-                      size={15}
+                      size={14}
                       color={
                         isPurpleTheme
                           ? 'rgba(255,255,255,0.88)'
@@ -2138,21 +2163,6 @@ export default function Dashboard() {
                   </Pressable>
                 ) : null}
               </View>
-              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
-                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
-                </Text>
-              ) : null}
-              {semesterPhase === 'no_calendar' ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
-              ) : null}
-              <Text style={[
-                styles.peakAlertLabel, 
-                isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
-                themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
-              ]}>
-                {T('semesterPulse')}
-              </Text>
             </View>
               <View
                 style={[
