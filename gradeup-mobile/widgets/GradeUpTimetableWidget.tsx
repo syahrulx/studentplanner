@@ -35,10 +35,13 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
   const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
+  // With .contentMarginsDisabled() these are the ONLY insets the widget has:
+  // WidgetKit no longer reserves a margin, which is what left the themed
+  // background floating inside an empty system ring on iPad.
   const contentInsets = {
-    top: small ? 16 : large ? 18 : 12,
-    side: small ? 13 : 14,
-    bottom: small ? 12 : large ? 13 : 10,
+    top: small ? 16 : large ? 20 : 16,
+    side: small ? 15 : 17,
+    bottom: small ? 14 : large ? 16 : 13,
   };
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 

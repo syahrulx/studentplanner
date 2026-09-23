@@ -86,7 +86,7 @@
               "name": "GradeUpToday",
               "displayName": "Today",
               "description": "Today’s tasks and timetable",
-              "contentMarginsDisabled": false,
+              "contentMarginsDisabled": true,
               "supportedFamilies": [
                 "systemSmall",
                 "systemMedium"
@@ -96,7 +96,7 @@
               "name": "GradeUpTasks",
               "displayName": "Tasks",
               "description": "Upcoming tasks",
-              "contentMarginsDisabled": false,
+              "contentMarginsDisabled": true,
               "supportedFamilies": [
                 "systemSmall",
                 "systemMedium",
@@ -109,7 +109,7 @@
               "name": "GradeUpTimetable",
               "displayName": "Timetable",
               "description": "Upcoming classes",
-              "contentMarginsDisabled": false,
+              "contentMarginsDisabled": true,
               "supportedFamilies": [
                 "systemSmall",
                 "systemMedium",

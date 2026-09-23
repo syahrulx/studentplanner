@@ -49,10 +49,13 @@ function GradeUpTasksWidgetView(props: HomeWidgetProps | null | undefined, _env:
   const family = _env.widgetFamily;
   const small  = family === 'systemSmall';
   const large  = family === 'systemLarge';
+  // With .contentMarginsDisabled() these are the ONLY insets the widget has:
+  // WidgetKit no longer reserves a margin, which is what left the themed
+  // background floating inside an empty system ring on iPad.
   const contentInsets = {
-    top: small ? 16 : large ? 18 : 17,
-    side: small ? 13 : 14,
-    bottom: small ? 12 : 13,
+    top: small ? 16 : large ? 20 : 19,
+    side: small ? 15 : 17,
+    bottom: small ? 14 : 16,
   };
   const isLock = family === 'accessoryInline' || family === 'accessoryCircular' || family === 'accessoryRectangular';
 
