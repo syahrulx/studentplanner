@@ -123,6 +123,20 @@ export function ConfessionsRoute() {
   const [campuses, setCampuses] = useState<ConfessionCampusSummary[]>([]);
   const [campusLoading, setCampusLoading] = useState(false);
   const [campus, setCampus] = useState<ConfessionCampusSummary | null>(null);
+  /** Viewing the whole university: the campus filter is dropped, not set. */
+  const [allCampuses, setAllCampuses] = useState(false);
+
+  /** Totals across the campuses of the open university. */
+  const uniTotals = useMemo(() => campuses.reduce(
+    (a, c) => ({
+      total: a.total + Number(c.total),
+      active: a.active + Number(c.active_count),
+      suspect: a.suspect + Number(c.suspect_count),
+      reported: a.reported + Number(c.reported_count),
+      removed: a.removed + Number(c.removed_count),
+    }),
+    { total: 0, active: 0, suspect: 0, reported: 0, removed: 0 },
+  ), [campuses]);
 
   const loadCampuses = useCallback(async () => {
     if (!uni) return;
@@ -151,12 +165,14 @@ export function ConfessionsRoute() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const loadRows = useCallback(async () => {
-    if (!campus) return;
+    if (!campus && !(allCampuses && uni)) return;
     setRowsLoading(true);
     try {
       setRows(await listConfessions({
-        university: campus.university_id,
-        campus: campusKey(campus.campus),
+        university: campus?.university_id ?? uni,
+        // null means "every campus", which is not the same as '' — that is the
+        // key for posts with no campus at all.
+        campus: campus ? campusKey(campus.campus) : null,
         status: statusFilter || null,
         suspectOnly,
         search: appliedSearch || null,
@@ -169,7 +185,7 @@ export function ConfessionsRoute() {
     } finally {
       setRowsLoading(false);
     }
-  }, [campus, page, statusFilter, suspectOnly, appliedSearch]);
+  }, [campus, allCampuses, uni, page, statusFilter, suspectOnly, appliedSearch]);
   useEffect(() => { void loadRows(); }, [loadRows]);
 
   // ── Level 4: replies, one post at a time ──────────────────────────────────
@@ -263,7 +279,7 @@ export function ConfessionsRoute() {
   const crumbs = (
     <div className="flex flex-wrap items-center gap-2 text-sm font-bold">
       <button
-        onClick={() => { setUni(null); setCampus(null); setRows([]); }}
+        onClick={() => { setUni(null); setCampus(null); setAllCampuses(false); setRows([]); }}
         className={uni ? 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200' : 'text-slate-900 dark:text-slate-100'}
       >
         All universities
@@ -272,17 +288,19 @@ export function ConfessionsRoute() {
         <>
           <span className="text-slate-300 dark:text-slate-700">/</span>
           <button
-            onClick={() => { setCampus(null); setRows([]); }}
-            className={campus ? 'uppercase text-slate-400 hover:text-slate-700 dark:hover:text-slate-200' : 'uppercase text-slate-900 dark:text-slate-100'}
+            onClick={() => { setCampus(null); setAllCampuses(false); setRows([]); }}
+            className={campus || allCampuses ? 'uppercase text-slate-400 hover:text-slate-700 dark:hover:text-slate-200' : 'uppercase text-slate-900 dark:text-slate-100'}
           >
             {uni}
           </button>
         </>
       )}
-      {campus && (
+      {(campus || allCampuses) && (
         <>
           <span className="text-slate-300 dark:text-slate-700">/</span>
-          <span className="text-slate-900 dark:text-slate-100">{campusLabel(campus.campus)}</span>
+          <span className="text-slate-900 dark:text-slate-100">
+            {campus ? campusLabel(campus.campus) : 'All campuses'}
+          </span>
         </>
       )}
     </div>
@@ -374,18 +392,49 @@ export function ConfessionsRoute() {
           )}
 
           {/* ── Campuses ── */}
-          {uni && !campus && (
+          {uni && !campus && !allCampuses && (
             campusLoading ? (
               <div className={`${CARD} flex items-center justify-center py-20 text-sm font-semibold text-slate-400`}>
                 Loading…
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {/* Every campus at once, so "did I see all of them?" has an
+                    answer that does not depend on visiting each card. */}
+                <button
+                  onClick={() => {
+                    setAllCampuses(true); setCampus(null);
+                    setRows([]); setPage(0); setStatusFilter(''); setSuspectOnly(false);
+                    setSearch(''); setAppliedSearch(''); setOpenReplies(null);
+                  }}
+                  className={`${CARD} p-5 text-left transition hover:-translate-y-0.5 hover:shadow-elev1`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-lg font-black tracking-tight text-slate-900 dark:text-slate-100">
+                      All campuses
+                    </div>
+                    {uniTotals.suspect > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                        {uniTotals.suspect}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                    {uniTotals.total} confession{uniTotals.total === 1 ? '' : 's'} in one list
+                  </div>
+                  <div className="mt-5 grid grid-cols-4 gap-3">
+                    <Stat label="Live" value={uniTotals.active} />
+                    <Stat label="Flagged" value={uniTotals.suspect} tone="amber" />
+                    <Stat label="Reported" value={uniTotals.reported} tone="amber" />
+                    <Stat label="Removed" value={uniTotals.removed} tone="muted" />
+                  </div>
+                </button>
+
                 {campuses.map((c) => (
                   <button
                     key={campusKey(c.campus)}
                     onClick={() => {
-                      setCampus(c);
+                      setCampus(c); setAllCampuses(false);
                       setRows([]); setPage(0); setStatusFilter(''); setSuspectOnly(false);
                       setSearch(''); setAppliedSearch(''); setOpenReplies(null);
                     }}
@@ -415,7 +464,7 @@ export function ConfessionsRoute() {
           )}
 
           {/* ── Posts ── */}
-          {campus && (
+          {(campus || allCampuses) && (
             <>
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 {([['', 'All'], ['active', 'Live'], ['flagged', 'Flagged'], ['removed', 'Removed']] as const).map(
@@ -437,7 +486,8 @@ export function ConfessionsRoute() {
                       : 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300'
                   }`}
                 >
-                  Needs review{campus.suspect_count > 0 ? ` · ${campus.suspect_count}` : ''}
+                  Needs review{(campus ? Number(campus.suspect_count) : uniTotals.suspect) > 0
+                    ? ` · ${campus ? campus.suspect_count : uniTotals.suspect}` : ''}
                 </button>
 
                 <div className="ml-auto flex items-center gap-2">
