@@ -528,15 +528,98 @@ function pickSegmentForTermCode(segments: AcademicPeriod[][], code: string): Aca
   return scored[0]?.seg ?? null;
 }
 
-function deriveUitmTermCodeFromDate(targetISO?: string): string | null {
-  const d = toDate(targetISO || iso(new Date()));
-  if (!d) return null;
-  const y = d.getFullYear(); const m = d.getMonth();
-  if (m <= 1) return `${y - 1}4`;
-  if (m >= 2 && m <= 7) return `${y}2`;
-  if (m === 8) return `${y}3`;
-  if (m >= 9) return `${y}4`;
-  return null;
+/**
+ * Widest lecture window a real UiTM semester can have. Anything beyond this is a
+ * parse artefact: `extractPeriodsByTermCode` slices the section at each `[code]`
+ * marker, so the last code on the page swallows every row after it — 20272
+ * currently comes out spanning Dec 2025 to Dec 2027. Those buckets must never
+ * win the auto-pick.
+ */
+const MAX_TERM_LECTURE_SPAN_DAYS = 300;
+
+/** Session 3 is intersession: a short optional term most students never sit. */
+function isIntersessionTermCode(code: string): boolean {
+  return /^\d{4}3$/.test(String(code || '').trim());
+}
+
+/** Lecture window for one term code, or null when absent or implausibly wide. */
+function lectureBoundsForTerm(periods: AcademicPeriod[]): { start: string; end: string } | null {
+  const b = teachingBounds(periods);
+  if (!b) return null;
+  const s = toDate(b.startDate);
+  const e = toDate(b.endDate);
+  if (!s || !e || e.getTime() < s.getTime()) return null;
+  if (Math.round((e.getTime() - s.getTime()) / 864e5) > MAX_TERM_LECTURE_SPAN_DAYS) return null;
+  return { start: b.startDate, end: b.endDate };
+}
+
+/**
+ * Choose the term code from the dates HEA actually publishes, rather than from
+ * the month number.
+ *
+ * The month map this replaces sent the whole of September to session 3, so a
+ * student opening the app on 23 Sep 2026 — four days before their semester
+ * started — was measured against the intersession that began 17 August and told
+ * they were in week 6. September is exactly where the two terms overlap, which
+ * is why guessing from the calendar month cannot work here.
+ *
+ * Order: the term whose lectures are running today, then the one starting
+ * soonest after today (so the week before a semester reads week 1), then the
+ * most recent one that has already ended.
+ */
+function pickTermCodeForDate(
+  byTerm: Record<string, AcademicPeriod[]>,
+  targetISO?: string,
+): string | null {
+  const target = toDate(targetISO || iso(new Date()));
+  if (!target) return null;
+
+  const candidates: { code: string; start: Date; end: Date }[] = [];
+  for (const [code, periods] of Object.entries(byTerm)) {
+    if (isIntersessionTermCode(code)) continue;
+    const b = lectureBoundsForTerm(periods);
+    const start = b && toDate(b.start);
+    const end = b && toDate(b.end);
+    if (start && end) candidates.push({ code, start, end });
+  }
+  if (candidates.length === 0) return null;
+
+  const running = candidates
+    .filter((c) => target.getTime() >= c.start.getTime() && target.getTime() <= c.end.getTime())
+    .sort((a, b) => b.start.getTime() - a.start.getTime());
+  if (running.length > 0) return running[0].code;
+
+  const upcoming = candidates
+    .filter((c) => c.start.getTime() > target.getTime())
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (upcoming.length > 0) return upcoming[0].code;
+
+  const past = candidates
+    .filter((c) => c.end.getTime() < target.getTime())
+    .sort((a, b) => b.end.getTime() - a.end.getTime());
+  return past[0]?.code ?? null;
+}
+
+/**
+ * True when this term's lectures finished before the target date.
+ *
+ * Nothing in the app ever refreshes `profiles.hea_term_code` — it is read in
+ * several places and written back as null, so a code stored one semester would
+ * otherwise pin that student to a dead term for good. Unknown codes return
+ * false so `pickSegmentForTermCode` still gets its chance at them.
+ */
+function isTermCodeExpired(
+  byTerm: Record<string, AcademicPeriod[]>,
+  code: string,
+  targetISO?: string,
+): boolean {
+  const periods = byTerm[String(code || '').trim()];
+  if (!periods) return false;
+  const b = lectureBoundsForTerm(periods);
+  const end = b && toDate(b.end);
+  const target = toDate(targetISO || iso(new Date()));
+  if (!end || !target) return false;
+  return end.getTime() < target.getTime();
 }
 
 // -------------------------------------------------------------------------------------
@@ -575,12 +658,20 @@ export async function fetchUitmAcademicCalendar(
   if (!section) return null;
 
   const variant: UitmCalendarVariant = options?.variant ?? 'auto';
-  const derived = deriveUitmTermCodeFromDate(options?.targetDateISO);
-  const preferred = options?.preferredTermCode?.trim() || derived || undefined;
 
   // 1. Summary-level periods (existing logic)
   const byTerm = extractPeriodsByTermCode(section, variant);
   const allSummary = extractPeriodsFromSection(section, variant);
+
+  // Term code: an explicit request wins, but only while its lectures are still
+  // running. Otherwise read the code off the published dates — never off the
+  // month number, which put every September student in the intersession.
+  const requested = options?.preferredTermCode?.trim() || undefined;
+  const preferred =
+    (requested && !isTermCodeExpired(byTerm, requested, options?.targetDateISO) ? requested : undefined) ||
+    pickTermCodeForDate(byTerm, options?.targetDateISO) ||
+    undefined;
+
   const directByTerm = preferred && /^\d{5}$/.test(preferred) ? byTerm[preferred] : undefined;
   const summarySource = directByTerm && directByTerm.length > 0 ? directByTerm : null;
   const segments = splitIntoSegments(allSummary);

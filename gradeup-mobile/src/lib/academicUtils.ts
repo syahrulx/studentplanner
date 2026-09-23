@@ -231,6 +231,24 @@ export function getAcademicProgress(startDateStr: string, totalWeeks: number = 1
 }
 
 /**
+ * True when `day` falls inside a published break row. Both break types count:
+ * HEA labels the long between-semester gap `break` and the mid-semester one
+ * `special_break`, and a student is equally off-teaching in either.
+ */
+function isWithinBreakPeriod(periods: AcademicPeriod[] | undefined, day: Date): boolean {
+  if (!periods || !Array.isArray(periods)) return false;
+  const t = day.getTime();
+  for (const p of periods) {
+    if (p.type !== 'break' && p.type !== 'special_break') continue;
+    const s = new Date(`${String(p.startDate ?? '').slice(0, 10)}T00:00:00`);
+    const e = new Date(`${String(p.endDate ?? '').slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue;
+    if (t >= s.getTime() && t <= e.getTime()) return true;
+  }
+  return false;
+}
+
+/**
  * Academic progress computed from a detailed calendar (when available).
  * Teaching week increments only on weeks that contain at least one "lecture" day.
  */
@@ -283,6 +301,19 @@ export function getAcademicProgressFromCalendar(
   now.setHours(0, 0, 0, 0);
 
   if (now.getTime() < startDate.getTime()) {
+    // Waiting for the semester is usually the semester break, and HEA says so:
+    // the outgoing term publishes its own "Semester Break" row running right up
+    // to the new term's first lecture. Prefer that over "not started yet", which
+    // tells a student nothing about where they are. Only when no published break
+    // actually covers today do we fall back — someone who configures a calendar
+    // months early is genuinely not on a break yet.
+    //
+    // `break_after` is the only on-break value SemesterPhase carries, so a break
+    // *before* teaching reuses it. It is what every surface already branches on
+    // to render the break label, and the naming is the type's, not this case's.
+    if (isWithinBreakPeriod(periods, now)) {
+      return { week: 1, isBreak: true, label: 'Semester break', semesterPhase: 'break_after' };
+    }
     return { week: 1, isBreak: false, label: 'Before semester', semesterPhase: 'before_start' };
   }
 

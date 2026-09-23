@@ -246,11 +246,19 @@ function createDashboardStyles(
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    peakAlertLeft: {},
+    // Both children of peakAlertTop must be allowed to shrink. Without this the
+    // row sizes each one to its content, so a long status ("Semester not started
+    // yet", and longer still in Malay) pushes the badge off the card edge — the
+    // badge's own numberOfLines / adjustsFontSizeToFit cannot help while its
+    // container has unbounded width to grow into.
+    peakAlertLeft: {
+      flexShrink: 1,
+    },
     peakAlertWeekRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
+      flexShrink: 1,
     },
     peakAlertEditBtn: {
       padding: 4,
@@ -261,6 +269,8 @@ function createDashboardStyles(
       fontWeight: '800',
       color: text,
       letterSpacing: -0.3,
+      // Wrap inside the row rather than shoving the edit pencil out of it.
+      flexShrink: 1,
     },
     peakAlertLabel: {
       fontSize: 11,
@@ -282,6 +292,11 @@ function createDashboardStyles(
       paddingHorizontal: 14,
       paddingVertical: 10,
       borderRadius: 12,
+      // Cap the badge so the status wraps inside the card instead of running off
+      // it. 45% leaves the title block the larger half, which is the side worth
+      // reading first.
+      flexShrink: 1,
+      maxWidth: '45%',
     },
     peakAlertBadgeMuted: {
       backgroundColor: bgSecondary,
@@ -2150,7 +2165,7 @@ export default function Dashboard() {
                     semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted,
                     themePack === 'custom' && { color: theme.textInverse }
                   ]}
-                  numberOfLines={semesterPhase === 'teaching' ? 1 : 3}
+                  numberOfLines={3}
                   adjustsFontSizeToFit
                 >
                 {pulseBadgeText}

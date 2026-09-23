@@ -24,6 +24,8 @@
     "test:calendar-timeline": "npx --yes tsx tests/calendarTimelineValidation.test.ts",
     "test:academic-level": "npx --yes tsx tests/academicLevel.test.ts",
     "test:calendar-shape": "npx --yes tsx tests/calendarTimeline.test.ts",
+    "test:uitm-term": "npx --yes tsx tests/uitmTermSelection.test.ts",
+    "test:semester-break": "npx --yes tsx tests/semesterBreakPhase.test.ts",
     "test:grade-persistence": "bash scripts/test-grade-persistence.sh",
     "test:calendar-offers": "bash scripts/test-calendar-offers.sh",
     "test:rate-limit": "bash scripts/test-rate-limit.sh",
