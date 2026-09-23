@@ -35,6 +35,7 @@ import {
 } from '@/src/lib/smartCapture/smartCaptureLimits';
 import { markCaptureSuccess } from '@/src/lib/smartCapture/smartCaptureSetupState';
 import type { Task } from '@/src/types';
+import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
 
 type Phase = 'scanning' | 'review' | 'empty' | 'limit' | 'error' | 'needs_vision' | 'added';
 
@@ -253,6 +254,7 @@ export default function SmartCaptureSheet() {
       setPhase('added');
       haptic('success');
       void markCaptureSuccess(inbox.source);
+      recordFeedbackEvent('smart_capture_added');
 
       if (thenOpenPlanner) {
         router.replace('/(tabs)/planner' as never);

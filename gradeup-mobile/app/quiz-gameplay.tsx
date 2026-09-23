@@ -11,6 +11,7 @@ import type { FinishParticipantResult } from '@/src/lib/quizApi';
 import type { GeneratedQuizQuestion } from '@/src/lib/studyApi';
 import { gradeShortAnswer, pointsForAnswer, computeLocalScore } from '@/src/lib/quizGrading';
 import { recordQuizAttempts, type QuizAttemptRow } from '@/src/lib/quizAttempts';
+import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
 
 const TIMER_MAP: Record<string, number> = { easy: 20, medium: 15, hard: 10 };
 /** Multiplayer keeps pace: the feedback panel auto-advances after this long. */
@@ -184,7 +185,14 @@ export default function QuizGameplay() {
     return Math.max(0, Math.ceil((timerSeconds * 1000 - elapsedMs) / 1000));
   }, [timerSeconds]);
 
+  // Multiplayer can reach the results screen by more than one path (all
+  // finished, skip button), so count the quiz once for feedback triggers.
+  const feedbackRecordedRef = useRef(false);
   const forceNavigateToResults = useCallback(() => {
+    if (!feedbackRecordedRef.current) {
+      feedbackRecordedRef.current = true;
+      recordFeedbackEvent('quiz_completed');
+    }
     const result = finishResultRef.current;
     const total = questionsRef.current.length;
     router.replace({

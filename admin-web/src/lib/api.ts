@@ -2764,3 +2764,113 @@ export async function setConfessionStatus(
   });
   if (error) throw toError(error);
 }
+
+// ─── Feedback surveys ────────────────────────────────────────────────────────
+//
+// Backed by `public.feedback_surveys` (+ `feedback_survey_user_state`,
+// `feedback_survey_responses`) through admin_data. The app shows the first
+// eligible survey as a popup; see gradeup-mobile/src/lib/feedbackSurvey.ts.
+
+export type FeedbackQuestionType = 'rating' | 'single' | 'multi' | 'text';
+
+export type FeedbackOption = { id: string; label_en: string; label_ms?: string | null };
+
+export type FeedbackQuestion = {
+  id: string;
+  type: FeedbackQuestionType;
+  prompt_en: string;
+  prompt_ms?: string | null;
+  required: boolean;
+  options?: FeedbackOption[];
+  placeholder_en?: string | null;
+  placeholder_ms?: string | null;
+};
+
+/** Keep in sync with FEEDBACK_EVENTS in supabase/functions/admin_data and the app. */
+export const FEEDBACK_EVENTS = [
+  { id: 'task_completed', label: 'Completes a task' },
+  { id: 'smart_capture_added', label: 'Adds tasks via Smart Capture' },
+  { id: 'quiz_completed', label: 'Finishes a quiz' },
+  { id: 'focus_session_completed', label: 'Finishes a focus timer session' },
+  { id: 'flashcard_review_completed', label: 'Finishes a flashcard review' },
+] as const;
+
+export type FeedbackSurveyInput = {
+  title_en: string;
+  title_ms: string | null;
+  intro_en: string | null;
+  intro_ms: string | null;
+  questions: FeedbackQuestion[];
+  is_active: boolean;
+  priority: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  min_app_opens: number;
+  trigger_event: string | null;
+  trigger_event_count: number;
+  min_account_age_days: number;
+  target_plans: string[] | null;
+  target_university_ids: string[] | null;
+  target_campuses: string[] | null;
+  target_platforms: string[] | null;
+  min_app_version: string | null;
+  max_prompts: number;
+  reprompt_after_days: number;
+};
+
+export type FeedbackSurveyStats = {
+  reached_users: number;
+  times_shown: number;
+  times_dismissed: number;
+  responses: number;
+};
+
+export type FeedbackSurveyRow = FeedbackSurveyInput & {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  stats?: FeedbackSurveyStats;
+};
+
+export type FeedbackResponseRow = {
+  id: string;
+  user_id: string;
+  user_name: string | null;
+  answers: Record<string, number | string | string[]>;
+  language: 'en' | 'ms';
+  platform: string | null;
+  app_version: string | null;
+  plan: string | null;
+  university_id: string | null;
+  university: string | null;
+  campus: string | null;
+  created_at: string;
+};
+
+export async function listFeedbackSurveys() {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'feedback_surveys_list' }, headers);
+  return unwrapFunctionData<{ items: FeedbackSurveyRow[] }>(data, error).items;
+}
+
+export async function upsertFeedbackSurvey(survey: FeedbackSurveyInput, id?: string) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'feedback_survey_upsert', id, survey }, headers);
+  return unwrapFunctionData<{ row: FeedbackSurveyRow }>(data, error).row;
+}
+
+export async function deleteFeedbackSurvey(id: string) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'feedback_survey_delete', id }, headers);
+  unwrapFunctionData<{ ok: boolean }>(data, error);
+}
+
+export async function getFeedbackSurveyResults(id: string) {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_data', { action: 'feedback_survey_results', id }, headers);
+  return unwrapFunctionData<{
+    survey: FeedbackSurveyRow;
+    stats: FeedbackSurveyStats;
+    responses: FeedbackResponseRow[];
+  }>(data, error);
+}

@@ -84,6 +84,22 @@ export default function Profile() {
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [campusSearchQuery, setCampusSearchQuery] = useState('');
 
+  // True when the university has a campus list but the saved campus isn't one of
+  // its names (e.g. "UiTM SHAH ALAM" copied from the student portal). Features
+  // that filter by campus can't place such a student, so nudge them to pick.
+  const [campusNeedsPick, setCampusNeedsPick] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (!user.universityId) { setCampusNeedsPick(false); return; }
+    fetchCampuses(user.universityId)
+      .then((list) => {
+        if (!alive) return;
+        setCampusNeedsPick(list.length > 0 && !list.some((c) => c.name === (user.campus ?? '').trim()));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [user.universityId, user.campus]);
+
   const filteredCampuses = React.useMemo(() => {
     const q = campusSearchQuery.trim().toLowerCase();
     if (!q) return campuses;
@@ -525,9 +541,17 @@ export default function Profile() {
         >
           <Text style={[styles.cardLabel, { color: theme.text }]}>{T('campus')}</Text>
           <View style={styles.cardValueWrap}>
-            <Text style={[styles.cardValue, { color: theme.textSecondary }]} numberOfLines={3}>
-              {displayProfileText(user.campus)}
-            </Text>
+            <View style={{ flexShrink: 1, alignItems: 'flex-end' }}>
+              <Text style={[styles.cardValue, { color: theme.textSecondary }]} numberOfLines={3}>
+                {displayProfileText(user.campus)}
+              </Text>
+              {campusNeedsPick ? (
+                <View style={styles.campusNudge}>
+                  <Feather name="alert-circle" size={12} color="#D97706" />
+                  <Text style={styles.campusNudgeText}>{T('campusPickFromList')}</Text>
+                </View>
+              ) : null}
+            </View>
             <Feather name="edit-2" size={14} color={theme.textSecondary} style={{ marginLeft: 8 }} />
           </View>
         </Pressable>
@@ -791,7 +815,10 @@ export default function Profile() {
                     handleSelectCampus(c.name);
                   }}
                 >
-                  <Text style={{ fontSize: 16, color: theme.text }}>{c.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 16, color: theme.text, flex: 1, fontWeight: c.name === user.campus ? '700' : '400' }}>{c.name}</Text>
+                    {c.name === user.campus ? <Feather name="check" size={18} color={theme.primary} /> : null}
+                  </View>
                 </Pressable>
               ))}
               {filteredCampuses.length === 0 && (
@@ -1072,6 +1099,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   cardLabel: { fontSize: 16, fontWeight: '400', maxWidth: '42%' },
+  campusNudge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  campusNudgeText: { fontSize: 12, fontWeight: '600', color: '#D97706' },
   cardValue: { fontSize: 16, fontWeight: '400', flexShrink: 1, textAlign: 'right' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)' },
   dividerList: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(150,150,150,0.2)', marginLeft: 52 },

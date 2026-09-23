@@ -34,6 +34,7 @@
     "test:eval-live": "npx --yes tsx tests/evalLive.test.ts",
     "test:math-text": "npx --yes tsx tests/mathText.test.ts",
     "test:request-timeout": "npx --yes tsx tests/supabaseRequestTimeout.test.ts",
+    "test:feedback-survey": "npx --yes tsx tests/feedbackSurvey.test.ts",
     "lint:rls": "node scripts/lint-rls-policies.js",
     "lint:rls:list": "node scripts/lint-rls-policies.js --list"
   },

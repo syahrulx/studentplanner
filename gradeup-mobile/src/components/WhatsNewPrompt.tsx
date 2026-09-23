@@ -18,6 +18,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import { fetchActiveWhatsNewPrompt, type WhatsNewPrompt } from '../lib/whatsNewApi';
+import { setFeedbackBlockingOverlay } from '../lib/feedbackSurvey';
 
 function parseFeatures(content: string): { title: string; body: string }[] {
   const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -81,6 +82,7 @@ export default function WhatsNewPromptModal() {
   }, []);
 
   useEffect(() => {
+    setFeedbackBlockingOverlay('whatsNew', visible);
     if (visible) {
       Animated.parallel([
         Animated.spring(slideAnim, { toValue: 0, damping: 22, stiffness: 180, mass: 0.9, useNativeDriver: true }),

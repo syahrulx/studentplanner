@@ -16,6 +16,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { scheduleStudyTimerComplete, cancelStudyTimerNotification } from '@/src/notificationManager';
 import { getCurrentTimetableSubjectLabel } from '@/src/lib/timetableCurrentSlot';
+import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
 import {
   startOrReplaceLiveActivity,
   updateLiveActivity,
@@ -142,6 +143,7 @@ export default function StudyTimerScreen() {
 
           if (currentPhase === 'focus') {
             setCompletedSessions((prev) => prev + 1);
+            recordFeedbackEvent('focus_session_completed');
             setPhase('break');
             setSecondsLeft(breakSecs);
             // Don't auto-start break – let user press Start

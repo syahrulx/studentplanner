@@ -40,6 +40,8 @@ import UpdatePrompt from '@/src/components/UpdatePrompt';
 import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
 import SmartCaptureLauncher from '@/src/components/SmartCaptureLauncher';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
+import FeedbackSurveyPrompt from '@/src/components/FeedbackSurveyPrompt';
+import { setFeedbackBlockingOverlay } from '@/src/lib/feedbackSurvey';
 import { useApp } from '@/src/context/AppContext';
 import { checkForAppUpdate, type UpdateCheckResult } from '@/src/lib/appVersion';
 import { useNavigationBreadcrumbs } from '@/src/lib/navigationBreadcrumbs';
@@ -370,6 +372,7 @@ function RootLayoutNav() {
           <SmartCaptureLauncher />
           <AppUpdateGate />
           <WhatsNewPromptModal />
+          <FeedbackSurveyPrompt />
         </QuizProvider>
       </CommunityProvider>
       <OfflineSyncBanner />
@@ -428,9 +431,12 @@ function AppUpdateGate() {
     }
   }, [result?.latestVersion]);
 
-  if (!result) return null;
-  if (result.severity === 'none') return null;
-  if (result.severity === 'soft' && dismissed) return null;
+  const showing = !!result && result.severity !== 'none' && !(result.severity === 'soft' && dismissed);
+  useEffect(() => {
+    setFeedbackBlockingOverlay('appUpdate', showing);
+  }, [showing]);
+
+  if (!result || !showing) return null;
 
   const override = result.messageEn;
 

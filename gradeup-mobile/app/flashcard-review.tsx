@@ -6,6 +6,7 @@ import { useDarkMinimalThemePack, useTheme } from '@/hooks/useTheme';
 import { Icons } from '@/src/constants';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
+import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Flashcard } from '@/src/types';
 import {
@@ -381,6 +382,7 @@ export default function FlashcardReview() {
       const next = i + 1;
       if (next >= list.length) {
         setFinished(true);
+        recordFeedbackEvent('flashcard_review_completed');
         return i;
       }
       return next;

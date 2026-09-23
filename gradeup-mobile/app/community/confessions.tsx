@@ -65,7 +65,7 @@ function FilterRow({ items, activeItem, onSelect, theme, renderLabel, iconFor, l
       {items.map((item: any) => {
         const isActive = activeItem === item;
         const icon = iconFor?.(item);
-        const color = isActive ? theme.background : theme.textSecondary;
+        const color = isActive ? theme.textInverse : theme.textSecondary;
         return (
           <Pressable
             key={item === null ? 'null-key' : item}
@@ -73,7 +73,7 @@ function FilterRow({ items, activeItem, onSelect, theme, renderLabel, iconFor, l
               if (!isActive) Haptics.selectionAsync().catch(() => {});
               onSelect(item);
             }}
-            style={[s.filterItem, isActive && { backgroundColor: theme.text }]}
+            style={[s.filterItem, isActive && { backgroundColor: theme.primary }]}
           >
             {icon ? <Feather name={icon} size={12} color={color} /> : null}
             <Text style={[s.filterText, { color, fontWeight: isActive ? '700' : '500' }]}>
