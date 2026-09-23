@@ -1064,10 +1064,12 @@ export default function StudyHub() {
                   { backgroundColor: quickActionWideTint },
                   pressed && { opacity: 0.85 },
                 ]}
-                // One subject is not worth a chooser, so it goes straight in —
-                // and the subtitle names that subject, otherwise skipping the
-                // sheet looks like the sheet is broken.
-                onPress={() => (dueBySubject.length > 1 ? setDuePickerOpen(true) : startDueReview())}
+                // Always the sheet, even for a single subject. Skipping it then
+                // was tidier and read as the feature being broken: the point of
+                // this row is that revision is chosen per subject, and a rule
+                // that hides the choice exactly when there is one subject makes
+                // that impossible to see.
+                onPress={() => setDuePickerOpen(true)}
               >
                 <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
                   <Feather name="clock" size={18} color={onPrimaryIcon} />
