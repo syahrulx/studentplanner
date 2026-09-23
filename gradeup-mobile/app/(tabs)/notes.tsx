@@ -952,6 +952,34 @@ export default function StudyHub() {
       .sort((a, b) => b.due - a.due || a.subjectId.localeCompare(b.subjectId));
   }, [flashcards, notes, isPastSubject]);
 
+  /** Subject opened inside the review sheet — its decks are then listed. */
+  const [dueSubject, setDueSubject] = useState<string | null>(null);
+
+  /** Due cards per deck, so a subject can be opened and a chapter picked. */
+  const dueByNote = useMemo(() => {
+    const now = new Date();
+    const m = new Map<string, number>();
+    for (const card of flashcards) {
+      if (!card.noteId || !isDue(card, now)) continue;
+      m.set(card.noteId, (m.get(card.noteId) ?? 0) + 1);
+    }
+    return m;
+  }, [flashcards]);
+
+  const decksForDueSubject = useMemo(() => {
+    if (!dueSubject) return [];
+    return notes
+      .filter((n) => n.subjectId === dueSubject)
+      .map((n) => ({
+        id: n.id,
+        title: n.title,
+        due: dueByNote.get(n.id) ?? 0,
+        total: flashcards.filter((c) => c.noteId === n.id).length,
+      }))
+      .filter((d) => d.total > 0)
+      .sort((a, b) => b.due - a.due || a.title.localeCompare(b.title));
+  }, [dueSubject, notes, flashcards, dueByNote]);
+
   const dueCurrent = useMemo(() => dueBySubject.filter((d) => !d.past), [dueBySubject]);
   const duePast = useMemo(() => dueBySubject.filter((d) => d.past), [dueBySubject]);
 
@@ -2167,8 +2195,21 @@ export default function StudyHub() {
             onPress={(e) => e.stopPropagation()}
           >
             <View style={s.dueSheetHeader}>
-              <Text style={[s.dueSheetTitle, { color: theme.text }]}>Review by subject</Text>
-              <Pressable onPress={() => setDuePickerOpen(false)} hitSlop={12}>
+              {dueSubject ? (
+                <Pressable
+                  onPress={() => setDueSubject(null)}
+                  hitSlop={12}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}
+                >
+                  <Feather name="chevron-left" size={20} color={theme.primary} />
+                  <Text style={[s.dueSheetTitle, { color: theme.text }]} numberOfLines={1}>
+                    {dueSubject}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text style={[s.dueSheetTitle, { color: theme.text }]}>Review by subject</Text>
+              )}
+              <Pressable onPress={() => { setDueSubject(null); setDuePickerOpen(false); }} hitSlop={12}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
               </Pressable>
             </View>
@@ -2179,19 +2220,71 @@ export default function StudyHub() {
                   s.dueSheetRow,
                   pressed && { backgroundColor: theme.backgroundSecondary },
                 ]}
-                onPress={() => startDueReview()}
+                onPress={() => (dueSubject ? startDueReview(dueSubject) : startDueReview())}
               >
                 <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg, width: 32, height: 32 }]}>
                   <Feather name="layers" size={16} color={onPrimaryIcon} />
                 </View>
-                <Text style={[s.dueSheetLabel, { color: theme.text }]}>All subjects</Text>
-                <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(dueTotal)}</Text>
+                <Text style={[s.dueSheetLabel, { color: theme.text }]}>
+                  {dueSubject ? `Everything in ${dueSubject}` : 'All subjects'}
+                </Text>
+                <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>
+                  {String(dueSubject
+                    ? dueBySubject.find((d) => d.subjectId === dueSubject)?.due ?? 0
+                    : dueTotal)}
+                </Text>
                 <Feather name="chevron-right" size={18} color={theme.textSecondary} />
               </Pressable>
 
               <View style={[s.dueSheetDivider, { backgroundColor: theme.border }]} />
 
-              {[
+              {dueSubject ? (
+                <>
+                  <Text style={[s.dueSheetGroupLabel, { color: theme.textSecondary }]}>
+                    DECKS IN THIS SUBJECT
+                  </Text>
+                  {decksForDueSubject.map((deck) => (
+                    <View key={deck.id} style={s.dueSheetRow}>
+                      <Pressable
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                        onPress={() => {
+                          invalidateInsights();
+                          setDuePickerOpen(false);
+                          setDueSubject(null);
+                          router.push({
+                            pathname: '/flashcard-review',
+                            params: deck.due > 0
+                              ? { mode: 'due', noteId: deck.id }
+                              : { noteId: deck.id },
+                          } as any);
+                        }}
+                      >
+                        <Feather name="layers" size={16} color={theme.textSecondary} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={2}>
+                            {deck.title}
+                          </Text>
+                          <Text style={[s.dueSheetCount, { color: theme.textSecondary, fontWeight: '600' }]}>
+                            {deck.due > 0 ? `${deck.due} due` : 'nothing due'} · {deck.total} cards
+                          </Text>
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        hitSlop={10}
+                        onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                        style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                      >
+                        <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    </View>
+                  ))}
+                  {decksForDueSubject.length === 0 && (
+                    <Text style={[s.dueSheetGroupLabel, { color: theme.textSecondary }]}>
+                      No decks under this subject.
+                    </Text>
+                  )}
+                </>
+              ) : [
                 { key: 'current', label: 'CURRENT SUBJECTS', rows: dueCurrent },
                 { key: 'past', label: 'PAST SUBJECTS', rows: duePast },
               ].map((group) => (group.rows.length === 0 ? null : (
@@ -2206,7 +2299,7 @@ export default function StudyHub() {
                         s.dueSheetRow,
                         pressed && { backgroundColor: theme.backgroundSecondary },
                       ]}
-                      onPress={() => startDueReview(sub.subjectId)}
+                      onPress={() => setDueSubject(sub.subjectId)}
                     >
                       <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
                       <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
