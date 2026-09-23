@@ -66,6 +66,18 @@ function parseSingleDateRange(raw: string): { start: string; end: string } | nul
 
 export type UitmCalendarVariant = 'auto' | 'standard' | 'kkt';
 
+/**
+ * Which kind of term to read out of the HEA page.
+ *
+ * UiTM publishes two in the same table: the normal ~14-week semester, and the
+ * short semester (session 3, "semester antara"/intersession) that runs between
+ * them. The picker skipped every short term, because most students never sit
+ * one — so a student who does had no way to see their own dates, and was shown
+ * the next normal semester instead. 'short' asks for exactly the terms 'auto'
+ * refuses to consider.
+ */
+export type UitmTermKind = 'auto' | 'normal' | 'short';
+
 function parseDateRangeDual(raw: string): { standard?: { start: string; end: string }; kkt?: { start: string; end: string } } {
   const s = raw.replace(/\u00a0/g, ' ').replace(/[–—]/g, '-');
   const parts = s.split('*').map((p) => p.trim()).filter(Boolean);
@@ -628,13 +640,14 @@ function lectureBoundsForTerm(periods: AcademicPeriod[]): { start: string; end: 
 function pickTermCodeForDate(
   byTerm: Record<string, AcademicPeriod[]>,
   targetISO?: string,
+  kind: UitmTermKind = 'auto',
 ): string | null {
   const target = toDate(targetISO || iso(new Date()));
   if (!target) return null;
 
   const candidates: { code: string; start: Date; end: Date }[] = [];
   for (const [code, periods] of Object.entries(byTerm)) {
-    if (isIntersessionTermCode(code)) continue;
+    if (isIntersessionTermCode(code) !== (kind === 'short')) continue;
     const b = lectureBoundsForTerm(periods);
     const start = b && toDate(b.start);
     const end = b && toDate(b.end);
@@ -705,10 +718,27 @@ function mergePeriods(summary: AcademicPeriod[], detailed: AcademicPeriod[]): Ac
 // Main fetch function
 // -------------------------------------------------------------------------------------
 
+export type UitmCalendarFetchResult = Pick<
+  AcademicCalendar,
+  'semesterLabel' | 'startDate' | 'endDate' | 'totalWeeks' | 'periods'
+> & {
+  /** HEA term code the dates came from, when one could be resolved. */
+  termCode?: string;
+  /** What was actually applied. 'short' only when a short term was found. */
+  resolvedTermKind: 'normal' | 'short';
+  /** A short semester was asked for and HEA publishes none for this group. */
+  shortSemesterUnavailable: boolean;
+};
+
 export async function fetchUitmAcademicCalendar(
   group: 'A' | 'B',
-  options?: { targetDateISO?: string; preferredTermCode?: string; variant?: UitmCalendarVariant },
-): Promise<Pick<AcademicCalendar, 'semesterLabel' | 'startDate' | 'endDate' | 'totalWeeks' | 'periods'> | null> {
+  options?: {
+    targetDateISO?: string;
+    preferredTermCode?: string;
+    variant?: UitmCalendarVariant;
+    termKind?: UitmTermKind;
+  },
+): Promise<UitmCalendarFetchResult | null> {
   const res = await fetch(HEA_CALENDAR_URL);
   if (!res.ok) return null;
   const html = await res.text();
@@ -724,10 +754,22 @@ export async function fetchUitmAcademicCalendar(
   // Term code: an explicit request wins, but only while its lectures are still
   // running. Otherwise read the code off the published dates — never off the
   // month number, which put every September student in the intersession.
+  const termKind: UitmTermKind = options?.termKind ?? 'auto';
   const requested = options?.preferredTermCode?.trim() || undefined;
+  // A stored code from the other kind of term must not win: a student who
+  // switches to the short semester still carries last semester's code.
+  const requestedFitsKind =
+    !!requested && (termKind === 'auto' || isIntersessionTermCode(requested) === (termKind === 'short'));
+  const byKind = pickTermCodeForDate(byTerm, options?.targetDateISO, termKind);
+  // Asked for a short semester and HEA lists none for this group: fall back to
+  // the normal term rather than to nothing, and say so in the result.
+  const shortSemesterUnavailable = termKind === 'short' && !byKind;
   const preferred =
-    (requested && !isTermCodeExpired(byTerm, requested, options?.targetDateISO) ? requested : undefined) ||
-    pickTermCodeForDate(byTerm, options?.targetDateISO) ||
+    (requested && requestedFitsKind && !isTermCodeExpired(byTerm, requested, options?.targetDateISO)
+      ? requested
+      : undefined) ||
+    byKind ||
+    (shortSemesterUnavailable ? pickTermCodeForDate(byTerm, options?.targetDateISO, 'normal') : null) ||
     undefined;
 
   const directByTerm = preferred && /^\d{5}$/.test(preferred) ? byTerm[preferred] : undefined;
@@ -799,15 +841,32 @@ export async function fetchUitmAcademicCalendar(
   const bounds = teachingBounds(chosenSummary as AcademicPeriod[]) ?? teachingBounds(periods);
   if (!bounds) return null;
 
-  const totalWeeks = 14;
+  const isShort = !!preferred && isIntersessionTermCode(preferred);
+  // A short semester is not 14 weeks, and saying it is put its students several
+  // weeks out on the Home screen. Measure it instead; normal terms keep the
+  // published 14 so a parse that clips a week cannot shift everyone's count.
+  const totalWeeks = isShort ? weeksBetween(bounds.startDate, bounds.endDate) : 14;
   const baseLabel = group === 'B' ? 'UiTM (Group B) – Official HEA' : 'UiTM (Group A) – Official HEA';
   const variantSuffix = variant === 'kkt' ? ' (Kedah/Kelantan/Terengganu*)' : variant === 'standard' ? ' (Standard)' : '';
+  const kindSuffix = isShort ? ' – Short semester' : '';
 
   return {
-    semesterLabel: `${baseLabel}${variantSuffix}`,
+    semesterLabel: `${baseLabel}${variantSuffix}${kindSuffix}`,
     startDate: bounds.startDate,
     endDate: bounds.endDate,
     totalWeeks,
     periods,
+    ...(preferred ? { termCode: preferred } : {}),
+    resolvedTermKind: isShort ? 'short' : 'normal',
+    shortSemesterUnavailable,
   };
+}
+
+/** Whole teaching weeks a range covers, at least one. */
+function weeksBetween(startISO: string, endISO: string): number {
+  const a = toDate(startISO);
+  const b = toDate(endISO);
+  if (!a || !b) return 14;
+  const days = Math.round((b.getTime() - a.getTime()) / 864e5) + 1;
+  return Math.max(1, Math.min(60, Math.ceil(days / 7)));
 }

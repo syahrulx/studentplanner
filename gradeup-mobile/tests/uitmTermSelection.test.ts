@@ -164,6 +164,41 @@ async function main(): Promise<void> {
     assert.notEqual(await startOn(d), '2025-12-22');
   }
 
+  // ── Short semester (semester antara) ──────────────────────────────────────
+  // Asking for it is the only way to get it: 'auto' and 'normal' skip every
+  // session-3 term, which is why a student sitting one had no way to see it.
+  const short = await fetchUitmAcademicCalendar('B', { targetDateISO: '2026-09-05', termKind: 'short' });
+  assert.ok(short);
+  assert.equal(short.startDate, INTERSESSION);
+  assert.equal(short.resolvedTermKind, 'short');
+  assert.equal(short.shortSemesterUnavailable, false);
+  assert.match(short.semesterLabel, /Short semester/);
+  // 17 Aug – 20 Sep is five weeks, not the fourteen every term used to report.
+  assert.equal(short.totalWeeks, 5);
+
+  const normal = await fetchUitmAcademicCalendar('B', { targetDateISO: '2026-09-05', termKind: 'normal' });
+  assert.ok(normal);
+  assert.equal(normal.startDate, SEM_20262);
+  assert.equal(normal.resolvedTermKind, 'normal');
+  assert.equal(normal.totalWeeks, 14);
+
+  // A code left over from a normal semester must not override the choice.
+  const shortDespitePin = await fetchUitmAcademicCalendar('B', {
+    targetDateISO: '2026-09-05',
+    preferredTermCode: '20262',
+    termKind: 'short',
+  });
+  assert.ok(shortDespitePin);
+  assert.equal(shortDespitePin.startDate, INTERSESSION);
+
+  // Group A publishes no intersession in this fixture: fall back to the normal
+  // term and say so, rather than returning nothing or silently pretending.
+  const noShort = await fetchUitmAcademicCalendar('A', { targetDateISO: '2026-09-23', termKind: 'short' });
+  assert.ok(noShort);
+  assert.equal(noShort.shortSemesterUnavailable, true);
+  assert.equal(noShort.resolvedTermKind, 'normal');
+  assert.equal(noShort.startDate, A_SEM_20264);
+
   console.log('uitmTermSelection: all assertions passed');
 }
 

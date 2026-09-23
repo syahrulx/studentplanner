@@ -1,6 +1,10 @@
 import type { CalendarProvider } from './types';
 import type { UserProfile, AcademicCalendar } from '@/src/types';
-import { fetchUitmAcademicCalendar, type UitmCalendarVariant } from '@/src/lib/uitmAcademicCalendar';
+import {
+  fetchUitmAcademicCalendar,
+  type UitmCalendarVariant,
+  type UitmTermKind,
+} from '@/src/lib/uitmAcademicCalendar';
 
 function todayISO(): string {
   const d = new Date();
@@ -50,10 +54,15 @@ export const uitmProvider: CalendarProvider = {
     const variant: UitmCalendarVariant =
       /kedah\/kelantan\/terengganu/i.test(currentLabel) ? 'kkt' : /standard/i.test(currentLabel) ? 'standard' : 'auto';
 
+    // A short semester is chosen by hand in Semester configuration. Background
+    // sync must not quietly move that student back to the normal term.
+    const termKind: UitmTermKind = /short semester/i.test(currentLabel) ? 'short' : 'auto';
+
     const official = await fetchUitmAcademicCalendar(group, {
       targetDateISO: today,
       preferredTermCode,
       variant,
+      termKind,
     });
 
     if (!official?.startDate || !official?.endDate) return null;

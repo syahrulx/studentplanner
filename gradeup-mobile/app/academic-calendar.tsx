@@ -52,6 +52,7 @@ import type { AcademicLevel } from "@/src/types";
 import {
   fetchUitmAcademicCalendar,
   type UitmCalendarVariant,
+  type UitmTermKind,
 } from "@/src/lib/uitmAcademicCalendar";
 import {
   fetchLatestCalendarForUniversity,
@@ -170,6 +171,13 @@ export default function AcademicCalendarScreen() {
     if (/standard/i.test(label)) return "standard";
     return "auto";
   });
+  /**
+   * Normal semester or the short one (semester antara). Read back from the
+   * saved label so re-opening the sheet shows what is actually applied.
+   */
+  const [cfgTermKind, setCfgTermKind] = useState<UitmTermKind>(() =>
+    /short semester/i.test(String(academicCalendar?.semesterLabel ?? "")) ? "short" : "auto",
+  );
   const [cfgStudentId, setCfgStudentId] = useState(() =>
     (user.studentId || "").trim(),
   );
@@ -682,6 +690,7 @@ export default function AcademicCalendarScreen() {
         const official = await fetchUitmAcademicCalendar(groupForHea, {
           targetDateISO: today,
           variant: cfgVariant,
+          termKind: cfgTermKind,
         });
         if (official?.startDate && official?.endDate) {
           await updateAcademicCalendar({
@@ -697,6 +706,15 @@ export default function AcademicCalendarScreen() {
             isActive: true,
           });
           setSyncStatus(`Auto-synced: ${official.semesterLabel}`);
+          // Never silently hand back a normal semester to someone who asked
+          // for the short one — the dates would look simply wrong.
+          if (official.shortSemesterUnavailable) {
+            setCfgTermKind("auto");
+            Alert.alert(
+              "No short semester published",
+              `HEA has not published a short semester (semester antara) for Group ${groupForHea} yet. Your normal semester is applied instead — come back and pick Short semester once it is out.`,
+            );
+          }
         } else {
           setSyncStatus("HEA fetch returned no data — check internet");
         }
@@ -751,6 +769,7 @@ export default function AcademicCalendarScreen() {
     cfgMode,
     cfgSelectedOfferId,
     cfgStudentId,
+    cfgTermKind,
     cfgVariant,
     cfgUitmCalendarSource,
     cfgSelectedUitmCommunityId,
@@ -1450,6 +1469,59 @@ export default function AcademicCalendarScreen() {
                             {
                               color:
                                 cfgVariant === opt.id
+                                  ? theme.textInverse
+                                  : theme.text,
+                            },
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <View style={s.divider} />
+                  <Text style={[s.fieldLabel, { color: theme.textSecondary }]}>
+                    Semester type
+                  </Text>
+                  <Text style={[s.modalSub, { color: theme.textSecondary }]}>
+                    Pick Short semester if you are taking semester antara — the
+                    short session between two normal semesters. Auto follows
+                    whichever normal semester is running now.
+                  </Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 8,
+                      marginTop: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {(
+                      [
+                        { id: "auto", label: "Auto" },
+                        { id: "normal", label: "Normal semester" },
+                        { id: "short", label: "Short semester (antara)" },
+                      ] as { id: UitmTermKind; label: string }[]
+                    ).map((opt) => (
+                      <Pressable
+                        key={opt.id}
+                        onPress={() => setCfgTermKind(opt.id)}
+                        style={[
+                          s.filterChip,
+                          {
+                            borderColor: theme.border,
+                            backgroundColor:
+                              cfgTermKind === opt.id ? theme.primary : theme.card,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.filterChipText,
+                            {
+                              color:
+                                cfgTermKind === opt.id
                                   ? theme.textInverse
                                   : theme.text,
                             },
