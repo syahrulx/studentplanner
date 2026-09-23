@@ -10,7 +10,12 @@ import {
   verifyUitmMatricOtp,
   uitmStudentEmailFor,
   maskStudentEmail,
+  describeSendOtpProblem,
+  describeVerifyResult,
+  describeVerifyProblem,
+  type MatricOtpProblem,
 } from '@/src/lib/uitmVerification';
+import VerificationErrorModal from '@/components/VerificationErrorModal';
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -36,6 +41,8 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
   const [sending, setSending] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The blocking failure currently explained in the popup, if any. */
+  const [problem, setProblem] = useState<MatricOtpProblem | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
   const inputRef = useRef<TextInput>(null);
@@ -52,6 +59,7 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
   const send = useCallback(async () => {
     setSending(true);
     setError(null);
+    setProblem(null);
     try {
       const result = await sendUitmMatricOtp(matric);
       if (result === 'already_verified') {
@@ -62,7 +70,11 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
       setCooldown(RESEND_COOLDOWN_SECONDS);
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send the code.');
+      // Everything here stops the student cold — no code will arrive — so it is
+      // explained in the popup as well as under the boxes.
+      const p = describeSendOtpProblem(e);
+      setError(p.message);
+      setProblem(p);
     } finally {
       setSending(false);
     }
@@ -85,6 +97,7 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
       if (verifiedRef.current) return;
       setVerifying(true);
       setError(null);
+      setProblem(null);
       try {
         const result = await verifyUitmMatricOtp(fullCode);
         if (result.status === 'verified') {
@@ -94,13 +107,20 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
           return;
         }
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        setError(result.message || 'That code did not work.');
+        const p = describeVerifyResult(result);
+        setError(p.message);
+        // A mistyped code stays inline: the boxes clear and the caption says so.
+        // Expired, locked and unknown need the popup, because none of them are
+        // fixed by typing the same code again.
+        if (p.blocking) setProblem(p);
         setCode('');
         if (result.status === 'expired' || result.status === 'locked') setCooldown(0);
-        requestAnimationFrame(() => inputRef.current?.focus());
+        if (!p.blocking) requestAnimationFrame(() => inputRef.current?.focus());
       } catch (e) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        setError(e instanceof Error ? e.message : 'Could not verify the code.');
+        const p = describeVerifyProblem(e);
+        setError(p.message);
+        setProblem(p);
         setCode('');
       } finally {
         setVerifying(false);
@@ -226,6 +246,17 @@ export default function MatricOtpVerify({ matric, onVerified, onChangeId }: Prop
         Only the owner of {matric} can read that inbox, so this confirms the ID belongs to you. We
         never ask for your MyStudent password.
       </Text>
+
+      <VerificationErrorModal
+        problem={problem}
+        onClose={() => setProblem(null)}
+        onRetry={() => {
+          setCooldown(0);
+          void send();
+        }}
+        retryLabel="Send a new code"
+        onChangeId={onChangeId}
+      />
     </View>
   );
 }

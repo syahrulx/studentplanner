@@ -19,8 +19,12 @@ import {
 import {
   getVerifiedUitmMatric,
   isValidMatric,
+  MatricOtpError,
+  describeSendOtpProblem,
+  type MatricOtpProblem,
 } from '@/src/lib/uitmVerification';
 import MatricOtpVerify from '@/components/MatricOtpVerify';
+import VerificationErrorModal from '@/components/VerificationErrorModal';
 import type { UniversityConfig, TimetableEntry, DayOfWeek, Course } from '@/src/types';
 
 type Step =
@@ -74,6 +78,8 @@ export default function UniversityConnectScreen() {
   /** Matric already proven by this account — lets us skip the OTP entirely. */
   const [verifiedMatric, setVerifiedMatric] = useState<string | null>(null);
   const [checkingVerified, setCheckingVerified] = useState(true);
+  /** Failure explained in the popup: bad ID, or a fetch that never landed. */
+  const [idProblem, setIdProblem] = useState<MatricOtpProblem | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,7 +179,26 @@ export default function UniversityConnectScreen() {
       setLastMyStudentProfile(mystudentProfile ?? null);
       setStep('review');
     } catch (e) {
-      Alert.alert(T('error'), e instanceof Error ? e.message : 'Failed to fetch timetable');
+      // The ID is proven by this point, so the failure is the fetch itself:
+      // say which, instead of printing whatever the parser threw.
+      const offline = /network request failed|failed to fetch|timeout|timed out/i.test(
+        e instanceof Error ? e.message : String(e ?? ''),
+      );
+      setIdProblem({
+        code: offline ? 'offline' : 'unknown',
+        title: offline ? 'No connection' : 'Timetable not loaded',
+        message: offline
+          ? 'Rencana could not reach the UiTM timetable while fetching your classes.'
+          : e instanceof Error
+            ? e.message
+            : 'We could not read your timetable from the public UiTM sources.',
+        hint: offline
+          ? 'Check your Wi-Fi or data, then try again.'
+          : 'Add your course codes in the optional field — that narrows the search and often fixes it.',
+        needsNewId: false,
+        canResend: true,
+        blocking: true,
+      });
       setStep('login');
     } finally {
       setLoading(false);
@@ -182,12 +207,12 @@ export default function UniversityConnectScreen() {
 
   const handleFetchTimetable = async () => {
     const matric = matricFromStudentLoginInput(studentEmail.trim());
-    if (!matric) {
-      Alert.alert(T('error'), T('studentEmailLabel'));
-      return;
-    }
-    if (!isValidMatric(matric)) {
-      Alert.alert(T('error'), 'Enter your matric number, e.g. 2024123456.');
+    if (!matric || !isValidMatric(matric)) {
+      setIdProblem(
+        describeSendOtpProblem(
+          new MatricOtpError('invalid_matric', 'That does not look like a UiTM matric number.'),
+        ),
+      );
       return;
     }
 
@@ -658,6 +683,13 @@ export default function UniversityConnectScreen() {
       {step === 'validating' && renderValidating()}
       {step === 'fetching' && renderFetching()}
       {step === 'review' && renderReview()}
+
+      <VerificationErrorModal
+        problem={idProblem}
+        onClose={() => setIdProblem(null)}
+        onRetry={idProblem?.code === 'invalid_matric' ? undefined : () => void handleFetchTimetable()}
+        onChangeId={() => setStep('login')}
+      />
     </View>
   );
 }
