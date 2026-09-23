@@ -2625,6 +2625,23 @@ export async function deleteConfessionBlockedWord(id: string): Promise<void> {
   if (error) throw toError(error);
 }
 
+export type ConfessionUniversitySummary = {
+  university_id: string;
+  campus_count: number;
+  total: number;
+  active_count: number;
+  removed_count: number;
+  suspect_count: number;
+  reported_count: number;
+  last_at: string | null;
+};
+
+export async function listConfessionUniversities(): Promise<ConfessionUniversitySummary[]> {
+  const { data, error } = await supabase.rpc('admin_confession_universities');
+  if (error) throw toError(error);
+  return (data ?? []) as ConfessionUniversitySummary[];
+}
+
 export type ConfessionCampusSummary = {
   university_id: string;
   campus: string | null;
@@ -2632,12 +2649,15 @@ export type ConfessionCampusSummary = {
   active_count: number;
   flagged_count: number;
   removed_count: number;
+  suspect_count: number;
   reported_count: number;
   last_at: string | null;
 };
 
-export async function listConfessionCampusSummary(): Promise<ConfessionCampusSummary[]> {
-  const { data, error } = await supabase.rpc('admin_confession_campus_summary');
+export async function listConfessionCampusSummary(university?: string | null): Promise<ConfessionCampusSummary[]> {
+  const { data, error } = await supabase.rpc('admin_confession_campus_summary', {
+    p_university: university ?? null,
+  });
   if (error) throw toError(error);
   return (data ?? []) as ConfessionCampusSummary[];
 }
@@ -2654,6 +2674,8 @@ export type AdminConfession = {
   like_count: number;
   comment_count: number;
   report_count: number;
+  /** Blocked words this post resembles without containing — evasion, or a coincidence. */
+  suspect_terms: string[];
   created_at: string;
   removed_at: string | null;
   removed_reason: string | null;
@@ -2666,6 +2688,7 @@ export async function listConfessions(params: {
   campus?: string | null;
   status?: string | null;
   search?: string | null;
+  suspectOnly?: boolean;
   limit?: number;
   offset?: number;
 }): Promise<AdminConfession[]> {
@@ -2674,11 +2697,47 @@ export async function listConfessions(params: {
     p_campus: params.campus ?? null,
     p_status: params.status ?? null,
     p_search: params.search?.trim() ? params.search.trim() : null,
+    p_suspect_only: params.suspectOnly ?? false,
     p_limit: params.limit ?? 25,
     p_offset: params.offset ?? 0,
   });
   if (error) throw toError(error);
   return (data ?? []) as AdminConfession[];
+}
+
+export type AdminConfessionComment = {
+  id: string;
+  content: string;
+  status: 'active' | 'flagged' | 'removed';
+  suspect_terms: string[];
+  created_at: string;
+};
+
+/** Replies under one confession — fetched only when a post is opened. */
+export async function listConfessionComments(confessionId: string): Promise<AdminConfessionComment[]> {
+  const { data, error } = await supabase.rpc('admin_list_confession_comments', {
+    p_confession_id: confessionId,
+  });
+  if (error) throw toError(error);
+  return (data ?? []) as AdminConfessionComment[];
+}
+
+export async function setConfessionCommentStatus(
+  id: string,
+  status: 'active' | 'flagged' | 'removed',
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_confession_comment_status', {
+    p_id: id,
+    p_status: status,
+  });
+  if (error) throw toError(error);
+}
+
+/** Re-scores every post against the current word list; run after adding a word. */
+export async function rescoreConfessionSuspects(): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_rescore_confession_suspects');
+  if (error) throw toError(error);
+  return Number(data ?? 0);
 }
 
 /** Removal is a status change: the per-campus numbering depends on rows staying put. */
