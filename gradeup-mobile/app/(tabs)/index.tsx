@@ -262,18 +262,20 @@ function createDashboardStyles(
     peakAlertLeft: {
       flexShrink: 1,
     },
-    peakAlertWeekRow: {
+    // The pencil rides the eyebrow rather than the title: a title that wraps
+    // takes the full column width even though its glyphs do not, so an icon
+    // after it floats in the empty half, and measuring the text to close that
+    // gap left it crowding the status badge instead. The eyebrow is one short
+    // line in every state and language, so the icon always sits against text.
+    peakAlertLabelRow: {
       flexDirection: 'row',
-      // Against the title's first line, so a title that wraps keeps the pencil
-      // at the top rather than level with the gap between its lines.
-      alignItems: 'flex-start',
-      gap: 2,
-      flexShrink: 1,
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 4,
     },
     peakAlertEditBtn: {
       padding: 4,
-      // 4pt of padding plus this centres the 14pt glyph on a 24pt line.
-      marginTop: 1,
+      marginTop: -1,
     },
     peakAlertWeek: {
       fontSize: 20,
@@ -288,7 +290,6 @@ function createDashboardStyles(
       fontWeight: '700',
       color: textSecondary,
       letterSpacing: 1.2,
-      marginTop: 4,
     },
     peakAlertSubline: {
       fontSize: 11,
@@ -1436,14 +1437,6 @@ export default function Dashboard() {
     return `${T('week')} ${homeTeachingWeek}`;
   }, [semesterPhase, user.isBreak, user.currentWeek, academicCalendar?.totalWeeks, homeTeachingWeek, T]);
 
-  /**
-   * Width of the pulse title's longest line, so the edit pencil can sit against
-   * the words. Grow-only, and reset when the title changes, so a measurement
-   * cannot feed back into itself.
-   */
-  const [pulseTitleWidth, setPulseTitleWidth] = useState(0);
-  useEffect(() => { setPulseTitleWidth(0); }, [pulseMainTitle]);
-
   // Shown in every phase, not just mid-teaching: break / study / exam weeks are
   // exactly when the derived week is most likely wrong, and hiding the pencil
   // there left no way back to the week-align picker from Home.
@@ -2135,24 +2128,27 @@ export default function Dashboard() {
           ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <View style={styles.peakAlertWeekRow}>
-                <Text
-                  // A Text that wraps takes the whole column even though its
-                  // glyphs do not, which left the pencil floating in the empty
-                  // half. Measure the longest line and hold the box to it, so
-                  // the icon sits against the words in every state.
-                  onTextLayout={(e) => {
-                    const lines = e.nativeEvent.lines ?? [];
-                    const w = Math.ceil(Math.max(0, ...lines.map((l) => l.width))) + 1;
-                    if (w > pulseTitleWidth) setPulseTitleWidth(w);
-                  }}
-                  style={[
-                    styles.peakAlertWeek,
-                    pulseTitleWidth > 0 && { width: pulseTitleWidth },
-                    isPurpleTheme && { color: '#ffffff' },
-                    themePack === 'custom' && { color: theme.focusCardText }
-                  ]}
-                >{pulseMainTitle}</Text>
+              <Text style={[
+                styles.peakAlertWeek,
+                isPurpleTheme && { color: '#ffffff' },
+                themePack === 'custom' && { color: theme.focusCardText }
+              ]}>{pulseMainTitle}</Text>
+              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
+                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
+                </Text>
+              ) : null}
+              {semesterPhase === 'no_calendar' ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
+              ) : null}
+              <View style={styles.peakAlertLabelRow}>
+                <Text style={[
+                  styles.peakAlertLabel,
+                  isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
+                  themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+                ]}>
+                  {T('semesterPulse')}
+                </Text>
                 {showWeekAlignEdit ? (
                   <Pressable
                     onPress={onWeekAlignPress}
@@ -2175,21 +2171,6 @@ export default function Dashboard() {
                   </Pressable>
                 ) : null}
               </View>
-              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
-                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
-                </Text>
-              ) : null}
-              {semesterPhase === 'no_calendar' ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
-              ) : null}
-              <Text style={[
-                styles.peakAlertLabel,
-                isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
-                themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
-              ]}>
-                {T('semesterPulse')}
-              </Text>
             </View>
               <View
                 style={[
