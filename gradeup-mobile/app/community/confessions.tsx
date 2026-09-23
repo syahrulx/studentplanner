@@ -123,6 +123,8 @@ export default function ConfessionsScreen() {
   const [draftTag, setDraftTag] = useState<string | null>(null);
   const [draftAnon, setDraftAnon] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  /** Why the server refused this draft — a blocked word, a number, a link. */
+  const [postError, setPostError] = useState<string | null>(null);
   const hiddenIdsRef = useRef<Set<string>>(new Set());
 
   // Debounce search
@@ -213,6 +215,7 @@ export default function ConfessionsScreen() {
     const text = draft.trim();
     if (!text || submitting) return;
     setSubmitting(true);
+    setPostError(null);
     try {
       const created = await confessionsApi.createConfession(text, draftTag, draftAnon);
       const campusMatch = selectedCampus === null || created.campus === selectedCampus || created.campus === null;
@@ -220,7 +223,11 @@ export default function ConfessionsScreen() {
       if (campusMatch && tagMatch) setItems((p) => [created, ...p]);
       setDraft(''); setDraftTag(null); setDraftAnon(true); setComposerOpen(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    } catch (e: any) { Alert.alert(T('error'), e?.message || T('confessionPostError')); }
+    } catch (e: any) {
+      // Shown in the composer, not in an alert: the filter's messages all say
+      // what to take out, and the draft is right there to edit.
+      setPostError(e?.message || T('confessionPostError'));
+    }
     finally { setSubmitting(false); }
   };
 
@@ -246,6 +253,7 @@ export default function ConfessionsScreen() {
   const openComposer = (starter?: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     if (starter && !draft.trim()) setDraft(starter);
+    setPostError(null);
     setComposerOpen(true);
   };
 
@@ -495,8 +503,17 @@ export default function ConfessionsScreen() {
               style={[s.composerInput, { color: theme.text }]}
               placeholder="What's on your mind?"
               placeholderTextColor={theme.textSecondary + '99'}
-              multiline maxLength={MAX_CONTENT} value={draft} onChangeText={setDraft} autoFocus
+              multiline maxLength={MAX_CONTENT} value={draft}
+              onChangeText={(v) => { setDraft(v); if (postError) setPostError(null); }}
+              autoFocus
             />
+
+            {!!postError && (
+              <View style={s.postError}>
+                <Feather name="alert-circle" size={14} color={theme.danger} />
+                <Text style={[s.postErrorText, { color: theme.danger }]}>{postError}</Text>
+              </View>
+            )}
 
             {!draft.trim() && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={s.chipScroll}>
@@ -564,6 +581,12 @@ const s = StyleSheet.create({
   filterDivider: { width: StyleSheet.hairlineWidth, height: 18, alignSelf: 'center', marginHorizontal: 6 },
 
   listContent: { paddingBottom: 120 },
+
+  postError: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8,
+  },
+  postErrorText: { flex: 1, fontSize: 13, fontWeight: '600', lineHeight: 19 },
 
   /* Feed row */
   row: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
