@@ -1001,7 +1001,11 @@ export default function CommunityMap() {
               onOpenFeed={() => router.push('/community/confessions' as any)}
               theme={theme}
               universityShort={(user as any)?.universityId ? String((user as any).universityId).toUpperCase() : undefined}
-              onPress={(c) => router.push({ pathname: '/community/confession-detail', params: { confessionId: c.id } } as any)}
+              onPress={(c) => {
+                // Put the feed underneath so Back from the post lands on Confessions, not the map.
+                router.push('/community/confessions' as any);
+                router.push({ pathname: '/community/confession-detail', params: { confessionId: c.id } } as any);
+              }}
             />
           </View>
         ) : null}
