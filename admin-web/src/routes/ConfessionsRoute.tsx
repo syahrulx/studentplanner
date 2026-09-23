@@ -7,6 +7,7 @@ import {
   listConfessionComments,
   setConfessionStatus,
   setConfessionCommentStatus,
+  markConfessionSuspectReviewed,
   listConfessionBlockedWords,
   addConfessionBlockedWord,
   setConfessionBlockedWordActive,
@@ -60,17 +61,26 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'am
   );
 }
 
-function SuspectChips({ terms }: { terms: string[] }) {
+function SuspectChips({ terms, reviewed }: { terms: string[]; reviewed?: boolean }) {
   if (!terms?.length) return null;
+  // The evidence survives the decision: a cleared flag still shows what was
+  // matched, in grey, so the call can be revisited.
+  const tone = reviewed
+    ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-        Looks like
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-black uppercase tracking-wide ${tone}`}>
+        {reviewed ? 'Marked safe' : 'Looks like'}
       </span>
       {terms.map((t) => (
         <span
           key={t}
-          className="rounded-full border border-amber-200 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-700 dark:border-amber-900/60 dark:text-amber-300"
+          className={`rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold ${
+            reviewed
+              ? 'border-slate-200 text-slate-400 dark:border-slate-700'
+              : 'border-amber-200 text-amber-700 dark:border-amber-900/60 dark:text-amber-300'
+          }`}
         >
           {t}
         </span>
@@ -221,6 +231,19 @@ export function ConfessionsRoute() {
       await loadCampuses();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update that confession.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markSafe(row: AdminConfession) {
+    setBusy(true);
+    try {
+      await markConfessionSuspectReviewed(row.id, true);
+      await loadRows();
+      await loadCampuses();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not clear that flag.');
     } finally {
       setBusy(false);
     }
@@ -521,7 +544,7 @@ export function ConfessionsRoute() {
                     <div
                       key={row.id}
                       className={`${CARD} flex flex-col p-5 ${
-                        row.suspect_terms.length > 0 && row.status !== 'removed'
+                        row.suspect_terms.length > 0 && !row.suspect_reviewed_at && row.status !== 'removed'
                           ? 'ring-1 ring-amber-300 dark:ring-amber-900/70'
                           : ''
                       }`}
@@ -540,7 +563,7 @@ export function ConfessionsRoute() {
                         {row.content}
                       </p>
 
-                      <SuspectChips terms={row.suspect_terms} />
+                      <SuspectChips terms={row.suspect_terms} reviewed={!!row.suspect_reviewed_at} />
 
                       {row.removed_reason && (
                         <div className="mt-2 text-xs font-semibold text-slate-400">Removed: {row.removed_reason}</div>
@@ -557,7 +580,22 @@ export function ConfessionsRoute() {
                         {row.report_count > 0 && (
                           <span className="text-amber-600 dark:text-amber-400">⚑ {row.report_count} reported</span>
                         )}
-                        <div className="ml-auto">
+                        <div className="ml-auto flex items-center gap-2">
+                          {row.suspect_terms.length > 0 && row.status !== 'removed' && (
+                            <button
+                              disabled={busy}
+                              onClick={() => void (row.suspect_reviewed_at
+                                ? markConfessionSuspectReviewed(row.id, false).then(loadRows).then(loadCampuses)
+                                : markSafe(row))}
+                              className={`rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
+                                row.suspect_reviewed_at
+                                  ? 'bg-slate-100 text-slate-500 hover:bg-amber-100 hover:text-amber-700 dark:bg-slate-800 dark:text-slate-400'
+                                  : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              }`}
+                            >
+                              {row.suspect_reviewed_at ? 'Flag again' : 'Mark safe'}
+                            </button>
+                          )}
                           {row.status === 'removed' ? (
                             <button
                               disabled={busy}

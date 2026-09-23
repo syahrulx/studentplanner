@@ -2676,6 +2676,8 @@ export type AdminConfession = {
   report_count: number;
   /** Blocked words this post resembles without containing — evasion, or a coincidence. */
   suspect_terms: string[];
+  /** Set once an admin has looked and decided it is fine; it then leaves the queue. */
+  suspect_reviewed_at: string | null;
   created_at: string;
   removed_at: string | null;
   removed_reason: string | null;
@@ -2729,6 +2731,15 @@ export async function setConfessionCommentStatus(
   const { error } = await supabase.rpc('admin_set_confession_comment_status', {
     p_id: id,
     p_status: status,
+  });
+  if (error) throw toError(error);
+}
+
+/** Clears a flag an admin has judged harmless — the terms stay, the queue drops it. */
+export async function markConfessionSuspectReviewed(id: string, reviewed = true): Promise<void> {
+  const { error } = await supabase.rpc('admin_mark_confession_suspect_reviewed', {
+    p_id: id,
+    p_reviewed: reviewed,
   });
   if (error) throw toError(error);
 }
