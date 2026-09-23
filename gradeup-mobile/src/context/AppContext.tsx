@@ -892,14 +892,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         let loadedCourses: import('../types').Course[] = [];
-        let validCourseIds: Set<string> | null = null;
         if (r4.status === 'fulfilled') {
           loadedCourses = r4.value;
           // An empty course response is ambiguous when the transport layer
-          // cannot expose its error. Preserve the last local course/note view
-          // rather than hiding every note during a connection problem.
+          // cannot expose its error. Preserve the last local course view rather
+          // than emptying it during a connection problem.
           if (loadedCourses.length > 0) {
-            validCourseIds = new Set(loadedCourses.map((c) => c.id.toUpperCase()));
             setCourses(loadedCourses);
           }
         }
@@ -907,15 +905,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let loadedNotes: import('../types').Note[] = [];
         if (r0.status === 'fulfilled' && !localMutatedDuringLoad) {
           loadedNotes = await offlineSync.mergePendingNotes(uid, r0.value);
-          if (validCourseIds) {
-            // Soft-hide notes whose subject isn't in the user's current course
-            // list. We previously auto-deleted them from Supabase here, but
-            // that caused permanent data loss in edge cases (course loader
-            // glitches, subject_id case mismatches, etc.). Now it's
-            // display-only — the user can restore access by re-adding the
-            // course, or we can clean up server-side via an admin script.
-            loadedNotes = loadedNotes.filter((n) => validCourseIds.has(n.subjectId.toUpperCase()));
-          }
+          // Notes whose subject is missing from the course list used to be
+          // hidden here. Nothing was deleted — the rows stayed in Supabase —
+          // but from inside the app the work was simply gone, with no route
+          // back to it and nothing said about why. Deleting a subject while
+          // choosing to KEEP its notes hit exactly that, and reported "0 cards,
+          // 0 notes" one second after promising to keep 53 and 8.
+          //
+          // They are the student's own notes, so they are shown. An orphan
+          // still appears under its old code in Flashcard decks, and a subject
+          // deleted from now on files its notes under KEPT, which exists as a
+          // course row so it reads as a folder rather than as a loose end.
+          // The reason this filter was here — a half-failed course fetch — is
+          // an argument against deleting them, which this no longer does.
           setNotes(loadedNotes);
           void offlineSync.cacheNotes(uid, loadedNotes);
         }
