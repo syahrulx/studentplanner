@@ -612,7 +612,7 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function StudyHub() {
-  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcardsForNote, renameCourse, deleteCourse, moveNoteToSubject, timetable, setTasks, setCourses: setAppCourses } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcardsForNote, renameCourse, deleteCourse, moveNoteToSubject, deleteStudyDataForSubject, timetable, setTasks, setCourses: setAppCourses } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const themePack = useThemePack();
@@ -797,6 +797,31 @@ export default function StudyHub() {
     renameCourse(renameTarget.id, trimmed);
     setRenameTarget(null);
     setRenameValue('');
+  };
+
+  /** Remove a past subject outright: every note and every card under its code. */
+  const confirmDeletePastSubject = (subjectId: string) => {
+    const noteCount = notes.filter((n) => n.subjectId === subjectId).length;
+    const cardCount = flashcards.filter((c) => {
+      const note = notes.find((n) => n.id === c.noteId);
+      return !!note && note.subjectId === subjectId;
+    }).length;
+    Alert.alert(
+      `Delete ${subjectId}?`,
+      `This removes ${noteCount} note${noteCount === 1 ? '' : 's'} and ${cardCount} card${cardCount === 1 ? '' : 's'} for good. It cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void deleteStudyDataForSubject(subjectId).catch((e) =>
+              Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.'),
+            );
+          },
+        },
+      ],
+    );
   };
 
   const handleDeleteDeck = (noteId: string, title: string) => {
@@ -2293,21 +2318,30 @@ export default function StudyHub() {
                     {group.label}
                   </Text>
                   {group.rows.map((sub) => (
-                    <Pressable
-                      key={sub.subjectId}
-                      style={({ pressed }) => [
-                        s.dueSheetRow,
-                        pressed && { backgroundColor: theme.backgroundSecondary },
-                      ]}
-                      onPress={() => setDueSubject(sub.subjectId)}
-                    >
-                      <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
-                      <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
-                        {sub.subjectId}
-                      </Text>
-                      <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
-                      <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-                    </Pressable>
+                    <View key={sub.subjectId} style={s.dueSheetRow}>
+                      <Pressable
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                        onPress={() => setDueSubject(sub.subjectId)}
+                      >
+                        <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
+                        <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
+                          {sub.subjectId}
+                        </Text>
+                        <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
+                        <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                      </Pressable>
+                      {/* Only past subjects: a current one is deleted from Your
+                          subjects, which also settles its tasks and classes. */}
+                      {sub.past && (
+                        <Pressable
+                          hitSlop={10}
+                          style={{ paddingLeft: 10, paddingVertical: 4 }}
+                          onPress={() => confirmDeletePastSubject(sub.subjectId)}
+                        >
+                          <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                        </Pressable>
+                      )}
+                    </View>
                   ))}
                 </View>
               )))}

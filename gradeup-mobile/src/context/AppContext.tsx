@@ -161,6 +161,7 @@ type AppState = {
   renameCourse: (subjectId: string, newName: string) => void;
   deleteCourse: (subjectId: string, options?: { deleteTimetable?: boolean; keepStudyData?: boolean }) => Promise<void>;
   moveNoteToSubject: (noteId: string, subjectId: string) => Promise<void>;
+  deleteStudyDataForSubject: (subjectId: string) => Promise<void>;
   tasks: Task[];
   tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -2143,6 +2144,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * Delete every note and flashcard filed under one subject code, without
+   * touching a course row.
+   *
+   * A past subject has no course row to delete — that is what makes it past —
+   * so Your subjects cannot reach it and the only way to be rid of it was one
+   * deck at a time, which still left the notes behind.
+   */
+  const deleteStudyDataForSubject = useCallback(async (subjectId: string) => {
+    const upper = subjectId.toUpperCase();
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to delete.');
+
+    const noteIds = new Set(
+      notes.filter((n) => n.subjectId.toUpperCase() === upper).map((n) => n.id),
+    );
+    await studyDb.deleteSubjectStudyData(uid, subjectId);
+    await Promise.all([...noteIds].map(async (noteId) => {
+      await offlineSync.queueNoteDelete(uid, noteId);
+      await deleteHandwritingCache(uid, noteId).catch(() => {});
+    }));
+    void offlineSync.flushOfflineSync(uid);
+
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.subjectId.toUpperCase() !== upper);
+      void offlineSync.cacheNotes(uid, next);
+      return next;
+    });
+    setFlashcards((prev) => prev.filter((c) => !c.noteId || !noteIds.has(c.noteId)));
+  }, [notes]);
+
   const deleteCourse = useCallback(async (
     subjectId: string,
     options?: { deleteTimetable?: boolean; keepStudyData?: boolean },
@@ -2780,6 +2813,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       renameCourse,
       deleteCourse,
       moveNoteToSubject,
+      deleteStudyDataForSubject,
       tasks,
       tasksVersion,
       setTasks,
@@ -2870,6 +2904,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       renameCourse,
       deleteCourse,
       moveNoteToSubject,
+      deleteStudyDataForSubject,
       tasks,
       tasksVersion,
       setTasks,
