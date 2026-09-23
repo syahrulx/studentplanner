@@ -33,7 +33,8 @@
     "test:eval-offline": "npx --yes tsx tests/evalOffline.test.ts",
     "test:eval-live": "npx --yes tsx tests/evalLive.test.ts",
     "test:math-text": "npx --yes tsx tests/mathText.test.ts",
-    "test:request-timeout": "npx --yes tsx tests/supabaseRequestTimeout.test.ts"
+    "test:request-timeout": "npx --yes tsx tests/supabaseRequestTimeout.test.ts",
+    "test:feedback-survey": "npx --yes tsx tests/feedbackSurvey.test.ts"
   },
   "dependencies": {
     "@expo/ui": "~55.0.11",

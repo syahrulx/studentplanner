@@ -116,6 +116,7 @@ import { initPurchases, logOutPurchases, onCustomerInfoUpdate } from '../lib/pur
 import { primeTrialOffers, resetTrialOffers } from '../lib/upgradePrompt';
 import * as offlineSync from '../lib/offlineSync';
 import type { OfflineSyncStatus } from '../lib/offlineSync';
+import { recordFeedbackEvent } from '../lib/feedbackSurvey';
 
 function getAuthFallbackName(session: { user?: { user_metadata?: Record<string, unknown>; email?: string } } | null): string {
   const u = session?.user;
@@ -1900,6 +1901,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const dateISO = (occurrenceDate ?? getTodayISO()).slice(0, 10);
       const key = taskDb.makeCompletionKey(taskId, dateISO);
       const wasDone = taskCompletionKeys.has(key);
+      if (!wasDone) recordFeedbackEvent('task_completed');
       // Optimistic local update.
       setTaskCompletionKeys((prev) => {
         const next = new Set(prev);
@@ -1930,6 +1932,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     if (updated.isDone) {
       cancelTaskNotifications(taskId).catch(() => {});
+      recordFeedbackEvent('task_completed');
     } else {
       scheduleTaskNotifications(updated).catch(() => {});
     }

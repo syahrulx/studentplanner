@@ -14,6 +14,7 @@ import { StudentPerformanceRoute } from './routes/StudentPerformanceRoute';
 import { ServicesRoute } from './routes/ServicesRoute';
 import { UserReportsRoute } from './routes/UserReportsRoute';
 import { ShareRewardsRoute } from './routes/ShareRewardsRoute';
+import { FeedbackSurveysRoute } from './routes/FeedbackSurveysRoute';
 import { MinigamesRoute } from './routes/MinigamesRoute';
 import { AcademicCalendarsRoute } from './routes/AcademicCalendarsRoute';
 import { CommunicationsRoute } from './routes/CommunicationsRoute';
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="logs" element={<LogsRoute />} />
             <Route path="task-categories" element={<TaskCategoriesRoute />} />
             <Route path="user-reports" element={<UserReportsRoute />} />
+            <Route path="feedback-surveys" element={<FeedbackSurveysRoute />} />
             <Route path="whats-new" element={<Navigate to="/communications?tab=whats-new" replace />} />
             <Route path="minigames" element={<MinigamesRoute />} />
             <Route path="settings" element={<Navigate to="/dashboard" replace />} />

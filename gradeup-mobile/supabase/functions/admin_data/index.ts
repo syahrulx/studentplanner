@@ -6,6 +6,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest } from '../_shared/adminAuth.ts';
+import { UUID_RE, sanitizeFeedbackSurvey } from '../_shared/feedbackSurvey.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { GEMINI_PREFERRED_MODELS, OPENAI_MODEL_FAST, samplingParams } from '../_shared/models.ts';
 
@@ -2305,6 +2306,96 @@ Rules: Dates must be YYYY-MM-DD. Do NOT invent dates — only use dates visible 
         meta: { action, id },
       });
       return json(200, { ok: true });
+    }
+
+    if (action === 'feedback_surveys_list') {
+      const [{ data: rows, error: e }, { data: stats, error: se }] = await Promise.all([
+        admin.from('feedback_surveys').select('*').order('created_at', { ascending: false }),
+        admin.rpc('feedback_survey_stats'),
+      ]);
+      if (e) return json(400, { error: e.message });
+      if (se) return json(400, { error: se.message });
+      const statsById: Record<string, unknown> = {};
+      for (const s of stats ?? []) statsById[String(s.survey_id)] = s;
+      const items = (rows ?? []).map((r) => ({
+        ...r,
+        stats: statsById[String(r.id)] ?? { reached_users: 0, times_shown: 0, times_dismissed: 0, responses: 0 },
+      }));
+      return json(200, { items });
+    }
+
+    if (action === 'feedback_survey_upsert') {
+      const parsed = sanitizeFeedbackSurvey(payload.survey);
+      if ('error' in parsed) return json(400, { error: parsed.error });
+      const id = payload.id != null ? String(payload.id) : null;
+      if (id != null && !UUID_RE.test(id)) return json(400, { error: 'Invalid survey id.' });
+
+      let result;
+      if (id != null) {
+        const { data, error: e } = await admin
+          .from('feedback_surveys').update(parsed.row).eq('id', id).select().single();
+        if (e) return json(400, { error: e.message });
+        result = data;
+      } else {
+        const { data, error: e } = await admin
+          .from('feedback_surveys').insert({ ...parsed.row, created_by: adminUserId }).select().single();
+        if (e) return json(400, { error: e.message });
+        result = data;
+      }
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id: result?.id, actor: adminUserId ?? null },
+      });
+      return json(200, { row: result });
+    }
+
+    if (action === 'feedback_survey_delete') {
+      const id = String(payload.id || '');
+      if (!UUID_RE.test(id)) return json(400, { error: 'Invalid survey id.' });
+      const { error: e } = await admin.from('feedback_surveys').delete().eq('id', id);
+      if (e) return json(400, { error: e.message });
+      await admin.from('admin_logs').insert({
+        type: 'api_request',
+        status: 'success',
+        meta: { action, id, actor: adminUserId ?? null },
+      });
+      return json(200, { ok: true });
+    }
+
+    if (action === 'feedback_survey_results') {
+      const id = String(payload.id || '');
+      if (!UUID_RE.test(id)) return json(400, { error: 'Invalid survey id.' });
+      const { data: survey, error: e } = await admin
+        .from('feedback_surveys').select('*').eq('id', id).maybeSingle();
+      if (e) return json(400, { error: e.message });
+      if (!survey) return json(404, { error: 'Survey not found.' });
+
+      const { data: responses, error: re } = await admin
+        .from('feedback_survey_responses')
+        .select('id,user_id,answers,language,platform,app_version,plan,university_id,university,campus,created_at')
+        .eq('survey_id', id)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (re) return json(400, { error: re.message });
+
+      const userIds = [...new Set((responses ?? []).map((r) => String(r.user_id)))];
+      const nameById: Record<string, string | null> = {};
+      for (let i = 0; i < userIds.length; i += 200) {
+        const { data: profs } = await admin
+          .from('profiles').select('id,name').in('id', userIds.slice(i, i + 200));
+        for (const p of profs ?? []) nameById[String(p.id)] = p.name ?? null;
+      }
+
+      const { data: stats } = await admin.rpc('feedback_survey_stats');
+      const own = (stats ?? []).find((s) => String(s.survey_id) === id)
+        ?? { reached_users: 0, times_shown: 0, times_dismissed: 0, responses: 0 };
+
+      return json(200, {
+        survey,
+        stats: own,
+        responses: (responses ?? []).map((r) => ({ ...r, user_name: nameById[String(r.user_id)] ?? null })),
+      });
     }
 
     return json(400, { error: 'unknown_action' });
