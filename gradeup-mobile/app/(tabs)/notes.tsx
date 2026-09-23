@@ -1061,7 +1061,9 @@ export default function StudyHub() {
                   { backgroundColor: quickActionWideTint },
                   pressed && { opacity: 0.85 },
                 ]}
-                // One subject is not worth a chooser; go straight in.
+                // One subject is not worth a chooser, so it goes straight in —
+                // and the subtitle names that subject, otherwise skipping the
+                // sheet looks like the sheet is broken.
                 onPress={() => (dueBySubject.length > 1 ? setDuePickerOpen(true) : startDueReview())}
               >
                 <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
@@ -1071,10 +1073,12 @@ export default function StudyHub() {
                   <Text style={s.quickActionWideTitle}>
                     {String((T as any)('studyNowDueCards')).replace('{n}', String(dueTotal))}
                   </Text>
-                  <Text style={s.quickActionWideSub}>
+                  <Text style={s.quickActionWideSub} numberOfLines={1}>
                     {dueBySubject.length > 1
                       ? `${(T as any)('studyNowDueCardsBody')} · ${dueBySubject.length} subjects`
-                      : (T as any)('studyNowDueCardsBody')}
+                      : dueBySubject.length === 1
+                        ? `${dueBySubject[0].subjectId} · ${(T as any)('studyNowDueCardsBody')}`
+                        : (T as any)('studyNowDueCardsBody')}
                   </Text>
                   {dueBySubject.length > 1 && (
                     <View style={s.dueDotRow}>
