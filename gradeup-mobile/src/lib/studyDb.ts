@@ -255,6 +255,20 @@ export async function deleteNote(userId: string, noteId: string): Promise<void> 
  * move to a subject that still exists or it silently disappears from the app.
  * Flashcards ride along — they point at a note, never at a subject.
  */
+/** Re-file one note under a different subject. Its flashcards follow. */
+export async function setNoteSubject(
+  userId: string,
+  noteId: string,
+  subjectId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from(NOTES_TABLE)
+    .update({ subject_id: subjectId })
+    .eq('user_id', userId)
+    .eq('id', noteId);
+  if (error) throw error;
+}
+
 export async function moveNotesToSubject(
   userId: string,
   fromSubjectId: string,

@@ -8,6 +8,7 @@ import { useTranslations } from '@/src/i18n';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
+import SubjectPickerSheet from '@/components/SubjectPickerSheet';
 import { dueCounts, isDue } from '@/src/lib/fsrs';
 import { EMPTY_INSIGHTS, buildMissedQuestionsQuiz, getStudyInsights, type StudyInsights } from '@/src/lib/studyInsights';
 import { setGeneratedQuizQuestions } from '@/src/lib/studyApi';
@@ -162,6 +163,10 @@ function createStyles(theme: ThemePalette) {
     dueSheetLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
     dueSheetCount: { fontSize: 13, fontWeight: '700' },
     dueSheetDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
+    dueSheetGroupLabel: {
+      fontSize: 11, fontWeight: '800', letterSpacing: 1.1,
+      paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4,
+    },
 
     /* Delete-subject dialog */
     deleteCard: {
@@ -607,7 +612,7 @@ function createStyles(theme: ThemePalette) {
 }
 
 export default function StudyHub() {
-  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcardsForNote, renameCourse, deleteCourse, timetable, setTasks, setCourses: setAppCourses } = useApp();
+  const { courses, notes, flashcards, language, getSubjectColor, deleteFlashcardsForNote, renameCourse, deleteCourse, moveNoteToSubject, timetable, setTasks, setCourses: setAppCourses } = useApp();
   const T = useTranslations(language);
   const theme = useTheme();
   const themePack = useThemePack();
@@ -627,6 +632,13 @@ export default function StudyHub() {
   const [renameValue, setRenameValue] = useState('');
   const [deckSortMode, setDeckSortMode] = useState<'cards_desc' | 'cards_asc' | 'title_asc' | 'updated_desc'>('cards_desc');
   const [deckGroupMode, setDeckGroupMode] = useState<'none' | 'subject'>('none');
+  /**
+   * Current = the subject is still in Your subjects. Past = it is not, either
+   * because it was deleted or because the note was filed under a code that
+   * never had one. Defaults to current: what you are taking now is what you
+   * revise, and the rest is still one tap away instead of hidden.
+   */
+  const [deckScope, setDeckScope] = useState<'current' | 'past' | 'all'>('current');
 
   // ── Re-link state for gc-course-xxx subjects ──
   const [relinkTarget, setRelinkTarget] = useState<Course | null>(null);
@@ -704,6 +716,14 @@ export default function StudyHub() {
    */
   const KEPT_SUBJECT_ID = 'KEPT';
   const liveCourses = useMemo(() => courses.filter((c) => c.id !== KEPT_SUBJECT_ID), [courses]);
+  const liveSubjectIds = useMemo(
+    () => new Set(liveCourses.map((c) => c.id.toUpperCase())),
+    [liveCourses],
+  );
+  const isPastSubject = useCallback(
+    (subjectId: string) => !liveSubjectIds.has(String(subjectId ?? '').toUpperCase()),
+    [liveSubjectIds],
+  );
   const keptCourse = useMemo(() => courses.find((c) => c.id === KEPT_SUBJECT_ID) ?? null, [courses]);
   const keptNoteCount = useMemo(
     () => notes.filter((n) => n.subjectId === KEPT_SUBJECT_ID).length,
@@ -853,8 +873,19 @@ export default function StudyHub() {
       .filter(deck => deck.count > 0);
   }, [notes, flashcards]);
 
+  const scopedDeckItems = useMemo(() => {
+    if (deckScope === 'all') return deckItems;
+    const wantPast = deckScope === 'past';
+    return deckItems.filter((d) => isPastSubject(d.subjectId) === wantPast);
+  }, [deckItems, deckScope, isPastSubject]);
+
+  const pastDeckCount = useMemo(
+    () => deckItems.filter((d) => isPastSubject(d.subjectId)).length,
+    [deckItems, isPastSubject],
+  );
+
   const sortedDeckItems = useMemo(() => {
-    const list = [...deckItems];
+    const list = [...scopedDeckItems];
     list.sort((a, b) => {
       if (deckSortMode === 'cards_asc') return (a.count - b.count) || a.title.localeCompare(b.title);
       if (deckSortMode === 'title_asc') return a.title.localeCompare(b.title) || (b.count - a.count);
@@ -862,7 +893,7 @@ export default function StudyHub() {
       return (b.count - a.count) || a.title.localeCompare(b.title);
     });
     return list;
-  }, [deckItems, deckSortMode]);
+  }, [scopedDeckItems, deckSortMode]);
 
   const groupedDeckItems = useMemo(() => {
     if (deckGroupMode === 'none') {
@@ -912,11 +943,21 @@ export default function StudyHub() {
       counts.set(subject, (counts.get(subject) ?? 0) + 1);
     }
     return Array.from(counts.entries())
-      .map(([subjectId, due], idx) => ({ subjectId, due, color: getColor(subjectId, idx) }))
+      .map(([subjectId, due], idx) => ({
+        subjectId,
+        due,
+        color: getColor(subjectId, idx),
+        past: isPastSubject(subjectId),
+      }))
       .sort((a, b) => b.due - a.due || a.subjectId.localeCompare(b.subjectId));
-  }, [flashcards, notes]);
+  }, [flashcards, notes, isPastSubject]);
+
+  const dueCurrent = useMemo(() => dueBySubject.filter((d) => !d.past), [dueBySubject]);
+  const duePast = useMemo(() => dueBySubject.filter((d) => d.past), [dueBySubject]);
 
   const [duePickerOpen, setDuePickerOpen] = useState(false);
+  /** Deck waiting to be re-filed under another subject. */
+  const [moveTarget, setMoveTarget] = useState<{ noteId: string; title: string; subjectId: string } | null>(null);
 
 
   const startDueReview = useCallback((subjectId?: string) => {
@@ -1225,6 +1266,36 @@ export default function StudyHub() {
         ) : (
           <View style={{ marginBottom: 28 }}>
             <View style={s.deckControlsRow}>
+              {/* Current by default; past subjects stay reachable rather than
+                  filling the list you revise from every day. */}
+              <Pressable
+                style={({ pressed }) => [
+                  s.deckControlBtn,
+                  deckScope !== 'current' && { borderColor: theme.primary },
+                  pressed && { opacity: 0.75 },
+                ]}
+                onPress={() =>
+                  setDeckScope((v) => (v === 'current' ? 'past' : v === 'past' ? 'all' : 'current'))
+                }
+              >
+                <Feather
+                  name={deckScope === 'past' ? 'archive' : deckScope === 'all' ? 'layers' : 'book-open'}
+                  size={13}
+                  color={deckScope === 'current' ? theme.textSecondary : theme.primary}
+                />
+                <Text
+                  style={[
+                    s.deckControlBtnText,
+                    deckScope !== 'current' && { color: theme.primary },
+                  ]}
+                >
+                  {deckScope === 'current'
+                    ? 'Current'
+                    : deckScope === 'past'
+                      ? `Past${pastDeckCount > 0 ? ` · ${pastDeckCount}` : ''}`
+                      : 'All subjects'}
+                </Text>
+              </Pressable>
               <Pressable
                 style={({ pressed }) => [s.deckControlBtn, pressed && { opacity: 0.75 }]}
                 onPress={() =>
@@ -1327,13 +1398,22 @@ export default function StudyHub() {
                                 {deck.subjectId}
                               </Text>
                             </View>
-                            <Pressable
-                              style={s.deckTrashBtn}
-                              hitSlop={8}
-                              onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                            >
-                              <Feather name="trash-2" size={15} color={theme.textSecondary} />
-                            </Pressable>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Pressable
+                                style={s.deckTrashBtn}
+                                hitSlop={8}
+                                onPress={() => setMoveTarget({ noteId: deck.id, title: deck.title, subjectId: deck.subjectId })}
+                              >
+                                <Feather name="corner-up-right" size={15} color={theme.textSecondary} />
+                              </Pressable>
+                              <Pressable
+                                style={s.deckTrashBtn}
+                                hitSlop={8}
+                                onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                              >
+                                <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                              </Pressable>
+                            </View>
                           </View>
 
                           <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
@@ -1417,13 +1497,22 @@ export default function StudyHub() {
                               {deck.subjectId}
                             </Text>
                           </View>
-                          <Pressable
-                            style={s.deckTrashBtn}
-                            hitSlop={8}
-                            onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                          >
-                            <Feather name="trash-2" size={15} color={theme.textSecondary} />
-                          </Pressable>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Pressable
+                              style={s.deckTrashBtn}
+                              hitSlop={8}
+                              onPress={() => setMoveTarget({ noteId: deck.id, title: deck.title, subjectId: deck.subjectId })}
+                            >
+                              <Feather name="corner-up-right" size={15} color={theme.textSecondary} />
+                            </Pressable>
+                            <Pressable
+                              style={s.deckTrashBtn}
+                              hitSlop={8}
+                              onPress={() => handleDeleteDeck(deck.id, deck.title)}
+                            >
+                              <Feather name="trash-2" size={15} color={theme.textSecondary} />
+                            </Pressable>
+                          </View>
                         </View>
 
                         <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
@@ -1926,6 +2015,24 @@ export default function StudyHub() {
         </View>
       </Modal>
 
+      {/* Re-file one deck under another subject — the way work stranded on a
+          past subject gets back into a current one. */}
+      <SubjectPickerSheet
+        visible={!!moveTarget}
+        onClose={() => setMoveTarget(null)}
+        title="Move to subject"
+        selectedId={moveTarget?.subjectId ?? ''}
+        includeId={moveTarget?.subjectId}
+        onSelect={(subjectId) => {
+          const target = moveTarget;
+          setMoveTarget(null);
+          if (!target || subjectId === target.subjectId) return;
+          void moveNoteToSubject(target.noteId, subjectId).catch((e) =>
+            Alert.alert('Could not move', e instanceof Error ? e.message : 'Try again.'),
+          );
+        }}
+      />
+
       {/* ─── Delete a subject ───
           What happens to the notes and flashcards is a real choice, so it is
           asked as one rather than buried in the confirmation copy. */}
@@ -2084,23 +2191,33 @@ export default function StudyHub() {
 
               <View style={[s.dueSheetDivider, { backgroundColor: theme.border }]} />
 
-              {dueBySubject.map((sub) => (
-                <Pressable
-                  key={sub.subjectId}
-                  style={({ pressed }) => [
-                    s.dueSheetRow,
-                    pressed && { backgroundColor: theme.backgroundSecondary },
-                  ]}
-                  onPress={() => startDueReview(sub.subjectId)}
-                >
-                  <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
-                  <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
-                    {sub.subjectId}
+              {[
+                { key: 'current', label: 'CURRENT SUBJECTS', rows: dueCurrent },
+                { key: 'past', label: 'PAST SUBJECTS', rows: duePast },
+              ].map((group) => (group.rows.length === 0 ? null : (
+                <View key={group.key}>
+                  <Text style={[s.dueSheetGroupLabel, { color: theme.textSecondary }]}>
+                    {group.label}
                   </Text>
-                  <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
-                  <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-                </Pressable>
-              ))}
+                  {group.rows.map((sub) => (
+                    <Pressable
+                      key={sub.subjectId}
+                      style={({ pressed }) => [
+                        s.dueSheetRow,
+                        pressed && { backgroundColor: theme.backgroundSecondary },
+                      ]}
+                      onPress={() => startDueReview(sub.subjectId)}
+                    >
+                      <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
+                      <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
+                        {sub.subjectId}
+                      </Text>
+                      <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
+                      <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                    </Pressable>
+                  ))}
+                </View>
+              )))}
               <View style={{ height: 8 }} />
             </ScrollView>
           </Pressable>

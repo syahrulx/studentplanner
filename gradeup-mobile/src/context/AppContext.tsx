@@ -160,6 +160,7 @@ type AppState = {
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
   renameCourse: (subjectId: string, newName: string) => void;
   deleteCourse: (subjectId: string, options?: { deleteTimetable?: boolean; keepStudyData?: boolean }) => Promise<void>;
+  moveNoteToSubject: (noteId: string, subjectId: string) => Promise<void>;
   tasks: Task[];
   tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -2125,6 +2126,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     workload: [],
   };
 
+  /**
+   * Move one note — and so its flashcards, which point at the note — to another
+   * subject. Used to rescue work stranded under a subject that no longer
+   * exists, without having to recreate that subject.
+   */
+  const moveNoteToSubject = useCallback(async (noteId: string, subjectId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Sign in required to move a note.');
+    await studyDb.setNoteSubject(uid, noteId, subjectId);
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === noteId ? { ...n, subjectId } : n));
+      void offlineSync.cacheNotes(uid, next);
+      return next;
+    });
+  }, []);
+
   const deleteCourse = useCallback(async (
     subjectId: string,
     options?: { deleteTimetable?: boolean; keepStudyData?: boolean },
@@ -2761,6 +2779,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCourse,
       renameCourse,
       deleteCourse,
+      moveNoteToSubject,
       tasks,
       tasksVersion,
       setTasks,
@@ -2850,6 +2869,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCourse,
       renameCourse,
       deleteCourse,
+      moveNoteToSubject,
       tasks,
       tasksVersion,
       setTasks,
