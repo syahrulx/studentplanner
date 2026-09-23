@@ -38,6 +38,9 @@ export function isUsableSubjectCode(code: string): boolean {
   return t.length >= 2 && t.length <= 40;
 }
 
+/** The archive folder holds work from deleted subjects; nothing new is filed there. */
+export const KEPT_SUBJECT_ID = 'KEPT';
+
 export function buildSubjectOptions(args: {
   courses: Course[];
   timetable: TimetableEntry[];
@@ -46,7 +49,9 @@ export function buildSubjectOptions(args: {
 }): SubjectOption[] {
   const { courses, timetable, includeId } = args;
 
-  const options: SubjectOption[] = courses.map((c) => ({ ...c, source: 'course' }));
+  const options: SubjectOption[] = courses
+    .filter((c) => c.id !== KEPT_SUBJECT_ID)
+    .map((c) => ({ ...c, source: 'course' }));
   const seen = new Set(options.map((c) => subjectKey(c.id)));
 
   if (includeId && includeId.trim() && !seen.has(subjectKey(includeId))) {

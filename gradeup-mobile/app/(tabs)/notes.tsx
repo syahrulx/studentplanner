@@ -125,6 +125,12 @@ function createStyles(theme: ThemePalette) {
       marginBottom: 8,
     },
     studyNowSpacer: { height: 20 },
+    // Dashed, so the archive reads as a holding place rather than a subject.
+    keptCard: { borderWidth: 1, borderStyle: 'dashed', backgroundColor: 'transparent' },
+    keptGlyph: {
+      width: 22, height: 22, borderRadius: 7,
+      alignItems: 'center', justifyContent: 'center',
+    },
     // A count carries further than a chevron on a row whose whole point is
     // "how much is waiting", and the dots say how many subjects it spans
     // before the sheet is even opened.
@@ -691,6 +697,19 @@ export default function StudyHub() {
   const [deleteTimetableToo, setDeleteTimetableToo] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  /**
+   * The archive folder is a real course row — that is the only thing that keeps
+   * its notes visible — but it is not a subject the student takes, so it is
+   * listed on its own rather than among them.
+   */
+  const KEPT_SUBJECT_ID = 'KEPT';
+  const liveCourses = useMemo(() => courses.filter((c) => c.id !== KEPT_SUBJECT_ID), [courses]);
+  const keptCourse = useMemo(() => courses.find((c) => c.id === KEPT_SUBJECT_ID) ?? null, [courses]);
+  const keptNoteCount = useMemo(
+    () => notes.filter((n) => n.subjectId === KEPT_SUBJECT_ID).length,
+    [notes],
+  );
+
   const tx = (key: string, fallback: string) => ((T as any)(key) as string) || fallback;
 
   const handleSubjectRowPress = (course: Course) => {
@@ -989,7 +1008,7 @@ export default function StudyHub() {
           <View style={s.headerInfo}>
             <Text style={s.headerTitle}>{(T as any)('studyTitle') || 'Study'}</Text>
             <Text style={s.headerSub}>
-              {totalCards} cards · {totalNotes} notes · {courses.length} subjects
+              {totalCards} cards · {totalNotes} notes · {liveCourses.length} subjects
             </Text>
           </View>
         </View>
@@ -1493,7 +1512,7 @@ export default function StudyHub() {
         )}
 
         <View style={s.groupCard}>
-          {courses.map((course, idx) => {
+          {liveCourses.map((course, idx) => {
             const count = notes.filter((n) => n.subjectId === course.id).length;
             const color = getColor(course.id, idx);
 
@@ -1577,6 +1596,44 @@ export default function StudyHub() {
             </Pressable>
           )}
         </View>
+
+        {/* ─── Kept from deleted subjects ───
+            Its own section, deliberately not inside Your subjects: it holds
+            work from subjects that are gone, and mixing it in would read as a
+            subject the student still takes. */}
+        {keptCourse && (
+          <>
+            <View style={[s.sectionHeaderRow, { marginTop: 24 }]}>
+              <Text style={s.sectionHeaderLabel}>{tx('keptSection', 'KEPT FROM DELETED SUBJECTS')}</Text>
+            </View>
+            <View style={[s.groupCard, s.keptCard, { borderColor: theme.border }]}>
+              <Pressable
+                style={({ pressed }) => [s.row, pressed && { opacity: 0.7 }]}
+                onPress={() => handleSubjectRowPress(keptCourse)}
+              >
+                <View style={[s.keptGlyph, { backgroundColor: theme.textSecondary + '22' }]}>
+                  <Feather name="archive" size={12} color={theme.textSecondary} />
+                </View>
+                <View style={s.rowBody}>
+                  <Text style={s.rowTitle}>{tx('keptFolder', 'Kept notes & flashcards')}</Text>
+                  <Text style={s.rowSub} numberOfLines={1}>
+                    {tx('keptFolderSub', 'Saved when you deleted a subject')}
+                  </Text>
+                </View>
+                {subjectsMode === 'idle' ? (
+                  <>
+                    <Text style={s.rowCount}>{keptNoteCount}</Text>
+                    <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+                  </>
+                ) : (
+                  <View style={[s.rowActionIcon, { backgroundColor: '#ef444422' }]}>
+                    <Feather name="trash-2" size={14} color="#ef4444" />
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </>
+        )}
 
       </ScrollView>
 
@@ -1909,9 +1966,9 @@ export default function StudyHub() {
                     <Text style={[s.deleteOptionTitle, { color: theme.text }]}>Keep notes and flashcards</Text>
                     <Text style={[s.deleteOptionBody, { color: theme.textSecondary }]}>
                       {deleteTarget?.noteCount ?? 0} note{(deleteTarget?.noteCount ?? 0) === 1 ? '' : 's'} and{' '}
-                      {deleteTarget?.cardCount ?? 0} card{(deleteTarget?.cardCount ?? 0) === 1 ? '' : 's'} stay in Study
-                      under “{deleteTarget?.course.id}”. They keep that folder to themselves — nothing is
-                      merged into your other subjects.
+                      {deleteTarget?.cardCount ?? 0} card{(deleteTarget?.cardCount ?? 0) === 1 ? '' : 's'} move to a
+                      folder called “KEPT” in Study. Everything you keep lands there — never inside a
+                      subject you still take.
                     </Text>
                   </View>
                 </Pressable>

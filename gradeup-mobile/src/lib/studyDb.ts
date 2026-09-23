@@ -247,6 +247,27 @@ export async function deleteNote(userId: string, noteId: string): Promise<void> 
 }
 
 /** Delete notes and their flashcards for exactly one subject owned by one user. */
+/**
+ * Re-file every note of one subject under another.
+ *
+ * Used when a subject is deleted but its study data is kept: the loader hides
+ * notes whose subject is not in the user's course list, so a kept note has to
+ * move to a subject that still exists or it silently disappears from the app.
+ * Flashcards ride along — they point at a note, never at a subject.
+ */
+export async function moveNotesToSubject(
+  userId: string,
+  fromSubjectId: string,
+  toSubjectId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from(NOTES_TABLE)
+    .update({ subject_id: toSubjectId })
+    .eq('user_id', userId)
+    .eq('subject_id', fromSubjectId);
+  if (error) throw error;
+}
+
 export async function deleteSubjectStudyData(userId: string, subjectId: string): Promise<void> {
   const { data: noteRows, error: readError } = await supabase
     .from(NOTES_TABLE)

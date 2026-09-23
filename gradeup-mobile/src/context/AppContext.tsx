@@ -2108,6 +2108,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    * in Study and never merge into a subject that still exists — the folder
    * outlives the subject row. Only the subject and its tasks go.
    */
+  /**
+   * Where notes and flashcards go when a subject is deleted but kept.
+   *
+   * It is a real course row because that is what makes a folder visible: the
+   * loader hides notes whose subject is not in the course list. One folder for
+   * all of them, never an existing subject, so nothing kept is ever mixed into
+   * a subject the student still takes.
+   */
+  const KEPT_STUDY_COURSE: Course = {
+    id: 'KEPT',
+    name: 'Kept from deleted subjects',
+    creditHours: 0,
+    workload: [],
+  };
+
   const deleteCourse = useCallback(async (
     subjectId: string,
     options?: { deleteTimetable?: boolean; keepStudyData?: boolean },
@@ -2136,8 +2151,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Remove child data before the folder row so a failed child write leaves a
     // visible folder the user can safely retry instead of hidden orphan data.
     const keepStudyData = options?.keepStudyData === true;
+    // Keeping the rows is not enough to keep them reachable: the loader hides
+    // notes whose subject is missing from the course list (see the soft-hide in
+    // loadRemote), so a kept note whose subject row has just gone would vanish
+    // on the next launch with its cards. Move them into one folder that does
+    // exist instead.
+    const keptAnything = keepStudyData && subjectNoteIds.size > 0;
     if (!keepStudyData) {
       await studyDb.deleteSubjectStudyData(uid, subjectId);
+    } else if (keptAnything) {
+      await coursesDb.addCourse(uid, KEPT_STUDY_COURSE);
+      await studyDb.moveNotesToSubject(uid, subjectId, KEPT_STUDY_COURSE.id);
     }
     await taskDb.deleteTasksForCourse(uid, subjectId);
     await coursesDb.deleteCourse(uid, subjectId);
@@ -2156,6 +2180,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     setCourses((prev) => {
       const next = prev.filter((c) => c.id.toUpperCase() !== upper);
+      if (keptAnything && !next.some((c) => c.id === KEPT_STUDY_COURSE.id)) {
+        next.push({ ...KEPT_STUDY_COURSE });
+      }
       persistCourses(next);
       return next;
     });
@@ -2171,6 +2198,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       setFlashcards((prev) => prev.filter((card) => !card.noteId || !subjectNoteIds.has(card.noteId)));
+    } else if (keptAnything) {
+      setNotes((prev) => {
+        const next = prev.map((note) =>
+          note.subjectId.toUpperCase() === upper ? { ...note, subjectId: KEPT_STUDY_COURSE.id } : note,
+        );
+        void offlineSync.cacheNotes(uid, next);
+        return next;
+      });
     }
 
     if (timetableIds.length > 0) {
