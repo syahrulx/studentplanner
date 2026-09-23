@@ -307,6 +307,9 @@ function createDashboardStyles(
       fontWeight: '800',
       color: text,
       letterSpacing: 0.4,
+      // Let the text be narrower than its natural line, so the badge's maxWidth
+      // is what decides the width and the words wrap inside it.
+      flexShrink: 1,
     },
     peakAlertBadgeTextMuted: {
       fontSize: 10,
@@ -2165,8 +2168,11 @@ export default function Dashboard() {
                     semesterPhase !== 'teaching' && styles.peakAlertBadgeTextMuted,
                     themePack === 'custom' && { color: theme.textInverse }
                   ]}
-                  numberOfLines={3}
-                  adjustsFontSizeToFit
+                  // No adjustsFontSizeToFit: on Android it is autoSizeTextType,
+                  // which measures at the text's natural width and then reports
+                  // that width outwards — the badge grows past maxWidth and runs
+                  // off the card instead of wrapping ("Semester not started yet").
+                  numberOfLines={2}
                 >
                 {pulseBadgeText}
               </Text>
