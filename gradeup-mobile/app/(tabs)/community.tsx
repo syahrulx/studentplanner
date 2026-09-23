@@ -21,6 +21,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useConfessionPulse } from '@/src/lib/confessionPulse';
+import { ConfessionPeek } from '@/src/components/confessions/ConfessionPeek';
 import Constants from 'expo-constants';
 import { ensureMapboxNativeInit } from 'mapbox-lazy-init';
 
@@ -257,19 +259,25 @@ function StableMarker({
       allowOverlap={true}
       allowOverlapWithPuck={true}
     >
-      <Pressable 
-        onPress={onPress} 
+      {/* The 200×180 box only makes room for the song strip — it must not be a tap
+          target, or tapping the map anywhere near a pin opened that person. Only the
+          avatar+pin and the song strip take touches; the rest falls through to the map. */}
+      <View
         style={[
-          styles.markerWrapper, 
+          styles.markerWrapper,
           isFaded && { opacity: 0.4 },
-        ]} 
-        hitSlop={10}
-        disabled={isFaded}
+        ]}
+        pointerEvents="box-none"
       >
-        <View style={{ width: 200, height: 180, alignItems: 'center', overflow: 'visible' }}>
+        <View style={{ width: 200, height: 180, alignItems: 'center', overflow: 'visible' }} pointerEvents="box-none">
           
           {/* Layer 1: The Marker (Avatar + Pin) - Positioned so pin tip is at y=140 */}
-          <View style={{ position: 'absolute', top: 50, alignItems: 'center', zIndex: 1 }}>
+          <Pressable
+            onPress={onPress}
+            disabled={isFaded}
+            hitSlop={6}
+            style={{ position: 'absolute', top: 50, alignItems: 'center', zIndex: 1 }}
+          >
             {/* Status cloud */}
             {showStatus && (
               <View style={[
@@ -341,11 +349,13 @@ function StableMarker({
                 marginTop: -5,
               },
             ]} />
-          </View>
+          </Pressable>
 
           {/* Layer 2: The Song Strip - Absolutely positioned to avoid overlap bugs */}
           {showSong && (
-            <View 
+            <Pressable
+              onPress={onPress}
+              disabled={isFaded}
               style={[
                 styles.songStrip,
                 { 
@@ -365,10 +375,10 @@ function StableMarker({
               <Text style={[styles.songStripText, { color: theme.text }]}>
                 {songDisplayText}
               </Text>
-            </View>
+            </Pressable>
           )}
         </View>
-      </Pressable>
+      </View>
     </MB.MarkerView>
   );
 }
@@ -444,9 +454,9 @@ export default function CommunityMap() {
   /** Keeps “current class” under Studying in sync as periods change. */
   useWallClockTick(30_000);
   const T = useTranslations(language);
+  const pulse = useConfessionPulse((user as any)?.universityId);
 
   const pillExpansion = useSharedValue(0);
-  const confessPillExpansion = useSharedValue(0);
   const checkInPulse = useSharedValue(1);
 
   const [sentReaction, setSentReaction] = useState<string | null>(null);
@@ -458,15 +468,6 @@ export default function CommunityMap() {
         300,
         withTiming(1, { duration: 500 })
       );
-      
-      confessPillExpansion.value = withDelay(
-        300,
-        withTiming(1, { duration: 500 })
-      );
-
-      const collapseId = setTimeout(() => {
-        confessPillExpansion.value = withTiming(0, { duration: 400 });
-      }, 3500);
 
       checkInPulse.value = withRepeat(
         withSequence(
@@ -478,9 +479,7 @@ export default function CommunityMap() {
       );
 
       return () => {
-        clearTimeout(collapseId);
         pillExpansion.value = 0;
-        confessPillExpansion.value = 0;
         checkInPulse.value = 1;
       };
     }, [])
@@ -508,29 +507,6 @@ export default function CommunityMap() {
       alignItems: 'center',
     };
   });
-  const confessBtnStyle = useAnimatedStyle(() => {
-    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [36, 95], 'clamp');
-    return {
-      maxWidth,
-      overflow: 'hidden',
-      borderRadius: 18,
-    };
-  });
-
-  const confessLabelStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(confessPillExpansion.value, [0, 0.4, 1], [0, 0, 1], 'clamp');
-    const maxWidth = interpolate(confessPillExpansion.value, [0, 1], [0, 60], 'clamp');
-    const marginLeft = interpolate(confessPillExpansion.value, [0, 1], [0, 6], 'clamp');
-    return {
-      opacity,
-      maxWidth,
-      marginLeft,
-      overflow: 'hidden',
-      flexDirection: 'row',
-      alignItems: 'center',
-    };
-  });
-
   const checkInBtnStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkInPulse.value }],
   }));
@@ -802,33 +778,6 @@ export default function CommunityMap() {
               </View>
             ) : null}
           </Pressable>
-          <Animated.View style={confessBtnStyle}>
-            <Pressable
-              onPress={() => router.push('/community/confessions' as any)}
-              style={({ pressed }) => [{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                backgroundColor: theme.card, 
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: theme.border,
-                paddingHorizontal: 9, 
-                paddingVertical: 9, 
-                borderRadius: 18,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-                elevation: 1
-              }, pressed && { opacity: 0.7 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Confessions"
-            >
-              <Feather name="edit-3" size={16} color={theme.text} />
-              <Animated.View style={confessLabelStyle}>
-                <Text style={{ color: theme.text, fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Confess</Text>
-              </Animated.View>
-            </Pressable>
-          </Animated.View>
         </View>
         <View style={styles.circleSelectorWrap} pointerEvents="box-none">
           <View style={[styles.circleSelector, { pointerEvents: 'auto' }]}>
@@ -938,6 +887,8 @@ export default function CommunityMap() {
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
+            // Drops below the confession peek strip when it is showing.
+            compassPosition={(user as any)?.universityId ? { top: 60, right: 8 } : undefined}
             scaleBarEnabled={false}
           >
 
@@ -1009,8 +960,55 @@ export default function CommunityMap() {
                 />
               ))}
 
+            {/* Confession bubbles: how loud each campus is today. Tap → that campus's feed. */}
+            {pulse.campuses.map((c) => {
+              const MB = Mapbox as any;
+              return (
+                <MB.MarkerView
+                  key={`confess-${c.name}`}
+                  id={`confess-${c.name}`}
+                  coordinate={[c.longitude, c.latitude]}
+                  // Bottom-left corner on the campus point, bubble drawn up-right of it:
+                  // students' pins cluster on the same spot and would hide it.
+                  anchor={{ x: 0, y: 1 }}
+                  allowOverlap={true}
+                >
+                  <View style={styles.confessBubbleOffset} pointerEvents="box-none">
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/community/confessions', params: { campus: c.name } } as any)}
+                    style={({ pressed }) => [styles.confessBubble, { backgroundColor: theme.text }, pressed && { transform: [{ scale: 0.95 }] }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${c.today} confessions today at ${c.name}`}
+                  >
+                    <Text style={styles.confessBubbleEmoji}>🤫</Text>
+                    <Text style={[styles.confessBubbleText, { color: theme.background }]}>{c.today}</Text>
+                  </Pressable>
+                  <View style={[styles.confessBubbleTail, { borderTopColor: theme.text }]} />
+                  </View>
+                </MB.MarkerView>
+              );
+            })}
+
           </Mapbox.MapView>
         )}
+
+        {/* Confessions entry point: a live teaser beats a labelled button in a crowded top bar. */}
+        {(user as any)?.universityId ? (
+          <View style={styles.confessPeekWrap} pointerEvents="box-none">
+            <ConfessionPeek
+              items={pulse.peek}
+              newCount={pulse.newCount}
+              onOpenFeed={() => router.push('/community/confessions' as any)}
+              theme={theme}
+              universityShort={(user as any)?.universityId ? String((user as any).universityId).toUpperCase() : undefined}
+              onPress={(c) => {
+                // Put the feed underneath so Back from the post lands on Confessions, not the map.
+                router.push('/community/confessions' as any);
+                router.push({ pathname: '/community/confession-detail', params: { confessionId: c.id } } as any);
+              }}
+            />
+          </View>
+        ) : null}
 
         {/* ─── First-time location consent (Moved to Map Overlay) ─── */}
 
@@ -2356,6 +2354,20 @@ const styles = StyleSheet.create({
   },
 
   // Top bar
+  confessPeekWrap: { position: 'absolute', top: 10, left: 12, right: 12 },
+  confessBubble: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4,
+  },
+  confessBubbleEmoji: { fontSize: 13 },
+  confessBubbleText: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  confessBubbleOffset: { paddingLeft: 34, paddingBottom: 46 },
+  confessBubbleTail: {
+    alignSelf: 'flex-start', marginLeft: 8, width: 0, height: 0,
+    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 7,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

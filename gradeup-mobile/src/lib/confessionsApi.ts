@@ -14,6 +14,13 @@ export interface Confession {
   my_reaction: string | null;
   reaction_counts: Record<string, number>;
   is_mine: boolean;
+  /** Missing on rows from servers older than the identity migration → treat as anonymous. */
+  is_anonymous?: boolean;
+  /** Per-campus running number, e.g. 1247 → "#Arau 1247". */
+  confession_no?: number | null;
+  /** Only set when the author chose to post under their name. */
+  author_name?: string | null;
+  author_avatar?: string | null;
 }
 
 export interface ConfessionComment {
@@ -50,14 +57,19 @@ export async function fetchConfessions(options?: {
   campus?: string | null;
   tag?: string | null;
   search?: string | null;
+  /** 'hot' = last 7 days ranked by engagement (single page). */
+  sort?: 'new' | 'hot';
 }): Promise<Confession[]> {
-  const { before = null, limit = DEFAULT_PAGE_SIZE, campus = null, tag = null, search = null } = options ?? {};
+  const { before = null, limit = DEFAULT_PAGE_SIZE, campus = null, tag = null, search = null, sort = 'new' } = options ?? {};
   const { data, error } = await supabase.rpc('get_confessions', {
     p_before: before,
     p_limit: limit,
     p_campus: campus,
     p_tag: tag,
     p_search: search,
+    // Only sent for hot so the default feed still works against a DB that
+    // predates the p_sort argument.
+    ...(sort === 'hot' ? { p_sort: 'hot' } : {}),
   });
   if (error) throw new Error(toErrorMessage(error));
   return (data ?? []) as Confession[];
@@ -72,11 +84,16 @@ export async function fetchConfession(confessionId: string): Promise<Confession 
   return rows[0] ?? null;
 }
 
-export async function createConfession(content: string, tag?: string | null): Promise<Confession> {
+export async function createConfession(
+  content: string,
+  tag?: string | null,
+  anonymous: boolean = true,
+): Promise<Confession> {
   const trimmed = content.trim();
   const { data, error } = await supabase.rpc('create_confession', {
     p_content: trimmed,
     p_tag: tag ?? null,
+    p_anonymous: anonymous,
   });
   if (error) throw new Error(toErrorMessage(error));
   const rows = (data ?? []) as Confession[];

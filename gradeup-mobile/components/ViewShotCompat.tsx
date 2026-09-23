@@ -2,6 +2,7 @@ import React from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 
 export type ExportImageFormat = 'png' | 'jpg';
 export type ExportResult = 'saved' | 'denied' | 'error';
@@ -43,6 +44,18 @@ export async function saveExportCanvas(
     });
     await MediaLibrary.saveToLibraryAsync(uri);
     return 'saved';
+  } catch {
+    return 'error';
+  }
+}
+
+/** Capture the canvas and open the system share sheet (Instagram, WhatsApp…). */
+export async function shareExportCanvas(ref: ViewShot | null): Promise<'shared' | 'error'> {
+  try {
+    if (!ref || !(await Sharing.isAvailableAsync())) return 'error';
+    const uri = await captureRef(ref, { format: 'png', quality: 1, result: 'tmpfile' });
+    await Sharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png' });
+    return 'shared';
   } catch {
     return 'error';
   }
