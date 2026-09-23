@@ -99,19 +99,7 @@ function createStyles(theme: ThemePalette) {
     },
 
     // Section
-    studyNowHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
     studyNowLabel: { marginBottom: 10 },
-    studyNowSeeAll: {
-      fontSize: 12,
-      fontWeight: '700',
-      color: theme.primary,
-      marginBottom: 10,
-      paddingRight: 4,
-    },
     // Same shell as quickActionWide, but rows stack inside one section so the
     // large trailing margin would break the grouping.
     studyNowRow: {
@@ -1219,20 +1207,9 @@ export default function StudyHub() {
             and never shows a dead end. */}
         {(hasStudyNow || totalCards > 0) && (
           <>
-            <View style={s.studyNowHeader}>
-              <Text style={[s.sectionLabel, s.studyNowLabel]}>
-                {String((T as any)('studyNowTitle')).toUpperCase()}
-              </Text>
-              <Pressable
-                // Goes to "Your progress", not to more of this list. It used to
-                // say "See all", which next to a list of things to do now reads
-                // as "show me the rest of them" — and lands somewhere else.
-                onPress={() => router.push('/study-insights' as any)}
-                hitSlop={8}
-              >
-                <Text style={s.studyNowSeeAll}>{(T as any)('studyNowSeeAll')}</Text>
-              </Pressable>
-            </View>
+            <Text style={[s.sectionLabel, s.studyNowLabel]}>
+              {String((T as any)('studyNowTitle')).toUpperCase()}
+            </Text>
 
             {dueTotal > 0 && (
               <Pressable

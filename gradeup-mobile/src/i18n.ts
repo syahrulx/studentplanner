@@ -207,7 +207,7 @@ const translations = {
     flashcardTypeConcept: 'CONCEPT',
     flashcardHintPrefix: 'Hint:',
     // ── Study insights ──
-    studyNowTitle: 'Study now',
+    studyNowTitle: 'Folder',
     studyNowSeeAll: 'Progress',
     studyNowDueCards: 'Review {n} due cards',
     studyNowDueCardsBody: 'Scheduled for today',
@@ -1415,7 +1415,7 @@ const translations = {
     flashcardTypeConcept: 'KONSEP',
     flashcardHintPrefix: 'Petunjuk:',
     // ── Study insights ──
-    studyNowTitle: 'Study sekarang',
+    studyNowTitle: 'Folder',
     studyNowSeeAll: 'Kemajuan',
     studyNowDueCards: 'Ulang {n} kad',
     studyNowDueCardsBody: 'Dijadualkan hari ini',
