@@ -2584,3 +2584,113 @@ export async function getOpenAiCreditUsage() {
   const { data, error } = await invokeEdgeFunction('admin_openai_usage', {}, headers);
   return unwrapFunctionData<any>(data, error);
 }
+
+// ─── Confessions moderation ─────────────────────────────────────────────────
+// Every call goes through a SECURITY DEFINER RPC that checks is_admin() once.
+// The tables themselves are closed to `authenticated`, so there is no path to
+// them from the app's own client.
+
+export type ConfessionBlockedWord = {
+  id: string;
+  pattern: string;
+  note: string | null;
+  active: boolean;
+  created_at: string;
+};
+
+export async function listConfessionBlockedWords(): Promise<ConfessionBlockedWord[]> {
+  const { data, error } = await supabase.rpc('admin_list_confession_blocked_words');
+  if (error) throw toError(error);
+  return (data ?? []) as ConfessionBlockedWord[];
+}
+
+export async function addConfessionBlockedWord(pattern: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_add_confession_blocked_word', {
+    p_pattern: pattern,
+    p_note: note ?? null,
+  });
+  if (error) throw toError(error);
+}
+
+export async function setConfessionBlockedWordActive(id: string, active: boolean): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_confession_blocked_word_active', {
+    p_id: id,
+    p_active: active,
+  });
+  if (error) throw toError(error);
+}
+
+export async function deleteConfessionBlockedWord(id: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_delete_confession_blocked_word', { p_id: id });
+  if (error) throw toError(error);
+}
+
+export type ConfessionCampusSummary = {
+  university_id: string;
+  campus: string | null;
+  total: number;
+  active_count: number;
+  flagged_count: number;
+  removed_count: number;
+  reported_count: number;
+  last_at: string | null;
+};
+
+export async function listConfessionCampusSummary(): Promise<ConfessionCampusSummary[]> {
+  const { data, error } = await supabase.rpc('admin_confession_campus_summary');
+  if (error) throw toError(error);
+  return (data ?? []) as ConfessionCampusSummary[];
+}
+
+export type AdminConfession = {
+  id: string;
+  confession_no: number | null;
+  content: string;
+  campus: string | null;
+  university_id: string;
+  tag: string | null;
+  status: 'active' | 'flagged' | 'removed';
+  is_anonymous: boolean;
+  like_count: number;
+  comment_count: number;
+  report_count: number;
+  created_at: string;
+  removed_at: string | null;
+  removed_reason: string | null;
+  /** Same on every row of the page: how many match the filter in total. */
+  total_count: number;
+};
+
+export async function listConfessions(params: {
+  university?: string | null;
+  campus?: string | null;
+  status?: string | null;
+  search?: string | null;
+  limit?: number;
+  offset?: number;
+}): Promise<AdminConfession[]> {
+  const { data, error } = await supabase.rpc('admin_list_confessions', {
+    p_university: params.university ?? null,
+    p_campus: params.campus ?? null,
+    p_status: params.status ?? null,
+    p_search: params.search?.trim() ? params.search.trim() : null,
+    p_limit: params.limit ?? 25,
+    p_offset: params.offset ?? 0,
+  });
+  if (error) throw toError(error);
+  return (data ?? []) as AdminConfession[];
+}
+
+/** Removal is a status change: the per-campus numbering depends on rows staying put. */
+export async function setConfessionStatus(
+  id: string,
+  status: 'active' | 'flagged' | 'removed',
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_confession_status', {
+    p_id: id,
+    p_status: status,
+    p_reason: reason ?? null,
+  });
+  if (error) throw toError(error);
+}

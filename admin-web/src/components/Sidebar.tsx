@@ -30,6 +30,7 @@ const nav: NavItem[] = [
   { header: 'Community' },
   { to: '/events', label: 'Events', Icon: IconClipboard },
   { to: '/services', label: 'Services', Icon: IconBriefcase },
+  { to: '/confessions', label: 'Confessions', Icon: IconFileText },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
