@@ -158,7 +158,7 @@ type AppState = {
   setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
   addCourse: (course: Course, options?: { skipRemote?: boolean }) => void;
   renameCourse: (subjectId: string, newName: string) => void;
-  deleteCourse: (subjectId: string, options?: { deleteTimetable?: boolean }) => Promise<void>;
+  deleteCourse: (subjectId: string, options?: { deleteTimetable?: boolean; keepStudyData?: boolean }) => Promise<void>;
   tasks: Task[];
   tasksVersion: number;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -2097,7 +2097,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const deleteCourse = useCallback(async (subjectId: string, options?: { deleteTimetable?: boolean }) => {
+  /**
+   * Remove a subject.
+   *
+   * `keepStudyData` leaves its notes and flashcards where they are. They keep
+   * the subject code they were filed under, so they stay together in one place
+   * in Study and never merge into a subject that still exists — the folder
+   * outlives the subject row. Only the subject and its tasks go.
+   */
+  const deleteCourse = useCallback(async (
+    subjectId: string,
+    options?: { deleteTimetable?: boolean; keepStudyData?: boolean },
+  ) => {
     offlineMutationVersionRef.current += 1;
     const upper = subjectId.toUpperCase();
     const subjectNoteIds = new Set(
@@ -2121,15 +2132,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Every delete is doubly scoped (authenticated uid + exact subject id).
     // Remove child data before the folder row so a failed child write leaves a
     // visible folder the user can safely retry instead of hidden orphan data.
-    await studyDb.deleteSubjectStudyData(uid, subjectId);
+    const keepStudyData = options?.keepStudyData === true;
+    if (!keepStudyData) {
+      await studyDb.deleteSubjectStudyData(uid, subjectId);
+    }
     await taskDb.deleteTasksForCourse(uid, subjectId);
     await coursesDb.deleteCourse(uid, subjectId);
     await Promise.all([
       ...subjectTaskIds.map((taskId) => offlineSync.queueTaskDelete(uid, taskId)),
-      ...[...subjectNoteIds].map(async (noteId) => {
-        await offlineSync.queueNoteDelete(uid, noteId);
-        await deleteHandwritingCache(uid, noteId).catch(() => {});
-      }),
+      ...(keepStudyData
+        ? []
+        : [...subjectNoteIds].map(async (noteId) => {
+            await offlineSync.queueNoteDelete(uid, noteId);
+            await deleteHandwritingCache(uid, noteId).catch(() => {});
+          })),
     ]);
     void offlineSync.flushOfflineSync(uid);
     if (remoteUserIdRef.current && remoteUserIdRef.current !== uid) {
@@ -2145,12 +2161,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void offlineSync.cacheTasks(uid, next);
       return next;
     });
-    setNotes((prev) => {
-      const next = prev.filter((note) => note.subjectId.toUpperCase() !== upper);
-      void offlineSync.cacheNotes(uid, next);
-      return next;
-    });
-    setFlashcards((prev) => prev.filter((card) => !card.noteId || !subjectNoteIds.has(card.noteId)));
+    if (!keepStudyData) {
+      setNotes((prev) => {
+        const next = prev.filter((note) => note.subjectId.toUpperCase() !== upper);
+        void offlineSync.cacheNotes(uid, next);
+        return next;
+      });
+      setFlashcards((prev) => prev.filter((card) => !card.noteId || !subjectNoteIds.has(card.noteId)));
+    }
 
     if (timetableIds.length > 0) {
       try {

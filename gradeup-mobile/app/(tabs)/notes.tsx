@@ -156,6 +156,27 @@ function createStyles(theme: ThemePalette) {
     dueSheetLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
     dueSheetCount: { fontSize: 13, fontWeight: '700' },
     dueSheetDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
+
+    /* Delete-subject dialog */
+    deleteCard: {
+      marginHorizontal: 20, marginBottom: 'auto', marginTop: 'auto',
+      borderRadius: 24, padding: 22,
+    },
+    deleteTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
+    deleteSub: { fontSize: 13, fontWeight: '600', marginTop: 4, marginBottom: 14 },
+    deleteOption: {
+      flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+      borderWidth: 1.5, borderRadius: 16, padding: 14, marginBottom: 10,
+    },
+    deleteOptionText: { flex: 1 },
+    deleteOptionTitle: { fontSize: 15, fontWeight: '700' },
+    deleteOptionBody: { fontSize: 12.5, lineHeight: 18, marginTop: 3 },
+    deleteFootnote: { fontSize: 12, lineHeight: 17, marginTop: 2, marginBottom: 16 },
+    deleteActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 14 },
+    deleteCancel: { paddingVertical: 10, paddingHorizontal: 8 },
+    deleteCancelText: { fontSize: 15, fontWeight: '700' },
+    deleteConfirm: { borderRadius: 100, paddingVertical: 12, paddingHorizontal: 22 },
+    deleteConfirmText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
     sectionLabel: {
       fontSize: 11,
       fontWeight: '700',
@@ -657,6 +678,19 @@ export default function StudyHub() {
     }
   }, [setTasks, setAppCourses]);
 
+  /** Subject being deleted, with the counts the dialog needs to be specific. */
+  const [deleteTarget, setDeleteTarget] = useState<{
+    course: Course;
+    classroomCount: number;
+    timetableCount: number;
+    noteCount: number;
+    cardCount: number;
+  } | null>(null);
+  /** Default: keep. Deleting a subject is usually tidying, not throwing work away. */
+  const [deleteKeepStudy, setDeleteKeepStudy] = useState(true);
+  const [deleteTimetableToo, setDeleteTimetableToo] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   const tx = (key: string, fallback: string) => ((T as any)(key) as string) || fallback;
 
   const handleSubjectRowPress = (course: Course) => {
@@ -666,61 +700,56 @@ export default function StudyHub() {
       return;
     }
     if (subjectsMode === 'delete') {
-      // Check if any Classroom course is mapped to this subject
+      // Three questions at once — notes, flashcards, timetable — is more than a
+      // stack of Alert buttons can ask, and Android caps them at three anyway.
       (async () => {
-        let mappedCount = 0;
+        let mapped = 0;
         try {
           const { getClassroomPrefs } = await import('@/src/lib/googleClassroom');
           const prefs = await getClassroomPrefs();
           if (prefs?.courseMapping) {
-            mappedCount = Object.values(prefs.courseMapping).filter(id => id === course.id).length;
+            mapped = Object.values(prefs.courseMapping).filter((id) => id === course.id).length;
           }
         } catch {}
-
-        const linkedTimetableCount = timetable.filter(
-          (entry) => entry.subjectCode.trim().toUpperCase() === course.id.trim().toUpperCase(),
-        ).length;
-        const baseMsg = `Delete "${course.id} — ${course.name}"? This removes its Study folder, notes, tasks, and flashcards.`;
-        const warningMsg = mappedCount > 0
-          ? `${baseMsg}\n\n⚠️ ${mappedCount} Google Classroom course${mappedCount !== 1 ? 's are' : ' is'} linked to this subject. Tasks from Classroom will create a new separate subject on next auto-sync.`
-          : baseMsg;
-
-        const runDelete = async (deleteTimetable: boolean) => {
-          try {
-            await deleteCourse(course.id, { deleteTimetable });
-            if (courses.length <= 1) setSubjectsMode('idle');
-          } catch (error) {
-            Alert.alert(
-              'Could not finish deletion',
-              error instanceof Error ? error.message : 'No additional data was assumed deleted.',
-            );
-          }
-        };
-
-        Alert.alert(
-          tx('deleteSubject', 'Delete subject'),
-          `${warningMsg}\n\nChoose whether to keep or remove ${linkedTimetableCount} linked timetable class${linkedTimetableCount === 1 ? '' : 'es'}.`,
-          [
-            { text: tx('cancel', 'Cancel'), style: 'cancel' },
-            {
-              text: 'Delete folder only',
-              style: 'destructive',
-              onPress: () => void runDelete(false),
-            },
-            ...(linkedTimetableCount > 0
-              ? [{
-                  text: `Delete folder + ${linkedTimetableCount} class${linkedTimetableCount === 1 ? '' : 'es'}`,
-                  style: 'destructive' as const,
-                  onPress: () => void runDelete(true),
-                }]
-              : []),
-          ],
-        );
+        setDeleteTarget({
+          course,
+          classroomCount: mapped,
+          timetableCount: timetable.filter(
+            (entry) => entry.subjectCode.trim().toUpperCase() === course.id.trim().toUpperCase(),
+          ).length,
+          noteCount: notes.filter((n) => n.subjectId.toUpperCase() === course.id.toUpperCase()).length,
+          cardCount: flashcards.filter((c) => {
+            const note = notes.find((n) => n.id === c.noteId);
+            return !!note && note.subjectId.toUpperCase() === course.id.toUpperCase();
+          }).length,
+        });
+        setDeleteKeepStudy(true);
+        setDeleteTimetableToo(false);
       })();
       return;
     }
     router.push({ pathname: '/notes-list' as any, params: { subjectId: course.id } });
   };
+
+  const runSubjectDelete = useCallback(async () => {
+    if (!deleteTarget || deleteBusy) return;
+    setDeleteBusy(true);
+    try {
+      await deleteCourse(deleteTarget.course.id, {
+        deleteTimetable: deleteTimetableToo,
+        keepStudyData: deleteKeepStudy,
+      });
+      setDeleteTarget(null);
+      if (courses.length <= 1) setSubjectsMode('idle');
+    } catch (error) {
+      Alert.alert(
+        'Could not finish deletion',
+        error instanceof Error ? error.message : 'No additional data was assumed deleted.',
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteTarget, deleteBusy, deleteTimetableToo, deleteKeepStudy, deleteCourse, courses.length]);
 
   const handleRenameSave = () => {
     if (!renameTarget) return;
@@ -869,6 +898,7 @@ export default function StudyHub() {
   }, [flashcards, notes]);
 
   const [duePickerOpen, setDuePickerOpen] = useState(false);
+
 
   const startDueReview = useCallback((subjectId?: string) => {
     invalidateInsights();
@@ -1837,6 +1867,123 @@ export default function StudyHub() {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* ─── Delete a subject ───
+          What happens to the notes and flashcards is a real choice, so it is
+          asked as one rather than buried in the confirmation copy. */}
+      <Modal
+        visible={!!deleteTarget}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setDeleteTarget(null)}
+      >
+        <Pressable style={s.dueSheetBg} onPress={() => setDeleteTarget(null)}>
+          <Pressable
+            style={[s.deleteCard, { backgroundColor: theme.card }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[s.deleteTitle, { color: theme.text }]}>
+              {tx('deleteSubject', 'Delete subject')}
+            </Text>
+            <Text style={[s.deleteSub, { color: theme.textSecondary }]}>
+              {deleteTarget?.course.id}
+              {deleteTarget?.course.name && deleteTarget.course.name !== deleteTarget.course.id
+                ? ` — ${deleteTarget.course.name}`
+                : ''}
+            </Text>
+
+            {(deleteTarget?.noteCount ?? 0) + (deleteTarget?.cardCount ?? 0) > 0 ? (
+              <>
+                <Pressable
+                  style={[s.deleteOption, { borderColor: deleteKeepStudy ? theme.primary : theme.border }]}
+                  onPress={() => setDeleteKeepStudy(true)}
+                >
+                  <Feather
+                    name={deleteKeepStudy ? 'check-circle' : 'circle'}
+                    size={18}
+                    color={deleteKeepStudy ? theme.primary : theme.textSecondary}
+                  />
+                  <View style={s.deleteOptionText}>
+                    <Text style={[s.deleteOptionTitle, { color: theme.text }]}>Keep notes and flashcards</Text>
+                    <Text style={[s.deleteOptionBody, { color: theme.textSecondary }]}>
+                      {deleteTarget?.noteCount ?? 0} note{(deleteTarget?.noteCount ?? 0) === 1 ? '' : 's'} and{' '}
+                      {deleteTarget?.cardCount ?? 0} card{(deleteTarget?.cardCount ?? 0) === 1 ? '' : 's'} stay in Study
+                      under “{deleteTarget?.course.id}”. They keep that folder to themselves — nothing is
+                      merged into your other subjects.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  style={[s.deleteOption, { borderColor: !deleteKeepStudy ? '#FF453A' : theme.border }]}
+                  onPress={() => setDeleteKeepStudy(false)}
+                >
+                  <Feather
+                    name={!deleteKeepStudy ? 'check-circle' : 'circle'}
+                    size={18}
+                    color={!deleteKeepStudy ? '#FF453A' : theme.textSecondary}
+                  />
+                  <View style={s.deleteOptionText}>
+                    <Text style={[s.deleteOptionTitle, { color: theme.text }]}>Delete them too</Text>
+                    <Text style={[s.deleteOptionBody, { color: theme.textSecondary }]}>
+                      The notes and flashcards go with the subject. This cannot be undone.
+                    </Text>
+                  </View>
+                </Pressable>
+              </>
+            ) : (
+              <Text style={[s.deleteOptionBody, { color: theme.textSecondary, marginTop: 4 }]}>
+                This subject has no notes or flashcards.
+              </Text>
+            )}
+
+            {(deleteTarget?.timetableCount ?? 0) > 0 && (
+              <Pressable
+                style={[s.deleteOption, { borderColor: deleteTimetableToo ? '#FF453A' : theme.border }]}
+                onPress={() => setDeleteTimetableToo((v) => !v)}
+              >
+                <Feather
+                  name={deleteTimetableToo ? 'check-square' : 'square'}
+                  size={18}
+                  color={deleteTimetableToo ? '#FF453A' : theme.textSecondary}
+                />
+                <View style={s.deleteOptionText}>
+                  <Text style={[s.deleteOptionTitle, { color: theme.text }]}>
+                    Also remove {deleteTarget?.timetableCount} timetable class
+                    {deleteTarget?.timetableCount === 1 ? '' : 'es'}
+                  </Text>
+                  <Text style={[s.deleteOptionBody, { color: theme.textSecondary }]}>
+                    Leave this off to keep the classes in your timetable.
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+
+            <Text style={[s.deleteFootnote, { color: theme.textSecondary }]}>
+              Tasks filed under this subject are always removed.
+              {(deleteTarget?.classroomCount ?? 0) > 0
+                ? ` ${deleteTarget?.classroomCount} linked Google Classroom course will recreate this subject on the next sync.`
+                : ''}
+            </Text>
+
+            <View style={s.deleteActions}>
+              <Pressable onPress={() => setDeleteTarget(null)} hitSlop={8} style={s.deleteCancel}>
+                <Text style={[s.deleteCancelText, { color: theme.textSecondary }]}>{tx('cancel', 'Cancel')}</Text>
+              </Pressable>
+              <Pressable
+                disabled={deleteBusy}
+                onPress={() => void runSubjectDelete()}
+                style={[s.deleteConfirm, { backgroundColor: '#FF453A', opacity: deleteBusy ? 0.6 : 1 }]}
+              >
+                <Text style={s.deleteConfirmText}>
+                  {deleteKeepStudy ? 'Delete subject' : 'Delete everything'}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* ─── Due cards, by subject ───
