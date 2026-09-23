@@ -799,6 +799,40 @@ export default function StudyHub() {
     setRenameValue('');
   };
 
+  /** One menu per deck: the actions were two icons crowding every card. */
+  const openDeckMenu = (deck: { id: string; title: string; subjectId: string }) => {
+    Alert.alert(
+      deck.title,
+      undefined,
+      [
+        {
+          text: 'Move to subject',
+          onPress: () => setMoveTarget({ noteId: deck.id, title: deck.title, subjectId: deck.subjectId }),
+        },
+        { text: 'Delete deck', style: 'destructive', onPress: () => handleDeleteDeck(deck.id, deck.title) },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const openPastSubjectMenu = (subjectId: string) => {
+    Alert.alert(
+      subjectId,
+      undefined,
+      [
+        { text: 'Open decks', onPress: () => setDueSubject(subjectId) },
+        {
+          text: 'Delete subject',
+          style: 'destructive',
+          onPress: () => confirmDeletePastSubject(subjectId),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  };
+
   /** Remove a past subject outright: every note and every card under its code. */
   const confirmDeletePastSubject = (subjectId: string) => {
     const noteCount = notes.filter((n) => n.subjectId === subjectId).length;
@@ -1389,6 +1423,26 @@ export default function StudyHub() {
               </Pressable>
             </View>
 
+            {/* Scoping to Current can empty the list while decks still exist.
+                Silence there reads as "you have nothing", which is wrong and
+                is the one thing this screen must not say. */}
+            {sortedDeckItems.length === 0 && (
+              <Pressable
+                style={s.emptyDeck}
+                onPress={() => setDeckScope(deckScope === 'current' ? 'past' : 'all')}
+              >
+                <Feather name="layers" size={28} color={theme.textSecondary} style={s.emptyDeckIcon} />
+                <Text style={s.emptyDeckTitle}>
+                  {deckScope === 'current' ? 'Nothing in your current subjects' : 'No decks here'}
+                </Text>
+                <Text style={s.emptyDeckSub}>
+                  {pastDeckCount > 0
+                    ? `${pastDeckCount} deck${pastDeckCount === 1 ? '' : 's'} sit under past subjects. Tap to see them.`
+                    : 'Generate cards from a note to start a deck.'}
+                </Text>
+              </Pressable>
+            )}
+
             {deckGroupMode === 'subject' ? (
               <ScrollView
                 horizontal
@@ -1451,22 +1505,13 @@ export default function StudyHub() {
                                 {deck.subjectId}
                               </Text>
                             </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                              <Pressable
-                                style={s.deckTrashBtn}
-                                hitSlop={8}
-                                onPress={() => setMoveTarget({ noteId: deck.id, title: deck.title, subjectId: deck.subjectId })}
-                              >
-                                <Feather name="corner-up-right" size={15} color={theme.textSecondary} />
-                              </Pressable>
-                              <Pressable
-                                style={s.deckTrashBtn}
-                                hitSlop={8}
-                                onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                              >
-                                <Feather name="trash-2" size={15} color={theme.textSecondary} />
-                              </Pressable>
-                            </View>
+                            <Pressable
+                              style={s.deckTrashBtn}
+                              hitSlop={10}
+                              onPress={() => openDeckMenu(deck)}
+                            >
+                              <Feather name="more-vertical" size={16} color={theme.textSecondary} />
+                            </Pressable>
                           </View>
 
                           <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
@@ -1550,22 +1595,13 @@ export default function StudyHub() {
                               {deck.subjectId}
                             </Text>
                           </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Pressable
-                              style={s.deckTrashBtn}
-                              hitSlop={8}
-                              onPress={() => setMoveTarget({ noteId: deck.id, title: deck.title, subjectId: deck.subjectId })}
-                            >
-                              <Feather name="corner-up-right" size={15} color={theme.textSecondary} />
-                            </Pressable>
-                            <Pressable
-                              style={s.deckTrashBtn}
-                              hitSlop={8}
-                              onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                            >
-                              <Feather name="trash-2" size={15} color={theme.textSecondary} />
-                            </Pressable>
-                          </View>
+                          <Pressable
+                            style={s.deckTrashBtn}
+                            hitSlop={10}
+                            onPress={() => openDeckMenu(deck)}
+                          >
+                            <Feather name="more-vertical" size={16} color={theme.textSecondary} />
+                          </Pressable>
                         </View>
 
                         <Text style={s.deckName} numberOfLines={3}>{deck.title}</Text>
@@ -2296,10 +2332,10 @@ export default function StudyHub() {
                       </Pressable>
                       <Pressable
                         hitSlop={10}
-                        onPress={() => handleDeleteDeck(deck.id, deck.title)}
-                        style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                        onPress={() => openDeckMenu({ id: deck.id, title: deck.title, subjectId: dueSubject })}
+                        style={{ paddingHorizontal: 4, paddingVertical: 4 }}
                       >
-                        <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                        <Feather name="more-vertical" size={16} color={theme.textSecondary} />
                       </Pressable>
                     </View>
                   ))}
@@ -2328,17 +2364,17 @@ export default function StudyHub() {
                           {sub.subjectId}
                         </Text>
                         <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
-                        <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                        {!sub.past && <Feather name="chevron-right" size={18} color={theme.textSecondary} />}
                       </Pressable>
                       {/* Only past subjects: a current one is deleted from Your
                           subjects, which also settles its tasks and classes. */}
                       {sub.past && (
                         <Pressable
                           hitSlop={10}
-                          style={{ paddingLeft: 10, paddingVertical: 4 }}
-                          onPress={() => confirmDeletePastSubject(sub.subjectId)}
+                          style={{ paddingLeft: 8, paddingVertical: 4 }}
+                          onPress={() => openPastSubjectMenu(sub.subjectId)}
                         >
-                          <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                          <Feather name="more-vertical" size={16} color={theme.textSecondary} />
                         </Pressable>
                       )}
                     </View>
