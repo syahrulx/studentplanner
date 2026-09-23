@@ -31,7 +31,7 @@ import {
   toISO,
   isTaskPastDueNow,
 } from '@/src/utils/date';
-import type { SharedTask, Course } from '@/src/types';
+import type { SharedTask } from '@/src/types';
 import { TaskType } from '@/src/types';
 import { fetchTaskCategories, type TaskCategory } from '@/src/lib/taskCategoriesApi';
 import { useTranslations } from '@/src/i18n';
@@ -42,6 +42,7 @@ import {
   subscribeToSharedBreakdown,
 } from '@/src/lib/communityApi';
 import type { Task } from '@/src/types';
+import SubjectPickerSheet from '@/components/SubjectPickerSheet';
 
 const NAVY = '#003366';
 const BG = '#f8fafc';
@@ -71,10 +72,6 @@ function formatTimeHM(d: Date): string {
 function addCalendarMonth(year: number, month: number, delta: number) {
   const x = new Date(year, month + delta, 1);
   return { year: x.getFullYear(), month: x.getMonth() };
-}
-
-function syntheticCourse(id: string): Course {
-  return { id, name: id, creditHours: 0, workload: [] };
 }
 
 export default function TaskDetails() {
@@ -258,15 +255,6 @@ export default function TaskDetails() {
     }
     toggleTaskDone(step.id);
   };
-
-  const subjectPickerCourses = useMemo(() => {
-    const list: Course[] = courses.map((c) => ({ ...c }));
-    if (localCourseId && !list.some((c) => c.id === localCourseId)) {
-      list.unshift(syntheticCourse(localCourseId));
-    }
-    if (list.length === 0) list.push(syntheticCourse('General'));
-    return list;
-  }, [courses, localCourseId]);
 
   const monthGridCells = getMonthGrid(pickerYear, pickerMonth);
   const pickerHeaderISO = toISO(pickerYear, pickerMonth, 1);
@@ -887,74 +875,17 @@ export default function TaskDetails() {
       {/* ── Calendar Modal ───────────────────────────────────────────────────── */}
       {calendarModal}
 
-      {/* ── Subject Picker Modal ─────────────────────────────────────────────── */}
-      <Modal
+      {/* ── Subject Picker ───────────────────────────────────────────────────── */}
+      <SubjectPickerSheet
         visible={subjectModalOpen}
-        animationType="slide"
-        {...(Platform.OS === 'ios' ? { presentationStyle: 'pageSheet' as const } : { transparent: true })}
-        onRequestClose={() => setSubjectModalOpen(false)}
-      >
-        {Platform.OS === 'ios' ? (
-          <View style={[s.sheetContainer, { paddingTop: insets.top, backgroundColor: theme.backgroundSecondary }]}>
-            <View style={[s.sheetGrab, { backgroundColor: theme.border }]} />
-            <View style={s.sheetHeader}>
-              <Text style={[s.sheetTitle, { color: theme.textSecondary }]}>Subject</Text>
-              <Pressable onPress={() => setSubjectModalOpen(false)} hitSlop={12}>
-                <Text style={[s.sheetDone, { color: theme.primary }]}>{T('done')}</Text>
-              </Pressable>
-            </View>
-            <View style={[s.sheetListCard, { backgroundColor: theme.card }]}>
-              <FlatList
-                data={subjectPickerCourses}
-                keyExtractor={(c, i) => `${c.id}__${i}`}
-                style={{ flex: 1 }}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item, index }) => (
-                  <Pressable
-                    style={({ pressed }) => [
-                      s.sheetRow,
-                      index < subjectPickerCourses.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
-                      pressed && { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                    onPress={() => {
-                      setLocalCourseId(item.id);
-                      saveField({ courseId: item.id });
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <Text style={[s.sheetRowText, { color: theme.text }]}>{formatSubjectName(item.id)}</Text>
-                    {localCourseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                )}
-              />
-            </View>
-          </View>
-        ) : (
-          <Pressable style={s.modalBg} onPress={() => setSubjectModalOpen(false)}>
-            <Pressable style={[s.androidSheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
-              <Text style={[s.sheetTitle, { color: theme.text, marginBottom: 12 }]}>Subject</Text>
-              <FlatList
-                data={subjectPickerCourses}
-                keyExtractor={(c, i) => `${c.id}__${i}`}
-                style={{ maxHeight: 320 }}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={s.sheetRow}
-                    onPress={() => {
-                      setLocalCourseId(item.id);
-                      saveField({ courseId: item.id });
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <Text style={{ color: theme.text, fontSize: 17 }}>{formatSubjectName(item.id)}</Text>
-                    {localCourseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                )}
-              />
-            </Pressable>
-          </Pressable>
-        )}
-      </Modal>
+        onClose={() => setSubjectModalOpen(false)}
+        selectedId={localCourseId}
+        includeId={localCourseId}
+        onSelect={(courseId) => {
+          setLocalCourseId(courseId);
+          saveField({ courseId });
+        }}
+      />
 
       {/* ── Type Picker Modal ─────────────────────────────────────────────────── */}
       <Modal visible={typeModalOpen} transparent animationType="slide" onRequestClose={() => setTypeModalOpen(false)}>

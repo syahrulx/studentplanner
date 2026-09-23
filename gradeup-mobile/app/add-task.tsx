@@ -40,11 +40,7 @@ import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } 
 import { useTheme, useThemeId } from '@/hooks/useTheme';
 import { isDarkTheme } from '@/constants/Themes';
 import type { ThemePalette } from '@/constants/Themes';
-import type { Course } from '@/src/types';
-
-function syntheticCourse(id: string): Course {
-  return { id, name: id, creditHours: 0, workload: [] };
-}
+import SubjectPickerSheet from '@/components/SubjectPickerSheet';
 
 /** Sentinel id used to represent "no subject" (task not tied to a course). */
 const NO_SUBJECT_ID = '';
@@ -294,16 +290,6 @@ export default function AddTask() {
 
   const monthGridCells = getMonthGrid(pickerYear, pickerMonth);
   const pickerHeaderISO = toISO(pickerYear, pickerMonth, 1);
-
-  /** Real courses plus current task course when unknown / not in list; fallback so the picker is never empty. */
-  const subjectPickerCourses = useMemo(() => {
-    const list: Course[] = courses.map((c) => ({ ...c }));
-    const hasId = (id: string) => list.some((c) => c.id === id);
-    if (courseId && courseId !== NO_SUBJECT_ID && !hasId(courseId)) {
-      list.unshift(syntheticCourse(courseId));
-    }
-    return list;
-  }, [courses, courseId]);
 
   const noSubjectLabel = (T as any)('noSubject') || 'No subject';
   const noSubjectHint = (T as any)('noSubjectHint') || 'Not related to any subject';
@@ -975,123 +961,20 @@ export default function AddTask() {
 
       {calendarModal}
 
-      <Modal
+      <SubjectPickerSheet
         visible={subjectModalOpen}
-        animationType="slide"
-        {...(Platform.OS === 'ios'
-          ? { presentationStyle: 'pageSheet' as const }
-          : { transparent: true })}
-        onRequestClose={() => setSubjectModalOpen(false)}
-      >
-        {Platform.OS === 'ios' ? (
-          <View style={[styles.sheetContainer, { paddingTop: insets.top, backgroundColor: theme.backgroundSecondary }]}>
-            <View style={[styles.sheetGrab, { backgroundColor: theme.border }]} />
-            <View style={styles.sheetHeader}>
-              <Text style={[styles.sheetTitle, { color: theme.textSecondary }]}>{T('subjectLabel')}</Text>
-              <Pressable onPress={() => setSubjectModalOpen(false)} hitSlop={12}>
-                <Text style={[styles.sheetDone, { color: theme.primary }]}>{T('done')}</Text>
-              </Pressable>
-            </View>
-            <View style={[styles.sheetListCard, { backgroundColor: theme.card }]}>
-              <FlatList
-                data={subjectPickerCourses}
-                keyExtractor={(c, index) => `${c.id}__${index}`}
-                style={styles.sheetFlatList}
-                keyboardShouldPersistTaps="handled"
-                ListHeaderComponent={
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sheetRow,
-                      {
-                        borderBottomColor: theme.border,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                      },
-                      pressed && { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                    onPress={() => {
-                      setSubjectTouched(true);
-                      setCourseId(NO_SUBJECT_ID);
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <Feather name="slash" size={16} color={theme.textSecondary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.sheetRowText, { color: theme.text }]}>{noSubjectLabel}</Text>
-                        <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>{noSubjectHint}</Text>
-                      </View>
-                    </View>
-                    {isNoSubject ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                }
-                renderItem={({ item, index }) => (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sheetRow,
-                      index < subjectPickerCourses.length - 1 && {
-                        borderBottomColor: theme.border,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                      },
-                      pressed && { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                    onPress={() => {
-                      setSubjectTouched(true);
-                      setCourseId(item.id);
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <Text style={[styles.sheetRowText, { color: theme.text }]}>{item.id}</Text>
-                    {courseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                )}
-              />
-            </View>
-          </View>
-        ) : (
-          <Pressable style={styles.modalBg} onPress={() => setSubjectModalOpen(false)}>
-            <Pressable style={[styles.androidSheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
-              <Text style={[styles.sheetTitle, { color: theme.text, marginBottom: 12 }]}>{T('subjectLabel')}</Text>
-              <FlatList
-                data={subjectPickerCourses}
-                keyExtractor={(c, index) => `${c.id}__${index}`}
-                style={{ maxHeight: 320 }}
-                ListHeaderComponent={
-                  <Pressable
-                    style={[styles.sheetRow, { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
-                    onPress={() => {
-                      setSubjectTouched(true);
-                      setCourseId(NO_SUBJECT_ID);
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <Feather name="slash" size={16} color={theme.textSecondary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: theme.text, fontSize: 17 }}>{noSubjectLabel}</Text>
-                        <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>{noSubjectHint}</Text>
-                      </View>
-                    </View>
-                    {isNoSubject ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                }
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.sheetRow}
-                    onPress={() => {
-                      setSubjectTouched(true);
-                      setCourseId(item.id);
-                      setSubjectModalOpen(false);
-                    }}
-                  >
-                    <Text style={{ color: theme.text, fontSize: 17 }}>{item.id}</Text>
-                    {courseId === item.id ? <Feather name="check" size={20} color={theme.primary} /> : null}
-                  </Pressable>
-                )}
-              />
-            </Pressable>
-          </Pressable>
-        )}
-      </Modal>
+        onClose={() => setSubjectModalOpen(false)}
+        selectedId={courseId}
+        includeId={courseId && courseId !== NO_SUBJECT_ID ? courseId : undefined}
+        allowNoSubject
+        noSubjectId={NO_SUBJECT_ID}
+        noSubjectLabel={noSubjectLabel}
+        noSubjectHint={noSubjectHint}
+        onSelect={(next) => {
+          setSubjectTouched(true);
+          setCourseId(next);
+        }}
+      />
 
       <Modal visible={showColorPicker} transparent animationType="slide" onRequestClose={() => setShowColorPicker(false)}>
         <Pressable style={styles.modalBg} onPress={() => setShowColorPicker(false)}>
