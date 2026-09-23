@@ -328,20 +328,6 @@ export default function ConfessionsScreen() {
     );
   };
 
-  const spillPrompt = userUni ? (
-    <Pressable
-      onPress={() => openComposer()}
-      style={({ pressed }) => [s.spill, { backgroundColor: theme.backgroundSecondary }, pressed && { opacity: 0.7 }]}
-    >
-      <Text style={[s.spillText, { color: theme.textSecondary }]} numberOfLines={1}>
-        {postingCampusLabel
-          ? T('confessionSpillPrompt').replace('{campus}', postingCampusLabel)
-          : T('confessionSpillPrompt').replace(/,?\s*\{campus\}/, '')}
-      </Text>
-      <Text style={[s.spillPost, { color: theme.primary }]}>{T('confessionPost')}</Text>
-    </Pressable>
-  ) : null;
-
   return (
     <View style={[s.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
       {/* ─── Apple iOS Header ───── */}
@@ -432,7 +418,8 @@ export default function ConfessionsScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderCard}
-        ListHeaderComponent={spillPrompt}
+        // No composer row above the feed: the header's compose button already
+        // opens it, and the row repeated that in more space than it was worth.
         ItemSeparatorComponent={() => <View style={[s.separator, { backgroundColor: theme.border }]} />}
         contentContainerStyle={s.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} />}
@@ -577,15 +564,6 @@ const s = StyleSheet.create({
   filterDivider: { width: StyleSheet.hairlineWidth, height: 18, alignSelf: 'center', marginHorizontal: 6 },
 
   listContent: { paddingBottom: 120 },
-
-  /* Spill prompt */
-  spill: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: 16, marginTop: 4, marginBottom: 8,
-    paddingHorizontal: 16, height: 46, borderRadius: 23,
-  },
-  spillText: { flex: 1, fontSize: 15 },
-  spillPost: { fontSize: 15, fontWeight: '700' },
 
   /* Feed row */
   row: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
