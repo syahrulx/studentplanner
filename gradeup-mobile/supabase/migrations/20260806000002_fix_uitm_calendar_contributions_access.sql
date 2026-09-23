@@ -40,5 +40,5 @@ drop policy if exists uitm_calendar_contributions_admin_all on public.uitm_calen
 create policy uitm_calendar_contributions_admin_all
   on public.uitm_calendar_contributions
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using ((select public.is_admin()))
+  with check ((select public.is_admin()));

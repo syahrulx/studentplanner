@@ -32,7 +32,7 @@ create policy university_calendar_offers_read_own_university
     university_id <> 'uitm'
     and exists (
       select 1 from public.profiles p
-      where p.id = auth.uid()
+      where p.id = (select auth.uid())
         and p.university_id = university_calendar_offers.university_id
         and (
           university_calendar_offers.campus_id is null
@@ -54,13 +54,13 @@ create policy university_calendar_offers_insert_own
   for insert
   to authenticated
   with check (
-    created_by = auth.uid()
+    created_by = (select auth.uid())
     and source = 'crowdsourced'
     and university_id is distinct from 'uitm'
     and exists (
       select 1
       from public.profiles p
-      where p.id = auth.uid()
+      where p.id = (select auth.uid())
         and p.university_id = university_calendar_offers.university_id
         and (
           (
