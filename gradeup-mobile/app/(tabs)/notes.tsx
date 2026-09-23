@@ -545,13 +545,13 @@ function createStyles(theme: ThemePalette) {
     // Empty deck state
     emptyDeck: {
       alignItems: 'center',
-      paddingVertical: 28,
+      paddingVertical: 22,
       paddingHorizontal: 20,
       backgroundColor: theme.card,
       borderRadius: 18,
       borderWidth: 1,
       borderColor: theme.border,
-      marginBottom: 28,
+      marginBottom: 14,
     },
     emptyDeckIcon: { marginBottom: 12 },
     emptyDeckTitle: { fontSize: 16, fontWeight: '700', color: theme.text, marginBottom: 4 },
@@ -1328,7 +1328,7 @@ export default function StudyHub() {
             </Text>
           </View>
         ) : (
-          <View style={{ marginBottom: 28 }}>
+          <View style={{ marginBottom: 14 }}>
             <View style={s.deckControlsRow}>
               {/* Current by default; past subjects stay reachable rather than
                   filling the list you revise from every day. */}
@@ -1405,7 +1405,7 @@ export default function StudyHub() {
                 is the one thing this screen must not say. */}
             {sortedDeckItems.length === 0 && (
               <Pressable
-                style={s.emptyDeck}
+                style={[s.emptyDeck, { marginBottom: 0 }]}
                 onPress={() => setDeckScope(deckScope === 'current' ? 'past' : 'all')}
               >
                 <Feather name="layers" size={28} color={theme.textSecondary} style={s.emptyDeckIcon} />
