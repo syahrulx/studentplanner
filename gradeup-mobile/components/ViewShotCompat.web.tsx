@@ -47,3 +47,9 @@ export async function saveExportCanvas(
     return 'error';
   }
 }
+
+/** Web has no share sheet for images — fall back to downloading the PNG. */
+export async function shareExportCanvas(ref: View | null): Promise<'shared' | 'error'> {
+  const r = await saveExportCanvas(ref, { format: 'png', quality: 1 });
+  return r === 'saved' ? 'shared' : 'error';
+}

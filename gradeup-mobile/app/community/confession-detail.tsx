@@ -24,6 +24,10 @@ import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import * as confessionsApi from '@/src/lib/confessionsApi';
 import type { Confession, ConfessionComment } from '@/src/lib/confessionsApi';
+import { ConfessionHeader } from '@/src/components/confessions/ConfessionHeader';
+import { ConfessionShareCard } from '@/src/components/confessions/ConfessionShareCard';
+import { friendlyAlias, isOpAlias } from '@/src/components/confessions/aliases';
+import { shareExportCanvas } from '@/components/ViewShotCompat';
 
 const MAX_COMMENT = 300;
 
@@ -49,7 +53,7 @@ function timeAgo(iso: string): string {
 export default function ConfessionDetailScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { language } = useApp();
+  const { user, language } = useApp();
   const T = useTranslations(language);
   const { confessionId } = useLocalSearchParams<{ confessionId: string }>();
 
@@ -60,14 +64,6 @@ export default function ConfessionDetailScreen() {
   const [replyingTo, setReplyingTo] = useState<ConfessionComment | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [activeReactionPicker, setActiveReactionPicker] = useState(false);
-
-  const getTagColor = (tag: string | null) => {
-    if (tag === '☕️ Tea') return '#F59E0B'; // Amber
-    if (tag === '❤️ Crush') return '#EC4899'; // Pink
-    if (tag === '📚 Rant') return '#EF4444'; // Red
-    if (tag === '❓ Advice') return '#3B82F6'; // Blue
-    return '#8B5CF6'; // Purple
-  };
 
   const loadAll = useCallback(async () => {
     if (!confessionId) return;
@@ -91,6 +87,18 @@ export default function ConfessionDetailScreen() {
       void loadAll();
     }, [loadAll]),
   );
+
+  const shareCardRef = useRef<any>(null);
+  const [sharing, setSharing] = useState(false);
+  const handleShare = async () => {
+    if (sharing) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setSharing(true);
+    const r = await shareExportCanvas(shareCardRef.current);
+    setSharing(false);
+    if (r === 'error') Alert.alert(T('error'), T('confessionShareError'));
+  };
+  const displayAlias = (alias: string) => (confessionId ? friendlyAlias(alias, String(confessionId)) : alias);
 
   const handleReaction = async (reaction: string | null) => {
     if (!confession) return;
@@ -277,7 +285,12 @@ export default function ConfessionDetailScreen() {
       ]}>
         <View style={s.commentHeader}>
           {isReply && <Feather name="corner-down-right" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />}
-          <Text style={[s.commentAlias, { color: theme.primary }]}>{item.alias}</Text>
+          <Text style={[s.commentAlias, { color: theme.text }]}>{displayAlias(item.alias)}</Text>
+          {isOpAlias(item.alias) && (
+            <View style={[s.opBadge, { backgroundColor: theme.text }]}>
+              <Text style={[s.opBadgeText, { color: theme.background }]}>OP</Text>
+            </View>
+          )}
           <Text style={[s.commentTime, { color: theme.textSecondary }]}>{timeAgo(item.created_at)}</Text>
           
           {!isReply && (
@@ -328,7 +341,12 @@ export default function ConfessionDetailScreen() {
         <Pressable onPress={() => router.back()} style={s.headerBtn} hitSlop={12}>
           <Feather name="arrow-left" size={22} color={theme.text} />
         </Pressable>
+        {/* balances the two right-hand buttons so the title stays centred */}
+        <View style={s.headerBtn} />
         <Text style={[s.headerTitle, { color: theme.text }]}>{T('confessionDetailTitle')}</Text>
+        <Pressable style={s.headerBtn} hitSlop={8} onPress={() => void handleShare()} disabled={sharing}>
+          {sharing ? <ActivityIndicator size="small" color={theme.text} /> : <Feather name="share" size={20} color={theme.text} />}
+        </Pressable>
         <Pressable
           style={s.headerBtn}
           onPress={() => {
@@ -366,17 +384,13 @@ export default function ConfessionDetailScreen() {
 
             <View style={[s.confessionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <View style={s.confessionMeta}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View style={[s.anonAvatar, { backgroundColor: getTagColor(confession.tag) + '15' }]}>
-                    <Feather name="user" size={20} color={getTagColor(confession.tag)} />
-                  </View>
-                  <View>
-                    <Text style={[s.metaText, { color: theme.text }]}>
-                      {confession.tag || 'Anon'}
-                    </Text>
-                    <Text style={[s.timeText, { color: theme.textSecondary }]}>{timeAgo(confession.created_at)}</Text>
-                  </View>
-                </View>
+                <ConfessionHeader
+                  confession={confession}
+                  theme={theme}
+                  anonLabel={T('confessionAnon')}
+                  universityShort={(user as any)?.universityId ? String((user as any).universityId).toUpperCase() : undefined}
+                  size="detail"
+                />
               </View>
               <Text style={[s.confessionBody, { color: theme.text }]}>{confession.content}</Text>
               <View style={s.detailBottomRight}>
@@ -439,7 +453,7 @@ export default function ConfessionDetailScreen() {
         {replyingTo && (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 }}>
             <Text style={{ fontSize: 12, color: theme.textSecondary, fontWeight: '600' }}>
-              Replying to <Text style={{ color: theme.primary }}>{replyingTo.alias}</Text>
+              Replying to <Text style={{ color: theme.primary }}>{displayAlias(replyingTo.alias)}</Text>
             </Text>
             <Pressable hitSlop={12} onPress={() => setReplyingTo(null)}>
               <Feather name="x" size={16} color={theme.textSecondary} />
@@ -469,6 +483,11 @@ export default function ConfessionDetailScreen() {
         </Pressable>
         </View>
       </View>
+      <ConfessionShareCard
+        ref={shareCardRef}
+        confession={confession}
+        universityShort={(user as any)?.universityId ? String((user as any).universityId).toUpperCase() : undefined}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -542,7 +561,7 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 16,
   },
-  confessionMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  confessionMeta: { marginBottom: 16 },
   anonAvatar: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   metaText: { fontSize: 14, fontWeight: '600' },
   timeText: { fontSize: 13, fontWeight: '500' },
@@ -565,6 +584,8 @@ const s = StyleSheet.create({
   commentCard: { borderRadius: 12, borderWidth: 1, padding: 12 },
   commentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   commentAlias: { fontSize: 13, fontWeight: '800' },
+  opBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  opBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   commentTime: { fontSize: 11, fontWeight: '600', flex: 1 },
   commentBody: { fontSize: 14, lineHeight: 20 },
   noComments: { textAlign: 'center', marginTop: 8, fontSize: 14 },
