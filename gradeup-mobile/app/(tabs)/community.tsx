@@ -976,14 +976,14 @@ export default function CommunityMap() {
                   <View style={styles.confessBubbleOffset} pointerEvents="box-none">
                   <Pressable
                     onPress={() => router.push({ pathname: '/community/confessions', params: { campus: c.name } } as any)}
-                    style={({ pressed }) => [styles.confessBubble, { backgroundColor: theme.text }, pressed && { transform: [{ scale: 0.95 }] }]}
+                    style={({ pressed }) => [styles.confessBubble, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }, pressed && { transform: [{ scale: 0.95 }] }]}
                     accessibilityRole="button"
                     accessibilityLabel={`${c.today} confessions today at ${c.name}`}
                   >
                     <Text style={styles.confessBubbleEmoji}>🤫</Text>
-                    <Text style={[styles.confessBubbleText, { color: theme.background }]}>{c.today}</Text>
+                    <Text style={[styles.confessBubbleText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>{c.today}</Text>
                   </Pressable>
-                  <View style={[styles.confessBubbleTail, { borderTopColor: theme.text }]} />
+                  <View style={[styles.confessBubbleTail, { borderTopColor: isMonoOnly ? '#ffffff' : theme.primary }]} />
                   </View>
                 </MB.MarkerView>
               );

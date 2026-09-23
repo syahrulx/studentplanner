@@ -683,15 +683,15 @@ export default function ServicesBoard() {
               const count = s.id === 'mine' ? mineCount : s.id === 'taken' ? takenCount : null;
               return (
                 <Pressable key={s.id} onPress={() => setScope(s.id)} hitSlop={6} style={styles.scopeTextTab}>
-                  <Text style={[styles.scopeTextLabel, { color: active ? theme.text : theme.textSecondary, fontWeight: active ? '800' : '600' }]}>
+                  <Text style={[styles.scopeTextLabel, { color: active ? theme.primary : theme.textSecondary, fontWeight: active ? '800' : '600' }]}>
                     {s.label}
                   </Text>
                   {count != null && count > 0 && (
-                    <View style={[styles.scopeBadge, { backgroundColor: active ? theme.text : theme.textSecondary }]}>
-                      <Text style={[styles.scopeBadgeText, { color: theme.background }]}>{count}</Text>
+                    <View style={[styles.scopeBadge, { backgroundColor: active ? theme.primary : theme.textSecondary }]}>
+                      <Text style={[styles.scopeBadgeText, { color: theme.textInverse }]}>{count}</Text>
                     </View>
                   )}
-                  {active && <View style={[styles.scopeUnderline, { backgroundColor: theme.text }]} />}
+                  {active && <View style={[styles.scopeUnderline, { backgroundColor: theme.primary }]} />}
                 </Pressable>
               );
             })}
@@ -718,9 +718,9 @@ export default function ServicesBoard() {
               <Pressable
                 key={k.id ?? 'all'}
                 onPress={() => { setKind(k.id); if (k.id === null) setCategory(null); }}
-                style={[styles.chip, active && { backgroundColor: theme.text }]}
+                style={[styles.chip, active && { backgroundColor: theme.primary }]}
               >
-                <Text style={[styles.chipText, { color: active ? theme.background : theme.textSecondary, fontWeight: active ? '700' : '500' }]}>
+                <Text style={[styles.chipText, { color: active ? theme.textInverse : theme.textSecondary, fontWeight: active ? '700' : '500' }]}>
                   {k.label}
                 </Text>
               </Pressable>

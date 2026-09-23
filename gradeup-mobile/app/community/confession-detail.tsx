@@ -287,8 +287,8 @@ export default function ConfessionDetailScreen() {
           {isReply && <Feather name="corner-down-right" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />}
           <Text style={[s.commentAlias, { color: theme.text }]}>{displayAlias(item.alias)}</Text>
           {isOpAlias(item.alias) && (
-            <View style={[s.opBadge, { backgroundColor: theme.text }]}>
-              <Text style={[s.opBadgeText, { color: theme.background }]}>OP</Text>
+            <View style={[s.opBadge, { backgroundColor: theme.primary }]}>
+              <Text style={[s.opBadgeText, { color: theme.textInverse }]}>OP</Text>
             </View>
           )}
           <Text style={[s.commentTime, { color: theme.textSecondary }]}>{timeAgo(item.created_at)}</Text>

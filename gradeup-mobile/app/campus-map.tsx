@@ -4,17 +4,18 @@ import {
   Text,
   Pressable,
   SectionList,
-  FlatList,
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
   TextInput,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Feather from '@expo/vector-icons/Feather';
+import * as WebBrowser from 'expo-web-browser';
 
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
@@ -24,11 +25,49 @@ import type { CampusRoom } from '@/src/lib/campusRoomsApi';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { Campus } from '@/src/lib/eventsApi';
 
-type Section = { title: string; data: CampusRoom[] };
+type Section = { title: string; data: CampusRoom[]; mapUrl?: string | null };
 
 function campusShort(name: string): string {
   return name.replace(/^.+?kampus\s+/i, '').replace(/^.+?campus\s+/i, '') || name;
 }
+
+/** Profile campus is free text ("UiTM SHAH ALAM") — compare loosely against campuses.name. */
+function sameCampus(a: string, b: string): boolean {
+  const norm = (v: string) =>
+    campusShort(v).toLowerCase().replace(/\(.*?\)/g, '').replace(/^(uitm|universiti teknologi mara)\s+/, '').trim();
+  return a === b || norm(a) === norm(b);
+}
+
+/** Faculty values are free text with mixed casing ("acis", "FSKM") — group and show case-insensitively. */
+const facultyKey = (f: string) => f.trim().toLowerCase();
+
+/**
+ * Levels arrive as "2ND FLOOR", "Aras 2", "Level 2", "2nd Floor (CS2)", "3"…
+ * Parsed into what a lift button would show ("G", "LG", "2", "2·3") plus the
+ * zone in brackets ("CS2"). Values that can't be a floor ("609" — a room
+ * number typed into the level field) give no button; unparseable text
+ * ("Mezzanine") is kept as `other` so it still shows in the meta line.
+ */
+type Floor = { short: string | null; zone: string | null; other: string | null };
+function parseLevel(raw: string | null | undefined): Floor {
+  const v = (raw ?? '').trim();
+  const none: Floor = { short: null, zone: null, other: null };
+  if (!v || v === '0') return none;
+  const zone = v.match(/\(([^)]+)\)/)?.[1]?.trim() ?? null;
+  const base = v.replace(/\(.*?\)/g, '').trim().toLowerCase();
+  if (/^(lg|lower ground)\b/.test(base)) return { short: 'LG', zone, other: null };
+  if (/^(g|ground)\b/.test(base)) return { short: 'G', zone, other: null };
+  const floors = base.match(/\d+/g);
+  if (floors && /^(aras|level|lvl|tingkat|floor)?\s*[\d\s&,-]+(st|nd|rd|th|rt)?\s*(floor)?$/.test(base)) {
+    if (floors.some((n) => Number(n) > 30)) return { ...none, zone };
+    return { short: floors.join('·'), zone, other: null };
+  }
+  return { short: null, zone, other: v };
+}
+
+/** Numbers in codes sort numerically: BK2 before BK10. */
+const byCode = (a: CampusRoom, b: CampusRoom) =>
+  a.room_code.localeCompare(b.room_code, undefined, { numeric: true, sensitivity: 'base' });
 
 /** Ignore email-like / empty faculty values (some profiles store an email). */
 function sanitizeFaculty(raw: unknown): string | null {
@@ -63,7 +102,7 @@ export default function CampusMapScreen() {
     eventsApi.fetchCampuses(userUni).then((list) => {
       setCampuses(list);
       if (list.length > 1 && userCampus) {
-        const match = list.find((c) => c.name === userCampus);
+        const match = list.find((c) => sameCampus(c.name, userCampus));
         if (match) setSelectedCampus(match.name);
       }
     }).catch(() => {});
@@ -109,47 +148,59 @@ export default function CampusMapScreen() {
   // Distinct faculties present in the loaded set, so users can narrow the
   // directory to a single faculty (the same room code can exist in several).
   const facultyOptions = useMemo(() => {
-    const set = new Set<string>();
+    const byKey = new Map<string, string>();
     for (const r of items) {
       const f = r.faculty?.trim();
-      if (f) set.add(f);
+      if (f && !byKey.has(facultyKey(f))) byKey.set(facultyKey(f), f.toUpperCase());
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
   // Drop a stale faculty selection when the loaded set no longer has it.
   useEffect(() => {
-    if (selectedFaculty && !facultyOptions.includes(selectedFaculty)) {
+    if (selectedFaculty && !facultyOptions.some((f) => facultyKey(f) === facultyKey(selectedFaculty))) {
       setSelectedFaculty(null);
     }
   }, [facultyOptions, selectedFaculty]);
 
   // Client-side search over the loaded set (server also supports search, but
   // local filtering is instant as the user types).
+  // Grouped by faculty — building is empty on most rooms (PDF directories rarely
+  // name it), so grouping by building dumped nearly everything under "Other".
   const sections: Section[] = useMemo(() => {
     const rawQ = search.trim().toLowerCase();
     const q = roomsApi.stripRoomPrefixes(rawQ).toLowerCase();
-    const base = selectedFaculty ? items.filter((r) => r.faculty === selectedFaculty) : items;
+    const base = selectedFaculty
+      ? items.filter((r) => r.faculty && facultyKey(r.faculty) === facultyKey(selectedFaculty))
+      : items;
     const filtered = q
       ? base.filter((r) =>
           [r.room_code, r.room_label, r.building, r.level, r.description, r.faculty]
             .filter(Boolean)
             .some((v) => {
               const str = String(v).toLowerCase();
-              // Check against both the raw query (e.g., if they typed an exact label) and the stripped query
               return str.includes(rawQ) || str.includes(q);
             }),
         )
       : base;
-    const byBuilding = new Map<string, CampusRoom[]>();
+    // One flat list when narrowed (search or a single faculty) — headers only add noise.
+    if (q || selectedFaculty) return filtered.length ? [{ title: '', data: [...filtered].sort(byCode) }] : [];
+    const byFaculty = new Map<string, { title: string; data: CampusRoom[] }>();
     for (const r of filtered) {
-      const key = r.building?.trim() || T('campusMapNoBuilding');
-      if (!byBuilding.has(key)) byBuilding.set(key, []);
-      byBuilding.get(key)!.push(r);
+      const title = r.faculty?.trim() ? r.faculty.trim().toUpperCase() : T('campusMapNoBuilding');
+      const key = facultyKey(title);
+      if (!byFaculty.has(key)) byFaculty.set(key, { title, data: [] });
+      byFaculty.get(key)!.data.push(r);
     }
-    return Array.from(byBuilding.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([title, data]) => ({ title, data }));
+    return Array.from(byFaculty.values())
+      .sort((a, b) => b.data.length - a.data.length || a.title.localeCompare(b.title))
+      .map((sec) => {
+        // The faculty's floor plan = the file most of its rooms were extracted from.
+        const files = new Map<string, number>();
+        for (const r of sec.data) if (r.source_file_url) files.set(r.source_file_url, (files.get(r.source_file_url) ?? 0) + 1);
+        const mapUrl = [...files.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+        return { ...sec, mapUrl, data: sec.data.sort(byCode) };
+      });
   }, [items, search, selectedFaculty, T]);
 
   const handleVote = async (room: CampusRoom, dir: 1 | -1) => {
@@ -220,76 +271,85 @@ export default function CampusMapScreen() {
 
   const handleMenu = (room: CampusRoom) => {
     const buttons: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [
+      { text: `${room.my_vote === 1 ? '✓ ' : ''}${T('campusMapVoteUp')}`, onPress: () => void handleVote(room, 1) },
+      { text: `${room.my_vote === -1 ? '✓ ' : ''}${T('campusMapVoteDown')}`, onPress: () => void handleVote(room, -1) },
       { text: T('campusMapReport'), onPress: () => handleReport(room) },
     ];
     if (room.is_mine) {
       buttons.unshift({ text: T('delete'), style: 'destructive', onPress: () => handleDelete(room) });
     }
     buttons.push({ text: T('cancel'), style: 'cancel' });
-    Alert.alert(T('campusMapOptions'), undefined, buttons);
+    Alert.alert(room.room_code, room.room_label ?? undefined, buttons);
   };
 
   const showCampusFilter = campuses.length > 1;
 
   const renderRoom = ({ item }: { item: CampusRoom }) => {
-    const locBits = [item.level, item.description].filter(Boolean);
+    const floor = parseLevel(item.level);
+    const building = item.building && item.building !== '0' && facultyKey(item.building) !== facultyKey(item.faculty ?? '')
+      ? item.building
+      : null;
+    const meta = [floor.zone, building, floor.other].filter(Boolean).join(' · ');
+    const hasMap = !!item.source_file_url;
     return (
-      <View style={[s.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={s.cardTop}>
-          <View style={[s.codeBadge, { backgroundColor: theme.primary + '18' }]}>
-            <Text style={[s.codeText, { color: theme.primary }]}>{item.room_code}</Text>
-          </View>
-          {item.verified ? (
-            <View style={[s.verifiedBadge, { backgroundColor: '#16a34a18' }]}>
-              <Feather name="check-circle" size={12} color="#16a34a" />
-              <Text style={[s.verifiedText, { color: '#16a34a' }]}>{T('campusMapVerified')}</Text>
-            </View>
+      <Pressable
+        onPress={() => (hasMap ? void WebBrowser.openBrowserAsync(item.source_file_url!) : handleMenu(item))}
+        onLongPress={() => handleMenu(item)}
+        style={({ pressed }) => [s.row, pressed && { backgroundColor: theme.backgroundSecondary }]}
+      >
+        {/* Lift button: the floor at a glance, the way you'd look for it in the building. */}
+        <View style={[s.liftBtn, { borderColor: floor.short ? theme.primary : theme.border }]}>
+          {floor.short ? (
+            <Text style={[s.liftText, { color: theme.primary }, floor.short.length > 2 && { fontSize: 11 }]} numberOfLines={1}>
+              {floor.short}
+            </Text>
+          ) : (
+            <View style={[s.liftDot, { backgroundColor: theme.border }]} />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.code, { color: theme.text }]} numberOfLines={2}>
+            {item.room_code}
+            {item.room_label && item.room_label.toLowerCase() !== item.room_code.toLowerCase() ? (
+              <Text style={[s.label, { color: theme.textSecondary }]}>{`  ${item.room_label}`}</Text>
+            ) : null}
+          </Text>
+          {meta || item.description ? (
+            <Text style={[s.meta, { color: theme.textSecondary }]} numberOfLines={2}>
+              {meta}
+              {meta && item.description ? '  ·  ' : ''}
+              {item.description ? <Text style={s.directions}>“{item.description}”</Text> : null}
+            </Text>
           ) : null}
-          <View style={{ flex: 1 }} />
-          <Pressable hitSlop={12} onPress={() => handleMenu(item)} style={s.menuBtn}>
+        </View>
+        <View style={s.rowRight}>
+          {item.verified ? (
+            <Feather name="check-circle" size={14} color="#16a34a" />
+          ) : item.upvote_count > 0 ? (
+            <Text style={s.confirmed}>✓ {item.upvote_count}</Text>
+          ) : null}
+          <Pressable hitSlop={12} onPress={() => handleMenu(item)}>
             <Feather name="more-horizontal" size={18} color={theme.textSecondary} />
           </Pressable>
         </View>
-
-        {item.room_label ? (
-          <Text style={[s.label, { color: theme.text }]}>{item.room_label}</Text>
-        ) : null}
-        {locBits.length > 0 ? (
-          <Text style={[s.loc, { color: theme.textSecondary }]}>{locBits.join(' · ')}</Text>
-        ) : null}
-        {item.faculty ? (
-          <View style={s.facultyTag}>
-            <Feather name="bookmark" size={11} color={theme.textSecondary} />
-            <Text style={[s.facultyTagText, { color: theme.textSecondary }]} numberOfLines={1}>{item.faculty}</Text>
-          </View>
-        ) : null}
-
-        <View style={s.voteRow}>
-          <Text style={[s.voteQ, { color: theme.textSecondary }]}>{T('campusMapAccuratePrompt')}</Text>
-          <Pressable
-            style={[s.voteBtn, item.my_vote === 1 && { backgroundColor: '#16a34a18' }]}
-            onPress={() => void handleVote(item, 1)}
-            hitSlop={8}
-          >
-            <Feather name="thumbs-up" size={15} color={item.my_vote === 1 ? '#16a34a' : theme.textSecondary} />
-            <Text style={[s.voteCount, { color: item.my_vote === 1 ? '#16a34a' : theme.textSecondary }]}>
-              {item.upvote_count > 0 ? item.upvote_count : ''}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[s.voteBtn, item.my_vote === -1 && { backgroundColor: '#ef444418' }]}
-            onPress={() => void handleVote(item, -1)}
-            hitSlop={8}
-          >
-            <Feather name="thumbs-down" size={15} color={item.my_vote === -1 ? '#ef4444' : theme.textSecondary} />
-            <Text style={[s.voteCount, { color: item.my_vote === -1 ? '#ef4444' : theme.textSecondary }]}>
-              {item.downvote_count > 0 ? item.downvote_count : ''}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      </Pressable>
     );
   };
+
+  // Your campus leads the row with a pin; "All" and the rest follow.
+  const ownCampus = userCampus ? campuses.find((c) => sameCampus(c.name, userCampus))?.name ?? null : null;
+  const campusItems: (string | null)[] = ownCampus
+    ? [ownCampus, null, ...campuses.map((c) => c.name).filter((n) => n !== ownCampus)]
+    : [null, ...campuses.map((c) => c.name)];
+
+  const Chip = ({ label, active, onPress, icon }: { label: string; active: boolean; onPress: () => void; icon?: any }) => (
+    <Pressable onPress={onPress} style={[s.chip, active && { backgroundColor: theme.primary }]}>
+      {icon ? <Feather name={icon} size={12} color={active ? theme.textInverse : theme.textSecondary} /> : null}
+      <Text style={[s.chipText, { color: active ? theme.textInverse : theme.textSecondary, fontWeight: active ? '700' : '500' }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
 
   return (
     <View style={[s.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
@@ -308,75 +368,9 @@ export default function CampusMapScreen() {
         <View style={s.headerBtn} />
       </View>
 
-      {userCampus && showCampusFilter ? (
-        <View style={[s.campusBanner, { backgroundColor: theme.primary + '12', borderBottomColor: theme.border }]}>
-          <Feather name="map-pin" size={13} color={theme.primary} />
-          <Text style={[s.campusBannerText, { color: theme.primary }]} numberOfLines={1}>
-            {T('confessionYouAreAt')} <Text style={{ fontWeight: '800' }}>{userCampus}</Text>
-          </Text>
-        </View>
-      ) : null}
-
-      {showCampusFilter ? (
-        <View style={[s.filterBar, { borderBottomColor: theme.border }]}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={[{ id: '__all__', name: null as string | null }, ...campuses.map((c) => ({ id: c.id, name: c.name }))]}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={s.filterBarContent}
-            renderItem={({ item }) => {
-              const isAll = item.id === '__all__';
-              const active = isAll ? selectedCampus === null : selectedCampus === item.name;
-              const isYours = !isAll && item.name === userCampus;
-              return (
-                <Pressable
-                  style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
-                  onPress={() => handleSelectCampus(item.name)}
-                >
-                  {isYours ? <Feather name="map-pin" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
-                  <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
-                    {isAll ? T('confessionAllCampuses') : campusShort(item.name!)}
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        </View>
-      ) : null}
-
-      {facultyOptions.length > 1 ? (
-        <View style={[s.filterBar, { borderBottomColor: theme.border }]}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={['__all__', ...facultyOptions]}
-            keyExtractor={(item) => item}
-            contentContainerStyle={s.filterBarContent}
-            renderItem={({ item }) => {
-              const isAll = item === '__all__';
-              const active = isAll ? selectedFaculty === null : selectedFaculty === item;
-              const isYours = !isAll && item === userFaculty;
-              return (
-                <Pressable
-                  style={[s.filterPill, { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border }]}
-                  onPress={() => isAll ? setSelectedFaculty(null) : setSelectedFaculty(item)}
-                >
-                  {isAll ? <Feather name="grid" size={11} color={active ? '#fff' : theme.textSecondary} style={{ marginRight: 3 }} /> : null}
-                  {isYours ? <Feather name="bookmark" size={11} color={active ? '#fff' : theme.primary} style={{ marginRight: 3 }} /> : null}
-                  <Text style={[s.filterPillText, { color: active ? '#fff' : theme.text, fontWeight: isYours ? '800' : '600' }]} numberOfLines={1}>
-                    {isAll ? T('campusMapAllFaculties') : item}
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        </View>
-      ) : null}
-
-      {/* Search */}
+      {/* Search first — people open this to find one specific room. */}
       {userUni ? (
-        <View style={[s.searchWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={[s.searchWrap, { backgroundColor: theme.backgroundSecondary }]}>
           <Feather name="search" size={16} color={theme.textSecondary} />
           <TextInput
             style={[s.searchInput, { color: theme.text }]}
@@ -385,13 +379,43 @@ export default function CampusMapScreen() {
             value={search}
             onChangeText={setSearch}
             autoCorrect={false}
+            autoCapitalize="characters"
           />
           {search.length > 0 ? (
             <Pressable onPress={() => setSearch('')} hitSlop={10}>
-              <Feather name="x" size={16} color={theme.textSecondary} />
+              <Feather name="x-circle" size={16} color={theme.textSecondary} />
             </Pressable>
           ) : null}
         </View>
+      ) : null}
+
+      {showCampusFilter ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chipBar} contentContainerStyle={s.chipRow}>
+          {campusItems.map((c) => (
+            <Chip
+              key={c ?? '__all__'}
+              label={c === null ? T('confessionAllCampuses') : campusShort(c)}
+              active={selectedCampus === c}
+              icon={c !== null && c === ownCampus ? 'map-pin' : undefined}
+              onPress={() => handleSelectCampus(c)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
+      {facultyOptions.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chipBar} contentContainerStyle={s.chipRow}>
+          <Chip label={T('campusMapAllFaculties')} active={selectedFaculty === null} onPress={() => setSelectedFaculty(null)} />
+          {facultyOptions.map((f) => (
+            <Chip
+              key={f}
+              label={f}
+              active={!!selectedFaculty && facultyKey(selectedFaculty) === facultyKey(f)}
+              icon={userFaculty && facultyKey(userFaculty) === facultyKey(f) ? 'bookmark' : undefined}
+              onPress={() => setSelectedFaculty(f)}
+            />
+          ))}
+        </ScrollView>
       ) : null}
 
       {!userUni ? (
@@ -407,13 +431,30 @@ export default function CampusMapScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={renderRoom}
-          renderSectionHeader={({ section }) => (
-            <View style={[s.sectionHeader, { backgroundColor: theme.background }]}>
-              <Feather name="home" size={14} color={theme.primary} />
-              <Text style={[s.sectionTitle, { color: theme.text }]}>{section.title}</Text>
-              <Text style={[s.sectionCount, { color: theme.textSecondary }]}>{section.data.length}</Text>
-            </View>
-          )}
+          renderSectionHeader={({ section }) =>
+            section.title ? (
+              // Directory board, like the sign at a faculty's entrance.
+              <View style={[s.board, { backgroundColor: theme.primary }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.boardKicker, { color: theme.textInverse }]}>DIRECTORY</Text>
+                  <Text style={[s.boardTitle, { color: theme.textInverse }]} numberOfLines={2}>{section.title}</Text>
+                  <Text style={[s.boardCount, { color: theme.textInverse }]}>
+                    {section.data.length} {section.data.length === 1 ? 'room' : 'rooms'}
+                  </Text>
+                </View>
+                {(section as Section).mapUrl ? (
+                  <Pressable
+                    onPress={() => void WebBrowser.openBrowserAsync((section as Section).mapUrl!)}
+                    style={({ pressed }) => [s.boardBtn, { backgroundColor: theme.textInverse }, pressed && { opacity: 0.85 }]}
+                  >
+                    <Feather name="map" size={14} color={theme.primary} />
+                    <Text style={[s.boardBtnText, { color: theme.primary }]}>{T('campusMapViewMap')}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null
+          }
+          ItemSeparatorComponent={() => <View style={[s.separator, { backgroundColor: theme.border }]} />}
           contentContainerStyle={s.listContent}
           stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.primary} />}
@@ -432,7 +473,7 @@ export default function CampusMapScreen() {
           style={[s.fab, { backgroundColor: theme.primary, bottom: insets.bottom + 20 }]}
           onPress={() => router.push('/campus-map-upload' as any)}
         >
-          <Feather name="upload" size={22} color="#fff" />
+          <Feather name="plus" size={20} color="#fff" />
           <Text style={s.fabText}>{T('campusMapAddBtn')}</Text>
         </Pressable>
       ) : null}
@@ -454,67 +495,46 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: '800' },
   headerSub: { fontSize: 12, fontWeight: '600', marginTop: 2, maxWidth: 220 },
 
-  campusBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  campusBannerText: { fontSize: 12, lineHeight: 16, flex: 1 },
-
-  filterBar: { height: 54, borderBottomWidth: StyleSheet.hairlineWidth },
-  filterBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, alignItems: 'center' },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: 1.5,
-  },
-  filterPillText: { fontSize: 13, fontWeight: '600' },
-
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginHorizontal: 16,
     marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: 22,
   },
   searchInput: { flex: 1, fontSize: 15, padding: 0 },
 
-  listContent: { padding: 16, paddingBottom: 110, gap: 10 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 14,
-    paddingBottom: 6,
-  },
-  sectionTitle: { fontSize: 15, fontWeight: '800', flex: 1 },
-  sectionCount: { fontSize: 13, fontWeight: '600' },
+  chipBar: { flexGrow: 0, flexShrink: 0 },
+  chipRow: { paddingHorizontal: 12, paddingTop: 8, gap: 2, alignItems: 'center' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
+  chipText: { fontSize: 14 },
 
-  card: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 10 },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  codeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  codeText: { fontSize: 14, fontWeight: '800' },
-  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  verifiedText: { fontSize: 11, fontWeight: '700' },
-  menuBtn: { padding: 2 },
-  label: { fontSize: 15, fontWeight: '600', marginBottom: 2 },
-  loc: { fontSize: 13, lineHeight: 19 },
-  facultyTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
-  facultyTagText: { fontSize: 12, flex: 1 },
-  voteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
-  voteQ: { fontSize: 12, flex: 1 },
-  voteBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  voteCount: { fontSize: 13, fontWeight: '700', minWidth: 6 },
+  listContent: { paddingBottom: 110, paddingTop: 4 },
+  board: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 12,
+    marginHorizontal: 16, marginTop: 18, marginBottom: 4,
+    paddingHorizontal: 18, paddingVertical: 16, borderRadius: 18,
+  },
+  boardKicker: { fontSize: 10, fontWeight: '800', letterSpacing: 1.6, opacity: 0.55 },
+  boardTitle: { fontSize: 26, fontWeight: '900', letterSpacing: -0.8, marginTop: 2 },
+  boardCount: { fontSize: 13, fontWeight: '600', opacity: 0.7, marginTop: 2 },
+  boardBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 17 },
+  boardBtnText: { fontSize: 13, fontWeight: '700' },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 12 },
+  liftBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  liftText: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  liftDot: { width: 5, height: 5, borderRadius: 3 },
+  code: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  label: { fontSize: 14, fontWeight: '500', letterSpacing: 0 },
+  meta: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  directions: { fontStyle: 'italic' },
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  confirmed: { fontSize: 12, fontWeight: '700', color: '#16a34a' },
+  separator: { height: StyleSheet.hairlineWidth, marginLeft: 70 },
 
   emptyWrap: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 56, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center' },
