@@ -23,6 +23,15 @@
 import assert from 'node:assert/strict';
 
 const HEA_FIXTURE = `
+<div>GROUP A: FOUNDATION/PROFESSIONAL</div>
+
+<table>
+  <tr><td colspan="2">SEMESTER JUNE OCTOBER 2026 [20264]</td></tr>
+  <tr><th>Activity</th><th>Date</th></tr>
+  <tr><td>Lecture</td><td>21 June 2026 - 4 October 2026</td></tr>
+  <tr><td>Semester Break</td><td>5 October 2026 - 7 November 2026</td></tr>
+</table>
+
 <div>GROUP B: PRE-DIPLOMA, DIPLOMA, BACHELOR, MASTER AND PhD</div>
 
 <table>
@@ -51,7 +60,31 @@ const HEA_FIXTURE = `
   <tr><th>Activity</th><th>Date</th></tr>
   <tr><td>Lecture</td><td>22 December 2025 - 20 December 2027</td></tr>
 </table>
+
+<div>GROUP A: FOUNDATION/PROFESSIONAL</div>
+
+<table>
+  <tr><td colspan="2">SEMESTER NOVEMBER 2026 MAY 2027 [20272]</td></tr>
+  <tr><th>Activity</th><th>Date</th></tr>
+  <tr><td>Lecture</td><td>8 November 2026 - 28 February 2027</td></tr>
+</table>
+
+<table>
+  <tr><td colspan="2">KALENDAR AKADEMIK SESI II 2025/2026 PROGRAM ASASI / PROFESIONAL SEMESTER DISEMBER 2025 – MEI 2026 (20262)</td></tr>
+  <tr><th>AKTIVITI</th><th>TARIKH</th></tr>
+  <tr><td>Kuliah 1</td><td>22 Disember 2025 – 8 Februari 2026</td></tr>
+  <tr><td>Kuliah 2</td><td>23 Februari 2026 – 10 Mei 2026</td></tr>
+</table>
 `;
+// The last table is a detailed "KALENDAR AKADEMIK" block for a *different* Group A
+// term. Its session is SESI II; the June–October term is slot 4, which the
+// session fallback maps to "I" — and `includes('I-')` matched "II-". That let a
+// December–May table redefine a June–October semester as starting in December.
+// The two Group A blocks bracket Group B on purpose. The live page interleaves
+// the groups the same way (A and B summaries, then A and B detailed tables), so
+// a parser that slices from the first matching header to the end of the page
+// hands Foundation students every Group B table as well, and hands Group B the
+// trailing Group A tables.
 
 globalThis.fetch = (async () => ({
   ok: true,
@@ -63,14 +96,44 @@ import { fetchUitmAcademicCalendar } from '../src/lib/uitmAcademicCalendar';
 const SEM_20262 = '2026-03-29';
 const INTERSESSION = '2026-08-17';
 const SEM_20264 = '2026-09-27';
+// Group A runs on its own calendar — Foundation's 20264 is June–October, not
+// September–February — so the two groups must never see each other's tables.
+const A_SEM_20264 = '2026-06-21';
+const A_SEM_20272 = '2026-11-08';
 
-async function startOn(targetDateISO: string, preferredTermCode?: string): Promise<string> {
-  const cal = await fetchUitmAcademicCalendar('B', { targetDateISO, preferredTermCode, variant: 'auto' });
-  assert.ok(cal, `expected a calendar for ${targetDateISO}`);
+async function startOn(
+  targetDateISO: string,
+  preferredTermCode?: string,
+  group: 'A' | 'B' = 'B',
+): Promise<string> {
+  const cal = await fetchUitmAcademicCalendar(group, { targetDateISO, preferredTermCode, variant: 'auto' });
+  assert.ok(cal, `expected a Group ${group} calendar for ${targetDateISO}`);
   return cal.startDate;
 }
 
 async function main(): Promise<void> {
+  // Foundation students read Group A, and only Group A. Sliced to the end of the
+  // page this used to return the earliest date in any table — Group B's — and
+  // the Home screen showed a week number in the forties.
+  assert.equal(await startOn('2026-09-23', undefined, 'A'), A_SEM_20264);
+  assert.equal(await startOn('2026-12-01', undefined, 'A'), A_SEM_20272);
+
+  // A detailed table from another term must not widen the chosen one. The
+  // fixture's December–May "KALENDAR AKADEMIK" block would have pushed this
+  // semester's end past May 2026 and its start back to December 2025.
+  const foundationSep = await fetchUitmAcademicCalendar('A', { targetDateISO: '2026-09-23', variant: 'auto' });
+  assert.ok(foundationSep);
+  assert.equal(foundationSep.startDate, A_SEM_20264);
+  assert.ok(foundationSep.endDate <= '2026-10-31', `endDate ${foundationSep.endDate} should stay inside the June–October term`);
+  for (const p of foundationSep.periods ?? []) {
+    assert.ok(p.startDate >= '2026-05-01', `period ${p.label} (${p.startDate}) leaked in from another term`);
+  }
+
+  // And Group B must not see the Group A block that follows it on the page:
+  // 1 December sits inside both B's 20264 and A's 20272, so a section that
+  // leaked A's tables could pick either.
+  assert.equal(await startOn('2026-12-01'), SEM_20264);
+
   // The reported case: the week before the semester starts reads as the semester
   // that is about to begin, not as week 6 of an intersession the student skipped.
   assert.equal(await startOn('2026-09-23'), SEM_20264);

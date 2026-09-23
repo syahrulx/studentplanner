@@ -162,18 +162,49 @@ function cleanProgrammeCell(raw: string): string {
 // Summary table parser (existing logic)
 // -------------------------------------------------------------------------------------
 
+/**
+ * Everything on the HEA page that belongs to one group, and nothing from the
+ * other.
+ *
+ * The page interleaves the two groups: summary schedules for A, then B, then
+ * the detailed per-term tables for A, then B. So no single contiguous slice
+ * holds all of one group without the other. This used to slice from the first
+ * "GROUP A" header to the end of the document, which for Foundation students
+ * meant every Group B table too — 76+ periods spanning two years, a start date
+ * of the earliest date anywhere on the page, and "week 40" on the Home screen.
+ * Group B only looked right because its first header sits after both of A's
+ * summaries; its slice still swallowed A's detailed tables and relied on the
+ * term picker never choosing one of them.
+ *
+ * Each header naming the wanted group opens a block that runs until the next
+ * header naming the other group. Every header appears twice on this page (an
+ * aria-label and the visible title, ~75 chars apart), so headers of the same
+ * group inside an open block are skipped rather than starting a new one.
+ */
 function extractGroupSection(html: string, group: 'A' | 'B'): string | null {
-  const want = group === 'B' ? 'B' : 'A';
-  const patterns: RegExp[] = [
-    new RegExp(String.raw`SUMMARY\s+SCHEDULE[\s\S]{0,120}?GROUP\s+${want}`, 'i'),
-    new RegExp(String.raw`GROUP\s+${want}\b`, 'i'),
-    new RegExp(String.raw`KUMPULAN\s+${want}\b`, 'i'),
-  ];
-  for (const re of patterns) {
-    const m = re.exec(html);
-    if (m && typeof m.index === 'number' && m.index >= 0) return html.slice(m.index);
+  const headerRe = /(?:GROUP|KUMPULAN)\s+([AB])\b/gi;
+  const headers: Array<{ index: number; group: 'A' | 'B' }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(html)) !== null) {
+    headers.push({ index: m.index, group: m[1].toUpperCase() as 'A' | 'B' });
   }
-  return null;
+  if (headers.length === 0) return null;
+
+  const parts: string[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].group !== group) continue;
+    let end = html.length;
+    for (let j = i + 1; j < headers.length; j++) {
+      if (headers[j].group !== group) {
+        end = headers[j].index;
+        break;
+      }
+    }
+    parts.push(html.slice(headers[i].index, end));
+    // Skip the same-group headers this block already covers.
+    while (i + 1 < headers.length && headers[i + 1].group === group && headers[i + 1].index < end) i++;
+  }
+  return parts.length > 0 ? parts.join('\n') : null;
 }
 
 function extractPeriodsFromSection(sectionHtml: string, variant: UitmCalendarVariant): AcademicPeriod[] {
@@ -271,8 +302,17 @@ function findDetailedSections(html: string, group: 'A' | 'B'): string[] {
   return sections;
 }
 
+// Strip first, then take the head. These tables open with a "download the PDF"
+// link whose <img> carries the icon as a base64 data URL, so the first few
+// thousand characters of raw HTML are one tag with no text in it — slicing
+// before stripping read the code as null for every Group A table and sent the
+// term lookup into the session fallback below.
+function detailedHeaderText(tableContent: string, chars: number): string {
+  return stripTags(tableContent.slice(0, 60000)).slice(0, chars);
+}
+
 function extractTermCodeFromDetailedHeader(tableContent: string): string | null {
-  const text = stripTags(tableContent.slice(0, 6000));
+  const text = detailedHeaderText(tableContent, 600);
   const m = text.match(/\((\d{5})\)/);
   if (m) return m[1];
   const m2 = text.match(/\[(\d{5})\]/);
@@ -280,9 +320,9 @@ function extractTermCodeFromDetailedHeader(tableContent: string): string | null 
 }
 
 function extractSessionFromDetailedHeader(tableContent: string): string | null {
-  const text = stripTags(tableContent.slice(0, 4000));
+  const text = detailedHeaderText(tableContent, 400);
   const m = text.match(/SESI\s+(I{1,3}|[IV]+)\s+(\d{4})\/(\d{4})/i);
-  if (m) return `${m[1]}-${m[2]}/${m[3]}`;
+  if (m) return `${m[1].toUpperCase()}-${m[2]}/${m[3]}`;
   return null;
 }
 
@@ -400,9 +440,19 @@ function extractPeriodsByTermCode(sectionHtml: string, variant: UitmCalendarVari
   }
   if (hits.length === 0) return {};
   const out: Record<string, AcademicPeriod[]> = {};
+  // The detailed "KALENDAR AKADEMIK" tables follow the summary schedules, so a
+  // segment must also stop where those begin. Without this the last [code] on
+  // the page ran to the end of the section and swallowed every detailed table
+  // after it — the two-year "catch-all bucket" pickTermCodeForDate has to
+  // reject, which left the final term of each group unselectable for the
+  // whole time it was actually running.
+  const detailedRe = /KALENDAR\s+AKADEMIK/gi;
   for (let i = 0; i < hits.length; i++) {
     const { code, idx } = hits[i];
-    const end = i + 1 < hits.length ? hits[i + 1].idx : sectionHtml.length;
+    let end = i + 1 < hits.length ? hits[i + 1].idx : sectionHtml.length;
+    detailedRe.lastIndex = idx;
+    const dm = detailedRe.exec(sectionHtml);
+    if (dm && dm.index < end) end = dm.index;
     const block = sectionHtml.slice(idx, end);
     const periods = extractPeriodsFromSection(block, variant);
     if (periods.length > 0) out[code] = periods;
@@ -444,6 +494,14 @@ function splitIntoSegments(periods: AcademicPeriod[]): AcademicPeriod[][] {
   }
   if (cur.length > 0) segments.push(cur);
   return segments.filter((seg) => seg.some((p) => p.type === 'lecture'));
+}
+
+/** ISO date `days` days from `isoStr`; the input unchanged when it does not parse. */
+function shiftISO(isoStr: string, days: number): string {
+  const d = toDate(isoStr);
+  if (!d) return isoStr;
+  d.setDate(d.getDate() + days);
+  return iso(d);
 }
 
 function segmentBounds(seg: AcademicPeriod[]): { start: string; end: string } | null {
@@ -700,7 +758,9 @@ export async function fetchUitmAcademicCalendar(
     const sessionNum = slot === '4' ? 'I' : slot === '2' ? 'II' : slot === '3' ? 'III' : '';
     for (const sec of detailedSections) {
       const session = extractSessionFromDetailedHeader(sec);
-      if (session && sessionNum && session.includes(sessionNum + '-')) {
+      // Compare the numeral exactly. `includes('I-')` also matched "II-" and
+      // "III-", which is how a June–October term picked up December's table.
+      if (session && sessionNum && session.split('-')[0] === sessionNum) {
         detailedPeriods.push(...parseDetailedTable(sec, variant));
       }
     }
@@ -719,9 +779,24 @@ export async function fetchUitmAcademicCalendar(
     if (detailedPeriods.length === 0) detailedPeriods = allDetailed;
   }
 
+  // The summary schedule decides which semester this is; detailed tables only
+  // add rows to it. Whatever path matched a detailed table above, its rows must
+  // START inside the chosen term — a table matched by the wrong code or session
+  // otherwise redefines the semester's start and end. The margin ahead of the
+  // start keeps genuine pre-semester registration rows. Starting, not merely
+  // overlapping: consecutive UiTM terms sit a week apart, so the previous
+  // term's final lecture row overlaps any useful margin and would leak in.
+  const summaryBounds = segmentBounds(chosenSummary as AcademicPeriod[]);
+  if (summaryBounds && detailedPeriods.length > 0) {
+    const earliest = shiftISO(summaryBounds.start, -45);
+    detailedPeriods = detailedPeriods.filter((p) => p.startDate >= earliest && p.startDate <= summaryBounds.end);
+  }
+
   // 3. Merge
   const periods = mergePeriods(chosenSummary ?? [], detailedPeriods);
-  const bounds = teachingBounds(periods);
+  // Term range from the summary when it has one: detailed rows may legitimately
+  // sit a little outside the lecture window, and must never widen the semester.
+  const bounds = teachingBounds(chosenSummary as AcademicPeriod[]) ?? teachingBounds(periods);
   if (!bounds) return null;
 
   const totalWeeks = 14;
