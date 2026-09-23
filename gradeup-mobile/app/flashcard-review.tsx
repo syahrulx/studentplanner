@@ -259,8 +259,10 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
 const RATINGS: FlashcardRating[] = [1, 3, 4];
 
 export default function FlashcardReview() {
-  const params = useLocalSearchParams<{ noteId?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ noteId?: string; mode?: string; subjectId?: string }>();
   const noteId = typeof params.noteId === 'string' && params.noteId.length > 0 ? params.noteId : undefined;
+  /** Set when the session was started from one subject in Study now. */
+  const subjectId = typeof params.subjectId === 'string' && params.subjectId.length > 0 ? params.subjectId : undefined;
   const mode: ReviewMode = params.mode === 'due' ? 'due' : 'deck';
   const { flashcards, notes, user, language, reviewFlashcard } = useApp();
   const T = useTranslations(language);
@@ -273,14 +275,23 @@ export default function FlashcardReview() {
   // the cards mid-session.
   const buildQueue = useCallback((): Flashcard[] => {
     const now = new Date();
-    const scoped = noteId ? flashcards.filter((c) => c.noteId === noteId) : flashcards;
+    // A subject scope covers every deck filed under it: Study now offers the
+    // due pile per subject, and a subject usually spans several notes.
+    const subjectNoteIds = subjectId
+      ? new Set(notes.filter((n) => n.subjectId === subjectId).map((n) => n.id))
+      : null;
+    const scoped = noteId
+      ? flashcards.filter((c) => c.noteId === noteId)
+      : subjectNoteIds
+        ? flashcards.filter((c) => subjectNoteIds.has(c.noteId ?? ''))
+        : flashcards;
     if (mode === 'due') {
       return scoped
         .filter((c) => isDue(c, now))
         .sort((a, b) => new Date(a.due ?? 0).getTime() - new Date(b.due ?? 0).getTime());
     }
     return scoped;
-  }, [flashcards, noteId, mode]);
+  }, [flashcards, notes, noteId, subjectId, mode]);
 
   const [queue, setQueue] = useState<Flashcard[]>(() => buildQueue());
   const [index, setIndex] = useState(0);
@@ -290,7 +301,7 @@ export default function FlashcardReview() {
   const [reviewedCount, setReviewedCount] = useState(0);
   const [againIds, setAgainIds] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const sessionKeyRef = useRef(`${mode}:${noteId ?? ''}`);
+  const sessionKeyRef = useRef(`${mode}:${noteId ?? ''}:${subjectId ?? ''}`);
   const cardStartRef = useRef<number>(Date.now());
   const ratingBusyRef = useRef(false);
 
@@ -308,12 +319,12 @@ export default function FlashcardReview() {
 
   // Only rebuild when the params change (deep-link to a different deck/mode).
   useEffect(() => {
-    const key = `${mode}:${noteId ?? ''}`;
+    const key = `${mode}:${noteId ?? ''}:${subjectId ?? ''}`;
     if (sessionKeyRef.current === key) return;
     sessionKeyRef.current = key;
     resetSession(buildQueue());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, noteId]);
+  }, [mode, noteId, subjectId]);
 
   // Keep the freshest FSRS state for the card being shown (previews use it),
   // while the queue membership/order itself stays frozen.

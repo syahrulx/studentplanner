@@ -8,7 +8,7 @@ import { useTranslations } from '@/src/i18n';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import type { Course } from '@/src/types';
-import { dueCounts } from '@/src/lib/fsrs';
+import { dueCounts, isDue } from '@/src/lib/fsrs';
 import { EMPTY_INSIGHTS, buildMissedQuestionsQuiz, getStudyInsights, type StudyInsights } from '@/src/lib/studyInsights';
 import { setGeneratedQuizQuestions } from '@/src/lib/studyApi';
 import { remapClassroomCourse } from '@/src/lib/googleClassroom';
@@ -125,6 +125,37 @@ function createStyles(theme: ThemePalette) {
       marginBottom: 8,
     },
     studyNowSpacer: { height: 20 },
+    // A count carries further than a chevron on a row whose whole point is
+    // "how much is waiting", and the dots say how many subjects it spans
+    // before the sheet is even opened.
+    duePill: {
+      minWidth: 30,
+      paddingHorizontal: 8,
+      height: 26,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    duePillText: { fontSize: 13, fontWeight: '800' },
+    dueDotRow: { flexDirection: 'row', gap: 4, marginTop: 6 },
+    dueDot: { width: 7, height: 7, borderRadius: 4 },
+
+    /* Due-by-subject sheet */
+    dueSheetBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    dueSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 14, paddingHorizontal: 8 },
+    dueSheetHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 12, paddingBottom: 10,
+    },
+    dueSheetTitle: { fontSize: 17, fontWeight: '800' },
+    dueSheetRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 14, paddingVertical: 14, borderRadius: 14,
+    },
+    dueSheetSwatch: { width: 10, height: 10, borderRadius: 5 },
+    dueSheetLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
+    dueSheetCount: { fontSize: 13, fontWeight: '700' },
+    dueSheetDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
     sectionLabel: {
       fontSize: 11,
       fontWeight: '700',
@@ -815,6 +846,39 @@ export default function StudyHub() {
   // Cards due for FSRS review across every deck (new cards count as due).
   const dueTotal = useMemo(() => dueCounts(flashcards, new Date()).due, [flashcards]);
 
+  /**
+   * Due cards per subject folder.
+   *
+   * "Review N due cards" used to drop the student straight into one mixed pile
+   * of every subject they have ever made a card for, which is not how anyone
+   * revises the night before a paper. The count is still the headline; the
+   * subjects behind it are now what the row opens.
+   */
+  const dueBySubject = useMemo(() => {
+    const now = new Date();
+    const subjectOfNote = new Map(notes.map((n) => [n.id, n.subjectId]));
+    const counts = new Map<string, number>();
+    for (const card of flashcards) {
+      if (!isDue(card, now)) continue;
+      const subject = subjectOfNote.get(card.noteId ?? '') || 'General';
+      counts.set(subject, (counts.get(subject) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([subjectId, due], idx) => ({ subjectId, due, color: getColor(subjectId, idx) }))
+      .sort((a, b) => b.due - a.due || a.subjectId.localeCompare(b.subjectId));
+  }, [flashcards, notes]);
+
+  const [duePickerOpen, setDuePickerOpen] = useState(false);
+
+  const startDueReview = useCallback((subjectId?: string) => {
+    invalidateInsights();
+    setDuePickerOpen(false);
+    router.push({
+      pathname: '/flashcard-review',
+      params: subjectId ? { mode: 'due', subjectId } : { mode: 'due' },
+    } as any);
+  }, []);
+
   // ── Study now ────────────────────────────────────────────────────────────
   // One RPC backs the whole section. Refreshed when the tab regains focus so
   // finishing a quiz or a review updates it, but throttled so tab-flicking does
@@ -997,10 +1061,8 @@ export default function StudyHub() {
                   { backgroundColor: quickActionWideTint },
                   pressed && { opacity: 0.85 },
                 ]}
-                onPress={() => {
-                  invalidateInsights();
-                  router.push({ pathname: '/flashcard-review', params: { mode: 'due' } } as any);
-                }}
+                // One subject is not worth a chooser; go straight in.
+                onPress={() => (dueBySubject.length > 1 ? setDuePickerOpen(true) : startDueReview())}
               >
                 <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
                   <Feather name="clock" size={18} color={onPrimaryIcon} />
@@ -1009,9 +1071,22 @@ export default function StudyHub() {
                   <Text style={s.quickActionWideTitle}>
                     {String((T as any)('studyNowDueCards')).replace('{n}', String(dueTotal))}
                   </Text>
-                  <Text style={s.quickActionWideSub}>{(T as any)('studyNowDueCardsBody')}</Text>
+                  <Text style={s.quickActionWideSub}>
+                    {dueBySubject.length > 1
+                      ? `${(T as any)('studyNowDueCardsBody')} · ${dueBySubject.length} subjects`
+                      : (T as any)('studyNowDueCardsBody')}
+                  </Text>
+                  {dueBySubject.length > 1 && (
+                    <View style={s.dueDotRow}>
+                      {dueBySubject.slice(0, 6).map((sub) => (
+                        <View key={sub.subjectId} style={[s.dueDot, { backgroundColor: sub.color }]} />
+                      ))}
+                    </View>
+                  )}
                 </View>
-                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                <View style={[s.duePill, { backgroundColor: quickActionIconBg }]}>
+                  <Text style={[s.duePillText, { color: onPrimaryIcon }]}>{String(dueTotal)}</Text>
+                </View>
               </Pressable>
             )}
 
@@ -1753,6 +1828,70 @@ export default function StudyHub() {
             )}
           </View>
         </View>
+      </Modal>
+
+      {/* ─── Due cards, by subject ───
+          Opened by the Study now row when more than one subject has cards
+          waiting, so revision can be aimed at the paper that is actually
+          next instead of one shuffled pile of everything. */}
+      <Modal
+        visible={duePickerOpen}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setDuePickerOpen(false)}
+      >
+        <Pressable style={s.dueSheetBg} onPress={() => setDuePickerOpen(false)}>
+          <Pressable
+            style={[s.dueSheet, { backgroundColor: theme.card, paddingBottom: 24 }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={s.dueSheetHeader}>
+              <Text style={[s.dueSheetTitle, { color: theme.text }]}>Review by subject</Text>
+              <Pressable onPress={() => setDuePickerOpen(false)} hitSlop={12}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} keyboardShouldPersistTaps="handled">
+              <Pressable
+                style={({ pressed }) => [
+                  s.dueSheetRow,
+                  pressed && { backgroundColor: theme.backgroundSecondary },
+                ]}
+                onPress={() => startDueReview()}
+              >
+                <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg, width: 32, height: 32 }]}>
+                  <Feather name="layers" size={16} color={onPrimaryIcon} />
+                </View>
+                <Text style={[s.dueSheetLabel, { color: theme.text }]}>All subjects</Text>
+                <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(dueTotal)}</Text>
+                <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+              </Pressable>
+
+              <View style={[s.dueSheetDivider, { backgroundColor: theme.border }]} />
+
+              {dueBySubject.map((sub) => (
+                <Pressable
+                  key={sub.subjectId}
+                  style={({ pressed }) => [
+                    s.dueSheetRow,
+                    pressed && { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                  onPress={() => startDueReview(sub.subjectId)}
+                >
+                  <View style={[s.dueSheetSwatch, { backgroundColor: sub.color }]} />
+                  <Text style={[s.dueSheetLabel, { color: theme.text }]} numberOfLines={1}>
+                    {sub.subjectId}
+                  </Text>
+                  <Text style={[s.dueSheetCount, { color: theme.textSecondary }]}>{String(sub.due)}</Text>
+                  <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                </Pressable>
+              ))}
+              <View style={{ height: 8 }} />
+            </ScrollView>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
