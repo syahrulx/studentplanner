@@ -182,6 +182,9 @@ function createDashboardStyles(
   const metaPillOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.82)' : border;
   const taskCardOutline = themePrefersLightOutline(theme) ? 'rgba(255,255,255,0.38)' : border;
   const monoAccent = '#9ca3af';
+  const onDarkPulseCard = themePrefersLightOutline(theme);
+  const pulseBadgeFill = onDarkPulseCard ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)';
+  const pulseBadgeStroke = onDarkPulseCard ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.10)';
   const pulseCurrentColor = themePack === 'custom' ? theme.focusCardText : (isSpiderTheme ? primary : isDarkMinimal ? monoAccent : GOLD);
 
   return StyleSheet.create({
@@ -259,26 +262,25 @@ function createDashboardStyles(
     peakAlertLeft: {
       flexShrink: 1,
     },
-    // The pencil rides the eyebrow, not the title. A title that wraps ("NOT IN
-    // SEMESTER", and most of the Malay strings) takes the full column width
-    // even though its glyphs do not, so an icon placed after it floated in the
-    // empty space between the second line and the status badge. The eyebrow is
-    // one short line in every state, so the icon always sits against text.
-    peakAlertLabelRow: {
+    peakAlertWeekRow: {
       flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: 4,
+      // Against the title's first line, so a title that wraps keeps the pencil
+      // at the top rather than level with the gap between its lines.
+      alignItems: 'flex-start',
+      gap: 2,
+      flexShrink: 1,
     },
     peakAlertEditBtn: {
       padding: 4,
-      marginTop: -1,
+      // 4pt of padding plus this centres the 14pt glyph on a 24pt line.
+      marginTop: 1,
     },
     peakAlertWeek: {
       fontSize: 20,
       fontWeight: '800',
       color: text,
       letterSpacing: -0.3,
+      // Fixed so the pencil can be aligned to the first line.
       lineHeight: 24,
     },
     peakAlertLabel: {
@@ -286,6 +288,7 @@ function createDashboardStyles(
       fontWeight: '700',
       color: textSecondary,
       letterSpacing: 1.2,
+      marginTop: 4,
     },
     peakAlertSubline: {
       fontSize: 11,
@@ -296,9 +299,15 @@ function createDashboardStyles(
       lineHeight: 15,
     },
     peakAlertBadge: {
-      backgroundColor: bgSecondary,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      // Tinted from the card itself rather than from backgroundSecondary: on
+      // several packs that colour equals the card, so the pill disappeared and
+      // the status read as loose text floating over the card art. An overlay
+      // plus a hairline separates it on light and dark alike.
+      backgroundColor: pulseBadgeFill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: pulseBadgeStroke,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
       borderRadius: 12,
       // Cap the badge so the status wraps inside the card instead of running off
       // it. 45% leaves the title block the larger half, which is the side worth
@@ -306,23 +315,21 @@ function createDashboardStyles(
       flexShrink: 1,
       maxWidth: '45%',
     },
-    peakAlertBadgeMuted: {
-      backgroundColor: bgSecondary,
-      // Solid on purpose: the themed card art (spider web, purple gradient)
-      // sits directly behind this corner, and a translucent badge let it show
-      // through the status text.
-    },
+    peakAlertBadgeMuted: {},
     peakAlertBadgeText: {
       fontSize: 12,
       fontWeight: '800',
       color: text,
-      letterSpacing: 0.4,
+      letterSpacing: 0.3,
+      // Ranged right: the badge sits in the card's right corner, so a wrapped
+      // status reads down the edge it is anchored to.
+      textAlign: 'right',
       // Let the text be narrower than its natural line, so the badge's maxWidth
       // is what decides the width and the words wrap inside it.
       flexShrink: 1,
     },
     peakAlertBadgeTextMuted: {
-      fontSize: 10,
+      fontSize: 11,
       color: textSecondary,
     },
     peakAlertBottom: {
@@ -1429,6 +1436,14 @@ export default function Dashboard() {
     return `${T('week')} ${homeTeachingWeek}`;
   }, [semesterPhase, user.isBreak, user.currentWeek, academicCalendar?.totalWeeks, homeTeachingWeek, T]);
 
+  /**
+   * Width of the pulse title's longest line, so the edit pencil can sit against
+   * the words. Grow-only, and reset when the title changes, so a measurement
+   * cannot feed back into itself.
+   */
+  const [pulseTitleWidth, setPulseTitleWidth] = useState(0);
+  useEffect(() => { setPulseTitleWidth(0); }, [pulseMainTitle]);
+
   // Shown in every phase, not just mid-teaching: break / study / exam weeks are
   // exactly when the derived week is most likely wrong, and hiding the pencil
   // there left no way back to the week-align picker from Home.
@@ -2120,27 +2135,24 @@ export default function Dashboard() {
           ) : null}
           <View style={styles.peakAlertTop}>
             <View style={styles.peakAlertLeft}>
-              <Text style={[
-                styles.peakAlertWeek,
-                isPurpleTheme && { color: '#ffffff' },
-                themePack === 'custom' && { color: theme.focusCardText }
-              ]}>{pulseMainTitle}</Text>
-              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
-                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
-                </Text>
-              ) : null}
-              {semesterPhase === 'no_calendar' ? (
-                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
-              ) : null}
-              <View style={styles.peakAlertLabelRow}>
-                <Text style={[
-                  styles.peakAlertLabel,
-                  isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
-                  themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
-                ]}>
-                  {T('semesterPulse')}
-                </Text>
+              <View style={styles.peakAlertWeekRow}>
+                <Text
+                  // A Text that wraps takes the whole column even though its
+                  // glyphs do not, which left the pencil floating in the empty
+                  // half. Measure the longest line and hold the box to it, so
+                  // the icon sits against the words in every state.
+                  onTextLayout={(e) => {
+                    const lines = e.nativeEvent.lines ?? [];
+                    const w = Math.ceil(Math.max(0, ...lines.map((l) => l.width))) + 1;
+                    if (w > pulseTitleWidth) setPulseTitleWidth(w);
+                  }}
+                  style={[
+                    styles.peakAlertWeek,
+                    pulseTitleWidth > 0 && { width: pulseTitleWidth },
+                    isPurpleTheme && { color: '#ffffff' },
+                    themePack === 'custom' && { color: theme.focusCardText }
+                  ]}
+                >{pulseMainTitle}</Text>
                 {showWeekAlignEdit ? (
                   <Pressable
                     onPress={onWeekAlignPress}
@@ -2163,6 +2175,21 @@ export default function Dashboard() {
                   </Pressable>
                 ) : null}
               </View>
+              {semesterPhase === 'before_start' && user.startDate?.slice(0, 10)?.length === 10 ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>
+                  {T('starts')} {formatDisplayDate(user.startDate.slice(0, 10))}
+                </Text>
+              ) : null}
+              {semesterPhase === 'no_calendar' ? (
+                <Text style={[styles.peakAlertSubline, themePack === 'custom' && { color: theme.focusCardText }]}>{T('tapToSetCalendar')}</Text>
+              ) : null}
+              <Text style={[
+                styles.peakAlertLabel,
+                isPurpleTheme && { color: 'rgba(255,255,255,0.92)' },
+                themePack === 'custom' && { color: theme.focusCardText, opacity: 0.85 }
+              ]}>
+                {T('semesterPulse')}
+              </Text>
             </View>
               <View
                 style={[
