@@ -1047,6 +1047,9 @@ export default function StudyHub() {
                 {String((T as any)('studyNowTitle')).toUpperCase()}
               </Text>
               <Pressable
+                // Goes to "Your progress", not to more of this list. It used to
+                // say "See all", which next to a list of things to do now reads
+                // as "show me the rest of them" — and lands somewhere else.
                 onPress={() => router.push('/study-insights' as any)}
                 hitSlop={8}
               >
