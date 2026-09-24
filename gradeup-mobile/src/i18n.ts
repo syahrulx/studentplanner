@@ -1098,6 +1098,8 @@ const translations = {
     aiErrorFileUnreadable: "We couldn't read the file you uploaded. Please pick it again.",
     aiErrorNoText:
       "No readable text was found in this file. Scanned or photographed PDFs don't work — export it from Word or Google Docs as a PDF and try again.",
+    aiErrorNoSlots:
+      'We read the file but could not find any class times in it. Make sure the page shows the day, start time and room for each class.',
     aiErrorUnreadableDoc: "The AI couldn't make sense of this document. Try a simpler or cleaner file.",
     aiErrorTooLarge: 'This file is too large. Try a smaller one, or split it into parts.',
     aiErrorSaveFailed: "We couldn't save the result. Please try again.",
@@ -2310,6 +2312,8 @@ const translations = {
     aiErrorFileUnreadable: 'Kami tidak dapat membaca fail yang anda muat naik. Sila pilih fail itu semula.',
     aiErrorNoText:
       'Tiada teks yang boleh dibaca dalam fail ini. PDF imbasan atau gambar tidak berfungsi — eksport daripada Word atau Google Docs sebagai PDF dan cuba lagi.',
+    aiErrorNoSlots:
+      'Fail dibaca tetapi tiada waktu kelas ditemui. Pastikan halaman menunjukkan hari, masa mula dan bilik bagi setiap kelas.',
     aiErrorUnreadableDoc: 'AI tidak dapat memahami dokumen ini. Cuba fail yang lebih ringkas atau kemas.',
     aiErrorTooLarge: 'Fail ini terlalu besar. Cuba fail yang lebih kecil, atau pecahkan kepada beberapa bahagian.',
     aiErrorSaveFailed: 'Kami tidak dapat menyimpan hasilnya. Sila cuba lagi.',

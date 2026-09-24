@@ -51,7 +51,10 @@ const BY_CODE: Record<string, Copy> = {
   // student can actually fix, so this copy tells them how.
   PDF_READ: { title: 'aiErrorTitle', body: 'aiErrorNoText' },
   PDF_TEXT: { title: 'aiErrorTitle', body: 'aiErrorNoText' },
-  EMPTY_EXTRACTION: { title: 'aiErrorTitle', body: 'aiErrorNoText' },
+  // Not the same failure: the file WAS read, and no class could be recognised
+  // in it. Telling that student to re-export the PDF sends them to fix a file
+  // that was never broken.
+  EMPTY_EXTRACTION: { title: 'aiErrorTitle', body: 'aiErrorNoSlots' },
 
   PARSE: { title: 'aiErrorTitle', body: 'aiErrorUnreadableDoc' },
   DB: { title: 'aiErrorTitle', body: 'aiErrorSaveFailed' },

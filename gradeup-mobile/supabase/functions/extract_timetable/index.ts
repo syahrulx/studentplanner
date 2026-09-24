@@ -149,6 +149,47 @@ const TIMETABLE_SYSTEM =
 const TIMETABLE_JSON_SHAPE =
   '{"slots":[{"day":"Monday","start_time":"09:00","end_time":"10:00","subject_code":"ABC123","subject_name":"Course title","lecturer":"Name or -","location":"Room or Online or -","group":""}]}';
 
+/**
+ * Course-registration slips, added alongside the grid rules rather than
+ * replacing them.
+ *
+ * A grid timetable says when a class sits by where its block is drawn. A
+ * registration slip says it in words, in one packed cell:
+ *
+ *   Jadual Waktu (Hari - Masa Mula - Bil jam - Bilik)
+ *   "Selasa -02:00 PM-2-DALAM TALIAN"
+ *
+ * That is day, start time, NUMBER OF HOURS, room — an end time is never
+ * printed, which is why these slips extracted to nothing: every rule we had
+ * asked the model to read an end time off the page. It has to add the hours
+ * to the start instead.
+ */
+const REGISTRATION_SLIP_RULES = [
+  '',
+  '## IF THIS IS A COURSE REGISTRATION SLIP, NOT A GRID',
+  'Some documents are a registration/enrolment slip: a table with one row per course,',
+  'under headings like "Kod Kursus", "Tajuk Kursus", "Kredit", "Tarikh Daftar" and a',
+  'schedule column such as "Jadual Waktu (Hari - Masa Mula - Bil jam - Bilik)".',
+  'Extract these exactly as carefully as a grid — each row is a real class.',
+  '',
+  'The schedule cell packs four fields separated by dashes:',
+  '  DAY - START TIME - NUMBER OF HOURS - ROOM',
+  'For example "Selasa -02:00 PM-2-DALAM TALIAN" means Tuesday, starts 14:00,',
+  'lasts 2 hours, room DALAM TALIAN. So start_time is 14:00 and end_time is 16:00.',
+  '',
+  '- The third field is a DURATION IN HOURS, never an end time. Add it to the start',
+  '  time to get end_time. 08:00 with 2 hours ends 10:00; 16:00 with 1 hour ends 17:00.',
+  '- Convert 12-hour times: "02:00 PM" is 14:00, "08:00 AM" is 08:00.',
+  '- Malay day names: Isnin=Monday, Selasa=Tuesday, Rabu=Wednesday, Khamis=Thursday,',
+  '  Jumaat=Friday, Sabtu=Saturday, Ahad=Sunday.',
+  '- "DALAM TALIAN" means the class is online: set location to "Online".',
+  '- subject_code comes from "Kod Kursus", subject_name from "Tajuk Kursus",',
+  '  group from "Set" or "Kumpulan" when present.',
+  '- Ignore Kredit, Taraf, Tarikh Daftar, Jumlah Kredit and any fee line — they are',
+  '  not class times.',
+  '- If one course row lists several meetings, emit one object per meeting.',
+].join('\n');
+
 function buildUserPromptForText(): string {
   return [
     'Extract every scheduled class session from the timetable text below.',
@@ -161,6 +202,7 @@ function buildUserPromptForText(): string {
     '- subject_name: full course name if visible, else repeat code.',
     '- lecturer, location, group: use "-" or empty string if missing.',
     '- One object per class meeting (split double periods into one row spanning start to end if shown as one block).',
+    REGISTRATION_SLIP_RULES,
     '',
     '=== TIMETABLE TEXT ===',
   ].join('\n');
@@ -412,6 +454,16 @@ function buildImageExtractionPrompt(): string {
     '4. NO SKIPPING: Every visible colored block MUST appear in your output. Check BOTH the morning section (08:00-12:00) AND afternoon section (14:00-18:00) of EVERY row. Timetables often have a gap between 12:00-14:00 — do not assume afternoon is empty.',
     '5. ROOM ISOLATION: Each block has its own room text (or none). Never copy a room from one block to another.',
     '6. ONE ENTRY PER BLOCK: Each colored block = exactly one JSON entry. Same subject on different days = separate entries.',
+    '',
+    // Everything above describes a grid. A photographed or exported
+    // registration slip is a table of course rows instead, and the grid
+    // procedure produces nothing from it.
+    '',
+    'NOTE: the procedure and rules above describe a GRID timetable. If this image is',
+    'instead a course registration slip — a table with one row per course — ignore the',
+    'grid procedure and follow the section below. Rule 2 above does not apply there:',
+    'on a slip, "DALAM TALIAN" really does mean the class is online.',
+    REGISTRATION_SLIP_RULES,
     '',
     '## OUTPUT FORMAT',
     'Return JSON only with this shape:',
