@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -119,6 +120,29 @@ export default function ConfessionsScreen() {
   const [activeReactionPicker, setActiveReactionPicker] = useState<string | null>(null);
 
   const [composerOpen, setComposerOpen] = useState(false);
+
+  // Android: the composer Modal's window is not resized for the keyboard under
+  // edge-to-edge, so KeyboardAvoidingView has nothing to react to and the sheet
+  // sits behind the keyboard. Lift it by however much the keyboard actually
+  // overlaps the backdrop — zero on devices that do resize the window, so the
+  // sheet is never lifted twice. iOS keeps KeyboardAvoidingView 'padding'.
+  const composerOverlayRef = useRef<View>(null);
+  const [composerKeyboardInset, setComposerKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !composerOpen) return;
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      const keyboardTop = e.endCoordinates.screenY;
+      composerOverlayRef.current?.measureInWindow((_x, y, _w, h) => {
+        setComposerKeyboardInset(Math.max(0, Math.round(y + h - keyboardTop)));
+      });
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setComposerKeyboardInset(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      setComposerKeyboardInset(0);
+    };
+  }, [composerOpen]);
   const [draft, setDraft] = useState('');
   const [draftTag, setDraftTag] = useState<string | null>(null);
   const [draftAnon, setDraftAnon] = useState(true);
@@ -449,8 +473,12 @@ export default function ConfessionsScreen() {
 
       {/* ─── Compose Modal ───── */}
       <Modal visible={composerOpen} animationType="slide" transparent onRequestClose={() => setComposerOpen(false)}>
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+        <KeyboardAvoidingView
+          style={[s.modalOverlay, { paddingBottom: composerKeyboardInset }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* Backdrop fills the whole overlay (padding does not move it), so it is what we measure. */}
+          <View ref={composerOverlayRef} style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
             <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setComposerOpen(false)} />
           </View>
           <View style={[s.modalSheet, { backgroundColor: theme.card }]}>
