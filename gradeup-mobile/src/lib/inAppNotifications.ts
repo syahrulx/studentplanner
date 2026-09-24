@@ -106,10 +106,25 @@ export async function fetchInAppNotifications(limit = 50): Promise<InAppNotifica
   });
 }
 
-/** Live badge updates when new in-app notifications arrive. */
+/**
+ * Live badge updates when new in-app notifications arrive.
+ *
+ * The topic carries a random suffix because supabase.channel() does not always
+ * build a new channel: for a topic that is already registered it hands back the
+ * existing one, and binding postgres_changes to a channel that has already
+ * subscribed throws "cannot add `postgres_changes` callbacks … after
+ * `subscribe()`".
+ *
+ * That is reachable here. removeChannel() is asynchronous, so when the effect
+ * on Home re-runs — a new user object is enough to do it — the replacement
+ * channel is created before the old one has gone, lands on the same topic, and
+ * throws into the error boundary. Users saw "Something went wrong" on opening
+ * Home. A unique topic means a new channel every time, and the old one is torn
+ * down in its own time. Same fix as the task-breakdown channel.
+ */
 export function subscribeInAppNotifications(userId: string, onChange: () => void): () => void {
   const channel = supabase
-    .channel(`in-app-notifications:${userId}`)
+    .channel(`in-app-notifications:${userId}:${Math.random().toString(36).slice(2)}`)
     .on(
       'postgres_changes',
       {
