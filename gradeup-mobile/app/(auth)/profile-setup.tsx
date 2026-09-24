@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Modal,
   FlatList,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -48,6 +50,30 @@ export default function ProfileSetup() {
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universityModalVisible, setUniversityModalVisible] = useState(false);
   const [universitySearch, setUniversitySearch] = useState('');
+
+  // Android: a Modal is its own window and is not resized for the keyboard under
+  // edge-to-edge, so this bottom sheet stays pinned to the bottom of the SCREEN
+  // and the keyboard covers it — you type a university name and the results you
+  // are typing towards are behind the keyboard. Lift the sheet by however much
+  // the keyboard actually overlaps, which is zero on devices that do resize, so
+  // it is never lifted twice. iOS is handled by KeyboardAvoidingView 'padding'.
+  const uniOverlayRef = useRef<View>(null);
+  const [uniKeyboardInset, setUniKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !universityModalVisible) return;
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      const keyboardTop = e.endCoordinates.screenY;
+      uniOverlayRef.current?.measureInWindow((_x, y, _w, h) => {
+        setUniKeyboardInset(Math.max(0, Math.round(y + h - keyboardTop)));
+      });
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setUniKeyboardInset(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      setUniKeyboardInset(0);
+    };
+  }, [universityModalVisible]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -303,7 +329,15 @@ export default function ProfileSetup() {
 
       {/* ── University Modal ── */}
       <Modal visible={universityModalVisible} transparent animationType="slide" onRequestClose={() => setUniversityModalVisible(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setUniversityModalVisible(false)}>
+        <KeyboardAvoidingView
+          style={[styles.modalBackdrop, { paddingBottom: uniKeyboardInset }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* The backdrop fills the whole overlay and padding does not move it,
+              so it is what the keyboard overlap is measured against. */}
+          <View ref={uniOverlayRef} style={StyleSheet.absoluteFillObject}>
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setUniversityModalVisible(false)} />
+          </View>
           <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select University</Text>
@@ -354,7 +388,7 @@ export default function ProfileSetup() {
               }
             />
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   );
