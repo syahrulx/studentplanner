@@ -888,7 +888,14 @@ export default function CommunityMap() {
             attributionEnabled={false}
             compassEnabled={true}
             // Drops below the confession peek strip when it is showing.
-            compassPosition={(user as any)?.universityId ? { top: 60, right: 8 } : undefined}
+            //
+            // Always a map, never undefined. RNMBXMapViewManager.setCompassPosition
+            // calls Dynamic.asMap(), which throws ClassCastException on anything
+            // that is not a ReadableMap — its own `if (mapValue == null)` guard is
+            // unreachable, because asMap() throws before it can return null. So
+            // clearing the university (which sets universityId to null) flipped
+            // this prop to undefined and killed the app.
+            compassPosition={(user as any)?.universityId ? { top: 60, right: 8 } : { top: 8, right: 8 }}
             scaleBarEnabled={false}
           >
 
