@@ -428,7 +428,12 @@ export default function ConfessionDetailScreen() {
                 </Pressable>
               </View>
               <Text style={[s.commentsLabel, { color: theme.textSecondary }]}>
-                {T('confessionComments')} ({confession.comment_count})
+                {/* Count what is on screen, not confessions.comment_count. The
+                    stored counter drifts — an admin status change never
+                    decrements it, and a reply whose parent was deleted is
+                    dropped by groupedComments — which left students reading
+                    "Comments (1)" above an empty list. */}
+                {T('confessionComments')} ({groupedComments.length})
               </Text>
             </View>
           </View>
