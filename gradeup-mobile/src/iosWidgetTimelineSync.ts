@@ -39,6 +39,12 @@ function getWidgetModule(name: string): { default?: { updateTimeline: (entries: 
     if (name === 'GradeUpTimetable') {
       return require('../widgets/GradeUpTimetableWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
     }
+    if (name === 'GradeUpWeek') {
+      return require('../widgets/GradeUpWeekWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
+    }
+    if (name === 'GradeUpTaskList') {
+      return require('../widgets/GradeUpTaskListWidget') as { default?: { updateTimeline: (entries: JsTimelineEntry[]) => void } };
+    }
   } catch (e) {
     if (__DEV__) console.warn(`[Rencana] Could not load ${name} widget module`, e);
   }
@@ -95,7 +101,7 @@ export function updateGradeUpTodayTimelineFromHost(
       ))) as HomeWidgetProps,
     }));
 
-    const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable'];
+    const names = ['GradeUpToday', 'GradeUpTasks', 'GradeUpTimetable', 'GradeUpWeek', 'GradeUpTaskList'];
     let updated = false;
     for (const name of names) {
       const resolved = getNativeWidgetHandle(name);

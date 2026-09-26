@@ -117,6 +117,31 @@
                 "accessoryCircular",
                 "accessoryRectangular"
               ]
+            },
+            {
+              "name": "GradeUpWeek",
+              "displayName": "Week",
+              "description": "Every class this week",
+              "contentMarginsDisabled": true,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "systemLarge",
+                "accessoryInline",
+                "accessoryCircular",
+                "accessoryRectangular"
+              ]
+            },
+            {
+              "name": "GradeUpTaskList",
+              "displayName": "Task list",
+              "description": "Everything due, in one list",
+              "contentMarginsDisabled": true,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "systemLarge"
+              ]
             }
           ]
         }

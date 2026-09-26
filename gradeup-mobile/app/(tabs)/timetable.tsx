@@ -835,6 +835,16 @@ export default function TimetableScreen() {
               style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
               onPress={() => {
                 setMenuOpen(false);
+                router.push('/lock-wallpaper' as any);
+              }}
+            >
+              <Feather name="lock" size={18} color={theme.primary} />
+              <Text style={[s.menuItemText, { color: theme.text }]}>Lock screen wallpaper</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
+              onPress={() => {
+                setMenuOpen(false);
                 router.push('/campus-map' as any);
               }}
             >

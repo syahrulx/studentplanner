@@ -30,6 +30,28 @@ export type HomeWidgetClassRow = {
   location: string;
 };
 
+/**
+ * One day in the week strip.
+ *
+ * The widget only ever had today's classes, which is enough for a "what's
+ * next" card but not for the week-at-a-glance strip students asked for. Seven
+ * of these carry the whole week at a cost of a few bytes each — codes are
+ * short and capped, because a lock-screen widget has room for about four
+ * characters per column.
+ */
+export type HomeWidgetWeekDay = {
+  /** 'M', 'T', 'W'… — the initial the strip prints above the date. */
+  initial: string;
+  /** Day of the month, 1-31. */
+  date: number;
+  /** ISO date, so the widget can mark today without re-deriving the week. */
+  dateISO: string;
+  /** How many classes that day, including any not listed in `codes`. */
+  count: number;
+  /** Subject codes for the day, soonest first, capped for space. */
+  codes: string[];
+};
+
 /** Snapshot of app theme colors for home-screen widgets (matches Profile → App theme). */
 export type HomeWidgetTheme = {
   themeId: ThemeId;
@@ -76,6 +98,8 @@ export type HomeWidgetProps = {
   signedIn: boolean;
   tasks: HomeWidgetTaskRow[];
   classes: HomeWidgetClassRow[];
+  /** Monday-first week containing `dateISO`. Absent on the signed-out fallback. */
+  week?: HomeWidgetWeekDay[];
   spiderWebImageUri?: string;
   theme: HomeWidgetTheme;
   /** Absent when nothing is broken down, or every step is done. */
@@ -155,7 +179,9 @@ export function buildHomeWidgetProps(input: {
   recommendationFeedback?: RecommendationFeedback[];
 }): HomeWidgetProps {
   const todayISO = input.todayISO ?? getTodayISO();
-  const maxTasks = input.maxTasks ?? 5;
+  // Eight is what the tall Task list widget fits; every other widget slices
+  // the same array down to what its own size allows.
+  const maxTasks = input.maxTasks ?? 8;
   const maxClasses = input.maxClasses ?? 6;
   const theme = homeWidgetThemeFromId(input.themeId, input.themePack, input.spiderBlueAccents ?? true, input.customThemeColors);
 
@@ -216,6 +242,30 @@ export function buildHomeWidgetProps(input: {
     location: (e.location || '').trim().slice(0, 24),
   }));
 
+  // ── Week strip: Monday-first, the week that contains today ──
+  const todayDate = new Date(`${todayISO}T12:00:00`);
+  const monday = new Date(todayDate);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+
+  const week: HomeWidgetWeekDay[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const dayName = JS_TO_DAY[d.getDay()];
+    const forDay = input.timetable
+      .filter((e) => e.day === dayName)
+      .sort((a, b) => timeSortKey(a.startTime) - timeSortKey(b.startTime));
+    return {
+      initial: dayName.charAt(0),
+      date: d.getDate(),
+      dateISO: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      count: forDay.length,
+      // Six is what a seventh of the large widget fits — the biggest frame that
+      // lists codes. Smaller frames slice this down; the count above always
+      // reports every class, so nothing is silently lost.
+      codes: forDay.slice(0, 6).map((e) => (e.subjectCode || '').trim().slice(0, 8)).filter(Boolean),
+    };
+  });
+
   const rawName = (input.userName || '').trim();
   const first = rawName.split(/\s+/)[0] || 'there';
   const greeting = `Hi, ${first}`;
@@ -226,6 +276,7 @@ export function buildHomeWidgetProps(input: {
     signedIn: true,
     tasks,
     classes,
+    week,
     spiderWebImageUri: input.spiderWebImageUri,
     theme,
     breakdown: buildWidgetBreakdown(input.tasks, todayISO),
