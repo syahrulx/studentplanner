@@ -36,6 +36,7 @@ import {
   collectLockScreenTasks,
   lockScreenA11ySummary,
   lockScreenEmptyTitle,
+  lockScreenNextLine,
   lockScreenRenderDates,
   lockScreenSignature,
   type LockScreenModelInput,
@@ -61,7 +62,7 @@ const TIMETABLE: TimetableEntry[] = [
   entry('c-mat', 'Tuesday', 'MAT210', '2:00 PM', '4:00 PM', { location: 'BK-3', group: '2' }),
   entry('c-csc', 'Tuesday', 'CSC301', '08:00:00', '10:00:00', { location: '-', group: 'CS2305A' }),
   entry('c-eng', 'Wednesday', 'ENG101', '10:00', '12:00', { displayName: 'English' }),
-  entry('c-bio', 'Monday', 'BIO110', '09:00', '11:00'),
+  entry('c-bio', 'Monday', 'BIO110', '09:00', '11:00', { location: 'BK2' }),
 ];
 
 const COMPLETIONS = new Set(['rec-done:2026-09-29']);
@@ -184,7 +185,10 @@ function testDayRows(): void {
 
   const thu = buildLockScreenDayModel(input, '2026-10-01');
   assert.deepEqual(thu.classes, []);
-  assert.deepEqual(thu.next, { dayShort: 'Mon', time: '9:00 AM', label: 'BIO110' });
+  assert.deepEqual(thu.next, { dayShort: 'Mon', time: '9:00 AM', label: 'BIO110', room: 'BK2' });
+  // A day with no classes still shows a room, on the Next line, when rooms are on.
+  assert.equal(lockScreenNextLine(thu.next!, T, false), 'Next: Mon 9:00 AM · BIO110');
+  assert.equal(lockScreenNextLine(thu.next!, T, true), 'Next: Mon 9:00 AM · BIO110 · BK2');
   assert.equal(lockScreenEmptyTitle(thu, T), 'All clear');
   assert.equal(lockScreenEmptyTitle(buildLockScreenDayModel(input, '2026-10-03'), T), 'Free day. Recharge.');
 
@@ -300,7 +304,7 @@ function testPublishedPeriods(): void {
   assert.equal(after.classes.length, 2);
   // "Next class" skips the break instead of promising a class during it.
   assert.equal(on('2027-02-10').next, null);
-  assert.deepEqual(on('2026-12-24').next, { dayShort: 'Mon', time: '9:00 AM', label: 'BIO110' });
+  assert.deepEqual(on('2026-12-24').next, { dayShort: 'Mon', time: '9:00 AM', label: 'BIO110', room: 'BK2' });
 }
 
 function testFallback(): void {

@@ -20,7 +20,7 @@ import {
   fmtTimeInline,
   type LockTranslate,
 } from '@/src/lib/lockScreen/lockScreenFormat';
-import { lockScreenEmptyTitle } from '@/src/lib/lockScreen/lockScreenModel';
+import { lockScreenEmptyTitle, lockScreenNextLine } from '@/src/lib/lockScreen/lockScreenModel';
 import type { LockInk } from '@/src/lib/lockScreen/lockScreenPalette';
 import type {
   LockClassRow,
@@ -503,14 +503,10 @@ export function WeekStrip({
 // ─── Week summary ────────────────────────────────────────────────────────────
 
 /** "No classes today · Next: Wed 8:00 AM · CSC301", or the break week's name. */
-function noClassesLine(source: LockScreenDayModel, T: LockTranslate): string {
+function noClassesLine(source: LockScreenDayModel, T: LockTranslate, showRoom: boolean): string {
   const title = source.noClassesPeriod ? lockScreenEmptyTitle(source, T) : T('lsNoClasses');
   if (!source.next) return title;
-  const next = T('lsNextLine')
-    .replace('{day}', source.next.dayShort)
-    .replace('{time}', source.next.time)
-    .replace('{subject}', source.next.label);
-  return `${title} · ${next}`;
+  return `${title} · ${lockScreenNextLine(source.next, T, showRoom)}`;
 }
 
 function SummaryLine({
@@ -549,7 +545,7 @@ function LinesSummary({ source, config, ink, s, T }: LockTemplateProps) {
       .replace('{subject}', first.label);
     if (config.show.rooms && first.room) classLine += ` · ${first.room}`;
   } else {
-    classLine = noClassesLine(source, T);
+    classLine = noClassesLine(source, T, config.show.rooms);
   }
 
   let taskLine = T('lsNothingDue');
@@ -689,7 +685,7 @@ function RowsSummary({ fit, source, config, ink, s, T }: LockTemplateProps) {
       ) : (
         <SummaryLine
           marker={<LockDot size={8 * s} color={ink.text3} style={{ marginRight: 6 * s }} />}
-          text={noClassesLine(source, T)}
+          text={noClassesLine(source, T, config.show.rooms)}
           weight="700"
           color={ink.text1}
           s={s}

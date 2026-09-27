@@ -314,6 +314,7 @@ function nextClassAfter(input: LockScreenModelInput, derived: Derived, dateISO: 
         dayShort: dayShortName(weekday, input.T),
         time: fmtTimeInline(first.start, input.uses24h, input.T),
         label: first.label,
+        room: first.room,
       };
     }
   }
@@ -528,6 +529,19 @@ function sentenceCase(text: string): string {
 }
 
 /**
+ * "Next: Mon 8:00 AM · CSC301", plus the room when rooms are shown. On a day
+ * with no classes this is the only line a room can appear in, so without it
+ * the Rooms switch would seem to do nothing on weekends.
+ */
+export function lockScreenNextLine(next: LockNextClass, T: LockTranslate, showRoom: boolean): string {
+  const line = lsText(T, 'lsNextLine', 'Next: {day} {time} · {subject}')
+    .replace('{day}', next.dayShort)
+    .replace('{time}', next.time)
+    .replace('{subject}', next.label);
+  return showRoom && next.room ? `${line} · ${next.room}` : line;
+}
+
+/**
  * The empty-block title for a day with no classes, in the Today template's
  * order: the break name, then "Free day" on a weekend or "All clear" on a
  * weekday when nothing is due either, otherwise "No classes today".
@@ -587,14 +601,7 @@ export function lockScreenA11ySummary(model: LockScreenDayModel, T: (k: Translat
     parts.push(line);
   } else {
     parts.push(lockScreenEmptyTitle(model, T));
-    if (model.next) {
-      parts.push(
-        lsText(T, 'lsNextLine', 'Next: {day} {time} · {subject}')
-          .replace('{day}', model.next.dayShort)
-          .replace('{time}', model.next.time)
-          .replace('{subject}', model.next.label),
-      );
-    }
+    if (model.next) parts.push(lockScreenNextLine(model.next, T, false));
   }
 
   if (model.tasks.length > 0) {

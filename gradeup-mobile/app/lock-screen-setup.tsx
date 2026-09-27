@@ -66,8 +66,10 @@ import {
   LOCK_SHORTCUT_HAS_TRIGGERS,
   LOCK_SHORTCUT_NAME,
   iosMajorVersion,
+  lockScreenAutomationLinks,
   lockScreenShortcutLink,
   openAutomationCreation,
+  openLockAutomationInstall,
   openLockShortcutInstall,
   runLockScreenShortcut,
   type LockRunOutcome,
@@ -117,7 +119,10 @@ const SLOW_RUN_MS = 8000;
 const COPIED_MS = 1500;
 const SHORTCUTS_ERROR_MAX = 120;
 
-const MANUAL_STEPS = ['lsManual1', 'lsManual2', 'lsManual3', 'lsManual4', 'lsManual5'] as const;
+// "Get Wallpaper" (Current) feeds Set Wallpaper Photo so the shortcut changes
+// whichever lock screen is active. Picking "Wallpaper 10" instead would pin
+// the builder's own wallpaper index, which another phone doesn't have.
+const MANUAL_STEPS = ['lsManual1', 'lsManual2', 'lsManual3', 'lsManual3b', 'lsManual4', 'lsManual5'] as const;
 
 const ICONS = {
   add: { sf: 'plus.square.on.square', feather: 'plus-square' },
@@ -571,6 +576,10 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
     entry.stale ? (readLockScreenStatus()?.lastServedAt ?? getLockScreenSetupSnapshot().completedAt) : null,
   );
   const [link, setLink] = useState<ShortcutLink>(UNPUBLISHED_LINK);
+  const [automationLinks, setAutomationLinks] = useState<Record<LockRecipe, ShortcutLink>>({
+    morning: UNPUBLISHED_LINK,
+    close: UNPUBLISHED_LINK,
+  });
   const [manualReturned, setManualReturned] = useState(false);
   const [installFailed, setInstallFailed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -598,6 +607,8 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
   stepRef.current = activeStep;
   const linkRef = useRef(link);
   linkRef.current = link;
+  const automationLinksRef = useRef(automationLinks);
+  automationLinksRef.current = automationLinks;
 
   // ─── Timers ────────────────────────────────────────────────────────────────
 
@@ -653,6 +664,22 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
       fetched = true;
       if (alive) setLink(current);
     });
+
+    // Only iOS 27 imports a shortcut's trigger, so only it gets the automation links.
+    if (iosMajorVersion() >= 27) {
+      (['morning', 'close'] as const).forEach((kind) => {
+        let fetchedOne = false;
+        const apply = (value: ShortcutLink) =>
+          setAutomationLinks((prev) => (prev[kind].url === value.url ? prev : { ...prev, [kind]: value }));
+        void lockScreenAutomationLinks[kind].getCached().then((cached) => {
+          if (alive && !fetchedOne) apply(cached);
+        });
+        void lockScreenAutomationLinks[kind].fetch().then((current) => {
+          fetchedOne = true;
+          if (alive) apply(current);
+        });
+      });
+    }
     return () => {
       alive = false;
     };
@@ -791,6 +818,18 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
   useEffect(() => {
     if (activeStep === 3 && setupLoaded) void checkAutomation();
   }, [activeStep, setupLoaded, checkAutomation]);
+
+  const installAutomation = useCallback((kind: LockRecipe) => {
+    setupHaptic('light');
+    setAutomationOpenFailed(false);
+    setAutomationVisited(true);
+    awaitingRef.current = 'automation';
+    void openLockAutomationInstall(automationLinksRef.current[kind]).then((opened) => {
+      if (opened) return;
+      awaitingRef.current = null;
+      if (mountedRef.current) setAutomationOpenFailed(true);
+    });
+  }, []);
 
   const openAutomations = useCallback(() => {
     setupHaptic('light');
@@ -1049,6 +1088,10 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
     );
   };
 
+  // iOS 27 with both links published: one tap per automation instead of building them.
+  const automationLinksShown =
+    iosVersion >= 27 && automationLinks.morning.isPublished && automationLinks.close.isPublished;
+
   // Once the student has been to Shortcuts, "I've set it up" becomes the obvious next tap.
   const stepThreeBody = autoConfirmed ? (
     <View style={styles.success}>
@@ -1066,7 +1109,25 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
         </View>
       ) : null}
       <Text style={styles.body}>{T('lsStep3Body')}</Text>
-      {iosVersion >= 27 ? (
+      {automationLinksShown ? (
+        <View style={styles.subCard}>
+          <Text style={styles.subCardTitle}>{T('lsIos27LinksTitle')}</Text>
+          <Text style={styles.subCardBody}>{T('lsIos27LinksBody')}</Text>
+          <SetupButton
+            {...btn}
+            label={T('lsGetMorningAuto')}
+            icon={ICONS.morning}
+            onPress={() => installAutomation('morning')}
+          />
+          <SetupButton
+            {...btn}
+            label={T('lsGetCloseAuto')}
+            icon={ICONS.close}
+            variant="tonal"
+            onPress={() => installAutomation('close')}
+          />
+        </View>
+      ) : iosVersion >= 27 ? (
         <View style={styles.subCard}>
           <Text style={styles.subCardTitle}>{T('lsIos27Title')}</Text>
           <Text style={styles.subCardBody}>{T(LOCK_SHORTCUT_HAS_TRIGGERS ? 'lsIos27BodyBuiltIn' : 'lsIos27Body')}</Text>
@@ -1081,7 +1142,7 @@ function SetupSheet({ unavailable }: { unavailable: boolean }) {
         {...btn}
         label={T(iosVersion >= 27 ? 'lsOpenShortcutIos27' : 'lsOpenAutomations')}
         icon={ICONS.openApp}
-        variant={automationVisited ? 'tonal' : 'primary'}
+        variant={automationVisited || automationLinksShown ? 'tonal' : 'primary'}
         onPress={openAutomations}
       />
       {automationOpenFailed ? <NoShortcutsNotice T={T} /> : null}

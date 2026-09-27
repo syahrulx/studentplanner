@@ -259,7 +259,12 @@ function fallback(chips: number): LockScreenDayModel {
   // Rooms: 44s rows only when rooms are on and the day has one.
   const withRoom = day({ classes: 3, room: 'DK1' });
   assert.equal(fitModel(withRoom, config({ show: { tasks: true, rooms: true, weekNo: true } }), H, 1).panelH, 84 + 3 * 44);
-  assert.equal(fitModel(withRoom, config(), H, 1).panelH, 84 + 3 * 36, 'rooms off keeps 36s rows');
+  assert.equal(
+    fitModel(withRoom, config({ show: { tasks: true, rooms: false, weekNo: true } }), H, 1).panelH,
+    84 + 3 * 36,
+    'rooms off keeps 36s rows',
+  );
+  assert.equal(config().show.rooms, true, 'rooms are on by default');
   const roomless = fitModel(day({ classes: 3 }), config({ show: { tasks: true, rooms: true, weekNo: true } }), H, 1);
   assert.equal(roomless.roomRows, false);
 }

@@ -30,7 +30,7 @@ export type LockDim = 0 | 1 | 2;
 
 export interface LockShowOptions {
   tasks: boolean;
-  /** Off by default: a lock screen is readable while locked. */
+  /** On by default; the Show tab warns that a lock screen is readable while locked. */
   rooms: boolean;
   weekNo: boolean;
 }
@@ -61,7 +61,7 @@ export const DEFAULT_LOCK_SCREEN_CONFIG: LockScreenConfig = {
   top: 'standard',
   topFrac: null,
   size: 'medium',
-  show: { tasks: true, rooms: false, weekNo: true },
+  show: { tasks: true, rooms: true, weekNo: true },
   autoRefresh: false,
 };
 
@@ -149,6 +149,7 @@ export interface LockNextClass {
   /** Formatted time. */
   time: string;
   label: string;
+  room: string | null;
 }
 
 export interface LockScreenDayModel {

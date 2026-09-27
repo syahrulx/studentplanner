@@ -49,6 +49,23 @@ export const lockScreenShortcutLink = createShortcutLinkSource(
   'lock_screen_shortcut_url',
 );
 
+/**
+ * iOS 27 only: the two automations, shared as shortcuts that start with their
+ * trigger ("Rencana Pagi" at 6:00 AM, "Rencana Bila Tutup" when Rencana is
+ * closed) and run "Rencana Lock Screen" by name. Triggers arrive switched off,
+ * so the student still turns each one on. Older iOS keeps automations outside
+ * shortcuts, so it gets the build-it-yourself recipes instead.
+ */
+export const lockScreenAutomationLinks = {
+  morning: createShortcutLinkSource('lock_screen_morning_shortcut_url', 'lock_screen_morning_shortcut_url'),
+  close: createShortcutLinkSource('lock_screen_close_shortcut_url', 'lock_screen_close_shortcut_url'),
+} as const;
+
+/** Opens an automation's iCloud link, or the Shortcuts app if the link is gone. */
+export async function openLockAutomationInstall(link: ShortcutLink): Promise<boolean> {
+  return openFirst(link.isPublished ? [link.url, SHORTCUTS_APP_URL] : [SHORTCUTS_APP_URL]);
+}
+
 /** 0 off iOS, so version checks never mistake an Android API level for an iOS release. */
 export function iosMajorVersion(): number {
   if (Platform.OS !== 'ios') return 0;
@@ -103,14 +120,9 @@ export async function openShortcutsForManualBuild(): Promise<boolean> {
 }
 
 export async function openAutomationCreation(): Promise<boolean> {
-  // iOS 27 moved automations into the shortcut itself as triggers, so the
-  // place to add one is the shortcut.
-  if (iosMajorVersion() >= 27) {
-    return openFirst([
-      `shortcuts://open-shortcut?name=${encodeURIComponent(LOCK_SHORTCUT_NAME)}`,
-      SHORTCUTS_APP_URL,
-    ]);
-  }
+  // iOS 27 builds an automation as a new shortcut that starts with a trigger.
+  // There is no documented URL for that screen, so open the app itself.
+  if (iosMajorVersion() >= 27) return openFirst([SHORTCUTS_APP_URL]);
   // Undocumented and argument-free: it only jumps to the creation screen.
   return openFirst(['shortcuts://create-automation', SHORTCUTS_APP_URL]);
 }
