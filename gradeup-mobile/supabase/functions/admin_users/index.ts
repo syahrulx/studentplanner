@@ -59,6 +59,7 @@ serve(async (req) => {
     if (action === 'list') {
       const q = String(payload.query || '').trim();
       const universityId = String(payload.universityId || '').trim();
+      const country = String(payload.country || '').trim();
       const plan = String(payload.plan || 'all').trim();
       const status = String(payload.status || 'all').trim();
       const dateFrom = String(payload.dateFrom || '').trim();
@@ -66,39 +67,26 @@ serve(async (req) => {
       const sort = String(payload.sort || 'newest').trim();
       const limit = Math.max(1, Math.min(200, Number(payload.limit || 50)));
       const offset = Math.max(0, Number(payload.offset || 0));
-      const sortColumn = sort === 'name_az' || sort === 'name_za' ? 'name' : 'created_at';
-      const ascending = sort === 'oldest' || sort === 'name_az';
 
-      let query = admin
-        .from('profiles')
-        .select('id,name,student_id,university_id,country,device_platform,created_at,status,updated_at,subscription_plan,subscription_status,subscription_period_type,subscription_product_id,subscription_expires_at,subscription_store,subscription_environment,subscription_price,subscription_currency,subscription_updated_at,ai_token_limit_override', { count: 'exact' })
-        .order(sortColumn, { ascending, nullsFirst: false })
-        .range(offset, offset + limit - 1);
-
-      if (universityId) query = query.eq('university_id', universityId);
-      if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
-      if (['active', 'disabled', 'banned'].includes(status)) query = query.eq('status', status);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) query = query.gte('created_at', `${dateFrom}T00:00:00.000Z`);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
-      if (q) {
-        // Strip PostgREST `or(...)` control chars so users can't break out of
-        // the grouped filter and inject additional clauses.
-        const safe = q.replace(/[,():*\\%]/g, ' ').trim();
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(safe)) {
-          query = query.eq('id', safe.toLowerCase());
-        } else if (/^[0-9a-f]{8}$/i.test(safe)) {
-          const prefix = safe.toLowerCase();
-          query = query
-            .gte('id', `${prefix}-0000-0000-0000-000000000000`)
-            .lte('id', `${prefix}-ffff-ffff-ffff-ffffffffffff`);
-        } else if (safe) {
-          query = query.or(`name.ilike.%${safe}%,student_id.ilike.%${safe}%`);
-        }
-      }
-
-      const { data, count, error: e } = await query;
+      // Search and filtering live in admin_search_users so the browser path and
+      // this one behave identically, and so email (auth.users) is searchable.
+      const { data, error: e } = await admin.rpc('admin_search_users', {
+        p_query: q || null,
+        p_university: universityId || null,
+        p_country: country || null,
+        p_plan: ['free', 'plus', 'pro'].includes(plan) ? plan : 'all',
+        p_status: ['active', 'disabled', 'banned'].includes(status) ? status : 'all',
+        p_from: /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? `${dateFrom}T00:00:00.000Z` : null,
+        p_to: /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? `${dateTo}T23:59:59.999Z` : null,
+        p_sort: ['newest', 'oldest', 'name_az', 'name_za'].includes(sort) ? sort : 'newest',
+        p_limit: limit,
+        p_offset: offset,
+      });
       if (e) return J(400, { error: e.message });
-      return J(200, { items: data ?? [], count: count ?? 0, offset, limit });
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      const count = rows.length ? Number(rows[0]?.total_count ?? rows.length) : 0;
+      const items = rows.map(({ total_count: _total, ...row }) => row);
+      return J(200, { items, count: Number.isFinite(count) ? count : rows.length, offset, limit });
     }
 
     if (action === 'set_status') {

@@ -24,6 +24,18 @@ function toError(err: unknown): Error {
   return new Error(typeof err === 'string' ? err : JSON.stringify(err));
 }
 
+/**
+ * True when the database has not been migrated yet and the RPC simply is not
+ * there. PostgREST answers PGRST202 for an unknown function, Postgres 42883
+ * for an undefined one. Anything else is a real failure and must surface.
+ */
+function isMissingDatabaseFunction(err: unknown): boolean {
+  const anyErr = err as { code?: string; message?: string } | null;
+  const code = anyErr?.code ?? '';
+  const message = anyErr?.message ?? '';
+  return code === 'PGRST202' || code === '42883' || /could not find the function|does not exist/i.test(message);
+}
+
 function normaliseDataIdentity(value: unknown): string {
   return String(value ?? '')
     .normalize('NFKC')
@@ -307,6 +319,7 @@ export function normalizeSubscriptionPlan(raw: string | null | undefined): Subsc
 
 export type AdminUserRow = {
   id: string;
+  email: string | null;
   name: string | null;
   student_id: string | null;
   university_id: string | null;
@@ -331,6 +344,7 @@ export type AdminUserRow = {
 function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
   return (rows as Array<
     Partial<AdminUserRow> & {
+      email?: string | null;
       subscription_plan?: string | null;
       subscription_status?: string | null;
       subscription_price?: number | string | null;
@@ -352,6 +366,7 @@ function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
           : Number(rawOverride);
     return {
       id: String(r.id ?? ''),
+      email: typeof r.email === 'string' && r.email.trim() ? r.email.trim() : null,
       name: r.name ?? null,
       student_id: r.student_id ?? null,
       university_id: r.university_id ?? null,
@@ -385,6 +400,7 @@ function mapAdminUserRows(rows: unknown[]): AdminUserRow[] {
 export async function listUsers(opts: {
   query?: string;
   universityId?: string;
+  country?: string;
   plan?: 'all' | SubscriptionPlan;
   status?: 'all' | AdminUserRow['status'];
   dateFrom?: string;
@@ -399,6 +415,35 @@ export async function listUsers(opts: {
     const plan = opts.plan ?? 'all';
     const status = opts.status ?? 'all';
     const sort = opts.sort ?? 'newest';
+    const country = (opts.country ?? '').trim();
+
+    // Email lives in auth.users, which the browser client cannot read, so the
+    // search runs inside an admin-only function. Deployments that have not run
+    // the migration yet fall through to the direct profiles query below.
+    const rpc = await supabase.rpc('admin_search_users', {
+      p_query: (opts.query ?? '').trim() || null,
+      p_university: (opts.universityId ?? '').trim() || null,
+      p_country: country || null,
+      p_plan: plan,
+      p_status: status,
+      p_from: opts.dateFrom ? `${opts.dateFrom}T00:00:00.000Z` : null,
+      p_to: opts.dateTo ? `${opts.dateTo}T23:59:59.999Z` : null,
+      p_sort: sort,
+      p_limit: limit,
+      p_offset: offset,
+    });
+    if (!rpc.error) {
+      const rows = (rpc.data ?? []) as Array<Record<string, unknown>>;
+      const total = rows.length ? Number(rows[0]?.total_count ?? rows.length) : 0;
+      return {
+        items: mapAdminUserRows(rows),
+        count: Number.isFinite(total) ? total : rows.length,
+        offset,
+        limit,
+      };
+    }
+    if (!isMissingDatabaseFunction(rpc.error)) throw toError(rpc.error);
+
     const sortColumn = sort === 'name_az' || sort === 'name_za' ? 'name' : 'created_at';
     const ascending = sort === 'oldest' || sort === 'name_az';
     let query = supabase
@@ -412,6 +457,7 @@ export async function listUsers(opts: {
     const q = (opts.query ?? '').trim();
     const universityId = (opts.universityId ?? '').trim();
     if (universityId) query = query.eq('university_id', universityId);
+    if (country) query = query.eq('country', country.toUpperCase());
     if (plan === 'free' || plan === 'plus' || plan === 'pro') query = query.eq('subscription_plan', plan);
     if (status !== 'all') query = query.eq('status', status);
     if (opts.dateFrom) query = query.gte('created_at', `${opts.dateFrom}T00:00:00.000Z`);
@@ -445,6 +491,27 @@ export async function listUsers(opts: {
   const { data, error } = await invokeEdgeFunction('admin_users', { action: 'list', ...opts }, headers);
   const res = unwrapFunctionData<{ items: AdminUserRow[]; count: number; offset: number; limit: number }>(data, error);
   return { ...res, items: mapAdminUserRows(res.items as unknown[]) };
+}
+
+export type AdminUserCountry = { country: string; userCount: number };
+
+/**
+ * Countries that actually have users, for the Users filter. Returns an empty
+ * list on a database that has not run the migration yet, so the panel just
+ * falls back to a free-text country box.
+ */
+export async function listUserCountries(): Promise<AdminUserCountry[]> {
+  const { data, error } = await supabase.rpc('admin_user_countries');
+  if (error) {
+    if (isMissingDatabaseFunction(error)) return [];
+    throw toError(error);
+  }
+  return ((data ?? []) as Array<{ country?: string | null; user_count?: number | string | null }>)
+    .map((r) => ({
+      country: String(r.country ?? '').trim().toUpperCase(),
+      userCount: Number(r.user_count ?? 0) || 0,
+    }))
+    .filter((r) => r.country.length > 0);
 }
 
 export async function setUserStatus(userId: string, status: AdminUserRow['status'], reason?: string) {

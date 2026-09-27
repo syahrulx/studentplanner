@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   deleteUser,
   listAiUsageForUsers,
+  listUserCountries,
   listUsers,
   MONTHLY_TOKEN_LIMITS,
   resetUserMonthlyTokens,
@@ -10,6 +11,7 @@ import {
   setUserStatus,
   setUserSubscriptionPlan,
   setUserTokenLimit,
+  type AdminUserCountry,
   type AdminUserRow,
   type SubscriptionPlan,
 } from '../lib/api';
@@ -96,6 +98,7 @@ function UserRowDetailPanel({
 
   const fields: Array<{ label: string; value: string }> = [
     { label: 'User ID', value: u.id },
+    { label: 'Email', value: u.email?.trim() || '—' },
     { label: 'Display name', value: u.name?.trim() || '—' },
     { label: 'Student ID', value: u.student_id?.trim() || '—' },
     { label: 'University', value: u.university_id?.trim() || '—' },
@@ -567,6 +570,8 @@ export function UsersRoute() {
   const { searchQuery } = useAdminSearch();
   const [query, setQuery] = useState('');
   const [universityId, setUniversityId] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
+  const [countries, setCountries] = useState<AdminUserCountry[]>([]);
   const [planFilter, setPlanFilter] = useState<'all' | SubscriptionPlan>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | AdminUserRow['status']>('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -610,6 +615,7 @@ export function UsersRoute() {
       const baseArgs = {
         query: query.trim() || undefined,
         universityId: universityId.trim() || undefined,
+        country: countryFilter.trim() || undefined,
         plan: planFilter,
         status: statusFilter,
         dateFrom: dateFrom || undefined,
@@ -630,6 +636,11 @@ export function UsersRoute() {
 
   useEffect(() => {
     void refresh(0);
+    // The list is admin-only and tiny; an empty result just means the database
+    // has not been migrated yet, and the filter stays hidden.
+    void listUserCountries()
+      .then(setCountries)
+      .catch((e) => console.warn('Failed to load country list:', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -640,7 +651,7 @@ export function UsersRoute() {
     }
     void refresh(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowLimit]);
+  }, [rowLimit, countryFilter]);
 
   const filteredRows = useMemo(() => {
     if (!searchQuery.trim()) return items;
@@ -648,6 +659,7 @@ export function UsersRoute() {
       matchesAdminSearch(
         searchQuery,
         u.id,
+        u.email,
         u.name,
         u.student_id,
         u.university_id,
@@ -689,7 +701,7 @@ export function UsersRoute() {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Name, Student ID or User ID"
+                    placeholder="Email, name, student ID or user ID"
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </label>
@@ -704,6 +716,24 @@ export function UsersRoute() {
                     placeholder="e.g. uitm"
                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                   />
+                </label>
+
+                <label className="block lg:w-48">
+                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                    Country
+                  </div>
+                  <select
+                    value={countryFilter}
+                    onChange={(e) => setCountryFilter(e.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="">All countries</option>
+                    {countries.map((c) => (
+                      <option key={c.country} value={c.country}>
+                        {formatCountry(c.country)} ({c.userCount.toLocaleString()})
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="block lg:w-36">
@@ -786,7 +816,7 @@ export function UsersRoute() {
                 <table className="w-full min-w-[1080px]">
                   <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
                     <tr>
-                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Name &amp; email</th>
                       <th className="px-4 py-3">Student ID</th>
                       <th className="px-4 py-3">University</th>
                       <th className="px-4 py-3">Country</th>
@@ -846,7 +876,10 @@ export function UsersRoute() {
                               </span>
                               <div>
                                 <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</div>
-                                <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                <div className="mt-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300" title={u.email ?? undefined}>
+                                  {u.email || '—'}
+                                </div>
+                                <div className="mt-0.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
                                   {u.id.slice(0, 8)}
                                 </div>
                               </div>
