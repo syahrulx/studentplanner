@@ -83,6 +83,47 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+const verifiedServiceTokens = new Set<string>();
+
+/** True for a legacy JWT whose payload claims role service_role. Signature is not checked here. */
+function claimsServiceRole(token: string): boolean {
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))).role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The trigger path sends whatever key is stored in Vault, and that has drifted
+ * from this function's SUPABASE_SERVICE_ROLE_KEY more than once (2026-09-08,
+ * 2026-09-27) — each time every trigger push died with a 401 nobody saw.
+ *
+ * An exact match is accepted as before. Anything else shaped like a service key
+ * is accepted only if the Auth admin API, which requires a service-level key,
+ * accepts it too. Verified tokens are cached per isolate so that check runs
+ * once, not once per push.
+ */
+async function isServiceCredential(token: string, supabaseUrl: string, serviceKey: string): Promise<boolean> {
+  if (!token) return false;
+  if (token === serviceKey || verifiedServiceTokens.has(token)) return true;
+  if (!token.startsWith('sb_secret_') && !claimsServiceRole(token)) return false;
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
+      headers: { apikey: token, Authorization: `Bearer ${token}` },
+    });
+    await res.body?.cancel();
+    if (!res.ok) return false;
+  } catch {
+    return false;
+  }
+  verifiedServiceTokens.add(token);
+  return true;
+}
+
 async function fetchProfilesByIds(
   admin: ReturnType<typeof createClient>,
   ids: string[],
@@ -126,7 +167,8 @@ serve(async (req: Request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
   const authorization = req.headers.get('authorization') ?? '';
-  if (authorization !== `Bearer ${serviceKey}`) {
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!(await isServiceCredential(token, supabaseUrl, serviceKey))) {
     return json(401, { error: 'service_role_required' });
   }
 
