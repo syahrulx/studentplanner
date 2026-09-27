@@ -1,0 +1,28 @@
+diff --git a/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/core/NativeViewGestureHandler.kt b/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/core/NativeViewGestureHandler.kt
+index 8329224..c3a99be 100644
+--- a/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/core/NativeViewGestureHandler.kt
++++ b/node_modules/react-native-gesture-handler/android/src/main/java/com/swmansion/gesturehandler/core/NativeViewGestureHandler.kt
+@@ -249,7 +249,22 @@ class NativeViewGestureHandler : GestureHandler() {
+     /**
+      * Passes the event down to the underlying view using the correct method.
+      */
+-    fun sendTouchEvent(view: View?, event: MotionEvent) = view?.onTouchEvent(event)
++    fun sendTouchEvent(view: View?, event: MotionEvent) = try {
++      view?.onTouchEvent(event)
++    } catch (e: IllegalArgumentException) {
++      // Android's ScrollView follows one pointer, recorded in mActivePointerId
++      // when it sees ACTION_DOWN. This handler withholds events until it
++      // activates, so a ScrollView can first hear about a gesture halfway
++      // through and never receive that ACTION_DOWN. When a second finger then
++      // lifts, ScrollView.onTouchEvent calls
++      // getY(findPointerIndex(mActivePointerId)), gets -1 back and throws,
++      // taking the whole app down on a two-finger touch on any scrolling list.
++      //
++      // Dropping the event costs one stuttered touch. Not dropping it kills
++      // the process, so swallow it. Narrow on purpose: only the framework's
++      // own IllegalArgumentException, not Throwable.
++      null
++    }
+   }
+ 
+   private class TextViewHook : NativeViewGestureHandlerHook {
