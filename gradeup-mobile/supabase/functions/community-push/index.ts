@@ -9,7 +9,7 @@
 //     "recipientUserIds": ["<uuid>", ...],
 //     "title": "string",
 //     "body":  "string",
-//     "category": "reaction" | "friend" | "circle" | "shared_task" | "quiz" | "goal" | "support",
+//     "category": "reaction" | "friend" | "circle" | "shared_task" | "confession" | "quiz" | "goal" | "support",
 //     "data":   { ...arbitrary JSON forwarded to the client },
 //     "collapseKey": "optional group id — Android collapseId / iOS apns-collapse-id"
 //   }
@@ -24,7 +24,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 
-type Category = 'reaction' | 'friend' | 'circle' | 'shared_task' | 'quiz' | 'goal' | 'support';
+type Category = 'reaction' | 'friend' | 'circle' | 'shared_task' | 'confession' | 'quiz' | 'goal' | 'support';
 
 type PushRequest = {
   recipientUserIds: string[];
@@ -43,6 +43,7 @@ type ProfileRow = {
   push_friend_requests_enabled?: boolean | null;
   push_circle_enabled?: boolean | null;
   push_shared_task_enabled?: boolean | null;
+  push_confession_replies_enabled?: boolean | null;
 };
 
 /** Map a category to the per-category column; reactions cover quiz/goal too by default. */
@@ -55,6 +56,8 @@ function isCategoryEnabled(p: ProfileRow, category?: Category): boolean {
       return p.push_circle_enabled !== false;
     case 'shared_task':
       return p.push_shared_task_enabled !== false;
+    case 'confession':
+      return p.push_confession_replies_enabled !== false;
     case 'support':
       // Support replies are account/service messages. They follow the master
       // push switch but are not incorrectly hidden by the reaction preference.
@@ -91,7 +94,7 @@ async function fetchProfilesByIds(
     const { data, error } = await admin
       .from('profiles')
       .select(
-        'id, expo_push_token, community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled',
+        'id, expo_push_token, community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled, push_confession_replies_enabled',
       )
       .in('id', idBatch);
     if (error) return { data: [], error: error.message };

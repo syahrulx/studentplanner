@@ -6,6 +6,7 @@ export type CommunityPushPrefs = {
   pushFriendRequestsEnabled: boolean;
   pushCircleEnabled: boolean;
   pushSharedTaskEnabled: boolean;
+  pushConfessionRepliesEnabled: boolean;
 };
 
 export const DEFAULT_COMMUNITY_PUSH_PREFS: CommunityPushPrefs = {
@@ -14,6 +15,7 @@ export const DEFAULT_COMMUNITY_PUSH_PREFS: CommunityPushPrefs = {
   pushFriendRequestsEnabled: true,
   pushCircleEnabled: true,
   pushSharedTaskEnabled: true,
+  pushConfessionRepliesEnabled: true,
 };
 
 type ProfileRow = {
@@ -22,6 +24,7 @@ type ProfileRow = {
   push_friend_requests_enabled: boolean | null;
   push_circle_enabled: boolean | null;
   push_shared_task_enabled: boolean | null;
+  push_confession_replies_enabled: boolean | null;
 };
 
 /** Fetch current push prefs for the user, falling back to defaults on any error. */
@@ -30,7 +33,7 @@ export async function getCommunityPushPrefs(userId: string): Promise<CommunityPu
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled',
+        'community_push_enabled, push_reactions_enabled, push_friend_requests_enabled, push_circle_enabled, push_shared_task_enabled, push_confession_replies_enabled',
       )
       .eq('id', userId)
       .maybeSingle();
@@ -43,6 +46,7 @@ export async function getCommunityPushPrefs(userId: string): Promise<CommunityPu
       pushFriendRequestsEnabled: row.push_friend_requests_enabled ?? true,
       pushCircleEnabled: row.push_circle_enabled ?? true,
       pushSharedTaskEnabled: row.push_shared_task_enabled ?? true,
+      pushConfessionRepliesEnabled: row.push_confession_replies_enabled ?? true,
     };
   } catch {
     return DEFAULT_COMMUNITY_PUSH_PREFS;
@@ -60,6 +64,7 @@ export async function updateCommunityPushPrefs(
   if (patch.pushFriendRequestsEnabled !== undefined) payload.push_friend_requests_enabled = patch.pushFriendRequestsEnabled;
   if (patch.pushCircleEnabled !== undefined) payload.push_circle_enabled = patch.pushCircleEnabled;
   if (patch.pushSharedTaskEnabled !== undefined) payload.push_shared_task_enabled = patch.pushSharedTaskEnabled;
+  if (patch.pushConfessionRepliesEnabled !== undefined) payload.push_confession_replies_enabled = patch.pushConfessionRepliesEnabled;
 
   if (Object.keys(payload).length === 0) return true;
 

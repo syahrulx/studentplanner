@@ -88,12 +88,17 @@ export async function createConfession(
   content: string,
   tag?: string | null,
   anonymous: boolean = true,
+  /** Tell the author when someone replies. Server default is true. */
+  notifyReplies: boolean = true,
 ): Promise<Confession> {
   const trimmed = content.trim();
   const { data, error } = await supabase.rpc('create_confession', {
     p_content: trimmed,
     p_tag: tag ?? null,
     p_anonymous: anonymous,
+    // Only sent when off so posting still works against a DB that predates
+    // the p_notify_replies argument.
+    ...(notifyReplies ? {} : { p_notify_replies: false }),
   });
   if (error) throw new Error(toErrorMessage(error));
   const rows = (data ?? []) as Confession[];

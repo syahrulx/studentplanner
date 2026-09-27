@@ -302,7 +302,7 @@ export default function CommunitySettings() {
             <View style={styles.pushBody}>
               <Text style={[styles.pushLabel, { color: theme.text }]}>Community notifications</Text>
               <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
-                Master switch for all community alerts (reactions, friends, circles, shared tasks).
+                Master switch for all community alerts (reactions, friends, circles, shared tasks, confessions).
               </Text>
             </View>
             <Switch
@@ -376,6 +376,23 @@ export default function CommunitySettings() {
             <Switch
               value={pushPrefs.pushSharedTaskEnabled}
               onValueChange={(v) => togglePushPref('pushSharedTaskEnabled', v)}
+              disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
+              trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+              thumbColor={switchThumb}
+              ios_backgroundColor={switchTrackOff}
+            />
+          </View>
+          <View style={styles.dividerList} />
+          <View style={[styles.pushRow, !pushPrefs.communityPushEnabled && { opacity: 0.4 }]}>
+            <View style={styles.pushBody}>
+              <Text style={[styles.pushLabel, { color: theme.text }]}>Confession replies</Text>
+              <Text style={[styles.pushDesc, { color: theme.textSecondary }]}>
+                When someone replies to your confession or your comment on one.
+              </Text>
+            </View>
+            <Switch
+              value={pushPrefs.pushConfessionRepliesEnabled}
+              onValueChange={(v) => togglePushPref('pushConfessionRepliesEnabled', v)}
               disabled={loadingPushPrefs || !pushPrefs.communityPushEnabled}
               trackColor={{ false: switchTrackOff, true: switchTrackOn }}
               thumbColor={switchThumb}

@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +26,7 @@ import { Image } from 'expo-image';
 import { ConfessionShareCard } from '@/src/components/confessions/ConfessionShareCard';
 import { shareExportCanvas } from '@/components/ViewShotCompat';
 
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import * as confessionsApi from '@/src/lib/confessionsApi';
@@ -89,6 +90,10 @@ function FilterRow({ items, activeItem, onSelect, theme, renderLabel, iconFor, l
 
 export default function ConfessionsScreen() {
   const theme = useTheme();
+  const isMonoTheme = useThemePack() === 'mono';
+  const switchTrackOff = isMonoTheme ? '#262626' : theme.border;
+  const switchTrackOn = isMonoTheme ? '#525252' : theme.primary;
+  const switchThumb = isMonoTheme ? '#ffffff' : undefined;
   const insets = useSafeAreaInsets();
   const { user, language } = useApp();
   const T = useTranslations(language);
@@ -146,6 +151,7 @@ export default function ConfessionsScreen() {
   const [draft, setDraft] = useState('');
   const [draftTag, setDraftTag] = useState<string | null>(null);
   const [draftAnon, setDraftAnon] = useState(true);
+  const [draftNotify, setDraftNotify] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   /** Why the server refused this draft — a blocked word, a number, a link. */
   const [postError, setPostError] = useState<string | null>(null);
@@ -241,11 +247,11 @@ export default function ConfessionsScreen() {
     setSubmitting(true);
     setPostError(null);
     try {
-      const created = await confessionsApi.createConfession(text, draftTag, draftAnon);
+      const created = await confessionsApi.createConfession(text, draftTag, draftAnon, draftNotify);
       const campusMatch = selectedCampus === null || created.campus === selectedCampus || created.campus === null;
       const tagMatch = selectedTag === '🔥 All' || created.tag === selectedTag;
       if (campusMatch && tagMatch) setItems((p) => [created, ...p]);
-      setDraft(''); setDraftTag(null); setDraftAnon(true); setComposerOpen(false);
+      setDraft(''); setDraftTag(null); setDraftAnon(true); setDraftNotify(true); setComposerOpen(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (e: any) {
       // Shown in the composer, not in an alert: the filter's messages all say
@@ -577,6 +583,18 @@ export default function ConfessionsScreen() {
                 <Text style={[s.charCount, { color: draft.length > MAX_CONTENT * 0.95 ? theme.danger : theme.textSecondary }]}>{MAX_CONTENT - draft.length}</Text>
               )}
             </View>
+
+            <View style={s.notifyRow}>
+              <Feather name={draftNotify ? 'bell' : 'bell-off'} size={16} color={theme.textSecondary} />
+              <Text style={[s.notifyLabel, { color: theme.text }]} numberOfLines={1}>{T('confessionNotifyReplies')}</Text>
+              <Switch
+                value={draftNotify}
+                onValueChange={(v) => { Haptics.selectionAsync().catch(() => {}); setDraftNotify(v); }}
+                trackColor={{ false: switchTrackOff, true: switchTrackOn }}
+                thumbColor={switchThumb}
+                ios_backgroundColor={switchTrackOff}
+              />
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -665,4 +683,6 @@ const s = StyleSheet.create({
   tagOption: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   tagOptionText: { fontSize: 14, fontWeight: '600' },
   charCount: { fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  notifyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  notifyLabel: { flex: 1, fontSize: 14, fontWeight: '500' },
 });

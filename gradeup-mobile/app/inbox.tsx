@@ -84,6 +84,7 @@ function notifIcon(item: InAppNotification): keyof typeof Feather.glyphMap {
   if (item.category === 'friend' || t === 'friend_request' || t === 'friend_accepted') return 'users';
   if (item.category === 'event' || t === 'event_new') return 'calendar';
   if (t === 'service_chat_message') return 'message-circle';
+  if (t === 'confession_reply') return 'message-square';
   if (t === 'service_offer_new') return 'tag';
   if (t === 'service_offer_accepted' || t === 'service_completed') return 'check-circle';
   if (t === 'service_offer_rejected' || t === 'service_rejected') return 'x-circle';
@@ -245,6 +246,15 @@ export default function InboxScreen() {
       return true;
     } else if (t === 'quiz_invite' && item.data?.sessionId) {
       router.push({ pathname: '/match-lobby', params: { sessionId: String(item.data.sessionId) } } as any);
+      return true;
+    } else if (t === 'confession_reply') {
+      // Same destination as the push tap in app/_layout.tsx.
+      const cid = typeof item.data?.confessionId === 'string' ? item.data.confessionId.trim() : '';
+      router.push(
+        (cid
+          ? { pathname: '/community/confession-detail', params: { confessionId: cid } }
+          : '/community/confessions') as any,
+      );
       return true;
     } else if (
       t === 'reaction' ||
