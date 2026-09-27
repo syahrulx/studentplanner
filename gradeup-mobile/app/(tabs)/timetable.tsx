@@ -15,6 +15,7 @@ import {
   Easing,
   PanResponder,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
@@ -79,6 +80,9 @@ const MONO_PLAYGROUND_SIZE = 56;
 const LANDSCAPE_DAY_ROW_HEIGHT = 100;
 const LANDSCAPE_HOUR_COL_WIDTH = 120;
 const LANDSCAPE_DAY_LABEL_WIDTH = 90;
+
+/** Set by the lock screen Studio on its first mount; until then the menu shows a NEW badge. */
+const LOCK_STUDIO_SEEN_KEY = 'lock_screen_studio_seen_v1';
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -199,6 +203,8 @@ export default function TimetableScreen() {
   const { width: winW, height: winH } = useWindowDimensions();
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
+  // null until read, so the NEW badge never flashes for someone who already opened the Studio.
+  const [lockStudioSeen, setLockStudioSeen] = useState<boolean | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
   const [exportPreset, setExportPreset] = useState<'screen' | 'portrait' | 'landscape'>('portrait');
@@ -222,6 +228,23 @@ export default function TimetableScreen() {
   useEffect(() => {
     getTimetableSlotDetailsVisibility().then(setSlotDetails);
   }, []);
+
+  // The Studio sets the flag on its first mount, so re-check each time the menu
+  // opens (the tab stays mounted across that visit); once seen, stop reading.
+  // Keyed on the combined flag so the first answer doesn't trigger a second read.
+  const checkLockStudioSeen = menuOpen && !lockStudioSeen;
+  useEffect(() => {
+    if (!checkLockStudioSeen) return;
+    let alive = true;
+    AsyncStorage.getItem(LOCK_STUDIO_SEEN_KEY)
+      .then((value) => {
+        if (alive) setLockStudioSeen(value != null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [checkLockStudioSeen]);
 
   // Resolve where the selected class is held from the crowdsourced room map.
   useEffect(() => {
@@ -839,7 +862,12 @@ export default function TimetableScreen() {
               }}
             >
               <Feather name="lock" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>Lock screen wallpaper</Text>
+              <Text style={[s.menuItemText, { color: theme.text }]}>{T('lsTitle')}</Text>
+              {lockStudioSeen === false ? (
+                <View style={[s.menuNewBadge, { backgroundColor: theme.primary }]}>
+                  <Text style={[s.menuNewBadgeText, { color: theme.textInverse }]}>{T('lsNewBadge')}</Text>
+                </View>
+              ) : null}
             </Pressable>
             <Pressable
               style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
@@ -2145,6 +2173,15 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
   },
   menuItemText: { flex: 1, fontSize: 15, fontWeight: '600' },
+  menuNewBadge: {
+    height: 18,
+    minWidth: 36,
+    paddingHorizontal: 7,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuNewBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
   menuSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',

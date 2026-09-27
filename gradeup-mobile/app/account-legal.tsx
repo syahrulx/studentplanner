@@ -21,6 +21,7 @@ import { useTheme, useThemePack } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { supabase } from '@/src/lib/supabase';
 import { invokeDeleteAccount } from '@/src/lib/invokeDeleteAccount';
+import { purgeLockScreenUserData } from '@/src/lib/lockScreen/lockScreenConfig';
 import { cancelAllTaskNotifications } from '@/src/notificationManager';
 import { cancelAllAttendanceNotifications } from '@/src/attendanceNotifications';
 import { cancelAllRevisionNotifications } from '@/src/revisionNotifications';
@@ -50,7 +51,7 @@ async function clearAllProfileSetupSkipFlags(): Promise<void> {
 }
 
 export default function AccountLegal() {
-  const { language, clearSemesterData } = useApp();
+  const { language, clearSemesterData, user } = useApp();
   const theme = useTheme();
   const themePack = useThemePack();
   const isMonoTheme = themePack === 'mono';
@@ -135,6 +136,9 @@ export default function AccountLegal() {
         await cancelAllRevisionNotifications().catch(() => {});
         await cancelAllAttendanceNotifications().catch(() => {});
         await clearAllProfileSetupSkipFlags();
+        // The lock screen design and its copied photo are this account's; the
+        // sign-out below clears the rendered pictures.
+        if (user.id) await purgeLockScreenUserData(user.id).catch(() => {});
         await supabase.auth.signOut().catch(() => {});
         router.replace('/(auth)/login' as any);
         return;

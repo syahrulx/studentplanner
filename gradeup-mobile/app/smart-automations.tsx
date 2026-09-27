@@ -1,13 +1,26 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AccessibilityInfo, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { useApp } from '@/src/context/AppContext';
 import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
+import { useLockScreenHealth } from '@/hooks/useLockScreenHealth';
+import { withAlpha } from '@/src/lib/contrast';
+import { detectUses24h, fmtWhen } from '@/src/lib/lockScreen/lockScreenFormat';
+import type { LockScreenHealth, LockScreenSetupState } from '@/src/lib/lockScreen/types';
 import { getFirstSuccess } from '@/src/lib/smartCapture/smartCaptureSetupState';
 import {
   fetchShortcutLink,
@@ -25,6 +38,9 @@ import {
  * binding it to Back Tap in Accessibility settings. iOS gives apps no way to
  * create the shortcut or set Back Tap programmatically, so the flow is guided
  * rather than automatic.
+ *
+ * The last card (iPhone only) is the entry to the self-refreshing lock screen
+ * Studio; its status line mirrors the Studio's pill so both say the same thing.
  */
 
 /**
@@ -43,6 +59,8 @@ export default function SmartAutomations() {
   const theme = useTheme();
   const T = useTranslations(language);
   const isIos = Platform.OS === 'ios';
+  // Auto-refresh is iPhone-only (health reports iPad as unsupported), so iPad gets no card.
+  const showLockScreenCard = Platform.OS === 'ios' && !Platform.isPad;
 
   const [backTapWorking, setBackTapWorking] = useState(false);
   const [shortcut, setShortcut] = useState<ShortcutLink>({
@@ -179,11 +197,178 @@ export default function SmartAutomations() {
           />
         </Card>
       )}
+
+      {showLockScreenCard ? <LockScreenCard theme={theme} T={T} /> : null}
     </ScreenContainer>
   );
 }
 
 type ThemeShape = ReturnType<typeof useTheme>;
+type Translate = ReturnType<typeof useTranslations>;
+
+/** Same dot colours as the Studio's status pill. */
+const LOCK_DOT_COLOR: Record<LockScreenHealth['kind'], string> = {
+  unsupported: '#8E8E93',
+  off: '#8E8E93',
+  setup: '#FF9F0A',
+  pending: '#0A84FF',
+  healthy: '#30D158',
+  stale: '#FF9F0A',
+};
+
+/** The Studio pill's resting text, without its transient overrides (Preparing, Updating). */
+function lockStatusText(
+  health: LockScreenHealth,
+  setup: LockScreenSetupState,
+  T: Translate,
+  uses24h: boolean,
+): string {
+  const now = Date.now();
+  switch (health.kind) {
+    case 'unsupported':
+      return T('lsUnavailable');
+    case 'off':
+      return T('lsPillOff');
+    case 'setup':
+      return T('lsPillSetup');
+    case 'pending':
+      return T('lsPillPending');
+    case 'healthy':
+      return T('lsPillUpdated').replace('{when}', fmtWhen(health.lastServedAt, now, T, uses24h));
+    case 'stale': {
+      // Never served: count from when setup finished. Stale implies completedAt
+      // (health rule 3), so the final fallback only satisfies the type.
+      const since = health.lastServedAt ?? setup.completedAt ?? now;
+      return T('lsPillStale').replace('{when}', fmtWhen(since, now, T, uses24h));
+    }
+  }
+}
+
+function useReduceMotion(): boolean {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((value) => {
+        if (alive) setReduce(value);
+      })
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduce);
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return reduce;
+}
+
+function LockScreenCard({ theme, T }: { theme: ThemeShape; T: Translate }) {
+  const { health, setup, loaded } = useLockScreenHealth();
+  const uses24h = useMemo(detectUses24h, []);
+  const isOff = health.kind === 'off';
+  // Amber and grey states want a nudge; a working lock screen just needs a way in.
+  const needsAction = isOff || health.kind === 'setup' || health.kind === 'stale';
+  const ctaLabel = isOff ? T('lsSaCardCtaSetup') : T('lsSaCardCtaOpen');
+
+  // Storage usually loaded at launch (the render host reads it), so this only
+  // fades on a cold first visit — and keeps "Set up" from flashing to "Open".
+  const reveal = useSharedValue(loaded ? 1 : 0);
+  useEffect(() => {
+    if (loaded) reveal.value = withTiming(1, { duration: 180 });
+  }, [loaded, reveal]);
+  const revealStyle = useAnimatedStyle(() => ({ opacity: reveal.value }));
+
+  const open = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    router.push(isOff ? '/lock-wallpaper?setup=1' : '/lock-wallpaper');
+  }, [isOff]);
+
+  return (
+    <Card theme={theme}>
+      <View style={styles.cardHeader}>
+        <LinearGradient
+          colors={[theme.primary, theme.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.lockTile}
+        >
+          <Feather name="lock" size={20} color={theme.textInverse} />
+        </LinearGradient>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>{T('lsSaCardTitle')}</Text>
+          <Text style={[styles.cardBody, { color: theme.textSecondary }]}>{T('lsSaCardSub')}</Text>
+        </View>
+      </View>
+
+      <Animated.View
+        style={[styles.lockFooter, { borderTopColor: theme.border }, revealStyle]}
+        pointerEvents={loaded ? 'auto' : 'none'}
+        accessibilityElementsHidden={!loaded}
+        importantForAccessibility={loaded ? 'auto' : 'no-hide-descendants'}
+      >
+        <View style={styles.lockStatus}>
+          <StatusDot color={LOCK_DOT_COLOR[health.kind]} pulsing={health.kind === 'pending'} />
+          <Text
+            style={[styles.statusText, styles.lockStatusText, { color: theme.textSecondary }]}
+            numberOfLines={2}
+          >
+            {lockStatusText(health, setup, T, uses24h)}
+          </Text>
+        </View>
+        <Pressable
+          onPress={open}
+          accessibilityRole="button"
+          accessibilityLabel={`${ctaLabel}, ${T('lsSaCardTitle')}`}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.lockBtn,
+            needsAction
+              ? { backgroundColor: theme.primary, borderColor: theme.primary }
+              : { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Text style={[styles.actionBtnText, { color: needsAction ? theme.textInverse : theme.primary }]}>
+            {ctaLabel}
+          </Text>
+          <Feather
+            name="chevron-right"
+            size={15}
+            color={needsAction ? theme.textInverse : theme.primary}
+          />
+        </Pressable>
+      </Animated.View>
+    </Card>
+  );
+}
+
+/** Coloured status dot on a soft halo; breathes like the Studio pill while waiting. */
+function StatusDot({ color, pulsing }: { color: string; pulsing: boolean }) {
+  const reduceMotion = useReduceMotion();
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (pulsing && !reduceMotion) {
+      opacity.value = withRepeat(
+        withTiming(0.4, { duration: 600, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(opacity);
+      opacity.value = 1;
+    }
+    return () => cancelAnimation(opacity);
+  }, [pulsing, reduceMotion, opacity]);
+
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View style={[styles.lockDotHalo, { backgroundColor: withAlpha(color, '2E') }, pulseStyle]}>
+      <View style={[styles.lockDot, { backgroundColor: color }]} />
+    </Animated.View>
+  );
+}
 
 function Card({ theme, children }: { theme: ThemeShape; children: React.ReactNode }) {
   return (
@@ -322,4 +507,27 @@ const styles = StyleSheet.create({
 
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
   statusText: { fontSize: 13, fontWeight: '700' },
+
+  lockTile: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  lockFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  lockStatus: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  lockStatusText: { flex: 1, lineHeight: 18 },
+  lockDotHalo: { width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  lockDot: { width: 8, height: 8, borderRadius: 4 },
+  lockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingLeft: 14,
+    paddingRight: 10,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
 });

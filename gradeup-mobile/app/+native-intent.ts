@@ -1,4 +1,8 @@
 import { enqueueCapture } from '@/src/lib/smartCapture/captureInboxStore';
+import {
+  emitLockScreenCallback,
+  parseLockScreenCallbackQuery,
+} from '@/src/lib/lockScreen/lockScreenCallback';
 
 /**
  * expo-router hands every incoming URL through here before it becomes a route.
@@ -21,6 +25,7 @@ import { enqueueCapture } from '@/src/lib/smartCapture/captureInboxStore';
 const URL_PARTS = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)[^?#]*(?:\?([^#]*))?/i;
 
 const SHARE_HOSTS = new Set(['expo-sharing', 'smart-capture']);
+const LOCK_SCREEN_CALLBACK_HOST = 'lock-screen-callback';
 
 export function redirectSystemPath({
   path,
@@ -31,6 +36,16 @@ export function redirectSystemPath({
   try {
     const match = URL_PARTS.exec(path);
     const host = match?.[1]?.toLowerCase();
+
+    // The Shortcuts app coming back after running "Rencana Lock Screen" from
+    // the lock screen setup. Stay on the screen that started the run. If iOS
+    // killed Rencana meanwhile, this is a cold launch with no run listening;
+    // the render host's reconcileInterruptedLockRun() records it instead.
+    if (host === LOCK_SCREEN_CALLBACK_HOST) {
+      emitLockScreenCallback(parseLockScreenCallbackQuery(match?.[2] ?? ''));
+      return null;
+    }
+
     if (!host || !SHARE_HOSTS.has(host)) return path;
 
     const query = match?.[2] ?? '';

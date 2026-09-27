@@ -39,6 +39,7 @@ import {
 import UpdatePrompt from '@/src/components/UpdatePrompt';
 import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
 import SmartCaptureLauncher from '@/src/components/SmartCaptureLauncher';
+import LockScreenRenderHost from '@/components/lockScreen/LockScreenRenderHost';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
 import FeedbackSurveyPrompt from '@/src/components/FeedbackSurveyPrompt';
 import { setFeedbackBlockingOverlay } from '@/src/lib/feedbackSurvey';
@@ -370,6 +371,7 @@ function RootLayoutNav() {
         <QuizProvider>
           <ThemeAwareLayout />
           <SmartCaptureLauncher />
+          <LockScreenRenderHost />
           <AppUpdateGate />
           <WhatsNewPromptModal />
           <FeedbackSurveyPrompt />
@@ -526,6 +528,7 @@ function ThemeAwareLayout() {
           }}
         />
         <Stack.Screen name="smart-automations" />
+        <Stack.Screen name="lock-screen-setup" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );

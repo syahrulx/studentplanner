@@ -106,6 +106,7 @@ import { getAcceptedSharedTasks, updateSharedTaskCompletion, syncNewTaskToStream
 import { syncExpoPushTokenToProfile, subscribeExpoPushTokenUpdates } from '../lib/pushRegistration';
 import { fetchUitmTimetablePublic, profileUpdatesFromMyStudentPayload } from '../lib/timetableParsers/uitm';
 import { isMatricVerified } from '../lib/uitmVerification';
+import { clearLockScreenImages } from '../lib/lockScreen/lockScreenStore';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
@@ -1400,6 +1401,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCourses([]);
           setAcademicCalendar(null);
           setTimetable([]);
+          // The lock screen pictures show this account's week; an automation
+          // must not keep serving them after sign-out.
+          try {
+            clearLockScreenImages();
+          } catch {
+            /* best effort: nothing to clear, or no App Group on this build */
+          }
           cancelAllAttendanceNotifications().catch(() => {});
           revenueCatUnsubscribeRef.current();
           revenueCatUnsubscribeRef.current = () => {};
