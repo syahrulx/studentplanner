@@ -576,7 +576,11 @@ export default function TimetableEditScreen() {
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8 }]}>{T('timetableSetDuration')}</Text>
                 <View style={styles.durationRow}>
-                  {([1, 1.5, 2, 3] as const).map((h) => {
+                  {/* Shortcuts, not a limit — the end time field takes anything
+                      later than the start. Long lab and studio blocks run to
+                      four and five hours, and students were reading the old
+                      1–3 row as a cap and giving up. */}
+                  {([1, 1.5, 2, 3, 4, 5] as const).map((h) => {
                     // Highlight when the derived start→end duration matches, or when the user
                     // just tapped this chip and we couldn't derive yet (empty/invalid times).
                     const active =
