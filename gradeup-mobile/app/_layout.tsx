@@ -196,6 +196,17 @@ function RootLayoutNav() {
           );
           break;
         }
+        case 'confession_reply': {
+          // Straight to the thread. Without an id we can only open the feed —
+          // the confession is anonymous, so there is nothing else to fall back on.
+          const cid = typeof data.confessionId === 'string' ? data.confessionId.trim() : '';
+          nav(() =>
+            cid
+              ? router.push({ pathname: '/community/confession-detail', params: { confessionId: cid } } as any)
+              : router.push('/community/confessions' as any),
+          );
+          break;
+        }
         case 'community_reaction': {
           const msg = String(data.message || '').toLowerCase();
           const isFriendRequestTap = data.reactionType === '👋' && msg.includes('friend request');
