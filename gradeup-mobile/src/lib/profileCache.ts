@@ -26,7 +26,7 @@ const PROFILE_COLUMNS =
   'avatar_url, campus, faculty, study_mode, current_semester, hea_term_code, ' +
   'mystudent_email, last_sync, portal_teaching_anchored_semester, subscription_plan, ' +
   'subscription_status, subscription_period_type, subscription_expires_at, ' +
-  'has_used_theme_trial, theme_preferences, country, location_visibility';
+  'has_used_theme_trial, theme_preferences, subject_colors, country, location_visibility';
 
 /**
  * Long enough to cover the spread between boot readers, short enough that a

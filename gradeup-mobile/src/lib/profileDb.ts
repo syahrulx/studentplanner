@@ -66,6 +66,7 @@ export async function getProfile(userId: string): Promise<{
   subscriptionExpiresAt?: string;
   hasUsedThemeTrial?: boolean;
   themePreferences?: ThemePreferencesRow | null;
+  subjectColors?: Record<string, string> | null;
   country?: string;
 } | null> {
   // Shared with the two layout gates and the community context, which each
@@ -96,6 +97,7 @@ export async function getProfile(userId: string): Promise<{
     subscription_expires_at: string | null;
     has_used_theme_trial: boolean | null;
     theme_preferences: ThemePreferencesRow | null;
+    subject_colors: Record<string, string> | null;
     country: string | null;
   };
   return {
@@ -130,6 +132,7 @@ export async function getProfile(userId: string): Promise<{
     subscriptionExpiresAt: row.subscription_expires_at ? String(row.subscription_expires_at) : undefined,
     hasUsedThemeTrial: row.has_used_theme_trial ?? false,
     themePreferences: row.theme_preferences ?? null,
+    subjectColors: row.subject_colors ?? null,
     country: row.country ? String(row.country).toUpperCase() : undefined,
   };
 }
@@ -156,6 +159,7 @@ export async function updateProfile(
     subscriptionPlan?: SubscriptionPlan;
     hasUsedThemeTrial?: boolean;
     themePreferences?: ThemePreferencesRow | null;
+    subjectColors?: Record<string, string> | null;
     country?: string;
   },
 ): Promise<void> {
@@ -195,6 +199,9 @@ export async function updateProfile(
   }
   if (updates.themePreferences !== undefined) {
     payload.theme_preferences = updates.themePreferences;
+  }
+  if (updates.subjectColors !== undefined) {
+    payload.subject_colors = updates.subjectColors;
   }
   if (updates.country !== undefined) {
     const cc = String(updates.country || '').trim().toUpperCase();

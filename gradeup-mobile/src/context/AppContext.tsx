@@ -1009,6 +1009,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // Subject colours are last-write-wins: the server map replaces the
+        // local one outright. A null column means this account has never set a
+        // colour, so whatever is on this device stays and will be pushed up on
+        // the next change.
+        if (profile?.subjectColors && typeof profile.subjectColors === 'object') {
+          const remote: Record<string, string> = {};
+          for (const [courseId, color] of Object.entries(profile.subjectColors)) {
+            if (typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)) remote[courseId] = color;
+          }
+          setSubjectColorsState(remote);
+          void persistSubjectColors(remote);
+        }
+
         let calendar: AcademicCalendar | null | undefined = undefined;
         if (r6.status === 'fulfilled') {
           calendar = r6.value ?? null;
@@ -2059,9 +2072,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSubjectColorsState((prev) => {
       const next = { ...prev, [courseId]: color };
       persistSubjectColors(next);
+      // Push the whole map, not the single entry: last write wins, so the
+      // device that changed a colour most recently defines the set.
+      const uid = user.id?.trim();
+      if (uid) {
+        void profileDb.updateProfile(uid, { subjectColors: next }).catch(() => {
+          /* subject_colors column may not be migrated yet */
+        });
+      }
       return next;
     });
-  }, []);
+  }, [user.id]);
 
   const addCourse = useCallback((course: Course, options?: { skipRemote?: boolean }) => {
     setCourses((prev) => {
@@ -2568,6 +2589,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAcademicCalendar(null);
     await persistSubjectColors({});
     setSubjectColorsState({});
+    // Clear the synced copy too, or the colours come straight back from the
+    // server on the next load and "clear semester data" only half worked.
+    await profileDb.updateProfile(uid, { subjectColors: null }).catch(() => {
+      /* subject_colors column may not be migrated yet */
+    });
     await persistPinnedTaskIds([]);
     setPinnedTaskIds([]);
     await persistCompletedStudies([]);
