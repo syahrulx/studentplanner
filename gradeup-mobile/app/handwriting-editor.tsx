@@ -398,6 +398,9 @@ export default function HandwritingEditor() {
   const [toolSettingsLoaded, setToolSettingsLoaded] = useState(false);
   const [workspaceSize, setWorkspaceSize] = useState({ width: 1, height: 1 });
   const [zoomScale, setZoomScale] = useState(1);
+  // Where the page should sit once a pinch's new zoom has been laid out.
+  // Held here rather than applied straight away — see commitDocumentZoom.
+  const pendingZoomScroll = useRef<number | null>(null);
   const [undoStacks, setUndoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const [redoStacks, setRedoStacks] = useState<Record<string, HandwritingStroke[][]>>({});
   const { width: windowWidth } = useWindowDimensions();
@@ -1319,16 +1322,31 @@ export default function HandwritingEditor() {
       }
     }), [fingerDrawing, tool]);
   const commitDocumentZoom = useCallback((value: number, targetScroll: number, targetHorizontal: number) => {
-    const next = Math.max(1, Math.min(3, value));
-    setZoomScale(Math.round(next * 100) / 100);
+    const next = Math.round(Math.max(1, Math.min(3, value)) * 100) / 100;
     horizontalOffset.value = targetHorizontal;
-    // Commit the layout and clear the temporary focal transform in the same
-    // frame. Delaying this by a timer causes a visible snap on iPad/phones
-    // while the page width is being relaid out.
-    scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, targetScroll));
-    pinchVisualX.value = 0;
-    pinchVisualY.value = 0;
-  }, [horizontalOffset, pinchVisualX, pinchVisualY, scrollOffset, verticalLimit]);
+
+    if (next === zoomScale) {
+      // The zoom did not actually change, so nothing will be re-laid out and
+      // there is no later frame to wait for. Settle now.
+      scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, targetScroll));
+      pinchVisualX.value = 0;
+      pinchVisualY.value = 0;
+      return;
+    }
+
+    // Hand over to the layout only once the new page width has actually been
+    // measured — onContentSizeChange finishes this.
+    //
+    // Both halves used to be done right here, and both were wrong. Clearing
+    // the focal transform in the same call that asks React for a new zoom
+    // means it disappears while the layout is still the old size, because
+    // setZoomScale lands a frame or more later: that gap is the jump on
+    // release. And clamping the scroll against verticalLimit used the limit
+    // for the shorter, pre-zoom content, so zooming in near the bottom of a
+    // page was clamped short and landed above where the pinch was aimed.
+    pendingZoomScroll.current = targetScroll;
+    setZoomScale(next);
+  }, [horizontalOffset, pinchVisualX, pinchVisualY, scrollOffset, verticalLimit, zoomScale]);
   const documentPinchGesture = useMemo(() => Gesture.Pinch()
     .onStart(() => {
       pinchStartZoom.value = committedZoom.value;
@@ -1605,7 +1623,15 @@ export default function HandwritingEditor() {
               maxToRenderPerBatch={2}
               updateCellsBatchingPeriod={40}
               windowSize={3}
-              removeClippedSubviews
+              // Deliberately not removeClippedSubviews. React Native documents
+              // it as "may have bugs (missing content)", and missing content is
+              // exactly what it produced here: zoomed in, the top of a page was
+              // clipped away and the grey background showed through, so the
+              // paper looked like it ended where it plainly had not. The page
+              // cell is several screens tall at 300%, which is where clipping a
+              // partly-visible cell goes wrong. windowSize and
+              // maxToRenderPerBatch above already bound how much is mounted, so
+              // this was buying very little on top of them.
               viewabilityConfig={viewabilityConfig}
               onViewableItemsChanged={onViewableItemsChanged}
               // scrollToIndex throws an uncaught invariant for indices beyond the
@@ -1625,7 +1651,18 @@ export default function HandwritingEditor() {
               onScroll={documentScrollHandler}
               onContentSizeChange={(_width, height) => {
                 verticalLimit.value = Math.max(0, height - workspaceSize.height);
-                if (scrollOffset.value > verticalLimit.value) scrollOffset.value = verticalLimit.value;
+                const pending = pendingZoomScroll.current;
+                if (pending != null) {
+                  // The taller content is measured now, so the focal point can
+                  // be honoured against the real limit, and the temporary
+                  // transform can go in the same frame the layout arrives.
+                  pendingZoomScroll.current = null;
+                  scrollOffset.value = Math.max(0, Math.min(verticalLimit.value, pending));
+                  pinchVisualX.value = 0;
+                  pinchVisualY.value = 0;
+                } else if (scrollOffset.value > verticalLimit.value) {
+                  scrollOffset.value = verticalLimit.value;
+                }
               }}
               scrollEventThrottle={16}
               renderItem={({ item }) => (
