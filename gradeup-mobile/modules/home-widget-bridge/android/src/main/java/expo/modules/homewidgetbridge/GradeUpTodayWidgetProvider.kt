@@ -535,25 +535,38 @@ open class GradeUpTodayWidgetProvider : AppWidgetProvider() {
      * Picks the appropriate snapshot from the JSON pack the host pushed.
      *
      * Schema versions supported:
-     *  - New: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
+     *  - Current: { days: [HomeWidgetProps, …], today: …, tomorrow: … }
+     *    → returns the entry in `days` whose `dateISO` equals the device's
+     *    current local date. `days` covers two weeks, so the widget keeps
+     *    rolling over even if the app is not opened for days — with only
+     *    today/tomorrow it froze after the second midnight.
+     *  - Older: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
      *    → returns whichever slot's `dateISO` equals device's current local date.
      *  - Legacy: HomeWidgetProps at root → returned as-is.
      *
      * This is what enables the midnight rollover: when the WorkManager worker fires
-     * at 00:00 and re-renders, the renderer naturally picks the `tomorrow` slot
-     * (which is now "today" by the device clock) without any new app sync.
+     * at 00:00 and re-renders, the renderer naturally picks the slot that is now
+     * "today" by the device clock, without any new app sync.
      */
     private fun pickActiveSnapshot(root: JSONObject?): JSONObject? {
       if (root == null) return null
+      val days = root.optJSONArray("days")
       val today = root.optJSONObject("today")
       val tomorrow = root.optJSONObject("tomorrow")
-      if (today == null && tomorrow == null) return root // legacy flat schema
+      if (days == null && today == null && tomorrow == null) return root // legacy flat schema
       val isoNow = WidgetRefreshScheduler.localTodayISO()
+
+      if (days != null) {
+        for (i in 0 until days.length()) {
+          val day = days.optJSONObject(i) ?: continue
+          if (day.optString("dateISO", "").trim().take(10) == isoNow) return day
+        }
+      }
       if (today != null && today.optString("dateISO", "").trim().take(10) == isoNow) return today
       if (tomorrow != null && tomorrow.optString("dateISO", "").trim().take(10) == isoNow) return tomorrow
-      // Neither matches device's "now" → return today slot so the existing
+      // Nothing matches device's "now" → return the first slot so the existing
       // "stale" code path can show its rollover prompt.
-      return today ?: tomorrow
+      return today ?: days?.optJSONObject(0) ?: tomorrow
     }
 
     // ─── Click handling ──────────────────────────────────────────
