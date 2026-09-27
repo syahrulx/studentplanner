@@ -4,11 +4,13 @@
 -- was ever produced from it, so the last version students actually have is
 -- 1.7.9 (iOS 151, Android 163). Everything since then is new to them.
 --
--- Ordering is by how many students the change reaches. Subject colours and the
--- widget rollover were silent failures that hit anyone with a second device or
--- a widget, so they lead. The lock screen is the bigger feature but it is
--- opt-in, so it follows. Confession replies reach community users, and the
--- storage warning is rare but severe.
+-- Ordering is by how many students the change reaches, and by how badly the
+-- bug read to them. The notes fixes lead: shape assist was rewriting
+-- handwriting as circles, and a zoomed page looked like it had run out of
+-- paper when it had not — both read as the app damaging your work rather than
+-- as a glitch. Subject colours and the widget rollover were silent failures
+-- affecting anyone with a second device or a widget. The lock screen is the
+-- bigger feature but it is opt-in, so it follows.
 --
 -- The lock screen line says "on iPhone" on purpose. Both platforms can build
 -- and save the wallpaper; only iOS refreshes it every morning, because that
@@ -21,10 +23,11 @@
 -- lines up wrongly here.
 --
 -- The store listing therefore carries a different layout — see
--- store-release-notes-v181.md, which does group into New and Fixes, and which
--- carries a separate Play body for the same lock screen reason. Wording and
--- layout differ on purpose; the substance must not. Change one, change the
--- other.
+-- store-release-notes-v181.md, which does group into New and Fixes, carries a
+-- separate Play body for the same lock screen reason, and is squeezed much
+-- harder because Play caps release notes at 500 characters. This prompt has no
+-- such cap, so it can afford to say things properly. Wording and layout differ
+-- on purpose; the substance must not. Change one, change the other.
 --
 -- Not listed: admin user search (9d66fec) is the staff console, and the
 -- community-push key fix (0f51c0c) and migration re-run fix (179ede4) are
@@ -49,11 +52,14 @@ INSERT INTO public.whats_new_prompts (
   true,
   '1.8.1',
   'What''s New in Rencana v1.8.1 🎉',
-  '• Subject colours now match on every device, instead of only the one you set them on.
+  '• Your handwriting stays as you wrote it. Shape assist now waits for a deliberate pause, so letters are no longer redrawn as circles.
+• Zooming in notes is smoother, and a zoomed page no longer looks cut off when there is more of it to scroll.
+• Subject colours now match on every device, instead of only the one you set them on.
 • Timetable and task widgets roll over at midnight again, instead of sticking on an old day.
 • Put your day on your lock screen — on iPhone it refreshes itself every morning.
 • Someone replies to your confession or your comment? You get a notification, and it opens the thread.
 • Turn those reply alerts off for one post, or all at once in Community settings.
 • Rooms now show on the Next line, even on days with no classes.
+• Fixed a crash when two fingers touched a scrolling list.
 • Rencana now tells you when your device is out of storage, instead of quietly failing to save.'
 );
