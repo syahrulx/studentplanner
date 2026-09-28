@@ -12,7 +12,7 @@ export const SF_SYMBOL_NAMES: Record<ThemeIconKey, string> = {
   add: 'plus.circle.fill',
   calendar: 'calendar',
   checkCircle: 'checkmark.circle.fill',
-  sparkles: 'bolt.fill',
+  sparkles: 'sparkles',
   user: 'person.fill',
   layers: 'square.stack.3d.up.fill',
   target: 'target',

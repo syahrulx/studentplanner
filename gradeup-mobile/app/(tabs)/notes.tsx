@@ -67,11 +67,11 @@ function createStyles(theme: ThemePalette) {
     quickActionWideSub: { fontSize: 12, fontWeight: '500', color: theme.textSecondary, marginTop: 1 },
     quickAction: {
       flex: 1,
-      borderRadius: 18,
+      borderRadius: 16,
       paddingHorizontal: 8,
-      paddingVertical: 16,
+      paddingVertical: 12,
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
       borderWidth: 1,
       borderColor: theme.border,
     },
@@ -95,7 +95,6 @@ function createStyles(theme: ThemePalette) {
       textAlign: 'center',
       marginTop: -2,
       lineHeight: 16,
-      minHeight: 32,
     },
 
     // Section
@@ -1143,10 +1142,10 @@ export default function StudyHub() {
             onPress={() => router.push('/ai-quiz-builder' as any)}
           >
             <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
-              <Feather name="zap" size={20} color={onPrimaryIcon} />
+              <Ionicons name="sparkles-outline" size={20} color={onPrimaryIcon} />
             </View>
             <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>AI Quiz</Text>
-            <Text style={s.quickActionSub} numberOfLines={2}>Auto-generate</Text>
+            <Text style={s.quickActionSub} numberOfLines={2}>From your notes</Text>
           </Pressable>
 
           <Pressable
@@ -1177,10 +1176,10 @@ export default function StudyHub() {
             onPress={() => router.push('/mini-games' as any)}
           >
             <View style={[s.quickActionIcon, { backgroundColor: quickActionIconBg }]}>
-              <Feather name="grid" size={20} color={onPrimaryIcon} />
+              <Ionicons name="game-controller-outline" size={21} color={onPrimaryIcon} />
             </View>
             <Text style={s.quickActionLabel} numberOfLines={1} adjustsFontSizeToFit>Mini Games</Text>
-            <Text style={s.quickActionSub} numberOfLines={2}>Word Game & 2048</Text>
+            <Text style={s.quickActionSub} numberOfLines={1}>Word & 2048</Text>
           </Pressable>
         </View>
         <Pressable
