@@ -1229,7 +1229,8 @@ export default function TimetableScreen() {
                             <Text
                               style={[
                                 s.gridSlotCode,
-                                !slotDetails.courseName && s.gridSlotCodeCompact,
+                                // Full size whenever no name line sits under it.
+                                !hasTitle && s.gridSlotCodeCompact,
                                 { color },
                               ]}
                               numberOfLines={2}
