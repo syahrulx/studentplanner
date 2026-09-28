@@ -34,8 +34,6 @@ import { useResponsive } from '@/hooks/useResponsive';
 import * as roomsApi from '@/src/lib/campusRoomsApi';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
-import { contrastText } from '@/src/lib/contrast';
-import { detectUses24h } from '@/src/lib/lockScreen/lockScreenFormat';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
 import {
   type WeekStartsOn,
@@ -72,7 +70,7 @@ const HOUR_HEIGHT = 56;
 const START_HOUR = 7;
 // END_HOUR is exclusive. Use 23 so the 22:00 row is visible.
 const END_HOUR = 23;
-const TIME_GUTTER = 40;
+const TIME_GUTTER = 46;
 const DAY_COLUMN_MIN_W = 84;
 /** gridRoot paddingHorizontal 6 + 6 */
 const GRID_OUTER_H_PAD = 12;
@@ -89,27 +87,6 @@ const LOCK_STUDIO_SEEN_KEY = 'lock_screen_studio_seen_v1';
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
-}
-
-/** Space above the first hour line, so its label can sit centred on the line. */
-const GRID_TOP_PAD = 8;
-/** Room under the last hour so the floating tab bar never covers a class. */
-const GRID_BOTTOM_PAD = 96;
-
-/** "8 AM" / "20:00", following the phone's 12/24-hour setting. */
-function gridHourLabel(h: number, uses24h: boolean): string {
-  if (uses24h) return `${String(h).padStart(2, '0')}:00`;
-  const suffix = h < 12 || h === 24 ? 'AM' : 'PM';
-  return `${h % 12 === 0 ? 12 : h % 12} ${suffix}`;
-}
-
-/** Mixes a hex colour toward black, so a pastel subject colour still reads as text on its own tint. */
-function darkenHex(hex: string, amount: number): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount));
-  return `#${[ch(16), ch(8), ch(0)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** True if [hour, hour+1) on `day` has no overlapping class. */
@@ -330,19 +307,22 @@ export default function TimetableScreen() {
    * Compact + “scroll all days”: all 7 columns, horizontal scroll.
    * Compact otherwise: first five days of the week (Settings → week starts on…), no horizontal scroll.
    */
+  // Columns are sized so five days fit the screen; only "All 7 days" switches
+  // to the narrow scrolling columns. Showing course names used to force that
+  // too, which pushed Friday off the edge for anyone who just wanted names.
+  // A weekend day that actually has a class is kept, off to the right — the
+  // grid scrolls sideways to it rather than squeezing every column thinner.
   const daysForWeekGrid = useMemo(() => {
-    if (slotDetails.courseName) return daysOrdered;
     if (slotDetails.scrollAllDaysInCompact) return daysOrdered;
-    return daysOrdered.slice(0, 5);
-  }, [daysOrdered, slotDetails.courseName, slotDetails.scrollAllDaysInCompact]);
+    return daysOrdered.filter((d, i) => i < 5 || timetable.some((e) => e.day === d.key));
+  }, [daysOrdered, slotDetails.scrollAllDaysInCompact, timetable]);
 
   const dayColumnWidth = useMemo(() => {
     const n = Math.max(1, daysForWeekGrid.length);
-    if (slotDetails.courseName) return DAY_COLUMN_MIN_W;
     if (slotDetails.scrollAllDaysInCompact) return DAY_COLUMN_MIN_W;
     const innerW = winW - GRID_OUTER_H_PAD - TIME_GUTTER;
-    return Math.max(50, Math.floor(innerW / n));
-  }, [slotDetails.courseName, slotDetails.scrollAllDaysInCompact, daysForWeekGrid.length, winW]);
+    return Math.max(50, Math.floor(innerW / Math.min(5, n)));
+  }, [slotDetails.scrollAllDaysInCompact, daysForWeekGrid.length, winW]);
 
   const todayDayKey = useMemo(() => JS_TO_DAY[new Date().getDay()], []);
 
@@ -352,42 +332,7 @@ export default function TimetableScreen() {
     ? getUniversityById(user.universityId)?.shortName ?? user.university
     : null;
 
-  // Only the hours classes use (never less than 8 AM to 6 PM), so the week
-  // isn't padded with empty evenings. Editing shows the whole day, so a class
-  // can be added at any hour.
-  const { gridStartHour, gridEndHour } = useMemo(() => {
-    if (gridEditMode || timetable.length === 0) return { gridStartHour: START_HOUR, gridEndHour: END_HOUR };
-    let first = 8;
-    let last = 18;
-    for (const e of timetable) {
-      const start = timeToMinutes(e.startTime);
-      const end = timeToMinutes(e.endTime);
-      if (start > 0) first = Math.min(first, Math.floor(start / 60));
-      if (end > 0) last = Math.max(last, Math.ceil(end / 60));
-    }
-    return { gridStartHour: Math.max(0, first), gridEndHour: Math.min(24, last + 1) };
-  }, [timetable, gridEditMode]);
-
-  /** Day of the month for each weekday of the current week, for the column heads. */
-  const weekDates = useMemo(() => {
-    const now = new Date();
-    const startIndex = weekStartsOn === 'sunday' ? 0 : 1;
-    const back = (now.getDay() - startIndex + 7) % 7;
-    const out: Partial<Record<DayOfWeek, number>> = {};
-    daysOrdered.forEach(({ key }, i) => {
-      out[key] = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + i).getDate();
-    });
-    return out;
-  }, [daysOrdered, weekStartsOn]);
-
-  const [nowMinutes, setNowMinutes] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
-  useEffect(() => {
-    const id = setInterval(() => setNowMinutes(new Date().getHours() * 60 + new Date().getMinutes()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const uses24h = useMemo(() => detectUses24h(), []);
-
-  const gridBodyHeight = (gridEndHour - gridStartHour) * HOUR_HEIGHT;
+  const gridBodyHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
   const gridContentWidth = TIME_GUTTER + daysForWeekGrid.length * dayColumnWidth;
   const gridScrollMaxH = Math.max(280, Math.min(gridBodyHeight + 8, winH - (Platform.OS === 'ios' ? 210 : 190)));
 
@@ -406,7 +351,7 @@ export default function TimetableScreen() {
       items.forEach((entry) => {
         const startMin = timeToMinutes(entry.startTime);
         const endMin = timeToMinutes(entry.endTime);
-        const top = GRID_TOP_PAD + ((startMin / 60) - gridStartHour) * HOUR_HEIGHT;
+        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
         const slotHeight = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
         const petSize = playgroundPetSize;
         const petHalf = petSize / 2;
@@ -420,7 +365,7 @@ export default function TimetableScreen() {
       });
     });
     return targets;
-  }, [isCatTheme, isCodexPlaygroundPet, playgroundPetSize, daysForWeekGrid, timetable, dayColumnWidth, gridStartHour]);
+  }, [isCatTheme, isCodexPlaygroundPet, playgroundPetSize, daysForWeekGrid, timetable, dayColumnWidth]);
 
   const catX = useRef(new RNAnimated.Value(TIME_GUTTER + 8)).current;
   const catY = useRef(new RNAnimated.Value(64)).current;
@@ -1128,10 +1073,8 @@ export default function TimetableScreen() {
 
   /* ── Week grid: one column per day (scroll horizontally if needed) ─ */
   function renderWeekGrid() {
-    const hours = Array.from({ length: gridEndHour - gridStartHour }, (_, i) => gridStartHour + i);
-    const hScrollWeekOrCompactAllDays =
-      slotDetails.courseName ||
-      (!slotDetails.courseName && slotDetails.scrollAllDaysInCompact);
+    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+    const hScrollWeekOrCompactAllDays = slotDetails.scrollAllDaysInCompact || daysForWeekGrid.length > 5;
     const minTableW = hScrollWeekOrCompactAllDays ? Math.max(gridContentWidth, winW) : gridContentWidth;
 
     return (
@@ -1148,17 +1091,25 @@ export default function TimetableScreen() {
             <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
               <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
               {daysForWeekGrid.map(({ key, shortKey }) => {
-                const isToday = key === todayDayKey;
+                const count = timetable.filter((e) => e.day === key).length;
                 return (
-                  <View key={key} style={[s.gridColHead, { width: dayColumnWidth }]}>
-                    <Text style={[s.gridColHeadLabel, { color: isToday ? theme.primary : theme.textSecondary }]}>
-                      {String((T as any)(shortKey)).toUpperCase()}
-                    </Text>
-                    <View style={[s.gridColDate, isToday && { backgroundColor: theme.primary }]}>
-                      <Text style={[s.gridColDateText, { color: isToday ? contrastText(theme.primary) : theme.text }]}>
-                        {weekDates[key]}
-                      </Text>
-                    </View>
+                  <View
+                    key={key}
+                    style={[
+                      s.gridColHead,
+                      {
+                        width: dayColumnWidth,
+                        borderLeftColor: theme.border,
+                        backgroundColor: theme.backgroundSecondary ?? theme.card,
+                      },
+                    ]}
+                  >
+                    <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
+                    {count > 0 ? (
+                      <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
+                        <Text style={[s.gridColCountText, isDarkMinimal && { color: theme.textInverse }]}>{count}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 );
               })}
@@ -1166,17 +1117,16 @@ export default function TimetableScreen() {
 
             <ScrollView
               style={{ maxHeight: gridScrollMaxH }}
-              contentContainerStyle={{ paddingBottom: GRID_BOTTOM_PAD }}
               nestedScrollEnabled
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator
               bounces={false}
             >
-              <View style={[s.gridBodyRow, { minHeight: gridBodyHeight + GRID_TOP_PAD, paddingTop: GRID_TOP_PAD }]}>
+              <View style={[s.gridBodyRow, { minHeight: gridBodyHeight }]}>
                 <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
                   {hours.map((h) => (
-                    <View key={h} style={{ height: HOUR_HEIGHT }}>
+                    <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
                       <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
-                        {gridHourLabel(h, uses24h)}
+                        {h.toString().padStart(2, '0')}:00
                       </Text>
                     </View>
                   ))}
@@ -1186,9 +1136,6 @@ export default function TimetableScreen() {
                   const items = timetable
                     .filter((e) => e.day === key)
                     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-                  const isToday = key === todayDayKey;
-                  const nowTop = (nowMinutes / 60 - gridStartHour) * HOUR_HEIGHT;
-                  const showNow = isToday && nowTop >= 0 && nowTop <= gridBodyHeight;
                   return (
                     <View
                       key={key}
@@ -1197,9 +1144,8 @@ export default function TimetableScreen() {
                         {
                           width: dayColumnWidth,
                           minHeight: gridBodyHeight,
-                          // Solid blocks carry the structure; column rules only help while placing a class.
-                          borderLeftWidth: gridEditMode ? StyleSheet.hairlineWidth : 0,
                           borderLeftColor: theme.border,
+                          backgroundColor: 'transparent',
                         },
                       ]}
                     >
@@ -1209,9 +1155,8 @@ export default function TimetableScreen() {
                           style={[
                             s.gridHourLine,
                             {
-                              top: (h - gridStartHour) * HOUR_HEIGHT,
+                              top: (h - START_HOUR) * HOUR_HEIGHT,
                               backgroundColor: theme.border,
-                              opacity: gridEditMode ? 0.7 : 0.35,
                             },
                           ]}
                         />
@@ -1226,7 +1171,7 @@ export default function TimetableScreen() {
                               style={[
                                 s.gridAddCell,
                                 {
-                                  top: (h - gridStartHour) * HOUR_HEIGHT,
+                                  top: (h - START_HOUR) * HOUR_HEIGHT,
                                   height: HOUR_HEIGHT,
                                 },
                               ]}
@@ -1247,15 +1192,9 @@ export default function TimetableScreen() {
                       {items.map((entry) => {
                         const startMin = timeToMinutes(entry.startTime);
                         const endMin = timeToMinutes(entry.endTime);
-                        // A gap above and below, so back-to-back classes in the same colour read as two blocks.
-                        const top = ((startMin / 60) - gridStartHour) * HOUR_HEIGHT + 1.5;
-                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT - 3, 26);
+                        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
+                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
                         const color = resolveSlotColor(entry);
-                        // White on the subject colour when it's dark enough; a deep shade of
-                        // the same hue on the light ones (amber, lime, cyan), never plain black.
-                        const whiteInk = contrastText(color) === '#ffffff';
-                        const inkColor = whiteInk ? '#FFFFFF' : darkenHex(color, 0.68);
-                        const inkSoft = whiteInk ? 'rgba(255,255,255,0.82)' : darkenHex(color, 0.5);
                         const title = entryDisplayTitle(entry);
                         const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
                         const hasTitle = Boolean(slotDetails.courseName && height > 38);
@@ -1278,18 +1217,15 @@ export default function TimetableScreen() {
                               style={[
                                 s.gridSlotCode,
                                 !slotDetails.courseName && s.gridSlotCodeCompact,
-                                { color: inkColor },
+                                { color },
                               ]}
-                              // A code is one token: shrink it rather than break "CSP650" into "CSP65 / 0".
-                              numberOfLines={1}
-                              adjustsFontSizeToFit
-                              minimumFontScale={0.75}
+                              numberOfLines={2}
                             >
                               {primaryLabel}
                             </Text>
                             {hasTitle ? (
                               <Text
-                                style={[s.gridSlotTitle, { color: inkColor }]}
+                                style={[s.gridSlotTitle, { color: theme.text }]}
                                 numberOfLines={height > 90 ? 4 : 2}
                               >
                                 {title}
@@ -1298,7 +1234,7 @@ export default function TimetableScreen() {
                             {metaParts ? (
                               <WeekGridSlotMetaText
                                 parts={metaParts}
-                                theme={{ text: inkColor, textSecondary: inkSoft }}
+                                theme={theme}
                                 slotHeight={height}
                               />
                             ) : null}
@@ -1309,7 +1245,8 @@ export default function TimetableScreen() {
                           {
                             top,
                             height,
-                            backgroundColor: color,
+                            backgroundColor: color + '32',
+                            borderLeftColor: color,
                             zIndex: 2,
                           },
                         ];
@@ -1332,11 +1269,6 @@ export default function TimetableScreen() {
                           </Pressable>
                         );
                       })}
-                      {showNow ? (
-                        <View pointerEvents="none" style={[s.gridNowLine, { top: nowTop, backgroundColor: theme.danger }]}>
-                          <View style={[s.gridNowDot, { backgroundColor: theme.danger }]} />
-                        </View>
-                      ) : null}
                     </View>
                   );
                 })}
@@ -1632,22 +1564,29 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    minHeight: 54,
+    minHeight: 48,
   },
   gridCorner: {},
   gridColHead: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    gap: 3,
+    paddingVertical: 8,
+    borderLeftWidth: StyleSheet.hairlineWidth,
   },
-  gridColHeadLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
-  gridColDate: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  gridColDateText: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  gridColHeadLabel: { fontSize: 12, fontWeight: '800' },
+  gridColCount: {
+    marginTop: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridColCountText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   gridBodyRow: { flexDirection: 'row' },
-  gridTimeCol: { paddingRight: 6 },
-  // Centred on its hour line rather than hanging below it.
-  gridHourText: { fontSize: 10.5, fontWeight: '600', textAlign: 'right', marginTop: -7, opacity: 0.85 },
+  gridTimeCol: { paddingRight: 2 },
+  gridHourText: { fontSize: 10, fontWeight: '600' },
   gridDayCol: {
     position: 'relative',
     borderLeftWidth: StyleSheet.hairlineWidth,
@@ -1657,10 +1596,7 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
-    opacity: 0.7,
   },
-  gridNowLine: { position: 'absolute', left: 0, right: 0, height: 1.5, zIndex: 3 },
-  gridNowDot: { position: 'absolute', left: -4, top: -3.25, width: 8, height: 8, borderRadius: 4 },
   gridAddCell: {
     position: 'absolute',
     left: 0,
@@ -1680,34 +1616,35 @@ const s = StyleSheet.create({
   },
   gridSlot: {
     position: 'absolute',
-    left: 1.5,
-    right: 1.5,
-    borderRadius: 7,
-    paddingHorizontal: 5,
-    paddingVertical: 5,
+    left: 1,
+    right: 1,
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     overflow: 'hidden',
   },
   gridSlotInner: { flex: 1, minHeight: 0, width: '100%' },
   gridSlotInnerStacked: { justifyContent: 'flex-start', gap: 1 },
   gridSlotInnerCodeOnly: { justifyContent: 'center' },
   gridSlotCode: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    lineHeight: 13,
-    letterSpacing: 0.1,
+    lineHeight: 12,
+    letterSpacing: 0.2,
   },
-  gridSlotCodeCompact: { fontSize: 12, lineHeight: 15, letterSpacing: 0.2 },
+  gridSlotCodeCompact: { fontSize: 12, lineHeight: 14, letterSpacing: 0.35 },
   gridSlotTitle: { fontSize: 8, fontWeight: '600', lineHeight: 12 },
   /** Room on its own row(s); lecturer/group below — independent line limits. */
   gridSlotMetaColumn: { width: '100%', gap: 2 },
   gridSlotMetaRoom: {
-    fontSize: 10.5,
-    lineHeight: 13,
-    fontWeight: '600',
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
   },
   gridSlotMetaLect: {
-    fontSize: 9,
-    lineHeight: 11.5,
+    fontSize: 8,
+    lineHeight: 11,
     fontWeight: '500',
   },
   gridEmptyCol: {

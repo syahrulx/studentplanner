@@ -186,17 +186,16 @@ function SheetContent({
     { key: 'room', icon: 'map-pin', tile: TILE.red, label: 'timetableMenuRoom' },
     { key: 'lecturer', icon: 'user', tile: TILE.green, label: 'timetableMenuLecturer' },
     { key: 'group', icon: 'users', tile: TILE.teal, label: 'timetableMenuGroup' },
-  ];
-  // With course names on, the grid already scrolls through all seven days.
-  if (!slotDetails.courseName) {
-    toggles.push({
+    // The only switch that turns on seven scrolling columns; course names no
+    // longer do, so it is offered whatever else is on.
+    {
       key: 'scrollAllDaysInCompact',
       icon: 'columns',
       tile: TILE.indigo,
       label: 'timetableMenuAllDays',
       sub: 'timetableMenuAllDaysSub',
-    });
-  }
+    },
+  ];
 
   return (
     <>
