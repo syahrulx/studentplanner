@@ -10,16 +10,16 @@ import {
   Modal,
   Alert,
   useWindowDimensions,
-  Switch,
   Animated as RNAnimated,
   Easing,
   PanResponder,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import TimetableMenuSheet from '@/components/TimetableMenuSheet';
+import { shareTimetablePdf, type TimetablePdfOrientation } from '@/src/lib/timetablePdf';
 import * as WebBrowser from 'expo-web-browser';
 import Feather from '@expo/vector-icons/Feather';
-import { ExportCanvas, saveExportCanvas } from '@/components/ViewShotCompat';
 import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
 import {
@@ -34,6 +34,8 @@ import { useResponsive } from '@/hooks/useResponsive';
 import * as roomsApi from '@/src/lib/campusRoomsApi';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
+import { contrastText } from '@/src/lib/contrast';
+import { detectUses24h } from '@/src/lib/lockScreen/lockScreenFormat';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
 import {
   type WeekStartsOn,
@@ -70,16 +72,16 @@ const HOUR_HEIGHT = 56;
 const START_HOUR = 7;
 // END_HOUR is exclusive. Use 23 so the 22:00 row is visible.
 const END_HOUR = 23;
-const TIME_GUTTER = 46;
+const TIME_GUTTER = 40;
 const DAY_COLUMN_MIN_W = 84;
 /** gridRoot paddingHorizontal 6 + 6 */
 const GRID_OUTER_H_PAD = 12;
 const CAT_PLAYGROUND_SIZE = 120;
 const MONO_PLAYGROUND_SIZE = 56;
 
-const LANDSCAPE_DAY_ROW_HEIGHT = 100;
-const LANDSCAPE_HOUR_COL_WIDTH = 120;
-const LANDSCAPE_DAY_LABEL_WIDTH = 90;
+
+/** Last PDF orientation, so the export panel opens on the one the student used. */
+const PDF_ORIENTATION_KEY = 'timetable_pdf_orientation';
 
 /** Set by the lock screen Studio on its first mount; until then the menu shows a NEW badge. */
 const LOCK_STUDIO_SEEN_KEY = 'lock_screen_studio_seen_v1';
@@ -87,6 +89,27 @@ const LOCK_STUDIO_SEEN_KEY = 'lock_screen_studio_seen_v1';
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
+}
+
+/** Space above the first hour line, so its label can sit centred on the line. */
+const GRID_TOP_PAD = 8;
+/** Room under the last hour so the floating tab bar never covers a class. */
+const GRID_BOTTOM_PAD = 96;
+
+/** "8 AM" / "20:00", following the phone's 12/24-hour setting. */
+function gridHourLabel(h: number, uses24h: boolean): string {
+  if (uses24h) return `${String(h).padStart(2, '0')}:00`;
+  const suffix = h < 12 || h === 24 ? 'AM' : 'PM';
+  return `${h % 12 === 0 ? 12 : h % 12} ${suffix}`;
+}
+
+/** Mixes a hex colour toward black, so a pastel subject colour still reads as text on its own tint. */
+function darkenHex(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount));
+  return `#${[ch(16), ch(8), ch(0)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** True if [hour, hour+1) on `day` has no overlapping class. */
@@ -203,13 +226,10 @@ export default function TimetableScreen() {
   const { width: winW, height: winH } = useWindowDimensions();
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState<TimetablePdfOrientation>('portrait');
   // null until read, so the NEW badge never flashes for someone who already opened the Studio.
   const [lockStudioSeen, setLockStudioSeen] = useState<boolean | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
-  const [exportPreset, setExportPreset] = useState<'screen' | 'portrait' | 'landscape'>('portrait');
-  const [exporting, setExporting] = useState(false);
-  const exportShotRef = useRef<any>(null);
   const [slotDetails, setSlotDetails] = useState<TimetableSlotDetailsVisibility>({
     courseName: false,
     scrollAllDaysInCompact: false,
@@ -245,6 +265,14 @@ export default function TimetableScreen() {
       alive = false;
     };
   }, [checkLockStudioSeen]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PDF_ORIENTATION_KEY)
+      .then((value) => {
+        if (value === 'portrait' || value === 'landscape') setPdfOrientation(value);
+      })
+      .catch(() => {});
+  }, []);
 
   // Resolve where the selected class is held from the crowdsourced room map.
   useEffect(() => {
@@ -324,43 +352,45 @@ export default function TimetableScreen() {
     ? getUniversityById(user.universityId)?.shortName ?? user.university
     : null;
 
-  const gridBodyHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
+  // Only the hours classes use (never less than 8 AM to 6 PM), so the week
+  // isn't padded with empty evenings. Editing shows the whole day, so a class
+  // can be added at any hour.
+  const { gridStartHour, gridEndHour } = useMemo(() => {
+    if (gridEditMode || timetable.length === 0) return { gridStartHour: START_HOUR, gridEndHour: END_HOUR };
+    let first = 8;
+    let last = 18;
+    for (const e of timetable) {
+      const start = timeToMinutes(e.startTime);
+      const end = timeToMinutes(e.endTime);
+      if (start > 0) first = Math.min(first, Math.floor(start / 60));
+      if (end > 0) last = Math.max(last, Math.ceil(end / 60));
+    }
+    return { gridStartHour: Math.max(0, first), gridEndHour: Math.min(24, last + 1) };
+  }, [timetable, gridEditMode]);
+
+  /** Day of the month for each weekday of the current week, for the column heads. */
+  const weekDates = useMemo(() => {
+    const now = new Date();
+    const startIndex = weekStartsOn === 'sunday' ? 0 : 1;
+    const back = (now.getDay() - startIndex + 7) % 7;
+    const out: Partial<Record<DayOfWeek, number>> = {};
+    daysOrdered.forEach(({ key }, i) => {
+      out[key] = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + i).getDate();
+    });
+    return out;
+  }, [daysOrdered, weekStartsOn]);
+
+  const [nowMinutes, setNowMinutes] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+  useEffect(() => {
+    const id = setInterval(() => setNowMinutes(new Date().getHours() * 60 + new Date().getMinutes()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const uses24h = useMemo(() => detectUses24h(), []);
+
+  const gridBodyHeight = (gridEndHour - gridStartHour) * HOUR_HEIGHT;
   const gridContentWidth = TIME_GUTTER + daysForWeekGrid.length * dayColumnWidth;
   const gridScrollMaxH = Math.max(280, Math.min(gridBodyHeight + 8, winH - (Platform.OS === 'ios' ? 210 : 190)));
 
-  const exportSize = useMemo(() => {
-    // Wallpaper-friendly defaults (high-res) + screen option.
-    if (exportPreset === 'screen') {
-      return { label: 'Current screen', width: Math.round(winW), height: Math.round(winH) };
-    }
-    if (exportPreset === 'landscape') {
-      return { label: 'Wallpaper (landscape)', width: 2400, height: 1080 };
-    }
-    return { label: 'Wallpaper (portrait)', width: 1080, height: 2400 };
-  }, [exportPreset, winW, winH]);
-
-  const naturalGrid = useMemo(() => {
-    // Natural grid width: compact 5-day fits screen; full week or compact+scroll is wider than screen.
-    const scrollsHorizontally =
-      slotDetails.courseName ||
-      (!slotDetails.courseName && slotDetails.scrollAllDaysInCompact);
-    const w = scrollsHorizontally ? Math.max(gridContentWidth, winW) : gridContentWidth;
-    const h = 48 + gridBodyHeight; // header row + grid body
-    return { w, h };
-  }, [gridContentWidth, winW, gridBodyHeight, slotDetails.courseName, slotDetails.scrollAllDaysInCompact]);
-
-  const naturalLandscapeGrid = useMemo(() => {
-    const hoursCount = END_HOUR - START_HOUR;
-    const w = LANDSCAPE_DAY_LABEL_WIDTH + hoursCount * LANDSCAPE_HOUR_COL_WIDTH;
-    const h = 48 + daysForWeekGrid.length * LANDSCAPE_DAY_ROW_HEIGHT;
-    return { w, h };
-  }, [daysForWeekGrid.length]);
-
-  const activeGrid = exportPreset === 'landscape' ? naturalLandscapeGrid : naturalGrid;
-
-  const exportScale = useMemo(() => {
-    return Math.min(exportSize.width / activeGrid.w, exportSize.height / activeGrid.h);
-  }, [exportSize.width, exportSize.height, activeGrid.w, activeGrid.h]);
 
   /**
    * Playground cat hops between subject slots in week view.
@@ -376,7 +406,7 @@ export default function TimetableScreen() {
       items.forEach((entry) => {
         const startMin = timeToMinutes(entry.startTime);
         const endMin = timeToMinutes(entry.endTime);
-        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
+        const top = GRID_TOP_PAD + ((startMin / 60) - gridStartHour) * HOUR_HEIGHT;
         const slotHeight = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
         const petSize = playgroundPetSize;
         const petHalf = petSize / 2;
@@ -390,7 +420,7 @@ export default function TimetableScreen() {
       });
     });
     return targets;
-  }, [isCatTheme, isCodexPlaygroundPet, playgroundPetSize, daysForWeekGrid, timetable, dayColumnWidth]);
+  }, [isCatTheme, isCodexPlaygroundPet, playgroundPetSize, daysForWeekGrid, timetable, dayColumnWidth, gridStartHour]);
 
   const catX = useRef(new RNAnimated.Value(TIME_GUTTER + 8)).current;
   const catY = useRef(new RNAnimated.Value(64)).current;
@@ -588,13 +618,6 @@ export default function TimetableScreen() {
     const id = setInterval(hop, 9000 + Math.random() * 5000);
     return () => clearInterval(id);
   }, [shouldAutoPlaygroundPet, isCodexPlaygroundPet, catHop]);
-
-  const previewScale = useMemo(() => {
-    // Preview box is limited; scale down to fit visually.
-    const pw = winW - 32 - 28; // panel padding + frame padding-ish
-    const ph = 220;
-    return Math.min(pw / activeGrid.w, ph / activeGrid.h);
-  }, [winW, activeGrid.w, activeGrid.h]);
 
   const allDaysGrouped = useMemo(() => {
     return daysOrdered
@@ -828,315 +851,77 @@ export default function TimetableScreen() {
     );
   }
 
-  function renderTimetableMenu() {
-    return (
-      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
-        <View style={s.menuModalRoot}>
-          <Pressable style={s.menuBackdrop} onPress={() => setMenuOpen(false)} />
-          <View style={[s.menuPopover, { backgroundColor: theme.card, borderColor: theme.border }]} pointerEvents="box-none">
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setMenuOpen(false);
-                router.push('/timetable-edit' as any);
-              }}
-            >
-              <Feather name="clipboard" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableEditClasses')}</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setMenuOpen(false);
-                setExportOpen(true);
-              }}
-            >
-              <Feather name="download" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>Download as wallpaper</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setMenuOpen(false);
-                router.push('/lock-wallpaper' as any);
-              }}
-            >
-              <Feather name="lock" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('lsTitle')}</Text>
-              {lockStudioSeen === false ? (
-                <View style={[s.menuNewBadge, { backgroundColor: theme.primary }]}>
-                  <Text style={[s.menuNewBadgeText, { color: theme.textInverse }]}>{T('lsNewBadge')}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setMenuOpen(false);
-                router.push('/campus-map' as any);
-              }}
-            >
-              <Feather name="map" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('campusMapTitle')}</Text>
-            </Pressable>
-            <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setViewMode('week');
-                setMenuOpen(false);
-              }}
-            >
-              <Feather name="grid" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableGridView')}</Text>
-              {viewMode === 'week' && <Feather name="check" size={18} color={theme.primary} />}
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setViewMode('list');
-                setMenuOpen(false);
-              }}
-            >
-              <Feather name="list" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableListView')}</Text>
-              {viewMode === 'list' && <Feather name="check" size={18} color={theme.primary} />}
-            </Pressable>
-            <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
-            <View style={s.menuSwitchRow}>
-              <Feather name="book-open" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowCourseName')}</Text>
-              <Switch
-                value={slotDetails.courseName}
-                onValueChange={(courseName) => patchSlotDetails({ courseName })}
-                trackColor={{ false: theme.border, true: `${theme.primary}55` }}
-                thumbColor={slotDetails.courseName ? theme.primary : theme.textSecondary}
-              />
-            </View>
-            <View style={s.menuSwitchRow}>
-              <Feather name="map-pin" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowRoom')}</Text>
-              <Switch
-                value={slotDetails.room}
-                onValueChange={(room) => patchSlotDetails({ room })}
-                trackColor={{ false: theme.border, true: `${theme.primary}55` }}
-                thumbColor={slotDetails.room ? theme.primary : theme.textSecondary}
-              />
-            </View>
-            <View style={s.menuSwitchRow}>
-              <Feather name="user" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowLecturer')}</Text>
-              <Switch
-                value={slotDetails.lecturer}
-                onValueChange={(lecturer) => patchSlotDetails({ lecturer })}
-                trackColor={{ false: theme.border, true: `${theme.primary}55` }}
-                thumbColor={slotDetails.lecturer ? theme.primary : theme.textSecondary}
-              />
-            </View>
-            {!slotDetails.courseName ? (
-              <View style={s.menuSwitchRow}>
-                <Feather name="sidebar" size={18} color={theme.primary} />
-                <Text style={[s.menuItemText, { color: theme.text, flex: 1 }]}>
-                  {T('timetableScrollAllDaysCompact')}
-                </Text>
-                <Switch
-                  value={slotDetails.scrollAllDaysInCompact}
-                  onValueChange={(scrollAllDaysInCompact) => patchSlotDetails({ scrollAllDaysInCompact })}
-                  trackColor={{ false: theme.border, true: `${theme.primary}55` }}
-                  thumbColor={slotDetails.scrollAllDaysInCompact ? theme.primary : theme.textSecondary}
-                />
-              </View>
-            ) : null}
-            <View style={[s.menuSwitchRow, s.menuSwitchRowLast]}>
-              <Feather name="users" size={18} color={theme.primary} />
-              <Text style={[s.menuItemText, { color: theme.text }]}>{T('timetableCardShowGroup')}</Text>
-              <Switch
-                value={slotDetails.group}
-                onValueChange={(group) => patchSlotDetails({ group })}
-                trackColor={{ false: theme.border, true: `${theme.primary}55` }}
-                thumbColor={slotDetails.group ? theme.primary : theme.textSecondary}
-              />
-            </View>
-            <View style={[s.menuDivider, { backgroundColor: theme.border }]} />
-            <Pressable
-              style={({ pressed }) => [s.menuItem, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                setMenuOpen(false);
-                Alert.alert(
-                  'Reset Timetable',
-                  'This will remove all your classes and return to the initial setup. This cannot be undone.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Reset',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await saveTimetableOnly([]);
-                        } catch {
-                          Alert.alert('Could not reset timetable', 'Please try again.');
-                        }
-                      },
-                    },
-                  ],
-                );
-              }}
-            >
-              <Feather name="trash-2" size={18} color="#ef4444" />
-              <Text style={[s.menuItemText, { color: '#ef4444' }]}>Reset timetable</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-
-  async function saveExportedImage() {
-    if (exporting) return;
-    setExporting(true);
+  async function exportPdf(orientation: TimetablePdfOrientation) {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    setPdfOrientation(orientation);
+    AsyncStorage.setItem(PDF_ORIENTATION_KEY, orientation).catch(() => {});
     try {
-      const result = await saveExportCanvas(exportShotRef.current, {
-        format: exportFormat,
-        quality: 0.95,
+      await shareTimetablePdf({
+        timetable,
+        subjectColors,
+        days: daysOrdered.map((d) => d.key),
+        title: T('timetablePdfTitle'),
+        subtitle: [uniName, new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })]
+          .filter(Boolean)
+          .join(' · '),
+        show: slotDetails,
+        onlineLabel: T('timetableRoomOnline'),
+        orientation,
       });
-      if (result === 'saved') setExportOpen(false);
+      setMenuOpen(false);
     } catch {
-      // ignore
+      Alert.alert(T('timetableExportPdfError'));
     } finally {
-      setExporting(false);
+      setExportingPdf(false);
     }
   }
 
-  function renderExportModal() {
-    if (!exportOpen) return null;
+  function confirmResetTimetable() {
+    Alert.alert(
+      'Reset Timetable',
+      'This will remove all your classes and return to the initial setup. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await saveTimetableOnly([]);
+            } catch {
+              Alert.alert('Could not reset timetable', 'Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }
 
+  function renderTimetableMenu() {
+    // Each place closes the sheet first, so it is gone before the next screen slides in.
+    const go = (action: () => void) => () => {
+      setMenuOpen(false);
+      action();
+    };
     return (
-      <Modal visible={exportOpen} transparent animationType="fade" onRequestClose={() => setExportOpen(false)}>
-        <View style={s.exportRoot}>
-          <Pressable style={s.exportBackdrop} onPress={() => !exporting && setExportOpen(false)} />
-          <View style={[s.exportPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[s.exportTitle, { color: theme.text }]}>Download timetable</Text>
-            <Text style={[s.exportSub, { color: theme.textSecondary }]}>
-              Choose a size for wallpaper. We’ll export the full timetable grid.
-            </Text>
-
-            <View style={s.exportOptionsRow}>
-              {(['portrait', 'landscape', 'screen'] as const).map((id) => {
-                const active = exportPreset === id;
-                const label = id === 'portrait' ? 'Portrait' : id === 'landscape' ? 'Landscape' : 'Screen';
-                return (
-                  <Pressable
-                    key={id}
-                    onPress={() => setExportPreset(id)}
-                    style={({ pressed }) => [
-                      s.exportChip,
-                      { borderColor: theme.border, backgroundColor: theme.background },
-                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
-                      pressed && { opacity: 0.9 },
-                    ]}
-                  >
-                    <Text style={[s.exportChipText, { color: active ? theme.textInverse : theme.text }]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={s.exportOptionsRow}>
-              {(['png', 'jpg'] as const).map((id) => {
-                const active = exportFormat === id;
-                const label = id.toUpperCase();
-                return (
-                  <Pressable
-                    key={id}
-                    onPress={() => setExportFormat(id)}
-                    style={({ pressed }) => [
-                      s.exportChip,
-                      { borderColor: theme.border, backgroundColor: theme.background },
-                      active && { backgroundColor: theme.primary, borderColor: theme.primary },
-                      pressed && { opacity: 0.9 },
-                    ]}
-                  >
-                    <Text style={[s.exportChipText, { color: active ? theme.textInverse : theme.text }]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={[s.exportPreviewFrame, { borderColor: theme.border, backgroundColor: theme.background }]}>
-              <View style={s.exportPreviewInner}>
-                <View
-                  style={{
-                    width: Math.floor(activeGrid.w * previewScale),
-                    height: Math.floor(activeGrid.h * previewScale),
-                    transform: [{ scale: previewScale }],
-                    transformOrigin: 'top left', // Scale from top left so it fits cleanly
-                  }}
-                >
-                  {exportPreset === 'landscape'
-                    ? renderLandscapeGridStatic(activeGrid.w)
-                    : renderWeekGridStatic(activeGrid.w)}
-                </View>
-              </View>
-            </View>
-
-            <View style={s.exportActions}>
-              <Pressable
-                style={({ pressed }) => [
-                  s.exportBtn,
-                  { borderColor: theme.border, backgroundColor: theme.background },
-                  pressed && { opacity: 0.9 },
-                ]}
-                onPress={() => setExportOpen(false)}
-                disabled={exporting}
-              >
-                <Text style={[s.exportBtnText, { color: theme.text }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  s.exportBtn,
-                  s.exportBtnPrimary,
-                  { borderColor: theme.primary, backgroundColor: theme.primary },
-                  (exporting || pressed) && { opacity: 0.9 },
-                ]}
-                onPress={() => void saveExportedImage()}
-                disabled={exporting}
-              >
-                <Text style={[s.exportBtnText, { color: theme.textInverse }]}>{exporting ? 'Saving…' : 'Save'}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        {/* Hidden full-size capture canvas (not constrained by preview frame). */}
-        <View style={s.exportHiddenCanvas} pointerEvents="none">
-          <ExportCanvas
-            ref={(r: any) => {
-              exportShotRef.current = r;
-            }}
-            format={exportFormat}
-            quality={exportFormat === 'jpg' ? 0.95 : 1}
-            style={{
-              width: exportSize.width,
-              height: exportSize.height,
-              backgroundColor: theme.background,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <View
-              style={{
-                width: activeGrid.w,
-                height: activeGrid.h,
-                transform: [{ scale: exportScale }],
-              }}
-            >
-              {exportPreset === 'landscape'
-                ? renderLandscapeGridStatic(activeGrid.w)
-                : renderWeekGridStatic(activeGrid.w)}
-            </View>
-          </ExportCanvas>
-        </View>
-      </Modal>
+      <TimetableMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        theme={theme}
+        T={T}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        slotDetails={slotDetails}
+        onSlotDetailsChange={patchSlotDetails}
+        lockScreenIsNew={lockStudioSeen === false}
+        onEditClasses={go(() => router.push('/timetable-edit' as any))}
+        onLockScreen={go(() => router.push('/lock-wallpaper' as any))}
+        pdfOrientation={pdfOrientation}
+        onExportPdf={(orientation) => void exportPdf(orientation)}
+        exportingPdf={exportingPdf}
+        onReset={go(confirmResetTimetable)}
+      />
     );
   }
 
@@ -1343,7 +1128,7 @@ export default function TimetableScreen() {
 
   /* ── Week grid: one column per day (scroll horizontally if needed) ─ */
   function renderWeekGrid() {
-    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+    const hours = Array.from({ length: gridEndHour - gridStartHour }, (_, i) => gridStartHour + i);
     const hScrollWeekOrCompactAllDays =
       slotDetails.courseName ||
       (!slotDetails.courseName && slotDetails.scrollAllDaysInCompact);
@@ -1363,25 +1148,17 @@ export default function TimetableScreen() {
             <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
               <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
               {daysForWeekGrid.map(({ key, shortKey }) => {
-                const count = timetable.filter((e) => e.day === key).length;
+                const isToday = key === todayDayKey;
                 return (
-                  <View
-                    key={key}
-                    style={[
-                      s.gridColHead,
-                      {
-                        width: dayColumnWidth,
-                        borderLeftColor: theme.border,
-                        backgroundColor: theme.backgroundSecondary ?? theme.card,
-                      },
-                    ]}
-                  >
-                    <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
-                    {count > 0 ? (
-                      <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                        <Text style={[s.gridColCountText, isDarkMinimal && { color: theme.textInverse }]}>{count}</Text>
-                      </View>
-                    ) : null}
+                  <View key={key} style={[s.gridColHead, { width: dayColumnWidth }]}>
+                    <Text style={[s.gridColHeadLabel, { color: isToday ? theme.primary : theme.textSecondary }]}>
+                      {String((T as any)(shortKey)).toUpperCase()}
+                    </Text>
+                    <View style={[s.gridColDate, isToday && { backgroundColor: theme.primary }]}>
+                      <Text style={[s.gridColDateText, { color: isToday ? contrastText(theme.primary) : theme.text }]}>
+                        {weekDates[key]}
+                      </Text>
+                    </View>
                   </View>
                 );
               })}
@@ -1389,16 +1166,17 @@ export default function TimetableScreen() {
 
             <ScrollView
               style={{ maxHeight: gridScrollMaxH }}
+              contentContainerStyle={{ paddingBottom: GRID_BOTTOM_PAD }}
               nestedScrollEnabled
-              showsVerticalScrollIndicator
+              showsVerticalScrollIndicator={false}
               bounces={false}
             >
-              <View style={[s.gridBodyRow, { minHeight: gridBodyHeight }]}>
+              <View style={[s.gridBodyRow, { minHeight: gridBodyHeight + GRID_TOP_PAD, paddingTop: GRID_TOP_PAD }]}>
                 <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
                   {hours.map((h) => (
-                    <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
+                    <View key={h} style={{ height: HOUR_HEIGHT }}>
                       <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
-                        {h.toString().padStart(2, '0')}:00
+                        {gridHourLabel(h, uses24h)}
                       </Text>
                     </View>
                   ))}
@@ -1408,6 +1186,9 @@ export default function TimetableScreen() {
                   const items = timetable
                     .filter((e) => e.day === key)
                     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+                  const isToday = key === todayDayKey;
+                  const nowTop = (nowMinutes / 60 - gridStartHour) * HOUR_HEIGHT;
+                  const showNow = isToday && nowTop >= 0 && nowTop <= gridBodyHeight;
                   return (
                     <View
                       key={key}
@@ -1416,8 +1197,9 @@ export default function TimetableScreen() {
                         {
                           width: dayColumnWidth,
                           minHeight: gridBodyHeight,
+                          // Solid blocks carry the structure; column rules only help while placing a class.
+                          borderLeftWidth: gridEditMode ? StyleSheet.hairlineWidth : 0,
                           borderLeftColor: theme.border,
-                          backgroundColor: 'transparent',
                         },
                       ]}
                     >
@@ -1427,8 +1209,9 @@ export default function TimetableScreen() {
                           style={[
                             s.gridHourLine,
                             {
-                              top: (h - START_HOUR) * HOUR_HEIGHT,
+                              top: (h - gridStartHour) * HOUR_HEIGHT,
                               backgroundColor: theme.border,
+                              opacity: gridEditMode ? 0.7 : 0.35,
                             },
                           ]}
                         />
@@ -1443,7 +1226,7 @@ export default function TimetableScreen() {
                               style={[
                                 s.gridAddCell,
                                 {
-                                  top: (h - START_HOUR) * HOUR_HEIGHT,
+                                  top: (h - gridStartHour) * HOUR_HEIGHT,
                                   height: HOUR_HEIGHT,
                                 },
                               ]}
@@ -1464,9 +1247,15 @@ export default function TimetableScreen() {
                       {items.map((entry) => {
                         const startMin = timeToMinutes(entry.startTime);
                         const endMin = timeToMinutes(entry.endTime);
-                        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
-                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
+                        // A gap above and below, so back-to-back classes in the same colour read as two blocks.
+                        const top = ((startMin / 60) - gridStartHour) * HOUR_HEIGHT + 1.5;
+                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT - 3, 26);
                         const color = resolveSlotColor(entry);
+                        // White on the subject colour when it's dark enough; a deep shade of
+                        // the same hue on the light ones (amber, lime, cyan), never plain black.
+                        const whiteInk = contrastText(color) === '#ffffff';
+                        const inkColor = whiteInk ? '#FFFFFF' : darkenHex(color, 0.68);
+                        const inkSoft = whiteInk ? 'rgba(255,255,255,0.82)' : darkenHex(color, 0.5);
                         const title = entryDisplayTitle(entry);
                         const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
                         const hasTitle = Boolean(slotDetails.courseName && height > 38);
@@ -1489,15 +1278,18 @@ export default function TimetableScreen() {
                               style={[
                                 s.gridSlotCode,
                                 !slotDetails.courseName && s.gridSlotCodeCompact,
-                                { color },
+                                { color: inkColor },
                               ]}
-                              numberOfLines={2}
+                              // A code is one token: shrink it rather than break "CSP650" into "CSP65 / 0".
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.75}
                             >
                               {primaryLabel}
                             </Text>
                             {hasTitle ? (
                               <Text
-                                style={[s.gridSlotTitle, { color: theme.text }]}
+                                style={[s.gridSlotTitle, { color: inkColor }]}
                                 numberOfLines={height > 90 ? 4 : 2}
                               >
                                 {title}
@@ -1506,7 +1298,7 @@ export default function TimetableScreen() {
                             {metaParts ? (
                               <WeekGridSlotMetaText
                                 parts={metaParts}
-                                theme={theme}
+                                theme={{ text: inkColor, textSecondary: inkSoft }}
                                 slotHeight={height}
                               />
                             ) : null}
@@ -1517,8 +1309,7 @@ export default function TimetableScreen() {
                           {
                             top,
                             height,
-                            backgroundColor: color + '32',
-                            borderLeftColor: color,
+                            backgroundColor: color,
                             zIndex: 2,
                           },
                         ];
@@ -1541,6 +1332,11 @@ export default function TimetableScreen() {
                           </Pressable>
                         );
                       })}
+                      {showNow ? (
+                        <View pointerEvents="none" style={[s.gridNowLine, { top: nowTop, backgroundColor: theme.danger }]}>
+                          <View style={[s.gridNowDot, { backgroundColor: theme.danger }]} />
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })}
@@ -1570,325 +1366,6 @@ export default function TimetableScreen() {
             </ScrollView>
           </View>
         </ScrollView>
-      </View>
-    );
-  }
-
-  function renderWeekGridStatic(minTableW: number) {
-    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-    return (
-      <View style={[s.gridRoot, { paddingHorizontal: 0, paddingBottom: 0 }]}>
-        <View style={{ width: minTableW }}>
-          <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
-            <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
-            {daysForWeekGrid.map(({ key, shortKey }) => {
-              const count = timetable.filter((e) => e.day === key).length;
-              return (
-                <View
-                  key={key}
-                  style={[
-                    s.gridColHead,
-                    {
-                      width: dayColumnWidth,
-                      borderLeftColor: theme.border,
-                      backgroundColor: theme.backgroundSecondary ?? theme.card,
-                    },
-                  ]}
-                >
-                  <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
-                  {count > 0 ? (
-                    <View style={[s.gridColCount, { backgroundColor: theme.primary }]}>
-                      <Text style={[s.gridColCountText, isDarkMinimal && { color: theme.textInverse }]}>{count}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-
-          <View style={[s.gridBodyRow, { minHeight: gridBodyHeight }]}>
-            <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
-              {hours.map((h) => (
-                <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
-                  <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
-                    {h.toString().padStart(2, '0')}:00
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            {daysForWeekGrid.map(({ key }) => {
-              const items = timetable
-                .filter((e) => e.day === key)
-                .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-              return (
-                <View
-                  key={key}
-                  style={[
-                    s.gridDayCol,
-                    {
-                      width: dayColumnWidth,
-                      minHeight: gridBodyHeight,
-                      borderLeftColor: theme.border,
-                      backgroundColor: 'transparent',
-                    },
-                  ]}
-                >
-                  {hours.map((h) => (
-                    <View
-                      key={h}
-                      style={[
-                        s.gridHourLine,
-                        {
-                          top: (h - START_HOUR) * HOUR_HEIGHT,
-                          backgroundColor: theme.border,
-                        },
-                      ]}
-                    />
-                  ))}
-                  {items.map((entry) => {
-                    const startMin = timeToMinutes(entry.startTime);
-                    const endMin = timeToMinutes(entry.endTime);
-                    const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
-                    const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
-                    const color = resolveSlotColor(entry);
-                    const title = entryDisplayTitle(entry);
-                    const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
-                    const hasTitle = Boolean(slotDetails.courseName && height > 38);
-                    const metaParts = weekGridMetaParts(
-                      entry,
-                      slotDetails,
-                      height,
-                      hasTitle,
-                      T('timetableRoomOnline'),
-                    );
-                    const stackTight = hasTitle || Boolean(metaParts);
-                    return (
-                      <View
-                        key={entry.id}
-                        style={[
-                          s.gridSlot,
-                          {
-                            top,
-                            height,
-                            backgroundColor: color + '32',
-                            borderLeftColor: color,
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            s.gridSlotInner,
-                            stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              s.gridSlotCode,
-                              !slotDetails.courseName && s.gridSlotCodeCompact,
-                              { color },
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {primaryLabel}
-                          </Text>
-                          {hasTitle ? (
-                            <Text
-                              style={[s.gridSlotTitle, { color: theme.text }]}
-                              numberOfLines={height > 90 ? 4 : 2}
-                            >
-                              {title}
-                            </Text>
-                          ) : null}
-                          {metaParts ? (
-                            <WeekGridSlotMetaText
-                              parts={metaParts}
-                              theme={theme}
-                              slotHeight={height}
-                            />
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })}
-                  {items.length === 0 && (
-                    <View style={[s.gridEmptyCol, { top: gridBodyHeight * 0.35 }]}>
-                      <Text style={[s.gridEmptyText, { color: theme.textSecondary }]}>—</Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  /* ── Landscape Export Grid: Transposed (Rows = Days) ─────────── */
-  function renderLandscapeGridStatic(minTableW: number) {
-    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-
-    return (
-      <View style={[s.gridRoot, { paddingHorizontal: 0, paddingBottom: 0, backgroundColor: theme.background }]}>
-        <View style={{ width: minTableW }}>
-          {/* Header Row: corner + Times */}
-          <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
-            <View style={[s.gridCorner, { width: LANDSCAPE_DAY_LABEL_WIDTH }]} />
-            {hours.map((h) => (
-              <View
-                key={h}
-                style={[
-                  s.gridColHead,
-                  {
-                    width: LANDSCAPE_HOUR_COL_WIDTH,
-                    borderLeftColor: theme.border,
-                    backgroundColor: theme.backgroundSecondary ?? theme.card,
-                  },
-                ]}
-              >
-                <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>
-                  {h.toString().padStart(2, '0')}:00
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={{ flexDirection: 'column' }}>
-            {daysForWeekGrid.map(({ key, shortKey }) => {
-              const items = timetable
-                .filter((e) => e.day === key)
-                .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-                
-              return (
-                <View
-                  key={key}
-                  style={{
-                    height: LANDSCAPE_DAY_ROW_HEIGHT,
-                    flexDirection: 'row',
-                    borderBottomWidth: 1,
-                    borderBottomColor: theme.border,
-                  }}
-                >
-                  {/* Left Column: Day Label */}
-                  <View
-                    style={{
-                      width: LANDSCAPE_DAY_LABEL_WIDTH,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: theme.backgroundSecondary ?? theme.card,
-                      borderRightWidth: 1,
-                      borderRightColor: theme.border,
-                    }}
-                  >
-                    <Text style={[s.gridColHeadLabel, { color: theme.primary }]}>{(T as any)(shortKey)}</Text>
-                  </View>
-
-                  {/* Right Column: Time Slots Wrapper */}
-                  <View
-                    style={{
-                      flex: 1,
-                      position: 'relative',
-                    }}
-                  >
-                    {/* Background Grid Lines (Vertical) */}
-                    {hours.map((h, idx) => (
-                      <View
-                        key={h}
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          bottom: 0,
-                          left: idx * LANDSCAPE_HOUR_COL_WIDTH,
-                          width: 1,
-                          backgroundColor: theme.border,
-                        }}
-                      />
-                    ))}
-
-                    {/* Class Slots */}
-                    {items.map((entry) => {
-                      const startMin = timeToMinutes(entry.startTime);
-                      const endMin = timeToMinutes(entry.endTime);
-                      
-                      const left = ((startMin / 60) - START_HOUR) * LANDSCAPE_HOUR_COL_WIDTH;
-                      const width = Math.max(((endMin - startMin) / 60) * LANDSCAPE_HOUR_COL_WIDTH, 40);
-                      
-                      const color = resolveSlotColor(entry);
-                      const title = entryDisplayTitle(entry);
-                      const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
-                      const hasTitle = Boolean(slotDetails.courseName && width > 60);
-                      const metaParts = weekGridMetaParts(
-                        entry,
-                        slotDetails,
-                        LANDSCAPE_DAY_ROW_HEIGHT, // pretend height is big to show meta
-                        hasTitle,
-                        T('timetableRoomOnline'),
-                      );
-                      const stackTight = hasTitle || Boolean(metaParts);
-                      const isHorizontal = width > 180;
-                      
-                      return (
-                        <View
-                          key={entry.id}
-                          style={[
-                            s.gridSlot, // has position: absolute, borderRadius, padding
-                            {
-                              left,
-                              width,
-                              top: 2, // Slight padding from top/bottom
-                              bottom: 2,
-                              height: undefined, // Override fixed height from s.gridSlot if any
-                              backgroundColor: color + '32',
-                              borderLeftColor: color,
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              s.gridSlotInner,
-                              stackTight ? s.gridSlotInnerStacked : s.gridSlotInnerCodeOnly,
-                              { flexDirection: isHorizontal ? 'row' : 'column', gap: isHorizontal ? 12 : 2, alignItems: isHorizontal ? 'center' : 'flex-start' }
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                s.gridSlotCode,
-                                !slotDetails.courseName && s.gridSlotCodeCompact,
-                                { color, flexShrink: 0 },
-                              ]}
-                              numberOfLines={isHorizontal ? 1 : 2}
-                            >
-                              {primaryLabel}
-                            </Text>
-                            <View style={{ flex: 1 }}>
-                              {hasTitle ? (
-                                <Text
-                                  style={[s.gridSlotTitle, { color: theme.text }]}
-                                  numberOfLines={isHorizontal ? 1 : 2}
-                                >
-                                  {title}
-                                </Text>
-                              ) : null}
-                              {metaParts ? (
-                                <WeekGridSlotMetaText
-                                  parts={metaParts}
-                                  theme={theme}
-                                  slotHeight={LANDSCAPE_DAY_ROW_HEIGHT} // Pass sufficient height to render
-                                  isHorizontal={isHorizontal}
-                                />
-                              ) : null}
-                            </View>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
       </View>
     );
   }
@@ -2040,7 +1517,6 @@ export default function TimetableScreen() {
       ) : null}
       {renderHeader(true)}
       {renderTimetableMenu()}
-      {renderExportModal()}
       {renderClassDetailsModal()}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
@@ -2124,27 +1600,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuModalRoot: {
-    flex: 1,
-  },
-  menuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  menuPopover: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 108 : 92,
-    right: 12,
-    minWidth: 268,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
   detailsModalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -2165,117 +1620,34 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  menuItemText: { flex: 1, fontSize: 15, fontWeight: '600' },
-  menuNewBadge: {
-    height: 18,
-    minWidth: 36,
-    paddingHorizontal: 7,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuNewBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
-  menuSwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    paddingRight: 12,
-  },
-  menuSwitchRowLast: { paddingBottom: 12 },
-  menuDivider: { height: StyleSheet.hairlineWidth, marginLeft: 46 },
   headerIconWrap: {
     width: 44, height: 44, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
   headerSub: { fontSize: 13, fontWeight: '500', marginTop: 2 },
-  exportRoot: { flex: 1 },
-  exportBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
-  exportPanel: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    top: Platform.OS === 'ios' ? 100 : 84,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 14,
-  },
-  exportTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.2 },
-  exportSub: { fontSize: 13, fontWeight: '600', marginTop: 6, lineHeight: 18 },
-  exportOptionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  exportChip: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exportChipText: { fontSize: 12, fontWeight: '900', letterSpacing: 0.2 },
-  exportPreviewFrame: {
-    borderWidth: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginTop: 12,
-    height: 220,
-  },
-  exportPreviewInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  exportHiddenCanvas: {
-    position: 'absolute',
-    left: -10000,
-    top: -10000,
-    width: 1,
-    height: 1,
-  },
-  exportActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  exportBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exportBtnPrimary: { flex: 1.3 },
-  exportBtnText: { fontSize: 13, fontWeight: '900' },
   gridRoot: { flex: 1, paddingHorizontal: 6, paddingBottom: 12 },
   gridHScroll: { flexGrow: 1 },
   gridHeaderRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    minHeight: 48,
+    minHeight: 54,
   },
   gridCorner: {},
   gridColHead: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderLeftWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 6,
+    gap: 3,
   },
-  gridColHeadLabel: { fontSize: 12, fontWeight: '800' },
-  gridColCount: {
-    marginTop: 4,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridColCountText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  gridColHeadLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
+  gridColDate: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  gridColDateText: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   gridBodyRow: { flexDirection: 'row' },
-  gridTimeCol: { paddingRight: 2 },
-  gridHourText: { fontSize: 10, fontWeight: '600' },
+  gridTimeCol: { paddingRight: 6 },
+  // Centred on its hour line rather than hanging below it.
+  gridHourText: { fontSize: 10.5, fontWeight: '600', textAlign: 'right', marginTop: -7, opacity: 0.85 },
   gridDayCol: {
     position: 'relative',
     borderLeftWidth: StyleSheet.hairlineWidth,
@@ -2285,7 +1657,10 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
+    opacity: 0.7,
   },
+  gridNowLine: { position: 'absolute', left: 0, right: 0, height: 1.5, zIndex: 3 },
+  gridNowDot: { position: 'absolute', left: -4, top: -3.25, width: 8, height: 8, borderRadius: 4 },
   gridAddCell: {
     position: 'absolute',
     left: 0,
@@ -2305,35 +1680,34 @@ const s = StyleSheet.create({
   },
   gridSlot: {
     position: 'absolute',
-    left: 1,
-    right: 1,
-    borderRadius: 6,
-    borderLeftWidth: 2,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    left: 1.5,
+    right: 1.5,
+    borderRadius: 7,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
     overflow: 'hidden',
   },
   gridSlotInner: { flex: 1, minHeight: 0, width: '100%' },
   gridSlotInnerStacked: { justifyContent: 'flex-start', gap: 1 },
   gridSlotInnerCodeOnly: { justifyContent: 'center' },
   gridSlotCode: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    lineHeight: 12,
-    letterSpacing: 0.2,
+    lineHeight: 13,
+    letterSpacing: 0.1,
   },
-  gridSlotCodeCompact: { fontSize: 12, lineHeight: 14, letterSpacing: 0.35 },
+  gridSlotCodeCompact: { fontSize: 12, lineHeight: 15, letterSpacing: 0.2 },
   gridSlotTitle: { fontSize: 8, fontWeight: '600', lineHeight: 12 },
   /** Room on its own row(s); lecturer/group below — independent line limits. */
   gridSlotMetaColumn: { width: '100%', gap: 2 },
   gridSlotMetaRoom: {
-    fontSize: 10,
-    lineHeight: 12,
-    fontWeight: '700',
+    fontSize: 10.5,
+    lineHeight: 13,
+    fontWeight: '600',
   },
   gridSlotMetaLect: {
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 9,
+    lineHeight: 11.5,
     fontWeight: '500',
   },
   gridEmptyCol: {
@@ -2512,8 +1886,10 @@ function WeekGridSlotMetaText({
 }) {
   const { room, lecturer, group } = parts;
   const { roomLines, lectLines } = weekGridMetaLineCaps(slotHeight);
-  const tail = [lecturer, group].filter(Boolean).join(' · ');
-  if (!room && !tail) return null;
+  // The horizontal (landscape) layout keeps one joined line; the grid gives the
+  // group its own line so a section code like "CDCS2596A" shrinks, never breaks.
+  const tail = isHorizontal ? [lecturer, group].filter(Boolean).join(' · ') : lecturer;
+  if (!room && !tail && !group) return null;
   return (
     <View style={[s.gridSlotMetaColumn, isHorizontal && { flexDirection: 'row', gap: 8, marginTop: 0 }]}>
       {room ? (
@@ -2532,6 +1908,16 @@ function WeekGridSlotMetaText({
           ellipsizeMode="tail"
         >
           {tail}
+        </Text>
+      ) : null}
+      {!isHorizontal && group ? (
+        <Text
+          style={[s.gridSlotMetaLect, { color: theme.textSecondary }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
+          {group}
         </Text>
       ) : null}
     </View>
