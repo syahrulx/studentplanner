@@ -51,7 +51,21 @@ export const uitmProvider: CalendarProvider = {
     //
     // rangeOk only asks whether the dates parse and totalWeeks is plausible,
     // which an ancient calendar passes just as well as a current one.
-    const storedEnd = String(currentCalendar?.endDate ?? '').trim().slice(0, 10);
+    //
+    // Expiry is measured against the last period, not `endDate`. endDate comes
+    // from teachingBounds, which is the last *lecture* day — study week and the
+    // finals that follow it sit outside that date. Expiring on it would have
+    // moved a student onto next semester's calendar the morning after their
+    // last lecture, i.e. for the whole of revision week and the exams, which is
+    // worse than the staleness this is fixing. The last period ends with the
+    // published semester break, the day before the next term begins.
+    const periodEnds = (currentCalendar?.periods ?? [])
+      .map((p) => String(p?.endDate ?? '').trim().slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    const storedEnd =
+      periodEnds.length > 0
+        ? periodEnds.reduce((a, b) => (a > b ? a : b))
+        : String(currentCalendar?.endDate ?? '').trim().slice(0, 10);
     const stillRunning =
       /^\d{4}-\d{2}-\d{2}$/.test(storedEnd) && storedEnd >= todayISO();
     if (rangeOk && hasPeriods && stillRunning) {
