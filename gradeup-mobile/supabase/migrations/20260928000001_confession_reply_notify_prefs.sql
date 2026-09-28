@@ -44,6 +44,13 @@ comment on column public.profiles.push_confession_replies_enabled is
 -- Body recreated verbatim from 20260923000002 (identical to prod) with only
 -- notify_replies added to the insert.
 
+-- Both signatures are dropped, not just the 3-argument one: without the
+-- 4-argument drop, re-running this migration fails with 42723 ("already
+-- exists with same argument types") because `create function` is the one
+-- statement here that is not idempotent, and a partial first run leaves the
+-- new overload behind. Every other statement is `if not exists` or `or
+-- replace`, so with this the whole file is safe to run again.
+drop function if exists public.create_confession(text, text, boolean, boolean);
 drop function if exists public.create_confession(text, text, boolean);
 
 create function public.create_confession(

@@ -81,11 +81,28 @@ export async function upsertCalendar(userId: string, calendar: Omit<AcademicCale
       ? calendar.breakEndDate || null
       : existing?.breakEndDate ?? null;
 
+  // An alignment belongs to the semester it was made in, so it is inherited only
+  // when the same semester is being refreshed.
+  //
+  // Carrying it across a semester change is how a student who aligned last term
+  // opened the first morning of the new one and saw "Week 10" instead of
+  // "Week 1". The offset is invisible while the phase is before_start or on a
+  // break — getAcademicProgressFromCalendar skips it in both — so it sits
+  // dormant through the whole break and then applies in full the moment
+  // teaching begins. Nothing looks wrong until the day it does.
+  //
+  // The automatic providers are what make this reachable: they refresh the
+  // calendar without naming an offset, so `undefined` here means "no opinion",
+  // not "keep the old correction". Every manual screen passes an explicit value
+  // and is unaffected either way.
+  const sameSemester =
+    existing != null &&
+    String(existing.startDate ?? '').slice(0, 10) === String(calendar.startDate ?? '').slice(0, 10);
   const teachingWeekOffset =
     calendar.teachingWeekOffset !== undefined
       ? Math.trunc(Number(calendar.teachingWeekOffset) || 0)
-      : existing != null
-        ? Math.trunc(Number(existing.teachingWeekOffset) || 0)
+      : sameSemester
+        ? Math.trunc(Number(existing!.teachingWeekOffset) || 0)
         : 0;
 
   const selectionSource =

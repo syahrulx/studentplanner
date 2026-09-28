@@ -38,6 +38,7 @@ import {
 } from '@/src/attendanceRecording';
 import UpdatePrompt from '@/src/components/UpdatePrompt';
 import OfflineSyncBanner from '@/src/components/OfflineSyncBanner';
+import StorageFullBanner from '@/src/components/StorageFullBanner';
 import SmartCaptureLauncher from '@/src/components/SmartCaptureLauncher';
 import LockScreenRenderHost from '@/components/lockScreen/LockScreenRenderHost';
 import WhatsNewPromptModal from '@/src/components/WhatsNewPrompt';
@@ -389,6 +390,7 @@ function RootLayoutNav() {
         </QuizProvider>
       </CommunityProvider>
       <OfflineSyncBanner />
+      <StorageFullBanner />
     </AppProvider>
   );
 }

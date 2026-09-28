@@ -1,5 +1,6 @@
 import type { CalendarProvider } from './types';
 import type { UserProfile, AcademicCalendar } from '@/src/types';
+import { isCalendarExpired } from '@/src/lib/academicUtils';
 import {
   fetchUitmAcademicCalendar,
   type UitmCalendarVariant,
@@ -40,7 +41,23 @@ export const uitmProvider: CalendarProvider = {
     if (isCommunityVerified && rangeOk) return null;
 
     // Full calendar already persisted — no HEA on every app open.
-    if (rangeOk && hasPeriods) {
+    //
+    // Unless it has expired. A calendar whose end date has passed is not
+    // "already persisted" in any useful sense: nothing else in the app ever
+    // refreshes one, so a student who finished a semester stayed on that
+    // semester's dates permanently. When this was found, 5,184 students were
+    // still on a calendar that started in March while the new term had begun
+    // in late September — their week never moved off the old term, and any
+    // leftover teaching_week_offset was being applied on top of it.
+    //
+    // rangeOk only asks whether the dates parse and totalWeeks is plausible,
+    // which an ancient calendar passes just as well as a current one.
+    // isCalendarExpired measures the term from its last real period, not from
+    // endDate — endDate is the last lecture day, so study week and finals fall
+    // outside it — and ignores the next intake's registration rows, which run
+    // weeks past the term they are printed in.
+    const stillRunning = !isCalendarExpired(currentCalendar);
+    if (rangeOk && hasPeriods && stillRunning) {
       return null;
     }
 
@@ -103,6 +120,11 @@ export const uitmProvider: CalendarProvider = {
       totalWeeks: official.totalWeeks ?? 14,
       periods: official.periods,
       isActive: true,
+      // A term the student picked by hand is over; what replaces it was chosen
+      // by the provider. Leaving this unset makes upsertCalendar inherit
+      // 'user', which would pin the new calendar and freeze it again next
+      // semester — the exact loop this is meant to break.
+      selectionSource: 'automatic',
     };
   },
 };

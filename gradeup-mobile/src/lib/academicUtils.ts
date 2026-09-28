@@ -63,6 +63,55 @@ export function resolveBreakPeriodLabel(
 
 type AcademicPeriod = NonNullable<AcademicCalendar['periods']>[number];
 
+/**
+ * Period types that do not describe the term the student is currently in, and
+ * so must not hold a finished calendar open.
+ *
+ * HEA publishes registration for the *next* intake inside the current term's
+ * calendar: a Group A calendar carries registration running to 14 December
+ * while the next semester already starts on 23 November. Measuring the end of
+ * the term from it would leave a student three weeks into a semester the app
+ * still thinks has not begun.
+ */
+const NON_TERM_PERIOD_TYPES = new Set(['registration']);
+
+/** Local YYYY-MM-DD. Built from local parts, never toISOString(). */
+function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * True when the calendar describes a term the student has already finished.
+ *
+ * The boundary is the last day of the last real period, which for a HEA
+ * calendar is the end of the published semester break — the day before the
+ * next term starts. Deliberately not `calendar.endDate`: that comes from
+ * teachingBounds and is the last *lecture* day, so using it would treat a
+ * calendar as finished during study week and the finals that follow.
+ *
+ * Shared on purpose. Three places decide whether to leave a calendar alone,
+ * and they have to agree, or a calendar is refreshed in one path and pinned in
+ * another.
+ */
+export function isCalendarExpired(
+  calendar: AcademicCalendar | null | undefined,
+  todayISO: string = localTodayISO(),
+): boolean {
+  if (!calendar) return false;
+  const ends = (calendar.periods ?? [])
+    .filter((p) => !NON_TERM_PERIOD_TYPES.has(String(p?.type ?? '')))
+    .map((p) => String(p?.endDate ?? '').trim().slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  // No usable periods: fall back to endDate. It understates the term, but an
+  // unknown shape is better treated as current than expired too early.
+  const last = ends.length > 0
+    ? ends.reduce((a, b) => (a > b ? a : b))
+    : String(calendar.endDate ?? '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(last)) return false;
+  return last < todayISO;
+}
+
 /** Default floor when `total_weeks` is missing (typical semester length). */
 export const MIN_DEFAULT_TEACHING_WEEKS = 14;
 /**

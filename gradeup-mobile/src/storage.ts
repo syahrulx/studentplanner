@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { reportStorageError } from './lib/storageFull';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { THEME_IDS, type ThemeId } from '@/constants/Themes';
@@ -29,7 +30,9 @@ export async function setHasSeenTutorial(value: boolean): Promise<void> {
     } else {
       await AsyncStorage.removeItem(KEY_HAS_SEEN_TUTORIAL);
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export async function getHasSeenNonUitmTimetableIntro(): Promise<boolean> {
@@ -48,7 +51,9 @@ export async function setHasSeenNonUitmTimetableIntro(value: boolean): Promise<v
     } else {
       await AsyncStorage.removeItem(KEY_HAS_SEEN_NON_UITM_TIMETABLE_INTRO);
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 /** Themes removed from the app — map to closest current option */
@@ -75,7 +80,9 @@ export async function getTheme(): Promise<ThemeId> {
 export async function setTheme(theme: ThemeId): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_THEME, theme);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export type ThemePackId = 'none' | 'cat' | 'mono' | 'spider' | 'purple' | 'custom';
@@ -98,7 +105,9 @@ export async function setThemePack(pack: ThemePackId): Promise<void> {
       return;
     }
     await AsyncStorage.setItem(KEY_THEME_PACK, pack);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 const KEY_CUSTOM_THEME_COLORS = '@custom_theme_colors';
@@ -132,7 +141,9 @@ export async function setCustomThemeColors(colors: CustomThemeColors | null): Pr
     } else {
       await AsyncStorage.removeItem(KEY_CUSTOM_THEME_COLORS);
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export async function getSpiderBlueAccents(): Promise<boolean> {
@@ -146,7 +157,9 @@ export async function getSpiderBlueAccents(): Promise<boolean> {
 export async function setSpiderBlueAccents(enabled: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_SPIDER_BLUE_ACCENTS, enabled ? 'true' : 'false');
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 const KEY_THEME_PREVIEW_EXPIRY = 'themePreviewExpiry';
@@ -169,7 +182,9 @@ export async function setThemePreviewExpiry(timestamp: number | null): Promise<v
     } else {
       await AsyncStorage.setItem(KEY_THEME_PREVIEW_EXPIRY, timestamp.toString());
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export type AppLanguage = 'en';
@@ -196,7 +211,9 @@ export async function setLoghat(loghat: AppLoghat | null): Promise<void> {
     } else {
       await AsyncStorage.setItem(KEY_LOGHAT, loghat);
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // Revision / Study time
@@ -253,7 +270,9 @@ export async function getRevisionSettings(): Promise<RevisionSettings> {
 export async function setRevisionSettings(settings: RevisionSettings): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_REVISION, JSON.stringify(settings));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // Completed study sessions (keys like "YYYY-MM-DDTHH:mm") so user can mark study as done
@@ -273,7 +292,9 @@ export async function getCompletedStudyKeys(): Promise<string[]> {
 export async function setCompletedStudyKeys(keys: string[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_COMPLETED_STUDIES, JSON.stringify(keys));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // Pinned task IDs (max 2) – tasks stay at top of planner
@@ -295,7 +316,9 @@ export async function setPinnedTaskIds(ids: string[]): Promise<void> {
   try {
     const trimmed = ids.slice(0, MAX_PINNED_TASKS);
     await AsyncStorage.setItem(KEY_PINNED_TASKS, JSON.stringify(trimmed));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // Subject/course color mapping – user can assign a color per subject
@@ -321,7 +344,9 @@ export async function getSubjectColors(): Promise<Record<string, string>> {
 export async function setSubjectColors(colors: Record<string, string>): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_SUBJECT_COLORS, JSON.stringify(colors));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // User-added courses/subjects (Study page)
@@ -357,7 +382,9 @@ export async function getCourses(): Promise<Course[] | null> {
 export async function setCourses(courses: Course[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_COURSES, JSON.stringify(courses));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // Planner view (week | month | all)
@@ -378,7 +405,9 @@ export async function getPlannerView(): Promise<PlannerViewMode> {
 export async function setPlannerView(view: PlannerViewMode): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_PLANNER_VIEW, view);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // ---------- Google Classroom sync ----------
@@ -433,7 +462,9 @@ export async function getClassroomToken(): Promise<ClassroomTokenCache | null> {
       await AsyncStorage.removeItem(KEY_CLASSROOM_TOKEN);
       return legacy;
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
   return null;
 }
 
@@ -444,7 +475,9 @@ export async function setClassroomToken(token: ClassroomTokenCache): Promise<voi
     } else {
       await AsyncStorage.setItem(KEY_CLASSROOM_TOKEN, JSON.stringify(token));
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export async function clearClassroomToken(): Promise<void> {
@@ -454,7 +487,9 @@ export async function clearClassroomToken(): Promise<void> {
     }
     // Always clear the legacy location too so a pre-migration copy can't linger.
     await AsyncStorage.removeItem(KEY_CLASSROOM_TOKEN);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 export async function getClassroomPrefs(): Promise<ClassroomPrefs | null> {
@@ -475,7 +510,9 @@ export async function setClassroomPrefs(prefs: ClassroomPrefs | null): Promise<v
     } else {
       await AsyncStorage.setItem(KEY_CLASSROOM_PREFS, JSON.stringify(prefs));
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 const KEY_HAS_DISMISSED_CLASSROOM_PROMO = 'hasDismissedClassroomPromo';
@@ -496,7 +533,9 @@ export async function setHasDismissedClassroomPromo(value: boolean): Promise<voi
     } else {
       await AsyncStorage.removeItem(KEY_HAS_DISMISSED_CLASSROOM_PROMO);
     }
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 
@@ -580,7 +619,9 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
 export async function setNotificationPrefs(prefs: NotificationPrefs): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_NOTIFICATION_PREFS, JSON.stringify(prefs));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 /**
@@ -619,7 +660,9 @@ export async function getWeekStartsOn(): Promise<WeekStartsOn> {
 export async function setWeekStartsOn(mode: WeekStartsOn): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_WEEK_STARTS_ON, mode);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 const KEY_AUTO_DELETE_PAST_TASKS = 'autoDeletePastTasks';
@@ -637,7 +680,9 @@ export async function getAutoDeletePastTasks(): Promise<boolean> {
 export async function setAutoDeletePastTasks(enabled: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_AUTO_DELETE_PAST_TASKS, enabled ? 'true' : 'false');
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 /** Timetable week grid / list: optional lines per class slot */
@@ -692,7 +737,9 @@ export async function setTimetableSlotDetailsVisibility(
 ): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_TIMETABLE_SLOT_DETAILS, JSON.stringify(v));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // ---------- Quiz in-progress recovery ----------
@@ -732,7 +779,9 @@ export async function saveQuizProgress(
   try {
     const payload: StoredQuizProgress = { sessionId, answers, updatedAt: Date.now() };
     await AsyncStorage.setItem(KEY_QUIZ_PROGRESS, JSON.stringify(payload));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 /** Returns saved answers for the given session, or null if none/mismatch. */
@@ -761,7 +810,9 @@ export async function clearQuizProgress(sessionId?: string): Promise<void> {
       }
     }
     await AsyncStorage.removeItem(KEY_QUIZ_PROGRESS);
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -792,5 +843,7 @@ export async function getLastActivityBump(userId: string): Promise<number> {
 export async function setLastActivityBump(userId: string, at: number): Promise<void> {
   try {
     await AsyncStorage.setItem(KEY_ACTIVITY_BUMP_PREFIX + userId, String(at));
-  } catch {}
+  } catch (error) {
+    reportStorageError(error);
+  }
 }

@@ -70,34 +70,51 @@ function addDaysISO(iso: string, n: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-/** Date object representing the next local midnight (00:00 tomorrow). */
-function nextLocalMidnight(): Date {
+/**
+ * How many days of snapshots to pack into one sync.
+ *
+ * This used to be 2 (today + tomorrow), which only rolls the widget over once.
+ * WidgetKit's reload policy is `.atEnd`, so when the last entry's date passes
+ * it does ask for a fresh timeline — but the provider just re-reads the same
+ * array the app wrote to the shared container, and nothing outside the app can
+ * regenerate it. So once both entries were in the past the widget froze on
+ * tomorrow's snapshot and never advanced again. That is invisible on a phone,
+ * which gets opened daily, and obvious on a Mac or iPad that goes days between
+ * launches. Two weeks of entries costs a few tens of KB and covers that gap.
+ */
+const WIDGET_TIMELINE_DAYS = 14;
+
+/** Date object for local 00:00 `n` days from today (n = 0 → this morning). */
+function localMidnightInDays(n: number): Date {
   const d = new Date();
-  d.setHours(24, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + n);
   return d;
 }
 
 /**
- * Pushes a 2-day snapshot pack (today + tomorrow) so the widget can roll over
- * automatically at midnight without requiring the app to be re-opened.
+ * Pushes a multi-day snapshot pack so the widget rolls over at every local
+ * midnight without the app being re-opened — see WIDGET_TIMELINE_DAYS.
  *
- * - iOS: pushed as a multi-entry WidgetKit timeline `[now, tomorrowMidnight]`.
- *   WidgetKit displays the second entry once the date changes.
- * - Android: pushed as `{ today, tomorrow }` JSON; the native widget renderer
- *   picks the slot whose `dateISO` matches the device's current local date.
+ * - iOS: pushed as a WidgetKit timeline `[now, +1d 00:00, +2d 00:00, …]`.
+ *   WidgetKit shows each entry once its date arrives.
+ * - Android: pushed as `{ days: [...], today, tomorrow }` JSON; the native
+ *   renderer picks the slot whose `dateISO` matches the device's local date.
+ *   `today`/`tomorrow` stay in the payload so a widget still running an older
+ *   native renderer keeps working as it did before.
  */
 export function syncHomeScreenWidget(input: WidgetSyncInputs): void {
   const todayISO = getTodayISO();
-  const tomorrowISO = addDaysISO(todayISO, 1);
   const spiderWebImageUri = ensureSpiderWebImageUri();
 
-  const todayProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO, spiderWebImageUri });
-  const tomorrowProps: HomeWidgetProps = buildHomeWidgetProps({ ...input, todayISO: tomorrowISO, spiderWebImageUri });
+  const days: HomeWidgetProps[] = Array.from({ length: WIDGET_TIMELINE_DAYS }, (_, i) =>
+    buildHomeWidgetProps({ ...input, todayISO: addDaysISO(todayISO, i), spiderWebImageUri }),
+  );
 
   if (Platform.OS === 'android') {
-    // Schema: { today: HomeWidgetProps, tomorrow: HomeWidgetProps }
-    // (renderer back-compat: also accepts a flat HomeWidgetProps for older builds)
-    const ok = updateAndroidHomeWidgetSnapshot(JSON.stringify({ today: todayProps, tomorrow: tomorrowProps }));
+    const ok = updateAndroidHomeWidgetSnapshot(
+      JSON.stringify({ days, today: days[0], tomorrow: days[1] }),
+    );
     if (!ok) captureError(new Error('Android home widget bridge unavailable'), { operation: 'home_widget_refresh', platform: 'android' });
     return;
   }
@@ -105,9 +122,10 @@ export function syncHomeScreenWidget(input: WidgetSyncInputs): void {
   if (Platform.OS !== 'ios') return;
   if (!iosWidgetSnapshotModulesAvailable()) return;
 
-  const ok = updateGradeUpTodayTimelineFromHost([
-    { date: new Date(), props: todayProps },
-    { date: nextLocalMidnight(), props: tomorrowProps },
-  ]);
+  // The first entry is dated `now`, not this morning's midnight: WidgetKit
+  // needs an entry that is already current when the timeline lands.
+  const ok = updateGradeUpTodayTimelineFromHost(
+    days.map((props, i) => ({ date: i === 0 ? new Date() : localMidnightInDays(i), props })),
+  );
   if (!ok) captureError(new Error('iOS home widget timeline unavailable'), { operation: 'home_widget_refresh', platform: 'ios' });
 }

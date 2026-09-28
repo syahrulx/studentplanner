@@ -28,6 +28,7 @@ export type NewFlashcardInput = { front: string; back: string } & Partial<Omit<F
 import {
   getAcademicProgress,
   getAcademicProgressFromCalendar,
+  isCalendarExpired,
   mergeTeachingWeeksForStoredCalendar,
 } from '../lib/academicUtils';
 import {
@@ -605,12 +606,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!uid || cancelled || remoteUserIdRef.current !== uid) return;
 
       const cal = academicCalendarRef.current;
+      // Both guards below hold only while the stored calendar still describes
+      // the term the student is in. Once it is over there is nothing left to
+      // protect: an explicit choice was a choice about a semester that has
+      // ended, and a complete set of periods is a complete set of last term's
+      // periods. Leaving them unconditional is what froze students on a
+      // finished calendar — and it also made the expiry check inside autoSync
+      // unreachable, because a full HEA calendar never got that far.
+      const calExpired = isCalendarExpired(cal);
       // An explicit semester/break choice must outrank background provider
       // refreshes. Users can still choose a different official calendar from
       // Academic Calendar settings whenever they want.
-      if (cal?.selectionSource === 'user' || cal?.selectionSource === 'manual') return;
+      if (!calExpired && (cal?.selectionSource === 'user' || cal?.selectionSource === 'manual')) return;
       const periodsN = Array.isArray(cal?.periods) ? cal.periods.length : 0;
-      if (periodsN >= UITM_HEA_PERIOD_COUNT_MIN) return;
+      if (!calExpired && periodsN >= UITM_HEA_PERIOD_COUNT_MIN) return;
 
       try {
         const profileForSync: UserProfile = {
@@ -1207,9 +1216,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             universityName: profile?.university,
           });
           const provider = getCalendarProvider(uniId);
+          // Same rule as the UiTM effect above: an explicit choice only
+          // outranks the provider while it is still about the current term.
           const hasExplicitCalendarChoice =
-            calendar?.selectionSource === 'user' ||
-            calendar?.selectionSource === 'manual';
+            !isCalendarExpired(calendar) &&
+            (calendar?.selectionSource === 'user' ||
+              calendar?.selectionSource === 'manual');
           if (provider && profile && !hasExplicitCalendarChoice) {
             try {
               const profileForSync = {

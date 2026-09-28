@@ -570,21 +570,27 @@ function distanceToSegment(point: HandwritingPoint, start: HandwritingPoint, end
   return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
 }
 
-function simplifyPoints(points: HandwritingPoint[], epsilon = 0.018): HandwritingPoint[] {
-  if (points.length < 3) return points;
-  let largest = 0;
-  let largestIndex = 0;
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const distance = distanceToSegment(points[index], points[0], points[points.length - 1]);
-    if (distance > largest) {
-      largest = distance;
-      largestIndex = index;
+/**
+ * How long the pen must rest at the end of a stroke before shape assist runs.
+ *
+ * The setting promises "hold ... briefly to clean it up", so this is what
+ * makes it a hold. Long enough that finishing a letter and lifting never
+ * reaches it, short enough to feel immediate when it is meant.
+ */
+const SHAPE_ASSIST_HOLD_MS = 350;
+
+/** Largest gap between any drawn point and the candidate outline. */
+function worstFitToOutline(points: HandwritingPoint[], outline: HandwritingPoint[]): number {
+  let worst = 0;
+  for (const point of points) {
+    let nearest = Infinity;
+    for (let index = 0; index < outline.length - 1; index += 1) {
+      nearest = Math.min(nearest, distanceToSegment(point, outline[index], outline[index + 1]));
+      if (nearest === 0) break;
     }
+    if (nearest > worst) worst = nearest;
   }
-  if (largest <= epsilon) return [points[0], points[points.length - 1]];
-  const left = simplifyPoints(points.slice(0, largestIndex + 1), epsilon);
-  const right = simplifyPoints(points.slice(largestIndex), epsilon);
-  return [...left.slice(0, -1), ...right];
+  return worst;
 }
 
 /** Correct a held gesture while preserving the original stroke as one undoable item. */
@@ -594,8 +600,6 @@ function recognizedShapePoints(points: HandwritingPoint[]): HandwritingPoint[] |
 
   const first = points[0];
   const last = points[points.length - 1];
-  const closed = Math.hypot(first.x - last.x, first.y - last.y) < 0.075;
-  if (!closed) return null;
 
   const bounds = points.reduce<NormalizedBounds>((value, point) => ({
     left: Math.min(value.left, point.x), top: Math.min(value.top, point.y),
@@ -605,29 +609,52 @@ function recognizedShapePoints(points: HandwritingPoint[]): HandwritingPoint[] |
   const height = bounds.bottom - bounds.top;
   if (width < 0.035 || height < 0.035) return null;
 
-  const simplified = simplifyPoints([...points, first], Math.max(0.012, Math.min(width, height) * 0.11));
-  const cornerCount = Math.max(0, simplified.length - 1);
-  if (cornerCount === 3) {
-    const top = { x: (bounds.left + bounds.right) / 2, y: bounds.top };
-    const bottomRight = { x: bounds.right, y: bounds.bottom };
-    const bottomLeft = { x: bounds.left, y: bounds.bottom };
-    return [top, bottomRight, bottomLeft, top];
-  }
-  if (cornerCount === 4) {
-    const topLeft = { x: bounds.left, y: bounds.top };
-    const topRight = { x: bounds.right, y: bounds.top };
-    const bottomRight = { x: bounds.right, y: bounds.bottom };
-    const bottomLeft = { x: bounds.left, y: bounds.bottom };
-    return [topLeft, topRight, bottomRight, bottomLeft, topLeft];
+  // Closed is measured against the stroke's own diagonal, not the canvas. The
+  // old test asked whether the ends were within 7.5% of the canvas, which is a
+  // fixed distance that does not shrink with the writing: at ordinary
+  // handwriting size the two ends of any letter fall inside it, so every
+  // letter looked like a closed shape.
+  const diagonal = Math.hypot(width, height);
+  if (Math.hypot(first.x - last.x, first.y - last.y) > diagonal * 0.25) return null;
+
+  const left = bounds.left, right = bounds.right, top = bounds.top, bottom = bounds.bottom;
+  const centerX = (left + right) / 2;
+  const centerY = (top + bottom) / 2;
+
+  // Every shape is scored against the ink and the best fit wins. Corner count
+  // decided this before, via simplifyPoints, and a stroke that simplified to
+  // four points became a rectangle whether or not it looked like one — a
+  // rounded letter loop lands on four corners easily. Scoring is also what
+  // retires the old unconditional ellipse fallback, which is why a handwritten
+  // "h" used to come back as an "o".
+  const candidates: HandwritingPoint[][] = [
+    // triangle
+    [{ x: centerX, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: centerX, y: top }],
+    // rectangle
+    [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }],
+    // ellipse
+    Array.from({ length: 49 }, (_, index) => {
+      const angle = (Math.PI * 2 * index) / 48;
+      return { x: centerX + Math.cos(angle) * width / 2, y: centerY + Math.sin(angle) * height / 2 };
+    }),
+  ];
+
+  let best: HandwritingPoint[] | null = null;
+  let bestFit = Infinity;
+  for (const candidate of candidates) {
+    const fit = worstFitToOutline(points, candidate);
+    if (fit < bestFit) {
+      bestFit = fit;
+      best = candidate;
+    }
   }
 
-  const centerX = (bounds.left + bounds.right) / 2;
-  const centerY = (bounds.top + bounds.bottom) / 2;
-  return Array.from({ length: 49 }, (_, index) => {
-    const angle = (Math.PI * 2 * index) / 48;
-    return { x: centerX + Math.cos(angle) * width / 2, y: centerY + Math.sin(angle) * height / 2 };
-  });
+  // Scaled to the stroke, so the allowance grows with a big deliberate shape
+  // and stays tight on small ink. Writing sits nowhere near any of these
+  // outlines, so it fails here and is left exactly as drawn.
+  return bestFit <= Math.min(width, height) * 0.12 ? best : null;
 }
+
 
 export default function HandwritingCanvas({
   page,
@@ -657,6 +684,10 @@ export default function HandwritingCanvas({
   const gestureAcceptedRef = useRef(false);
   const beforeGestureRef = useRef<HandwritingStroke[]>([]);
   const gestureStartedAtRef = useRef(0);
+  // When the pen last actually moved. updateGesture drops points that have
+  // barely travelled, so this stops advancing the moment the pen is held
+  // still, which is what shape assist waits for.
+  const lastPointAtRef = useRef(0);
   const gestureWasStylusRef = useRef(false);
   const lastStylusTapRef = useRef<{ at: number; before: HandwritingStroke[] } | null>(null);
   const lassoStartRef = useRef<HandwritingPoint | null>(null);
@@ -857,6 +888,7 @@ export default function HandwritingCanvas({
     if (!gestureAcceptedRef.current) return;
     beforeGestureRef.current = strokesRef.current;
     gestureStartedAtRef.current = Date.now();
+    lastPointAtRef.current = gestureStartedAtRef.current;
     gestureWasStylusRef.current = event.pointerType === PointerType.STYLUS;
     const point = pointFromEvent(event, sizeRef.current.width, sizeRef.current.height);
     if (tool === 'lasso') {
@@ -1024,6 +1056,7 @@ export default function HandwritingCanvas({
       const dy = point.y - lastPoint.y;
       if (dx * dx + dy * dy < 0.000004) return;
     }
+    lastPointAtRef.current = Date.now();
     const next = strokesRef.current.map((stroke) => (
       stroke.id === activeId ? { ...stroke, points: [...stroke.points, point] } : stroke
     ));
@@ -1094,7 +1127,11 @@ export default function HandwritingCanvas({
         tool !== 'eraser' &&
         tool !== 'highlighter' &&
         settings.shapeAssist &&
-        Date.now() - gestureStartedAtRef.current >= 260 &&
+        // Hold, not elapsed time. This used to ask whether the whole stroke
+        // took 260ms, which every handwritten letter does, so shape assist ran
+        // on ordinary writing. lastPointAtRef stops moving when the pen stops,
+        // so this is the deliberate pause the setting actually promises.
+        Date.now() - lastPointAtRef.current >= SHAPE_ASSIST_HOLD_MS &&
         activeStrokeIdRef.current
       ) {
         strokesRef.current = strokesRef.current.map((stroke) => {
