@@ -117,6 +117,17 @@ function entryPrimaryLabel(e: TimetableEntry, showCourseName: boolean): string {
   return !showCourseName && customName ? customName : e.subjectCode;
 }
 
+/**
+ * The course name is worth a line only when it says something the code line
+ * doesn't. Some timetables store the code as the subject name (UM: "ISP613"),
+ * and printing it again under itself read as a bug.
+ */
+function titleAddsToLabel(title: string, label: string): boolean {
+  const norm = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+  const t = norm(title);
+  return t.length > 0 && t !== norm(label);
+}
+
 function entrySlotColor(e: TimetableEntry, subjectColors: Record<string, string>): string {
   return getTimetableEntryColor(e, subjectColors);
 }
@@ -1197,7 +1208,9 @@ export default function TimetableScreen() {
                         const color = resolveSlotColor(entry);
                         const title = entryDisplayTitle(entry);
                         const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);
-                        const hasTitle = Boolean(slotDetails.courseName && height > 38);
+                        const hasTitle = Boolean(
+                          slotDetails.courseName && height > 38 && titleAddsToLabel(title, primaryLabel),
+                        );
                         const metaParts = weekGridMetaParts(
                           entry,
                           slotDetails,
@@ -1350,7 +1363,7 @@ export default function TimetableScreen() {
                       </View>
                       <View style={s.listCardBody}>
                         <Text style={[s.listCode, { color }]} numberOfLines={2}>{primaryLabel}</Text>
-                        {slotDetails.courseName ? (
+                        {slotDetails.courseName && titleAddsToLabel(title, primaryLabel) ? (
                           <Text style={[s.listName, { color: theme.text }]} numberOfLines={2}>
                             {title}
                           </Text>
