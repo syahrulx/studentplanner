@@ -40,7 +40,21 @@ export const uitmProvider: CalendarProvider = {
     if (isCommunityVerified && rangeOk) return null;
 
     // Full calendar already persisted — no HEA on every app open.
-    if (rangeOk && hasPeriods) {
+    //
+    // Unless it has expired. A calendar whose end date has passed is not
+    // "already persisted" in any useful sense: nothing else in the app ever
+    // refreshes one, so a student who finished a semester stayed on that
+    // semester's dates permanently. When this was found, 5,184 students were
+    // still on a calendar that started in March while the new term had begun
+    // in late September — their week never moved off the old term, and any
+    // leftover teaching_week_offset was being applied on top of it.
+    //
+    // rangeOk only asks whether the dates parse and totalWeeks is plausible,
+    // which an ancient calendar passes just as well as a current one.
+    const storedEnd = String(currentCalendar?.endDate ?? '').trim().slice(0, 10);
+    const stillRunning =
+      /^\d{4}-\d{2}-\d{2}$/.test(storedEnd) && storedEnd >= todayISO();
+    if (rangeOk && hasPeriods && stillRunning) {
       return null;
     }
 
