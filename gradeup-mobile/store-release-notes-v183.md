@@ -5,11 +5,10 @@ release-notes field. The in-app prompt is driven by `supabase-whats-new-v183.sql
 and uses bullets, because `src/components/WhatsNewPrompt.tsx` renders one card
 per bullet line and has no concept of a section heading.
 
-No platform difference: everything here is shared app code, so the App Store
-and Play bodies are identical.
-
-Length: 497 characters, just inside Play's 500 cap. Without the Fixes section
-(see below) it is 362.
+The code is all shared, but the two stores sit at different starting points,
+so the bodies differ: iOS was last approved at 1.7.8 and needs everything
+since then (first body below); Play gets the 1.8.3 changes only (second body,
+497 characters, just inside Play's 500 cap; 362 without its Fixes section).
 
 ## Does this carry 1.8.2's fix?
 
@@ -26,7 +25,45 @@ Connect and the Play Console:** if a 1.8.2 build is already live, drop the
 Timetable options and PDF export
 ```
 
-## Body — App Store and Play Console (identical)
+## Body — App Store (iOS), covering 1.7.8 -> 1.8.3
+
+**Use this one for iOS.** The last build Apple approved is **1.7.8**: 1.7.9
+(iOS 151), 1.8.1 (154/155) and 1.8.2 (156) never reached iOS students, so
+this body carries all of them. 1.8.1's notes assumed 1.7.9 had shipped and
+left out its widgets and 4h/5h classes; they are here.
+
+Dropped for iOS: "Fixed a two-finger touch crash" (1.8.1) — `0d54b28` is an
+Android-only gesture-handler patch. Added: the storage-full banner (`5769f01`,
+an iOS ENOSPC report), which no earlier notes listed.
+
+1221 characters; the App Store allows 4000.
+
+```
+New
+1. Lock screen planner: your day as a wallpaper that refreshes each morning
+2. Week and Task List widgets for your home screen and lock screen
+3. Timetable options: pick grid or list, and choose what each class shows - course name, room, lecturer, group
+4. Export your timetable as a PDF, portrait or landscape, to print or share
+5. Your lock screen can show your class group, and classes with no room say Online
+6. Replies to your confession or comment now notify you, and open the thread
+7. Turn reply alerts off per post, or in Community settings
+8. Classes can now be 4 or 5 hours long
+
+Improvements
+1. Your timetable fits Monday to Friday on one screen, in calmer colours
+2. Rencana tells you when your phone is full, instead of edits quietly not saving
+
+Fixes
+1. Your semester week is correct again. The app moves on to your new semester, and a week you set by hand no longer carries over
+2. Handwriting no longer turns into shapes as you write
+3. Smoother zoom in notes, and no more cut-off pages
+4. Subject colours match on every device
+5. Widgets roll over at midnight again
+6. Rooms show on the lock screen's Next line, even on a day with no classes
+7. Reply counts on confessions match the replies you see
+```
+
+## Body — Play Console (and App Store only if 1.8.2 shipped there)
 
 ```
 New
