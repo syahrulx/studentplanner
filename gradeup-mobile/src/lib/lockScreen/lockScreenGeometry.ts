@@ -1,5 +1,7 @@
 import { Dimensions, PixelRatio, Platform } from 'react-native';
 
+import { lockClassDetail } from './lockScreenFormat';
+
 import type {
   LockScreenConfig,
   LockScreenDayModel,
@@ -404,7 +406,7 @@ function layoutAt(
     l.classes = Math.min(model.classes.length, capC);
     l.tasks = config.show.tasks ? Math.min(model.tasks.length, capT) : 0;
     l.roomRows =
-      template === 'today' && config.show.rooms && model.classes.some((c) => !!c.room);
+      template === 'today' && model.classes.some((c) => lockClassDetail(c, config.show) != null);
   }
 
   l.height = measureUnits(template, model, config, l);

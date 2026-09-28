@@ -244,3 +244,17 @@ export function fmtAsOf(nowMs: number, T: LockTranslate, uses24h: boolean): stri
   const when = `${dayShortName(new Date(nowMs).getDay(), T)} ${fmtTimeOfDay(nowMs, uses24h, T)}`;
   return lsText(T, 'lsAsOf', 'as of {when}').replace('{when}', when);
 }
+
+/**
+ * The small print under a class: its room and/or group, whichever the Show
+ * tab has on. Null when there is nothing to print, so a template can drop the
+ * line (and geometry can drop the taller row) instead of drawing it empty.
+ */
+export function lockClassDetail(
+  row: { room: string | null; group: string | null },
+  show: { rooms: boolean; group: boolean } | null,
+): string | null {
+  if (!show) return null;
+  const parts = [show.rooms ? row.room : null, show.group ? row.group : null].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}

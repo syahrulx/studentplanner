@@ -104,6 +104,7 @@ function sanitizeConfig(raw: unknown): LockScreenConfig {
     show: {
       tasks: bool(show.tasks, d.show.tasks),
       rooms: bool(show.rooms, d.show.rooms),
+      group: bool(show.group, d.show.group),
       weekNo: bool(show.weekNo, d.show.weekNo),
     },
     autoRefresh: bool(r.autoRefresh, d.autoRefresh),

@@ -37,6 +37,7 @@ export interface ShowPanelProps extends StudioPanelProps {
 const ROWS: readonly { key: keyof LockShowOptions; label: TranslationKey; hint?: TranslationKey }[] = [
   { key: 'tasks', label: 'lsShowTasks' },
   { key: 'rooms', label: 'lsShowRooms', hint: 'lsShowRoomsHint' },
+  { key: 'group', label: 'lsShowGroup' },
   { key: 'weekNo', label: 'lsShowWeekNo' },
 ];
 

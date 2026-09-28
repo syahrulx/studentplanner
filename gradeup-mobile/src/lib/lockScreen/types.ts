@@ -32,6 +32,8 @@ export interface LockShowOptions {
   tasks: boolean;
   /** On by default; the Show tab warns that a lock screen is readable while locked. */
   rooms: boolean;
+  /** Group / section code (e.g. CDCS2596A). Off by default: one code on every class is noise. */
+  group: boolean;
   weekNo: boolean;
 }
 
@@ -61,7 +63,7 @@ export const DEFAULT_LOCK_SCREEN_CONFIG: LockScreenConfig = {
   top: 'standard',
   topFrac: null,
   size: 'medium',
-  show: { tasks: true, rooms: true, weekNo: true },
+  show: { tasks: true, rooms: true, group: false, weekNo: true },
   autoRefresh: false,
 };
 
@@ -110,8 +112,10 @@ export interface LockClassRow {
   label: string;
   /** subjectName when it differs from label. */
   name: string | null;
-  /** location (+ ' · G{group}'), or null. */
+  /** location; "Online" when there is none, as the timetable grid shows it. */
   room: string | null;
+  /** 'G2' for a bare number, else the section code as stored; null when none. */
+  group: string | null;
   color: string;
   onColor: string;
 }
@@ -150,6 +154,7 @@ export interface LockNextClass {
   time: string;
   label: string;
   room: string | null;
+  group: string | null;
 }
 
 export interface LockScreenDayModel {

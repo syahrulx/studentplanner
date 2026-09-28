@@ -18,6 +18,7 @@ import {
 import {
   fmtTime,
   fmtTimeInline,
+  lockClassDetail,
   type LockTranslate,
 } from '@/src/lib/lockScreen/lockScreenFormat';
 import { lockScreenEmptyTitle, lockScreenNextLine } from '@/src/lib/lockScreen/lockScreenModel';
@@ -26,6 +27,7 @@ import type {
   LockClassRow,
   LockScreenConfig,
   LockScreenDayModel,
+  LockShowOptions,
   LockTaskRow,
   LockWeekCell,
 } from '@/src/lib/lockScreen/types';
@@ -503,10 +505,10 @@ export function WeekStrip({
 // ─── Week summary ────────────────────────────────────────────────────────────
 
 /** "No classes today · Next: Wed 8:00 AM · CSC301", or the break week's name. */
-function noClassesLine(source: LockScreenDayModel, T: LockTranslate, showRoom: boolean): string {
+function noClassesLine(source: LockScreenDayModel, T: LockTranslate, show: LockShowOptions): string {
   const title = source.noClassesPeriod ? lockScreenEmptyTitle(source, T) : T('lsNoClasses');
   if (!source.next) return title;
-  return `${title} · ${lockScreenNextLine(source.next, T, showRoom)}`;
+  return `${title} · ${lockScreenNextLine(source.next, T, show)}`;
 }
 
 function SummaryLine({
@@ -543,9 +545,10 @@ function LinesSummary({ source, config, ink, s, T }: LockTemplateProps) {
     classLine = T('lsFirstLine')
       .replace('{time}', fmtTimeInline(first.start, source.uses24h, T))
       .replace('{subject}', first.label);
-    if (config.show.rooms && first.room) classLine += ` · ${first.room}`;
+    const detail = lockClassDetail(first, config.show);
+    if (detail) classLine += ` · ${detail}`;
   } else {
-    classLine = noClassesLine(source, T, config.show.rooms);
+    classLine = noClassesLine(source, T, config.show);
   }
 
   let taskLine = T('lsNothingDue');
@@ -588,14 +591,15 @@ function WeekClassRow({
   row,
   time,
   timeW,
-  showRoom,
+  detail,
   ink,
   s,
 }: {
   row: LockClassRow;
   time: ClockParts;
   timeW: number;
-  showRoom: boolean;
+  /** Room and/or group, per the Show tab; null draws nothing. */
+  detail: string | null;
   ink: LockInk;
   s: number;
 }) {
@@ -627,14 +631,14 @@ function WeekClassRow({
           <LockSpan style={{ fontWeight: '600', color: ink.text2 }}>{` · ${row.name}`}</LockSpan>
         ) : null}
       </LockText>
-      {showRoom && row.room ? (
+      {detail ? (
         <LockText
           size={12 * s}
           weight="600"
           color={ink.text3}
           style={[styles.noShrink, { maxWidth: 90 * s, marginLeft: 8 * s }]}
         >
-          {row.room}
+          {detail}
         </LockText>
       ) : null}
     </View>
@@ -677,7 +681,7 @@ function RowsSummary({ fit, source, config, ink, s, T }: LockTemplateProps) {
             row={row}
             time={times[i]}
             timeW={timeW}
-            showRoom={config.show.rooms}
+            detail={lockClassDetail(row, config.show)}
             ink={ink}
             s={s}
           />
@@ -685,7 +689,7 @@ function RowsSummary({ fit, source, config, ink, s, T }: LockTemplateProps) {
       ) : (
         <SummaryLine
           marker={<LockDot size={8 * s} color={ink.text3} style={{ marginRight: 6 * s }} />}
-          text={noClassesLine(source, T, config.show.rooms)}
+          text={noClassesLine(source, T, config.show)}
           weight="700"
           color={ink.text1}
           s={s}

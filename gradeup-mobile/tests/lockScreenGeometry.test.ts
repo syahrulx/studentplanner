@@ -72,6 +72,7 @@ function classRow(i: number, room: string | null = null): LockClassRow {
     label: `SUB${i}`,
     name: null,
     room,
+    group: null,
     color: '#7C3AED',
     onColor: '#ffffff',
   };
@@ -258,20 +259,21 @@ function fallback(chips: number): LockScreenDayModel {
 {
   // Rooms: 44s rows only when rooms are on and the day has one.
   const withRoom = day({ classes: 3, room: 'DK1' });
-  assert.equal(fitModel(withRoom, config({ show: { tasks: true, rooms: true, weekNo: true } }), H, 1).panelH, 84 + 3 * 44);
+  assert.equal(fitModel(withRoom, config({ show: { tasks: true, rooms: true, group: false, weekNo: true } }), H, 1).panelH, 84 + 3 * 44);
   assert.equal(
-    fitModel(withRoom, config({ show: { tasks: true, rooms: false, weekNo: true } }), H, 1).panelH,
+    fitModel(withRoom, config({ show: { tasks: true, rooms: false, group: false, weekNo: true } }), H, 1).panelH,
     84 + 3 * 36,
     'rooms off keeps 36s rows',
   );
   assert.equal(config().show.rooms, true, 'rooms are on by default');
-  const roomless = fitModel(day({ classes: 3 }), config({ show: { tasks: true, rooms: true, weekNo: true } }), H, 1);
+  assert.equal(config().show.group, false, 'group is off by default');
+  const roomless = fitModel(day({ classes: 3 }), config({ show: { tasks: true, rooms: true, group: false, weekNo: true } }), H, 1);
   assert.equal(roomless.roomRows, false);
 }
 
 {
   // Tasks switched off aren't "hidden": no due block, nothing counted.
-  const fit = fitModel(day({ classes: 2, tasks: 5 }), config({ show: { tasks: false, rooms: false, weekNo: true } }), H, 1);
+  const fit = fitModel(day({ classes: 2, tasks: 5 }), config({ show: { tasks: false, rooms: false, group: false, weekNo: true } }), H, 1);
   assert.equal(fit.panelH, 84 + 2 * 36);
   assert.equal(fit.hiddenTasks, 0);
   assert.equal(fit.model.tasks.length, 5);
@@ -334,7 +336,7 @@ function fallback(chips: number): LockScreenDayModel {
   const empty = day({ chips: 0 });
   assert.equal(measurePanel('week', empty, config({ template: 'week', size: 'short' }), 1), 80 + 76);
   // The medium due line disappears with tasks switched off.
-  const noTasks = config({ template: 'week', show: { tasks: false, rooms: false, weekNo: true } });
+  const noTasks = config({ template: 'week', show: { tasks: false, rooms: false, group: false, weekNo: true } });
   assert.equal(measurePanel('week', day({ chips: 1 }), noTasks, 1), 80 + (12 + 14 + 26 + 6 + 18) + 21 + 20);
 }
 

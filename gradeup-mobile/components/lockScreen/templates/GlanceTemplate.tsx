@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { fmtTime } from '@/src/lib/lockScreen/lockScreenFormat';
+import { fmtTime, lockClassDetail } from '@/src/lib/lockScreen/lockScreenFormat';
 import { lockScreenEmptyTitle, lockScreenNextLine } from '@/src/lib/lockScreen/lockScreenModel';
 import type { LockInk } from '@/src/lib/lockScreen/lockScreenPalette';
 import type { LockScreenDayModel } from '@/src/lib/lockScreen/types';
@@ -104,7 +104,8 @@ export default function GlanceTemplate({ fit, source, config, ink, s, T }: LockT
     let detail = '';
     if (first) {
       const parts: string[] = [];
-      if (config.show.rooms && first.room) parts.push(first.room);
+      const classDetail = lockClassDetail(first, config.show);
+      if (classDetail) parts.push(classDetail);
       if (model.classes.length > 1) {
         parts.push(T('lsThenMore').replace('{n}', String(model.classes.length - 1)));
       } else if (first.name) {
@@ -112,7 +113,7 @@ export default function GlanceTemplate({ fit, source, config, ink, s, T }: LockT
       }
       detail = parts.join(' · ');
     } else if (source.next) {
-      detail = lockScreenNextLine(source.next, T, config.show.rooms);
+      detail = lockScreenNextLine(source.next, T, config.show);
     } else if (source.tasks.length === 0) {
       detail = T('lsNothingDue');
     }

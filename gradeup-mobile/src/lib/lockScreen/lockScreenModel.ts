@@ -17,6 +17,7 @@ import {
   fmtHeaderDate,
   fmtRange,
   fmtTimeInline,
+  lockClassDetail,
   lsText,
   normalizeClock,
   weekdayOfISO,
@@ -107,15 +108,17 @@ const derivedCache = new WeakMap<LockScreenModelInput, Derived>();
 
 // ─── Classes ─────────────────────────────────────────────────────────────────
 
-function classRow(e: TimetableEntry, subjectColors: Record<string, string>): LockClassRow {
+function classRow(e: TimetableEntry, subjectColors: Record<string, string>, onlineLabel: string): LockClassRow {
   const code = (e.subjectCode ?? '').trim();
   const subjectName = (e.subjectName ?? '').trim();
   const label = (e.displayName ?? '').trim() || code || subjectName;
   const location = (e.location ?? '').trim();
   const group = (e.group ?? '').trim();
-  // Timetables store "-" for no room. A bare number reads as a group only
-  // with the G; a section code like "CS2305A" already says what it is.
-  const parts = [location === '-' ? '' : location, /^\d+$/.test(group) ? `G${group}` : group].filter(Boolean);
+  // No room (empty or "-") is an online class, exactly as the timetable grid
+  // labels it. A bare number reads as a group only with the G; a section code
+  // like "CS2305A" already says what it is.
+  const room = location && location !== '-' ? location : onlineLabel;
+  const groupLabel = group && group !== '-' ? (/^\d+$/.test(group) ? `G${group}` : group) : null;
   const color = getTimetableEntryColor(e, subjectColors);
   return {
     key: e.id,
@@ -123,7 +126,8 @@ function classRow(e: TimetableEntry, subjectColors: Record<string, string>): Loc
     end: normalizeClock(e.endTime) ?? (e.endTime ?? '').trim(),
     label,
     name: subjectName && subjectName !== label ? subjectName : null,
-    room: parts.length ? parts.join(' · ') : null,
+    room,
+    group: groupLabel,
     color,
     onColor: contrastText(color),
   };
@@ -142,7 +146,7 @@ function derive(input: LockScreenModelInput): Derived {
   );
   for (const e of sorted) {
     const weekday = WEEKDAY_NAMES.indexOf(e.day);
-    if (weekday >= 0) classesByWeekday[weekday].push(classRow(e, input.subjectColors));
+    if (weekday >= 0) classesByWeekday[weekday].push(classRow(e, input.subjectColors, lsText(input.T, 'timetableRoomOnline', 'Online')));
   }
   const chipsByWeekday = classesByWeekday.map((rows) =>
     rows.map((r) => ({ label: r.label.slice(0, 6), color: r.color, onColor: r.onColor })),
@@ -315,6 +319,7 @@ function nextClassAfter(input: LockScreenModelInput, derived: Derived, dateISO: 
         time: fmtTimeInline(first.start, input.uses24h, input.T),
         label: first.label,
         room: first.room,
+        group: first.group,
       };
     }
   }
@@ -529,16 +534,21 @@ function sentenceCase(text: string): string {
 }
 
 /**
- * "Next: Mon 8:00 AM · CSC301", plus the room when rooms are shown. On a day
- * with no classes this is the only line a room can appear in, so without it
+ * "Next: Mon 8:00 AM · CSC301", plus the room/group the Show tab has on. On a
+ * day with no classes this is the only line they can appear in, so without it
  * the Rooms switch would seem to do nothing on weekends.
  */
-export function lockScreenNextLine(next: LockNextClass, T: LockTranslate, showRoom: boolean): string {
+export function lockScreenNextLine(
+  next: LockNextClass,
+  T: LockTranslate,
+  show: { rooms: boolean; group: boolean } | null,
+): string {
   const line = lsText(T, 'lsNextLine', 'Next: {day} {time} · {subject}')
     .replace('{day}', next.dayShort)
     .replace('{time}', next.time)
     .replace('{subject}', next.label);
-  return showRoom && next.room ? `${line} · ${next.room}` : line;
+  const detail = lockClassDetail(next, show);
+  return detail ? `${line} · ${detail}` : line;
 }
 
 /**
@@ -601,7 +611,7 @@ export function lockScreenA11ySummary(model: LockScreenDayModel, T: (k: Translat
     parts.push(line);
   } else {
     parts.push(lockScreenEmptyTitle(model, T));
-    if (model.next) parts.push(lockScreenNextLine(model.next, T, false));
+    if (model.next) parts.push(lockScreenNextLine(model.next, T, null));
   }
 
   if (model.tasks.length > 0) {

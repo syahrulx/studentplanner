@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { LOCK_METRICS } from '@/src/lib/lockScreen/lockScreenGeometry';
-import { fmtTime, fmtTimeInline } from '@/src/lib/lockScreen/lockScreenFormat';
+import { fmtTime, fmtTimeInline, lockClassDetail } from '@/src/lib/lockScreen/lockScreenFormat';
 import { lockScreenEmptyTitle, lockScreenNextLine } from '@/src/lib/lockScreen/lockScreenModel';
 import type { LockInk } from '@/src/lib/lockScreen/lockScreenPalette';
 import type { LockWeekCell } from '@/src/lib/lockScreen/types';
@@ -111,7 +111,7 @@ export default function TodayTemplate(props: LockTemplateProps) {
   // ── Empty day ──
   let emptySub: string | null = null;
   if (source.next) {
-    emptySub = lockScreenNextLine(source.next, T, config.show.rooms);
+    emptySub = lockScreenNextLine(source.next, T, config.show);
   } else if (source.tasks.length === 0) {
     emptySub = T('lsNothingDue');
   }
@@ -198,9 +198,9 @@ export default function TodayTemplate(props: LockTemplateProps) {
               </LockText>
               {fit.roomRows ? (
                 <View style={{ height: secondLineH }}>
-                  {c.room ? (
+                  {lockClassDetail(c, config.show) ? (
                     <LockText size={12 * s} weight="600" color={ink.text3}>
-                      {c.room}
+                      {lockClassDetail(c, config.show)}
                     </LockText>
                   ) : null}
                 </View>
