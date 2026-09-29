@@ -5,9 +5,8 @@
 -- calendar fix — see store-release-notes-v183.md. If a 1.8.2 build did go
 -- live, drop the last bullet before running.
 --
--- New: the Timetable and Grid lock screen templates, the Timetable options
--- sheet, timetable export as PDF, and a group toggle plus "Online" for
--- room-less classes on the lock screen. The week grid
+-- New: the Timetable options sheet, timetable export as PDF, and a group
+-- toggle plus "Online" for room-less classes on the lock screen. The week grid
 -- is back to its calmer 1.8.0 look with Monday to Friday on one screen.
 --
 -- Run this only once the build is actually live on both stores, otherwise it
@@ -28,8 +27,7 @@ INSERT INTO public.whats_new_prompts (
   true,
   '1.8.3',
   'What''s New in Rencana v1.8.3 🎉',
-  '• Two new lock screen templates, Timetable and Grid: your whole week with rooms, ready to save as your wallpaper.
-• Timetable options: pick grid or list, and choose what each class shows — course name, room, lecturer, group.
+  '• Timetable options: pick grid or list, and choose what each class shows — course name, room, lecturer, group.
 • Export your timetable as a PDF, portrait or landscape, to print or share.
 • Your lock screen can show your class group, and classes with no room now say Online.
 • Your week fits one screen again, Monday to Friday, in calmer colours.
