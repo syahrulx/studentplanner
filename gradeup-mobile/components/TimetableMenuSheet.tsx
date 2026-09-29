@@ -186,6 +186,7 @@ function SheetContent({
     { key: 'room', icon: 'map-pin', tile: TILE.red, label: 'timetableMenuRoom' },
     { key: 'lecturer', icon: 'user', tile: TILE.green, label: 'timetableMenuLecturer' },
     { key: 'group', icon: 'users', tile: TILE.teal, label: 'timetableMenuGroup' },
+    { key: 'use12HourTime', icon: 'clock', tile: TILE.blue, label: 'timetableMenu12Hour', sub: 'timetableMenu12HourSub' },
     // The only switch that turns on seven scrolling columns; course names no
     // longer do, so it is offered whatever else is on.
     {

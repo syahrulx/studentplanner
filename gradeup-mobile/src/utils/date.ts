@@ -145,3 +145,40 @@ export function isDateInWeek(dateISO: string, refISO: string): boolean {
   const sat = `${satDate.getFullYear()}-${String(satDate.getMonth() + 1).padStart(2, '0')}-${String(satDate.getDate()).padStart(2, '0')}`;
   return dateISO >= sun && dateISO <= sat;
 }
+
+/**
+ * A stored "HH:mm" as 24-hour or 12-hour clock text.
+ *
+ * Times are stored 24-hour and compared as strings elsewhere, so this is
+ * display only — never feed its output back into timeToMinutes or a sort.
+ *
+ * Anything that is not HH:mm comes back untouched: timetables are imported
+ * from portals and screenshots, and a row that arrived malformed should still
+ * show whatever it has rather than turn into "NaN:NaN PM".
+ */
+export function formatClockTime(hhmm: string, use12Hour: boolean): string {
+  const raw = String(hhmm ?? '').trim();
+  if (!use12Hour) return raw;
+  const m = /^(\d{1,2}):(\d{2})/.exec(raw);
+  if (!m) return raw;
+  const h = Number(m[1]);
+  const min = m[2];
+  if (!Number.isFinite(h) || h < 0 || h > 23) return raw;
+  const suffix = h < 12 ? 'AM' : 'PM';
+  // 0 and 12 both display as 12 — midnight is 12 AM, noon is 12 PM.
+  const display = h % 12 === 0 ? 12 : h % 12;
+  return `${display}:${min} ${suffix}`;
+}
+
+/**
+ * An hour-of-day (0-23) as a short axis label: "08:00" or "8 AM".
+ *
+ * The 12-hour form drops ":00" on purpose. The week grid's time gutter is 46pt
+ * at 10pt type, and "12:00 PM" does not fit — the same shape every calendar
+ * app uses for the same reason.
+ */
+export function formatHourLabel(hour24: number, use12Hour: boolean): string {
+  const h = Math.max(0, Math.min(23, Math.trunc(hour24)));
+  if (!use12Hour) return `${String(h).padStart(2, '0')}:00`;
+  return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
+}

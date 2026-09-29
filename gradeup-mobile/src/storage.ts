@@ -697,6 +697,12 @@ export type TimetableSlotDetailsVisibility = {
   room: boolean;
   lecturer: boolean;
   group: boolean;
+  /**
+   * Show class times as 1:00 PM rather than 13:00. Default false: the
+   * timetables students import are printed in 24-hour, so matching them is
+   * the least surprising starting point.
+   */
+  use12HourTime: boolean;
 };
 
 const KEY_TIMETABLE_SLOT_DETAILS = 'timetableSlotDetails';
@@ -707,6 +713,7 @@ const DEFAULT_TIMETABLE_SLOT_DETAILS: TimetableSlotDetailsVisibility = {
   room: true,
   lecturer: true,
   group: true,
+  use12HourTime: false,
 };
 
 export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlotDetailsVisibility> {
@@ -726,6 +733,10 @@ export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlot
         room: typeof parsed.room === 'boolean' ? parsed.room : DEFAULT_TIMETABLE_SLOT_DETAILS.room,
         lecturer: typeof parsed.lecturer === 'boolean' ? parsed.lecturer : DEFAULT_TIMETABLE_SLOT_DETAILS.lecturer,
         group: typeof parsed.group === 'boolean' ? parsed.group : DEFAULT_TIMETABLE_SLOT_DETAILS.group,
+        use12HourTime:
+          typeof parsed.use12HourTime === 'boolean'
+            ? parsed.use12HourTime
+            : DEFAULT_TIMETABLE_SLOT_DETAILS.use12HourTime,
       };
     }
   } catch {}
