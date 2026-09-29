@@ -280,45 +280,103 @@ export const REACTION_TEMPLATES = [
 // FRIENDS
 // =============================================================================
 
-/** Send a friend request to another user */
-export async function sendFriendRequest(requesterId: string, addresseeId: string) {
-  // Check for any existing friendship row (in either direction) to avoid duplicate key errors
-  const { data: existing } = await supabase
-    .from('friendships')
-    .select('id, status, requester_id')
-    .or(
-      `and(requester_id.eq.${requesterId},addressee_id.eq.${addresseeId}),and(requester_id.eq.${addresseeId},addressee_id.eq.${requesterId})`
-    )
-    .maybeSingle();
+export type FriendRequestErrorCode = 'already_friends' | 'already_sent' | 'blocked' | 'self';
 
-  if (existing) {
-    if (existing.status === 'accepted') {
-      throw new Error('You are already friends with this person.');
-    }
-    if (existing.status === 'pending' && existing.requester_id === requesterId) {
-      throw new Error('Friend request already sent.');
-    }
-    if (existing.status === 'pending' && existing.requester_id === addresseeId) {
-      // They already sent us a request — accept it instead
-      await acceptFriendRequest(existing.id);
-      return existing;
-    }
-    if (existing.status === 'blocked') {
-      throw new Error('Unable to send friend request.');
-    }
+/** A friend request that cannot be sent, for a reason the UI can name. */
+export class FriendRequestError extends Error {
+  constructor(public readonly code: FriendRequestErrorCode) {
+    super(
+      code === 'already_friends'
+        ? 'You are already friends with this person.'
+        : code === 'already_sent'
+          ? 'Friend request already sent.'
+          : code === 'self'
+            ? 'You cannot add yourself.'
+            : 'Unable to send friend request.',
+    );
+    this.name = 'FriendRequestError';
   }
+}
+
+/** 'sent': a new pending request. 'accepted': they had asked first, so theirs was accepted instead. */
+export type FriendRequestOutcome = { outcome: 'sent' | 'accepted'; friendship: Friendship };
+
+type FriendshipRow = Pick<Friendship, 'id' | 'status' | 'requester_id' | 'addressee_id' | 'created_at'>;
+
+/**
+ * Every row between two users, in either direction. A pair can hold two rows
+ * (A→B and B→A): the table's unique key used to be one-directional, so two
+ * people asking each other at once each got their own. `.maybeSingle()` errors
+ * on that, which is why this reads a list.
+ */
+async function friendshipRowsBetween(a: string, b: string): Promise<FriendshipRow[]> {
+  const { data, error } = await supabase
+    .from('friendships')
+    .select('id, status, requester_id, addressee_id, created_at')
+    .or(`and(requester_id.eq.${a},addressee_id.eq.${b}),and(requester_id.eq.${b},addressee_id.eq.${a})`);
+  if (error) throw error;
+  return (data ?? []) as FriendshipRow[];
+}
+
+/** What a friend request finds already there, strongest relationship first. */
+function classifyExisting(
+  rows: FriendshipRow[],
+  requesterId: string,
+): { kind: 'blocked' | 'friends' | 'sent' } | { kind: 'incoming'; row: FriendshipRow } | { kind: 'none' } {
+  if (rows.some((r) => r.status === 'blocked')) return { kind: 'blocked' };
+  if (rows.some((r) => r.status === 'accepted')) return { kind: 'friends' };
+  if (rows.some((r) => r.status === 'pending' && r.requester_id === requesterId)) return { kind: 'sent' };
+  const incoming = rows.find((r) => r.status === 'pending' && r.requester_id !== requesterId);
+  return incoming ? { kind: 'incoming', row: incoming } : { kind: 'none' };
+}
+
+/**
+ * Send a friend request. Throws FriendRequestError when there is nothing to
+ * send — already friends, already asked, a block, or yourself — so the caller
+ * can say which instead of "something went wrong". If they had already asked
+ * us, their request is accepted rather than a second one opened.
+ */
+export async function sendFriendRequest(requesterId: string, addresseeId: string): Promise<FriendRequestOutcome> {
+  if (!requesterId || !addresseeId || requesterId === addresseeId) throw new FriendRequestError('self');
+
+  const settle = async (rows: FriendshipRow[]): Promise<FriendRequestOutcome | null> => {
+    const found = classifyExisting(rows, requesterId);
+    switch (found.kind) {
+      case 'blocked':
+        throw new FriendRequestError('blocked');
+      case 'friends':
+        throw new FriendRequestError('already_friends');
+      case 'sent':
+        throw new FriendRequestError('already_sent');
+      case 'incoming':
+        return { outcome: 'accepted', friendship: (await acceptFriendRequest(found.row.id)) as Friendship };
+      default:
+        return null;
+    }
+  };
+
+  const settled = await settle(await friendshipRowsBetween(requesterId, addresseeId));
+  if (settled) return settled;
 
   const { data, error } = await supabase
     .from('friendships')
     .insert({ requester_id: requesterId, addressee_id: addresseeId, status: 'pending' })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    // Lost a race: a double tap, or both people asking at once. Whatever is
+    // there now decides the answer, so re-read rather than show a raw 23505.
+    if ((error as { code?: string }).code === '23505') {
+      const raced = await settle(await friendshipRowsBetween(requesterId, addresseeId));
+      if (raced) return raced;
+    }
+    throw error;
+  }
 
   // Notify the addressee so the request appears in their notifications feed
   await sendReaction(requesterId, addresseeId, '👋', 'Sent you a friend request!').catch(() => {});
 
-  return data;
+  return { outcome: 'sent', friendship: data as Friendship };
 }
 
 /** Accept a friend request */
@@ -368,19 +426,14 @@ export async function blockUserByUserId(userId: string, blockedUserId: string) {
   if (!userId || !blockedUserId || userId === blockedUserId) {
     throw new Error('Invalid block target');
   }
-  const { data: existing } = await supabase
-    .from('friendships')
-    .select('id')
-    .or(
-      `and(requester_id.eq.${userId},addressee_id.eq.${blockedUserId}),and(requester_id.eq.${blockedUserId},addressee_id.eq.${userId})`
-    )
-    .maybeSingle();
-
-  if (existing?.id) {
+  // Every row between the pair, so a pair still holding both directions ends
+  // up blocked either way. The database records who blocked (blocked_by).
+  const existing = await friendshipRowsBetween(userId, blockedUserId);
+  if (existing.length > 0) {
     const { error } = await supabase
       .from('friendships')
       .update({ status: 'blocked' })
-      .eq('id', existing.id);
+      .in('id', existing.map((r) => r.id));
     if (error) throw error;
     return;
   }
@@ -391,20 +444,40 @@ export async function blockUserByUserId(userId: string, blockedUserId: string) {
   if (insertErr) throw insertErr;
 }
 
-/** Unblock a user. Removes the friendship row (treated as "no relationship"). */
-export async function unblockUserByUserId(userId: string, blockedUserId: string) {
-  const { data } = await supabase
+/**
+ * Whether a block stands between two users, and whose it is. 'byThem' is a
+ * block the other person made: this user can't lift it. A block from before
+ * blocked_by was recorded counts as this user's, since either side could lift
+ * those and still can.
+ */
+export async function getBlockState(userId: string, otherId: string): Promise<'none' | 'byMe' | 'byThem'> {
+  const { data, error } = await supabase
     .from('friendships')
-    .select('id, status')
-    .or(
-      `and(requester_id.eq.${userId},addressee_id.eq.${blockedUserId}),and(requester_id.eq.${blockedUserId},addressee_id.eq.${userId})`
-    )
-    .maybeSingle();
-
-  if (!data?.id) return;
-  if (data.status !== 'blocked') return;
-  const { error } = await supabase.from('friendships').delete().eq('id', data.id);
+    .select('status, blocked_by')
+    .or(`and(requester_id.eq.${userId},addressee_id.eq.${otherId}),and(requester_id.eq.${otherId},addressee_id.eq.${userId})`);
   if (error) throw error;
+  const block = (data ?? []).find((r: { status: string }) => r.status === 'blocked') as
+    | { blocked_by: string | null }
+    | undefined;
+  if (!block) return 'none';
+  return block.blocked_by && block.blocked_by !== userId ? 'byThem' : 'byMe';
+}
+
+/**
+ * Unblock a user. Removes the block row (treated as "no relationship"). Only
+ * the one who blocked may; the database deletes nothing for the other side,
+ * which is reported as an error rather than a silent "unblocked".
+ */
+export async function unblockUserByUserId(userId: string, blockedUserId: string) {
+  const blocked = (await friendshipRowsBetween(userId, blockedUserId)).filter((r) => r.status === 'blocked');
+  if (blocked.length === 0) return;
+  const { data, error } = await supabase
+    .from('friendships')
+    .delete()
+    .in('id', blocked.map((r) => r.id))
+    .select('id');
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('Only the person who blocked can unblock.');
 }
 
 /**

@@ -20,7 +20,34 @@ import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
 import * as communityApi from '@/src/lib/communityApi';
-import type { FriendProfile, Friendship } from '@/src/lib/communityApi';
+import { FriendRequestError, type FriendProfile, type Friendship } from '@/src/lib/communityApi';
+import type { TranslationKey } from '@/src/i18n';
+
+type Translate = (key: TranslationKey) => string;
+
+/**
+ * Tells the user why a request didn't open a new one, and says what the pair
+ * is now: 'sent' when a request of theirs is already waiting, 'friends' when
+ * they already are, 'other' otherwise.
+ */
+function reportFriendRequestError(e: unknown, T: Translate): 'sent' | 'friends' | 'other' {
+  if (e instanceof FriendRequestError) {
+    if (e.code === 'already_friends') {
+      Alert.alert(T('commAlreadyFriendsTitle'), T('commAlreadyFriendsBody'));
+      return 'friends';
+    }
+    if (e.code === 'already_sent') {
+      Alert.alert(T('commAlreadySentTitle'), T('commAlreadySentBody'));
+      return 'sent';
+    }
+    if (e.code === 'blocked') {
+      Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestBlockedBody'));
+      return 'other';
+    }
+  }
+  Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
+  return 'other';
+}
 
 type Tab = 'nearby' | 'incoming' | 'sent';
 
@@ -82,7 +109,7 @@ export default function AddFriendScreen() {
   const idFromLinking = useMemo(() => idFromAppLinkUrl(linkingUrl), [linkingUrl]);
   const [idFromAsyncParse, setIdFromAsyncParse] = useState<string | undefined>(undefined);
   const inviteFromId = idFromParams?.trim() || idFromLinking || idFromAsyncParse;
-  const { userId, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
+  const { userId, friends, incomingRequests, refreshRequests, refreshFriends } = useCommunity();
 
   // `refreshRequests` / `T` change identity often and would re-run this effect while the alert is
   // open — cleanup flips `alive` and deferred handlers no-op → broken state / duplicate alerts.
@@ -161,27 +188,23 @@ export default function AddFriendScreen() {
                 markHandled();
                 setTimeout(() => {
                   void (async () => {
+                    const tr = TRef.current;
                     try {
-                      await communityApi.sendFriendRequest(userId, inviterId);
-                      setSentIds((prev) => new Set(prev).add(inviterId));
-                      await refreshRequestsRef.current();
-                      await refreshFriendsRef.current();
-                      setTab('sent');
-                    } catch (e: any) {
-                      const msg = String(e?.message || '');
-                      if (/already friends/i.test(msg)) {
-                        Alert.alert('Already friends', 'You are already friends with this user.');
-                      } else if (/already sent/i.test(msg)) {
-                        Alert.alert('Already sent', 'You already sent a request to this user.');
-                        setTab('sent');
+                      const { outcome } = await communityApi.sendFriendRequest(userId, inviterId);
+                      if (outcome === 'accepted') {
+                        Alert.alert(tr('commNowFriendsTitle'), tr('commNowFriendsBody'));
                       } else {
-                        const tr = TRef.current;
-                        Alert.alert(
-                          tr('commFriendRequestNotSentTitle'),
-                          tr('commFriendRequestNotSentBody'),
-                        );
+                        setSentIds((prev) => new Set(prev).add(inviterId));
+                        setTab('sent');
+                      }
+                    } catch (e) {
+                      if (reportFriendRequestError(e, tr) === 'sent') {
+                        setSentIds((prev) => new Set(prev).add(inviterId));
+                        setTab('sent');
                       }
                     }
+                    await refreshRequestsRef.current().catch(() => {});
+                    await refreshFriendsRef.current().catch(() => {});
                   })();
                 }, 0);
               },
@@ -251,20 +274,17 @@ export default function AddFriendScreen() {
     async (targetId: string) => {
       if (!userId) return;
       try {
-        await communityApi.sendFriendRequest(userId, targetId);
-        setSentIds((prev) => new Set(prev).add(targetId));
-        await refreshOutgoingRequests();
-        await refreshRequests();
-        await refreshFriends();
-      } catch (e: any) {
-        const msg = e?.message || '';
-        if (/duplicate key|already exists/i.test(msg)) {
-          setSentIds((prev) => new Set(prev).add(targetId));
-          await refreshOutgoingRequests();
+        const { outcome } = await communityApi.sendFriendRequest(userId, targetId);
+        if (outcome === 'accepted') {
+          Alert.alert(T('commNowFriendsTitle'), T('commNowFriendsBody'));
         } else {
-          Alert.alert(T('commFriendRequestNotSentTitle'), T('commFriendRequestNotSentBody'));
+          setSentIds((prev) => new Set(prev).add(targetId));
         }
+      } catch (e) {
+        if (reportFriendRequestError(e, T) === 'sent') setSentIds((prev) => new Set(prev).add(targetId));
       }
+      // Whatever happened, the rows now say what the pair is; the buttons follow them.
+      await Promise.all([refreshOutgoingRequests(), refreshRequests(), refreshFriends()]).catch(() => {});
     },
     [userId, refreshOutgoingRequests, refreshRequests, refreshFriends, T],
   );
@@ -352,8 +372,19 @@ export default function AddFriendScreen() {
     [incomingRequests.length, outgoingRequests.length],
   );
 
+  // What each person already is to this user, so search never offers "Add"
+  // for a friend, or a second request to someone already asked.
+  const friendIds = useMemo(() => new Set(friends.map((f) => f.id)), [friends]);
+  const incomingByRequester = useMemo(
+    () => new Map(incomingRequests.map((r) => [r.requester_id, r] as const)),
+    [incomingRequests],
+  );
+  const outgoingIds = useMemo(() => new Set(outgoingRequests.map((r) => r.addressee_id)), [outgoingRequests]);
+
   const renderPerson = (person: FriendProfile) => {
-    const isSent = sentIds.has(person.id);
+    const isFriend = friendIds.has(person.id);
+    const incoming = isFriend ? undefined : incomingByRequester.get(person.id);
+    const isSent = !isFriend && !incoming && (sentIds.has(person.id) || outgoingIds.has(person.id));
     return (
       <View key={person.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
         <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
@@ -365,7 +396,19 @@ export default function AddFriendScreen() {
             {[person.university, person.faculty, person.course].filter(Boolean).join(' · ')}
           </Text>
         </View>
-        {isSent ? (
+        {isFriend ? (
+          <View style={[styles.sentBadge, { backgroundColor: theme.primary + '1A' }]}>
+            <Feather name="user-check" size={14} color={theme.primary} />
+            <Text style={[styles.sentBadgeText, { color: theme.primary }]}>{T('commFriendsBadge')}</Text>
+          </View>
+        ) : incoming ? (
+          <Pressable
+            style={({ pressed }) => [styles.acceptBtn, { backgroundColor: theme.primary }, pressed && { opacity: 0.8 }]}
+            onPress={() => handleAccept(incoming.id)}
+          >
+            <Text style={styles.acceptBtnText}>{T('commAcceptShort')}</Text>
+          </Pressable>
+        ) : isSent ? (
           <View style={[styles.sentBadge, { backgroundColor: theme.textSecondary + '20' }]}>
             <Feather name="check" size={14} color={theme.textSecondary} />
             <Text style={[styles.sentBadgeText, { color: theme.textSecondary }]}>Sent</Text>

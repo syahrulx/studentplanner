@@ -30,7 +30,7 @@ import { Avatar } from '@/components/Avatar';
 import * as dmApi from '@/src/lib/dmApi';
 import type { DmMessage } from '@/src/lib/dmApi';
 import { getSavedQuizzes, type SavedQuizItem } from '@/src/lib/studyApi';
-import { blockUserByUserId, reportUser, unblockUserByUserId } from '@/src/lib/communityApi';
+import { blockUserByUserId, getBlockState, reportUser, unblockUserByUserId } from '@/src/lib/communityApi';
 import { upsertNote, upsertFlashcard } from '@/src/lib/studyDb';
 import type { Note, Flashcard } from '@/src/types';
 import {
@@ -142,24 +142,19 @@ export default function ChatRoomScreen() {
   const [savedQuizzes, setSavedQuizzes] = useState<SavedQuizItem[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedByMe, setBlockedByMe] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // Check if friend is blocked on mount
+  // Whether a block stands between us, and whose: only a block this user made
+  // can be lifted from here.
   useEffect(() => {
     if (!communityUserId || !friendId) return;
-    (async () => {
-      try {
-        const { supabase } = require('@/src/lib/supabase');
-        const { data } = await supabase
-          .from('friendships')
-          .select('status')
-          .or(
-            `and(requester_id.eq.${communityUserId},addressee_id.eq.${friendId}),and(requester_id.eq.${friendId},addressee_id.eq.${communityUserId})`,
-          )
-          .maybeSingle();
-        if (data?.status === 'blocked') setIsBlocked(true);
-      } catch {}
-    })();
+    getBlockState(communityUserId, friendId)
+      .then((state) => {
+        setIsBlocked(state !== 'none');
+        setBlockedByMe(state === 'byMe');
+      })
+      .catch(() => {});
   }, [communityUserId, friendId]);
 
   // Load messages
@@ -398,6 +393,7 @@ export default function ChatRoomScreen() {
               if (communityUserId && friendId) {
                 await blockUserByUserId(communityUserId, friendId);
                 setIsBlocked(true);
+                setBlockedByMe(true);
                 refreshFriends();
                 Alert.alert('Blocked', `${friendName || 'User'} has been blocked.`);
                 router.back();
@@ -426,6 +422,7 @@ export default function ChatRoomScreen() {
               if (communityUserId && friendId) {
                 await unblockUserByUserId(communityUserId, friendId);
                 setIsBlocked(false);
+                setBlockedByMe(false);
                 refreshFriends();
                 Alert.alert('Unblocked', `${friendName || 'User'} has been unblocked.`);
               }
@@ -768,7 +765,8 @@ export default function ChatRoomScreen() {
       {/* Dropdown menu */}
       {showMenu && (
         <View style={[styles.dropdownMenu, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          {isBlocked ? (
+          {/* A block the other person made can't be lifted or doubled from here. */}
+          {isBlocked && !blockedByMe ? null : isBlocked ? (
             <Pressable
               style={({ pressed }) => [styles.dropdownItem, pressed && { backgroundColor: theme.backgroundSecondary }]}
               onPress={handleUnblockUser}
