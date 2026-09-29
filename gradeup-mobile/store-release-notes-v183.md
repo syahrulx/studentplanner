@@ -8,7 +8,7 @@ per bullet line and has no concept of a section heading.
 The code is all shared, but the two stores sit at different starting points,
 so the bodies differ: iOS was last approved at 1.7.8 and needs everything
 since then (first body below); Play gets the 1.8.3 changes only (second body,
-497 characters, just inside Play's 500 cap; 362 without its Fixes section).
+494 characters, inside Play's 500 cap).
 
 ## Does this carry 1.8.2's fix?
 
@@ -36,18 +36,19 @@ Dropped for iOS: "Fixed a two-finger touch crash" (1.8.1) — `0d54b28` is an
 Android-only gesture-handler patch. Added: the storage-full banner (`5769f01`,
 an iOS ENOSPC report), which no earlier notes listed.
 
-1221 characters; the App Store allows 4000.
+1302 characters; the App Store allows 4000.
 
 ```
 New
 1. Lock screen planner: your day as a wallpaper that refreshes each morning
-2. Week and Task List widgets for your home screen and lock screen
-3. Timetable options: pick grid or list, and choose what each class shows - course name, room, lecturer, group
-4. Export your timetable as a PDF, portrait or landscape, to print or share
-5. Your lock screen can show your class group, and classes with no room say Online
-6. Replies to your confession or comment now notify you, and open the thread
-7. Turn reply alerts off per post, or in Community settings
-8. Classes can now be 4 or 5 hours long
+2. Two new lock screen templates, Timetable and Grid: your whole week with rooms
+3. Week and Task List widgets for your home screen and lock screen
+4. Timetable options: pick grid or list, and choose what each class shows - course name, room, lecturer, group
+5. Export your timetable as a PDF, portrait or landscape, to print or share
+6. Your lock screen can show your class group, and classes with no room say Online
+7. Replies to your confession or comment now notify you, and open the thread
+8. Turn reply alerts off per post, or in Community settings
+9. Classes can now be 4 or 5 hours long
 
 Improvements
 1. Your timetable fits Monday to Friday on one screen, in calmer colours
@@ -67,13 +68,14 @@ Fixes
 
 ```
 New
-1. Timetable options: pick grid or list, and choose what each class shows - course name, room, lecturer, group
-2. Export your timetable as a PDF, portrait or landscape, to print or share
-3. Your lock screen can show your class group, and classes with no room now say Online
+1. Lock screen templates Timetable and Grid: your whole week with rooms, to save as wallpaper
+2. Timetable options: grid or list, and what each class shows
+3. Export your timetable as a PDF, portrait or landscape
+4. Lock screen can show your class group; roomless classes say Online
 Improvements
-4. Your week fits one screen again, Monday to Friday, in calmer colours
+5. Your week fits one screen, Monday to Friday, in calmer colours
 Fixes
-5. Your semester week is correct again. The app moves on to your new semester, and a week you set by hand no longer carries over
+6. Your semester week is right again: the app moves on to your new semester, and a week set by hand no longer carries over
 ```
 
 ## What changed
@@ -91,7 +93,12 @@ Fixes
    course names no longer force seven scrolling columns, and a weekend day
    with a class stays reachable by scrolling. A subject name that is just the
    code is no longer printed twice.
-5. 1.8.2's calendar work (dev-izwan `4ff37bc`, `a51f45b`, `14168bb`,
+5. Two new lock screen templates, Timetable (a list of each day's classes)
+   and Grid (a mini timetable grid), both undated so a picture saved once —
+   the only option on Android — stays right all semester. Glance is removed:
+   it showed only the first class, wrong from that class onward. A stored
+   Glance choice falls back to Today.
+6. 1.8.2's calendar work (dev-izwan `4ff37bc`, `a51f45b`, `14168bb`,
    `ef2ea69`): an ended semester is refreshed once its last published period
    is over, including user-chosen calendars; registration rows no longer
    delay that; a hand-set week no longer carries into a new semester.
