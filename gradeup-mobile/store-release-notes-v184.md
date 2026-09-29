@@ -12,7 +12,7 @@ No platform difference: shared app code, so both bodies are identical. It
 matters most on Android, which cannot refresh a wallpaper and so saves the
 picture once — that is what the two templates are for.
 
-Length: 318 characters, inside Play's 500 cap.
+Length: 471 characters, inside Play's 500 cap.
 
 ## Title
 
@@ -24,11 +24,15 @@ Your whole week on your lock screen
 
 ```
 New
-1. Two new lock screen templates: Timetable, your whole week as a list with times and rooms, and Grid, a mini timetable grid
+1. Lock screen templates Timetable and Grid: your whole week with times and rooms
 2. Neither shows a date, so on Android you can save one as your wallpaper and it stays right all semester
+3. Friend search shows who's already a friend or has a request waiting, and lets you accept right there
 
 Changes
-1. The Glance template is gone. If you were using it, you're on Today now
+1. The Glance template is gone. If you used it, you're on Today now
+
+Fixes
+1. Adding someone who's already your friend now says so, instead of "Something went wrong"
 ```
 
 ## What changed
@@ -50,9 +54,17 @@ Glance is removed: it drew only the day's first class, so a picture drawn
 once a day was wrong from that class on. A stored Glance choice is not in the
 template list any more and falls back to the default, Today.
 
+`587fb70`. Friends: search shows Friends / Sent / Accept instead of "Add" for
+everyone, and a request that can't be sent says why ("Already friends",
+"Already sent", "You're now friends") instead of "Something went wrong". The
+database side (one row per pair, only the addressee accepts, only the blocker
+unblocks) went out as migration `20260929000001` ahead of the build, so it
+already holds for 1.8.3.
+
 ## Not listed
 
-Nothing else user-facing changed between 1.8.3 and 1.8.4.
+The friendship RLS and trigger hardening — not something to advertise, and
+already live for every build.
 
 ## Ship order
 
